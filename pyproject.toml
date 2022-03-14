@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "watcher"
+version = "0.0.1"
+description = "A small tool that is waiting for the specific docker image to be rolled out"
+authors = ["Vadim Gedz <vadims@linux-tech.io>"]
+license = "MIT"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+requests = "^2.27.1"
+fastapi = "^0.75.0"
+uvicorn = "^0.17.6"
+
+[tool.poetry.dev-dependencies]
+
+[tool.poetry.scripts]
+run = "watcher.web:main"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
