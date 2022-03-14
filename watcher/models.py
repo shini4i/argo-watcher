@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+from typing import List
 
 
 class Image(BaseModel):
@@ -8,4 +9,4 @@ class Image(BaseModel):
 
 class Images(BaseModel):
     app: str
-    images: Image
+    images: List[Image]

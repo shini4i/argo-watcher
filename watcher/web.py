@@ -14,7 +14,7 @@ argo = Argo()
 
 @app.post("/api/v1/status", status_code=status.HTTP_202_ACCEPTED)
 async def get_status(payload: Images):
-    return argo.get_app_status(payload.app)
+    return argo.wait_for_rollout(payload)
 
 
 def main():

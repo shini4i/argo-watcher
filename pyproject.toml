@@ -10,6 +10,7 @@ python = "^3.10"
 requests = "^2.27.1"
 fastapi = "^0.75.0"
 uvicorn = "^0.17.6"
+tenacity = "^8.0.1"
 
 [tool.poetry.dev-dependencies]
 
