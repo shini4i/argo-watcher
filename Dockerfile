@@ -1,8 +1,8 @@
-FROM python:3.10.2-alpine3.15 as base
+ARG PYTHON_VERSION=3.10.2-alpine3.15
+
+FROM python:${PYTHON_VERSION} as builder
 
 WORKDIR /src
-
-FROM base as builder
 
 RUN apk add --no-cache gcc musl-dev python3-dev libffi-dev openssl-dev \
  && pip install cryptography==3.1.1 \
@@ -16,26 +16,20 @@ COPY . .
 
 RUN poetry build
 
-FROM base as final
+FROM python:${PYTHON_VERSION}
 
 WORKDIR /app
 
-RUN apk add --no-cache git openssh \
- && adduser -u 1000 -h /app -D deployer
+RUN adduser -u 1000 -h /app -D app
 
 # Addreses security vulnerability
 RUN apk add --no-cache "expat>2.4.4"
-
-# A shitty hack that makes sure that multi stage copy cache is invalidated
-# https://github.com/GoogleContainerTools/kaniko/issues/1262
-ARG CI_COMMIT_SHA
-RUN echo $CI_COMMIT_SHA > /CI_COMMIT_SHA
 
 COPY --from=builder /src/dist/*.tar.gz /app
 COPY run.py /app/
 
 RUN pip install *.tar.gz && rm -f *.tar.gz
 
-USER deployer
+USER app
 
 CMD ["./run.py"]
