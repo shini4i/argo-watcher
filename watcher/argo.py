@@ -2,7 +2,7 @@ import requests
 import logging
 import json
 
-from tenacity import retry, stop_after_delay, retry_if_exception_type, wait_fixed, RetryError
+from tenacity import retry, stop_after_delay, retry_if_exception_type, wait_fixed
 
 from watcher.settings import Settings
 from watcher.models import Images
@@ -44,21 +44,26 @@ class Argo:
             return None
         else:
             app = json.loads(r.content.decode('utf-8'))
-        return app['status']['summary']['images']
-        # return {'synced': app['status']['sync']['status'], 'healthy': app['status']['health']['status']}
+
+        status = {
+                    "images": app['status']['summary']['images'],
+                    'synced': app['status']['sync']['status'],
+                    'healthy': app['status']['health']['status']
+                  }
+
+        return status
 
     @retry(stop=stop_after_delay(60),
-           retry=retry_if_exception_type(InvalidImageException),
+           retry=retry_if_exception_type((AppNotReadyException, InvalidImageException)),
            wait=wait_fixed(5))
-    def wait_for_image(self, payload: Images):
+    def wait_for_rollout(self, payload: Images):
+        app_status = self.get_app_status(payload.app)
         for target in payload.images:
-            if f"{target.image}:{target.tag}" not in self.get_app_status(payload.app):
-                print("waiting")
+            if f"{target.image}:{target.tag}" not in app_status['images']:
+                logging.debug(f"{target.image}:{target.tag} is not available yet...")
                 raise InvalidImageException
 
-    def wait_for_rollout(self, payload: Images):
-        try:
-            self.wait_for_image(payload)
-        except RetryError:
-            return "RazRaz"
-        return payload
+        if app_status['synced'] == 'Synced' and app_status['healthy'] == "Healthy":
+            return True
+        else:
+            raise AppNotReadyException
