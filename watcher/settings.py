@@ -8,7 +8,9 @@ class Settings:
         url = getenv("ARGO_URL")
         user = getenv("ARGO_USER")
         password = getenv("ARGO_PASSWORD")
-        timeout = 300
+        timeout = getenv("ARGO_TIMEOUT", 300)
+        if not isinstance(timeout, int):
+            timeout = int(timeout)
 
     class Logs:
         log_level = logging.getLevelName(getenv("LOG_LEVEL", "DEBUG"))

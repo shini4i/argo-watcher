@@ -2,7 +2,7 @@
 
 from os import getenv
 
-from fastapi import FastAPI, status
+from fastapi import FastAPI, Response, status
 from uvicorn import Config, Server
 from tenacity import RetryError
 
@@ -11,16 +11,43 @@ from watcher.models import Images
 from watcher.logs import setup_logging
 from watcher.settings import Settings
 
-app = FastAPI()
+app = FastAPI(
+    title="ArgoCD Rollout Watcher",
+    description="A small tool that is waiting for the specific docker image to be rolled out",
+    version="0.0.1"
+)
 argo = Argo()
 
 
-@app.post("/api/v1/status", status_code=status.HTTP_202_ACCEPTED)
-async def get_status(payload: Images):
+@app.post("/api/v1/status", status_code=status.HTTP_200_OK,
+          response_description="If the required version was rolled out",
+          responses={
+              200: {
+                  "content": {
+                      "application/json": {
+                          "example": {
+                              "deployed": True
+                          },
+                      }
+                  }
+              },
+              424: {
+                  "content": {
+                      "application/json": {
+                          "example": {
+                              "deployed": False
+                          },
+                      }
+                  }
+              }
+          }
+          )
+async def get_status(payload: Images, response: Response):
     try:
-        return argo.wait_for_rollout(payload)
+        return {"deployed": argo.wait_for_rollout(payload)}
     except RetryError:
-        return False
+        response.status_code = status.HTTP_424_FAILED_DEPENDENCY
+        return {"deployed": False}
 
 
 def main():
