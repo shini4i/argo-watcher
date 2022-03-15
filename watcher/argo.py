@@ -53,7 +53,7 @@ class Argo:
 
         return status
 
-    @retry(stop=stop_after_delay(60),
+    @retry(stop=stop_after_delay(Settings.Argo.timeout),
            retry=retry_if_exception_type((AppNotReadyException, InvalidImageException)),
            wait=wait_fixed(5))
     def wait_for_rollout(self, payload: Images):
