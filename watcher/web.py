@@ -42,7 +42,7 @@ argo = Argo()
               }
           }
           )
-async def get_status(payload: Images, response: Response):
+def get_status(payload: Images, response: Response):
     try:
         return {"deployed": argo.wait_for_rollout(payload)}
     except RetryError:
