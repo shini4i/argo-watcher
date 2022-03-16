@@ -38,6 +38,9 @@ class Argo:
                 logging.error("Forbidden, please check the firewall!")
                 return False
 
+    def refresh_app(self, app_name: str):
+        self.session.get(url=f"{Settings.Argo.url}/api/v1/applications/{app_name}?refresh=normal")
+
     def get_app_status(self, app: str):
         r = self.session.get(url=f"{Settings.Argo.url}/api/v1/applications/{app}")
         if r.status_code != 200:
@@ -57,6 +60,9 @@ class Argo:
            retry=retry_if_exception_type((AppNotReadyException, InvalidImageException)),
            wait=wait_fixed(5))
     def wait_for_rollout(self, payload: Images):
+
+        self.refresh_app(app_name=payload.app)
+
         app_status = self.get_app_status(payload.app)
         for target in payload.images:
             if f"{target.image}:{target.tag}" not in app_status['images']:
