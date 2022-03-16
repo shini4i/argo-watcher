@@ -17,6 +17,10 @@ class AppNotReadyException(Exception):
     pass
 
 
+class AppDoesNotExistException(Exception):
+    pass
+
+
 class Argo:
     def __init__(self):
         self.session = requests.session()
@@ -26,13 +30,11 @@ class Argo:
         self.authorized = self.auth()
 
     def auth(self) -> bool:
-        status_code = self.session.post(url=f"{self.argo_url}/api/v1/session",
-                                        json={
-                                            "username": self.argo_user,
-                                            "password": self.argo_password
-                                        }).status_code
-
-        match status_code:
+        match self.session.post(url=f"{self.argo_url}/api/v1/session",
+                                json={
+                                    "username": self.argo_user,
+                                    "password": self.argo_password
+                                }).status_code:
             case 200:
                 return True
             case 401:
@@ -42,11 +44,8 @@ class Argo:
                 logging.error("Forbidden, please check the firewall!")
                 return False
 
-    def refresh_app(self, app: str) -> bool:
-        if self.session.get(url=f"{self.argo_url}/api/v1/applications/{app}?refresh=normal").status_code == 200:
-            return True
-        else:
-            return False
+    def refresh_app(self, app: str) -> int:
+        return self.session.get(url=f"{self.argo_url}/api/v1/applications/{app}?refresh=normal").status_code
 
     def get_app_status(self, app: str) -> Optional[dict]:
         r = self.session.get(url=f"{self.argo_url}/api/v1/applications/{app}")
@@ -68,7 +67,11 @@ class Argo:
            wait=wait_fixed(5))
     def wait_for_rollout(self, payload: Images):
 
-        self.refresh_app(app=payload.app)
+        match self.refresh_app(app=payload.app):
+            case 200:
+                logging.info("test")
+            case 404:
+                raise AppDoesNotExistException
 
         app_status = self.get_app_status(payload.app)
         for target in payload.images:

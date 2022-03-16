@@ -6,7 +6,7 @@ from fastapi import FastAPI, Response, status
 from uvicorn import Config, Server
 from tenacity import RetryError
 
-from watcher.argo import Argo
+from watcher.argo import Argo, AppDoesNotExistException
 from watcher.models import Images
 from watcher.logs import setup_logging
 from watcher.settings import Settings
@@ -39,6 +39,15 @@ argo = Argo()
                           },
                       }
                   }
+              },
+              404: {
+                  "content": {
+                      "application/json": {
+                          "example": {
+                              "error": "App does not exists"
+                          },
+                      }
+                  }
               }
           }
           )
@@ -48,6 +57,9 @@ def get_status(payload: Images, response: Response):
     except RetryError:
         response.status_code = status.HTTP_424_FAILED_DEPENDENCY
         return {"deployed": False}
+    except AppDoesNotExistException:
+        response.status_code = status.HTTP_404_NOT_FOUND
+        return {"error": "App does not exists"}
 
 
 def main():
