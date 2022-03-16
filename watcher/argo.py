@@ -20,10 +20,10 @@ class AppNotReadyException(Exception):
 class Argo:
     def __init__(self):
         self.session = requests.session()
-        self.authorized = self.auth()
         self.argo_url = Settings.Argo.url
         self.argo_user = Settings.Argo.user
         self.argo_password = Settings.Argo.password
+        self.authorized = self.auth()
 
     def auth(self) -> bool:
         status_code = self.session.post(url=f"{self.argo_url}/api/v1/session",
