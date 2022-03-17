@@ -2,11 +2,14 @@ import requests
 import logging
 import json
 
-from tenacity import retry, stop_after_delay, retry_if_exception_type, wait_fixed
+from tenacity import retry, stop_after_delay, retry_if_exception_type, wait_fixed, RetryError
 from typing import Optional
 
 from watcher.settings import Settings
-from watcher.models import Images
+from watcher.models import Task
+from watcher.state import State
+
+state = State()
 
 
 class InvalidImageException(Exception):
@@ -44,6 +47,22 @@ class Argo:
                 logging.error("Forbidden, please check the firewall!")
                 return False
 
+    def start_task(self, task: Task, task_id: str):
+        try:
+            state.set_current_task(task_id=task_id, task=task, status="In progress")
+            self.wait_for_rollout(task=task)
+            state.update_task(task_id=task_id, status="Deployed")
+        except RetryError:
+            state.update_task(task_id=task_id, status="Failed")
+
+    @staticmethod
+    def get_task_status(task_id: str):
+        return state.get_task_status(task_id=task_id)
+
+    @staticmethod
+    def return_state():
+        return state.get_state()
+
     def refresh_app(self, app: str) -> int:
         return self.session.get(url=f"{self.argo_url}/api/v1/applications/{app}?refresh=normal").status_code
 
@@ -65,21 +84,19 @@ class Argo:
     @retry(stop=stop_after_delay(Settings.Argo.timeout),
            retry=retry_if_exception_type((AppNotReadyException, InvalidImageException)),
            wait=wait_fixed(5))
-    def wait_for_rollout(self, payload: Images):
+    def wait_for_rollout(self, task: Task):
 
-        match self.refresh_app(app=payload.app):
-            case 200:
-                logging.info("test")
-            case 404:
-                raise AppDoesNotExistException
+        if self.refresh_app(app=task.app) == 404:
+            raise AppDoesNotExistException
 
-        app_status = self.get_app_status(payload.app)
-        for target in payload.images:
+        app_status = self.get_app_status(task.app)
+
+        for target in task.images:
             if f"{target.image}:{target.tag}" not in app_status['images']:
                 logging.debug(f"{target.image}:{target.tag} is not available yet...")
                 raise InvalidImageException
 
         if app_status['synced'] == 'Synced' and app_status['healthy'] == "Healthy":
-            return True
+            return
         else:
             raise AppNotReadyException
