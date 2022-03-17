@@ -15,7 +15,6 @@ class State:
             "tags": set([image.tag for image in task.images]),
             "status": status
         }
-        print(self.state)
 
     def get_task_status(self, task_id: str) -> Optional[dict]:
         return self.state.get(task_id)['status']

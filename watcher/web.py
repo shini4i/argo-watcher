@@ -20,7 +20,6 @@ argo = Argo()
 
 
 @app.post("/api/v1/tasks", status_code=status.HTTP_202_ACCEPTED,
-          response_description="If the required version was rolled out",
           responses={
               202: {
                   "content": {
