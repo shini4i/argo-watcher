@@ -7,6 +7,7 @@ class Image(BaseModel):
     tag: str
 
 
-class Images(BaseModel):
+class Task(BaseModel):
     app: str
+    author: str
     images: List[Image]

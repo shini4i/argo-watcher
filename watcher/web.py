@@ -2,64 +2,77 @@
 
 from os import getenv
 
-from fastapi import FastAPI, Response, status
+from fastapi import FastAPI, BackgroundTasks, status
 from uvicorn import Config, Server
-from tenacity import RetryError
+from uuid import uuid1
 
-from watcher.argo import Argo, AppDoesNotExistException
-from watcher.models import Images
+from watcher.argo import Argo
+from watcher.models import Task
 from watcher.logs import setup_logging
 from watcher.settings import Settings
 
 app = FastAPI(
-    title="ArgoCD Rollout Watcher",
-    description="A small tool that is waiting for the specific docker image to be rolled out",
+    title="ArgoCD Watcher",
+    description="A small tool that will wait for the specific docker image to be rolled out",
     version="0.0.1"
 )
 argo = Argo()
 
 
-@app.post("/api/v1/status", status_code=status.HTTP_200_OK,
-          response_description="If the required version was rolled out",
+@app.post("/api/v1/tasks", status_code=status.HTTP_202_ACCEPTED,
           responses={
-              200: {
+              202: {
                   "content": {
                       "application/json": {
                           "example": {
-                              "deployed": True
-                          },
-                      }
-                  }
-              },
-              424: {
-                  "content": {
-                      "application/json": {
-                          "example": {
-                              "deployed": False
-                          },
-                      }
-                  }
-              },
-              404: {
-                  "content": {
-                      "application/json": {
-                          "example": {
-                              "error": "App does not exists"
+                              "status": "accepted",
+                              "id": "a09791dc-a615-11ec-b182-f2c4bb72758c"
                           },
                       }
                   }
               }
-          }
-          )
-def get_status(payload: Images, response: Response):
-    try:
-        return {"deployed": argo.wait_for_rollout(payload)}
-    except RetryError:
-        response.status_code = status.HTTP_424_FAILED_DEPENDENCY
-        return {"deployed": False}
-    except AppDoesNotExistException:
-        response.status_code = status.HTTP_404_NOT_FOUND
-        return {"error": "App does not exists"}
+          })
+def add_task(background_tasks: BackgroundTasks, task: Task):
+    task_id = str(uuid1())
+    background_tasks.add_task(argo.start_task, task=task, task_id=task_id)
+    return {"status": "accepted", "id": task_id}
+
+
+@app.get("/api/v1/tasks/{task_id}", status_code=status.HTTP_200_OK,
+         responses={
+             200: {
+                 "content": {
+                     "application/json": {
+                         "example": {
+                             "status": "Deployed"
+                         }
+                     }
+                 }
+             }
+         })
+def get_task_details(task_id: str):
+    return {"status": argo.get_task_status(task_id=task_id)}
+
+
+@app.get("/api/v1/tasks", status_code=status.HTTP_200_OK,
+         responses={
+             200: {
+                 "content": {
+                     "application/json": {
+                         "example": {
+                             "484269da-a647-11ec-82ad-f2c4bb72758a": {
+                                 "app": "test",
+                                 "author": "John Doe",
+                                 "tags": ["v0.1.0"],
+                                 "status": "Deployed"
+                             }
+                         }
+                     }
+                 }
+             }
+         })
+def get_state():
+    return argo.return_state()
 
 
 def main():
