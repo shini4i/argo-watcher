@@ -1,4 +1,6 @@
 # argo-watcher
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=shini4i_argo-watcher&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=shini4i_argo-watcher)
+
 PoC version of app that will watch if the required docker image was rolled out in ArgoCD.<br>
 The reason for its existence is to provide clear visibility in pipelines that the specific code version is up and running w/o checking argocd ui.
 
