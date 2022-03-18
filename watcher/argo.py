@@ -47,13 +47,13 @@ class Argo:
                 logging.error("Forbidden, please check the firewall!")
                 return False
 
-    def start_task(self, task: Task, task_id: str):
+    def start_task(self, task: Task):
         try:
-            state.set_current_task(task_id=task_id, task=task, status="in progress")
+            state.set_current_task(task=task, status="in progress")
             self.wait_for_rollout(task=task)
-            state.update_task(task_id=task_id, status="deployed")
+            state.update_task(task_id=task.id, status="deployed")
         except RetryError:
-            state.update_task(task_id=task_id, status="failed")
+            state.update_task(task_id=task.id, status="failed")
 
     @staticmethod
     def get_task_status(task_id: str):
