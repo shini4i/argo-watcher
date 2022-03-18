@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 
 
 class Image(BaseModel):
@@ -8,6 +8,8 @@ class Image(BaseModel):
 
 
 class Task(BaseModel):
+    id: Optional[str]
     app: str
     author: str
     images: List[Image]
+    status: Optional[str]
