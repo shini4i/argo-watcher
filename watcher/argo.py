@@ -49,11 +49,11 @@ class Argo:
 
     def start_task(self, task: Task, task_id: str):
         try:
-            state.set_current_task(task_id=task_id, task=task, status="In progress")
+            state.set_current_task(task_id=task_id, task=task, status="in progress")
             self.wait_for_rollout(task=task)
-            state.update_task(task_id=task_id, status="Deployed")
+            state.update_task(task_id=task_id, status="deployed")
         except RetryError:
-            state.update_task(task_id=task_id, status="Failed")
+            state.update_task(task_id=task_id, status="failed")
 
     @staticmethod
     def get_task_status(task_id: str):
