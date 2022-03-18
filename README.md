@@ -26,3 +26,21 @@ Example response:
 ```bash
 {"status":"In progress"}
 ```
+
+# Development
+
+To start developing argo-watcher you will need
+1. python interpreter
+2. poetry toolkit
+3. direnv
+
+Starting the development
+
+```shell
+# create virtual environment
+poetry shell
+# install dependencies
+poetry install
+# start the project
+poetry run
+```

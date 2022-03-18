@@ -1,3 +1,4 @@
 .idea
 .envrc
+.env
 **/__pycache__
