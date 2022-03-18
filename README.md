@@ -24,5 +24,5 @@ curl http://localhost:8080/api/v1/tasks/be8c42c0-a645-11ec-8ea5-f2c4bb72758a
 ```
 Example response:
 ```bash
-{"status":"In progress"}
+{"status":"in progress"}
 ```
