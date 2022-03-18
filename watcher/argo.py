@@ -26,18 +26,24 @@ class AppDoesNotExistException(Exception):
 
 class Argo:
     def __init__(self):
-        self.session = requests.session()
+        self.session = requests.Session()
         self.argo_url = Settings.Argo.url
         self.argo_user = Settings.Argo.user
         self.argo_password = Settings.Argo.password
         self.authorized = self.auth()
 
     def auth(self) -> bool:
-        match self.session.post(url=f"{self.argo_url}/api/v1/session",
-                                json={
-                                    "username": self.argo_user,
-                                    "password": self.argo_password
-                                }).status_code:
+        try:
+            response = self.session.post(url=f"{self.argo_url}/api/v1/session",
+                                         json={
+                                             "username": self.argo_user,
+                                             "password": self.argo_password
+                                         })
+        except requests.exceptions.RequestException as e:  # This is the correct syntax
+            logging.error(e)
+            return False
+
+        match response.status_code:
             case 200:
                 return True
             case 401:
