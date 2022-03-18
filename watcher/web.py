@@ -44,7 +44,7 @@ def add_task(background_tasks: BackgroundTasks, task: Task):
                  "content": {
                      "application/json": {
                          "example": {
-                             "status": "Deployed"
+                             "status": "deployed"
                          }
                      }
                  }
@@ -64,7 +64,7 @@ def get_task_details(task_id: str):
                                  "app": "test",
                                  "author": "John Doe",
                                  "tags": ["v0.1.0"],
-                                 "status": "Deployed"
+                                 "status": "deployed"
                              }
                          }
                      }
