@@ -18,7 +18,7 @@ def send_task(url: str, task: dict) -> str:
     return r.json()['id']
 
 
-def check_status(url: str, task_id: str):
+def check_status(url: str, task_id: str) -> str:
     return requests.get(url=f"{url}/{task_id}").json()['status']
 
 
