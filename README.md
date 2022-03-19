@@ -35,3 +35,39 @@ Example response:
 ```bash
 {"status":"in progress"}
 ```
+
+# API Development
+
+To start developing argo-watcher you will need
+1. python interpreter
+2. poetry toolkit
+3. direnv
+
+Starting the API development
+
+```shell
+# create virtual environment
+poetry shell
+# install dependencies
+poetry install
+# start the project
+poetry run
+```
+
+# Front-End Development
+
+To start developing front-end you'd need
+1. NodeJS version 16.6.0+
+2. NPM (comes with NodeJS) 7.19.1+
+
+```shell
+# go into web directory
+cd web
+# install dependencies
+npm install
+# start web development server
+npm start
+```
+
+The browser will open on http://localhost:3000
+
