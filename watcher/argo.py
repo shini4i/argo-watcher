@@ -54,6 +54,8 @@ class Argo:
             state.update_task(task_id=task.id, status="deployed")
         except RetryError:
             state.update_task(task_id=task.id, status="failed")
+        except AppDoesNotExistException:
+            state.update_task(task_id=task.id, status="app not found")
 
     @staticmethod
     def get_task_status(task_id: str):
