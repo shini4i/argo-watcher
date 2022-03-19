@@ -39,7 +39,7 @@ class Argo:
                                              "username": self.argo_user,
                                              "password": self.argo_password
                                          })
-        except requests.exceptions.RequestException as e:  # This is the correct syntax
+        except requests.exceptions.RequestException as e:
             logging.error(e)
             return False
 
