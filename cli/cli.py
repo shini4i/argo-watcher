@@ -34,7 +34,12 @@ def main(url, app, author, image, tag):
     while (status := check_status(url=url, task_id=task_id)) not in ["deployed", "failed", "app not found"]:
         click.echo("Application deployment is in progress...")
         sleep(5)
-    click.echo(f"Application deployment ended with \"{status}\" result.")
+
+    if status in ["failed", "app not found"]:
+        click.echo("The deployment has failed, please check logs.")
+        exit(1)
+    else:
+        click.echo(f"The deployment of {tag} version is done.")
 
 
 if __name__ == '__main__':
