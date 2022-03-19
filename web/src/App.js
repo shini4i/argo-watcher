@@ -1,11 +1,9 @@
 import {useEffect, useState} from "react";
 
 function App() {
-
   const [tasks, setTasks] = useState([]);
 
   useEffect(() => {
-
     fetch('/api/v1/tasks')
         .then(res => res.json())
         .then(items => {
