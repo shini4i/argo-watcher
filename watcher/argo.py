@@ -1,11 +1,10 @@
 import requests
-from requests.exceptions import RequestException
-
 import logging
 import json
 
 from tenacity import retry, stop_after_delay, retry_if_exception_type, wait_fixed, RetryError
 from typing import Optional
+from requests.exceptions import RequestException
 
 from watcher.settings import Settings
 from watcher.models import Task
