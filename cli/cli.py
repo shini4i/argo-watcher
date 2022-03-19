@@ -35,11 +35,15 @@ def main(url, app, author, image, tag):
         click.echo("Application deployment is in progress...")
         sleep(5)
 
-    if status in ["failed", "app not found"]:
-        click.echo("The deployment has failed, please check logs.")
-        exit(1)
-    else:
-        click.echo(f"The deployment of {tag} version is done.")
+    match status:
+        case "failed":
+            click.echo("The deployment has failed, please check logs.")
+            exit(1)
+        case "app not found":
+            click.echo(f"Application {app} does not exist.")
+            exit(1)
+        case "deployed":
+            click.echo(f"The deployment of {tag} version is done.")
 
 
 if __name__ == '__main__':
