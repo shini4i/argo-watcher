@@ -2,7 +2,16 @@
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=shini4i_argo-watcher&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=shini4i_argo-watcher)
 
 PoC version of app that will watch if the required docker image was rolled out in ArgoCD.<br>
+It is intended to be used in tandem with [argocd-image-updater](https://github.com/argoproj-labs/argocd-image-updater).
+
 The reason for its existence is to provide clear visibility in pipelines that the specific code version is up and running w/o checking argocd ui.
+
+## Expected workflow
+1) argocd-image-updater is configured for auto-update of some specific Application.
+2) Code build pipeline is triggered.
+3) Docker image is packaged and tagged according to the pre-defined pattern and pushed to the Docker registry.
+4) The pipeline starts to communicate with argo-watcher and waits for either "deployed" or "failed" status to be returned.
+5) It happens alongside with step 4. argocd-image-updater detects that the new image tag appeared in the registry and commits changes to the gitops repo.
 
 ## Examples
 ### Add a task
