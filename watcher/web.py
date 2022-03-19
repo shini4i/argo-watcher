@@ -6,6 +6,8 @@ from fastapi import FastAPI, BackgroundTasks, status
 from uvicorn import Config, Server
 from uuid import uuid1
 
+from typing import List
+
 from watcher.argo import Argo
 from watcher.models import Task
 from watcher.logs import setup_logging
@@ -33,9 +35,9 @@ argo = Argo()
               }
           })
 def add_task(background_tasks: BackgroundTasks, task: Task):
-    task_id = str(uuid1())
-    background_tasks.add_task(argo.start_task, task=task, task_id=task_id)
-    return {"status": "accepted", "id": task_id}
+    task.id = str(uuid1())
+    background_tasks.add_task(argo.start_task, task=task)
+    return {"status": "accepted", "id": task.id}
 
 
 @app.get("/api/v1/tasks/{task_id}", status_code=status.HTTP_200_OK,
@@ -44,7 +46,7 @@ def add_task(background_tasks: BackgroundTasks, task: Task):
                  "content": {
                      "application/json": {
                          "example": {
-                             "status": "Deployed"
+                             "status": "deployed"
                          }
                      }
                  }
@@ -54,23 +56,7 @@ def get_task_details(task_id: str):
     return {"status": argo.get_task_status(task_id=task_id)}
 
 
-@app.get("/api/v1/tasks", status_code=status.HTTP_200_OK,
-         responses={
-             200: {
-                 "content": {
-                     "application/json": {
-                         "example": {
-                             "484269da-a647-11ec-82ad-f2c4bb72758a": {
-                                 "app": "test",
-                                 "author": "John Doe",
-                                 "tags": ["v0.1.0"],
-                                 "status": "Deployed"
-                             }
-                         }
-                     }
-                 }
-             }
-         })
+@app.get("/api/v1/tasks", status_code=status.HTTP_200_OK, response_model=List[Task])
 def get_state():
     return argo.return_state()
 
