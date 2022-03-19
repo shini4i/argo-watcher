@@ -31,7 +31,7 @@ def check_status(url: str, task_id: str) -> str:
 def main(url, app, author, image, tag):
     task = generate_task(app=app, author=author, images=image, tag=tag)
     task_id = send_task(url=url, task=task)
-    while (status := check_status(url=url, task_id=task_id)) not in ["deployed", "failed", "app not found"]:
+    while (status := check_status(url=url, task_id=task_id)) == "in progress":
         click.echo("Application deployment is in progress...")
         sleep(5)
 
