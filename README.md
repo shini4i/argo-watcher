@@ -11,7 +11,7 @@ The reason for its existence is to provide clear visibility in pipelines that th
 2) Code build pipeline is triggered.
 3) Docker image is packaged and tagged according to the pre-defined pattern and pushed to the Docker registry.
 4) The pipeline starts to communicate with argo-watcher and waits for either "deployed" or "failed" status to be returned.
-5) It happens simultaneously as step 4. argocd-image-updater detects that the new image tag appeared in the registry and commits changes to the gitops repo.
+5) It happens alongside with step 4. argocd-image-updater detects that the new image tag appeared in the registry and commits changes to the gitops repo.
 
 ## Examples
 ### Add a task
