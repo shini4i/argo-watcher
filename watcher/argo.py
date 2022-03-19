@@ -1,4 +1,6 @@
 import requests
+from requests.exceptions import RequestException
+
 import logging
 import json
 
@@ -39,8 +41,8 @@ class Argo:
                                              "username": self.argo_user,
                                              "password": self.argo_password
                                          })
-        except requests.exceptions.RequestException as e:
-            logging.error(e)
+        except RequestException as exception:
+            logging.error(exception)
             return False
 
         match response.status_code:
