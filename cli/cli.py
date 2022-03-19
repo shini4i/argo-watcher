@@ -14,8 +14,7 @@ def generate_task(app, author, images, tag) -> dict:
 
 
 def send_task(url: str, task: dict) -> str:
-    r = requests.post(url=url, json=task)
-    return r.json()['id']
+    return requests.post(url=url, json=task).json()['id']
 
 
 def check_status(url: str, task_id: str) -> str:

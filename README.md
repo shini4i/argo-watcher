@@ -39,9 +39,8 @@ Example response:
 # API Development
 
 To start developing argo-watcher you will need
-1. python interpreter
-2. poetry toolkit
-3. direnv
+1. python version 3.10+
+2. [poetry](https://python-poetry.org/) toolkit
 
 Starting the API development
 
@@ -70,4 +69,3 @@ npm start
 ```
 
 The browser will open on http://localhost:3000
-
