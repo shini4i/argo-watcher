@@ -1,6 +1,7 @@
 import {useEffect, useState} from "react";
 import Navbar from "./Navbar";
 import ErrorSnackbar from "./ErrorSnackbar";
+import {relativeTime} from "./Utils";
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import Container from "@mui/material/Container";
@@ -13,6 +14,7 @@ import TableContainer from '@mui/material/TableContainer';
 import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import Tooltip from "@mui/material/Tooltip";
 
 function App() {
   const [tasks, setTasks] = useState([]);
@@ -75,7 +77,12 @@ function App() {
                                 <TableCell>{task.app}</TableCell>
                                 <TableCell>{task.author}</TableCell>
                                 <TableCell>{task.status}</TableCell>
-                                <TableCell>TODO</TableCell>
+                                <TableCell>
+                                    <Tooltip title={new Date(task.created * 1000).toISOString()}>
+                                        <span>{relativeTime(task.created * 1000)}</span>
+                                    </Tooltip>
+
+                                </TableCell>
                                 <TableCell>
                                     {task.images.map((item, index) => {
                                         return <div key={index}>{item.image}:{item.tag}</div>
