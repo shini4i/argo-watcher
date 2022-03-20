@@ -3,6 +3,8 @@
 from os import getenv
 
 from fastapi import FastAPI, BackgroundTasks, status
+from fastapi.staticfiles import StaticFiles
+from starlette.responses import FileResponse
 from uvicorn import Config, Server
 from uuid import uuid1
 
@@ -59,6 +61,14 @@ def get_task_details(task_id: str):
 @app.get("/api/v1/tasks", status_code=status.HTTP_200_OK, response_model=List[Task])
 def get_state():
     return argo.return_state()
+
+
+app.mount("/", StaticFiles(directory="static", html=True))
+
+
+@app.get("/")
+async def index():
+    return FileResponse('static/index.html', media_type='text/html')
 
 
 def main():

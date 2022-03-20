@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - watcher/**
+      - web/**
 
 jobs:
   build-and-push-docker-image:
