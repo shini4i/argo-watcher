@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 
-import time
-
 from os import getenv
 
 from fastapi import FastAPI, BackgroundTasks, status
@@ -38,7 +36,6 @@ argo = Argo()
           })
 def add_task(background_tasks: BackgroundTasks, task: Task):
     task.id = str(uuid1())
-    task.created = time.time()
     background_tasks.add_task(argo.start_task, task=task)
     return {"status": "accepted", "id": task.id}
 

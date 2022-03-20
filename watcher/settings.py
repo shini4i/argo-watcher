@@ -12,6 +12,11 @@ class Settings:
         if not isinstance(timeout, int):
             timeout = int(timeout)
 
+    class Watcher:
+        history_ttl = getenv("HISTORY_TTL", 3600)
+        if not isinstance(history_ttl, int):
+            history_ttl = int(history_ttl)
+
     class Logs:
         log_level = logging.getLevelName(getenv("LOG_LEVEL", "DEBUG"))
         json_logs = True if getenv("JSON_LOGS", "0") == "1" else False

@@ -8,9 +8,9 @@ from requests.exceptions import RequestException
 
 from watcher.settings import Settings
 from watcher.models import Task
-from watcher.state import State
+from watcher.state import InMemoryState
 
-state = State()
+state = InMemoryState()
 
 
 class InvalidImageException(Exception):
