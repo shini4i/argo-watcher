@@ -13,16 +13,27 @@ import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import Paper from '@mui/material/Paper';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import ErrorSnackbar from "./ErrorSnackbar";
 
 function App() {
   const [tasks, setTasks] = useState([]);
+  const [loadingError, setLoadingError] = useState(null);
 
   const refreshTasks = () => {
       fetch('/api/v1/tasks')
-          .then(res => res.json())
+          .then(res => {
+              if (res.status !== 200) {
+                  throw new Error(res.statusText);
+              }
+              return res.json();
+          })
           .then(items => {
               setTasks(items);
-          });
+          })
+          .catch(error => {
+              setLoadingError(error.message);
+          })
+      ;
   };
 
   useEffect(() => {
@@ -54,33 +65,34 @@ function App() {
                         </TableRow>
                     </TableHead>
                     <TableBody>
-                        {tasks.map((row) => (
+                        {tasks.map((task) => (
                             <TableRow
-                                key={row.name}
+                                key={task.id}
                                 sx={{ '&:last-child td, &:last-child th': { border: 0 } }}
                             >
                                 <TableCell component="th" scope="row">
-                                    {row.id}
+                                    {task.id}
                                 </TableCell>
-                                <TableCell>{row.app}</TableCell>
-                                <TableCell>{row.author}</TableCell>
-                                <TableCell>{row.status}</TableCell>
+                                <TableCell>{task.app}</TableCell>
+                                <TableCell>{task.author}</TableCell>
+                                <TableCell>{task.status}</TableCell>
                                 <TableCell>TODO</TableCell>
                                 <TableCell>
-                                    {row.images.map(item => {
-                                        return <div>{item.image}:{item.tag}</div>
+                                    {task.images.map((item, index) => {
+                                        return <div key={index}>{item.image}:{item.tag}</div>
                                     })}
                                 </TableCell>
                             </TableRow>
                         ))}
                         {tasks.length === 0 && <TableRow>
                             <TableCell colSpan={100} sx={{textAlign: "center"}}>
-                                No tasks currently is being executed
+                                No tasks are currently being executed
                             </TableCell>
                         </TableRow>}
                     </TableBody>
                 </Table>
             </TableContainer>
+            <ErrorSnackbar message={loadingError} setMessage={setLoadingError}/>
         </Container>
     </div>
   );
