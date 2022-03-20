@@ -63,7 +63,7 @@ def get_state():
     return argo.return_state()
 
 
-app.mount("/", StaticFiles(directory="static"))
+app.mount("/", StaticFiles(directory="static", html=True))
 
 
 @app.get("/")
