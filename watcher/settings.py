@@ -13,9 +13,9 @@ class Settings:
             timeout = int(timeout)
 
     class Watcher:
-        task_ttl = getenv("TASK_TTL", 60)
-        if not isinstance(task_ttl, int):
-            timeout = int(task_ttl)
+        history_ttl = getenv("TASK_TTL", 3600)
+        if not isinstance(history_ttl, int):
+            history_ttl = int(history_ttl)
 
     class Logs:
         log_level = logging.getLevelName(getenv("LOG_LEVEL", "DEBUG"))

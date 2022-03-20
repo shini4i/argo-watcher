@@ -29,7 +29,7 @@ class InMemoryState:
         current_time = time()
         if len(self.tasks) > 0:
             for task in self.tasks.copy().values():
-                if (current_time - task.created)/60 > Settings.Watcher.task_ttl:
+                if int(current_time - task.created) > Settings.Watcher.history_ttl:
                     logging.debug(f"Expiring {task.id} task...")
                     self.tasks.pop(task.id)
 
