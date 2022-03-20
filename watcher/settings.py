@@ -13,7 +13,7 @@ class Settings:
             timeout = int(timeout)
 
     class Watcher:
-        history_ttl = getenv("TASK_TTL", 3600)
+        history_ttl = getenv("HISTORY_TTL", 3600)
         if not isinstance(history_ttl, int):
             history_ttl = int(history_ttl)
 
