@@ -12,6 +12,11 @@ class Settings:
         if not isinstance(timeout, int):
             timeout = int(timeout)
 
+    class Watcher:
+        task_ttl = getenv("TASK_TTL", 60)
+        if not isinstance(task_ttl, int):
+            timeout = int(task_ttl)
+
     class Logs:
         log_level = logging.getLevelName(getenv("LOG_LEVEL", "DEBUG"))
         json_logs = True if getenv("JSON_LOGS", "0") == "1" else False
