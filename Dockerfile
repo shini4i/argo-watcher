@@ -1,5 +1,6 @@
 ARG PYTHON_VERSION=3.10.2-alpine3.15
 
+# Backend build
 FROM python:${PYTHON_VERSION} as builder-backend
 
 WORKDIR /src
@@ -16,6 +17,7 @@ COPY . .
 
 RUN poetry build
 
+# Frontend build
 FROM node:17.7-alpine3.15 as builder-frontend
 
 WORKDIR /app
@@ -30,6 +32,7 @@ COPY web/ .
 
 RUN npm run build
 
+# The resulting image build
 FROM python:${PYTHON_VERSION}
 
 WORKDIR /app
