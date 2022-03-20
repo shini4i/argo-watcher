@@ -1,13 +1,13 @@
 import logging
 
-from os import getenv
+from os import getenv, environ
 
 
 class Settings:
     class Argo:
-        url = getenv("ARGO_URL")
-        user = getenv("ARGO_USER")
-        password = getenv("ARGO_PASSWORD")
+        url = environ['ARGO_URL']
+        user = environ['ARGO_USER']
+        password = environ['ARGO_PASSWORD']
         timeout = getenv("ARGO_TIMEOUT", 300)
         if not isinstance(timeout, int):
             timeout = int(timeout)
