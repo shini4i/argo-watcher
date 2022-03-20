@@ -9,6 +9,7 @@ class Image(BaseModel):
 
 class Task(BaseModel):
     id: Optional[str]
+    created: Optional[int]
     app: str
     author: str
     images: List[Image]
