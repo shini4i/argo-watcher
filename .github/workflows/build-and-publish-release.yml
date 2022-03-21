@@ -1,13 +1,9 @@
-name: Build and Publish
+name: Build and Publish release versions
 
 on:
   push:
-    branches:
-      - main
-      - fix/local-backend-development
-    paths:
-      - watcher/**
-      - web/**
+    tags:
+      - 'v*.*.*'
 
 jobs:
   build-and-push-docker-image:
@@ -34,5 +30,5 @@ jobs:
         with:
           context: .
           tags: |
-            ghcr.io/shini4i/argo-watcher:${{ github.sha }}
+            ghcr.io/shini4i/argo-watcher:${{ github.ref_name }}
           push: true

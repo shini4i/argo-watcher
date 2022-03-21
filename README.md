@@ -36,7 +36,7 @@ Example response:
 {"status":"in progress"}
 ```
 
-# API Development
+## Back-End Development
 
 To start developing argo-watcher you will need
 1. python version 3.10+
@@ -53,7 +53,7 @@ poetry install
 poetry run
 ```
 
-# Front-End Development
+## Front-End Development
 
 To start developing front-end you'd need
 1. NodeJS version 16.6.0+

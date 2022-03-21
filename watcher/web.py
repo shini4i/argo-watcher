@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 from os import getenv
+from os.path import isdir
 
 from fastapi import FastAPI, BackgroundTasks, status
 from fastapi.staticfiles import StaticFiles
@@ -63,7 +64,8 @@ def get_state():
     return argo.return_state()
 
 
-app.mount("/", StaticFiles(directory="static", html=True))
+if isdir("static"):
+    app.mount("/", StaticFiles(directory="static", html=True))
 
 
 @app.get("/")
