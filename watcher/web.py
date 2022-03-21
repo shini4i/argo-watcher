@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 from os import getenv
-from os.path import isdir as exists
 
 from fastapi import FastAPI, BackgroundTasks, status
 from fastapi.staticfiles import StaticFiles
@@ -21,10 +20,6 @@ app = FastAPI(
     description="A small tool that will wait for the specific docker image to be rolled out",
     version="0.0.1"
 )
-
-if exists("static"):
-    app.mount("/", StaticFiles(directory="static", html=True))
-
 argo = Argo()
 
 
@@ -66,6 +61,9 @@ def get_task_details(task_id: str):
 @app.get("/api/v1/tasks", status_code=status.HTTP_200_OK, response_model=List[Task])
 def get_state():
     return argo.return_state()
+
+
+app.mount("/", StaticFiles(directory="static", html=True))
 
 
 @app.get("/")
