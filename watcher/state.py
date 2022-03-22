@@ -67,18 +67,23 @@ class DBState(State):
         )
 
     def set_current_task(self, task: Task, status: str):
-        task.status = status
-        task.created = time()
+        task = {
+            "id": task.id,
+            "created": date.fromtimestamp(time()),
+            "images": json.dumps(json.loads(task.json())['images']),
+            "status": status,
+            "app": task.app,
+            "author": task.author
+        }
 
         cursor = self.db.cursor()
         cursor.execute(
             "INSERT INTO public.tasks(id, created, images, status, app, author) VALUES (%s, %s, %s, %s, %s, %s);",
-            (task.id, date.fromtimestamp(task.created), json.dumps(json.loads(task.json())['images']), task.status,
-             task.app, task.author))
+            (task['id'], task['created'], task['images'], task['status'], task['app'], task['author']))
         self.db.commit()
 
     def get_task_status(self, task_id: str) -> Optional[Task]:
-        query = f"select id, created, images, status, app, author from public.tasks where id = '{task_id}'"
+        query = f"select status from public.tasks where id='{task_id}'"
         cursor = self.db.cursor(cursor_factory=psycopg2.extras.DictCursor)
         cursor.execute(query=query)
         task = cursor.fetchone()
@@ -86,7 +91,28 @@ class DBState(State):
 
     def update_task(self, task_id: str, status: str):
         cursor = self.db.cursor()
-        cursor.execute(f"UPDATE public.tasks SET status = '{status}' where id = '{task_id}'")
+        cursor.execute(f"UPDATE public.tasks SET status='{status}' where id='{task_id}'")
 
     def get_state(self):
-        pass
+        query = f"select * from public.tasks"
+        cursor = self.db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute(query=query)
+        tasks = cursor.fetchall()
+        task_list = []
+        for task in tasks:
+            tmp = {
+                "id": task['id'],
+                "created": task['created'].strftime('%s'),
+                "images": task['images'],
+                "status": task['status'],
+                "app": task['app'],
+                "author": task['author']
+            }
+            tmp = Task(**tmp)
+
+            task_list.append(tmp)
+
+        if len(task_list) > 0:
+            return task_list
+        else:
+            return []

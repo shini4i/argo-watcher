@@ -10,9 +10,11 @@ from watcher.settings import Settings
 from watcher.models import Task
 from watcher.state import InMemoryState, DBState
 
-
-# state = InMemoryState()
-state = DBState()
+match Settings.Watcher.state_type:
+    case "in-memory":
+        state = InMemoryState()
+    case "postgres":
+        state = DBState()
 
 
 class InvalidImageException(Exception):

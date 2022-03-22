@@ -13,6 +13,7 @@ class Settings:
             timeout = int(timeout)
 
     class Watcher:
+        state_type = getenv("STATE_TYPE", "in-memory")
         history_ttl = getenv('HISTORY_TTL', 3600)
         if not isinstance(history_ttl, int):
             history_ttl = int(history_ttl)
