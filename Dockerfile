@@ -1,4 +1,5 @@
 ARG PYTHON_VERSION=3.10.2-slim-buster
+ARG NODE_VERSION=17.7-alpine3.15
 
 ##################
 # Backend build
@@ -21,7 +22,7 @@ RUN poetry build
 ##################
 # Frontend build
 ##################
-FROM node:17.7-alpine3.15 as builder-frontend
+FROM node:${NODE_VERSION} as builder-frontend
 
 WORKDIR /app
 
