@@ -1,5 +1,6 @@
 import logging
 
+from abc import ABC, abstractmethod
 from typing import Optional
 from time import time
 from threading import Timer
@@ -8,7 +9,22 @@ from watcher.models import Task
 from watcher.settings import Settings
 
 
-class InMemoryState:
+class State(ABC):
+
+    @abstractmethod
+    def set_current_task(self, task: Task, status: str): ...
+
+    @abstractmethod
+    def get_task_status(self, task_id: str) -> Optional[Task]: ...
+
+    @abstractmethod
+    def update_task(self, task_id: str, status: str): ...
+
+    @abstractmethod
+    def get_state(self): ...
+
+
+class InMemoryState(State):
     def __init__(self):
         self.tasks = dict()
         self.expire_tasks()
@@ -35,3 +51,20 @@ class InMemoryState:
 
     def get_state(self):
         return [task for task in self.tasks.values()]
+
+
+class DBState(State):
+    def __init__(self):
+        self.db = ""
+
+    def set_current_task(self, task: Task, status: str):
+        pass
+
+    def get_task_status(self, task_id: str) -> Optional[Task]:
+        pass
+
+    def update_task(self, task_id: str, status: str):
+        pass
+
+    def get_state(self):
+        pass

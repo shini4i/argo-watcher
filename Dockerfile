@@ -1,4 +1,4 @@
-ARG PYTHON_VERSION=3.10.2-alpine3.15
+ARG PYTHON_VERSION=3.10.2-slim-buster
 
 ##################
 # Backend build
@@ -7,8 +7,7 @@ FROM python:${PYTHON_VERSION} as builder-backend
 
 WORKDIR /src
 
-RUN apk add --no-cache gcc musl-dev python3-dev libffi-dev openssl-dev \
- && pip install cryptography==3.1.1 \
+RUN pip install cryptography==3.1.1 \
  && pip install "poetry==1.1.5"
 
 COPY poetry.lock pyproject.toml /src/
@@ -43,14 +42,14 @@ FROM python:${PYTHON_VERSION}
 
 WORKDIR /app
 
-RUN adduser -u 1000 -h /app -D app
-
-USER app
+RUN adduser --uid 1000 --home /app --disabled-password --gecos "" app
 
 COPY --chown=app:app --from=builder-backend /src/dist/*.tar.gz /app
 COPY --chown=app:app --from=builder-frontend /app/build /app/static
-COPY --chown=app:app  run.py /app/
+COPY --chown=app:app run.py /app/
 
 RUN pip install *.tar.gz && rm -f *.tar.gz
+
+USER app
 
 CMD ["./run.py"]
