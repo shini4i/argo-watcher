@@ -60,10 +60,10 @@ class InMemoryState(State):
 class DBState(State):
     def __init__(self):
         self.db = psycopg2.connect(
-            host="127.0.0.1",
-            database="argo",
-            user="postgres",
-            password="example"
+            host=Settings.DB.host,
+            database=Settings.DB.db_name,
+            user=Settings.DB.db_user,
+            password=Settings.DB.db_password
         )
 
     def set_current_task(self, task: Task, status: str):

@@ -43,6 +43,8 @@ FROM python:${PYTHON_VERSION}
 
 WORKDIR /app
 
+RUN apt update && apt install libpq-dev -y && apt clean
+
 RUN adduser --uid 1000 --home /app --disabled-password --gecos "" app
 
 COPY --chown=app:app --from=builder-backend /src/dist/*.tar.gz /app

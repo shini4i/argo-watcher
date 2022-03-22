@@ -17,6 +17,12 @@ class Settings:
         if not isinstance(history_ttl, int):
             history_ttl = int(history_ttl)
 
+    class DB:
+        host = getenv("DB_HOST")
+        db_name = getenv("DB_NAME")
+        db_user = getenv("DB_USER")
+        db_password = getenv("DB_PASSWORD")
+
     class Logs:
         log_level = logging.getLevelName(getenv('LOG_LEVEL', 'DEBUG'))
         json_logs = True if getenv('JSON_LOGS', '0') == '1' else False
