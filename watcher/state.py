@@ -4,10 +4,10 @@ import psycopg2.extras
 import json
 
 from abc import ABC, abstractmethod
+from datetime import datetime, timedelta
 from typing import Optional
 from time import time
 from threading import Timer
-from datetime import date
 
 from watcher.models import Task
 from watcher.settings import Settings
@@ -25,7 +25,7 @@ class State(ABC):
     def update_task(self, task_id: str, status: str): ...
 
     @abstractmethod
-    def get_state(self): ...
+    def get_state(self, time_range: int): ...
 
 
 class InMemoryState(State):
@@ -45,7 +45,7 @@ class InMemoryState(State):
         self.tasks[task_id].status = status
 
     def expire_tasks(self):
-        Timer(5.0, self.expire_tasks).start()
+        Timer(60.0, self.expire_tasks).start()
         current_time = time()
         if len(self.tasks) > 0:
             for task in self.tasks.copy().values():
@@ -53,7 +53,7 @@ class InMemoryState(State):
                     logging.debug(f"Expiring {task.id} task...")
                     self.tasks.pop(task.id)
 
-    def get_state(self):
+    def get_state(self, time_range: int):
         return [task for task in self.tasks.values()]
 
 
@@ -69,7 +69,7 @@ class DBState(State):
     def set_current_task(self, task: Task, status: str):
         task = {
             "id": task.id,
-            "created": date.fromtimestamp(time()),
+            "created": datetime.fromtimestamp(time()).strftime('%Y-%m-%d %H:%M:%S'),
             "images": json.dumps(json.loads(task.json())['images']),
             "status": status,
             "app": task.app,
@@ -93,26 +93,10 @@ class DBState(State):
         cursor = self.db.cursor()
         cursor.execute(f"UPDATE public.tasks SET status='{status}' where id='{task_id}'")
 
-    def get_state(self):
-        query = f"select * from public.tasks"
+    def get_state(self, time_range: int):
+        query = "select id, extract(epoch from created) AS created, images, status, app, author from public.tasks " \
+                f"where created >= \'{datetime.today() - timedelta(hours=0, minutes=time_range)}\'"
         cursor = self.db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cursor.execute(query=query)
         tasks = cursor.fetchall()
-        task_list = []
-        for task in tasks:
-            tmp = {
-                "id": task['id'],
-                "created": task['created'].strftime('%s'),
-                "images": task['images'],
-                "status": task['status'],
-                "app": task['app'],
-                "author": task['author']
-            }
-            tmp = Task(**tmp)
-
-            task_list.append(tmp)
-
-        if len(task_list) > 0:
-            return task_list
-        else:
-            return []
+        return [Task(**task) for task in tasks]

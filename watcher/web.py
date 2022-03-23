@@ -60,8 +60,8 @@ def get_task_details(task_id: str):
 
 
 @app.get("/api/v1/tasks", status_code=status.HTTP_200_OK, response_model=List[Task])
-def get_state():
-    return argo.return_state()
+def get_state(timestamp: float | None = None):
+    return argo.return_state(from_timestamp=timestamp)
 
 
 if isdir("static"):

@@ -2,6 +2,7 @@ import requests
 import logging
 import json
 
+from time import time
 from tenacity import retry, stop_after_delay, retry_if_exception_type, wait_fixed, RetryError
 from typing import Optional
 from requests.exceptions import RequestException
@@ -73,8 +74,12 @@ class Argo:
         return state.get_task_status(task_id=task_id)
 
     @staticmethod
-    def return_state():
-        return state.get_state()
+    def return_state(from_timestamp: float | None):
+        if from_timestamp is None:
+            last_n_minutes = 60
+        else:
+            last_n_minutes = int((time()-from_timestamp)/60)
+        return state.get_state(time_range=last_n_minutes)
 
     def refresh_app(self, app: str) -> int:
         return self.session.get(url=f"{self.argo_url}/api/v1/applications/{app}?refresh=normal").status_code
