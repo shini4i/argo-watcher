@@ -16,6 +16,9 @@ match Settings.Watcher.state_type:
         state = InMemoryState()
     case "postgres":
         state = DBState()
+    case _:
+        logging.error("Invalid STATE_TYPE was provided")
+        exit(1)
 
 
 class InvalidImageException(Exception):
