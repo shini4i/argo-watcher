@@ -77,12 +77,8 @@ class Argo:
         return state.get_task_status(task_id=task_id)
 
     @staticmethod
-    def return_state(from_timestamp: float | None):
-        if from_timestamp is None:
-            last_n_minutes = 60
-        else:
-            last_n_minutes = int((time()-from_timestamp)/60)
-        return state.get_state(time_range=last_n_minutes)
+    def return_state(from_timestamp: float):
+        return state.get_state(time_range=int((time()-from_timestamp)/60))
 
     def refresh_app(self, app: str) -> int:
         return self.session.get(url=f"{self.argo_url}/api/v1/applications/{app}?refresh=normal").status_code

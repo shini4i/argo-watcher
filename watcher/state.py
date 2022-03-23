@@ -54,7 +54,7 @@ class InMemoryState(State):
                     self.tasks.pop(task.id)
 
     def get_state(self, time_range: int):
-        return [task for task in self.tasks.values()]
+        return [task for task in self.tasks.values() if task.created >= time() - time_range*60]
 
 
 class DBState(State):

@@ -60,7 +60,7 @@ def get_task_details(task_id: str):
 
 
 @app.get("/api/v1/tasks", status_code=status.HTTP_200_OK, response_model=List[Task])
-def get_state(timestamp: float | None = None):
+def get_state(timestamp: float):
     return argo.return_state(from_timestamp=timestamp)
 
 
