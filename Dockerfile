@@ -1,4 +1,5 @@
-ARG PYTHON_VERSION=3.10.2-alpine3.15
+ARG PYTHON_VERSION=3.10.2-slim-buster
+ARG NODE_VERSION=17.7-alpine3.15
 
 ##################
 # Backend build
@@ -7,8 +8,7 @@ FROM python:${PYTHON_VERSION} as builder-backend
 
 WORKDIR /src
 
-RUN apk add --no-cache gcc musl-dev python3-dev libffi-dev openssl-dev \
- && pip install cryptography==3.1.1 \
+RUN pip install cryptography==3.1.1 \
  && pip install "poetry==1.1.5"
 
 COPY poetry.lock pyproject.toml /src/
@@ -22,7 +22,7 @@ RUN poetry build
 ##################
 # Frontend build
 ##################
-FROM node:17.7-alpine3.15 as builder-frontend
+FROM node:${NODE_VERSION} as builder-frontend
 
 WORKDIR /app
 
@@ -43,14 +43,18 @@ FROM python:${PYTHON_VERSION}
 
 WORKDIR /app
 
-RUN adduser -u 1000 -h /app -D app
+RUN apt update && apt install libpq-dev -y && apt clean
 
-USER app
+RUN adduser --uid 1000 --home /app --disabled-password --gecos "" app
 
 COPY --chown=app:app --from=builder-backend /src/dist/*.tar.gz /app
 COPY --chown=app:app --from=builder-frontend /app/build /app/static
-COPY --chown=app:app  run.py /app/
+COPY --chown=app:app run.py /app/
+COPY --chown=app:app db /app/db/
+COPY --from=amacneil/dbmate /usr/local/bin/dbmate /bin/dbmate
 
 RUN pip install *.tar.gz && rm -f *.tar.gz
+
+USER app
 
 CMD ["./run.py"]

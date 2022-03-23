@@ -2,3 +2,4 @@
 .envrc
 .env
 **/__pycache__
+db/schema.sql
