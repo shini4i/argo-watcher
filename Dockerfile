@@ -50,6 +50,8 @@ RUN adduser --uid 1000 --home /app --disabled-password --gecos "" app
 COPY --chown=app:app --from=builder-backend /src/dist/*.tar.gz /app
 COPY --chown=app:app --from=builder-frontend /app/build /app/static
 COPY --chown=app:app run.py /app/
+COPY --chown=app:app db /app/db/
+COPY --from=amacneil/dbmate /usr/local/bin/dbmate /bin/dbmate
 
 RUN pip install *.tar.gz && rm -f *.tar.gz
 
