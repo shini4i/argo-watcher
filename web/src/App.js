@@ -1,4 +1,4 @@
-import {useEffect, useState} from "react";
+import React, {useEffect, useState} from "react";
 import Navbar from "./Navbar";
 import ErrorSnackbar from "./ErrorSnackbar";
 import {relativeTime} from "./Utils";
@@ -15,13 +15,27 @@ import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import Tooltip from "@mui/material/Tooltip";
+import Box from '@mui/material/Box';
+import InputLabel from '@mui/material/InputLabel';
+import MenuItem from '@mui/material/MenuItem';
+import FormControl from '@mui/material/FormControl';
+import Select from '@mui/material/Select';
 
 function App() {
   const [tasks, setTasks] = useState([]);
   const [loadingError, setLoadingError] = useState(null);
+  const timeframes = {
+    '5 minutes': 5 * 60,
+    '15 minutes': 15 * 60,
+    '30 minutes': 30 * 60,
+    '1 hour': 60 * 60
+  };
+  const [timeframe, setTimeframe] = useState(timeframes['5 minutes']);
 
-  const refreshTasks = () => {
-      fetch('/api/v1/tasks')
+  const refreshTasks = (timeframe) => {
+      let timestamp = Math.floor(Date.now() / 1000) - timeframe; // - 1h
+
+      fetch(`/api/v1/tasks?timestamp=${timestamp}`)
           .then(res => {
               if (res.status !== 200) {
                   throw new Error(res.statusText);
@@ -38,8 +52,14 @@ function App() {
   };
 
   useEffect(() => {
-      refreshTasks();
-  }, [])
+      refreshTasks(timeframe);
+  }, []);
+
+
+  const handleChange = (event) => {
+    setTimeframe(event.target.value);
+    refreshTasks(event.target.value);
+  };
 
   return (
     <div>
@@ -49,9 +69,26 @@ function App() {
                 <Typography variant="h4" gutterBottom component="div" sx={{ flexGrow: 1 }}>
                     Active tasks
                 </Typography>
-                <IconButton edge="start" color="inherit" onClick={refreshTasks}>
-                    <RefreshIcon />
+                <IconButton edge="start" color="inherit" onClick={() => {
+                  refreshTasks(timeframe);
+                }}>
+                  <RefreshIcon />
                 </IconButton>
+                <Box sx={{ minWidth: 120 }}>
+                    <FormControl fullWidth size={"small"}>
+                        <InputLabel>Timeframe</InputLabel>
+                        <Select
+                            value={timeframe}
+                            label="Timeframe"
+                            onChange={handleChange}
+                        >
+                          {Object.keys(timeframes).map(timeframe => {
+                              let value = timeframes[timeframe];
+                              return <MenuItem key={timeframe} value={value}>{timeframe}</MenuItem>
+                          })}
+                        </Select>
+                    </FormControl>
+                </Box>
             </Stack>
             <TableContainer component={Paper}>
                 <Table sx={{ minWidth: 650 }} aria-label="simple table">

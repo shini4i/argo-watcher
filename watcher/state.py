@@ -4,7 +4,7 @@ import psycopg2.extras
 import json
 
 from abc import ABC, abstractmethod
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from time import time
 from threading import Timer
@@ -69,7 +69,7 @@ class DBState(State):
     def set_current_task(self, task: Task, status: str):
         task = {
             "id": task.id,
-            "created": datetime.fromtimestamp(time()).strftime('%Y-%m-%d %H:%M:%S'),
+            "created": datetime.fromtimestamp(time(), tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S'),
             "images": json.dumps(json.loads(task.json())['images']),
             "status": status,
             "app": task.app,
@@ -95,7 +95,7 @@ class DBState(State):
 
     def get_state(self, time_range: int):
         query = "select id, extract(epoch from created) AS created, images, status, app, author from public.tasks " \
-                f"where created >= \'{datetime.today() - timedelta(hours=0, minutes=time_range)}\'"
+                f"where created >= \'{datetime.now(tz=timezone.utc) - timedelta(hours=0, minutes=time_range)}\'"
         cursor = self.db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cursor.execute(query=query)
         tasks = cursor.fetchall()
