@@ -1,5 +1,5 @@
 export const relativeTime = (oldTimestamp) => {
-    const timestamp = (new Date()).getTime();
+    const timestamp = Date.now();
     const difference = Math.round(timestamp/1000 - oldTimestamp/1000);
 
     let output = ``;
