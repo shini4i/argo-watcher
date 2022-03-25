@@ -43,6 +43,7 @@ class InMemoryState(State):
 
     def update_task(self, task_id: str, status: str):
         self.tasks[task_id].status = status
+        self.tasks[task_id].updated = time()
 
     def expire_tasks(self):
         Timer(60.0, self.expire_tasks).start()
@@ -92,8 +93,10 @@ class DBState(State):
         return task['status']
 
     def update_task(self, task_id: str, status: str):
+        updated = datetime.now(tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
         cursor = self.db.cursor()
-        cursor.execute(f"UPDATE public.tasks SET status='{status}' where id='{task_id}'")
+        cursor.execute(f"UPDATE public.tasks SET status='{status}',updated='{updated}' where id='{task_id}'")
+        self.db.commit()
 
     def get_state(self, time_range: int):
         query = "select id, extract(epoch from created) AS created, images, status, app, author, project" \
