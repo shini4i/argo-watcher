@@ -10,6 +10,7 @@ class Image(BaseModel):
 class Task(BaseModel):
     id: Optional[str]
     created: Optional[int]
+    updated: Optional[int]
     app: str
     author: str
     project: str

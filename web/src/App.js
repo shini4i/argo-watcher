@@ -100,6 +100,7 @@ function App() {
                             <TableCell>Author</TableCell>
                             <TableCell>Status</TableCell>
                             <TableCell>Started</TableCell>
+                            <TableCell>Updated</TableCell>
                             <TableCell>Images</TableCell>
                         </TableRow>
                     </TableHead>
@@ -120,7 +121,11 @@ function App() {
                                     <Tooltip title={new Date(task.created * 1000).toISOString()}>
                                         <span>{relativeTime(task.created * 1000)}</span>
                                     </Tooltip>
-
+                                </TableCell>
+                                <TableCell>
+                                    <Tooltip title={new Date(task.updated * 1000).toISOString()}>
+                                        <span>{relativeTime(task.updated * 1000)}</span>
+                                    </Tooltip>
                                 </TableCell>
                                 <TableCell>
                                     {task.images.map((item, index) => {
