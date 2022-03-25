@@ -19,7 +19,7 @@ Post request:
 ```bash
 curl --header "Content-Type: application/json" \
      --request POST \
-     --data '{"app":"test-app","author": "name", "images":[{"image":"example", "tag":"v1.8.0"}]}' \
+     --data '{"app":"test-app","author":"name","project":"example","images":[{"image":"example", "tag":"v1.8.0"}]}' \
      http://localhost:8080/api/v1/tasks
 ```
 Example response:
