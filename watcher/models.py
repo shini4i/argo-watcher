@@ -12,5 +12,6 @@ class Task(BaseModel):
     created: Optional[int]
     app: str
     author: str
+    project: str
     images: List[Image]
     status: Optional[str]

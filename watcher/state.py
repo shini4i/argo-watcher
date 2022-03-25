@@ -54,7 +54,7 @@ class InMemoryState(State):
                     self.tasks.pop(task.id)
 
     def get_state(self, time_range: int):
-        return [task for task in self.tasks.values() if task.created >= time() - time_range*60]
+        return [task for task in self.tasks.values() if task.created >= time() - time_range * 60]
 
 
 class DBState(State):
@@ -73,13 +73,15 @@ class DBState(State):
             "images": json.dumps(json.loads(task.json())['images']),
             "status": status,
             "app": task.app,
-            "author": task.author
+            "author": task.author,
+            "project": task.project
         }
 
         cursor = self.db.cursor()
         cursor.execute(
-            "INSERT INTO public.tasks(id, created, images, status, app, author) VALUES (%s, %s, %s, %s, %s, %s);",
-            (task['id'], task['created'], task['images'], task['status'], task['app'], task['author']))
+            "INSERT INTO public.tasks(id, created, images, status, app, author, project) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s);",
+            (task['id'], task['created'], task['images'], task['status'], task['app'], task['author'], task['project']))
         self.db.commit()
 
     def get_task_status(self, task_id: str) -> Optional[Task]:
@@ -94,7 +96,8 @@ class DBState(State):
         cursor.execute(f"UPDATE public.tasks SET status='{status}' where id='{task_id}'")
 
     def get_state(self, time_range: int):
-        query = "select id, extract(epoch from created) AS created, images, status, app, author from public.tasks " \
+        query = "select id, extract(epoch from created) AS created, images, status, app, author, project" \
+                " from public.tasks " \
                 f"where created >= \'{datetime.now(tz=timezone.utc) - timedelta(hours=0, minutes=time_range)}\'"
         cursor = self.db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cursor.execute(query=query)

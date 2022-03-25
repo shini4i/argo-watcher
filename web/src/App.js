@@ -96,6 +96,7 @@ function App() {
                         <TableRow>
                             <TableCell>ID</TableCell>
                             <TableCell>Application</TableCell>
+                            <TableCell>Project</TableCell>
                             <TableCell>Author</TableCell>
                             <TableCell>Status</TableCell>
                             <TableCell>Started</TableCell>
@@ -112,6 +113,7 @@ function App() {
                                     {task.id}
                                 </TableCell>
                                 <TableCell>{task.app}</TableCell>
+                                <TableCell>{task.project}</TableCell>
                                 <TableCell>{task.author}</TableCell>
                                 <TableCell>{task.status}</TableCell>
                                 <TableCell>
