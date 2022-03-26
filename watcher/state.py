@@ -5,7 +5,6 @@ import json
 
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 from time import time
 from threading import Timer
 
@@ -19,7 +18,7 @@ class State(ABC):
     def set_current_task(self, task: Task, status: str): ...
 
     @abstractmethod
-    def get_task_status(self, task_id: str) -> Optional[Task]: ...
+    def get_task_status(self, task_id: str) -> str: ...
 
     @abstractmethod
     def update_task(self, task_id: str, status: str): ...
@@ -29,8 +28,10 @@ class State(ABC):
 
 
 class InMemoryState(State):
-    def __init__(self):
+    def __init__(self, retry_interval=5.0):
         self.tasks = dict()
+        self.retry_interval = retry_interval
+        self.timer = None
         self.expire_tasks()
 
     def set_current_task(self, task: Task, status: str):
@@ -38,21 +39,24 @@ class InMemoryState(State):
         task.created = time()
         self.tasks[task.id] = task
 
-    def get_task_status(self, task_id: str) -> Optional[Task]:
-        return self.tasks.get(task_id).status
+    def get_task_status(self, task_id: str) -> str:
+        try:
+            return self.tasks.get(task_id).status
+        except AttributeError:
+            return "task not found"
 
     def update_task(self, task_id: str, status: str):
         self.tasks[task_id].status = status
         self.tasks[task_id].updated = time()
 
     def expire_tasks(self):
-        Timer(60.0, self.expire_tasks).start()
+        self.timer = Timer(self.retry_interval, self.expire_tasks)
+        self.timer.start()
         current_time = time()
-        if len(self.tasks) > 0:
-            for task in self.tasks.copy().values():
-                if int(current_time - task.created) > Settings.Watcher.history_ttl:
-                    logging.debug(f"Expiring {task.id} task...")
-                    self.tasks.pop(task.id)
+        for task in self.tasks.copy().values():
+            if int(current_time - task.created) > Settings.Watcher.history_ttl:
+                logging.debug(f"Expiring {task.id} task...")
+                self.tasks.pop(task.id)
 
     def get_state(self, time_range: int):
         return [task for task in self.tasks.values() if task.created >= time() - time_range * 60]
@@ -85,7 +89,7 @@ class DBState(State):
             (task['id'], task['created'], task['images'], task['status'], task['app'], task['author'], task['project']))
         self.db.commit()
 
-    def get_task_status(self, task_id: str) -> Optional[Task]:
+    def get_task_status(self, task_id: str) -> str:
         query = f"select status from public.tasks where id='{task_id}'"
         cursor = self.db.cursor(cursor_factory=psycopg2.extras.DictCursor)
         cursor.execute(query=query)
