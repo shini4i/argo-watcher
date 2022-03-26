@@ -1,5 +1,4 @@
 import pytest
-
 from uuid import uuid1
 from time import sleep
 
