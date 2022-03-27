@@ -24,7 +24,7 @@ def test_task_status():
 
 
 def test_task_expiration():
-    state = InMemoryState()
+    state = InMemoryState(history_ttl=1)
 
     task = task_template
     task['id'] = str(uuid1())

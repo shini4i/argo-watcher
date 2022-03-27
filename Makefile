@@ -10,4 +10,4 @@ migrate:
 	@dbmate up
 
 test:
-	@HISTORY_TTL=1 pytest
+	@ARGO_URL=https://argocd.example.com ARGO_USER=test ARGO_PASSWORD=test pytest

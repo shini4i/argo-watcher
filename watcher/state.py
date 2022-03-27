@@ -27,10 +27,10 @@ class State(ABC):
 
 
 class InMemoryState(State):
-    def __init__(self):
+    def __init__(self, history_ttl=Settings.Watcher.history_ttl):
         self.tasks = ExpiringDict(
             max_len=100,
-            max_age_seconds=Settings.Watcher.history_ttl
+            max_age_seconds=history_ttl
         )
 
     def set_current_task(self, task: Task, status: str):
