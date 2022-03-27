@@ -33,7 +33,7 @@ function App() {
   const [timeframe, setTimeframe] = useState(timeframes['5 minutes']);
 
   const refreshTasks = (timeframe) => {
-      let timestamp = Math.floor(Date.now() / 1000) - timeframe; // - 1h
+      let timestamp = Math.floor(Date.now() / 1000) - timeframe;
 
       fetch(`/api/v1/tasks?timestamp=${timestamp}`)
           .then(res => {

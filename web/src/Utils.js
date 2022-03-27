@@ -3,7 +3,10 @@ export const relativeTime = (oldTimestamp) => {
     const difference = Math.round(timestamp/1000 - oldTimestamp/1000);
 
     let output = ``;
-    if (difference < 60) {
+    if (oldTimestamp === 0) {
+        // API returned null as the task is still in progress
+        output = `-`
+    } else if (difference < 60) {
         // Less than a minute has passed:
         output = `${difference} seconds ago`;
     } else if (difference < 3600) {
