@@ -1,4 +1,3 @@
-import logging
 import psycopg2
 import psycopg2.extras
 import json
@@ -6,7 +5,7 @@ import json
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta, timezone
 from time import time
-from threading import Timer
+from expiringdict import ExpiringDict
 
 from watcher.models import Task
 from watcher.settings import Settings
@@ -28,11 +27,11 @@ class State(ABC):
 
 
 class InMemoryState(State):
-    def __init__(self, retry_interval=5.0):
-        self.tasks = dict()
-        self.retry_interval = retry_interval
-        self.timer = None
-        self.expire_tasks()
+    def __init__(self):
+        self.tasks = ExpiringDict(
+            max_len=100,
+            max_age_seconds=Settings.Watcher.history_ttl
+        )
 
     def set_current_task(self, task: Task, status: str):
         task.status = status
@@ -48,15 +47,6 @@ class InMemoryState(State):
     def update_task(self, task_id: str, status: str):
         self.tasks[task_id].status = status
         self.tasks[task_id].updated = time()
-
-    def expire_tasks(self):
-        self.timer = Timer(self.retry_interval, self.expire_tasks)
-        self.timer.start()
-        current_time = time()
-        for task in self.tasks.copy().values():
-            if int(current_time - task.created) > Settings.Watcher.history_ttl:
-                logging.debug(f"Expiring {task.id} task...")
-                self.tasks.pop(task.id)
 
     def get_state(self, time_range: int):
         return [task for task in self.tasks.values() if task.created >= time() - time_range * 60]
