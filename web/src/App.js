@@ -67,7 +67,7 @@ function App() {
         <Container maxWidth="xl">
             <Stack direction="row" spacing={2} alignItems="center">
                 <Typography variant="h4" gutterBottom component="div" sx={{ flexGrow: 1 }}>
-                    Active tasks
+                    Existing tasks
                 </Typography>
                 <IconButton edge="start" color="inherit" onClick={() => {
                   refreshTasks(timeframe);
@@ -136,7 +136,7 @@ function App() {
                         ))}
                         {tasks.length === 0 && <TableRow>
                             <TableCell colSpan={100} sx={{textAlign: "center"}}>
-                                No tasks are currently being executed
+                                No tasks were found within provided timeframe
                             </TableCell>
                         </TableRow>}
                     </TableBody>
