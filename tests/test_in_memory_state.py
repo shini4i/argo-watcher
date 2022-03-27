@@ -8,7 +8,7 @@ task_template = {
     "app": "test_app",
     "author": "test_author",
     "project": "test_project",
-    "images": [{"image": "test_image", "tag": "test_tag"}]
+    "images": [{"image": "example", "tag": "latest"}]
 }
 
 
@@ -30,6 +30,6 @@ def test_task_expiration():
     task['id'] = str(uuid1())
 
     state.set_current_task(task=Task(**task), status="in progress")
-
     sleep(5)
+
     assert state.get_task_status(task_id=task['id']) == "task not found"
