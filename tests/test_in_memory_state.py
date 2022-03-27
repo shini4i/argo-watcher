@@ -11,6 +11,8 @@ task_template = {
     "images": [{"image": "example", "tag": "latest"}]
 }
 
+default_task_status = 'in progress'
+
 
 def test_task_status():
     state = InMemoryState()
@@ -18,9 +20,9 @@ def test_task_status():
     task = task_template
     task['id'] = str(uuid1())
 
-    state.set_current_task(task=Task(**task), status="in progress")
+    state.set_current_task(task=Task(**task), status=default_task_status)
 
-    assert state.get_task_status(task_id=task['id']) == "in progress"
+    assert state.get_task_status(task_id=task['id']) == default_task_status
 
 
 def test_task_expiration():
@@ -29,7 +31,7 @@ def test_task_expiration():
     task = task_template
     task['id'] = str(uuid1())
 
-    state.set_current_task(task=Task(**task), status="in progress")
-    sleep(5)
+    state.set_current_task(task=Task(**task), status=default_task_status)
+    sleep(2)
 
     assert state.get_task_status(task_id=task['id']) == "task not found"
