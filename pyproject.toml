@@ -13,8 +13,11 @@ uvicorn = "^0.17.6"
 tenacity = "^8.0.1"
 loguru = "^0.6.0"
 psycopg2-binary = "^2.9.3"
+expiringdict = "^1.2.1"
 
 [tool.poetry.dev-dependencies]
+pytest = "^7.1.1"
+responses = "^0.20.0"
 
 [tool.poetry.scripts]
 run = "watcher.web:main"
