@@ -103,8 +103,7 @@ function App() {
     refreshTasks(currentTimeframe);
   }, []);
 
-  // refresh interval functionality
-  // we reset interval on any state change (because we use them all of data retrieval)
+  // we reset interval on any state change (because we use the state variables for data retrieval)
   useEffect(() => {
     // reset current interval
     if (autoRefreshIntervalRef.current !== null) {
@@ -117,6 +116,13 @@ function App() {
     autoRefreshIntervalRef.current = setInterval(() => {
       refreshTasks(currentTimeframe);
     }, currentAutoRefresh * 1000);
+
+    // clear interval on exit
+    return () => {
+      if (autoRefreshIntervalRef.current !== null) {
+        clearInterval(autoRefreshIntervalRef.current);
+      }
+    };
   });
 
   const handleTimeframeChange = (event) => {
