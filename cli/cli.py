@@ -2,37 +2,32 @@
 
 import click
 import requests
+
 from time import sleep
+from os import environ
 
 
-def generate_task(app, author, project, images, tag) -> dict:
+def generate_task() -> dict:
     return {
-        "app": app,
-        "author": author,
-        "project": project,
-        "images": [{"image": image, "tag": tag} for image in images],
+        "app": environ['ARGO_APP'],
+        "author": environ['COMMIT_AUTHOR'],
+        "project": environ['PROJECT_NAME'],
+        "images": [{"image": image, "tag": environ['IMAGE_TAG']} for image in environ["IMAGES"].split(',')],
     }
 
 
-def send_task(url: str, task: dict) -> str:
-    return requests.post(url=url, json=task).json()['id']
+def send_task(task: dict) -> str:
+    return requests.post(url=environ['ARGO_WATCHER_URL'], json=task).json()['id']
 
 
-def check_status(url: str, task_id: str) -> str:
-    return requests.get(url=f"{url}/{task_id}").json()['status']
+def check_status(task_id: str) -> str:
+    return requests.get(url=f"{environ['ARGO_WATCHER_URL']}/{task_id}").json()['status']
 
 
-@click.command()
-@click.option("--url", help="argo-watcher url", default="http://localhost:8080/api/v1/tasks")
-@click.option("--app", help="ArgoCD Application name", required=True)
-@click.option("--project", help="Project/Service name", required=True)
-@click.option("--author", help="Name of the person who triggered the pipeline", required=True)
-@click.option("--image", help="Image name that should contain specific tag", required=True, multiple=True)
-@click.option("--tag", help="Expected tag", required=True)
-def main(url, app, author, project, image, tag):
-    task = generate_task(app=app, author=author, project=project, images=image, tag=tag)
-    task_id = send_task(url=url, task=task)
-    while (status := check_status(url=url, task_id=task_id)) == "in progress":
+def main():
+    task = generate_task()
+    task_id = send_task(task=task)
+    while (status := check_status(task_id=task_id)) == "in progress":
         click.echo("Application deployment is in progress...")
         sleep(5)
 
@@ -41,10 +36,10 @@ def main(url, app, author, project, image, tag):
             click.echo("The deployment has failed, please check logs.")
             exit(1)
         case "app not found":
-            click.echo(f"Application {app} does not exist.")
+            click.echo(f"Application {environ['ARGO_APP']} does not exist.")
             exit(1)
         case "deployed":
-            click.echo(f"The deployment of {tag} version is done.")
+            click.echo(f"The deployment of {environ['IMAGE_TAG']} version is done.")
 
 
 if __name__ == '__main__':

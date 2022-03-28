@@ -32,6 +32,6 @@ def test_task_expiration():
     task['id'] = str(uuid1())
 
     state.set_current_task(task=Task(**task), status=default_task_status)
-    sleep(2)
+    sleep(1)
 
     assert state.get_task_status(task_id=task['id']) == "task not found"
