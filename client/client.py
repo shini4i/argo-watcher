@@ -17,19 +17,20 @@ def generate_task() -> dict:
 
 
 def send_task(task: dict) -> str:
-    return requests.post(url=environ['ARGO_WATCHER_URL'], json=task).json()['id']
+    return requests.post(url=f"{environ['ARGO_WATCHER_URL']}/api/v1/tasks", json=task).json()['id']
 
 
 def check_status(task_id: str) -> str:
-    return requests.get(url=f"{environ['ARGO_WATCHER_URL']}/{task_id}").json()['status']
+    return requests.get(url=f"{environ['ARGO_WATCHER_URL']}/api/v1/tasks/{task_id}").json()['status']
 
 
 def main():
     task = generate_task()
     task_id = send_task(task=task)
+
     while (status := check_status(task_id=task_id)) == "in progress":
         click.echo("Application deployment is in progress...")
-        sleep(5)
+        sleep(15)
 
     match status:
         case "failed":

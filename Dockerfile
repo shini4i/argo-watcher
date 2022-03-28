@@ -1,4 +1,4 @@
-ARG PYTHON_VERSION=3.10.2-slim-buster
+ARG PYTHON_VERSION=3.10.3-slim-buster
 ARG NODE_VERSION=17.7-alpine3.15
 
 ##################
