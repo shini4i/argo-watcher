@@ -10,4 +10,4 @@ migrate:
 	@dbmate up
 
 test:
-	@ARGO_URL=https://argocd.example.com ARGO_USER=test ARGO_PASSWORD=test pytest
+	@STATE_TYPE=in-memory ARGO_URL=https://argocd.example.com ARGO_USER=test ARGO_PASSWORD=test pytest

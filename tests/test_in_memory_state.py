@@ -1,5 +1,5 @@
 from uuid import uuid1
-from time import sleep
+from time import sleep, time
 
 from watcher.state import InMemoryState
 from watcher.models import Task
@@ -35,3 +35,17 @@ def test_task_expiration():
     sleep(1)
 
     assert state.get_task_status(task_id=task['id']) == "task not found"
+
+
+def test_task_filter():
+    state = InMemoryState()
+
+    task1 = task_template
+    task2 = task_template.copy()
+    task2['app'] = "example"
+
+    state.set_current_task(task=Task(**task1), status=default_task_status)
+    state.set_current_task(task=Task(**task2), status=default_task_status)
+
+    assert len(state.get_state(time_range=int(time()-60), app_name="example")) == 1
+    assert state.get_state(time_range=int(time()-60), app_name="example")[0].app == "example"

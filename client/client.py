@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 
-import click
 import requests
 
 from time import sleep
@@ -29,18 +28,18 @@ def main():
     task_id = send_task(task=task)
 
     while (status := check_status(task_id=task_id)) == "in progress":
-        click.echo("Application deployment is in progress...")
+        print("Application deployment is in progress...")
         sleep(15)
 
     match status:
         case "failed":
-            click.echo("The deployment has failed, please check logs.")
+            print("The deployment has failed, please check logs.")
             exit(1)
         case "app not found":
-            click.echo(f"Application {environ['ARGO_APP']} does not exist.")
+            print(f"Application {environ['ARGO_APP']} does not exist.")
             exit(1)
         case "deployed":
-            click.echo(f"The deployment of {environ['IMAGE_TAG']} version is done.")
+            print(f"The deployment of {environ['IMAGE_TAG']} version is done.")
 
 
 if __name__ == '__main__':
