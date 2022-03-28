@@ -7,6 +7,7 @@ from watcher.web import app
 from test_in_memory_state import task_template
 
 client = TestClient(app)
+api_path = "/api/v1/tasks"
 
 
 def responses_configuration():
@@ -40,7 +41,7 @@ def responses_configuration():
 @responses.activate
 def test_add_task():
     responses_configuration()
-    response = client.post("/api/v1/tasks", json=task_template)
+    response = client.post(api_path, json=task_template)
 
     assert response.status_code == 202
     assert response.json()['status'] == "accepted"
@@ -50,8 +51,8 @@ def test_add_task():
 @responses.activate
 def test_get_task_status():
     responses_configuration()
-    task_id = client.post("/api/v1/tasks", json=task_template).json()['id']
-    response = client.get(f"/api/v1/tasks/{task_id}")
+    task_id = client.post(api_path, json=task_template).json()['id']
+    response = client.get(f"{api_path}/{task_id}")
 
     assert response.status_code == 200
     assert response.json()['status'] == "deployed"
@@ -63,11 +64,11 @@ def test_get_state_with_filter():
     target_task = task_template.copy()
     target_task['app'] = 'example'
 
-    client.post("/api/v1/tasks", json=task_template)
-    client.post("/api/v1/tasks", json=task_template)
-    client.post("/api/v1/tasks", json=target_task)
+    client.post(api_path, json=task_template)
+    client.post(api_path, json=task_template)
+    client.post(api_path, json=target_task)
 
-    response = client.get("/api/v1/tasks", params={"timestamp": int(time() - 60), "app": "example"})
+    response = client.get(api_path, params={"timestamp": int(time() - 60), "app": "example"})
 
     assert response.status_code == 200
     assert len(response.json()) == 1
