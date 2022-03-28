@@ -10,23 +10,31 @@ client = TestClient(app)
 
 
 def responses_configuration():
-    responses.add(responses.GET, 'https://argocd.example.com', status=200)
-    responses.add(method=responses.GET,
-                  url='https://argocd.example.com/api/v1/applications/test_app',
-                  json={'status': {
-                      'summary': {'images': ['example:latest']},
-                      'sync': {'status': 'Synced'},
-                      'health': {'status': 'Healthy'}
-                  }},
-                  status=200)
-    responses.add(method=responses.GET,
-                  url='https://argocd.example.com/api/v1/applications/example',
-                  json={'status': {
-                      'summary': {'images': ['example:latest']},
-                      'sync': {'status': 'Synced'},
-                      'health': {'status': 'Healthy'}
-                  }},
-                  status=200)
+    responses.add(
+        method=responses.GET,
+        url='https://argocd.example.com',
+        status=200
+    )
+    responses.add(
+        method=responses.GET,
+        url='https://argocd.example.com/api/v1/applications/test_app',
+        json={'status': {
+            'summary': {'images': ['example:latest']},
+            'sync': {'status': 'Synced'},
+            'health': {'status': 'Healthy'}
+        }},
+        status=200
+    )
+    responses.add(
+        method=responses.GET,
+        url='https://argocd.example.com/api/v1/applications/example',
+        json={'status': {
+            'summary': {'images': ['example:latest']},
+            'sync': {'status': 'Synced'},
+            'health': {'status': 'Healthy'}
+        }},
+        status=200
+    )
 
 
 @responses.activate
