@@ -1,4 +1,4 @@
-import React, {useEffect, useState} from "react";
+import React, {useEffect, useRef, useState} from "react";
 import Navbar from "./Navbar";
 import ErrorSnackbar from "./ErrorSnackbar";
 import {relativeTime} from "./Utils";
@@ -30,11 +30,22 @@ const timeframes = {
   '1 hour': 60 * 60
 };
 
+const autoRefreshIntervals = {
+  '5s': 5,
+  '10s': 10,
+  '30s': 30,
+  '1m': 60,
+  'off': 0,
+};
+
 function App() {
   const [tasks, setTasks] = useState([]);
   const [currentSort, setCurrentSort] = useState({field: "created", direction: "ASC"});
+  const [currentAutoRefresh, setCurrentAutoRefresh] = useState(autoRefreshIntervals['30s']);
+  const autoRefreshIntervalRef = useRef(null);
+
   const [loadingError, setLoadingError] = useState(null);
-  const [timeframe, setTimeframe] = useState(timeframes['5 minutes']);
+  const [currentTimeframe, setCurrentTimeframe] = useState(timeframes['5 minutes']);
 
   const refreshTasks = (timeframe) => {
     let timestamp = Math.floor(Date.now() / 1000) - timeframe;
@@ -87,15 +98,35 @@ function App() {
     setTasksSorted(tasks, sortFieldChange);
   };
 
-
+  // initial load
   useEffect(() => {
-    refreshTasks(timeframe);
+    refreshTasks(currentTimeframe);
   }, []);
 
+  // refresh interval functionality
+  // we reset interval on any state change (because we use them all of data retrieval)
+  useEffect(() => {
+    // reset current interval
+    if (autoRefreshIntervalRef.current !== null) {
+      clearInterval(autoRefreshIntervalRef.current);
+    }
+    if (!currentAutoRefresh) { // value is 0 for "off"
+      return;
+    }
+    // set interval
+    autoRefreshIntervalRef.current = setInterval(() => {
+      refreshTasks(currentTimeframe);
+    }, currentAutoRefresh * 1000);
+  });
 
-  const handleChange = (event) => {
-    setTimeframe(event.target.value);
+  const handleTimeframeChange = (event) => {
+    setCurrentTimeframe(event.target.value);
     refreshTasks(event.target.value);
+  };
+
+  const handleAutoRefreshChange = (event) => {
+    // save auto refresh interval
+    setCurrentAutoRefresh(event.target.value);
   };
 
   const TableCellSorted = ({field, children}) => {
@@ -118,17 +149,32 @@ function App() {
               Existing tasks
             </Typography>
             <IconButton edge="start" color="inherit" onClick={() => {
-              refreshTasks(timeframe);
+              refreshTasks(currentTimeframe);
             }}>
               <RefreshIcon/>
             </IconButton>
             <Box sx={{minWidth: 120}}>
               <FormControl fullWidth size={"small"}>
+                <InputLabel>Auto-Refresh</InputLabel>
+                <Select
+                    value={currentAutoRefresh}
+                    label="Auto-Refresh"
+                    onChange={handleAutoRefreshChange}
+                >
+                  {Object.keys(autoRefreshIntervals).map(autoRefreshInterval => {
+                    let value = autoRefreshIntervals[autoRefreshInterval];
+                    return <MenuItem key={autoRefreshInterval} value={value}>{autoRefreshInterval}</MenuItem>
+                  })}
+                </Select>
+              </FormControl>
+            </Box>
+            <Box sx={{minWidth: 120}}>
+              <FormControl fullWidth size={"small"}>
                 <InputLabel>Timeframe</InputLabel>
                 <Select
-                    value={timeframe}
+                    value={currentTimeframe}
                     label="Timeframe"
-                    onChange={handleChange}
+                    onChange={handleTimeframeChange}
                 >
                   {Object.keys(timeframes).map(timeframe => {
                     let value = timeframes[timeframe];
