@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 from time import time
 
 from watcher.web import app
-from test_in_memory_state import task_template
+from test_in_memory_state import task_template, generate_task
 
 client = TestClient(app)
 api_path = "/api/v1/tasks"
@@ -73,3 +73,10 @@ def test_get_state_with_filter():
     assert response.status_code == 200
     assert len(response.json()) == 1
     assert response.json()[0]['app'] == "example"
+
+
+def test_get_app_list():
+    response = client.get("/api/v1/apps")
+
+    assert len(response.json()['apps']) == 2
+    assert set(response.json()['apps']) == {'test_app', 'example'}

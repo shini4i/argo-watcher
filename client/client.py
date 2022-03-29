@@ -28,18 +28,18 @@ def main():
     task_id = send_task(task=task)
 
     while (status := check_status(task_id=task_id)) == "in progress":
-        print("Application deployment is in progress...")
+        print("Application deployment is in progress...", flush=True)
         sleep(15)
 
     match status:
         case "failed":
-            print("The deployment has failed, please check logs.")
+            print("The deployment has failed, please check logs.", flush=True)
             exit(1)
         case "app not found":
-            print(f"Application {environ['ARGO_APP']} does not exist.")
+            print(f"Application {environ['ARGO_APP']} does not exist.", flush=True)
             exit(1)
         case "deployed":
-            print(f"The deployment of {environ['IMAGE_TAG']} version is done.")
+            print(f"The deployment of {environ['IMAGE_TAG']} version is done.", flush=True)
 
 
 if __name__ == '__main__':
