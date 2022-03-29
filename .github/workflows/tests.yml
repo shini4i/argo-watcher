@@ -26,10 +26,10 @@ jobs:
         run: poetry export -f requirements.txt | pip install -r /dev/stdin
 
       - name: Run tests
-        run: STATE_TYPE=in-memory ARGO_URL=https://argocd.example.com ARGO_USER=test ARGO_PASSWORD=test coverage run -m pytest
+        run: STATE_TYPE=in-memory ARGO_URL=https://argocd.example.com ARGO_USER=test ARGO_PASSWORD=test coverage run -m pytest -rap --junitxml coverage.xml
 
       - name: Generate coverage report
-        run: coverage xml -o coverage.xml
+        run: coverage xml -i
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@master
