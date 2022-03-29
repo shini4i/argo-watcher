@@ -70,7 +70,7 @@ def get_state(timestamp: float, app: str | None = None):
                  "content": {
                      "application/json": {
                          "example": {
-                             "app": ["app_name"]
+                             "apps": ["app_name"]
                          }
                      }
                  }
