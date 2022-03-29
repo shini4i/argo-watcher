@@ -100,6 +100,7 @@ class Argo:
             'healthy': app['status']['health']['status']
         }
 
+
         return status
 
     @retry(stop=stop_after_delay(Settings.Argo.timeout),
