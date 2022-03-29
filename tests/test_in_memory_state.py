@@ -14,6 +14,13 @@ task_template = {
 default_task_status = 'in progress'
 
 
+def generate_task(index: int):
+    task = task_template.copy()
+    task['id'] = str(uuid1())
+    task['app'] = f"example{index}"
+    return Task(**task)
+
+
 def test_task_status():
     state = InMemoryState()
 
@@ -40,12 +47,23 @@ def test_task_expiration():
 def test_task_filter():
     state = InMemoryState()
 
-    task1 = task_template
-    task2 = task_template.copy()
-    task2['app'] = "example"
+    for task in [generate_task(i) for i in range(2)]:
+        state.set_current_task(task=task, status=default_task_status)
 
-    state.set_current_task(task=Task(**task1), status=default_task_status)
-    state.set_current_task(task=Task(**task2), status=default_task_status)
+    assert len(state.get_state(time_range=int(time() - 60), app_name="example1")) == 1
+    assert state.get_state(time_range=int(time() - 60), app_name="example1")[0].app == "example1"
 
-    assert len(state.get_state(time_range=int(time()-60), app_name="example")) == 1
-    assert state.get_state(time_range=int(time()-60), app_name="example")[0].app == "example"
+
+def test_get_app_list():
+    state = InMemoryState()
+
+    task = task_template.copy()
+    task['app'] = 'example1'
+    task['id'] = str(uuid1())
+
+    state.set_current_task(task=Task(**task), status=default_task_status)
+
+    for task in [generate_task(i) for i in range(5)]:
+        state.set_current_task(task=task, status=default_task_status)
+
+    assert len(state.get_app_list()) == 5

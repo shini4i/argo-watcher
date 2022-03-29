@@ -80,6 +80,10 @@ class Argo:
     def return_state(from_timestamp: float, app_name: str):
         return state.get_state(time_range=int((time()-from_timestamp)/60), app_name=app_name)
 
+    @staticmethod
+    def return_app_list():
+        return state.get_app_list()
+
     def refresh_app(self, app: str) -> int:
         return self.session.get(url=f"{self.argo_url}/api/v1/applications/{app}?refresh=normal").status_code
 

@@ -73,3 +73,10 @@ def test_get_state_with_filter():
     assert response.status_code == 200
     assert len(response.json()) == 1
     assert response.json()[0]['app'] == "example"
+
+
+def test_get_app_list():
+    response = client.get("/api/v1/apps")
+
+    assert len(response.json()) == 2
+    assert set(response.json()) == {'test_app', 'example'}

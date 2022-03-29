@@ -25,6 +25,9 @@ class State(ABC):
     @abstractmethod
     def get_state(self, time_range: int, app_name: str): ...
 
+    @abstractmethod
+    def get_app_list(self) -> set: ...
+
 
 class InMemoryState(State):
     def __init__(self, history_ttl=Settings.Watcher.history_ttl):
@@ -54,6 +57,9 @@ class InMemoryState(State):
         else:
             return [task for task in self.tasks.values() if
                     task.created >= time() - time_range * 60 and task.app == app_name]
+
+    def get_app_list(self) -> set:
+        return set([task.app for task in self.tasks.values()])
 
 
 class DBState(State):
@@ -106,3 +112,11 @@ class DBState(State):
         cursor.execute(query=query)
         tasks = cursor.fetchall()
         return [Task(**task) for task in tasks]
+
+    def get_app_list(self) -> set:
+        query = "select distinct app from public.tasks"
+        cursor = self.db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute(query=query)
+        apps = cursor.fetchall()
+
+        return set([res['app'] for res in apps])

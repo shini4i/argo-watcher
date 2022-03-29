@@ -64,6 +64,20 @@ def get_state(timestamp: float, app: str | None = None):
     return argo.return_state(from_timestamp=timestamp, app_name=app)
 
 
+@app.get("/api/v1/apps", status_code=status.HTTP_200_OK,
+         responses={
+             200: {
+                 "content": {
+                     "application/json": {
+                         "example": ["app_name", "app_name2"]
+                     }
+                 }
+             }
+         })
+def get_app_list():
+    return argo.return_app_list()
+
+
 if isdir("static"):
     app.mount("/", StaticFiles(directory="static", html=True))
 
