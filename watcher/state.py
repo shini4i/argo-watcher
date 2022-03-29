@@ -1,5 +1,3 @@
-import logging
-
 import psycopg2
 import psycopg2.extras
 import json

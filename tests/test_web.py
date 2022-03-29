@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 from time import time
 
 from watcher.web import app
-from test_in_memory_state import task_template, generate_task
+from test_in_memory_state import task_template
 
 client = TestClient(app)
 api_path = "/api/v1/tasks"
