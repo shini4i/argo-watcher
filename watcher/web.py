@@ -69,15 +69,13 @@ def get_state(timestamp: float, app: str | None = None):
              200: {
                  "content": {
                      "application/json": {
-                         "example": {
-                             "apps": ["app_name"]
-                         }
+                         "example": ["app_name", "app_name2"]
                      }
                  }
              }
          })
 def get_app_list():
-    return {"apps": argo.return_app_list()}
+    return argo.return_app_list()
 
 
 if isdir("static"):

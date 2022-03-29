@@ -78,5 +78,5 @@ def test_get_state_with_filter():
 def test_get_app_list():
     response = client.get("/api/v1/apps")
 
-    assert len(response.json()['apps']) == 2
-    assert set(response.json()['apps']) == {'test_app', 'example'}
+    assert len(response.json()) == 2
+    assert set(response.json()) == {'test_app', 'example'}
