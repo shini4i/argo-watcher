@@ -1,0 +1,38 @@
+name: Tests
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, synchronize, reopened]
+jobs:
+  sonarcloud:
+    name: SonarCloud
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.10.x'
+
+      - name: Install required packages
+        run: pip install cryptography==3.1.1 poetry==1.1.5 pytest coverage responses
+
+      - name: Install project
+        run: poetry export -f requirements.txt | pip install -r /dev/stdin
+
+      - name: Run tests
+        run: STATE_TYPE=in-memory ARGO_URL=https://argocd.example.com ARGO_USER=test ARGO_PASSWORD=test coverage run -m pytest
+
+      - name: Generate coverage report
+        run: coverage xml -o coverage.xml
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
