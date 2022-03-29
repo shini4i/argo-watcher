@@ -6,7 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
-- An edpoint to get a list of existing app names
+- An endpoint to get a list of existing app names
 ### Fixed
 - Make client print output during execution
 
