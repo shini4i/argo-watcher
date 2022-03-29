@@ -33,7 +33,7 @@ jobs:
 
       - name: Override Coverage Source Path for Sonar
         run: |
-          sed -i 's/\/home\/runner\/work\/shini4i\/argo-watcher\//\/github\/workspace\//g' coverage.xml
+          sed -i 's@'$GITHUB_WORKSPACE'@/github/workspace/@g' coverage.xml
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@master
