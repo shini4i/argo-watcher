@@ -20,6 +20,8 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+        ports:
+          - 5432:5432
 
     steps:
       - uses: actions/checkout@v2
@@ -42,7 +44,7 @@ jobs:
 
       - name: Run migrations
         env:
-          DATABASE_URL: "postgres://postgres:postgres@postgres:5432/postgres?sslmode=disable"
+          DATABASE_URL: "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable"
         run: /usr/local/bin/dbmate up
 
       - name: Run tests
@@ -51,7 +53,7 @@ jobs:
           ARGO_URL: https://argocd.example.com
           ARGO_USER: test
           ARGO_PASSWORD: test
-          DB_HOST: postgres
+          DB_HOST: localhost
           DB_USER: postgres
           DB_NAME: postgres
           DB_PASSWORD: postgres
