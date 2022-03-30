@@ -2,6 +2,7 @@ import React, {useEffect, useRef, useState} from "react";
 import Navbar from "./Navbar";
 import ErrorSnackbar from "./ErrorSnackbar";
 import {relativeTime} from "./Utils";
+import {fetchApplications, fetchTasks} from "./Services/Data";
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import Container from "@mui/material/Container";
@@ -22,15 +23,20 @@ import FormControl from '@mui/material/FormControl';
 import Select from '@mui/material/Select';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
-import {fetchApplications, fetchTasks} from "./Services/Data";
 import TextField from '@mui/material/TextField';
 import Autocomplete from '@mui/material/Autocomplete';
+import AdapterDateFns from '@mui/lab/AdapterDateFns';
+import LocalizationProvider from '@mui/lab/LocalizationProvider';
+import DatePicker from '@mui/lab/DatePicker';
 
 const timeframes = {
   '5 minutes': 5 * 60,
   '15 minutes': 15 * 60,
   '30 minutes': 30 * 60,
-  '1 hour': 60 * 60
+  '1 hour': 60 * 60,
+  '6 hours': 6 * 60 * 60,
+  '12 hours': 12 * 60 * 60,
+  'Custom': 0,
 };
 
 const autoRefreshIntervals = {
@@ -52,6 +58,17 @@ function App() {
 
   const [loadingError, setLoadingError] = useState(null);
   const [currentTimeframe, setCurrentTimeframe] = useState(timeframes['5 minutes']);
+  const [currentCustomTimestamp, setCurrentCustomTimestamp] = useState(null);
+
+  const calculateCurrentTimeframe = () => {
+    if (currentTimeframe !== timeframes["Custom"]) {
+      return currentTimeframe;
+    } else if (currentCustomTimestamp !== null) {
+      return Math.floor((Date.now() - currentCustomTimestamp.getTime()) / 1000);
+    } else {
+      return 0;
+    }
+  }
 
   const refreshTasks = (timeframe, application) => {
     let timestamp = Math.floor(Date.now() / 1000) - timeframe;
@@ -113,7 +130,7 @@ function App() {
     }
     // set interval
     autoRefreshIntervalRef.current = setInterval(() => {
-      refreshTasks(currentTimeframe, currentApplication);
+      refreshTasks(calculateCurrentTimeframe(), currentApplication);
     }, currentAutoRefresh * 1000);
 
     // clear interval on exit
@@ -125,8 +142,13 @@ function App() {
   });
 
   const handleTimeframeChange = (event) => {
-    setCurrentTimeframe(event.target.value);
-    refreshTasks(event.target.value, currentApplication);
+    let newTimeframe = event.target.value;
+    setCurrentTimeframe(newTimeframe);
+    if (newTimeframe !== timeframes["Custom"]) {
+      refreshTasks(newTimeframe, currentApplication);
+    } else if (currentCustomTimestamp !== null) {
+      refreshTasks(Math.floor((Date.now() - currentCustomTimestamp.getTime()) / 1000), currentApplication);
+    }
   };
 
   const handleAutoRefreshChange = (event) => {
@@ -135,7 +157,20 @@ function App() {
 
   const handleApplicationsChange = (event, newValue) => {
     setCurrentApplication(newValue);
-    refreshTasks(currentTimeframe, newValue);
+    refreshTasks(calculateCurrentTimeframe(), newValue);
+  };
+
+  const handleCustomTimestampChange = (newValue) => {
+    if (!newValue) {
+      return;
+    }
+
+    let newCustomTimestamp = new Date(newValue.getTime() - (newValue.getTime() % 86400000));
+    setCurrentCustomTimestamp(newCustomTimestamp);
+
+    if (currentTimeframe === timeframes["Custom"]) {
+      refreshTasks(Math.floor((Date.now() - newCustomTimestamp.getTime()) / 1000), currentApplication);
+    }
   };
 
   const TableCellSorted = ({field, children}) => {
@@ -162,14 +197,14 @@ function App() {
                   size={"small"}
                   disablePortal
                   options={applications}
-                  sx={{ width: 300 }}
+                  sx={{ width: 220 }}
                   renderInput={(params) => <TextField {...params} label="Application" />}
                   value={currentApplication || null}
                   onChange={handleApplicationsChange}
               />
             </Box>
             <IconButton edge="start" color="inherit" onClick={() => {
-              refreshTasks(currentTimeframe, currentApplication);
+              refreshTasks(calculateCurrentTimeframe(), currentApplication);
             }}>
               <RefreshIcon/>
             </IconButton>
@@ -188,6 +223,17 @@ function App() {
                 </Select>
               </FormControl>
             </Box>
+            {currentTimeframe === timeframes['Custom'] &&  <Box sx={{width: 150}}>
+              <LocalizationProvider dateAdapter={AdapterDateFns}>
+                <DatePicker
+                    renderInput={(props) => <TextField {...props} size="small" />}
+                    label="Period Start Date"
+                    value={currentCustomTimestamp}
+                    maxDate={new Date()}
+                    onChange={handleCustomTimestampChange}
+                />
+              </LocalizationProvider>
+            </Box>}
             <Box sx={{minWidth: 120}}>
               <FormControl fullWidth size={"small"}>
                 <InputLabel>Timeframe</InputLabel>
