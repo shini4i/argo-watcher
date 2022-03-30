@@ -1,4 +1,4 @@
-name: Tests
+name: Run unit tests and sonar scan
 on:
   push:
     branches:
@@ -9,6 +9,20 @@ jobs:
   sonarcloud:
     name: SonarCloud
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
     steps:
       - uses: actions/checkout@v2
         with:
@@ -25,8 +39,25 @@ jobs:
       - name: Install project
         run: poetry export -f requirements.txt | pip install -r /dev/stdin
 
+      - name: Install dbmate
+        run: curl -fsSL -o /usr/local/bin/dbmate https://github.com/amacneil/dbmate/releases/latest/download/dbmate-linux-amd64 && chmod +x /usr/local/bin/dbmate
+
+      - name: Run migrations
+        env:
+          DATABASE_URL: "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable"
+        run: /usr/local/bin/dbmate up
+
       - name: Run tests
-        run: STATE_TYPE=in-memory ARGO_URL=https://argocd.example.com ARGO_USER=test ARGO_PASSWORD=test coverage run -m pytest -rap --junitxml coverage.xml
+        env:
+          STATE_TYPE: in-memory
+          ARGO_URL: https://argocd.example.com
+          ARGO_USER: test
+          ARGO_PASSWORD: test
+          DB_HOST: localhost
+          DB_USER: postgres
+          DB_NAME: postgres
+          DB_PASSWORD: postgres
+        run: coverage run -m pytest -rap --junitxml coverage.xml
 
       - name: Generate coverage report
         run: coverage xml -i
