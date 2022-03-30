@@ -22,6 +22,7 @@ import FormControl from '@mui/material/FormControl';
 import Select from '@mui/material/Select';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import {fetchApplications, fetchTasks} from "./Services/Data";
 
 const timeframes = {
   '5 minutes': 5 * 60,
@@ -40,29 +41,22 @@ const autoRefreshIntervals = {
 
 function App() {
   const [tasks, setTasks] = useState([]);
+  const [applications, setApplications] = useState([]);
+
   const [currentSort, setCurrentSort] = useState({field: "created", direction: "ASC"});
   const [currentAutoRefresh, setCurrentAutoRefresh] = useState(autoRefreshIntervals['30s']);
   const autoRefreshIntervalRef = useRef(null);
+  const [currentApplication, setCurrentApplication] = useState("");
 
   const [loadingError, setLoadingError] = useState(null);
   const [currentTimeframe, setCurrentTimeframe] = useState(timeframes['5 minutes']);
 
-  const refreshTasks = (timeframe) => {
+  const refreshTasks = (timeframe, application) => {
     let timestamp = Math.floor(Date.now() / 1000) - timeframe;
-    fetch(`/api/v1/tasks?timestamp=${timestamp}`)
-        .then(res => {
-          if (res.status !== 200) {
-            throw new Error(res.statusText);
-          }
-          return res.json();
-        })
-        .then(items => {
-          setTasksSorted(items, currentSort);
-        })
-        .catch(error => {
-          setLoadingError(error.message);
-        })
-    ;
+    // get tasks by timestamp
+    fetchTasks(timestamp, application)
+        .then(items => { setTasksSorted(items, currentSort); })
+        .catch(error => { setLoadingError(error.message); });
   };
 
   const setTasksSorted = (tasks, sort) => {
@@ -100,7 +94,10 @@ function App() {
 
   // initial load
   useEffect(() => {
-    refreshTasks(currentTimeframe);
+    refreshTasks(currentTimeframe, currentApplication);
+    fetchApplications()
+        .then(items => { setApplications(items) })
+        .catch(error => { setLoadingError(error.message); });
   }, []);
 
   // we reset interval on any state change (because we use the state variables for data retrieval)
@@ -114,7 +111,7 @@ function App() {
     }
     // set interval
     autoRefreshIntervalRef.current = setInterval(() => {
-      refreshTasks(currentTimeframe);
+      refreshTasks(currentTimeframe, currentApplication);
     }, currentAutoRefresh * 1000);
 
     // clear interval on exit
@@ -127,12 +124,16 @@ function App() {
 
   const handleTimeframeChange = (event) => {
     setCurrentTimeframe(event.target.value);
-    refreshTasks(event.target.value);
+    refreshTasks(event.target.value, currentApplication);
   };
 
   const handleAutoRefreshChange = (event) => {
-    // save auto refresh interval
     setCurrentAutoRefresh(event.target.value);
+  };
+
+  const handleApplicationsChange = (event) => {
+    setCurrentApplication(event.target.value);
+    refreshTasks(currentTimeframe, event.target.value);
   };
 
   const TableCellSorted = ({field, children}) => {
@@ -154,8 +155,25 @@ function App() {
             <Typography variant="h4" gutterBottom component="div" sx={{flexGrow: 1}}>
               Existing tasks
             </Typography>
+            <Box sx={{minWidth: 140}}>
+              <FormControl fullWidth size={"small"}>
+                <InputLabel>Applications</InputLabel>
+                <Select
+                    value={currentApplication}
+                    label="Applications"
+                    onChange={handleApplicationsChange}
+                >
+                  <MenuItem value="">
+                    <em>None</em>
+                  </MenuItem>
+                  {applications.map(application => {
+                    return <MenuItem key={application} value={application}>{application}</MenuItem>
+                  })}
+                </Select>
+              </FormControl>
+            </Box>
             <IconButton edge="start" color="inherit" onClick={() => {
-              refreshTasks(currentTimeframe);
+              refreshTasks(currentTimeframe, currentApplication);
             }}>
               <RefreshIcon/>
             </IconButton>
