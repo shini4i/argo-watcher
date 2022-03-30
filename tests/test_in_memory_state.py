@@ -28,8 +28,9 @@ def test_task_status():
     task['id'] = str(uuid1())
 
     state.set_current_task(task=Task(**task), status=default_task_status)
+    state.update_task(task_id=task['id'], status="deployed")
 
-    assert state.get_task_status(task_id=task['id']) == default_task_status
+    assert state.get_task_status(task_id=task['id']) == "deployed"
 
 
 def test_task_expiration():
