@@ -1,6 +1,6 @@
-export function fetchTasks(timestamp, application = '') {
+export function fetchTasks(timestamp, application = null) {
   let queryString = "?timestamp=" + timestamp;
-  if (application && application.length > 0) {
+  if (application !== null) {
     queryString += "&app=" + application;
   }
   return fetch(`/api/v1/tasks${queryString}`)

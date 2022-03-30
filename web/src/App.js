@@ -23,6 +23,8 @@ import Select from '@mui/material/Select';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import {fetchApplications, fetchTasks} from "./Services/Data";
+import TextField from '@mui/material/TextField';
+import Autocomplete from '@mui/material/Autocomplete';
 
 const timeframes = {
   '5 minutes': 5 * 60,
@@ -46,7 +48,7 @@ function App() {
   const [currentSort, setCurrentSort] = useState({field: "created", direction: "ASC"});
   const [currentAutoRefresh, setCurrentAutoRefresh] = useState(autoRefreshIntervals['30s']);
   const autoRefreshIntervalRef = useRef(null);
-  const [currentApplication, setCurrentApplication] = useState("");
+  const [currentApplication, setCurrentApplication] = useState(null);
 
   const [loadingError, setLoadingError] = useState(null);
   const [currentTimeframe, setCurrentTimeframe] = useState(timeframes['5 minutes']);
@@ -131,9 +133,9 @@ function App() {
     setCurrentAutoRefresh(event.target.value);
   };
 
-  const handleApplicationsChange = (event) => {
-    setCurrentApplication(event.target.value);
-    refreshTasks(currentTimeframe, event.target.value);
+  const handleApplicationsChange = (event, newValue) => {
+    setCurrentApplication(newValue);
+    refreshTasks(currentTimeframe, newValue);
   };
 
   const TableCellSorted = ({field, children}) => {
@@ -155,22 +157,16 @@ function App() {
             <Typography variant="h4" gutterBottom component="div" sx={{flexGrow: 1}}>
               Existing tasks
             </Typography>
-            <Box sx={{minWidth: 140}}>
-              <FormControl fullWidth size={"small"}>
-                <InputLabel>Applications</InputLabel>
-                <Select
-                    value={currentApplication}
-                    label="Applications"
-                    onChange={handleApplicationsChange}
-                >
-                  <MenuItem value="">
-                    <em>None</em>
-                  </MenuItem>
-                  {applications.map(application => {
-                    return <MenuItem key={application} value={application}>{application}</MenuItem>
-                  })}
-                </Select>
-              </FormControl>
+            <Box>
+              <Autocomplete
+                  size={"small"}
+                  disablePortal
+                  options={applications}
+                  sx={{ width: 300 }}
+                  renderInput={(params) => <TextField {...params} label="Application" />}
+                  value={currentApplication || null}
+                  onChange={handleApplicationsChange}
+              />
             </Box>
             <IconButton edge="start" color="inherit" onClick={() => {
               refreshTasks(currentTimeframe, currentApplication);
