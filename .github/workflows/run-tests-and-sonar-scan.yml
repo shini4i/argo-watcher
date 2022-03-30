@@ -43,7 +43,7 @@ jobs:
       - name: Run migrations
         env:
           DATABASE_URL: "postgres://postgres:postgres@postgres:5432/postgres?sslmode=disable"
-        run: /usr/local/bin/dmate up
+        run: /usr/local/bin/dbmate up
 
       - name: Run tests
         env:
