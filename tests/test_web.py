@@ -39,6 +39,35 @@ def responses_configuration():
 
 
 @responses.activate
+def test_healthz():
+    responses_configuration()
+
+    responses.add(
+        method=responses.GET,
+        url='https://argocd.example.com/api/v1/session/userinfo',
+        json={"loggedIn": True},
+        status=200
+    )
+
+    response = client.get("/healthz")
+
+    assert response.status_code == 200
+    assert response.json()['status'] == "up"
+
+    responses.add(
+        method=responses.GET,
+        url='https://argocd.example.com/api/v1/session/userinfo',
+        json={},
+        status=503
+    )
+
+    response = client.get("/healthz")
+
+    assert response.status_code == 503
+    assert response.json()['status'] == "down"
+
+
+@responses.activate
 def test_add_task():
     responses_configuration()
     response = client.post(api_path, json=task_template)

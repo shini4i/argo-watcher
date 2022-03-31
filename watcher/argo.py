@@ -62,6 +62,14 @@ class Argo:
                 logging.error("Forbidden, please check the firewall!")
                 return False
 
+    def check_argo(self):
+        try:
+            response = self.session.get(url=f"{self.argo_url}/api/v1/session/userinfo")
+            if response.json()['loggedIn']:
+                return "up"
+        except KeyError:
+            return "down"
+
     def start_task(self, task: Task):
         try:
             state.set_current_task(task=task, status="in progress")
@@ -78,7 +86,7 @@ class Argo:
 
     @staticmethod
     def return_state(from_timestamp: float, app_name: str):
-        return state.get_state(time_range=int((time()-from_timestamp)/60), app_name=app_name)
+        return state.get_state(time_range=int((time() - from_timestamp) / 60), app_name=app_name)
 
     @staticmethod
     def return_app_list():
