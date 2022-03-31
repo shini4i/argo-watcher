@@ -14,7 +14,7 @@ def truncate_table():
     state.db.commit()
 
 
-def test_task_status():
+def test_get_task_status():
     truncate_table()
 
     task = task_template.copy()
@@ -25,7 +25,7 @@ def test_task_status():
     assert state.get_task_status(task_id=task['id']) == default_task_status
 
 
-def test_get_task_status():
+def test_set_current_task():
     task = task_template.copy()
     task['id'] = str(uuid1())
 

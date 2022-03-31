@@ -3,7 +3,7 @@
 from os import getenv
 from os.path import isdir
 
-from fastapi import FastAPI, BackgroundTasks, status
+from fastapi import FastAPI, BackgroundTasks, Response, status
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import FileResponse
 from uvicorn import Config, Server
@@ -76,6 +76,13 @@ def get_state(timestamp: float, app: str | None = None):
          })
 def get_app_list():
     return argo.return_app_list()
+
+
+@app.get("/healthz", status_code=status.HTTP_200_OK)
+def healthz(response: Response):
+    if (health := argo.check_argo()) == "down":
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    return {"status": health}
 
 
 if isdir("static"):
