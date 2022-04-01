@@ -11,6 +11,8 @@ from uuid import uuid1
 
 from typing import List
 
+from prometheus_client import make_asgi_app
+
 from watcher.argo import Argo
 from watcher.models import Task
 from watcher.logs import setup_logging
@@ -22,6 +24,7 @@ app = FastAPI(
     version="0.0.1"
 )
 argo = Argo()
+metrics = make_asgi_app()
 
 
 @app.post("/api/v1/tasks", status_code=status.HTTP_202_ACCEPTED,
@@ -87,6 +90,8 @@ def healthz(response: Response):
 
 if isdir("static"):
     app.mount("/", StaticFiles(directory="static", html=True))
+
+app.mount("/metrics", metrics)
 
 
 @app.get("/")
