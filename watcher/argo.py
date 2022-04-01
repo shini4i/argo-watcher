@@ -38,8 +38,8 @@ class AppDoesNotExistException(Exception):
 class Argo:
     def __init__(self):
         self.session = requests.Session()
-        self.gauge = Gauge('failed_deployment',
-                           'Failed deployment', ['app_name'])
+        self.failed_deployment_gauge = Gauge('failed_deployment',
+                                             'Failed deployment', ['app_name'])
         self.argo_url = Settings.Argo.url
         self.argo_user = Settings.Argo.user
         self.argo_password = Settings.Argo.password
@@ -78,11 +78,11 @@ class Argo:
         try:
             state.set_current_task(task=task, status="in progress")
             self.wait_for_rollout(task=task)
-            self.gauge.labels(task.app).set(0)
+            self.failed_deployment_gauge.labels(task.app).set(0)
             state.update_task(task_id=task.id, status="deployed")
         except RetryError:
             state.update_task(task_id=task.id, status="failed")
-            self.gauge.labels(task.app).inc()
+            self.failed_deployment_gauge.labels(task.app).inc()
         except AppDoesNotExistException:
             state.update_task(task_id=task.id, status="app not found")
 
