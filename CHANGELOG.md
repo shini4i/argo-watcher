@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Health Check endpoint
 - Application filter in Web UI
 - Custom timeframe selection with DatePicker in Web UI
+- Metrics endpoint (currently with a single failed_deployment metric)
 ### Fixed
 - Make client print output during execution
 
