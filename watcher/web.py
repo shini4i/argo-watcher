@@ -21,7 +21,7 @@ from watcher.settings import Settings
 app = FastAPI(
     title="ArgoCD Watcher",
     description="A small tool that will wait for the specific docker image to be rolled out",
-    version="0.0.1"
+    version="0.0.2"
 )
 argo = Argo()
 metrics = make_asgi_app()

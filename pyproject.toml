@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "watcher"
-version = "0.0.1"
+version = "0.0.2"
 description = "A small tool that is waiting for the specific docker image to be rolled out"
 authors = ["Vadim Gedz <vadims@linux-tech.io>"]
 license = "MIT"
