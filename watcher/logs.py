@@ -6,6 +6,17 @@ from loguru import logger
 from watcher.settings import Settings
 
 
+class ReduceLoggingNoise(logging.Filter):
+    def filter(self, record):
+        request_method = record.args[1]
+        query_string = record.args[2]
+
+        return request_method == 'GET' and query_string not in [
+            "/healthz",
+            "/",
+        ]
+
+
 class InterceptHandler(logging.Handler):
     def emit(self, record):
         # Get corresponding Loguru level if it exists
@@ -44,5 +55,8 @@ def setup_logging():
             }
         ]
     }
+
+    # Disable logging for specific paths
+    logging.getLogger("uvicorn.access").addFilter(ReduceLoggingNoise())
 
     logger.configure(**config)
