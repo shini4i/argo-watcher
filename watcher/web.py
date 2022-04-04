@@ -88,7 +88,9 @@ def healthz(response: Response):
 
 
 app.mount("/metrics", make_asgi_app())
-app.mount("/", StaticFiles(directory="static", html=True))
+
+if isdir("static"):
+    app.mount("/", StaticFiles(directory="static", html=True))
 
 
 @app.get("/")
