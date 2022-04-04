@@ -45,7 +45,9 @@ There are 2 ways of how you can run argo-watcher locally
 
 ## Docker Compose development
 
-An overview on how to use docker compose setup
+Create .env file with necessary environment variables
+
+An overview on how to start docker compose setup
 ```shell
 # install backend dependencies
 docker compose run --rm backend poetry install
