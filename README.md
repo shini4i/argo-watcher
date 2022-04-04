@@ -37,6 +37,33 @@ Example response:
 {"status":"in progress"}
 ```
 
+# Development 
+
+There are 2 ways of how you can run argo-watcher locally
+1. with docker compose
+2. with locally installed python, poetry, nodejs, npm 
+
+## Docker Compose development
+
+An overview on how to use docker compose setup
+```shell
+# install backend dependencies
+docker compose run --rm backend poetry install
+# install frontend dependencies
+docker compose run --rm frontend npm install
+# start database, backend and frontend
+docker compose --profile complete up
+# or you can start only the database
+docker compose up
+```
+
+Backend container needs to be restarted manually
+```shell
+docker restart argo-watcher-backend-1
+```
+
+> Frontend container monitors file changes and reloads server automatically.
+
 ## Back-End Development
 
 To start developing argo-watcher you will need

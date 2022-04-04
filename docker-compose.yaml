@@ -1,12 +1,37 @@
-version: '3.9'
-
 services:
-
-  db:
+  database:
     image: postgres:14.2
-    restart: always
+    mem_limit: 2g
     environment:
       POSTGRES_DB: argo
       POSTGRES_PASSWORD: example
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - ./db/data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - 5432:5432
+  backend:
+    profiles: ["backend", "complete"]
+    image: mwalbeck/python-poetry:latest
+    mem_limit: 512m
+    env_file: [ .env ]
+    working_dir: /app
+    volumes:
+      - ./:/app
+    ports:
+      - 8080:8080
+    depends_on: [ database ]
+    command: poetry run
+  frontend:
+    profiles: ["complete"]
+    image: node:16.14.2-slim
+    mem_limit: 2g
+    ports:
+      - 3000:3000
+    working_dir: /app
+    volumes:
+      - ./web:/app
+    environment:
+      - DISABLE_ESLINT_PLUGIN=true # disable eslint for docker container output
+    entrypoint: ""
+    command: npm start

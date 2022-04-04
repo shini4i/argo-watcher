@@ -1,6 +1,8 @@
 .idea
 .envrc
 .env
+.venv
+db/data
 **/__pycache__
 db/schema.sql
 .pytest_cache
