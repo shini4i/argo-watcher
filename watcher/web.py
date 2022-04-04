@@ -24,7 +24,6 @@ app = FastAPI(
     version="0.0.2"
 )
 argo = Argo()
-metrics = make_asgi_app()
 
 
 @app.post("/api/v1/tasks", status_code=status.HTTP_202_ACCEPTED,
@@ -88,10 +87,8 @@ def healthz(response: Response):
     return {"status": health}
 
 
-if isdir("static"):
-    app.mount("/", StaticFiles(directory="static", html=True))
-
-app.mount("/metrics", metrics)
+app.mount("/metrics", make_asgi_app())
+app.mount("/", StaticFiles(directory="static", html=True))
 
 
 @app.get("/")
