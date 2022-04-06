@@ -1,6 +1,7 @@
 import logging
 
 from os import getenv, environ
+from distutils.util import strtobool
 
 
 class Settings:
@@ -16,7 +17,7 @@ class Settings:
         state_type = getenv("STATE_TYPE", "in-memory")
         ssl_verify = getenv("SSL_VERIFY", True)
         if not isinstance(ssl_verify, bool):
-            ssl_verify = bool(ssl_verify)
+            ssl_verify = bool(strtobool(ssl_verify))
         history_ttl = getenv('HISTORY_TTL', 3600)
         if not isinstance(history_ttl, int):
             history_ttl = int(history_ttl)
