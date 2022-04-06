@@ -25,9 +25,9 @@ export function useTasks({ setLoadingError }) {
         .catch(error => { setLoadingError(error.message); });
   };
 
-  const setTasksSorted = (tasks, sort) => {
+  const setTasksSorted = (unsortedTasks, sort) => {
     // sort tasks
-    tasks.sort((a, b) => {
+    unsortedTasks.sort((a, b) => {
       let aField = a[sort.field];
       let bField = b[sort.field];
       if (aField === bField) {
@@ -41,7 +41,7 @@ export function useTasks({ setLoadingError }) {
     });
 
     // save sorted tasks
-    setTasks([].concat(tasks));
+    setTasks([].concat(unsortedTasks));
   };
 
   // sort field change hook
@@ -55,13 +55,13 @@ export function useTasks({ setLoadingError }) {
 }
 
 function TableCellSorted({field, sortField, setSortField, children}) {
-  const triggerSortChange = (field) => {
+  const triggerSortChange = (triggerField) => {
     // change sort parameters
     let sortFieldChange = {...sortField};
-    if (sortFieldChange.field === field) {
+    if (sortFieldChange.field === triggerField) {
       sortFieldChange.direction = sortFieldChange.direction === 'ASC' ? 'DESC' : 'ASC';
     } else {
-      sortFieldChange.field = field;
+      sortFieldChange.field = triggerField;
       sortFieldChange.direction = 'ASC';
     }
     setSortField(sortFieldChange);

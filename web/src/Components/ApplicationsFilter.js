@@ -12,7 +12,7 @@ function ApplicationsFilter({ value, onChange, setLoadingError }) {
         .catch(error => { setLoadingError(error.message); });
   }, []);
 
-  const handleApplicationsChange = (event, newValue) => {
+  const handleApplicationsChange = (_event, newValue) => {
     onChange && onChange(newValue);
   };
 
