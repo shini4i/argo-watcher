@@ -38,6 +38,7 @@ class AppDoesNotExistException(Exception):
 class Argo:
     def __init__(self):
         self.session = requests.Session()
+        self.ssl_verify = Settings.Watcher.ssl_verify
         self.failed_deployment_gauge = Gauge('failed_deployment',
                                              'Failed deployment', ['app_name'])
         self.argo_url = Settings.Argo.url
@@ -51,7 +52,7 @@ class Argo:
                                          json={
                                              "username": self.argo_user,
                                              "password": self.argo_password
-                                         })
+                                         }, verify=self.ssl_verify)
         except RequestException as exception:
             logging.error(exception)
             return False
@@ -68,7 +69,7 @@ class Argo:
 
     def check_argo(self):
         try:
-            response = self.session.get(url=f"{self.argo_url}/api/v1/session/userinfo")
+            response = self.session.get(url=f"{self.argo_url}/api/v1/session/userinfo", verify=self.ssl_verify)
             if response.json()['loggedIn']:
                 return "up"
         except KeyError:
@@ -99,10 +100,11 @@ class Argo:
         return state.get_app_list()
 
     def refresh_app(self, app: str) -> int:
-        return self.session.get(url=f"{self.argo_url}/api/v1/applications/{app}?refresh=normal").status_code
+        return self.session.get(url=f"{self.argo_url}/api/v1/applications/{app}?refresh=normal",
+                                verify=self.ssl_verify).status_code
 
     def get_app_status(self, app: str) -> Optional[dict]:
-        r = self.session.get(url=f"{self.argo_url}/api/v1/applications/{app}")
+        r = self.session.get(url=f"{self.argo_url}/api/v1/applications/{app}", verify=self.ssl_verify)
         if r.status_code != 200:
             return None
         else:
