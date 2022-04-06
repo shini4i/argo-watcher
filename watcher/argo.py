@@ -38,6 +38,7 @@ class AppDoesNotExistException(Exception):
 class Argo:
     def __init__(self):
         self.session = requests.Session()
+        self.ssl_verify = Settings.Watcher.ssl_verify
         self.failed_deployment_gauge = Gauge('failed_deployment',
                                              'Failed deployment', ['app_name'])
         self.argo_url = Settings.Argo.url
@@ -51,7 +52,7 @@ class Argo:
                                          json={
                                              "username": self.argo_user,
                                              "password": self.argo_password
-                                         })
+                                         }, verify=self.ssl_verify)
         except RequestException as exception:
             logging.error(exception)
             return False
@@ -68,22 +69,28 @@ class Argo:
 
     def check_argo(self):
         try:
-            response = self.session.get(url=f"{self.argo_url}/api/v1/session/userinfo")
+            response = self.session.get(url=f"{self.argo_url}/api/v1/session/userinfo", verify=self.ssl_verify)
             if response.json()['loggedIn']:
                 return "up"
         except KeyError:
             return "down"
 
     def start_task(self, task: Task):
+        logging.info(f"New task with id {task.id} was triggered. "
+                     f"Expecting tag {task.images[0].tag} in {task.app} app.")
         try:
             state.set_current_task(task=task, status="in progress")
             self.wait_for_rollout(task=task)
             self.failed_deployment_gauge.labels(task.app).set(0)
             state.update_task(task_id=task.id, status="deployed")
+            logging.info(f"Task {task.id} has succeeded. App {task.app} is running on the expected version.")
         except RetryError:
+            logging.warning(f"Task {task.id} has failed. "
+                            f"App {task.app} did not become healthy within reasonable timeframe.")
             state.update_task(task_id=task.id, status="failed")
             self.failed_deployment_gauge.labels(task.app).inc()
         except AppDoesNotExistException:
+            logging.warning(f"Task {task.id} has failed. App {task.app} does not exists.")
             state.update_task(task_id=task.id, status="app not found")
 
     @staticmethod
@@ -99,10 +106,11 @@ class Argo:
         return state.get_app_list()
 
     def refresh_app(self, app: str) -> int:
-        return self.session.get(url=f"{self.argo_url}/api/v1/applications/{app}?refresh=normal").status_code
+        return self.session.get(url=f"{self.argo_url}/api/v1/applications/{app}?refresh=normal",
+                                verify=self.ssl_verify).status_code
 
     def get_app_status(self, app: str) -> Optional[dict]:
-        r = self.session.get(url=f"{self.argo_url}/api/v1/applications/{app}")
+        r = self.session.get(url=f"{self.argo_url}/api/v1/applications/{app}", verify=self.ssl_verify)
         if r.status_code != 200:
             return None
         else:

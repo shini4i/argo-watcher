@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Frontend: Split homepage into "Recent tasks" page and "History tasks" page
 - Frontend: Add routing to the application
+### Changed
+- Make ssl verification optional
+- Logging approach
 ### Fixed
 - Metrics endpoint returning 404
 - Frontend: Refactor UI components to be more maintainable

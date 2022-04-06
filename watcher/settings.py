@@ -14,6 +14,9 @@ class Settings:
 
     class Watcher:
         state_type = getenv("STATE_TYPE", "in-memory")
+        ssl_verify = getenv("SSL_VERIFY", True)
+        if not isinstance(ssl_verify, bool):
+            ssl_verify = bool(ssl_verify)
         history_ttl = getenv('HISTORY_TTL', 3600)
         if not isinstance(history_ttl, int):
             history_ttl = int(history_ttl)
@@ -25,5 +28,4 @@ class Settings:
         db_password = getenv("DB_PASSWORD")
 
     class Logs:
-        log_level = logging.getLevelName(getenv('LOG_LEVEL', 'DEBUG'))
-        json_logs = True if getenv('JSON_LOGS', '0') == '1' else False
+        log_level = logging.getLevelName(getenv('LOG_LEVEL', 'INFO'))
