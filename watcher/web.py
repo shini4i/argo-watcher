@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+import logging
+
 from os import getenv
 from os.path import isdir
 
@@ -15,7 +17,6 @@ from prometheus_client import make_asgi_app
 
 from watcher.argo import Argo
 from watcher.models import Task
-from watcher.logs import setup_logging
 from watcher.settings import Settings
 
 app = FastAPI(
@@ -104,13 +105,17 @@ def main():
             "watcher.web:app",
             host=getenv('BIND_IP', '0.0.0.0'),
             port=8080,
-            log_level=Settings.Logs.log_level,
+            log_level=logging.getLevelName("WARN"),
 
         ),
     )
 
-    setup_logging()
+    logging.basicConfig(
+        level=Settings.Logs.log_level,
+        format="%(asctime)s %(levelname)s %(message)s",
+    )
 
+    logging.info("Starting web server...")
     server.run()
 
 
