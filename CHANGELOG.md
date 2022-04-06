@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Changed
 - Make ssl verification optional
+- Logging approach
 ### Fixed
 - Metrics endpoint returning 404
 

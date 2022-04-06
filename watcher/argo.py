@@ -76,15 +76,21 @@ class Argo:
             return "down"
 
     def start_task(self, task: Task):
+        logging.info(f"New task with id {task.id} was triggered. "
+                     f"Expecting tag {task.images[0].tag} in {task.app} app.")
         try:
             state.set_current_task(task=task, status="in progress")
             self.wait_for_rollout(task=task)
             self.failed_deployment_gauge.labels(task.app).set(0)
             state.update_task(task_id=task.id, status="deployed")
+            logging.info(f"Task {task.id} has succeeded. App {task.app} is running on the expected version.")
         except RetryError:
+            logging.warning(f"Task {task.id} has failed. "
+                            f"App {task.app} did not become healthy within reasonable timeframe.")
             state.update_task(task_id=task.id, status="failed")
             self.failed_deployment_gauge.labels(task.app).inc()
         except AppDoesNotExistException:
+            logging.warning(f"Task {task.id} has failed. App {task.app} does not exists.")
             state.update_task(task_id=task.id, status="app not found")
 
     @staticmethod

@@ -28,5 +28,4 @@ class Settings:
         db_password = getenv("DB_PASSWORD")
 
     class Logs:
-        log_level = logging.getLevelName(getenv('LOG_LEVEL', 'DEBUG'))
-        json_logs = True if getenv('JSON_LOGS', '0') == '1' else False
+        log_level = logging.getLevelName(getenv('LOG_LEVEL', 'INFO'))
