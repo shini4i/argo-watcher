@@ -5,10 +5,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-### Fixed
-- Metrics endpoint returning 404
+### Added
 - Frontend: Split homepage into "Recent tasks" page and "History tasks" page
 - Frontend: Add routing to the application
+### Fixed
+- Metrics endpoint returning 404
 - Frontend: Refactor UI components to be more maintainable
 
 ## [0.0.2] - 2022-04-02
