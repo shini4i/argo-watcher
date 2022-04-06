@@ -1,6 +1,8 @@
 .idea
 .envrc
 .env
+.venv
+db/data
 static
 **/__pycache__
 db/schema.sql
