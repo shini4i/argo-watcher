@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Fixed
 - Metrics endpoint returning 404
-- Frontend: Split homepage into "Recent tasks" page and "History tasks page"
+- Frontend: Split homepage into "Recent tasks" page and "History tasks" page
 - Frontend: Add routing to the application
 - Frontend: Refactor UI components to be more maintainable
 
