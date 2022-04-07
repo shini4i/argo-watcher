@@ -23,7 +23,7 @@ class State(ABC):
     def update_task(self, task_id: str, status: str): ...
 
     @abstractmethod
-    def get_state(self, time_range_from: int, time_range_to: int, app_name: str): ...
+    def get_state(self, time_range_from: float, time_range_to: float, app_name: str): ...
 
     @abstractmethod
     def get_app_list(self) -> set: ...
@@ -51,9 +51,9 @@ class InMemoryState(State):
         self.tasks[task_id].status = status
         self.tasks[task_id].updated = time()
 
-    def get_state(self, time_range_from: int, time_range_to: int, app_name: str):
+    def get_state(self, time_range_from: float, time_range_to: float, app_name: str):
         result = [task for task in self.tasks.values() if
-                  time() - time_range_from * 60 <= task.created >= time() - time_range_to * 60]
+                  time() - time_range_from * 60 <= task.created <= time_range_to * 60]
         if app_name is not None:
             result = [task for task in result if task.app == app_name]
         return result
@@ -102,7 +102,7 @@ class DBState(State):
         cursor.execute(f"UPDATE public.tasks SET status='{status}',updated='{updated}' where id='{task_id}'")
         self.db.commit()
 
-    def get_state(self, time_range_from: int, time_range_to: int, app_name: str):
+    def get_state(self, time_range_from: float, time_range_to: float, app_name: str):
         query = "select id, extract(epoch from created) AS created, extract(epoch from updated) AS updated, " \
                 "images, status, app, author, project from public.tasks " \
                 f"where created >= \'{datetime.now(tz=timezone.utc) - timedelta(hours=0, minutes=time_range_from)}\' " \

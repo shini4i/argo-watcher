@@ -104,8 +104,8 @@ class Argo:
     def return_state(from_timestamp: float, to_timestamp: float, app_name: str):
         if to_timestamp is None:
             to_timestamp = time()
-        return state.get_state(time_range_from=int((time() - from_timestamp) / 60),
-                               time_range_to=int((time() - to_timestamp) / 60),
+        return state.get_state(time_range_from=(time() - from_timestamp) / 60,
+                               time_range_to=to_timestamp / 60,
                                app_name=app_name)
 
     @staticmethod

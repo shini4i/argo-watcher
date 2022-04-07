@@ -52,13 +52,13 @@ def test_task_filter():
         state.set_current_task(task=task, status=default_task_status)
 
     assert len(state.get_state(
-        time_range_from=int((time() - 60) / 60),
-        time_range_to=int(time() / 60),
+        time_range_from=(time() - 60) / 60,
+        time_range_to=time() / 60,
         app_name="example1")) == 1
 
     assert state.get_state(
-        time_range_from=int((time() - 60) / 60),
-        time_range_to=int(time() / 60),
+        time_range_from=(time() - 60) / 60,
+        time_range_to=time() / 60,
         app_name="example1"
     )[0].app == "example1"
 
