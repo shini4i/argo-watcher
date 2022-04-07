@@ -99,6 +99,7 @@ def test_get_state_with_filter():
 
     response = client.get(api_path, params={"timestamp": int(time() - 60), "app": "example"})
 
+    assert response.json() == 200
     assert response.status_code == 200
     assert len(response.json()) == 1
     assert response.json()[0]['app'] == "example"

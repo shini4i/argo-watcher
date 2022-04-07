@@ -101,8 +101,12 @@ class Argo:
         return state.get_task_status(task_id=task_id)
 
     @staticmethod
-    def return_state(from_timestamp: float, app_name: str):
-        return state.get_state(time_range=int((time() - from_timestamp) / 60), app_name=app_name)
+    def return_state(from_timestamp: float, to_timestamp: float, app_name: str):
+        if to_timestamp is None:
+            to_timestamp = time()
+        return state.get_state(time_range_from=int((time() - from_timestamp) / 60),
+                               time_range_to=int((time() - to_timestamp) / 60),
+                               app_name=app_name)
 
     @staticmethod
     def return_app_list():
