@@ -1,5 +1,5 @@
 export function fetchTasks(timestamp, application = null) {
-  let queryString = "?timestamp=" + timestamp;
+  let queryString = "?from_timestamp=" + timestamp;
   if (application !== null) {
     queryString += "&app=" + application;
   }

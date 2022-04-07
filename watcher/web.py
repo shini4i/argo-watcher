@@ -63,8 +63,8 @@ def get_task_details(task_id: str):
 
 
 @app.get("/api/v1/tasks", status_code=status.HTTP_200_OK, response_model=List[Task])
-def get_state(timestamp: float, timestamp_to: float | None = None, app: str | None = None):
-    return argo.return_state(from_timestamp=timestamp, to_timestamp=timestamp_to, app_name=app)
+def get_state(from_timestamp: float, to_timestamp: float | None = None, app: str | None = None):
+    return argo.return_state(from_timestamp=from_timestamp, to_timestamp=to_timestamp, app_name=app)
 
 
 @app.get("/api/v1/apps", status_code=status.HTTP_200_OK,
