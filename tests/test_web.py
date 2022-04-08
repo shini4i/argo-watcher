@@ -97,7 +97,7 @@ def test_get_state_with_filter():
     client.post(api_path, json=task_template)
     client.post(api_path, json=target_task)
 
-    response = client.get(api_path, params={"timestamp": int(time() - 60), "app": "example"})
+    response = client.get(api_path, params={"from_timestamp": time() - 60, "app": "example"})
 
     assert response.status_code == 200
     assert len(response.json()) == 1

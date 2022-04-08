@@ -51,8 +51,16 @@ def test_task_filter():
     for task in [generate_task(i) for i in range(2)]:
         state.set_current_task(task=task, status=default_task_status)
 
-    assert len(state.get_state(time_range=int(time() - 60), app_name="example1")) == 1
-    assert state.get_state(time_range=int(time() - 60), app_name="example1")[0].app == "example1"
+    assert len(state.get_state(
+        time_range_from=(time() - 60) / 60,
+        time_range_to=time() / 60,
+        app_name="example1")) == 1
+
+    assert state.get_state(
+        time_range_from=(time() - 60) / 60,
+        time_range_to=time() / 60,
+        app_name="example1"
+    )[0].app == "example1"
 
 
 def test_get_app_list():
