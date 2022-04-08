@@ -1,19 +1,20 @@
 #!/usr/bin/env python
 
 import logging
-
 from os import getenv
 from os.path import isdir
-
-from fastapi import FastAPI, BackgroundTasks, Response, status
-from fastapi.staticfiles import StaticFiles
-from starlette.responses import FileResponse
-from uvicorn import Config, Server
+from typing import List
 from uuid import uuid1
 
-from typing import List
-
+from fastapi import BackgroundTasks
+from fastapi import FastAPI
+from fastapi import Response
+from fastapi import status
+from fastapi.staticfiles import StaticFiles
 from prometheus_client import make_asgi_app
+from starlette.responses import FileResponse
+from uvicorn import Config
+from uvicorn import Server
 
 from watcher.argo import Argo
 from watcher.models import Task

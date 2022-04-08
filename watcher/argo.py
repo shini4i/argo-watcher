@@ -1,18 +1,22 @@
-import requests
-import logging
 import json
-
+import logging
 from time import time
-from tenacity import retry, stop_after_delay, retry_if_exception_type, wait_fixed, RetryError
 from typing import Optional
+
+import requests
+from prometheus_client import Gauge
 from requests.exceptions import RequestException
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
+from tenacity import RetryError
+from tenacity import retry
+from tenacity import retry_if_exception_type
+from tenacity import stop_after_delay
+from tenacity import wait_fixed
 
-from prometheus_client import Gauge
-
-from watcher.settings import Settings
 from watcher.models import Task
-from watcher.state import InMemoryState, DBState
+from watcher.settings import Settings
+from watcher.state import DBState
+from watcher.state import InMemoryState
 
 match Settings.Watcher.state_type:
     case "in-memory":

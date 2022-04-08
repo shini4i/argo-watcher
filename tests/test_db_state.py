@@ -1,9 +1,11 @@
 from uuid import uuid1
-from time import sleep, time
 
-from watcher.state import DBState
+from test_in_memory_state import default_task_status
+from test_in_memory_state import generate_task
+from test_in_memory_state import task_template
+
 from watcher.models import Task
-from test_in_memory_state import task_template, default_task_status, generate_task
+from watcher.state import DBState
 
 state = DBState()
 

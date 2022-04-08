@@ -1,10 +1,13 @@
+import json
+from abc import ABC
+from abc import abstractmethod
+from datetime import datetime
+from datetime import timedelta
+from datetime import timezone
+from time import time
+
 import psycopg2
 import psycopg2.extras
-import json
-
-from abc import ABC, abstractmethod
-from datetime import datetime, timedelta, timezone
-from time import time
 from expiringdict import ExpiringDict
 
 from watcher.models import Task

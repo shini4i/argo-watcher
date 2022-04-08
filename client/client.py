@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 
-import requests
-
-from time import sleep
 from os import environ
+from time import sleep
+
+import requests
 
 
 def generate_task() -> dict:
