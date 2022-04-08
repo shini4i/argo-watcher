@@ -4,6 +4,11 @@ repos:
     hooks:
       - id: black
         args: [--line-length=88, --safe]
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.1.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
   - repo: https://github.com/pycqa/isort
     rev: 5.10.1
     hooks:
