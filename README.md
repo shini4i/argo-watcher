@@ -14,6 +14,15 @@ The reason for its existence is to provide clear visibility in pipelines that th
 4) The pipeline starts to communicate with argo-watcher and waits for either "deployed" or "failed" status to be returned.
 5) It happens alongside with step 4. argocd-image-updater detects that the new image tag appeared in the registry and commits changes to the gitops repo.
 
+## Prerequisites
+This project depends on various git hooks. ([pre-commit](https://pre-commit.com))
+
+They can be installed by running:
+```bash
+pre-commit install
+pre-commit install-hooks
+```
+
 ## Examples
 ### Add a task
 Post request:
@@ -37,11 +46,11 @@ Example response:
 {"status":"in progress"}
 ```
 
-# Development 
+# Development
 
 There are 2 ways of how you can run argo-watcher locally
 1. with docker compose
-2. with locally installed python, poetry, nodejs, npm 
+2. with locally installed python, poetry, nodejs, npm
 
 ## Docker Compose development
 
