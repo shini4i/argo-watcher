@@ -1,10 +1,10 @@
-import responses
-
-from fastapi.testclient import TestClient
 from time import time
 
-from watcher.web import app
+import responses
+from fastapi.testclient import TestClient
 from test_in_memory_state import task_template
+
+from watcher.web import app
 
 client = TestClient(app)
 api_path = "/api/v1/tasks"

@@ -1,10 +1,13 @@
+import json
+from abc import ABC
+from abc import abstractmethod
+from datetime import datetime
+from datetime import timedelta
+from datetime import timezone
+from time import time
+
 import psycopg2
 import psycopg2.extras
-import json
-
-from abc import ABC, abstractmethod
-from datetime import datetime, timedelta, timezone
-from time import time
 from expiringdict import ExpiringDict
 
 from watcher.models import Task
@@ -12,29 +15,30 @@ from watcher.settings import Settings
 
 
 class State(ABC):
+    @abstractmethod
+    def set_current_task(self, task: Task, status: str):
+        ...
 
     @abstractmethod
-    def set_current_task(self, task: Task, status: str): ...
+    def get_task_status(self, task_id: str) -> str:
+        ...
 
     @abstractmethod
-    def get_task_status(self, task_id: str) -> str: ...
+    def update_task(self, task_id: str, status: str):
+        ...
 
     @abstractmethod
-    def update_task(self, task_id: str, status: str): ...
+    def get_state(self, time_range_from: float, time_range_to: float, app_name: str):
+        ...
 
     @abstractmethod
-    def get_state(self, time_range_from: float, time_range_to: float, app_name: str): ...
-
-    @abstractmethod
-    def get_app_list(self) -> set: ...
+    def get_app_list(self) -> set:
+        ...
 
 
 class InMemoryState(State):
     def __init__(self, history_ttl=Settings.Watcher.history_ttl):
-        self.tasks = ExpiringDict(
-            max_len=100,
-            max_age_seconds=history_ttl
-        )
+        self.tasks = ExpiringDict(max_len=100, max_age_seconds=history_ttl)
 
     def set_current_task(self, task: Task, status: str):
         task.status = status
@@ -52,8 +56,11 @@ class InMemoryState(State):
         self.tasks[task_id].updated = time()
 
     def get_state(self, time_range_from: float, time_range_to: float, app_name: str):
-        result = [task for task in self.tasks.values() if
-                  time() - time_range_from * 60 <= task.created <= time_range_to * 60]
+        result = [
+            task
+            for task in self.tasks.values()
+            if time() - time_range_from * 60 <= task.created <= time_range_to * 60
+        ]
         if app_name is not None:
             result = [task for task in result if task.app == app_name]
         return result
@@ -68,25 +75,36 @@ class DBState(State):
             host=Settings.DB.host,
             database=Settings.DB.db_name,
             user=Settings.DB.db_user,
-            password=Settings.DB.db_password
+            password=Settings.DB.db_password,
         )
 
     def set_current_task(self, task: Task, status: str):
         task = {
             "id": task.id,
-            "created": datetime.fromtimestamp(time(), tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S'),
-            "images": json.dumps(json.loads(task.json())['images']),
+            "created": datetime.fromtimestamp(time(), tz=timezone.utc).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            ),
+            "images": json.dumps(json.loads(task.json())["images"]),
             "status": status,
             "app": task.app,
             "author": task.author,
-            "project": task.project
+            "project": task.project,
         }
 
         cursor = self.db.cursor()
         cursor.execute(
             "INSERT INTO public.tasks(id, created, images, status, app, author, project) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s);",
-            (task['id'], task['created'], task['images'], task['status'], task['app'], task['author'], task['project']))
+            (
+                task["id"],
+                task["created"],
+                task["images"],
+                task["status"],
+                task["app"],
+                task["author"],
+                task["project"],
+            ),
+        )
         self.db.commit()
 
     def get_task_status(self, task_id: str) -> str:
@@ -94,21 +112,33 @@ class DBState(State):
         cursor = self.db.cursor(cursor_factory=psycopg2.extras.DictCursor)
         cursor.execute(query=query)
         task = cursor.fetchone()
-        return task['status']
+        return task["status"]
 
     def update_task(self, task_id: str, status: str):
-        updated = datetime.now(tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+        updated = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         cursor = self.db.cursor()
-        cursor.execute(f"UPDATE public.tasks SET status='{status}',updated='{updated}' where id='{task_id}'")
+        cursor.execute(
+            f"UPDATE public.tasks SET status='{status}',updated='{updated}' where id='{task_id}'"
+        )
         self.db.commit()
 
     def get_state(self, time_range_from: float, time_range_to: float, app_name: str):
-        query = "select id, extract(epoch from created) AS created, extract(epoch from updated) AS updated, " \
-                "images, status, app, author, project from public.tasks " \
-                f"where created >= \'{datetime.now(tz=timezone.utc) - timedelta(hours=0, minutes=time_range_from)}\' " \
-                f"AND created <= \'{datetime.now(tz=timezone.utc) - timedelta(hours=0, minutes=time_range_to)}\'"
+        time_range_from = datetime.now(tz=timezone.utc) - timedelta(
+            hours=0, minutes=time_range_from
+        )
+        time_range_to = datetime.now(tz=timezone.utc) - timedelta(
+            hours=0, minutes=time_range_to
+        )
+
+        query = (
+            "select id, extract(epoch from created) AS created, "
+            "extract(epoch from updated) AS updated, "
+            "images, status, app, author, project from public.tasks "
+            f"where created >= '{time_range_from}' AND created <= '{time_range_to}'"
+        )
+
         if app_name is not None:
-            query = f"{query} and app = \'{app_name}\'"
+            query = f"{query} and app = '{app_name}'"
 
         cursor = self.db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cursor.execute(query=query)
@@ -121,4 +151,4 @@ class DBState(State):
         cursor.execute(query=query)
         apps = cursor.fetchall()
 
-        return set([res['app'] for res in apps])
+        return set([res["app"] for res in apps])

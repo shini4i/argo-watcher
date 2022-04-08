@@ -1,8 +1,9 @@
+from time import sleep
+from time import time
 from uuid import uuid1
-from time import sleep, time
 
-from watcher.state import InMemoryState
 from watcher.models import Task
+from watcher.state import InMemoryState
 
 task_template = {
     "app": "test_app",

@@ -1,7 +1,7 @@
 import logging
-
-from os import getenv, environ
 from distutils.util import strtobool
+from os import environ
+from os import getenv
 
 
 class Settings:
