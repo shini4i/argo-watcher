@@ -12,4 +12,3 @@ CREATE TABLE tasks
 CREATE INDEX tasks_idx_created ON tasks (created);
 
 -- migrate:down
-
