@@ -46,8 +46,9 @@ class Argo:
         self.session.verify = Settings.Watcher.ssl_verify
         if not self.session.verify:
             requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
-        self.failed_deployment_gauge = Gauge('failed_deployment',
-                                             'Failed deployment', ['app_name'])
+        self.failed_deployment_gauge = Gauge(
+            "failed_deployment", "Failed deployment", ["app_name"]
+        )
         self.argo_url = Settings.Argo.url
         self.argo_user = Settings.Argo.user
         self.argo_password = Settings.Argo.password
@@ -55,49 +56,54 @@ class Argo:
 
     def auth(self) -> bool:
         try:
-            response = self.session.post(url=f"{self.argo_url}/api/v1/session",
-                                         json={
-                                             "username": self.argo_user,
-                                             "password": self.argo_password
-                                         })
+            response = self.session.post(
+                url=f"{self.argo_url}/api/v1/session",
+                json={"username": self.argo_user, "password": self.argo_password},
+            )
         except RequestException as exception:
             logging.error(exception)
             return False
 
         match response.status_code:
-            case 200:
-                return True
             case 401:
-                logging.error("Unauthorized, please check ArgoCD credentials!")
-                return False
+                logging.critical("Unauthorized, please check ArgoCD credentials!")
+                exit(1)
             case 403:
-                logging.error("Forbidden, please check the firewall!")
-                return False
+                logging.critical("Forbidden, please check the firewall!")
+                exit(1)
 
     def check_argo(self):
         try:
             response = self.session.get(url=f"{self.argo_url}/api/v1/session/userinfo")
-            if response.json()['loggedIn']:
+            if response.json()["loggedIn"]:
                 return "up"
         except KeyError:
             return "down"
 
     def start_task(self, task: Task):
-        logging.info(f"New task with id {task.id} was triggered. "
-                     f"Expecting tag {task.images[0].tag} in {task.app} app.")
+        logging.info(
+            f"New task with id {task.id} was triggered. "
+            f"Expecting tag {task.images[0].tag} in {task.app} app."
+        )
         try:
             state.set_current_task(task=task, status="in progress")
             self.wait_for_rollout(task=task)
             self.failed_deployment_gauge.labels(task.app).set(0)
             state.update_task(task_id=task.id, status="deployed")
-            logging.info(f"Task {task.id} has succeeded. App {task.app} is running on the expected version.")
+            logging.info(
+                f"Task {task.id} has succeeded. App {task.app} is running on the expected version."
+            )
         except RetryError:
-            logging.warning(f"Task {task.id} has failed. "
-                            f"App {task.app} did not become healthy within reasonable timeframe.")
+            logging.warning(
+                f"Task {task.id} has failed. "
+                f"App {task.app} did not become healthy within reasonable timeframe."
+            )
             state.update_task(task_id=task.id, status="failed")
             self.failed_deployment_gauge.labels(task.app).inc()
         except AppDoesNotExistException:
-            logging.warning(f"Task {task.id} has failed. App {task.app} does not exists.")
+            logging.warning(
+                f"Task {task.id} has failed. App {task.app} does not exists."
+            )
             state.update_task(task_id=task.id, status="app not found")
 
     @staticmethod
@@ -108,35 +114,41 @@ class Argo:
     def return_state(from_timestamp: float, to_timestamp: float, app_name: str):
         if to_timestamp is None:
             to_timestamp = time()
-        return state.get_state(time_range_from=(time() - from_timestamp) / 60,
-                               time_range_to=to_timestamp / 60,
-                               app_name=app_name)
+        return state.get_state(
+            time_range_from=(time() - from_timestamp) / 60,
+            time_range_to=to_timestamp / 60,
+            app_name=app_name,
+        )
 
     @staticmethod
     def return_app_list():
         return state.get_app_list()
 
     def refresh_app(self, app: str) -> int:
-        return self.session.get(url=f"{self.argo_url}/api/v1/applications/{app}?refresh=normal").status_code
+        return self.session.get(
+            url=f"{self.argo_url}/api/v1/applications/{app}?refresh=normal"
+        ).status_code
 
     def get_app_status(self, app: str) -> Optional[dict]:
         r = self.session.get(url=f"{self.argo_url}/api/v1/applications/{app}")
         if r.status_code != 200:
             return None
         else:
-            app = json.loads(r.content.decode('utf-8'))
+            app = json.loads(r.content.decode("utf-8"))
 
         status = {
-            "images": app['status']['summary']['images'],
-            'synced': app['status']['sync']['status'],
-            'healthy': app['status']['health']['status']
+            "images": app["status"]["summary"]["images"],
+            "synced": app["status"]["sync"]["status"],
+            "healthy": app["status"]["health"]["status"],
         }
 
         return status
 
-    @retry(stop=stop_after_delay(Settings.Argo.timeout),
-           retry=retry_if_exception_type((AppNotReadyException, InvalidImageException)),
-           wait=wait_fixed(5))
+    @retry(
+        stop=stop_after_delay(Settings.Argo.timeout),
+        retry=retry_if_exception_type((AppNotReadyException, InvalidImageException)),
+        wait=wait_fixed(5),
+    )
     def wait_for_rollout(self, task: Task):
 
         if self.refresh_app(app=task.app) == 404:
@@ -145,11 +157,11 @@ class Argo:
         app_status = self.get_app_status(task.app)
 
         for target in task.images:
-            if f"{target.image}:{target.tag}" not in app_status['images']:
+            if f"{target.image}:{target.tag}" not in app_status["images"]:
                 logging.debug(f"{target.image}:{target.tag} is not available yet...")
                 raise InvalidImageException
 
-        if app_status['synced'] == 'Synced' and app_status['healthy'] == "Healthy":
+        if app_status["synced"] == "Synced" and app_status["healthy"] == "Healthy":
             return
         else:
             raise AppNotReadyException

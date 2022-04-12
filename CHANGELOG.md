@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - Support for providing end timestamp to be able to configure more reasonable timeframe
+### Changed
+- Exit 1 if received 401 or 403 from ArgoCD
+
 ## [0.0.3] - 2022-04-06
 ### Added
 - Frontend: Split homepage into "Recent tasks" page and "History tasks" page
