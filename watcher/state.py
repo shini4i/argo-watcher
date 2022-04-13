@@ -121,7 +121,7 @@ class DBState(State):
         updated = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         cursor = self.db.cursor()
         query = (
-            f"UPDATE public.tasks "
+            "UPDATE public.tasks "
             f"SET status='{status}', updated='{updated}' "
             f"where id='{task_id}'"
         )

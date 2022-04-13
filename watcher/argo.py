@@ -24,19 +24,36 @@ match Settings.Watcher.state_type:
     case "postgres":
         state = DBState()
     case _:
-        logging.error("Invalid STATE_TYPE was provided")
-        exit(1)
+        logging.error(
+            "Invalid STATE_TYPE was provided. Falling back to an in-memory state."
+        )
+        state = InMemoryState()
 
 
 class InvalidImageException(Exception):
+    """
+    An exception that is thrown when ArgoCD returns a list of images with tags
+    that does not contain the expected version
+    """
+
     pass
 
 
 class AppNotReadyException(Exception):
+    """
+    An exception that is thrown when ArgoCD already returned the list of images with
+    required version, but app status is not yet synced and healthy
+    """
+
     pass
 
 
 class AppDoesNotExistException(Exception):
+    """
+    An exception that is thrown when payload contained app that does not
+    exist in ArgoCD
+    """
+
     pass
 
 
@@ -135,7 +152,7 @@ class Argo:
         return state.get_app_list()
 
     def refresh_app(self, app: str) -> int:
-        # Trigger app refresh to increase new version detection speed
+        # Trigger app refresh to increase git changes detection speed
         url = f"{self.argo_url}/api/v1/applications/{app}?refresh=normal"
         return self.session.get(url=url).status_code
 
