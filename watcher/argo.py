@@ -109,7 +109,7 @@ class Argo:
             self.failed_deployment_gauge.labels(task.app).inc()
         except AppDoesNotExistException:
             logging.warning(
-                f"Task {task.id} has failed. " f"App {task.app} does not exists."
+                f"Task {task.id} has failed. App {task.app} does not exists."
             )
             state.update_task(task_id=task.id, status="app not found")
 
