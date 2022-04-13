@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for providing end timestamp to be able to configure more reasonable timeframe
 ### Changed
 - Exit 1 if received 401 or 403 from ArgoCD
+- Falling back to in-memory state if invalid value was provided in STATE_TYPE
 
 ## [0.0.3] - 2022-04-06
 ### Added

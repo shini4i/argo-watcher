@@ -24,19 +24,36 @@ match Settings.Watcher.state_type:
     case "postgres":
         state = DBState()
     case _:
-        logging.error("Invalid STATE_TYPE was provided")
-        exit(1)
+        logging.error(
+            "Invalid STATE_TYPE was provided. Falling back to an in-memory state."
+        )
+        state = InMemoryState()
 
 
 class InvalidImageException(Exception):
+    """
+    An exception that is thrown when ArgoCD returns a list of images with tags
+    that does not contain the expected version
+    """
+
     pass
 
 
 class AppNotReadyException(Exception):
+    """
+    An exception that is thrown when ArgoCD already returned the list of images with
+    required version, but app status is not yet synced and healthy
+    """
+
     pass
 
 
 class AppDoesNotExistException(Exception):
+    """
+    An exception that is thrown when payload contained app that does not
+    exist in ArgoCD
+    """
+
     pass
 
 
@@ -45,21 +62,27 @@ class Argo:
         self.session = requests.Session()
         self.session.verify = Settings.Watcher.ssl_verify
         if not self.session.verify:
+            # Reducing noise in logs as we assume that the user knows
+            # the risk of disabling SSL verification
             requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+
+        # Exposes per-app Prometheus metric in the following way
+        # failed_deployment{app_name="test"} 0.0
         self.failed_deployment_gauge = Gauge(
             "failed_deployment", "Failed deployment", ["app_name"]
         )
+
         self.argo_url = Settings.Argo.url
         self.argo_user = Settings.Argo.user
         self.argo_password = Settings.Argo.password
         self.authorized = self.auth()
 
     def auth(self) -> bool:
+        url = f"{self.argo_url}/api/v1/session"
+        payload = {"username": self.argo_user, "password": self.argo_password}
+
         try:
-            response = self.session.post(
-                url=f"{self.argo_url}/api/v1/session",
-                json={"username": self.argo_user, "password": self.argo_password},
-            )
+            response = self.session.post(url=url, json=payload)
         except RequestException as exception:
             logging.error(exception)
             return False
@@ -91,7 +114,8 @@ class Argo:
             self.failed_deployment_gauge.labels(task.app).set(0)
             state.update_task(task_id=task.id, status="deployed")
             logging.info(
-                f"Task {task.id} has succeeded. App {task.app} is running on the expected version."
+                f"Task {task.id} has succeeded. "
+                f"App {task.app} is running on the expected version."
             )
         except RetryError:
             logging.warning(
@@ -112,8 +136,11 @@ class Argo:
 
     @staticmethod
     def return_state(from_timestamp: float, to_timestamp: float, app_name: str):
+        # Set "to_timestamp" to the current timestamp
+        # to return all tasks starting from "from_timestamp"
         if to_timestamp is None:
             to_timestamp = time()
+
         return state.get_state(
             time_range_from=(time() - from_timestamp) / 60,
             time_range_to=to_timestamp / 60,
@@ -125,9 +152,9 @@ class Argo:
         return state.get_app_list()
 
     def refresh_app(self, app: str) -> int:
-        return self.session.get(
-            url=f"{self.argo_url}/api/v1/applications/{app}?refresh=normal"
-        ).status_code
+        # Trigger app refresh to increase git changes detection speed
+        url = f"{self.argo_url}/api/v1/applications/{app}?refresh=normal"
+        return self.session.get(url=url).status_code
 
     def get_app_status(self, app: str) -> Optional[dict]:
         r = self.session.get(url=f"{self.argo_url}/api/v1/applications/{app}")
