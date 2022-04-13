@@ -61,8 +61,10 @@ class InMemoryState(State):
             for task in self.tasks.values()
             if time() - time_range_from * 60 <= task.created <= time_range_to * 60
         ]
+
         if app_name is not None:
             result = [task for task in result if task.app == app_name]
+
         return result
 
     def get_app_list(self) -> set:
@@ -112,20 +114,25 @@ class DBState(State):
         cursor = self.db.cursor(cursor_factory=psycopg2.extras.DictCursor)
         cursor.execute(query=query)
         task = cursor.fetchone()
+
         return task["status"]
 
     def update_task(self, task_id: str, status: str):
         updated = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         cursor = self.db.cursor()
-        cursor.execute(
-            f"UPDATE public.tasks SET status='{status}',updated='{updated}' where id='{task_id}'"
+        query = (
+            f"UPDATE public.tasks "
+            f"SET status='{status}', updated='{updated}' "
+            f"where id='{task_id}'"
         )
+        cursor.execute(query)
         self.db.commit()
 
     def get_state(self, time_range_from: float, time_range_to: float, app_name: str):
         time_range_from = datetime.now(tz=timezone.utc) - timedelta(
             hours=0, minutes=time_range_from
         )
+
         time_range_to = datetime.now(tz=timezone.utc) - timedelta(
             hours=0, minutes=time_range_to
         )
@@ -143,6 +150,7 @@ class DBState(State):
         cursor = self.db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cursor.execute(query=query)
         tasks = cursor.fetchall()
+
         return [Task(**task) for task in tasks]
 
     def get_app_list(self) -> set:
