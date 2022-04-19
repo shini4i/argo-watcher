@@ -23,7 +23,7 @@ const autoRefreshIntervals = {
 
 function RecentTasks() {
   const [loadingError, setLoadingError] = useState(null);
-  const {tasks, sortField, setSortField, refreshTasks} = useTasks({ setLoadingError });
+  const {tasks, sortField, setSortField, refreshTasksInTimeframe} = useTasks({ setLoadingError });
   const [currentAutoRefresh, setCurrentAutoRefresh] = useState(autoRefreshIntervals['30s']);
   const autoRefreshIntervalRef = useRef(null);
   const [currentApplication, setCurrentApplication] = useState(null);
@@ -31,7 +31,7 @@ function RecentTasks() {
 
   // initial load
   useEffect(() => {
-    refreshTasks(currentTimeframe, currentApplication);
+    refreshTasksInTimeframe(currentTimeframe, currentApplication);
   }, []);
 
   // we reset interval on any state change (because we use the state variables for data retrieval)
@@ -45,7 +45,7 @@ function RecentTasks() {
     }
     // set interval
     autoRefreshIntervalRef.current = setInterval(() => {
-      refreshTasks(currentTimeframe, currentApplication);
+      refreshTasksInTimeframe(currentTimeframe, currentApplication);
     }, currentAutoRefresh * 1000);
 
     // clear interval on exit
@@ -71,7 +71,7 @@ function RecentTasks() {
             value={currentApplication}
             onChange={(value) => {
               setCurrentApplication(value);
-              refreshTasks(currentTimeframe, value);
+              refreshTasksInTimeframe(currentTimeframe, value);
             }}
             setLoadingError={setLoadingError}
           />
@@ -92,7 +92,7 @@ function RecentTasks() {
           </FormControl>
         </Box>
         <IconButton edge="start" color={"primary"} title={"force table load"} onClick={() => {
-          refreshTasks(currentTimeframe, currentApplication);
+          refreshTasksInTimeframe(currentTimeframe, currentApplication);
         }}>
           <RefreshIcon/>
         </IconButton>

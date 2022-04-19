@@ -27,3 +27,7 @@ export const relativeTime = (oldTimestamp) => {
     }
     return output;
 }
+
+export const relativeTimestamp = (timeframe) => {
+    return Math.floor(Date.now() / 1000) - timeframe;
+};

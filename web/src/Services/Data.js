@@ -1,9 +1,15 @@
-export function fetchTasks(timestamp, application = null) {
-  let queryString = "?from_timestamp=" + timestamp;
-  if (application !== null) {
-    queryString += "&app=" + application;
+export function fetchTasks(fromTimestamp, toTimestamp, application = null) {
+  let searchParams = {};
+  if (fromTimestamp) {
+    searchParams.from_timestamp = fromTimestamp;
   }
-  return fetch(`/api/v1/tasks${queryString}`)
+  if (toTimestamp) {
+    searchParams.to_timestamp = toTimestamp;
+  }
+  if (application) {
+    searchParams.app = application;
+  }
+  return fetch(`/api/v1/tasks?${new URLSearchParams(searchParams)}`)
       .then(res => {
         if (res.status !== 200) {
           throw new Error(res.statusText);

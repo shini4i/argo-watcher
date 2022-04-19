@@ -29,29 +29,43 @@ const timeframes = {
 
 function HistoryTasks() {
   const [loadingError, setLoadingError] = useState(null);
-  const {tasks, sortField, setSortField, refreshTasks} = useTasks({ setLoadingError });
+  const {
+      tasks,
+      sortField,
+      setSortField,
+      refreshTasksInTimeframe,
+      refreshTasksInRange,
+      clearTasks
+    } = useTasks({ setLoadingError });
   const [currentApplication, setCurrentApplication] = useState(null);
   const [currentTimeframe, setCurrentTimeframe] = useState(timeframes['1 hour']);
   const [currentCustomTimestamp, setCurrentCustomTimestamp] = useState(null);
 
-  const calculateCurrentTimeframe = () => {
-    if (currentTimeframe !== timeframes["Custom"]) {
-      return currentTimeframe;
-    } else if (currentCustomTimestamp !== null) {
-      return Math.floor((Date.now() - currentCustomTimestamp.getTime()) / 1000);
+  const refreshWithFilters = (timeframe, customTimestamp, application) => {
+    if (timeframe !== timeframes["Custom"]) {
+      // use relative time
+      refreshTasksInTimeframe(timeframe, application);
+    } else if (customTimestamp !== null) {
+      let startDate = new Date(customTimestamp);
+      startDate.setUTCHours(0,0,0,0);
+      let endDate = new Date(customTimestamp);
+      endDate.setUTCHours(23, 59, 59, 999);
+      // use absolute time
+      refreshTasksInRange(
+          Math.floor(startDate.getTime() / 1000),
+          Math.floor(endDate.getTime() / 1000),
+          application
+      );
     } else {
-      return 0;
+      // reset list of tasks
+      clearTasks();
     }
-  }
+  };
 
   const handleTimeframeChange = (event) => {
     let newTimeframe = event.target.value;
     setCurrentTimeframe(newTimeframe);
-    if (newTimeframe !== timeframes["Custom"]) {
-      refreshTasks(newTimeframe, currentApplication);
-    } else if (currentCustomTimestamp !== null) {
-      refreshTasks(Math.floor((Date.now() - currentCustomTimestamp.getTime()) / 1000), currentApplication);
-    }
+    refreshWithFilters(newTimeframe, currentCustomTimestamp, currentApplication);
   };
 
   const handleCustomTimestampChange = (newValue) => {
@@ -63,12 +77,12 @@ function HistoryTasks() {
     setCurrentCustomTimestamp(newCustomTimestamp);
 
     if (currentTimeframe === timeframes["Custom"]) {
-      refreshTasks(Math.floor((Date.now() - newCustomTimestamp.getTime()) / 1000), currentApplication);
+      refreshWithFilters(currentTimeframe, newCustomTimestamp, currentApplication);
     }
   };
 
   useEffect(() => {
-    refreshTasks(currentTimeframe, currentApplication);
+    refreshWithFilters(currentTimeframe, currentCustomTimestamp, currentApplication);
   }, []);
 
   return (
@@ -82,7 +96,7 @@ function HistoryTasks() {
               value={currentApplication}
               onChange={(value) => {
                 setCurrentApplication(value);
-                refreshTasks(calculateCurrentTimeframe(), value);
+                refreshWithFilters(currentTimeframe, currentCustomTimestamp, value);
               }}
               setLoadingError={setLoadingError}
           />
@@ -91,7 +105,7 @@ function HistoryTasks() {
           <LocalizationProvider dateAdapter={AdapterDateFns}>
             <DatePicker
                 renderInput={(props) => <TextField {...props} size="small" />}
-                label="Period Start Date"
+                label="Search Date"
                 value={currentCustomTimestamp}
                 maxDate={new Date()}
                 onChange={handleCustomTimestampChange}
@@ -114,7 +128,7 @@ function HistoryTasks() {
           </FormControl>
         </Box>
         <IconButton edge="start" color={"primary"} title={"reload table"} onClick={() => {
-          refreshTasks(calculateCurrentTimeframe(), currentApplication);
+          refreshWithFilters(currentTimeframe, currentCustomTimestamp, currentApplication);
         }}>
           <RefreshIcon/>
         </IconButton>
