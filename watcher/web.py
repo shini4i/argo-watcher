@@ -18,10 +18,10 @@ from uvicorn import Server
 
 from watcher.argo import Argo
 from watcher.models import Task
-from watcher.settings import Settings
+from watcher.config import Config
 
 logging.basicConfig(
-    level=Settings.Logs.log_level,
+    level=Config.Logs.log_level,
     format="%(asctime)s %(levelname)s %(message)s",
 )
 

@@ -14,11 +14,11 @@ from tenacity import stop_after_delay
 from tenacity import wait_fixed
 
 from watcher.models import Task
-from watcher.settings import Settings
+from watcher.config import Config
 from watcher.state import DBState
 from watcher.state import InMemoryState
 
-match Settings.Watcher.state_type:
+match Config.Watcher.state_type:
     case "in-memory":
         state = InMemoryState()
     case "postgres":
@@ -60,7 +60,7 @@ class AppDoesNotExistException(Exception):
 class Argo:
     def __init__(self):
         self.session = requests.Session()
-        self.session.verify = Settings.Watcher.ssl_verify
+        self.session.verify = Config.Watcher.ssl_verify
         if not self.session.verify:
             # Reducing noise in logs as we assume that the user knows
             # the risk of disabling SSL verification
@@ -72,9 +72,9 @@ class Argo:
             "failed_deployment", "Failed deployment", ["app_name"]
         )
 
-        self.argo_url = Settings.Argo.url
-        self.argo_user = Settings.Argo.user
-        self.argo_password = Settings.Argo.password
+        self.argo_url = Config.Argo.url
+        self.argo_user = Config.Argo.user
+        self.argo_password = Config.Argo.password
         self.authorized = self.auth()
 
     def auth(self) -> bool:
@@ -167,7 +167,7 @@ class Argo:
         return status
 
     @retry(
-        stop=stop_after_delay(Settings.Argo.timeout),
+        stop=stop_after_delay(Config.Argo.timeout),
         retry=retry_if_exception_type((AppNotReadyException, InvalidImageException)),
         wait=wait_fixed(5),
     )

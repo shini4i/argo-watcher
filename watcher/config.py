@@ -1,23 +1,23 @@
 import logging
-from distutils.util import strtobool
 from os import environ
 from os import getenv
 
 
-class Settings:
+class Config:
     class Argo:
         url = environ['ARGO_URL']
         user = environ['ARGO_USER']
         password = environ['ARGO_PASSWORD']
-        timeout = getenv('ARGO_TIMEOUT', 300)
-        if not isinstance(timeout, int):
-            timeout = int(timeout)
+        timeout = int(getenv('ARGO_TIMEOUT', 300))
 
     class Watcher:
         state_type = getenv("STATE_TYPE", "in-memory")
-        ssl_verify = getenv("SSL_VERIFY", True)
-        if not isinstance(ssl_verify, bool):
-            ssl_verify = bool(strtobool(ssl_verify))
+        ssl_verify = getenv("SSL_VERIFY", "True")
+        if ssl_verify.upper() == "FALSE":
+            ssl_verify = False
+        else:
+            ssl_verify = True
+
         history_ttl = getenv('HISTORY_TTL', 3600)
         if not isinstance(history_ttl, int):
             history_ttl = int(history_ttl)
