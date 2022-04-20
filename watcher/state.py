@@ -1,8 +1,8 @@
 import json
+import logging
 from abc import ABC
 from abc import abstractmethod
 from datetime import datetime
-from datetime import timedelta
 from datetime import timezone
 from time import time
 
@@ -11,7 +11,7 @@ import psycopg2.extras
 from expiringdict import ExpiringDict
 
 from watcher.models import Task
-from watcher.settings import Settings
+from watcher.config import Config
 
 
 class State(ABC):
@@ -37,7 +37,7 @@ class State(ABC):
 
 
 class InMemoryState(State):
-    def __init__(self, history_ttl=Settings.Watcher.history_ttl):
+    def __init__(self, history_ttl=Config.Watcher.history_ttl):
         self.tasks = ExpiringDict(max_len=100, max_age_seconds=history_ttl)
 
     def set_current_task(self, task: Task, status: str):
@@ -56,11 +56,10 @@ class InMemoryState(State):
         self.tasks[task_id].updated = time()
 
     def get_state(self, time_range_from: float, time_range_to: float, app_name: str):
-        result = [
-            task
-            for task in self.tasks.values()
-            if time() - time_range_from * 60 <= task.created <= time_range_to * 60
-        ]
+        result = [task for task in self.tasks.values() if time_range_from <= task.created]
+
+        if time_range_to is not None:
+            result = [task for task in result if task.created <= time_range_to * 60]
 
         if app_name is not None:
             result = [task for task in result if task.app == app_name]
@@ -74,10 +73,10 @@ class InMemoryState(State):
 class DBState(State):
     def __init__(self):
         self.db = psycopg2.connect(
-            host=Settings.DB.host,
-            database=Settings.DB.db_name,
-            user=Settings.DB.db_user,
-            password=Settings.DB.db_password,
+            host=Config.DB.host,
+            database=Config.DB.db_name,
+            user=Config.DB.db_user,
+            password=Config.DB.db_password,
         )
 
     def set_current_task(self, task: Task, status: str):
@@ -129,20 +128,17 @@ class DBState(State):
         self.db.commit()
 
     def get_state(self, time_range_from: float, time_range_to: float, app_name: str):
-        time_range_from = datetime.now(tz=timezone.utc) - timedelta(
-            hours=0, minutes=time_range_from
-        )
-
-        time_range_to = datetime.now(tz=timezone.utc) - timedelta(
-            hours=0, minutes=time_range_to
-        )
+        logging.info(datetime.fromtimestamp(time_range_from))
 
         query = (
             "select id, extract(epoch from created) AS created, "
             "extract(epoch from updated) AS updated, "
             "images, status, app, author, project from public.tasks "
-            f"where created >= '{time_range_from}' AND created <= '{time_range_to}'"
+            f"where created >= '{datetime.fromtimestamp(time_range_from, tz=timezone.utc)}'"
         )
+
+        if time_range_to is not None:
+            query = f"{query} AND created <= '{datetime.fromtimestamp(time_range_to, tz=timezone.utc)}'"
 
         if app_name is not None:
             query = f"{query} and app = '{app_name}'"
