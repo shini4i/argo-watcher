@@ -56,11 +56,10 @@ class InMemoryState(State):
         self.tasks[task_id].updated = time()
 
     def get_state(self, time_range_from: float, time_range_to: float, app_name: str):
-        result = [
-            task
-            for task in self.tasks.values()
-            if time() - time_range_from * 60 <= task.created <= time_range_to * 60
-        ]
+        result = [task for task in self.tasks.values() if time_range_from <= task.created]
+
+        if time_range_to is not None:
+            result = [task for task in result if task.created <= time_range_to * 60]
 
         if app_name is not None:
             result = [task for task in result if task.app == app_name]
