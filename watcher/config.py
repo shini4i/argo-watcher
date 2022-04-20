@@ -1,4 +1,5 @@
 import logging
+from os import getenv
 
 from environs import Env
 from marshmallow.validate import OneOf
@@ -24,13 +25,11 @@ class Config:
         ssl_verify = env.bool("SSL_VERIFY", True)
         history_ttl = env.int("HISTORY_TTL", 3600)
 
-    if Watcher.state_type == "postgres":
-
-        class DB:
-            host = env.str("DB_HOST")
-            db_name = env.str("DB_NAME")
-            db_user = env.str("DB_USER")
-            db_password = env.str("DB_PASSWORD")
+    class DB:
+        host = getenv("DB_HOST")
+        db_name = getenv("DB_NAME")
+        db_user = getenv("DB_USER")
+        db_password = getenv("DB_PASSWORD")
 
     class Logs:
         log_level = env.log_level("LOG_LEVEL", logging.INFO)
