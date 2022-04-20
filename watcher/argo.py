@@ -1,6 +1,5 @@
 import json
 import logging
-from time import time
 from typing import Optional
 
 import requests
@@ -13,8 +12,8 @@ from tenacity import retry_if_exception_type
 from tenacity import stop_after_delay
 from tenacity import wait_fixed
 
-from watcher.models import Task
 from watcher.config import Config
+from watcher.models import Task
 from watcher.state import DBState
 from watcher.state import InMemoryState
 
@@ -23,11 +22,6 @@ match Config.Watcher.state_type:
         state = InMemoryState()
     case "postgres":
         state = DBState()
-    case _:
-        logging.error(
-            "Invalid STATE_TYPE was provided. Falling back to an in-memory state."
-        )
-        state = InMemoryState()
 
 
 class InvalidImageException(Exception):
