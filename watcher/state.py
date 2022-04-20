@@ -1,5 +1,4 @@
 import json
-import logging
 from abc import ABC
 from abc import abstractmethod
 from datetime import datetime
@@ -10,8 +9,8 @@ import psycopg2
 import psycopg2.extras
 from expiringdict import ExpiringDict
 
-from watcher.models import Task
 from watcher.config import Config
+from watcher.models import Task
 
 
 class State(ABC):
@@ -56,7 +55,9 @@ class InMemoryState(State):
         self.tasks[task_id].updated = time()
 
     def get_state(self, time_range_from: float, time_range_to: float, app_name: str):
-        result = [task for task in self.tasks.values() if time_range_from <= task.created]
+        result = [
+            task for task in self.tasks.values() if time_range_from <= task.created
+        ]
 
         if time_range_to is not None:
             result = [task for task in result if task.created <= time_range_to * 60]
@@ -128,7 +129,6 @@ class DBState(State):
         self.db.commit()
 
     def get_state(self, time_range_from: float, time_range_to: float, app_name: str):
-        logging.info(datetime.fromtimestamp(time_range_from))
 
         query = (
             "select id, extract(epoch from created) AS created, "
@@ -138,7 +138,10 @@ class DBState(State):
         )
 
         if time_range_to is not None:
-            query = f"{query} AND created <= '{datetime.fromtimestamp(time_range_to, tz=timezone.utc)}'"
+            query = (
+                f"{query} AND created "
+                f"<= '{datetime.fromtimestamp(time_range_to, tz=timezone.utc)}'"
+            )
 
         if app_name is not None:
             query = f"{query} and app = '{app_name}'"
