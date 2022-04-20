@@ -138,7 +138,7 @@ class DBState(State):
         )
 
         if time_range_to is not None:
-            query = f"{query} AND created <= '{datetime.fromtimestamp(time_range_to, tz=timezone.utc)};"
+            query = f"{query} AND created <= '{datetime.fromtimestamp(time_range_to, tz=timezone.utc)}'"
 
         if app_name is not None:
             query = f"{query} and app = '{app_name}'"
