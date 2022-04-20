@@ -1,4 +1,5 @@
 import json
+import logging
 from abc import ABC
 from abc import abstractmethod
 from datetime import datetime
@@ -128,15 +129,17 @@ class DBState(State):
         self.db.commit()
 
     def get_state(self, time_range_from: float, time_range_to: float, app_name: str):
+        logging.info(datetime.fromtimestamp(time_range_from))
+
         query = (
             "select id, extract(epoch from created) AS created, "
             "extract(epoch from updated) AS updated, "
             "images, status, app, author, project from public.tasks "
-            f"where created >= '{datetime.fromtimestamp(time_range_from)}'"
+            f"where created >= '{datetime.fromtimestamp(time_range_from, tz=timezone.utc)}'"
         )
 
         if time_range_to is not None:
-            query = f"{query} AND created <= '{datetime.fromtimestamp(time_range_to)};"
+            query = f"{query} AND created <= '{datetime.fromtimestamp(time_range_to, tz=timezone.utc)};"
 
         if app_name is not None:
             query = f"{query} and app = '{app_name}'"
