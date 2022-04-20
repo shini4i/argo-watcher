@@ -2,7 +2,6 @@ import json
 from abc import ABC
 from abc import abstractmethod
 from datetime import datetime
-from datetime import timedelta
 from datetime import timezone
 from time import time
 
@@ -129,20 +128,15 @@ class DBState(State):
         self.db.commit()
 
     def get_state(self, time_range_from: float, time_range_to: float, app_name: str):
-        time_range_from = datetime.now(tz=timezone.utc) - timedelta(
-            hours=0, minutes=time_range_from
-        )
-
-        time_range_to = datetime.now(tz=timezone.utc) - timedelta(
-            hours=0, minutes=time_range_to
-        )
-
         query = (
             "select id, extract(epoch from created) AS created, "
             "extract(epoch from updated) AS updated, "
             "images, status, app, author, project from public.tasks "
-            f"where created >= '{time_range_from}' AND created <= '{time_range_to}'"
+            f"where created >= '{datetime.fromtimestamp(time_range_from)}'"
         )
+
+        if time_range_to is not None:
+            query = f"{query} AND created <= '{datetime.fromtimestamp(time_range_to)};"
 
         if app_name is not None:
             query = f"{query} and app = '{app_name}'"

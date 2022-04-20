@@ -136,14 +136,9 @@ class Argo:
 
     @staticmethod
     def return_state(from_timestamp: float, to_timestamp: float, app_name: str):
-        # Set "to_timestamp" to the current timestamp
-        # to return all tasks starting from "from_timestamp"
-        if to_timestamp is None:
-            to_timestamp = time()
-
         return state.get_state(
-            time_range_from=(time() - from_timestamp) / 60,
-            time_range_to=to_timestamp / 60,
+            time_range_from=from_timestamp,
+            time_range_to=to_timestamp,
             app_name=app_name,
         )
 
