@@ -9,7 +9,7 @@ import psycopg2
 import psycopg2.extras
 from expiringdict import ExpiringDict
 
-from watcher.config import Config
+from watcher.config import config
 from watcher.models import Task
 
 
@@ -36,7 +36,7 @@ class State(ABC):
 
 
 class InMemoryState(State):
-    def __init__(self, history_ttl=Config.Watcher.history_ttl):
+    def __init__(self, history_ttl=config.get_watcher_history_ttl()):
         self.tasks = ExpiringDict(max_len=100, max_age_seconds=history_ttl)
 
     def set_current_task(self, task: Task, status: str):
@@ -72,12 +72,12 @@ class InMemoryState(State):
 
 
 class DBState(State):
-    def __init__(self):
+    def __init__(self, db_host, db_name, db_user, db_password):
         self.db = psycopg2.connect(
-            host=Config.DB.host,
-            database=Config.DB.db_name,
-            user=Config.DB.db_user,
-            password=Config.DB.db_password,
+            host=db_host,
+            database=db_name,
+            user=db_user,
+            password=db_password,
         )
 
     def set_current_task(self, task: Task, status: str):

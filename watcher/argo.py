@@ -3,6 +3,7 @@ import logging
 from typing import Optional
 
 import requests
+from environs import Env
 from prometheus_client import Gauge
 from requests.exceptions import RequestException
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
@@ -12,16 +13,22 @@ from tenacity import retry_if_exception_type
 from tenacity import stop_after_delay
 from tenacity import wait_fixed
 
-from watcher.config import Config
+from watcher.config import config
 from watcher.models import Task
 from watcher.state import DBState
 from watcher.state import InMemoryState
 
-match Config.Watcher.state_type:
+match config.get_watcher_state_type():
     case "in-memory":
         state = InMemoryState()
     case "postgres":
-        state = DBState()
+        env = Env()
+        state = DBState(
+            db_host=env.str("DB_HOST"),
+            db_name=env.str("DB_NAME"),
+            db_user=env.str("DB_USER"),
+            db_password=env.str("DB_PASSWORD"),
+        )
 
 
 class InvalidImageException(Exception):
@@ -54,7 +61,7 @@ class AppDoesNotExistException(Exception):
 class Argo:
     def __init__(self):
         self.session = requests.Session()
-        self.session.verify = Config.Watcher.ssl_verify
+        self.session.verify = config.get_watcher_ssl_verify()
         if not self.session.verify:
             # Reducing noise in logs as we assume that the user knows
             # the risk of disabling SSL verification
@@ -66,9 +73,9 @@ class Argo:
             "failed_deployment", "Failed deployment", ["app_name"]
         )
 
-        self.argo_url = Config.Argo.url
-        self.argo_user = Config.Argo.user
-        self.argo_password = Config.Argo.password
+        self.argo_url = config.get_argo_url()
+        self.argo_user = config.get_argo_user()
+        self.argo_password = config.get_argo_password()
         self.authorized = self.auth()
 
     def auth(self) -> bool:
@@ -161,7 +168,7 @@ class Argo:
         return status
 
     @retry(
-        stop=stop_after_delay(Config.Argo.timeout),
+        stop=stop_after_delay(config.get_argo_timeout()),
         retry=retry_if_exception_type((AppNotReadyException, InvalidImageException)),
         wait=wait_fixed(5),
     )
