@@ -101,11 +101,6 @@ app.mount("/metrics", make_asgi_app())
 app.mount("/", StaticFiles(directory="static", html=True))
 
 
-@app.get("/")
-async def index():
-    return FileResponse("static/index.html", media_type="text/html")
-
-
 def main():
     server = Server(
         Config(
