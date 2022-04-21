@@ -1,35 +1,42 @@
 import logging
-from os import getenv
 
 from environs import Env
 from marshmallow.validate import OneOf
 
-env = Env()
-
 
 class Config:
-    class Argo:
-        url = env.str("ARGO_URL")
-        user = env.str("ARGO_USER")
-        password = env.str("ARGO_PASSWORD")
-        timeout = env.int("ARGO_TIMEOUT", 300)
+    def __init__(self):
+        self.env = Env()
 
-    class Watcher:
-        state_type = env.str(
+    def get_argo_url(self):
+        return self.env.str("ARGO_URL")
+
+    def get_argo_user(self):
+        return self.env.str("ARGO_USER")
+
+    def get_argo_password(self):
+        return self.env.str("ARGO_PASSWORD")
+
+    def get_argo_timeout(self):
+        return self.env.int("ARGO_TIMEOUT", 300)
+
+    def get_watcher_state_type(self):
+        return self.env.str(
             "STATE_TYPE",
             "in-memory",
             validate=OneOf(
                 ["in-memory", "postgres"], error="STATE_TYPE must be one of {choices}"
             ),
         )
-        ssl_verify = env.bool("SSL_VERIFY", True)
-        history_ttl = env.int("HISTORY_TTL", 3600)
 
-    class DB:
-        host = getenv("DB_HOST")
-        db_name = getenv("DB_NAME")
-        db_user = getenv("DB_USER")
-        db_password = getenv("DB_PASSWORD")
+    def get_watcher_ssl_verify(self):
+        return self.env.bool("SSL_VERIFY", True)
 
-    class Logs:
-        log_level = env.log_level("LOG_LEVEL", logging.INFO)
+    def get_watcher_history_ttl(self):
+        return self.env.int("HISTORY_TTL", 3600)
+
+    def get_log_level(self):
+        return self.env.log_level("LOG_LEVEL", logging.INFO)
+
+
+config = Config()
