@@ -2,7 +2,6 @@
 
 import logging
 from os import getenv
-from os.path import isdir
 from typing import List
 from uuid import uuid1
 
@@ -93,15 +92,13 @@ def healthz(response: Response):
     return {"status": health}
 
 
-app.mount("/metrics", make_asgi_app())
-
-if isdir("static"):
-    app.mount("/", StaticFiles(directory="static", html=True))
-
-
-@app.get("/")
-async def index():
+@app.get("/history")
+async def history():
     return FileResponse("static/index.html", media_type="text/html")
+
+
+app.mount("/metrics", make_asgi_app())
+app.mount("/", StaticFiles(directory="static", html=True))
 
 
 def main():
