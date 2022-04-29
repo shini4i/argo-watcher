@@ -92,8 +92,8 @@ def healthz(response: Response):
     return {"status": health}
 
 
-@app.get("/history")
-async def history():
+@app.exception_handler(404)
+def catch_all_path(_, __):
     return FileResponse("static/index.html", media_type="text/html")
 
 
