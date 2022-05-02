@@ -1,2 +1,5 @@
 /** Global CSS goes here */
 /** .... */
+html, body {
+    height: 100%
+}

@@ -2,20 +2,19 @@ import React from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import RecentTasks from "./Components/RecentTasks";
 import HistoryTasks from "./Components/HistoryTasks";
-import Navbar from "./Components/Navbar";
-import Box from "@mui/material/Box";
+import Layout from "./Layout";
+import Page404 from "./Page404";
 
 function App() {
   return (
       <BrowserRouter>
-        <Box>
-          <Navbar/>
-          <Routes>
-            <Route path="/" element={<RecentTasks />} />
+        <Routes>
+          <Route path="/" element={<Layout />}>
+            <Route index element={<RecentTasks />} />
             <Route path="/history" element={<HistoryTasks />} />
-            <Route path="*" element={<Box sx={{textAlign: 'center'}}>Page not found 404</Box>} />
-          </Routes>
-        </Box>
+          </Route>
+          <Route path="*" element={<Page404 />} />
+        </Routes>
       </BrowserRouter>
   );
 }

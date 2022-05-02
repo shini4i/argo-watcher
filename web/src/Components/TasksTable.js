@@ -5,7 +5,7 @@ import TableRow from "@mui/material/TableRow";
 import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
 import Tooltip from "@mui/material/Tooltip";
-import {relativeTime} from "../Utils";
+import {relativeTime, relativeTimestamp} from "../Utils";
 import TableContainer from "@mui/material/TableContainer";
 import React, {useEffect, useState} from "react";
 import {fetchTasks} from "../Services/Data";
@@ -17,12 +17,22 @@ export function useTasks({ setLoadingError }) {
   const [tasks, setTasks] = useState([]);
   const [sortField, setSortField] = useState({field: "created", direction: "ASC"});
 
-  const refreshTasks = (timeframe, application) => {
-    let timestamp = Math.floor(Date.now() / 1000) - timeframe;
+  const refreshTasksInTimeframe = (timeframe, application) => {
     // get tasks by timestamp
-    fetchTasks(timestamp, application)
+    fetchTasks(relativeTimestamp(timeframe), null, application)
         .then(items => { setTasksSorted(items, sortField); })
         .catch(error => { setLoadingError(error.message); });
+  };
+
+  const refreshTasksInRange = (fromTimestamp, toTimestamp, application) => {
+    // get tasks by timestamp
+    fetchTasks(fromTimestamp, toTimestamp, application)
+        .then(items => { setTasksSorted(items, sortField); })
+        .catch(error => { setLoadingError(error.message); });
+  };
+
+  const clearTasks = () => {
+    setTasks([]);
   };
 
   const setTasksSorted = (unsortedTasks, sort) => {
@@ -50,7 +60,9 @@ export function useTasks({ setLoadingError }) {
   }, [sortField]);
 
   return {
-    tasks, sortField, setSortField, refreshTasks
+    tasks, sortField, setSortField,
+    refreshTasksInTimeframe, refreshTasksInRange,
+    clearTasks,
   }
 }
 
