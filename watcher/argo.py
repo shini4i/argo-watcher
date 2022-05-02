@@ -1,9 +1,9 @@
 import json
 import logging
-from time import time
 from typing import Optional
 
 import requests
+from environs import Env
 from prometheus_client import Gauge
 from requests.exceptions import RequestException
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
@@ -13,21 +13,22 @@ from tenacity import retry_if_exception_type
 from tenacity import stop_after_delay
 from tenacity import wait_fixed
 
+from watcher.config import config
 from watcher.models import Task
-from watcher.settings import Settings
 from watcher.state import DBState
 from watcher.state import InMemoryState
 
-match Settings.Watcher.state_type:
+match config.get_watcher_state_type():
     case "in-memory":
         state = InMemoryState()
     case "postgres":
-        state = DBState()
-    case _:
-        logging.error(
-            "Invalid STATE_TYPE was provided. Falling back to an in-memory state."
+        env = Env()
+        state = DBState(
+            db_host=env.str("DB_HOST"),
+            db_name=env.str("DB_NAME"),
+            db_user=env.str("DB_USER"),
+            db_password=env.str("DB_PASSWORD"),
         )
-        state = InMemoryState()
 
 
 class InvalidImageException(Exception):
@@ -60,7 +61,7 @@ class AppDoesNotExistException(Exception):
 class Argo:
     def __init__(self):
         self.session = requests.Session()
-        self.session.verify = Settings.Watcher.ssl_verify
+        self.session.verify = config.get_watcher_ssl_verify()
         if not self.session.verify:
             # Reducing noise in logs as we assume that the user knows
             # the risk of disabling SSL verification
@@ -72,9 +73,9 @@ class Argo:
             "failed_deployment", "Failed deployment", ["app_name"]
         )
 
-        self.argo_url = Settings.Argo.url
-        self.argo_user = Settings.Argo.user
-        self.argo_password = Settings.Argo.password
+        self.argo_url = config.get_argo_url()
+        self.argo_user = config.get_argo_user()
+        self.argo_password = config.get_argo_password()
         self.authorized = self.auth()
 
     def auth(self) -> bool:
@@ -136,14 +137,9 @@ class Argo:
 
     @staticmethod
     def return_state(from_timestamp: float, to_timestamp: float, app_name: str):
-        # Set "to_timestamp" to the current timestamp
-        # to return all tasks starting from "from_timestamp"
-        if to_timestamp is None:
-            to_timestamp = time()
-
         return state.get_state(
-            time_range_from=(time() - from_timestamp) / 60,
-            time_range_to=to_timestamp / 60,
+            time_range_from=from_timestamp,
+            time_range_to=to_timestamp,
             app_name=app_name,
         )
 
@@ -172,7 +168,7 @@ class Argo:
         return status
 
     @retry(
-        stop=stop_after_delay(Settings.Argo.timeout),
+        stop=stop_after_delay(config.get_argo_timeout()),
         retry=retry_if_exception_type((AppNotReadyException, InvalidImageException)),
         wait=wait_fixed(5),
     )

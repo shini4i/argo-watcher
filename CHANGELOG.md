@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Exit 1 if received 401 or 403 from ArgoCD
 - Falling back to in-memory state if invalid value was provided in STATE_TYPE
+- Settings were renamed to Config and environment variable processing was changed
+### Fixed
+- 404 on /history page reload/direct access
 
 ## [0.0.3] - 2022-04-06
 ### Added

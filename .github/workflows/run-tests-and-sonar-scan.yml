@@ -47,6 +47,9 @@ jobs:
           DATABASE_URL: "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable"
         run: /usr/local/bin/dbmate up
 
+      - name: Create required directory
+        run: mkdir static
+
       - name: Run tests
         env:
           STATE_TYPE: in-memory

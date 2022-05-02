@@ -2,7 +2,6 @@
 
 import logging
 from os import getenv
-from os.path import isdir
 from typing import List
 from uuid import uuid1
 
@@ -17,11 +16,11 @@ from uvicorn import Config
 from uvicorn import Server
 
 from watcher.argo import Argo
+from watcher.config import config
 from watcher.models import Task
-from watcher.settings import Settings
 
 logging.basicConfig(
-    level=Settings.Logs.log_level,
+    level=config.get_log_level(),
     format="%(asctime)s %(levelname)s %(message)s",
 )
 
@@ -93,15 +92,13 @@ def healthz(response: Response):
     return {"status": health}
 
 
-app.mount("/metrics", make_asgi_app())
-
-if isdir("static"):
-    app.mount("/", StaticFiles(directory="static", html=True))
-
-
-@app.get("/")
-async def index():
+@app.exception_handler(404)
+def catch_all_path(_, __):
     return FileResponse("static/index.html", media_type="text/html")
+
+
+app.mount("/metrics", make_asgi_app())
+app.mount("/", StaticFiles(directory="static", html=True))
 
 
 def main():
