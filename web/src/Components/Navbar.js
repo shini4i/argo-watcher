@@ -32,7 +32,6 @@ function Navbar() {
                 <Stack sx={{ flexGrow: 1, px: 2 }} spacing={1} direction={"row"}>
                     <NavigationButton to={"/"}>recent</NavigationButton>
                     <NavigationButton to={"/history"}>history</NavigationButton>
-                    <NavigationButton to={"/test"}>test</NavigationButton>
                 </Stack>
                 <IconButton
                     edge="start"
