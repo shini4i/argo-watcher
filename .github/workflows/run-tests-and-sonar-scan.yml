@@ -48,7 +48,7 @@ jobs:
         run: /usr/local/bin/dbmate up
 
       - name: Create required directory
-        run: mkdir static
+        run: mkdir -p static
 
       - name: Run tests
         env:
