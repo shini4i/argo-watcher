@@ -10,6 +10,6 @@ function Layout() {
         <Outlet />
       </Box>
   );
-};
+}
 
 export default Layout;

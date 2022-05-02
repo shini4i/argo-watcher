@@ -17,7 +17,7 @@ function Page404() {
           display: "table-cell",
           verticalAlign: "middle",
         }}>
-          <Typography component={"h1"} variant={"h1"}sx={{
+          <Typography component={"h1"} variant={"h1"} sx={{
             fontSize: "50px",
             display: "inline-block",
             paddingRight: "12px",
@@ -27,6 +27,6 @@ function Page404() {
         </Box>
       </Box>
   );
-};
+}
 
 export default Page404;
