@@ -5,8 +5,8 @@
 db/data
 
 # static directory
-!static/.gitkeep
 static/**
+!static/.gitkeep
 
 # environment files
 .envrc
