@@ -1,9 +1,17 @@
+# IDE settings
 .idea
+
+# database for development
+db/data
+
+# static directory
+!static/.gitkeep
+static/**
+
+# environment files
 .envrc
 .env
+
+# python environment
 .venv
-db/data
-static
 **/__pycache__
-db/schema.sql
-.pytest_cache

@@ -19,7 +19,7 @@ services:
     ports:
       - 8080:8080
     depends_on: [ database ]
-    command: poetry run
+    command: poetry run /app/run.py
   frontend:
     profiles: ["complete"]
     image: node:17.7-alpine3.15
