@@ -3,6 +3,7 @@
 
 # database for development
 db/data
+db/schema.sql
 
 # static directory
 static/**
