@@ -23,19 +23,19 @@ A server-side part can be installed using the helm chart that is available  [her
 ### Client
 A simple example of client implementation that can be used in a pipeline is available [here](https://github.com/shini4i/argo-watcher/tree/main/client)
 
-## Prerequisites
+## Development
+
+There are 2 ways of how you can run argo-watcher locally
+1. with docker compose
+2. with locally installed python, poetry, nodejs, npm
+
+### Prerequisites
 This project depends on various git hooks. ([pre-commit](https://pre-commit.com))
 
 They can be installed by running:
 ```bash
 pre-commit install
 ```
-
-## Development
-
-There are 2 ways of how you can run argo-watcher locally
-1. with docker compose
-2. with locally installed python, poetry, nodejs, npm
 
 ### Docker Compose development
 
@@ -74,7 +74,7 @@ poetry shell
 # install dependencies
 poetry install
 # start the project
-poetry run
+poetry run argo-watcher
 ```
 
 ### Front-End Development
