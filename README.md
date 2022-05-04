@@ -12,17 +12,16 @@ Currently, there is a limitation while using [argocd-image-updater](https://gith
 to understand what is happening after an image is built in a pipeline and before ArgoCD deploys the built image.
 
 This app allows checking the status of built image deployment from the pipeline, which will help to
-1) Have clear visibility of when the deployment is finished w/o checking ArgoCD.
+1) Have clear visibility of when the deployment is finished w/o checking ArgoCD
 2) Mark a pipeline as either successful or failed depending on the deployment result
 
 Additionally, there is a Web UI that allows checking all current deployments and the history of old deployments.
 
-### Expected workflow
-1) argocd-image-updater is configured for auto-update of the required Application.
-2) A pipeline is triggered
-3) Docker image is packaged and tagged according to the pre-defined naming convention and pushed to the Docker registry.
-4) The pipeline starts to communicate with argo-watcher and waits for either "deployed" or "failed" status to be returned.
-5) It happens alongside with step 4. argocd-image-updater detects that the new image tag appeared in the registry and commits changes to the gitops repo.
+## How to install
+### Server
+A server-side part can be installed using the helm chart that is available  [here](https://artifacthub.io/packages/helm/shini4i/argo-watcher)
+### Client
+A simple example of client implementation that can be used in a pipeline is available [here](https://github.com/shini4i/argo-watcher/tree/main/client)
 
 ## Prerequisites
 This project depends on various git hooks. ([pre-commit](https://pre-commit.com))
