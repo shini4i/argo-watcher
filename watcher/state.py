@@ -8,9 +8,12 @@ from time import time
 import psycopg2
 import psycopg2.extras
 from expiringdict import ExpiringDict
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 
 from watcher.config import config
 from watcher.models import Task
+from watcher.models import Tasks
 
 
 class State(ABC):
@@ -79,6 +82,10 @@ class DBState(State):
             user=db_user,
             password=db_password,
         )
+        self.db1 = create_engine(
+            f"postgresql://{db_user}:{db_password}@{db_host}:5432/{db_name}"
+        )
+        self.session = Session(self.db1)
 
     def set_current_task(self, task: Task, status: str):
         task = {
@@ -110,12 +117,8 @@ class DBState(State):
         self.db.commit()
 
     def get_task_status(self, task_id: str) -> str:
-        query = f"select status from public.tasks where id='{task_id}'"
-        cursor = self.db.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        cursor.execute(query=query)
-        task = cursor.fetchone()
-
-        return task["status"]
+        task = self.session.query(Tasks).filter(Tasks.id == task_id)
+        return task[0].status
 
     def update_task(self, task_id: str, status: str):
         updated = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
