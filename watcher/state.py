@@ -118,18 +118,18 @@ class DBState(State):
 
     def get_task_status(self, task_id: str) -> str:
         task = self.session.query(Tasks).filter(Tasks.id == task_id)
-        return task[0].status
+        try:
+            status = task[0].status
+        except IndexError:
+            status = "task not found"
+        return status
 
     def update_task(self, task_id: str, status: str):
         updated = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-        cursor = self.db.cursor()
-        query = (
-            "UPDATE public.tasks "
-            f"SET status='{status}', updated='{updated}' "
-            f"where id='{task_id}'"
+        self.session.query(Tasks).filter(Tasks.id == task_id).update(
+            {"updated": updated}
         )
-        cursor.execute(query)
-        self.db.commit()
+        self.session.commit()
 
     def get_state(self, time_range_from: float, time_range_to: float, app_name: str):
 
