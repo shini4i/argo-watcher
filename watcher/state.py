@@ -126,28 +126,21 @@ class DBState(State):
         self.session.commit()
 
     def get_state(self, time_range_from: float, time_range_to: float, app_name: str):
-
-        query = (
-            "select id, extract(epoch from created) AS created, "
-            "extract(epoch from updated) AS updated, "
-            "images, status, app, author, project from public.tasks "
-            f"where created >= '{datetime.fromtimestamp(time_range_from, tz=timezone.utc)}'"
-        )
+        all_filters = [
+            Tasks.created >= datetime.fromtimestamp(time_range_from, tz=timezone.utc)
+        ]
 
         if time_range_to is not None:
-            query = (
-                f"{query} AND created "
-                f"<= '{datetime.fromtimestamp(time_range_to, tz=timezone.utc)}'"
+            all_filters.append(
+                Tasks.created <= datetime.fromtimestamp(time_range_to, tz=timezone.utc)
             )
 
         if app_name is not None:
-            query = f"{query} and app = '{app_name}'"
+            all_filters.append(Tasks.app == app_name)
 
-        cursor = self.db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cursor.execute(query=query)
-        tasks = cursor.fetchall()
+        results = self.session.query(Tasks).filter(*all_filters).all()
 
-        return [Task(**task) for task in tasks]
+        return [Task(**task.__dict__) for task in results]
 
     def get_app_list(self) -> list:
         return [app[0] for app in self.session.query(Tasks.app).distinct()]

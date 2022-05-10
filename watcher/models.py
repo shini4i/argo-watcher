@@ -1,7 +1,9 @@
+from datetime import datetime
 from typing import List
 from typing import Optional
 
 from pydantic import BaseModel
+from pydantic import validator
 from sqlalchemy import JSON
 from sqlalchemy import TIMESTAMP
 from sqlalchemy import VARCHAR
@@ -18,13 +20,20 @@ class Image(BaseModel):
 
 class Task(BaseModel):
     id: Optional[str]
-    created: Optional[int]
-    updated: Optional[int]
+    created: Optional[float]
+    updated: Optional[float]
     app: str
     author: str
     project: str
     images: List[Image]
     status: Optional[str]
+
+    @validator("created", "updated", pre=True)
+    def convert_datetime_to_float(cls, timestamp):
+        if type(timestamp) is datetime:
+            return float(timestamp.timestamp())
+        else:
+            return timestamp
 
 
 class Tasks(Base):
