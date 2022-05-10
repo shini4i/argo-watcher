@@ -1,7 +1,17 @@
+from datetime import datetime
+from datetime import timezone
 from typing import List
 from typing import Optional
 
 from pydantic import BaseModel
+from pydantic import validator
+from sqlalchemy import JSON
+from sqlalchemy import TIMESTAMP
+from sqlalchemy import VARCHAR
+from sqlalchemy import Column
+from sqlalchemy.orm import declarative_base
+
+Base = declarative_base()
 
 
 class Image(BaseModel):
@@ -11,10 +21,30 @@ class Image(BaseModel):
 
 class Task(BaseModel):
     id: Optional[str]
-    created: Optional[int]
-    updated: Optional[int]
+    created: Optional[float]
+    updated: Optional[float]
     app: str
     author: str
     project: str
     images: List[Image]
     status: Optional[str]
+
+    @validator("created", "updated", pre=True)
+    def convert_datetime_to_float(cls, timestamp):
+        if type(timestamp) is datetime:
+            return float(timestamp.replace(tzinfo=timezone.utc).timestamp())
+        else:
+            return timestamp
+
+
+class Tasks(Base):
+    __tablename__ = "tasks"
+
+    id = Column(VARCHAR(36), primary_key=True)
+    created = Column(TIMESTAMP)
+    updated = Column(TIMESTAMP)
+    images = Column(JSON)
+    status = Column(VARCHAR(255))
+    app = Column(VARCHAR(255))
+    author = Column(VARCHAR(255))
+    project = Column(VARCHAR(255))

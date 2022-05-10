@@ -11,10 +11,11 @@ requests = "^2.27.1"
 fastapi = "^0.75.0"
 uvicorn = "^0.17.6"
 tenacity = "^8.0.1"
-psycopg2-binary = "^2.9.3"
 expiringdict = "^1.2.1"
 prometheus-client = "^0.13.1"
 environs = "^9.5.0"
+SQLAlchemy = "^1.4.36"
+psycopg2 = "^2.9.3"
 
 [tool.poetry.dev-dependencies]
 pytest = "^7.1.1"
