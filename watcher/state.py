@@ -7,8 +7,11 @@ from time import time
 
 import psycopg2
 import psycopg2.extras
+import sqlalchemy.exc
 from expiringdict import ExpiringDict
 from sqlalchemy import create_engine
+from sqlalchemy import select
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from watcher.config import config
@@ -117,17 +120,20 @@ class DBState(State):
         self.db.commit()
 
     def get_task_status(self, task_id: str) -> str:
-        task = self.session.query(Tasks).filter(Tasks.id == task_id)
         try:
-            status = task[0].status
-        except IndexError:
-            status = "task not found"
+            status = self.session.execute(
+                select(Tasks.status).where(Tasks.id == task_id)
+            ).scalar_one()
+        except sqlalchemy.exc.NoResultFound:
+            return "task not found"
         return status
 
     def update_task(self, task_id: str, status: str):
         updated = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-        self.session.query(Tasks).filter(Tasks.id == task_id).update(
-            {"updated": updated}
+        self.session.execute(
+            update(Tasks)
+            .where(Tasks.id == task_id)
+            .values(status=status, updated=updated)
         )
         self.session.commit()
 
