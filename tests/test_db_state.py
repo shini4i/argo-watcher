@@ -20,9 +20,7 @@ state = DBState(
 
 
 def truncate_table():
-    cursor = state.db.cursor()
-    cursor.execute("TRUNCATE TABLE public.tasks")
-    state.db.commit()
+    state.session.execute("""TRUNCATE TABLE public.tasks""")
 
 
 def test_get_task_status():

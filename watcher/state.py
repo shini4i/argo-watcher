@@ -5,8 +5,6 @@ from datetime import datetime
 from datetime import timezone
 from time import time
 
-import psycopg2
-import psycopg2.extras
 import sqlalchemy.exc
 from expiringdict import ExpiringDict
 from sqlalchemy import create_engine
@@ -80,16 +78,10 @@ class InMemoryState(State):
 
 class DBState(State):
     def __init__(self, db_host, db_name, db_user, db_password):
-        self.db = psycopg2.connect(
-            host=db_host,
-            database=db_name,
-            user=db_user,
-            password=db_password,
-        )
-        self.db1 = create_engine(
+        self.db = create_engine(
             f"postgresql://{db_user}:{db_password}@{db_host}:5432/{db_name}"
         )
-        self.session = Session(self.db1)
+        self.session = Session(self.db)
 
     def set_current_task(self, task: Task, status: str):
         self.session.execute(

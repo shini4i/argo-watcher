@@ -1,4 +1,5 @@
 from datetime import datetime
+from datetime import timezone
 from typing import List
 from typing import Optional
 
@@ -31,7 +32,7 @@ class Task(BaseModel):
     @validator("created", "updated", pre=True)
     def convert_datetime_to_float(cls, timestamp):
         if type(timestamp) is datetime:
-            return float(timestamp.timestamp())
+            return float(timestamp.replace(tzinfo=timezone.utc).timestamp())
         else:
             return timestamp
 
