@@ -10,6 +10,7 @@ import psycopg2.extras
 import sqlalchemy.exc
 from expiringdict import ExpiringDict
 from sqlalchemy import create_engine
+from sqlalchemy import insert
 from sqlalchemy import select
 from sqlalchemy import update
 from sqlalchemy.orm import Session
@@ -91,33 +92,20 @@ class DBState(State):
         self.session = Session(self.db1)
 
     def set_current_task(self, task: Task, status: str):
-        task = {
-            "id": task.id,
-            "created": datetime.fromtimestamp(time(), tz=timezone.utc).strftime(
-                "%Y-%m-%d %H:%M:%S"
-            ),
-            "images": json.dumps(json.loads(task.json())["images"]),
-            "status": status,
-            "app": task.app,
-            "author": task.author,
-            "project": task.project,
-        }
-
-        cursor = self.db.cursor()
-        cursor.execute(
-            "INSERT INTO public.tasks(id, created, images, status, app, author, project) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s);",
-            (
-                task["id"],
-                task["created"],
-                task["images"],
-                task["status"],
-                task["app"],
-                task["author"],
-                task["project"],
-            ),
+        self.session.execute(
+            insert(Tasks).values(
+                id=task.id,
+                created=datetime.fromtimestamp(time(), tz=timezone.utc).strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                ),
+                images=json.loads(task.json())["images"],
+                status=status,
+                app=task.app,
+                author=task.author,
+                project=task.project,
+            )
         )
-        self.db.commit()
+        self.session.commit()
 
     def get_task_status(self, task_id: str) -> str:
         try:
@@ -161,10 +149,5 @@ class DBState(State):
 
         return [Task(**task) for task in tasks]
 
-    def get_app_list(self) -> set:
-        query = "select distinct app from public.tasks"
-        cursor = self.db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cursor.execute(query=query)
-        apps = cursor.fetchall()
-
-        return set([res["app"] for res in apps])
+    def get_app_list(self) -> list:
+        return [app[0] for app in self.session.query(Tasks.app).distinct()]
