@@ -79,7 +79,8 @@ class InMemoryState(State):
 class DBState(State):
     def __init__(self, db_host, db_name, db_user, db_password):
         self.db = create_engine(
-            f"postgresql://{db_user}:{db_password}@{db_host}:5432/{db_name}"
+            f"postgresql://{db_user}:{db_password}@{db_host}:5432/{db_name}",
+            pool_pre_ping=True,
         )
         self.session = Session(self.db)
 
