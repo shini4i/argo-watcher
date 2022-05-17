@@ -35,6 +35,7 @@ argo = Argo()
 @app.post(
     "/api/v1/tasks",
     status_code=status.HTTP_202_ACCEPTED,
+    tags=["backend"],
     responses={
         202: {
             "content": {
@@ -57,6 +58,7 @@ def add_task(background_tasks: BackgroundTasks, task: Task):
 @app.get(
     "/api/v1/tasks/{task_id}",
     status_code=status.HTTP_200_OK,
+    tags=["backend"],
     responses={
         200: {"content": {"application/json": {"example": {"status": "deployed"}}}}
     },
@@ -65,7 +67,12 @@ def get_task_details(task_id: str):
     return {"status": argo.get_task_status(task_id=task_id)}
 
 
-@app.get("/api/v1/tasks", status_code=status.HTTP_200_OK, response_model=List[Task])
+@app.get(
+    "/api/v1/tasks",
+    status_code=status.HTTP_200_OK,
+    tags=["frontend"],
+    response_model=List[Task],
+)
 def get_state(
     from_timestamp: float, to_timestamp: float | None = None, app: str | None = None
 ):
@@ -77,6 +84,7 @@ def get_state(
 @app.get(
     "/api/v1/apps",
     status_code=status.HTTP_200_OK,
+    tags=["frontend"],
     responses={
         200: {"content": {"application/json": {"example": ["app_name", "app_name2"]}}}
     },
@@ -85,7 +93,7 @@ def get_app_list():
     return argo.return_app_list()
 
 
-@app.get("/healthz", status_code=status.HTTP_200_OK)
+@app.get("/healthz", status_code=status.HTTP_200_OK, tags=["service"])
 def healthz(response: Response):
     if (health := argo.check_argo()) == "down":
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
