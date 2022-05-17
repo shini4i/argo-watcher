@@ -55,7 +55,7 @@ def test_task_filter():
     assert (
         len(
             state.get_state(
-                time_range_from=time() - 5, time_range_to=time(), app_name="example"
+                time_range_from=time() - 5, time_range_to=time(), app_name="example1"
             )
         )
         == 1
