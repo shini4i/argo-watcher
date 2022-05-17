@@ -65,7 +65,7 @@ class InMemoryState(State):
         ]
 
         if time_range_to is not None:
-            result = [task for task in result if task.created <= time_range_to * 60]
+            result = [task for task in result if task.created <= time_range_to]
 
         if app_name is not None:
             result = [task for task in result if task.app == app_name]
