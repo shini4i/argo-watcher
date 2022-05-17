@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Changed
 - Migrated DBState to SQLAlchemy
+- Add support for PostgreSQL port configuration
 ### Fixed
 - InMemoryState time_range_to filter
 
