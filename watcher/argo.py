@@ -15,8 +15,8 @@ from tenacity import wait_fixed
 
 from watcher.config import config
 from watcher.models import Task
-from watcher.state import DBState
-from watcher.state import InMemoryState
+from watcher.state.db_state import DBState
+from watcher.state.in_memory_state import InMemoryState
 
 match config.get_watcher_state_type():
     case "in-memory":

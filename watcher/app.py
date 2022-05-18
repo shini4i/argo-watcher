@@ -112,7 +112,7 @@ app.mount("/", StaticFiles(directory="static", html=True))
 def main():
     server = Server(
         Config(
-            "watcher.web:app",
+            "watcher.app:app",
             host=getenv("BIND_IP", "0.0.0.0"),
             port=8080,
             log_level=logging.getLevelName("WARN"),
