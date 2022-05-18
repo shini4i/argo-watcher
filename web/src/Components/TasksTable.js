@@ -144,15 +144,13 @@ function TasksTable({ tasks, sortField, setSortField }) {
                     <Chip label={task.status} color={chipColorByStatus(task.status)} />
                   </TableCell>
                   <TableCell>
-                    <Tooltip title={new Date(task.created * 1000).toISOString()}>
+                    <Tooltip title={new Date(task.created * 1000).toLocaleString()}>
                       <span>{relativeTime(task.created * 1000)}</span>
                     </Tooltip>
                   </TableCell>
                   <TableCell>
                     {task.updated && (
-                      <Tooltip title={new Date(task.updated * 1000).toISOString()}>
                         <span>{taskDuration(task.created, task.updated)}</span>
-                      </Tooltip>
                     )}
                     {!task.updated && (
                         <span>-</span>
