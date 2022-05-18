@@ -3,7 +3,7 @@ from time import time
 from uuid import uuid1
 
 from watcher.models import Task
-from watcher.state import InMemoryState
+from watcher.state.in_memory_state import InMemoryState
 
 task_template = {
     "app": "test_app",
