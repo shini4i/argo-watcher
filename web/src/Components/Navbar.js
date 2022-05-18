@@ -2,7 +2,6 @@ import Box from "@mui/material/Box";
 import AppBar from "@mui/material/AppBar";
 import Toolbar from "@mui/material/Toolbar";
 import Typography from "@mui/material/Typography";
-import IconButton from "@mui/material/IconButton";
 import GitHubIcon from "@mui/icons-material/GitHub";
 import Link from "@mui/material/Link";
 import Button from "@mui/material/Button";
@@ -33,14 +32,13 @@ function Navbar() {
                     <NavigationButton to={"/"}>recent</NavigationButton>
                     <NavigationButton to={"/history"}>history</NavigationButton>
                 </Stack>
-                <IconButton
-                    edge="start"
-                    color="inherit"
-                    component={Link}
-                    href={"https://github.com/shini4i/argo-watcher#readme"}
-                >
-                    <GitHubIcon />
-                </IconButton>
+                <Button endIcon={<GitHubIcon />}
+                        sx={{ color: 'white', textTransform: 'unset'}}
+                        size={"small"}
+                        component={Link}
+                        href={"https://github.com/shini4i/argo-watcher#readme"}>
+                    View on GitHub
+                </Button>
             </Toolbar>
         </AppBar>
     </Box>
