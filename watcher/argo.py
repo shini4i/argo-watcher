@@ -25,7 +25,7 @@ match config.get_watcher_state_type():
         env = Env()
         state = DBState(
             db_host=env.str("DB_HOST"),
-            db_port=env.int("DB_PORT"),
+            db_port=env.int("DB_PORT", 5432),
             db_name=env.str("DB_NAME"),
             db_user=env.str("DB_USER"),
             db_password=env.str("DB_PASSWORD"),
