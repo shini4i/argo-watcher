@@ -1,5 +1,6 @@
 from abc import ABC
 from abc import abstractmethod
+from typing import List
 
 from watcher.models import Task
 
@@ -20,7 +21,7 @@ class State(ABC):
     @abstractmethod
     def get_state(
         self, time_range_from: float, time_range_to: float, app_name: str
-    ) -> list:
+    ) -> List[Task]:
         ...
 
     @abstractmethod

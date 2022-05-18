@@ -1,4 +1,5 @@
 from time import time
+from typing import List
 
 from expiringdict import ExpiringDict
 
@@ -28,7 +29,7 @@ class InMemoryState(State):
 
     def get_state(
         self, time_range_from: float, time_range_to: float, app_name: str
-    ) -> list:
+    ) -> List[Task]:
         result = [
             task for task in self.tasks.values() if time_range_from <= task.created
         ]

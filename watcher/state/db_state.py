@@ -2,6 +2,7 @@ import json
 from datetime import datetime
 from datetime import timezone
 from time import time
+from typing import List
 
 import sqlalchemy.exc
 from sqlalchemy import create_engine
@@ -59,7 +60,7 @@ class DBState(State):
 
     def get_state(
         self, time_range_from: float, time_range_to: float, app_name: str
-    ) -> list:
+    ) -> List[Task]:
         all_filters = [
             Tasks.created >= datetime.fromtimestamp(time_range_from, tz=timezone.utc)
         ]
