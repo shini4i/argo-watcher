@@ -13,6 +13,7 @@ import Box from "@mui/material/Box";
 import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import {Chip} from "@mui/material";
+import Link from "@mui/material/Link";
 
 const chipColorByStatus = (status) => {
   if (status === 'in progress') {
@@ -133,7 +134,11 @@ function TasksTable({ tasks, sortField, setSortField }) {
                     sx={{'&:last-child td, &:last-child th': {border: 0}}}
                 >
                   <TableCell>{task.app}</TableCell>
-                  <TableCell>{task.project}</TableCell>
+                  <TableCell>
+                    {task.project.indexOf('https') === 0 ? (
+                        <Link href={task.project}>{task.project}</Link>
+                    ) : task.project}
+                  </TableCell>
                   <TableCell>{task.author}</TableCell>
                   <TableCell>
                     <Chip label={task.status} color={chipColorByStatus(task.status)} />
