@@ -57,7 +57,9 @@ class DBState(State):
         )
         self.session.commit()
 
-    def get_state(self, time_range_from: float, time_range_to: float, app_name: str):
+    def get_state(
+        self, time_range_from: float, time_range_to: float, app_name: str
+    ) -> list:
         all_filters = [
             Tasks.created >= datetime.fromtimestamp(time_range_from, tz=timezone.utc)
         ]
@@ -74,5 +76,5 @@ class DBState(State):
 
         return [Task(**task.__dict__) for task in results]
 
-    def get_app_list(self) -> list:
-        return [app[0] for app in self.session.query(Tasks.app).distinct()]
+    def get_app_list(self) -> set:
+        return {app[0] for app in self.session.query(Tasks.app).distinct()}

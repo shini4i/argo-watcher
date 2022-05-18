@@ -26,7 +26,9 @@ class InMemoryState(State):
         self.tasks[task_id].status = status
         self.tasks[task_id].updated = time()
 
-    def get_state(self, time_range_from: float, time_range_to: float, app_name: str):
+    def get_state(
+        self, time_range_from: float, time_range_to: float, app_name: str
+    ) -> list:
         result = [
             task for task in self.tasks.values() if time_range_from <= task.created
         ]
@@ -40,4 +42,4 @@ class InMemoryState(State):
         return result
 
     def get_app_list(self) -> set:
-        return set([task.app for task in self.tasks.values()])
+        return {task.app for task in self.tasks.values()}

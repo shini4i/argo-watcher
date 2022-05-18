@@ -18,7 +18,9 @@ class State(ABC):
         ...
 
     @abstractmethod
-    def get_state(self, time_range_from: float, time_range_to: float, app_name: str):
+    def get_state(
+        self, time_range_from: float, time_range_to: float, app_name: str
+    ) -> list:
         ...
 
     @abstractmethod
