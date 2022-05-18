@@ -135,8 +135,12 @@ function TasksTable({ tasks, sortField, setSortField }) {
                 >
                   <TableCell>{task.app}</TableCell>
                   <TableCell>
-                    {task.project.indexOf('https') === 0 ? (
-                        <Link href={task.project}>{task.project}</Link>
+                    {task.project.indexOf('http') === 0 ? (
+                        <Link href={task.project}>
+                          {task.project
+                              .replace(/^http(s)?:\/\//, '')
+                              .replace(/\/+$/, '')}
+                        </Link>
                     ) : task.project}
                   </TableCell>
                   <TableCell>{task.author}</TableCell>
