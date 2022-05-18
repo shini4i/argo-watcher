@@ -27,7 +27,7 @@ function RecentTasks() {
   const [currentAutoRefresh, setCurrentAutoRefresh] = useState(autoRefreshIntervals['30s']);
   const autoRefreshIntervalRef = useRef(null);
   const [currentApplication, setCurrentApplication] = useState(null);
-  const currentTimeframe = 60 * 60;
+  const currentTimeframe = 9 * 60 * 60;
 
   // initial load
   useEffect(() => {

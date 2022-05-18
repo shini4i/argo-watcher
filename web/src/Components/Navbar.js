@@ -2,7 +2,6 @@ import Box from "@mui/material/Box";
 import AppBar from "@mui/material/AppBar";
 import Toolbar from "@mui/material/Toolbar";
 import Typography from "@mui/material/Typography";
-import IconButton from "@mui/material/IconButton";
 import GitHubIcon from "@mui/icons-material/GitHub";
 import Link from "@mui/material/Link";
 import Button from "@mui/material/Button";
@@ -10,16 +9,13 @@ import { Link as RouterLink } from "react-router-dom";
 import Stack from "@mui/material/Stack";
 
 function NavigationButton({to, children}) {
-    return (
-        <Button
-            sx={{ color: 'white', display: 'block' }}
-            size={"small"}
-            component={RouterLink}
-            to={to}
-        >
-            {children}
-        </Button>
-    );
+    return <Link
+        sx={{ color: 'white', display: 'block', mx: '10px' }}
+        component={RouterLink}
+        to={to}
+    >
+        {children}
+    </Link>
 }
 
 function Navbar() {
@@ -30,17 +26,16 @@ function Navbar() {
                     Argo Watcher
                 </Typography>
                 <Stack sx={{ flexGrow: 1, px: 2 }} spacing={1} direction={"row"}>
-                    <NavigationButton to={"/"}>recent</NavigationButton>
-                    <NavigationButton to={"/history"}>history</NavigationButton>
+                    <NavigationButton to={"/"}>Recent</NavigationButton>
+                    <NavigationButton to={"/history"}>History</NavigationButton>
                 </Stack>
-                <IconButton
-                    edge="start"
-                    color="inherit"
-                    component={Link}
-                    href={"https://github.com/shini4i/argo-watcher#readme"}
-                >
-                    <GitHubIcon />
-                </IconButton>
+                <Button endIcon={<GitHubIcon />}
+                        sx={{ color: 'white', textTransform: 'unset'}}
+                        size={"small"}
+                        component={Link}
+                        href={"https://github.com/shini4i/argo-watcher"}>
+                    View on GitHub
+                </Button>
             </Toolbar>
         </AppBar>
     </Box>

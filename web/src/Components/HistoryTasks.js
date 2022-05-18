@@ -18,12 +18,11 @@ import ApplicationsFilter from "./ApplicationsFilter";
 import TasksTable, {useTasks} from "./TasksTable";
 
 const timeframes = {
-  '5 minutes': 5 * 60,
-  '15 minutes': 15 * 60,
-  '30 minutes': 30 * 60,
   '1 hour': 60 * 60,
   '6 hours': 6 * 60 * 60,
+  '9 hours': 9 * 60 * 60,
   '12 hours': 12 * 60 * 60,
+  '24 hours': 24 * 60 * 60,
   'Custom': 0,
 };
 
@@ -38,7 +37,7 @@ function HistoryTasks() {
       clearTasks
     } = useTasks({ setLoadingError });
   const [currentApplication, setCurrentApplication] = useState(null);
-  const [currentTimeframe, setCurrentTimeframe] = useState(timeframes['1 hour']);
+  const [currentTimeframe, setCurrentTimeframe] = useState(timeframes['9 hours']);
   const [currentCustomTimestamp, setCurrentCustomTimestamp] = useState(null);
 
   const refreshWithFilters = (timeframe, customTimestamp, application) => {
