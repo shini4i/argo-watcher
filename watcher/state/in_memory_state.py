@@ -5,7 +5,7 @@ from expiringdict import ExpiringDict
 
 from watcher.config import config
 from watcher.models import Task
-from watcher.state.state import State
+from watcher.state.base import State
 
 
 class InMemoryState(State):

@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from watcher.models import Task
 from watcher.models import Tasks
-from watcher.state.state import State
+from watcher.state.base import State
 
 
 class DBState(State):
