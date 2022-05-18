@@ -12,6 +12,20 @@ import {fetchTasks} from "../Services/Data";
 import Box from "@mui/material/Box";
 import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
+import {Chip} from "@mui/material";
+
+const chipColorByStatus = (status) => {
+  if (status === 'in progress') {
+    return 'primary';
+  }
+  if (status === 'failed') {
+    return 'error';
+  }
+  if (status === 'deployed') {
+    return 'success';
+  }
+  return undefined;
+};
 
 export function useTasks({ setLoadingError }) {
   const [tasks, setTasks] = useState([]);
@@ -117,7 +131,9 @@ function TasksTable({ tasks, sortField, setSortField }) {
                   <TableCell>{task.app}</TableCell>
                   <TableCell>{task.project}</TableCell>
                   <TableCell>{task.author}</TableCell>
-                  <TableCell>{task.status}</TableCell>
+                  <TableCell>
+                    <Chip label={task.status} color={chipColorByStatus(task.status)} />
+                  </TableCell>
                   <TableCell>
                     <Tooltip title={new Date(task.created * 1000).toISOString()}>
                       <span>{relativeTime(task.created * 1000)}</span>
