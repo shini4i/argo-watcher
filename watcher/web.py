@@ -27,7 +27,7 @@ logging.basicConfig(
 app = FastAPI(
     title="ArgoCD Watcher",
     description="A small tool that will wait for the specific docker image to be rolled out",
-    version="0.0.4",
+    version="0.0.5",
 )
 argo = Argo()
 

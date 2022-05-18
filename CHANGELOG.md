@@ -4,10 +4,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.0.5] - 2022-05-18
+### Added
+- Frontend: status badges
 ### Changed
 - Migrated DBState to SQLAlchemy
 - Add support for PostgreSQL port configuration
+- Frontend: fqdns are hyperlinks now
+- Frontend: minor improvements of the layout
 ### Fixed
 - InMemoryState time_range_to filter
 

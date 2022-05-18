@@ -8,6 +8,10 @@ FROM python:${PYTHON_VERSION} as builder-backend
 
 WORKDIR /src
 
+RUN apt update \
+ && apt install libpq-dev gcc -y \
+ && apt clean
+
 RUN pip install cryptography==3.1.1 \
  && pip install "poetry==1.1.5"
 
@@ -43,7 +47,7 @@ FROM python:${PYTHON_VERSION}
 
 WORKDIR /app
 
-RUN apt update && apt install libpq-dev -y && apt clean
+RUN apt update && apt install libpq-dev gcc -y && apt clean
 
 RUN adduser --uid 1000 --home /app --disabled-password --gecos "" app
 
