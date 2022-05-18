@@ -36,7 +36,7 @@ function Navbar() {
                         sx={{ color: 'white', textTransform: 'unset'}}
                         size={"small"}
                         component={Link}
-                        href={"https://github.com/shini4i/argo-watcher#readme"}>
+                        href={"https://github.com/shini4i/argo-watcher"}>
                     View on GitHub
                 </Button>
             </Toolbar>
