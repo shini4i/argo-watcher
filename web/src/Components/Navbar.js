@@ -9,16 +9,13 @@ import { Link as RouterLink } from "react-router-dom";
 import Stack from "@mui/material/Stack";
 
 function NavigationButton({to, children}) {
-    return (
-        <Button
-            sx={{ color: 'white', display: 'block' }}
-            size={"small"}
-            component={RouterLink}
-            to={to}
-        >
-            {children}
-        </Button>
-    );
+    return <Link
+        sx={{ color: 'white', display: 'block', mx: '10px' }}
+        component={RouterLink}
+        to={to}
+    >
+        {children}
+    </Link>
 }
 
 function Navbar() {
@@ -29,8 +26,8 @@ function Navbar() {
                     Argo Watcher
                 </Typography>
                 <Stack sx={{ flexGrow: 1, px: 2 }} spacing={1} direction={"row"}>
-                    <NavigationButton to={"/"}>recent</NavigationButton>
-                    <NavigationButton to={"/history"}>history</NavigationButton>
+                    <NavigationButton to={"/"}>Recent</NavigationButton>
+                    <NavigationButton to={"/history"}>History</NavigationButton>
                 </Stack>
                 <Button endIcon={<GitHubIcon />}
                         sx={{ color: 'white', textTransform: 'unset'}}
