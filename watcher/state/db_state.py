@@ -12,8 +12,8 @@ from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from watcher.models import Task
-from watcher.models import Tasks
 from watcher.state.base import State
+from watcher.state.base import Tasks
 
 
 class DBState(State):
