@@ -34,7 +34,7 @@ match config.get_watcher_state_type():
 
 class InvalidImageException(Exception):
     """
-    An exception that is thrown when ArgoCD returns a list of images with tags
+    An exception that is raised when ArgoCD returns a list of images with tags
     that does not contain the expected version
     """
 
@@ -43,7 +43,7 @@ class InvalidImageException(Exception):
 
 class AppNotReadyException(Exception):
     """
-    An exception that is thrown when ArgoCD already returned the list of images with
+    An exception that is raised when ArgoCD already returned the list of images with
     required version, but app status is not yet synced and healthy
     """
 
@@ -52,7 +52,7 @@ class AppNotReadyException(Exception):
 
 class AppDoesNotExistException(Exception):
     """
-    An exception that is thrown when payload contained app that does not
+    An exception that is raised when payload contained app that does not
     exist in ArgoCD
     """
 

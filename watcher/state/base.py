@@ -2,28 +2,7 @@ from abc import ABC
 from abc import abstractmethod
 from typing import List
 
-from sqlalchemy import JSON
-from sqlalchemy import TIMESTAMP
-from sqlalchemy import VARCHAR
-from sqlalchemy import Column
-from sqlalchemy.orm import declarative_base
-
 from watcher.models import Task
-
-Base = declarative_base()
-
-
-class Tasks(Base):
-    __tablename__ = "tasks"
-
-    id = Column(VARCHAR(36), primary_key=True)
-    created = Column(TIMESTAMP)
-    updated = Column(TIMESTAMP)
-    images = Column(JSON)
-    status = Column(VARCHAR(255))
-    app = Column(VARCHAR(255))
-    author = Column(VARCHAR(255))
-    project = Column(VARCHAR(255))
 
 
 class State(ABC):

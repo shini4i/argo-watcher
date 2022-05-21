@@ -5,15 +5,34 @@ from time import time
 from typing import List
 
 import sqlalchemy.exc
+from sqlalchemy import JSON
+from sqlalchemy import TIMESTAMP
+from sqlalchemy import VARCHAR
+from sqlalchemy import Column
 from sqlalchemy import create_engine
 from sqlalchemy import insert
 from sqlalchemy import select
 from sqlalchemy import update
 from sqlalchemy.orm import Session
+from sqlalchemy.orm import declarative_base
 
 from watcher.models import Task
 from watcher.state.base import State
-from watcher.state.base import Tasks
+
+Base = declarative_base()
+
+
+class Tasks(Base):
+    __tablename__ = "tasks"
+
+    id = Column(VARCHAR(36), primary_key=True)
+    created = Column(TIMESTAMP)
+    updated = Column(TIMESTAMP)
+    images = Column(JSON)
+    status = Column(VARCHAR(255))
+    app = Column(VARCHAR(255))
+    author = Column(VARCHAR(255))
+    project = Column(VARCHAR(255))
 
 
 class DBState(State):
