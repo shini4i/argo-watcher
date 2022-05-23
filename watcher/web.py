@@ -18,6 +18,7 @@ from uvicorn import Server
 from watcher.argo import Argo
 from watcher.config import config
 from watcher.models import Task
+from watcher.version import VERSION as __version__
 
 logging.basicConfig(
     level=config.get_log_level(),
@@ -74,7 +75,7 @@ def get_task_details(task_id: str):
     response_model=List[Task],
 )
 def get_state(
-    from_timestamp: float, to_timestamp: float | None = None, app: str | None = None
+        from_timestamp: float, to_timestamp: float | None = None, app: str | None = None
 ):
     return argo.return_state(
         from_timestamp=from_timestamp, to_timestamp=to_timestamp, app_name=app
@@ -91,6 +92,11 @@ def get_state(
 )
 def get_app_list():
     return argo.return_app_list()
+
+
+@app.get("/api/v1/version")
+def return_version():
+    return {"version": __version__}
 
 
 @app.get("/healthz", status_code=status.HTTP_200_OK, tags=["service"])
