@@ -75,7 +75,7 @@ def get_task_details(task_id: str):
     response_model=List[Task],
 )
 def get_state(
-        from_timestamp: float, to_timestamp: float | None = None, app: str | None = None
+    from_timestamp: float, to_timestamp: float | None = None, app: str | None = None
 ):
     return argo.return_state(
         from_timestamp=from_timestamp, to_timestamp=to_timestamp, app_name=app
