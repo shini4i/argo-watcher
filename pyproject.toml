@@ -22,7 +22,7 @@ pytest = "^7.1.1"
 responses = "^0.20.0"
 
 [tool.poetry.scripts]
-argo-watcher = "watcher.web:main"
+argo-watcher = "watcher.app:main"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

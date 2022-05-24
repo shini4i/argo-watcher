@@ -7,7 +7,7 @@ from test_in_memory_state import generate_task
 from test_in_memory_state import task_template
 
 from watcher.models import Task
-from watcher.state import DBState
+from watcher.state.db_state import DBState
 
 env = Env()
 
