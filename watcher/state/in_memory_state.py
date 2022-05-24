@@ -12,6 +12,10 @@ class InMemoryState(State):
     def __init__(self, history_ttl=config.get_watcher_history_ttl()):
         self.tasks = ExpiringDict(max_len=100, max_age_seconds=history_ttl)
 
+    @staticmethod
+    def get_state_type() -> str:
+        return "InMemoryState"
+
     def set_current_task(self, task: Task, status: str):
         task.status = status
         task.created = time()

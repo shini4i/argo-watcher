@@ -4,7 +4,7 @@ import responses
 from fastapi.testclient import TestClient
 from test_in_memory_state import task_template
 
-from watcher.web import app
+from watcher.app import app
 
 client = TestClient(app)
 api_path = "/api/v1/tasks"
@@ -53,7 +53,7 @@ def test_healthz():
     response = client.get("/healthz")
 
     assert response.status_code == 200
-    assert response.json()["status"] == "up"
+    assert response.json()["argo_status"] == "up"
 
     responses.add(
         method=responses.GET,
@@ -65,7 +65,7 @@ def test_healthz():
     response = client.get("/healthz")
 
     assert response.status_code == 503
-    assert response.json()["status"] == "down"
+    assert response.json()["argo_status"] == "down"
 
 
 @responses.activate

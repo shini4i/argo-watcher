@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import datetime
 from datetime import timezone
 from time import time
@@ -42,6 +43,10 @@ class DBState(State):
             pool_pre_ping=True,
         )
         self.session = Session(self.db)
+
+    @staticmethod
+    def get_state_type() -> str:
+        return "DBState"
 
     def set_current_task(self, task: Task, status: str):
         self.session.execute(
@@ -98,3 +103,15 @@ class DBState(State):
 
     def get_app_list(self) -> set:
         return {app[0] for app in self.session.query(Tasks.app).distinct()}
+
+    def check_connection(self) -> str:
+        try:
+            self.session.execute("SELECT 1")
+            return "up"
+        except sqlalchemy.exc.PendingRollbackError as e:
+            logging.error(e)
+            self.session.rollback()
+            return "down"
+        except sqlalchemy.exc.OperationalError as e:
+            logging.error(e)
+            return "down"

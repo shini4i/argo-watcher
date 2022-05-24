@@ -27,3 +27,8 @@ class State(ABC):
     @abstractmethod
     def get_app_list(self) -> set:
         ...
+
+    @staticmethod
+    @abstractmethod
+    def get_state_type() -> str:
+        ...

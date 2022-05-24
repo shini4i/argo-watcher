@@ -16,6 +16,7 @@ from uvicorn import Config
 from uvicorn import Server
 
 from watcher.argo import Argo
+from watcher.argo import state
 from watcher.config import config
 from watcher.models import Task
 from watcher.version import VERSION as __version__
@@ -101,9 +102,16 @@ def return_version():
 
 @app.get("/healthz", status_code=status.HTTP_200_OK, tags=["service"])
 def healthz(response: Response):
-    if (health := argo.check_argo()) == "down":
+    if (argo_health := argo.check_argo()) == "down":
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-    return {"status": health}
+
+    match state.get_state_type():
+        case "InMemoryState":
+            return {"argo_status": argo_health}
+        case "DBState":
+            if (db_health := state.check_connection()) == "down":
+                response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+            return {"argo_status": argo_health, "db_status": db_health}
 
 
 @app.exception_handler(404)
