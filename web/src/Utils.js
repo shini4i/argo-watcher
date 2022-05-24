@@ -8,10 +8,9 @@ export const relativeTime = (oldTimestamp) => {
 }
 
 export const relativeHumanDuration = (seconds) => {
-
     if (seconds < 60) {
         // Less than a minute has passed:
-        return `${seconds} seconds`;
+        return `${Math.floor(seconds)} seconds`;
     } else if (seconds < 3600) {
         // Less than an hour has passed:
         return `${Math.floor(seconds / 60)} minutes`;
