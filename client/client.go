@@ -119,9 +119,9 @@ func main() {
 	}
 
 	task := Task{
-		App:     "whoami",
-		Author:  "John",
-		Project: "whoami",
+		App:     os.Getenv("ARGO_APP"),
+		Author:  os.Getenv("COMMIT_AUTHOR"),
+		Project: os.Getenv("PROJECT_NAME"),
 		Images:  images,
 	}
 
@@ -144,7 +144,7 @@ loop:
 			fmt.Printf("Application %s does not exist.\n", task.App)
 			break loop
 		case "deployed":
-			fmt.Println("done")
+			fmt.Printf("The deployment of %s version is done.", tag)
 			break loop
 		}
 	}
