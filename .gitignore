@@ -10,7 +10,7 @@ static/**
 !static/.gitkeep
 
 # environment files
-.envrc
+**/.envrc
 .env
 
 # python environment
