@@ -1,12 +1,17 @@
-FROM python:3.10.3-slim-buster
+FROM golang:1.18-alpine3.16 as builder
 
-WORKDIR /app
+WORKDIR /src
 
-RUN adduser --uid 1000 --home /app --disabled-password --gecos "" app
+COPY go.mod /src/go.mod
+COPY client.go /src/client.go
 
-COPY --chown=app:app . .
+RUN apk add --no-cache ca-certificates
 
-RUN pip install -r requirements.txt
+RUN CGO_ENABLED=0 GOOS=linux go build
 
-ENTRYPOINT ["python"]
-CMD ["/app/client.py"]
+FROM scratch
+
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=builder /src/client /bin/client
+
+ENTRYPOINT ["/bin/client"]
