@@ -11,7 +11,7 @@ static/**
 
 # environment files
 **/.envrc
-.env
+**/.env
 
 # python environment
 .venv

@@ -8,4 +8,5 @@ COPY --chown=app:app . .
 
 RUN pip install -r requirements.txt
 
-CMD ['/app/client.py']
+ENTRYPOINT ["python"]
+CMD ["/app/client.py"]
