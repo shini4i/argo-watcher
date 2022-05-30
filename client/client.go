@@ -108,7 +108,7 @@ func (task *Task) getStatus(id string) string {
 }
 
 func main() {
-	tag := "v1.8.0"
+	tag := os.Getenv("IMAGE_TAG")
 	var images []Image
 
 	for _, image := range strings.Split(os.Getenv("IMAGES"), ",") {
@@ -125,7 +125,7 @@ func main() {
 		Images:  images,
 	}
 
-	fmt.Printf("Waiting for %s app to be running on %s version\n", task.App, tag)
+	fmt.Printf("Waiting for %s app to be running on %s version.\n", task.App, tag)
 
 	id := task.send()
 
@@ -138,13 +138,13 @@ loop:
 			fmt.Println("The deployment has failed, please check logs.")
 			break loop
 		case "in progress":
-			fmt.Println("Application deployment is in progress..")
+			fmt.Println("Application deployment is in progress...")
 			time.Sleep(15 * time.Second)
 		case "app not found":
 			fmt.Printf("Application %s does not exist.\n", task.App)
 			break loop
 		case "deployed":
-			fmt.Printf("The deployment of %s version is done.", tag)
+			fmt.Printf("The deployment of %s version is done.\n", tag)
 			break loop
 		}
 	}
