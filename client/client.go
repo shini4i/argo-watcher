@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -107,17 +108,25 @@ func (task *Task) getStatus(id string) string {
 }
 
 func main() {
+	tag := "v1.8.0"
+	var images []Image
+
+	for _, image := range strings.Split(os.Getenv("IMAGES"), ",") {
+		images = append(images, Image{
+			image,
+			tag,
+		})
+	}
+
 	task := Task{
 		App:     "whoami",
 		Author:  "John",
 		Project: "whoami",
-		Images: []Image{
-			{
-				Image: "traefik/whoami",
-				Tag:   "v1.8.0",
-			},
-		},
+		Images:  images,
 	}
+
+	fmt.Printf("Waiting for %s app to be running on %s version\n", task.App, tag)
+
 	id := task.send()
 
 	time.Sleep(5 * time.Second)
@@ -130,9 +139,9 @@ loop:
 			break loop
 		case "in progress":
 			fmt.Println("Application deployment is in progress..")
-			time.Sleep(5 * time.Second)
+			time.Sleep(15 * time.Second)
 		case "app not found":
-			fmt.Println("Application " + task.App + " does not exist")
+			fmt.Printf("Application %s does not exist.\n", task.App)
 			break loop
 		case "deployed":
 			fmt.Println("done")
