@@ -27,12 +27,15 @@ type Task struct {
 
 func (task *Task) send() string {
 	body, err := json.Marshal(task)
-
 	if err != nil {
 		panic(err)
 	}
 
 	request, err := http.NewRequest("POST", os.Getenv("ARGO_WATCHER_URL")+"/api/v1/tasks", bytes.NewBuffer(body))
+	if err != nil {
+		panic(err)
+	}
+
 	request.Header.Set("Content-Type", "application/json; charset=UTF-8")
 	client := &http.Client{}
 
