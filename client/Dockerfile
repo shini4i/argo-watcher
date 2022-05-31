@@ -7,7 +7,7 @@ COPY client.go /src/client.go
 
 RUN apk add --no-cache ca-certificates
 
-RUN CGO_ENABLED=0 GOOS=linux go build
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w"
 
 FROM alpine:3.16
 
