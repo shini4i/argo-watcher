@@ -8,7 +8,7 @@ from watcher.app import app
 
 client = TestClient(app)
 api_path = "/api/v1/tasks"
-version = "0.0.6"
+version = "0.0.7"
 
 
 def responses_configuration():
