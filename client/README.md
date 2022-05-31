@@ -6,13 +6,13 @@ This is just an example of what can be used within pipeline to communicate with 
 
 | Variable | Description | Mandatory |
 |---|---|---|
-| ARGO_WATCHER_URL | The url of argo-watcher instance | Yes
-| ARGO_APP | The name of argo app to check for images rollout | Yes
-| COMMIT_AUTHOR | The person who made commit/triggered pipeline | Yes
-| PROJECT_NAME | An identificator of the business project (not related to argo project) | Yes
-| IMAGES | A list of images (separated by ",") that should contain specific tag | Yes
-| IMAGE_TAG | An image tag that is expected to be rolled out | Yes
-| DEBUG | Print various debug information | No
+| ARGO_WATCHER_URL | The url of argo-watcher instance | Yes |
+| ARGO_APP | The name of argo app to check for images rollout | Yes |
+| COMMIT_AUTHOR | The person who made commit/triggered pipeline | Yes |
+| PROJECT_NAME | An identificator of the business project (not related to argo project) | Yes |
+| IMAGES | A list of images (separated by ",") that should contain specific tag | Yes |
+| IMAGE_TAG | An image tag that is expected to be rolled out | Yes |
+| DEBUG | Print various debug information | No |
 
 ## Example configuration
 ### gitlab-ci
@@ -26,6 +26,6 @@ await-deployment:
     PROJECT_NAME: $CI_PROJECT_PATH
     IMAGES: $CI_REGISTRY_IMAGE
     IMAGE_TAG: $CI_PIPELINE_ID
-    DEBUG: True
+    DEBUG: 1
   script: ["/bin/client"]
 ```

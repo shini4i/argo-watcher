@@ -143,7 +143,8 @@ func main() {
 
 	if debug {
 		fmt.Printf("Got the following configuration:\n"+
-			"ARGO_WATCHER_URL: %s\nARGO_APP: %s\n"+
+			"ARGO_WATCHER_URL: %s\n"+
+			"ARGO_APP: %s\n"+
 			"COMMIT_AUTHOR: %s\n"+
 			"PROJECT_NAME: %s\n"+
 			"IMAGE_TAG: %s\n"+
