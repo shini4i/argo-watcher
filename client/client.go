@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -51,13 +52,15 @@ func (task *Task) send() string {
 		}
 	}(response.Body)
 
-	if response.StatusCode != 202 {
-		fmt.Println("Something went wrong. Aborting...")
-	}
-
 	body, err = ioutil.ReadAll(response.Body)
 	if err != nil {
 		panic(err)
+	}
+
+	if response.StatusCode != 202 {
+		fmt.Printf("Something went wrong on argo-watcher side. Got the following response code %d\n", response.StatusCode)
+		fmt.Printf("Body: %s\n", string(body))
+		os.Exit(1)
 	}
 
 	type AcceptedTask struct {
@@ -97,6 +100,12 @@ func (task *Task) getStatus(id string) string {
 
 	body, err := ioutil.ReadAll(response.Body)
 
+	if response.StatusCode != 200 {
+		fmt.Printf("Received non 200 status code (%d)\n", response.StatusCode)
+		fmt.Printf("Body: %s\n", string(body))
+		os.Exit(1)
+	}
+
 	type TaskStatus struct {
 		Status string `json:"status"`
 	}
@@ -129,6 +138,18 @@ func main() {
 	}
 
 	fmt.Printf("Waiting for %s app to be running on %s version.\n", task.App, tag)
+
+	debug, _ := strconv.ParseBool(os.Getenv("DEBUG"))
+
+	if debug {
+		fmt.Printf("Got the following configuration:\n"+
+			"ARGO_WATCHER_URL: %s\nARGO_APP: %s\n"+
+			"COMMIT_AUTHOR: %s\n"+
+			"PROJECT_NAME: %s\n"+
+			"IMAGE_TAG: %s\n"+
+			"IMAGES: %s\n",
+			os.Getenv("ARGO_WATCHER_URL"), task.App, task.Author, task.Project, tag, os.Getenv("IMAGES"))
+	}
 
 	id := task.send()
 

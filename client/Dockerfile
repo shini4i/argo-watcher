@@ -9,7 +9,7 @@ RUN apk add --no-cache ca-certificates
 
 RUN CGO_ENABLED=0 GOOS=linux go build
 
-FROM scratch
+FROM alpine:3.16
 
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /src/client /bin/client
