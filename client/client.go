@@ -161,13 +161,13 @@ loop:
 		switch status := task.getStatus(id); status {
 		case "failed":
 			fmt.Println("The deployment has failed, please check logs.")
-			break loop
+			os.Exit(1)
 		case "in progress":
 			fmt.Println("Application deployment is in progress...")
 			time.Sleep(15 * time.Second)
 		case "app not found":
 			fmt.Printf("Application %s does not exist.\n", task.App)
-			break loop
+			os.Exit(1)
 		case "deployed":
 			fmt.Printf("The deployment of %s version is done.\n", tag)
 			break loop
