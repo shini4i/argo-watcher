@@ -1,4 +1,4 @@
-name: Run unit tests and sonar scan
+name: Run unit tests
 on:
   push:
     branches:
@@ -6,8 +6,8 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 jobs:
-  sonarcloud:
-    name: SonarCloud
+  test:
+    name: Test
     runs-on: ubuntu-latest
 
     services:
@@ -28,27 +28,9 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Python
-        uses: actions/setup-python@v2
+      - uses: actions/setup-go@v3
         with:
-          python-version: '3.10.x'
-
-      - name: Install required packages
-        run: pip install cryptography==3.1.1 poetry==1.1.5 pytest coverage responses
-
-      - name: Install project
-        run: poetry export -f requirements.txt | pip install -r /dev/stdin
-
-      - name: Install dbmate
-        run: curl -fsSL -o /usr/local/bin/dbmate https://github.com/amacneil/dbmate/releases/latest/download/dbmate-linux-amd64 && chmod +x /usr/local/bin/dbmate
-
-      - name: Run migrations
-        env:
-          DATABASE_URL: "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable"
-        run: /usr/local/bin/dbmate up
-
-      - name: Create required directory
-        run: mkdir -p static
+          go-version: '^1.18.0'
 
       - name: Run tests
         env:
@@ -60,17 +42,4 @@ jobs:
           DB_USER: postgres
           DB_NAME: postgres
           DB_PASSWORD: postgres
-        run: coverage run -m pytest -rap --junitxml coverage.xml
-
-      - name: Generate coverage report
-        run: coverage xml -i
-
-      - name: Override Coverage Source Path for Sonar
-        run: |
-          sed -i 's@'$GITHUB_WORKSPACE'@/github/workspace/@g' coverage.xml
-
-      - name: SonarCloud Scan
-        uses: SonarSource/sonarcloud-github-action@master
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: cd cmd && go test -v ./...
