@@ -1,6 +1,4 @@
 # argo-watcher
-![Sonar Quality Gate](https://img.shields.io/sonar/quality_gate/shini4i_argo-watcher?server=https%3A%2F%2Fsonarcloud.io)
-![Sonar Coverage](https://img.shields.io/sonar/coverage/shini4i_argo-watcher?server=https%3A%2F%2Fsonarcloud.io)
 ![GitHub release (latest by date)](https://img.shields.io/github/v/release/shini4i/argo-watcher)
 ![GitHub](https://img.shields.io/github/license/shini4i/argo-watcher)
 
@@ -27,7 +25,7 @@ A simple example of client implementation that can be used in a pipeline is avai
 
 There are 2 ways of how you can run argo-watcher locally
 1. with docker compose
-2. with locally installed python, poetry, nodejs, npm
+2. with locally installed golang, nodejs, npm
 
 ### Prerequisites
 This project depends on various git hooks. ([pre-commit](https://pre-commit.com))
@@ -39,25 +37,13 @@ pre-commit install
 ### Back-End Development
 
 To start developing argo-watcher you will need
-1. python version 3.10+
-2. [poetry](https://python-poetry.org/) toolkit
-
-Starting the API development
-
-```shell
-# create virtual environment
-poetry shell
-# install dependencies
-poetry install
-# start the project
-poetry run argo-watcher
-```
+1. golang 1.18+
 
 ### Front-End Development
 
 To start developing front-end you'd need
-1. NodeJS version 16.6.0+
-2. NPM (comes with NodeJS) 7.19.1+
+1. NodeJS version 17.7.0+
+2. NPM (comes with NodeJS) 8.9.0+
 
 ```shell
 # go into web directory
@@ -71,7 +57,6 @@ npm start
 The browser will open on http://localhost:3000
 
 ### Requests examples
-> OpenAPI endpoint is available under http://localhost:8080/docs endpoint
 #### Add a task
 Post request:
 ```bash
