@@ -14,6 +14,8 @@ import (
 	m "watcher/models"
 )
 
+const version = "0.0.8"
+
 var (
 	argo = Argo{
 		User:     os.Getenv("ARGO_USER"),
@@ -42,6 +44,7 @@ func setupRouter() *gin.Engine {
 	apiGroup.GET("/tasks", getState)
 	apiGroup.GET("/tasks/:id", getTaskStatus)
 	apiGroup.GET("/apps", getApps)
+	apiGroup.GET("/version", getVersion)
 
 	return router
 }
@@ -86,6 +89,10 @@ func getTaskStatus(c *gin.Context) {
 
 func getApps(c *gin.Context) {
 	c.JSON(http.StatusOK, client.GetAppList())
+}
+
+func getVersion(c *gin.Context) {
+	c.JSON(http.StatusOK, version)
 }
 
 func healthz(c *gin.Context) {
