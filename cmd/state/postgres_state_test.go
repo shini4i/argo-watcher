@@ -69,20 +69,6 @@ func TestPostgresState_GetTaskStatus(t *testing.T) {
 	}
 }
 
-func TestPostgresState_GetTasks(t *testing.T) {
-	currentTasks := postgresState.GetTasks(float64(time.Now().UTC().Unix()-5*60*1000), float64(time.Now().UTC().Unix()), "")
-	currentFilteredTasks := postgresState.GetTasks(float64(time.Now().UTC().Unix()-5*60*1000), float64(time.Now().UTC().Unix()), "Test")
-
-	// A much simpler check. Need to reconsider this in the future.
-	if len(currentTasks) != len(postgresTasks) {
-		t.Errorf("Unfiltered tasks count does not match. Got %d, expected %d", len(currentTasks), len(postgresTasks))
-	}
-
-	if l := len(currentFilteredTasks); l != 1 {
-		t.Errorf("Filtered tasks count does not match. Got %d tasks, expected %d", l, 1)
-	}
-}
-
 func TestPostgresState_SetTaskStatus(t *testing.T) {
 	postgresState.SetTaskStatus(postgresTaskId, "deployed")
 
