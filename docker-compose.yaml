@@ -7,5 +7,39 @@ services:
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - ./db/data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     ports:
       - 5432:5432
+  backend:
+    build:
+      dockerfile: Dockerfile
+      context: .
+    env_file:
+      - .env
+    environment:
+      DB_HOST: database
+      DB_NAME: argo
+      DB_USER: postgres
+      DB_PASSWORD: example
+      STATE_TYPE: postgres
+    ports:
+      - 8080:8080
+    depends_on:
+      database:
+        condition: service_healthy
+  frontend:
+    image: node:17.7-alpine3.15
+    working_dir: /app
+    volumes:
+      - ./web:/app
+    environment:
+      - DISABLE_ESLINT_PLUGIN=true
+      - PROXY=http://backend:8080
+    entrypoint: ""
+    command: npm start
+    ports:
+      - 3000:3000

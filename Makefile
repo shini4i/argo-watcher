@@ -1,4 +1,4 @@
-.PHONY: test migrate up down run
+.PHONY: test up down
 
 up:
 	@docker compose up &
@@ -6,11 +6,5 @@ up:
 down:
 	@docker compose down
 
-migrate:
-	@dbmate up
-
-run:
-	@poetry run argo-watcher
-
 test:
-	@STATE_TYPE=in-memory ARGO_URL=https://argocd.example.com ARGO_USER=test ARGO_PASSWORD=test pytest
+	@cd cmd && go test -v ./... -count=1

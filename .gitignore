@@ -3,16 +3,10 @@
 
 # database for development
 db/data
-db/schema.sql
 
 # static directory
-static/**
-!static/.gitkeep
+static/
 
 # environment files
 **/.envrc
 **/.env
-
-# python environment
-.venv
-**/__pycache__
