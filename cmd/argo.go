@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"os"
 	"strconv"
 	"time"
+	h "watcher/helpers"
 	m "watcher/models"
 	s "watcher/state"
 )
@@ -57,8 +59,15 @@ func (argo *Argo) Init() *Argo {
 	req, err := http.NewRequest("POST", argo.Url+"/api/v1/session", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json; charset=UTF-8")
 
+	tlsVerify, _ := strconv.ParseBool(h.GetEnv("SSL_VERIFY", "true"))
+
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: tlsVerify},
+	}
+
 	client := &http.Client{
-		Jar: jar,
+		Jar:       jar,
+		Transport: transport,
 	}
 
 	response, err := client.Do(req)
