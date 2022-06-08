@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/gin-gonic/contrib/static"
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/romana/rlog"
 	"net/http"
 	"os"
@@ -38,6 +39,7 @@ func setupRouter() *gin.Engine {
 		c.File(fmt.Sprintf("%s/index.html", staticFilesPath))
 	})
 	router.GET("/healthz", healthz)
+	router.GET("/metrics", prometheusHandler())
 
 	apiGroup := router.Group("/api/v1")
 	apiGroup.POST("/tasks", addTask)
@@ -104,6 +106,14 @@ func healthz(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, m.HealthStatus{
 			Status: "down",
 		})
+	}
+}
+
+func prometheusHandler() gin.HandlerFunc {
+	h := promhttp.Handler()
+
+	return func(c *gin.Context) {
+		h.ServeHTTP(c.Writer, c.Request)
 	}
 }
 

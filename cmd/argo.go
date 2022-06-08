@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/avast/retry-go"
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/romana/rlog"
 	"io"
 	"io/ioutil"
@@ -19,6 +20,17 @@ import (
 	h "watcher/helpers"
 	m "watcher/models"
 	s "watcher/state"
+)
+
+var (
+	failedDeployment = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "failed_deployment",
+		Help: "Per application failed deployment count before first success.",
+	}, []string{"app"})
+	processedDeployments = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "processed_deployments",
+		Help: "The amount of deployment processed since startup.",
+	})
 )
 
 type Argo struct {
@@ -34,6 +46,9 @@ func (argo *Argo) Init() *Argo {
 		Username string `json:"username"`
 		Password string `json:"password"`
 	}
+
+	prometheus.MustRegister(failedDeployment)
+	prometheus.MustRegister(processedDeployments)
 
 	switch state := os.Getenv("STATE_TYPE"); state {
 	case "postgres":
@@ -59,10 +74,10 @@ func (argo *Argo) Init() *Argo {
 	req, err := http.NewRequest("POST", argo.Url+"/api/v1/session", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json; charset=UTF-8")
 
-	tlsVerify, _ := strconv.ParseBool(h.GetEnv("SSL_VERIFY", "true"))
+	skipTlsVerify, _ := strconv.ParseBool(h.GetEnv("SKIP_TLS_VERIFY", "false"))
 
 	transport := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: tlsVerify},
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: skipTlsVerify},
 	}
 
 	client := &http.Client{
@@ -136,6 +151,7 @@ func (argo *Argo) AddTask(task m.Task) string {
 	task.Id = uuid.New().String()
 	rlog.Infof("[%s] A new task was triggered. Expecting tag %s in app %s.", task.Id, task.Images[0].Tag, task.App)
 	argo.state.Add(task)
+	processedDeployments.Inc()
 	go argo.waitForRollout(task)
 	return task.Id
 }
@@ -207,6 +223,7 @@ func (argo *Argo) waitForRollout(task m.Task) {
 						return errors.New("")
 					} else {
 						rlog.Infof("[%s] App is running on the excepted version.", task.Id)
+						failedDeployment.With(prometheus.Labels{"app": task.App}).Set(0)
 						argo.state.SetTaskStatus(task.Id, "deployed")
 					}
 				}
@@ -223,6 +240,7 @@ func (argo *Argo) waitForRollout(task m.Task) {
 
 	if err != nil {
 		rlog.Infof("[%s] The expected tag did not become available within expected timeframe. Aborting.", task.Id)
+		failedDeployment.With(prometheus.Labels{"app": task.App}).Inc()
 		argo.state.SetTaskStatus(task.Id, "failed")
 	}
 }
