@@ -3,9 +3,9 @@ package state
 import (
 	"github.com/google/uuid"
 	"os"
-	"reflect"
 	"testing"
 	"time"
+	"watcher/helpers"
 	m "watcher/models"
 )
 
@@ -70,8 +70,8 @@ func TestPostgresState_GetTaskStatus(t *testing.T) {
 }
 
 func TestPostgresState_GetTasks(t *testing.T) {
-	currentTasks := postgresState.GetTasks(float64(time.Now().Unix()-5*60*1000), float64(time.Now().Unix()), "")
-	currentFilteredTasks := postgresState.GetTasks(float64(time.Now().Unix()-5*60*1000), float64(time.Now().Unix()), "Test")
+	currentTasks := postgresState.GetTasks(float64(time.Now().UTC().Unix()-5*60*1000), float64(time.Now().UTC().Unix()), "")
+	currentFilteredTasks := postgresState.GetTasks(float64(time.Now().UTC().Unix()-5*60*1000), float64(time.Now().UTC().Unix()), "Test")
 
 	// A much simpler check. Need to reconsider this in the future.
 	if len(currentTasks) != len(postgresTasks) {
@@ -94,7 +94,13 @@ func TestPostgresState_SetTaskStatus(t *testing.T) {
 func TestPostgresState_GetAppList(t *testing.T) {
 	apps := postgresState.GetAppList()
 
-	if !reflect.DeepEqual(apps, []string{"Test", "Test2"}) {
-		t.Errorf("got %s, expected %s", apps, []string{"Test", "Test2"})
+	for _, app := range apps {
+		if !helpers.Contains([]string{"Test", "Test2"}, app) {
+			t.Errorf("Got unexpected value %s", app)
+		}
+	}
+
+	if len(apps) != 2 {
+		t.Errorf("Got %d apps, but expected %d", len(apps), 2)
 	}
 }

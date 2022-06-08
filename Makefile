@@ -7,4 +7,4 @@ down:
 	@docker compose down
 
 test:
-	@cd cmd && go test -v ./...
+	@cd cmd && go test -v ./... -count=1
