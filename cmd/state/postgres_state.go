@@ -20,7 +20,7 @@ import (
 
 var (
 	dbHost     = os.Getenv("DB_HOST")
-	dbPort     = os.Getenv("DB_PORT")
+	dbPort     = h.GetEnv("DB_PORT", "5432")
 	dbName     = os.Getenv("DB_NAME")
 	dbUser     = os.Getenv("DB_USER")
 	dbPassword = os.Getenv("DB_PASSWORD")
