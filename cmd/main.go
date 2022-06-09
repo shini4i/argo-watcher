@@ -10,9 +10,9 @@ import (
 	"os"
 	"strconv"
 	"time"
-	"watcher/helpers"
 
-	m "watcher/models"
+	"github.com/shini4i/argo-watcher/cmd/helpers"
+	m "github.com/shini4i/argo-watcher/cmd/models"
 )
 
 const version = "0.0.8"

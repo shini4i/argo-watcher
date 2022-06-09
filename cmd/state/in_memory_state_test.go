@@ -2,10 +2,10 @@ package state
 
 import (
 	"github.com/google/uuid"
+	m "github.com/shini4i/argo-watcher/cmd/models"
 	"reflect"
 	"testing"
 	"time"
-	m "watcher/models"
 )
 
 const taskId = "9b67e344-e5b5-11ec-bc56-8a68373f0f50"

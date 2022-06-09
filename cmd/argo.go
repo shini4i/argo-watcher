@@ -17,9 +17,10 @@ import (
 	"os"
 	"strconv"
 	"time"
-	h "watcher/helpers"
-	m "watcher/models"
-	s "watcher/state"
+
+	h "github.com/shini4i/argo-watcher/cmd/helpers"
+	m "github.com/shini4i/argo-watcher/cmd/models"
+	s "github.com/shini4i/argo-watcher/cmd/state"
 )
 
 var (
