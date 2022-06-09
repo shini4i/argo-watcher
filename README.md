@@ -19,7 +19,7 @@ Additionally, there is a Web UI that allows checking all current deployments and
 ### Server
 A server-side part can be installed using the helm chart that is available  [here](https://artifacthub.io/packages/helm/shini4i/argo-watcher)
 ### Client
-A simple example of client implementation that can be used in a pipeline is available [here](https://github.com/shini4i/argo-watcher/tree/main/client)
+A simple example of client implementation that can be used in a pipeline is available [here](https://github.com/shini4i/argo-watcher/tree/main/cmd/client)
 
 ## Development
 
