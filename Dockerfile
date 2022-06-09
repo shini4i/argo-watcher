@@ -1,7 +1,14 @@
+#######################
+# CA-Certs
+#######################
+
 FROM alpine:3.16 as ca-certs
 
 RUN apk add --no-cache ca-certificates
 
+#######################
+# Frontend build
+#######################
 FROM node:17.7-alpine3.15 as builder-frontend
 
 WORKDIR /app
@@ -16,6 +23,9 @@ COPY web/ .
 
 RUN npm run build
 
+#######################
+# Final image
+#######################
 FROM scratch
 
 COPY --from=ca-certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
