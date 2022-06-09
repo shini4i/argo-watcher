@@ -5,8 +5,9 @@ import (
 	"os"
 	"testing"
 	"time"
-	"watcher/helpers"
-	m "watcher/models"
+
+	"github.com/shini4i/argo-watcher/cmd/helpers"
+	m "github.com/shini4i/argo-watcher/cmd/models"
 )
 
 const postgresTaskId = "782e6e84-e67d-11ec-9f2f-8a68373f0f50"

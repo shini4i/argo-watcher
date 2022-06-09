@@ -3,8 +3,9 @@ package state
 import (
 	"github.com/romana/rlog"
 	"time"
-	h "watcher/helpers"
-	m "watcher/models"
+
+	h "github.com/shini4i/argo-watcher/cmd/helpers"
+	m "github.com/shini4i/argo-watcher/cmd/models"
 )
 
 type InMemoryState struct {
