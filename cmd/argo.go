@@ -173,6 +173,10 @@ func (argo *Argo) checkAppStatus(app string) (m.Application, error) {
 		panic(err)
 	}
 
+	q := req.URL.Query()
+	q.Add("refresh", "normal")
+	req.URL.RawQuery = q.Encode()
+
 	resp, err := argo.client.Do(req)
 	if err != nil {
 		panic(err)
