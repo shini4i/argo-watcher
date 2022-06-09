@@ -2,12 +2,12 @@ package state
 
 import (
 	"github.com/google/uuid"
+	"github.com/shini4i/argo-watcher/internal/helpers"
 	"os"
 	"testing"
 	"time"
 
-	"github.com/shini4i/argo-watcher/cmd/helpers"
-	m "github.com/shini4i/argo-watcher/cmd/models"
+	m "github.com/shini4i/argo-watcher/internal/models"
 )
 
 const postgresTaskId = "782e6e84-e67d-11ec-9f2f-8a68373f0f50"
@@ -48,7 +48,7 @@ var (
 )
 
 func TestPostgresState_Add(t *testing.T) {
-	err := os.Setenv("DB_MIGRATIONS_PATH", "../../db/migrations")
+	err := os.Setenv("DB_MIGRATIONS_PATH", "../../../db/migrations")
 	if err != nil {
 		panic(err)
 	}

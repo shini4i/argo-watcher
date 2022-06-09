@@ -1,6 +1,8 @@
 package state
 
-import m "github.com/shini4i/argo-watcher/cmd/models"
+import (
+	m "github.com/shini4i/argo-watcher/internal/models"
+)
 
 type State interface {
 	Connect()

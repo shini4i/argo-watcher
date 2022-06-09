@@ -1,20 +1,7 @@
-##################
-# Backend build
-##################
-FROM golang:1.18-alpine3.16 as builder-backend
-
-WORKDIR /src
-
-COPY cmd/ cmd/
-COPY go.* .
+FROM alpine:3.16 as ca-certs
 
 RUN apk add --no-cache ca-certificates
 
-RUN cd cmd && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o argo-watcher
-
-##################
-# Frontend build
-##################
 FROM node:17.7-alpine3.15 as builder-frontend
 
 WORKDIR /app
@@ -29,14 +16,12 @@ COPY web/ .
 
 RUN npm run build
 
-##################
-# The resulting image build
-##################
 FROM scratch
 
-COPY --from=builder-backend /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --from=builder-backend /src/cmd/argo-watcher /argo-watcher
+COPY --from=ca-certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder-frontend /app/build /static
+
+COPY bin/argo-watcher /argo-watcher
 COPY db /db
 
 CMD ["/argo-watcher"]
