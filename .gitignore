@@ -10,3 +10,6 @@ static/
 # environment files
 **/.envrc
 **/.env
+
+# directory for built binary files
+bin/

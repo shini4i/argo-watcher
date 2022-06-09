@@ -11,8 +11,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/shini4i/argo-watcher/cmd/helpers"
-	m "github.com/shini4i/argo-watcher/cmd/models"
+	h "github.com/shini4i/argo-watcher/internal/helpers"
+	m "github.com/shini4i/argo-watcher/internal/models"
 )
 
 const version = "0.0.8"
@@ -27,7 +27,7 @@ var (
 )
 
 func setupRouter() *gin.Engine {
-	staticFilesPath := helpers.GetEnv("STATIC_FILES_PATH", "static")
+	staticFilesPath := h.GetEnv("STATIC_FILES_PATH", "static")
 
 	gin.SetMode(gin.ReleaseMode)
 

@@ -29,6 +29,7 @@ jobs:
         uses: docker/build-push-action@v2
         with:
           context: .
+          file: ./Dockerfile
           tags: |
             ghcr.io/shini4i/argo-watcher:${{ github.ref_name }}
           push: true
@@ -36,7 +37,8 @@ jobs:
       - name: Build and publish argo-watcher-client image
         uses: docker/build-push-action@v2
         with:
-          context: client
+          context: .
+          file: ./Dockerfile.client
           tags: |
             ghcr.io/shini4i/argo-watcher-client:${{ github.ref_name }}
           push: true

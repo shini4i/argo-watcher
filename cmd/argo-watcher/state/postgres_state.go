@@ -12,11 +12,11 @@ import (
 	"os"
 	"time"
 
-	h "github.com/shini4i/argo-watcher/cmd/helpers"
-	m "github.com/shini4i/argo-watcher/cmd/models"
-
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
+
+	h "github.com/shini4i/argo-watcher/internal/helpers"
+	m "github.com/shini4i/argo-watcher/internal/models"
 )
 
 var (
