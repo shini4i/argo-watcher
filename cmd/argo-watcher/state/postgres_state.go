@@ -49,9 +49,7 @@ func (p *PostgresState) Connect() {
 	rlog.Debug("Running database migrations...")
 
 	switch err = migrations.Up(); err {
-	case migrate.ErrNoChange:
-		rlog.Debug("Database schema is up to date.")
-	case nil:
+	case migrate.ErrNoChange, nil:
 		rlog.Debug("Database schema is up to date.")
 	default:
 		panic(err)

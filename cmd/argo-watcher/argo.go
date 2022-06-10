@@ -23,17 +23,6 @@ import (
 	m "github.com/shini4i/argo-watcher/internal/models"
 )
 
-var (
-	failedDeployment = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "failed_deployment",
-		Help: "Per application failed deployment count before first success.",
-	}, []string{"app"})
-	processedDeployments = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "processed_deployments",
-		Help: "The amount of deployment processed since startup.",
-	})
-)
-
 type Argo struct {
 	Url      string
 	User     string
@@ -47,9 +36,6 @@ func (argo *Argo) Init() *Argo {
 		Username string `json:"username"`
 		Password string `json:"password"`
 	}
-
-	prometheus.MustRegister(failedDeployment)
-	prometheus.MustRegister(processedDeployments)
 
 	switch state := os.Getenv("STATE_TYPE"); state {
 	case "postgres":
