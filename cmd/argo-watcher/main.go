@@ -41,9 +41,6 @@ var (
 func setupRouter() *gin.Engine {
 	staticFilesPath := h.GetEnv("STATIC_FILES_PATH", "static")
 
-	prometheus.MustRegister(failedDeployment)
-	prometheus.MustRegister(processedDeployments)
-
 	gin.SetMode(gin.ReleaseMode)
 
 	router := gin.New()
@@ -132,9 +129,19 @@ func prometheusHandler() gin.HandlerFunc {
 	}
 }
 
+func prometheusRegisterMetrics() {
+	rlog.Debug("Registering prometheus metrics...")
+	prometheus.MustRegister(failedDeployment)
+	prometheus.MustRegister(processedDeployments)
+}
+
 func main() {
 	rlog.Info("Starting web server")
+
 	router := setupRouter()
+
+	prometheusRegisterMetrics()
+
 	err := router.Run(":8080")
 	if err != nil {
 		rlog.Critical(err)
