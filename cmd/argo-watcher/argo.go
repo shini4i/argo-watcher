@@ -210,6 +210,7 @@ func (argo *Argo) waitForRollout(task m.Task) {
 			for _, image := range task.Images {
 				expected := fmt.Sprintf("%s:%s", image.Image, image.Tag)
 				for _, currentImage := range app.Status.Summary.Images {
+					rlog.Debugf("[%s] expected %s, got %s", task.Id, expected, currentImage)
 					if expected != currentImage {
 						return errors.New("")
 					} else {
