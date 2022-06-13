@@ -27,3 +27,13 @@ export function fetchApplications() {
         return res.json();
       });
 }
+
+export function fetchVersion() {
+  return fetch(`/api/v1/version`)
+      .then(res => {
+        if (res.status !== 200) {
+          throw new Error(res.statusText);
+        }
+        return res.json();
+      });
+}
