@@ -8,7 +8,7 @@ down:
 
 .PHONY: test
 test:
-	@go test -v ./... -count=1
+	@ARGO_TIMEOUT=1 go test -v ./... -count=1
 
 .PHONY: endure-dirs
 endure-dirs:

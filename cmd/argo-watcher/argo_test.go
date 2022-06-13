@@ -34,7 +34,9 @@ var (
 func TestArgo_GetTaskStatus(t *testing.T) {
 	taskId = testClient.AddTask(task)
 
-	if status := testClient.GetTaskStatus(taskId); status != "in progress" {
+	time.Sleep(5 * time.Second)
+
+	if status := testClient.GetTaskStatus(taskId); status != "deployed" {
 		t.Errorf("got %s, expected %s", status, "in progress")
 	}
 }

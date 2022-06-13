@@ -44,4 +44,5 @@ jobs:
           DB_PASSWORD: postgres
           STATE_TYPE: in-memory
           ARGO_URL: http://localhost:8081
+          ARGO_TIMEOUT: 1
         run: cd cmd && go test -v ./...
