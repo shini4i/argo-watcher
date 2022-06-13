@@ -9,7 +9,7 @@ RUN apk add --no-cache ca-certificates
 
 COPY . .
 
-RUN GO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o client ./cmd/client
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o client ./cmd/client
 
 #######################
 # Final image

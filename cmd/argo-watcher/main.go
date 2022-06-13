@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/gin-gonic/contrib/static"
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/romana/rlog"
 	"net/http"
@@ -24,6 +25,17 @@ var (
 		Url:      os.Getenv("ARGO_URL"),
 	}
 	client = argo.Init()
+)
+
+var (
+	failedDeployment = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "failed_deployment",
+		Help: "Per application failed deployment count before first success.",
+	}, []string{"app"})
+	processedDeployments = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "processed_deployments",
+		Help: "The amount of deployment processed since startup.",
+	})
 )
 
 func setupRouter() *gin.Engine {
@@ -110,16 +122,26 @@ func healthz(c *gin.Context) {
 }
 
 func prometheusHandler() gin.HandlerFunc {
-	h := promhttp.Handler()
+	ph := promhttp.Handler()
 
 	return func(c *gin.Context) {
-		h.ServeHTTP(c.Writer, c.Request)
+		ph.ServeHTTP(c.Writer, c.Request)
 	}
+}
+
+func prometheusRegisterMetrics() {
+	rlog.Debug("Registering prometheus metrics...")
+	prometheus.MustRegister(failedDeployment)
+	prometheus.MustRegister(processedDeployments)
 }
 
 func main() {
 	rlog.Info("Starting web server")
+
 	router := setupRouter()
+
+	prometheusRegisterMetrics()
+
 	err := router.Run(":8080")
 	if err != nil {
 		rlog.Critical(err)
