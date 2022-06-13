@@ -22,6 +22,10 @@ jobs:
           --health-retries 5
         ports:
           - 5432:5432
+      mock:
+        image: shini4i/argo-watcher-mock:v0.0.1
+        ports:
+          - 8081:8081
 
     steps:
       - uses: actions/checkout@v2
@@ -38,4 +42,7 @@ jobs:
           DB_USER: postgres
           DB_NAME: postgres
           DB_PASSWORD: postgres
+          STATE_TYPE: in-memory
+          ARGO_URL: http://localhost:8081
+          ARGO_TIMEOUT: 1
         run: cd cmd && go test -v ./...
