@@ -43,6 +43,9 @@ func (argo *Argo) Init() *Argo {
 		argo.state.Connect()
 	case "in-memory":
 		argo.state = &s.InMemoryState{}
+	default:
+		rlog.Critical("Variable STATE_TYPE must be set. Aborting.")
+		os.Exit(1)
 	}
 
 	body, err := json.Marshal(argoAuth{

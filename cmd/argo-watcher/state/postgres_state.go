@@ -112,7 +112,7 @@ func (p *PostgresState) GetTasks(startTime float64, endTime float64, app string)
 	defer func(rows *sql.Rows) {
 		err := rows.Close()
 		if err != nil {
-
+			rlog.Error(err)
 		}
 	}(rows)
 
