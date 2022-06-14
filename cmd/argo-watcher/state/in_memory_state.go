@@ -25,21 +25,23 @@ func (state *InMemoryState) Add(task m.Task) {
 func (state *InMemoryState) GetTasks(startTime float64, endTime float64, app string) []m.Task {
 	if state.tasks == nil {
 		return []m.Task{}
-	} else {
-		var tasks []m.Task
-		for _, task := range state.tasks {
-			if app == "" {
-				if task.Created >= startTime && task.Created <= endTime {
-					tasks = append(tasks, task)
-				}
-			} else {
-				if task.Created >= startTime && task.Created <= endTime && task.App == app {
-					tasks = append(tasks, task)
-				}
+	}
+
+	var tasks []m.Task
+
+	for _, task := range state.tasks {
+		if app == "" {
+			if task.Created >= startTime && task.Created <= endTime {
+				tasks = append(tasks, task)
+			}
+		} else {
+			if task.Created >= startTime && task.Created <= endTime && task.App == app {
+				tasks = append(tasks, task)
 			}
 		}
-		return tasks
 	}
+
+	return tasks
 }
 
 func (state *InMemoryState) GetTaskStatus(id string) string {
