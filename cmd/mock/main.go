@@ -32,7 +32,7 @@ func mockReturnAppStatus(c *gin.Context) {
 
 	appStatus.Status.Sync.Status = "synced"
 	appStatus.Status.Health.Status = "healthy"
-	appStatus.Status.Summary.Images = []string{"test:v0.0.1"}
+	appStatus.Status.Summary.Images = []string{"test:v0.0.1", "test2:v0.0.3", "test:v0.0.3"}
 
 	c.JSON(http.StatusOK, appStatus)
 }

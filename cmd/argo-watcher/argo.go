@@ -209,14 +209,16 @@ func (argo *Argo) waitForRollout(task m.Task) {
 
 			for _, image := range task.Images {
 				expected := fmt.Sprintf("%s:%s", image.Image, image.Tag)
-				for _, currentImage := range app.Status.Summary.Images {
-					rlog.Debugf("[%s] expected %s, got %s", task.Id, expected, currentImage)
-					if expected != currentImage {
+				for idx, currentImage := range app.Status.Summary.Images {
+					rlog.Debugf("[%s] comparing %s with %s", task.Id, expected, currentImage)
+					if idx == len(app.Status.Summary.Images)-1 && expected != currentImage {
 						return errors.New("")
+					} else if expected != currentImage {
+						rlog.Debugf("[%s] versions did not match", task.Id)
+						continue
 					} else {
-						rlog.Infof("[%s] App is running on the excepted version.", task.Id)
-						failedDeployment.With(prometheus.Labels{"app": task.App}).Set(0)
-						argo.state.SetTaskStatus(task.Id, "deployed")
+						rlog.Debugf("[%s] versions did match", task.Id)
+						break
 					}
 				}
 			}
@@ -234,6 +236,11 @@ func (argo *Argo) waitForRollout(task m.Task) {
 		rlog.Infof("[%s] The expected tag did not become available within expected timeframe. Aborting.", task.Id)
 		failedDeployment.With(prometheus.Labels{"app": task.App}).Inc()
 		argo.state.SetTaskStatus(task.Id, "failed")
+		return
+	} else {
+		rlog.Infof("[%s] App is running on the excepted version.", task.Id)
+		failedDeployment.With(prometheus.Labels{"app": task.App}).Set(0)
+		argo.state.SetTaskStatus(task.Id, "deployed")
 	}
 }
 
