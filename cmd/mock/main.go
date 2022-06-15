@@ -30,8 +30,8 @@ func mockGenSession(c *gin.Context) {
 func mockReturnAppStatus(c *gin.Context) {
 	var appStatus m.Application
 
-	appStatus.Status.Sync.Status = "synced"
-	appStatus.Status.Health.Status = "healthy"
+	appStatus.Status.Sync.Status = "Synced"
+	appStatus.Status.Health.Status = "Healthy"
 	appStatus.Status.Summary.Images = []string{"test:v0.0.1", "test2:v0.0.3", "test:v0.0.3"}
 
 	c.JSON(http.StatusOK, appStatus)

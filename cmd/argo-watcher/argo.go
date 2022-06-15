@@ -206,8 +206,7 @@ func (argo *Argo) waitForRollout(task m.Task) {
 		func() error {
 			app, err := argo.checkAppStatus(task.App)
 			if err != nil {
-				argo.state.SetTaskStatus(task.Id, "app not found")
-				return nil
+				return errors.New("app not found")
 			}
 
 			for _, image := range task.Images {
@@ -218,9 +217,10 @@ func (argo *Argo) waitForRollout(task m.Task) {
 						return errors.New("")
 					} else if expected != currentImage {
 						rlog.Debugf("[%s] versions did not match", task.Id)
-						continue
+					} else if expected == currentImage && app.Status.Sync.Status != "Synced" && app.Status.Health.Status != "Healthy" {
+						rlog.Debugf("[%s] version did match, but application is not yet running on the expected version", task.Id)
 					} else {
-						rlog.Debugf("[%s] versions did match", task.Id)
+						rlog.Debugf("[%s] versions did match, and application is running on the expected version", task.Id)
 						break
 					}
 				}
@@ -233,13 +233,24 @@ func (argo *Argo) waitForRollout(task m.Task) {
 		retry.DelayType(retry.FixedDelay),
 		retry.Delay(15*time.Second),
 		retry.Attempts(retryAttempts),
+		retry.RetryIf(func(err error) bool {
+			if err.Error() == "app not found" {
+				return false
+			}
+			return true
+		}),
 	)
 
 	if err != nil {
-		rlog.Infof("[%s] The expected tag did not become available within expected timeframe. Aborting.", task.Id)
-		failedDeployment.With(prometheus.Labels{"app": task.App}).Inc()
-		argo.state.SetTaskStatus(task.Id, "failed")
-		return
+		switch err.Error() {
+		case "All attempts fail:\n#1: app not found":
+			rlog.Errorf("[%s] Application %s does not exist", task.Id, task.App)
+			argo.state.SetTaskStatus(task.Id, "app not found")
+		default:
+			rlog.Infof("[%s] The expected tag did not become available within expected timeframe. Aborting.", task.Id)
+			failedDeployment.With(prometheus.Labels{"app": task.App}).Inc()
+			argo.state.SetTaskStatus(task.Id, "failed")
+		}
 	} else {
 		rlog.Infof("[%s] App is running on the excepted version.", task.Id)
 		failedDeployment.With(prometheus.Labels{"app": task.App}).Set(0)

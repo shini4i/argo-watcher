@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Fixed
 - waitForRollout for apps with multiple images
+- Validate application status
 
 ## [0.0.10] - 2022-06-13
 ### Changed
