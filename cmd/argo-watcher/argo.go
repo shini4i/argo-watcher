@@ -219,13 +219,13 @@ func (argo *Argo) waitForRollout(task m.Task) {
 						rlog.Debugf("[%s] versions did not match", task.Id)
 					} else if expected == currentImage && app.Status.Sync.Status != "Synced" {
 						rlog.Debugf("[%s] version did match, but application is not yet synced", task.Id)
+						return errors.New("application is not yet synced")
 					} else if expected == currentImage && app.Status.Health.Status != "Healthy" {
 						rlog.Debugf("[%s] version did match, but application is not yet healthy", task.Id)
+						return errors.New("application is not yet healthy")
 					} else if expected == currentImage && app.Status.Sync.Status == "Synced" && app.Status.Health.Status == "Healthy" {
 						rlog.Debugf("[%s] versions did match, and application is running on the expected version", task.Id)
 						break
-					} else {
-						return errors.New("")
 					}
 				}
 			}
