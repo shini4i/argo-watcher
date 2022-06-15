@@ -23,7 +23,7 @@ jobs:
         ports:
           - 5432:5432
       mock:
-        image: shini4i/argo-watcher-mock:v0.0.1
+        image: shini4i/argo-watcher-mock:v0.0.2
         ports:
           - 8081:8081
 
