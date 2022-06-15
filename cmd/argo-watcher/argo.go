@@ -211,24 +211,17 @@ func (argo *Argo) waitForRollout(task m.Task) {
 
 			for _, image := range task.Images {
 				expected := fmt.Sprintf("%s:%s", image.Image, image.Tag)
-				for idx, currentImage := range app.Status.Summary.Images {
-					rlog.Debugf("[%s] comparing %s with %s", task.Id, expected, currentImage)
-					if idx == len(app.Status.Summary.Images)-1 && expected != currentImage {
-						return errors.New("")
-					} else if expected != currentImage {
-						rlog.Debugf("[%s] versions did not match", task.Id)
-					} else if expected == currentImage && app.Status.Sync.Status != "Synced" {
-						rlog.Debugf("[%s] version did match, but application is not yet synced", task.Id)
-						return errors.New("application is not yet synced")
-					} else if expected == currentImage && app.Status.Health.Status != "Healthy" {
-						rlog.Debugf("[%s] version did match, but application is not yet healthy", task.Id)
-						return errors.New("application is not yet healthy")
-					} else if expected == currentImage && app.Status.Sync.Status == "Synced" && app.Status.Health.Status == "Healthy" {
-						rlog.Debugf("[%s] versions did match, and application is running on the expected version", task.Id)
-						break
-					}
+				if !h.Contains(app.Status.Summary.Images, expected) {
+					rlog.Debugf("[%s] %s is not available yet", task.Id, expected)
+					return errors.New("")
 				}
 			}
+
+			if app.Status.Sync.Status != "Synced" || app.Status.Health.Status != "Healthy" {
+				rlog.Debugf("[%s] %s is not ready yet", task.Id, task.App)
+				return errors.New("")
+			}
+
 			return nil
 		},
 		retry.DelayType(retry.FixedDelay),
