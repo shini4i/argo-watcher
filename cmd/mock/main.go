@@ -12,6 +12,10 @@ type Token struct {
 	Token string `json:"token"`
 }
 
+var (
+	requestsCount = 0
+)
+
 func setupRouter() *gin.Engine {
 	router := gin.Default()
 
@@ -46,13 +50,26 @@ func mockReturnAppStatus(c *gin.Context) {
 		appStatus.Status.Sync.Status = "OutOfSync"
 	}
 
-	if app == "app3" {
+	appStatus.Status.Summary.Images = []string{"app:v0.0.1", "nginx:1.21.6", "migrations:v0.0.1"}
+
+	if app == "app4" && requestsCount < 5 {
+		rlog.Infof("app4 requests count %d", requestsCount)
+		requestsCount++
+		if requestsCount < 2 {
+			appStatus.Status.Summary.Images = []string{"app:v0.0.1-rc1", "nginx:1.21.6", "migrations:v0.0.1"}
+		}
 		appStatus.Status.Health.Status = "UhHealthy"
+		rlog.Infof("app4 sync status is %s", appStatus.Status.Sync.Status)
+		rlog.Infof("app4 health status is %s", appStatus.Status.Health.Status)
+	} else if app == "app4" {
+		requestsCount = 0
+		appStatus.Status.Health.Status = "Healthy"
+		appStatus.Status.Sync.Status = "Synced"
+		rlog.Infof("app4 sync status is %s", appStatus.Status.Sync.Status)
+		rlog.Infof("app4 health status is %s", appStatus.Status.Health.Status)
 	} else {
 		appStatus.Status.Health.Status = "Healthy"
 	}
-
-	appStatus.Status.Summary.Images = []string{"app:v0.0.1", "nginx:1.21.6", "migrations:v0.0.1"}
 
 	c.JSON(http.StatusOK, appStatus)
 }

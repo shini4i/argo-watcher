@@ -212,14 +212,16 @@ func (argo *Argo) waitForRollout(task m.Task) {
 			for _, image := range task.Images {
 				expected := fmt.Sprintf("%s:%s", image.Image, image.Tag)
 				if !h.Contains(app.Status.Summary.Images, expected) {
-					rlog.Infof("[%s] %s is not available yet", task.Id, expected)
+					rlog.Debugf("[%s] %s is not available yet", task.Id, expected)
 					return errors.New("")
-				} else {
-					if app.Status.Sync.Status != "Synced" || app.Status.Health.Status != "Healthy" {
-						return errors.New("")
-					}
 				}
 			}
+
+			if app.Status.Sync.Status != "Synced" || app.Status.Health.Status != "Healthy" {
+				rlog.Debugf("[%s] %s is not ready yet", task.Id, task.App)
+				return errors.New("")
+			}
+
 			return nil
 		},
 		retry.DelayType(retry.FixedDelay),
