@@ -231,9 +231,6 @@ func (argo *Argo) waitForRollout(task m.Task) {
 			}
 			return nil
 		},
-		retry.OnRetry(func(n uint, err error) {
-			rlog.Debugf("[%s] The expected tag was not found. Retrying...", task.Id)
-		}),
 		retry.DelayType(retry.FixedDelay),
 		retry.Delay(15*time.Second),
 		retry.Attempts(retryAttempts),
