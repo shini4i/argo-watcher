@@ -12,10 +12,6 @@ type Token struct {
 	Token string `json:"token"`
 }
 
-var (
-	requestsCount int
-)
-
 func setupRouter() *gin.Engine {
 	router := gin.Default()
 

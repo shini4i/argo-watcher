@@ -43,16 +43,6 @@ func TestArgo_GetTaskStatus(t *testing.T) {
 
 	task2 = task
 	task2.App = "app2"
-	task2.Images = []m.Image{
-		{
-			Image: "app",
-			Tag:   "v0.0.1",
-		},
-		{
-			Image: "nginx",
-			Tag:   "migrations:v0.0.1",
-		},
-	}
 	task2Id = testClient.AddTask(task2)
 
 	task3 = task

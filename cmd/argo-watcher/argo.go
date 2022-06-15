@@ -224,6 +224,8 @@ func (argo *Argo) waitForRollout(task m.Task) {
 						rlog.Debugf("[%s] version did match, but application is not yet healthy", task.Id)
 						return errors.New("application is not yet healthy")
 					} else if expected == currentImage && app.Status.Sync.Status == "Synced" && app.Status.Health.Status == "Healthy" {
+						// We except that Health status can be "Healthy" only when all containers are running the required images
+						// hence we consider first match as a "success" indicator
 						rlog.Debugf("[%s] versions did match, and application is running on the expected version", task.Id)
 						break
 					}
