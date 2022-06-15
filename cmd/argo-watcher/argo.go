@@ -224,6 +224,8 @@ func (argo *Argo) waitForRollout(task m.Task) {
 					} else if expected == currentImage && app.Status.Sync.Status == "Synced" && app.Status.Health.Status == "Healthy" {
 						rlog.Debugf("[%s] versions did match, and application is running on the expected version", task.Id)
 						break
+					} else {
+						return errors.New("")
 					}
 				}
 			}
