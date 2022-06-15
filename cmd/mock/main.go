@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/romana/rlog"
+	"github.com/shini4i/argo-watcher/internal/helpers"
 	m "github.com/shini4i/argo-watcher/internal/models"
 	"net/http"
 )
@@ -10,6 +11,10 @@ import (
 type Token struct {
 	Token string `json:"token"`
 }
+
+var (
+	requestsCount int
+)
 
 func setupRouter() *gin.Engine {
 	router := gin.Default()
@@ -30,9 +35,28 @@ func mockGenSession(c *gin.Context) {
 func mockReturnAppStatus(c *gin.Context) {
 	var appStatus m.Application
 
-	appStatus.Status.Sync.Status = "Synced"
-	appStatus.Status.Health.Status = "Healthy"
-	appStatus.Status.Summary.Images = []string{"test:v0.0.1", "test2:v0.0.3", "test:v0.0.3"}
+	apps := []string{"app", "app2", "app4"}
+
+	app := c.Param("id")
+
+	if !helpers.Contains(apps, app) {
+		c.JSON(http.StatusNotFound, nil)
+		return
+	}
+
+	if app == "app" {
+		appStatus.Status.Sync.Status = "Synced"
+	} else {
+		appStatus.Status.Sync.Status = "OutOfSync"
+	}
+
+	if app == "app3" {
+		appStatus.Status.Health.Status = "UhHealthy"
+	} else {
+		appStatus.Status.Health.Status = "Healthy"
+	}
+
+	appStatus.Status.Summary.Images = []string{"app:v0.0.1", "nginx:1.21.6", "migrations:v0.0.1"}
 
 	c.JSON(http.StatusOK, appStatus)
 }
