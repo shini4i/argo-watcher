@@ -26,13 +26,17 @@ type Task struct {
 	Images  []Image `json:"images"`
 }
 
+var (
+	url = os.Getenv("ARGO_WATCHER_URL")
+)
+
 func (task *Task) send() string {
 	body, err := json.Marshal(task)
 	if err != nil {
 		panic(err)
 	}
 
-	request, err := http.NewRequest("POST", os.Getenv("ARGO_WATCHER_URL")+"/api/v1/tasks", bytes.NewBuffer(body))
+	request, err := http.NewRequest("POST", url+"/api/v1/tasks", bytes.NewBuffer(body))
 	if err != nil {
 		panic(err)
 	}
@@ -78,7 +82,7 @@ func (task *Task) send() string {
 }
 
 func (task *Task) getStatus(id string) string {
-	request, err := http.NewRequest("GET", os.Getenv("ARGO_WATCHER_URL")+"/api/v1/tasks/"+id, nil)
+	request, err := http.NewRequest("GET", url+"/api/v1/tasks/"+id, nil)
 	if err != nil {
 		log.Print(err)
 		os.Exit(1)
@@ -138,6 +142,8 @@ func main() {
 	}
 
 	fmt.Printf("Waiting for %s app to be running on %s version.\n", task.App, tag)
+
+	url = strings.TrimSuffix(url, "/")
 
 	debug, _ := strconv.ParseBool(os.Getenv("DEBUG"))
 

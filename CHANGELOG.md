@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Changed
 - Improved waitForRollout logic
+- strings.TrimSuffix for client to handle cases when url is provided with trailing slash
 
 ## [0.0.11] - 2022-06-15
 ### Fixed
