@@ -41,6 +41,10 @@ func (state *InMemoryState) GetTasks(startTime float64, endTime float64, app str
 		}
 	}
 
+	if tasks == nil {
+		return []m.Task{}
+	}
+
 	return tasks
 }
 
