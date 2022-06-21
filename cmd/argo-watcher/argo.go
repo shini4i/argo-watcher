@@ -44,7 +44,7 @@ func (argo *Argo) Init() *Argo {
 	case "in-memory":
 		argo.state = &s.InMemoryState{}
 	default:
-		rlog.Critical("Variable STATE_TYPE must be set. Aborting.")
+		rlog.Critical("Variable STATE_TYPE must be one of [\"postgres\", \"in-memory\"]. Aborting.")
 		os.Exit(1)
 	}
 
@@ -228,10 +228,7 @@ func (argo *Argo) waitForRollout(task m.Task) {
 		retry.Delay(15*time.Second),
 		retry.Attempts(retryAttempts),
 		retry.RetryIf(func(err error) bool {
-			if err.Error() == "app not found" {
-				return false
-			}
-			return true
+			return err.Error() != "app not found"
 		}),
 	)
 
@@ -245,11 +242,12 @@ func (argo *Argo) waitForRollout(task m.Task) {
 			failedDeployment.With(prometheus.Labels{"app": task.App}).Inc()
 			argo.state.SetTaskStatus(task.Id, "failed")
 		}
-	} else {
-		rlog.Infof("[%s] App is running on the excepted version.", task.Id)
-		failedDeployment.With(prometheus.Labels{"app": task.App}).Set(0)
-		argo.state.SetTaskStatus(task.Id, "deployed")
+		return
 	}
+
+	rlog.Infof("[%s] App is running on the excepted version.", task.Id)
+	failedDeployment.With(prometheus.Labels{"app": task.App}).Set(0)
+	argo.state.SetTaskStatus(task.Id, "deployed")
 }
 
 func (argo *Argo) GetAppList() []string {
