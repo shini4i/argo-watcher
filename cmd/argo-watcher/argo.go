@@ -44,7 +44,7 @@ func (argo *Argo) Init() *Argo {
 	case "in-memory":
 		argo.state = &s.InMemoryState{}
 	default:
-		rlog.Critical("Variable STATE_TYPE must be on of [\"postgres\", \"in-memory\"]. Aborting.")
+		rlog.Critical("Variable STATE_TYPE must be one of [\"postgres\", \"in-memory\"]. Aborting.")
 		os.Exit(1)
 	}
 
