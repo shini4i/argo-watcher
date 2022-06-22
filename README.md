@@ -5,7 +5,9 @@
 
 ## Project Description
 
-This project is currently in PoC mode. The main idea is that this simple app will act as a "proxy" between pipelines and ArgoCD.
+This project is in an early development phase; hence some breaking changes might and should be expected.
+
+The main idea is that this simple app will act as a "proxy" between pipelines and ArgoCD.
 
 Currently, there is a limitation while using [argocd-image-updater](https://github.com/argoproj-labs/argocd-image-updater) that makes it hard
 to understand what is happening after an image is built in a pipeline and before ArgoCD deploys the built image.

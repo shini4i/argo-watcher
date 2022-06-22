@@ -30,12 +30,10 @@ func (state *InMemoryState) GetTasks(startTime float64, endTime float64, app str
 	var tasks []m.Task
 
 	for _, task := range state.tasks {
-		if app == "" {
-			if task.Created >= startTime && task.Created <= endTime {
+		if task.Created >= startTime && task.Created <= endTime {
+			if app == "" {
 				tasks = append(tasks, task)
-			}
-		} else {
-			if task.Created >= startTime && task.Created <= endTime && task.App == app {
+			} else if app == task.App {
 				tasks = append(tasks, task)
 			}
 		}
@@ -73,6 +71,10 @@ func (state *InMemoryState) GetAppList() []string {
 		if !h.Contains(apps, app.App) {
 			apps = append(apps, app.App)
 		}
+	}
+
+	if apps == nil {
+		return []string{}
 	}
 
 	return apps

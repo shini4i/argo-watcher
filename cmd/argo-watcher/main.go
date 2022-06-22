@@ -16,7 +16,7 @@ import (
 	m "github.com/shini4i/argo-watcher/internal/models"
 )
 
-const version = "0.0.12"
+var version = "local"
 
 var (
 	argo = Argo{
