@@ -3,13 +3,15 @@
 #######################
 FROM golang:1.18-alpine3.16 as builder-backend
 
+ARG APP_VERSION
+
 WORKDIR /src
 
 RUN apk add --no-cache ca-certificates upx
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o argo-watcher ./cmd/argo-watcher \
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X main.version=$APP_VERSION" -o argo-watcher ./cmd/argo-watcher \
  && upx --brute argo-watcher
 
 #######################

@@ -8,7 +8,6 @@ import (
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/lib/pq"
 	"github.com/romana/rlog"
-	"math"
 	"os"
 	"time"
 
@@ -79,11 +78,8 @@ func (p *PostgresState) Add(task m.Task) {
 }
 
 func (p *PostgresState) GetTasks(startTime float64, endTime float64, app string) []m.Task {
-	integ, decim := math.Modf(startTime)
-	start := time.Unix(int64(integ), int64(decim*(1e9)))
-
-	integ, decim = math.Modf(endTime)
-	end := time.Unix(int64(integ), int64(decim*(1e9)))
+	startTimeUTC := time.Unix(int64(startTime), 0).UTC()
+	endTimeUTC := time.Unix(int64(endTime), 0).UTC()
 
 	var rows *sql.Rows
 	var err error
@@ -94,14 +90,14 @@ func (p *PostgresState) GetTasks(startTime float64, endTime float64, app string)
 				"extract(epoch from updated) AS updated, "+
 				"images, status, app, author, "+
 				"project from tasks where created >= $1 AND created <= $2",
-			start, end)
+			startTimeUTC, endTimeUTC)
 	} else {
 		rows, err = p.db.Query(
 			"select extract(epoch from created) AS created, "+
 				"extract(epoch from updated) AS updated, "+
 				"images, status, app, author, "+
 				"project from tasks where created >= $1 AND created <= $2 AND app = $3",
-			start, end, app)
+			startTimeUTC, endTimeUTC, app)
 	}
 
 	if err != nil {
@@ -124,22 +120,21 @@ func (p *PostgresState) GetTasks(startTime float64, endTime float64, app string)
 	var images []uint8
 
 	for rows.Next() {
-		var t m.Task
-		// id is skipped as it is not used in the UI
-		if err := rows.Scan(&t.Created, &updated, &images, &t.Status, &t.App, &t.Author, &t.Project); err != nil {
-			rlog.Error(err)
-			return nil
+		var task m.Task
+
+		if err := rows.Scan(&task.Created, &updated, &images, &task.Status, &task.App, &task.Author, &task.Project); err != nil {
+			panic(err)
 		}
 
 		if updated.Valid {
-			t.Updated = updated.Float64
+			task.Updated = updated.Float64
 		}
 
-		err := json.Unmarshal(images, &t.Images)
-		if err != nil {
+		if err := json.Unmarshal(images, &task.Images); err != nil {
 			panic(err)
 		}
-		tasks = append(tasks, t)
+
+		tasks = append(tasks, task)
 	}
 
 	if tasks == nil {
@@ -154,6 +149,7 @@ func (p *PostgresState) GetTaskStatus(id string) string {
 
 	err := p.db.QueryRow("SELECT status FROM tasks WHERE id=$1", id).Scan(&status)
 	if err != nil {
+		rlog.Errorf("Failed to get task status for task %s: %s", id, err)
 		return "task not found"
 	}
 
@@ -161,7 +157,7 @@ func (p *PostgresState) GetTaskStatus(id string) string {
 }
 
 func (p *PostgresState) SetTaskStatus(id string, status string) {
-	_, err := p.db.Exec("UPDATE tasks SET status=$1, updated=$2 where id=$3", status, time.Now().UTC(), id)
+	_, err := p.db.Exec("UPDATE tasks SET status=$1, updated=$2 WHERE id=$3", status, time.Now().UTC(), id)
 	if err != nil {
 		rlog.Error(err)
 	}
@@ -175,31 +171,33 @@ func (p *PostgresState) GetAppList() []string {
 		rlog.Error(err)
 	}
 
-	for rows.Next() {
-		var app sql.NullString
-
-		if err := rows.Scan(&app); err != nil {
+	defer func(rows *sql.Rows) {
+		err := rows.Close()
+		if err != nil {
 			rlog.Error(err)
 		}
+	}(rows)
 
-		if app.Valid {
-			apps = append(apps, app.String)
+	for rows.Next() {
+		var app string
+		if err := rows.Scan(&app); err != nil {
+			panic(err)
 		}
+		apps = append(apps, app)
 	}
 
 	if apps == nil {
 		return []string{}
-	} else {
-		return apps
 	}
+
+	return apps
 }
 
 func (p *PostgresState) Check() bool {
-	err := p.db.Ping()
+	_, err := p.db.Exec("SELECT 1")
 	if err != nil {
 		rlog.Error(err)
 		return false
-	} else {
-		return true
 	}
+	return true
 }
