@@ -18,9 +18,9 @@ This is just an example of what can be used within pipeline to communicate with 
 ### gitlab-ci
 ```yaml
 await-deployment:
-  image: ghcr.io/shini4i/argo-watcher-client:v0.0.7
+  image: ghcr.io/shini4i/argo-watcher-client:v0.0.12
   variables:
-    ARGO_WATCHER_URL: argo-watcher.example.com
+    ARGO_WATCHER_URL: https://argo-watcher.example.com
     ARGO_APP: example
     COMMIT_AUTHOR: $GITLAB_USER_EMAIL
     PROJECT_NAME: $CI_PROJECT_PATH

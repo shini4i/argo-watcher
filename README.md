@@ -5,7 +5,7 @@
 
 ## Project Description
 
-This project is currently in an early development phase; hence some breaking changes might and should be expected.
+This project is in an early development phase; hence some breaking changes might and should be expected.
 
 The main idea is that this simple app will act as a "proxy" between pipelines and ArgoCD.
 
