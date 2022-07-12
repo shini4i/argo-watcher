@@ -1,7 +1,15 @@
+<div align="center">
+
 # argo-watcher
-![GitHub](https://img.shields.io/github/license/shini4i/argo-watcher)
+A small tool that will help to improve deployment visibility
+
+![GitHub Actions](https://img.shields.io/github/workflow/status/shini4i/argo-watcher/Build%20and%20Publish%20docker%20images)
 ![GitHub release (latest by date)](https://img.shields.io/github/v/release/shini4i/argo-watcher)
 [![Go Report Card](https://goreportcard.com/badge/github.com/shini4i/argo-watcher)](https://goreportcard.com/report/github.com/shini4i/argo-watcher)
+![GitHub](https://img.shields.io/github/license/shini4i/argo-watcher)
+
+![demo](https://i.ibb.co/x3v7t1n/demo.png)
+</div>
 
 ## Project Description
 
