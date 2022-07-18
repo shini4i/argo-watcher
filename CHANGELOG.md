@@ -5,6 +5,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- added date range picker to history page, now it is possible to choose range instead of single date
+### Changed
+- both "recent tasks" page and "history" page now save their filters to URL to support links sharing
 ### Fixed
 - e is null issue
 - GetAppList for InMemoryState
