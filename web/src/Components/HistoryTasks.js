@@ -1,4 +1,4 @@
-import React, {useEffect, useState} from "react";
+import React, {forwardRef, useEffect, useState} from "react";
 import Box from "@mui/material/Box";
 import Container from "@mui/material/Container";
 import Stack from "@mui/material/Stack";
@@ -6,25 +6,12 @@ import Typography from "@mui/material/Typography";
 import TextField from "@mui/material/TextField";
 import IconButton from "@mui/material/IconButton";
 import RefreshIcon from "@mui/icons-material/Refresh";
-import FormControl from "@mui/material/FormControl";
-import InputLabel from "@mui/material/InputLabel";
-import Select from "@mui/material/Select";
-import MenuItem from "@mui/material/MenuItem";
-import LocalizationProvider from "@mui/lab/LocalizationProvider";
-import AdapterDateFns from "@mui/lab/AdapterDateFns";
-import DatePicker from "@mui/lab/DatePicker";
 import ErrorSnackbar from "./ErrorSnackbar";
 import ApplicationsFilter from "./ApplicationsFilter";
 import TasksTable, {useTasks} from "./TasksTable";
-
-const timeframes = {
-  '1 hour': 60 * 60,
-  '6 hours': 6 * 60 * 60,
-  '9 hours': 9 * 60 * 60,
-  '12 hours': 12 * 60 * 60,
-  '24 hours': 24 * 60 * 60,
-  'Custom': 0,
-};
+import {endOfDay, startOfDay} from 'date-fns'
+import DatePicker from "react-datepicker";
+import "react-datepicker/dist/react-datepicker.css";
 
 function HistoryTasks() {
   const [loadingError, setLoadingError] = useState(null);
@@ -32,27 +19,19 @@ function HistoryTasks() {
       tasks,
       sortField,
       setSortField,
-      refreshTasksInTimeframe,
       refreshTasksInRange,
       clearTasks
     } = useTasks({ setLoadingError });
   const [currentApplication, setCurrentApplication] = useState(null);
-  const [currentTimeframe, setCurrentTimeframe] = useState(timeframes['9 hours']);
-  const [currentCustomTimestamp, setCurrentCustomTimestamp] = useState(null);
+  const [dateRange, setDateRange] = useState([startOfDay(new Date).getTime(), startOfDay(new Date).getTime()]);
+  const [startDate, endDate] = dateRange;
 
-  const refreshWithFilters = (timeframe, customTimestamp, application) => {
-    if (timeframe !== timeframes["Custom"]) {
-      // use relative time
-      refreshTasksInTimeframe(timeframe, application);
-    } else if (customTimestamp !== null) {
-      let startDate = new Date(customTimestamp);
-      startDate.setUTCHours(0,0,0,0);
-      let endDate = new Date(customTimestamp);
-      endDate.setUTCHours(23, 59, 59, 999);
+  const refreshWithFilters = (startDate, endDate, application) => {
+   if (startDate && endDate) {
       // use absolute time
       refreshTasksInRange(
-          Math.floor(startDate.getTime() / 1000),
-          Math.floor(endDate.getTime() / 1000),
+          Math.floor(startOfDay(new Date(startDate)).getTime() / 1000),
+          Math.floor(endOfDay(new Date(endDate)).getTime() / 1000),
           application
       );
     } else {
@@ -61,28 +40,13 @@ function HistoryTasks() {
     }
   };
 
-  const handleTimeframeChange = (event) => {
-    let newTimeframe = event.target.value;
-    setCurrentTimeframe(newTimeframe);
-    refreshWithFilters(newTimeframe, currentCustomTimestamp, currentApplication);
-  };
-
-  const handleCustomTimestampChange = (newValue) => {
-    if (!newValue) {
-      return;
-    }
-
-    let newCustomTimestamp = new Date(newValue.getTime() - (newValue.getTime() % 86400000));
-    setCurrentCustomTimestamp(newCustomTimestamp);
-
-    if (currentTimeframe === timeframes["Custom"]) {
-      refreshWithFilters(currentTimeframe, newCustomTimestamp, currentApplication);
-    }
-  };
-
   useEffect(() => {
-    refreshWithFilters(currentTimeframe, currentCustomTimestamp, currentApplication);
+    refreshWithFilters(startDate, endDate, currentApplication);
   }, []);
+
+  const DateRangePickerCustomInput = forwardRef(({ value, onClick }, ref) => (
+      <TextField size="small" sx={{minWidth: "220px"}} onClick={onClick} ref={ref} value={value} />
+  ));
 
   return (
     <Container maxWidth="xl">
@@ -95,39 +59,28 @@ function HistoryTasks() {
               value={currentApplication}
               onChange={(value) => {
                 setCurrentApplication(value);
-                refreshWithFilters(currentTimeframe, currentCustomTimestamp, value);
+                refreshWithFilters(startDate, endDate, value);
               }}
               setLoadingError={setLoadingError}
           />
         </Box>
-        {currentTimeframe === timeframes['Custom'] &&  <Box sx={{width: 200}}>
-          <LocalizationProvider dateAdapter={AdapterDateFns}>
-            <DatePicker
-                renderInput={(props) => <TextField {...props} size="small" />}
-                label="Search Date"
-                value={currentCustomTimestamp}
-                maxDate={new Date()}
-                onChange={handleCustomTimestampChange}
+        <Box>
+          <DatePicker
+              selectsRange={true}
+              startDate={startDate}
+              endDate={endDate}
+              onChange={(update) => {
+                setDateRange(update);
+                refreshWithFilters(update[0], update[1], currentApplication);
+              }}
+              maxDate={new Date()}
+              isClearable={false}
+              customInput={<DateRangePickerCustomInput />}
+              required
             />
-          </LocalizationProvider>
-        </Box>}
-        <Box sx={{minWidth: 120}}>
-          <FormControl fullWidth size={"small"}>
-            <InputLabel>Timeframe</InputLabel>
-            <Select
-                value={currentTimeframe}
-                label="Timeframe"
-                onChange={handleTimeframeChange}
-            >
-              {Object.keys(timeframes).map(timeframe => {
-                let value = timeframes[timeframe];
-                return <MenuItem key={timeframe} value={value}>{timeframe}</MenuItem>
-              })}
-            </Select>
-          </FormControl>
         </Box>
         <IconButton edge="start" color={"primary"} title={"reload table"} onClick={() => {
-          refreshWithFilters(currentTimeframe, currentCustomTimestamp, currentApplication);
+          refreshWithFilters(startDate, endDate, currentApplication);
         }}>
           <RefreshIcon/>
         </IconButton>
