@@ -1,4 +1,5 @@
 import React, {useEffect, useRef, useState} from "react";
+import { useSearchParams } from "react-router-dom";
 import Box from "@mui/material/Box";
 import Container from "@mui/material/Container";
 import Stack from "@mui/material/Stack";
@@ -22,11 +23,12 @@ const autoRefreshIntervals = {
 };
 
 function RecentTasks() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [loadingError, setLoadingError] = useState(null);
   const {tasks, sortField, setSortField, refreshTasksInTimeframe} = useTasks({ setLoadingError });
-  const [currentAutoRefresh, setCurrentAutoRefresh] = useState(autoRefreshIntervals['30s']);
+  const [currentAutoRefresh, setCurrentAutoRefresh] = useState(searchParams.get('refresh') ?? autoRefreshIntervals['30s']);
   const autoRefreshIntervalRef = useRef(null);
-  const [currentApplication, setCurrentApplication] = useState(null);
+  const [currentApplication, setCurrentApplication] = useState(searchParams.get('app') ?? null);
   const currentTimeframe = 9 * 60 * 60;
 
   // initial load
@@ -57,7 +59,13 @@ function RecentTasks() {
   });
 
   const handleAutoRefreshChange = (event) => {
+    // change value
     setCurrentAutoRefresh(event.target.value);
+    // save to URL
+    setSearchParams({
+      app: currentApplication ?? "",
+      refresh: event.target.value
+    });
   };
 
   return (
@@ -72,6 +80,11 @@ function RecentTasks() {
             onChange={(value) => {
               setCurrentApplication(value);
               refreshTasksInTimeframe(currentTimeframe, value);
+              // save to URL
+              setSearchParams({
+                app: value ?? "",
+                refresh: currentAutoRefresh
+              });
             }}
             setLoadingError={setLoadingError}
           />

@@ -1,4 +1,5 @@
 import React, {forwardRef, useEffect, useState} from "react";
+import { useSearchParams } from "react-router-dom";
 import Box from "@mui/material/Box";
 import Container from "@mui/material/Container";
 import Stack from "@mui/material/Stack";
@@ -14,6 +15,7 @@ import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 
 function HistoryTasks() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [loadingError, setLoadingError] = useState(null);
   const {
       tasks,
@@ -22,19 +24,34 @@ function HistoryTasks() {
       refreshTasksInRange,
       clearTasks
     } = useTasks({ setLoadingError });
-  const [currentApplication, setCurrentApplication] = useState(null);
-  const [dateRange, setDateRange] = useState([startOfDay(new Date).getTime(), startOfDay(new Date).getTime()]);
+  const [currentApplication, setCurrentApplication] = useState(searchParams.get('app') ?? null);
+  const [dateRange, setDateRange] = useState([
+    // start date
+    Number(searchParams.get('start'))
+        ? new Date(Number(searchParams.get('start')) * 1000)
+        : startOfDay(new Date),
+    // end date
+    Number(searchParams.get('end'))
+        ? new Date(Number(searchParams.get('end')) * 1000)
+        : startOfDay(new Date)
+  ]);
   const [startDate, endDate] = dateRange;
 
   const refreshWithFilters = (startDate, endDate, application) => {
    if (startDate && endDate) {
-      // use absolute time
+      // re-fetch tasks
       refreshTasksInRange(
-          Math.floor(startOfDay(new Date(startDate)).getTime() / 1000),
-          Math.floor(endOfDay(new Date(endDate)).getTime() / 1000),
+          Math.floor(startOfDay(startDate).getTime() / 1000),
+          Math.floor(endOfDay(endDate).getTime() / 1000),
           application
       );
-    } else {
+      // save to filters
+     setSearchParams({
+       app: application ?? "",
+       start: Math.floor(startDate.getTime()/1000),
+       end: Math.floor(endDate.getTime()/1000),
+     });
+   } else {
       // reset list of tasks
       clearTasks();
     }
@@ -45,7 +62,7 @@ function HistoryTasks() {
   }, []);
 
   const DateRangePickerCustomInput = forwardRef(({ value, onClick }, ref) => (
-      <TextField size="small" sx={{minWidth: "220px"}} onClick={onClick} ref={ref} value={value} />
+      <TextField size="small" sx={{minWidth: "220px"}} onClick={onClick} ref={ref} value={value} label={"Date range"}/>
   ));
 
   return (
