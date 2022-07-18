@@ -31,7 +31,7 @@ jobs:
           context: .
           file: ./Dockerfile
           build-args: |
-            APP_VERSION: ${{ github.ref_name }}
+            APP_VERSION=${{ github.ref_name }}
           tags: |
             ghcr.io/shini4i/argo-watcher:${{ github.ref_name }}
           push: true
