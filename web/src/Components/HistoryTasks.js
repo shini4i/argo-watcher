@@ -37,19 +37,19 @@ function HistoryTasks() {
   ]);
   const [startDate, endDate] = dateRange;
 
-  const refreshWithFilters = (startDate, endDate, application) => {
-   if (startDate && endDate) {
+  const refreshWithFilters = (start, end, application) => {
+   if (start && end) {
       // re-fetch tasks
       refreshTasksInRange(
-          Math.floor(startOfDay(startDate).getTime() / 1000),
-          Math.floor(endOfDay(endDate).getTime() / 1000),
+          Math.floor(startOfDay(start).getTime() / 1000),
+          Math.floor(endOfDay(end).getTime() / 1000),
           application
       );
       // save to filters
      setSearchParams({
        app: application ?? "",
-       start: Math.floor(startDate.getTime()/1000),
-       end: Math.floor(endDate.getTime()/1000),
+       start: Math.floor(start.getTime()/1000),
+       end: Math.floor(end.getTime()/1000),
      });
    } else {
       // reset list of tasks
