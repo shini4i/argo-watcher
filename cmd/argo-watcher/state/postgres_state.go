@@ -86,14 +86,14 @@ func (p *PostgresState) GetTasks(startTime float64, endTime float64, app string)
 
 	if app == "" {
 		rows, err = p.db.Query(
-			"select extract(epoch from created) AS created, "+
+			"select id, extract(epoch from created) AS created, "+
 				"extract(epoch from updated) AS updated, "+
 				"images, status, app, author, "+
 				"project from tasks where created >= $1 AND created <= $2",
 			startTimeUTC, endTimeUTC)
 	} else {
 		rows, err = p.db.Query(
-			"select extract(epoch from created) AS created, "+
+			"select id, extract(epoch from created) AS created, "+
 				"extract(epoch from updated) AS updated, "+
 				"images, status, app, author, "+
 				"project from tasks where created >= $1 AND created <= $2 AND app = $3",
@@ -122,7 +122,7 @@ func (p *PostgresState) GetTasks(startTime float64, endTime float64, app string)
 	for rows.Next() {
 		var task m.Task
 
-		if err := rows.Scan(&task.Created, &updated, &images, &task.Status, &task.App, &task.Author, &task.Project); err != nil {
+		if err := rows.Scan(&task.Id, &task.Created, &updated, &images, &task.Status, &task.App, &task.Author, &task.Project); err != nil {
 			panic(err)
 		}
 
