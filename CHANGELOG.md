@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+### Changed
+- Tasks with a status "app not found" are removed after 1h as they provide no value in history
+- Tasks with a status "in progress" are marked as "aborted" after 1h since that's an indicator of argo-watcher crash
+
 ## [0.1.1] - 2022-07-27
 ### Fixed
 - url to github project

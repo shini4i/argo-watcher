@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/avast/retry-go"
+	"github.com/avast/retry-go/v4"
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/romana/rlog"
@@ -41,8 +41,10 @@ func (argo *Argo) Init() *Argo {
 	case "postgres":
 		argo.state = &s.PostgresState{}
 		argo.state.Connect()
+		go argo.state.ProcessObsoleteTasks()
 	case "in-memory":
 		argo.state = &s.InMemoryState{}
+		go argo.state.ProcessObsoleteTasks()
 	default:
 		rlog.Critical("Variable STATE_TYPE must be one of [\"postgres\", \"in-memory\"]. Aborting.")
 		os.Exit(1)

@@ -3,7 +3,9 @@ package state
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/avast/retry-go/v4"
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/lib/pq"
@@ -30,7 +32,7 @@ type PostgresState struct {
 	db *sql.DB
 }
 
-func (p *PostgresState) Connect() {
+func (state *PostgresState) Connect() {
 	c := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable", dbHost, dbPort, dbUser, dbPassword, dbName)
 
 	db, err := sql.Open("postgres", c)
@@ -54,15 +56,15 @@ func (p *PostgresState) Connect() {
 		panic(err)
 	}
 
-	p.db = db
+	state.db = db
 }
 
-func (p *PostgresState) Add(task m.Task) {
+func (state *PostgresState) Add(task m.Task) {
 	images, err := json.Marshal(task.Images)
 	if err != nil {
 		return
 	}
-	_, err = p.db.Exec("INSERT INTO tasks(id, created, images, status, app, author, project) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+	_, err = state.db.Exec("INSERT INTO tasks(id, created, images, status, app, author, project) VALUES ($1, $2, $3, $4, $5, $6, $7)",
 		task.Id,
 		time.Now().UTC(),
 		images,
@@ -77,7 +79,7 @@ func (p *PostgresState) Add(task m.Task) {
 	}
 }
 
-func (p *PostgresState) GetTasks(startTime float64, endTime float64, app string) []m.Task {
+func (state *PostgresState) GetTasks(startTime float64, endTime float64, app string) []m.Task {
 	startTimeUTC := time.Unix(int64(startTime), 0).UTC()
 	endTimeUTC := time.Unix(int64(endTime), 0).UTC()
 
@@ -85,14 +87,14 @@ func (p *PostgresState) GetTasks(startTime float64, endTime float64, app string)
 	var err error
 
 	if app == "" {
-		rows, err = p.db.Query(
+		rows, err = state.db.Query(
 			"select id, extract(epoch from created) AS created, "+
 				"extract(epoch from updated) AS updated, "+
 				"images, status, app, author, "+
 				"project from tasks where created >= $1 AND created <= $2",
 			startTimeUTC, endTimeUTC)
 	} else {
-		rows, err = p.db.Query(
+		rows, err = state.db.Query(
 			"select id, extract(epoch from created) AS created, "+
 				"extract(epoch from updated) AS updated, "+
 				"images, status, app, author, "+
@@ -144,10 +146,10 @@ func (p *PostgresState) GetTasks(startTime float64, endTime float64, app string)
 	}
 }
 
-func (p *PostgresState) GetTaskStatus(id string) string {
+func (state *PostgresState) GetTaskStatus(id string) string {
 	var status string
 
-	err := p.db.QueryRow("SELECT status FROM tasks WHERE id=$1", id).Scan(&status)
+	err := state.db.QueryRow("SELECT status FROM tasks WHERE id=$1", id).Scan(&status)
 	if err != nil {
 		rlog.Errorf("Failed to get task status for task %s: %s", id, err)
 		return "task not found"
@@ -156,17 +158,17 @@ func (p *PostgresState) GetTaskStatus(id string) string {
 	return status
 }
 
-func (p *PostgresState) SetTaskStatus(id string, status string) {
-	_, err := p.db.Exec("UPDATE tasks SET status=$1, updated=$2 WHERE id=$3", status, time.Now().UTC(), id)
+func (state *PostgresState) SetTaskStatus(id string, status string) {
+	_, err := state.db.Exec("UPDATE tasks SET status=$1, updated=$2 WHERE id=$3", status, time.Now().UTC(), id)
 	if err != nil {
 		rlog.Error(err)
 	}
 }
 
-func (p *PostgresState) GetAppList() []string {
+func (state *PostgresState) GetAppList() []string {
 	var apps []string
 
-	rows, err := p.db.Query("SELECT DISTINCT app FROM tasks")
+	rows, err := state.db.Query("SELECT DISTINCT app FROM tasks")
 	if err != nil {
 		rlog.Error(err)
 	}
@@ -193,11 +195,37 @@ func (p *PostgresState) GetAppList() []string {
 	return apps
 }
 
-func (p *PostgresState) Check() bool {
-	_, err := p.db.Exec("SELECT 1")
+func (state *PostgresState) Check() bool {
+	_, err := state.db.Exec("SELECT 1")
 	if err != nil {
 		rlog.Error(err)
 		return false
 	}
 	return true
+}
+
+func (state *PostgresState) ProcessObsoleteTasks() {
+	rlog.Debug("Starting watching for obsolete tasks...")
+	err := retry.Do(
+		func() error {
+			_, err := state.db.Exec("DELETE FROM tasks WHERE status = 'app not found'")
+			if err != nil {
+				rlog.Error(err)
+			}
+
+			_, err = state.db.Exec("UPDATE tasks SET status='aborted' WHERE status = 'in progress' AND created < now() - interval '1 hour'")
+			if err != nil {
+				rlog.Error(err)
+			}
+
+			return errors.New("returning error to retry")
+		},
+		retry.DelayType(retry.FixedDelay),
+		retry.Delay(60*time.Minute),
+		retry.Attempts(0),
+	)
+
+	if err != nil {
+		rlog.Errorf("Couldn't process obsolete tasks. Got the following error: %s", err)
+	}
 }

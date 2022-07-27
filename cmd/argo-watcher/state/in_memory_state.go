@@ -1,6 +1,8 @@
 package state
 
 import (
+	"errors"
+	"github.com/avast/retry-go/v4"
 	"github.com/romana/rlog"
 	"time"
 
@@ -82,4 +84,35 @@ func (state *InMemoryState) GetAppList() []string {
 
 func (state *InMemoryState) Check() bool {
 	return true
+}
+
+func (state *InMemoryState) ProcessObsoleteTasks() {
+	rlog.Debug("Starting watching for obsolete tasks...")
+	err := retry.Do(
+		func() error {
+			for i := 0; i < len(state.tasks); i++ {
+				if state.tasks[i].Status == "app not found" {
+					state.tasks = append(state.tasks[:i], state.tasks[i+1:]...)
+					i--
+				}
+			}
+
+			for idx, task := range state.tasks {
+				if task.Status == "app not found" {
+					if task.Status == "in progress" && task.Updated+3600 < float64(time.Now().Unix()) {
+						state.tasks[idx].Status = "aborted"
+					}
+				}
+			}
+
+			return errors.New("returning error to retry")
+		},
+		retry.DelayType(retry.FixedDelay),
+		retry.Delay(60*time.Minute),
+		retry.Attempts(0),
+	)
+
+	if err != nil {
+		rlog.Errorf("Couldn't process obsolete tasks. Got the following error: %s", err)
+	}
 }
