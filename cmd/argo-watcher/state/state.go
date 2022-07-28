@@ -12,4 +12,5 @@ type State interface {
 	SetTaskStatus(id string, status string)
 	GetAppList() []string
 	Check() bool
+	ProcessObsoleteTasks()
 }
