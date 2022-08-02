@@ -114,10 +114,7 @@ function TableCellSorted({field, sortField, setSortField, children}) {
 
 function TimeRepresentation(task) {
   if (window.location.pathname.startsWith('/history')) {
-    return new Date(task.created * 1000).toISOString()
-        .replace(/T/, ' ')
-        .replace(/\..+/, '')
-        .toLocaleString();
+    return new Date(task.created * 1000).toLocaleString();
   } else {
     return relativeTime(task.created * 1000);
   }
