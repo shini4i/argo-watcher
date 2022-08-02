@@ -120,6 +120,14 @@ function TimeRepresentation(task) {
   }
 }
 
+function TimeRepresentationTitle(task) {
+  if (window.location.pathname.startsWith('/history')) {
+    return "";
+  } else {
+    return new Date(task.created * 1000).toLocaleString();
+  }
+}
+
 function TasksTable({ tasks, sortField, setSortField }) {
   return (
       <TableContainer component={Paper}>
@@ -156,7 +164,7 @@ function TasksTable({ tasks, sortField, setSortField }) {
                     <Chip label={task.status} color={chipColorByStatus(task.status)} />
                   </TableCell>
                   <TableCell>
-                    <Tooltip title={new Date(task.created * 1000).toLocaleString()}>
+                    <Tooltip title={TimeRepresentationTitle(task)}>
                       <span>{TimeRepresentation(task)}</span>
                     </Tooltip>
                   </TableCell>
