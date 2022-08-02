@@ -112,6 +112,17 @@ function TableCellSorted({field, sortField, setSortField, children}) {
   </TableCell>
 }
 
+function TimeRepresentation(task) {
+  if (window.location.pathname.startsWith('/history')) {
+    return new Date(task.created * 1000).toISOString()
+        .replace(/T/, ' ')
+        .replace(/\..+/, '')
+        .toLocaleString();
+  } else {
+    return relativeTime(task.created * 1000);
+  }
+}
+
 function TasksTable({ tasks, sortField, setSortField }) {
   return (
       <TableContainer component={Paper}>
@@ -149,7 +160,7 @@ function TasksTable({ tasks, sortField, setSortField }) {
                   </TableCell>
                   <TableCell>
                     <Tooltip title={new Date(task.created * 1000).toLocaleString()}>
-                      <span>{relativeTime(task.created * 1000)}</span>
+                      <span>{TimeRepresentation(task)}</span>
                     </Tooltip>
                   </TableCell>
                   <TableCell>
