@@ -112,19 +112,20 @@ function TableCellSorted({field, sortField, setSortField, children}) {
   </TableCell>
 }
 
-function TimeRepresentation(task) {
-  if (window.location.pathname.startsWith('/history')) {
-    return new Date(task.created * 1000).toLocaleString();
-  } else {
-    return relativeTime(task.created * 1000);
-  }
-}
-
-function TimeRepresentationTitle(task) {
-  if (window.location.pathname.startsWith('/history')) {
-    return "";
-  } else {
-    return new Date(task.created * 1000).toLocaleString();
+function TimeRepresentation(task, location = "span") {
+  switch (location) {
+    case "title":
+      if (window.location.pathname.startsWith('/history')) {
+        return "";
+      } else {
+        return new Date(task.created * 1000).toLocaleString();
+      }
+    case "span":
+      if (window.location.pathname.startsWith('/history')) {
+        return new Date(task.created * 1000).toLocaleString();
+      } else {
+        return relativeTime(task.created * 1000);
+      }
   }
 }
 
@@ -164,7 +165,7 @@ function TasksTable({ tasks, sortField, setSortField }) {
                     <Chip label={task.status} color={chipColorByStatus(task.status)} />
                   </TableCell>
                   <TableCell>
-                    <Tooltip title={TimeRepresentationTitle(task)}>
+                    <Tooltip title={TimeRepresentation(task, "title")}>
                       <span>{TimeRepresentation(task)}</span>
                     </Tooltip>
                   </TableCell>
