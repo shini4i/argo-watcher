@@ -112,7 +112,7 @@ function TableCellSorted({field, sortField, setSortField, children}) {
   </TableCell>
 }
 
-function TimeRepresentation(task, position = "span") {
+function TimestampRepresentation(task, position = "span") {
   switch (position) {
     case "title":
       if (window.location.pathname.startsWith('/history')) {
@@ -165,8 +165,8 @@ function TasksTable({ tasks, sortField, setSortField }) {
                     <Chip label={task.status} color={chipColorByStatus(task.status)} />
                   </TableCell>
                   <TableCell>
-                    <Tooltip title={TimeRepresentation(task, "title")}>
-                      <span>{TimeRepresentation(task)}</span>
+                    <Tooltip title={TimestampRepresentation(task, "title")}>
+                      <span>{TimestampRepresentation(task)}</span>
                     </Tooltip>
                   </TableCell>
                   <TableCell>
