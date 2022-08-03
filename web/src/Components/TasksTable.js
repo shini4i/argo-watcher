@@ -112,8 +112,8 @@ function TableCellSorted({field, sortField, setSortField, children}) {
   </TableCell>
 }
 
-function TimeRepresentation(task, location = "span") {
-  switch (location) {
+function TimeRepresentation(task, position = "span") {
+  switch (position) {
     case "title":
       if (window.location.pathname.startsWith('/history')) {
         return "";
