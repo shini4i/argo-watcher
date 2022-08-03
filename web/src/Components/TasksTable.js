@@ -112,6 +112,23 @@ function TableCellSorted({field, sortField, setSortField, children}) {
   </TableCell>
 }
 
+function TimestampRepresentation(task, position = "span") {
+  switch (position) {
+    case "title":
+      if (window.location.pathname.startsWith('/history')) {
+        return "";
+      } else {
+        return new Date(task.created * 1000).toLocaleString();
+      }
+    case "span":
+      if (window.location.pathname.startsWith('/history')) {
+        return new Date(task.created * 1000).toLocaleString();
+      } else {
+        return relativeTime(task.created * 1000);
+      }
+  }
+}
+
 function TasksTable({ tasks, sortField, setSortField }) {
   return (
       <TableContainer component={Paper}>
@@ -148,8 +165,8 @@ function TasksTable({ tasks, sortField, setSortField }) {
                     <Chip label={task.status} color={chipColorByStatus(task.status)} />
                   </TableCell>
                   <TableCell>
-                    <Tooltip title={new Date(task.created * 1000).toLocaleString()}>
-                      <span>{relativeTime(task.created * 1000)}</span>
+                    <Tooltip title={TimestampRepresentation(task, "title")}>
+                      <span>{TimestampRepresentation(task)}</span>
                     </Tooltip>
                   </TableCell>
                   <TableCell>
