@@ -4,10 +4,9 @@ import Toolbar from "@mui/material/Toolbar";
 import Typography from "@mui/material/Typography";
 import GitHubIcon from "@mui/icons-material/GitHub";
 import Link from "@mui/material/Link";
-import Button from "@mui/material/Button";
 import { Link as RouterLink } from "react-router-dom";
 import Stack from "@mui/material/Stack";
-import {fetchApplications, fetchVersion} from "../Services/Data";
+import {fetchVersion} from "../Services/Data";
 import {useEffect, useState} from "react";
 import LocalOfferIcon from '@mui/icons-material/LocalOffer';
 
@@ -31,8 +30,8 @@ function Navbar() {
             .catch(error => { console.log(error.message); });
     }, []);
 
-    return <Box sx={{ mb: 2}}>
-        <AppBar position="static">
+    return <Box sx={{ mb: 2 }}>
+        <AppBar position="static" style={{ background: '#2E3B55' }}>
             <Toolbar>
                 <Typography variant="h6" component="div">
                     Argo Watcher
