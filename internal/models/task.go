@@ -1,18 +1,18 @@
 package models
 
 type Image struct {
-	Image string `json:"image"`
-	Tag   string `json:"tag"`
+	Image string `json:"image" example:"ghcr.io/shini4i/argo-watcher"`
+	Tag   string `json:"tag" example:"dev"`
 }
 
 type Task struct {
 	Id      string  `json:"id,omitempty"`
 	Created float64 `json:"created,omitempty"`
 	Updated float64 `json:"updated,omitempty"`
-	App     string  `json:"app"`
-	Author  string  `json:"author"`
-	Project string  `json:"project"`
-	Images  []Image `json:"images"`
+	App     string  `json:"app" binding:"required" example:"argo-watcher"`
+	Author  string  `json:"author" binding:"required" example:"John Doe"`
+	Project string  `json:"project" binding:"required" example:"Demo"`
+	Images  []Image `json:"images" binding:"required"`
 	Status  string  `json:"status,omitempty"`
 }
 

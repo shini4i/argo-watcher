@@ -7,11 +7,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/romana/rlog"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 	"net/http"
 	"os"
 	"strconv"
 	"time"
 
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/docs"
 	h "github.com/shini4i/argo-watcher/internal/helpers"
 	m "github.com/shini4i/argo-watcher/internal/models"
 )
@@ -41,6 +44,10 @@ var (
 func setupRouter() *gin.Engine {
 	staticFilesPath := h.GetEnv("STATIC_FILES_PATH", "static")
 
+	docs.SwaggerInfo.Title = "Argo-Watcher API"
+	docs.SwaggerInfo.Version = version
+	docs.SwaggerInfo.Description = "A small tool that will help to improve deployment visibility"
+
 	gin.SetMode(gin.ReleaseMode)
 
 	router := gin.New()
@@ -52,6 +59,7 @@ func setupRouter() *gin.Engine {
 	})
 	router.GET("/healthz", healthz)
 	router.GET("/metrics", prometheusHandler())
+	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	apiGroup := router.Group("/api/v1")
 	apiGroup.POST("/tasks", addTask)
@@ -63,6 +71,16 @@ func setupRouter() *gin.Engine {
 	return router
 }
 
+// addTask godoc
+// @Summary Add a new task
+// @Description Add a new task
+// @Tags backend
+// @Accept json
+// @Produce json
+// @Param task body m.Task true "Task"
+// default({"app":"argo-watcher","author":"John Doe", "project":"Demo", images:["gcr.io/shini4i/argo-watcher:dev"]})
+// @Success 200 {object} m.TaskStatus
+// @Router /api/v1/tasks [post]
 func addTask(c *gin.Context) {
 	var task m.Task
 
@@ -83,6 +101,15 @@ func addTask(c *gin.Context) {
 	})
 }
 
+// getState godoc
+// @Summary Get state content
+// @Description Get all tasks that match the provided parameters
+// @Tags backend, frontend
+// @Param app query string false "App name"
+// @Param from_timestamp query int true "From timestamp" default(1648390029)
+// @Param to_timestamp query int false "To timestamp"
+// @Success 200 {array} m.Task
+// @Router /api/v1/tasks [get]
 func getState(c *gin.Context) {
 	startTime, _ := strconv.ParseFloat(c.Query("from_timestamp"), 64)
 	endTime, _ := strconv.ParseFloat(c.Query("to_timestamp"), 64)
@@ -94,6 +121,14 @@ func getState(c *gin.Context) {
 	c.JSON(http.StatusOK, client.GetTasks(startTime, endTime, app))
 }
 
+// getTaskStatus godoc
+// @Summary Get the status of a task
+// @Description Get the status of a task
+// @Param id path string true "Task id" default(9185fae0-add5-11ec-87f3-56b185c552fa)
+// @Tags backend
+// @Produce json
+// @Success 200 {object} m.TaskStatus
+// @Router /api/v1/tasks/{id} [get]
 func getTaskStatus(c *gin.Context) {
 	id := c.Param("id")
 	c.JSON(http.StatusOK, m.TaskStatus{
@@ -101,14 +136,34 @@ func getTaskStatus(c *gin.Context) {
 	})
 }
 
+// getApps godoc
+// @Summary Get the list of apps
+// @Description Get the list of apps
+// @Tags frontend
+// @Success 200 {array} string
+// @Router /api/v1/apps [get]
 func getApps(c *gin.Context) {
 	c.JSON(http.StatusOK, client.GetAppList())
 }
 
+// getVersion godoc
+// @Summary Get the version of the server
+// @Description Get the version of the server
+// @Tags frontend
+// @Success 200 {string} string
+// @Router /api/v1/version [get]
 func getVersion(c *gin.Context) {
 	c.JSON(http.StatusOK, version)
 }
 
+// healthz godoc
+// @Summary Check if the server is healthy
+// @Description Check if the argo-watcher is ready to process new tasks
+// @Tags service
+// @Produce json
+// @Success 200 {object} m.HealthStatus
+// @Failure 503 {object} m.HealthStatus
+// @Router /healthz [get]
 func healthz(c *gin.Context) {
 	if status := client.Check(); status == "up" {
 		c.JSON(http.StatusOK, m.HealthStatus{
