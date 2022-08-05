@@ -90,3 +90,6 @@ Example response:
 ```bash
 {"status":"in progress"}
 ```
+
+### Swagger
+A swagger documentation can be accessed via http://localhost:8080/swagger/index.html

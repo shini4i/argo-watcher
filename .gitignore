@@ -13,3 +13,6 @@ static/
 
 # directory for built binary files
 bin/
+
+# swagger files
+**/swagger.*
