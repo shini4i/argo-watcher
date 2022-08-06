@@ -1,17 +1,9 @@
-.PHONY: up
-up:
-	@docker compose up
-
-.PHONY: down
-down:
-	@docker compose down
-
 .PHONY: test
 test:
 	@ARGO_TIMEOUT=1 go test -v ./... -count=1
 
-.PHONY: endure-dirs
-endure-dirs:
+.PHONY: ensure-dirs
+ensure-dirs:
 	@mkdir -p bin
 
 .PHONY: build

@@ -35,10 +35,6 @@ A simple example of client implementation that can be used in a pipeline is avai
 
 ## Development
 
-There are 2 ways of how you can run argo-watcher locally
-1. with docker compose
-2. with locally installed golang, nodejs, npm
-
 ### Prerequisites
 This project depends on various git hooks. ([pre-commit](https://pre-commit.com))
 
@@ -48,12 +44,11 @@ pre-commit install
 ```
 ### Back-End Development
 
-To start developing argo-watcher you will need
-1. golang 1.18+
+To start developing argo-watcher you will need golang 1.18+
 
 ### Front-End Development
 
-To start developing front-end you'd need
+To start developing front-end you will need
 1. NodeJS version 17.7.0+
 2. NPM (comes with NodeJS) 8.9.0+
 
