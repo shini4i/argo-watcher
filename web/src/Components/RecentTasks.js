@@ -71,8 +71,9 @@ function RecentTasks() {
   return (
     <Container maxWidth="xl">
       <Stack direction="row" spacing={2} alignItems="center">
-        <Typography variant="h4" gutterBottom component="div" sx={{flexGrow: 1}}>
-          Recent tasks
+        <Typography variant="h4" gutterBottom component="div" sx={{flexGrow: 1, display: 'flex', gap: '10px'}}>
+          <Box>Recent tasks</Box>
+          <Box sx={{fontSize: '10px'}}>UTC</Box>
         </Typography>
         <Box>
           <ApplicationsFilter
@@ -114,6 +115,7 @@ function RecentTasks() {
           tasks={tasks}
           sortField={sortField}
           setSortField={setSortField}
+          relativeDate={true}
       />
       <ErrorSnackbar message={loadingError} setMessage={setLoadingError}/>
     </Container>

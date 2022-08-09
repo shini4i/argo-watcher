@@ -29,11 +29,11 @@ function HistoryTasks() {
     // start date
     Number(searchParams.get('start'))
         ? new Date(Number(searchParams.get('start')) * 1000)
-        : startOfDay(new Date),
+        : startOfDay(new Date()),
     // end date
     Number(searchParams.get('end'))
         ? new Date(Number(searchParams.get('end')) * 1000)
-        : startOfDay(new Date)
+        : startOfDay(new Date())
   ]);
   const [startDate, endDate] = dateRange;
 
@@ -68,8 +68,9 @@ function HistoryTasks() {
   return (
     <Container maxWidth="xl">
       <Stack direction="row" spacing={2} alignItems="center">
-        <Typography variant="h4" gutterBottom component="div" sx={{flexGrow: 1}}>
-          History tasks
+        <Typography variant="h4" gutterBottom component="div" sx={{flexGrow: 1, display: 'flex', gap: '10px'}}>
+          <Box>History tasks</Box>
+          <Box sx={{fontSize: '10px'}}>UTC</Box>
         </Typography>
         <Box>
           <ApplicationsFilter
@@ -106,6 +107,7 @@ function HistoryTasks() {
           tasks={tasks}
           sortField={sortField}
           setSortField={setSortField}
+          relativeDate={false}
       />
       <ErrorSnackbar message={loadingError} setMessage={setLoadingError}/>
     </Container>
