@@ -119,13 +119,7 @@ function TableCellSorted({field, sortField, setSortField, children}) {
   </TableCell>
 }
 
-function TasksTable({ tasks, sortField, setSortField, relativeDate, initialPage = 1, onPageChange = () => {} }) {
-  const [page, setPage] = React.useState(initialPage);
-  const handleChange = (event, value) => {
-    setPage(value);
-    onPageChange(value);
-  };
-
+function TasksTable({ tasks, sortField, setSortField, relativeDate, page = 1, onPageChange = () => {} }) {
   const pages = Math.ceil(tasks.length / 10);
   const tasksPaginated = tasks.slice((page - 1)*10, page*10);
 
@@ -205,7 +199,9 @@ function TasksTable({ tasks, sortField, setSortField, relativeDate, initialPage 
                   variant="outlined"
                   shape="rounded"
                   page={page}
-                  onChange={handleChange}
+                  onChange={(event, value) => {
+                    onPageChange(value);
+                  }}
               />
             </Box>
           </>

@@ -30,10 +30,20 @@ function RecentTasks() {
   const autoRefreshIntervalRef = useRef(null);
   const [currentApplication, setCurrentApplication] = useState(searchParams.get('app') ?? null);
   const currentTimeframe = 9 * 60 * 60;
+  const [currentPage, setCurrentPage] = useState(searchParams.get('page') ? Number(searchParams.get('page')) : 1);
+
+  const updateSearchParameters = (application, refresh, page) => {
+    setSearchParams({
+      app: application ?? "",
+      refresh,
+      page,
+    });
+  }
 
   // initial load
   useEffect(() => {
     refreshTasksInTimeframe(currentTimeframe, currentApplication);
+    updateSearchParameters(currentApplication, currentAutoRefresh, currentPage);
   }, []);
 
   // we reset interval on any state change (because we use the state variables for data retrieval)
@@ -62,10 +72,7 @@ function RecentTasks() {
     // change value
     setCurrentAutoRefresh(event.target.value);
     // save to URL
-    setSearchParams({
-      app: currentApplication ?? "",
-      refresh: event.target.value
-    });
+    updateSearchParameters(currentApplication,  event.target.value, 1);
   };
 
   return (
@@ -81,11 +88,10 @@ function RecentTasks() {
             onChange={(value) => {
               setCurrentApplication(value);
               refreshTasksInTimeframe(currentTimeframe, value);
-              // save to URL
-              setSearchParams({
-                app: value ?? "",
-                refresh: currentAutoRefresh
-              });
+              // reset page
+              setCurrentPage(1);
+              // update url
+              updateSearchParameters(value, currentAutoRefresh, 1);
             }}
             setLoadingError={setLoadingError}
           />
@@ -116,6 +122,11 @@ function RecentTasks() {
           sortField={sortField}
           setSortField={setSortField}
           relativeDate={true}
+          page={currentPage}
+          onPageChange={(page) => {
+            setCurrentPage(page);
+            updateSearchParameters(currentApplication, currentAutoRefresh, page);
+          }}
       />
       <ErrorSnackbar message={loadingError} setMessage={setLoadingError}/>
     </Container>

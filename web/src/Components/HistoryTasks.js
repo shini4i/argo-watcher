@@ -36,7 +36,7 @@ function HistoryTasks() {
         : startOfDay(new Date())
   ]);
   const [startDate, endDate] = dateRange;
-  const page = searchParams.get('page') ? Number(searchParams.get('page')) : 1;
+  const [currentPage, setCurrentPage] = useState(searchParams.get('page') ? Number(searchParams.get('page')) : 1);
 
   const updateSearchParameters = (start, end, application, page) => {
     setSearchParams({
@@ -46,7 +46,7 @@ function HistoryTasks() {
       page
     });
   }
-  const refreshWithFilters = (start, end, application) => {
+  const refreshWithFilters = (start, end, application, page) => {
    if (start && end) {
       // re-fetch tasks
       refreshTasksInRange(
@@ -63,7 +63,7 @@ function HistoryTasks() {
   };
 
   useEffect(() => {
-    refreshWithFilters(startDate, endDate, currentApplication);
+    refreshWithFilters(startDate, endDate, currentApplication, currentPage);
   }, []);
 
   const DateRangePickerCustomInput = forwardRef(({ value, onClick }, ref) => (
@@ -82,7 +82,8 @@ function HistoryTasks() {
               value={currentApplication}
               onChange={(value) => {
                 setCurrentApplication(value);
-                refreshWithFilters(startDate, endDate, value);
+                setCurrentPage(1);
+                refreshWithFilters(startDate, endDate, value, 1);
               }}
               setLoadingError={setLoadingError}
           />
@@ -94,7 +95,8 @@ function HistoryTasks() {
               endDate={endDate}
               onChange={(update) => {
                 setDateRange(update);
-                refreshWithFilters(update[0], update[1], currentApplication);
+                setCurrentPage(1);
+                refreshWithFilters(update[0], update[1], currentApplication, 1);
               }}
               maxDate={new Date()}
               isClearable={false}
@@ -103,7 +105,8 @@ function HistoryTasks() {
             />
         </Box>
         <IconButton edge="start" color={"primary"} title={"reload table"} onClick={() => {
-          refreshWithFilters(startDate, endDate, currentApplication);
+          setCurrentPage(1);
+          refreshWithFilters(startDate, endDate, currentApplication, 1);
         }}>
           <RefreshIcon/>
         </IconButton>
@@ -113,9 +116,9 @@ function HistoryTasks() {
           sortField={sortField}
           setSortField={setSortField}
           relativeDate={false}
-          initialPage={page}
+          page={currentPage}
           onPageChange={(page) => {
-            console.log('new page', page);
+            setCurrentPage(page);
             updateSearchParameters(startDate, endDate, currentApplication, page);
           }}
       />
