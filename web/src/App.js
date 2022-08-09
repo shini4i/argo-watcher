@@ -4,18 +4,29 @@ import RecentTasks from "./Components/RecentTasks";
 import HistoryTasks from "./Components/HistoryTasks";
 import Layout from "./Layout";
 import Page404 from "./Page404";
+import {createTheme, ThemeProvider} from "@mui/material";
+
+const theme = createTheme({
+  palette: {
+    primary: {
+      main: '#2E3B55',
+    },
+  },
+});
 
 function App() {
   return (
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Layout />}>
-            <Route index element={<RecentTasks />} />
-            <Route path="/history" element={<HistoryTasks />} />
-          </Route>
-          <Route path="*" element={<Page404 />} />
-        </Routes>
-      </BrowserRouter>
+      <ThemeProvider theme={theme}>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<Layout />}>
+              <Route index element={<RecentTasks />} />
+              <Route path="/history" element={<HistoryTasks />} />
+            </Route>
+            <Route path="*" element={<Page404 />} />
+          </Routes>
+        </BrowserRouter>
+      </ThemeProvider>
   );
 }
 

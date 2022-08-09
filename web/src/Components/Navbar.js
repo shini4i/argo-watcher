@@ -9,10 +9,13 @@ import Stack from "@mui/material/Stack";
 import {fetchVersion} from "../Services/Data";
 import {useEffect, useState} from "react";
 import LocalOfferIcon from '@mui/icons-material/LocalOffer';
+import RestoreIcon from '@mui/icons-material/Restore';
+import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
+import Tooltip from "@mui/material/Tooltip";
 
 function NavigationButton({to, children}) {
     return <Link
-        sx={{ color: 'white', display: 'block', mx: '10px' }}
+        sx={{ color: 'white', mx: '10px', display: 'flex' }}
         component={RouterLink}
         to={to}
     >
@@ -31,14 +34,22 @@ function Navbar() {
     }, []);
 
     return <Box sx={{ mb: 2 }}>
-        <AppBar position="static" style={{ background: '#2E3B55' }}>
+        <AppBar position="static">
             <Toolbar>
                 <Typography variant="h6" component="div">
                     Argo Watcher
                 </Typography>
                 <Stack sx={{ flexGrow: 1, px: 2 }} spacing={1} direction={"row"}>
-                    <NavigationButton to={"/"}>Recent</NavigationButton>
-                    <NavigationButton to={"/history"}>History</NavigationButton>
+                    <NavigationButton to={"/"}>
+                        <Tooltip title="Recent">
+                         <RestoreIcon />
+                        </Tooltip>
+                    </NavigationButton>
+                    <NavigationButton to={"/history"}>
+                        <Tooltip title="History">
+                            <CalendarMonthIcon />
+                        </Tooltip>
+                    </NavigationButton>
                 </Stack>
                 <Stack spacing={1} direction={"row"} alignItems={"center"}
                        sx={{

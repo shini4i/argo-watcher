@@ -12,8 +12,10 @@ import {fetchTasks} from "../Services/Data";
 import Box from "@mui/material/Box";
 import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
-import {Chip} from "@mui/material";
+import {Chip, Divider} from "@mui/material";
 import Link from "@mui/material/Link";
+import { addMinutes, format } from 'date-fns'
+import Pagination from '@mui/material/Pagination'
 
 const chipColorByStatus = (status) => {
   if (status === 'in progress') {
@@ -34,6 +36,11 @@ const taskDuration = (created, updated) => {
   }
   const seconds = updated - created;
   return relativeHumanDuration(seconds);
+}
+
+const formatDateTime = (timestamp) => {
+  let dateTime = new Date(timestamp * 1000);
+  return format(addMinutes(dateTime, dateTime.getTimezoneOffset()),'yyyy/MM/dd HH:mm:ss');
 }
 
 export function useTasks({ setLoadingError }) {
@@ -112,24 +119,10 @@ function TableCellSorted({field, sortField, setSortField, children}) {
   </TableCell>
 }
 
-function TimestampRepresentation(task, position = "span") {
-  switch (position) {
-    case "title":
-      if (window.location.pathname.startsWith('/history')) {
-        return "";
-      } else {
-        return new Date(task.created * 1000).toLocaleString();
-      }
-    case "span":
-      if (window.location.pathname.startsWith('/history')) {
-        return new Date(task.created * 1000).toLocaleString();
-      } else {
-        return relativeTime(task.created * 1000);
-      }
-  }
-}
+function TasksTable({ tasks, sortField, setSortField, relativeDate, onPageChange, page = 1 }) {
+  const pages = Math.ceil(tasks.length / 10);
+  const tasksPaginated = tasks.slice((page - 1)*10, page*10);
 
-function TasksTable({ tasks, sortField, setSortField }) {
   return (
       <TableContainer component={Paper}>
         <Table sx={{minWidth: 650}} aria-label="simple table">
@@ -145,7 +138,7 @@ function TasksTable({ tasks, sortField, setSortField }) {
             </TableRow>
           </TableHead>
           <TableBody>
-            {tasks.map((task) => (
+            {tasksPaginated.map((task) => (
                 <TableRow
                     key={task.id}
                     sx={{'&:last-child td, &:last-child th': {border: 0}}}
@@ -165,9 +158,14 @@ function TasksTable({ tasks, sortField, setSortField }) {
                     <Chip label={task.status} color={chipColorByStatus(task.status)} />
                   </TableCell>
                   <TableCell>
-                    <Tooltip title={TimestampRepresentation(task, "title")}>
-                      <span>{TimestampRepresentation(task)}</span>
-                    </Tooltip>
+                    {relativeDate && (
+                        <Tooltip title={formatDateTime(task.created)}>
+                          <span>{relativeTime(task.created * 1000)}</span>
+                        </Tooltip>
+                    )}
+                    {!relativeDate && (
+                        <span>{formatDateTime(task.created)}</span>
+                    )}
                   </TableCell>
                   <TableCell>
                     {task.updated && (
@@ -191,6 +189,23 @@ function TasksTable({ tasks, sortField, setSortField }) {
             </TableRow>}
           </TableBody>
         </Table>
+        {pages > 1 && (
+          <>
+            <Divider />
+            <Box sx={{m: 1, display: 'flex', justifyContent: 'center'}}>
+              <Pagination
+                  count={Math.ceil(tasks.length / 10)}
+                  size="small"
+                  variant="outlined"
+                  shape="rounded"
+                  page={page}
+                  onChange={(_event, value) => {
+                    onPageChange && onPageChange(value);
+                  }}
+              />
+            </Box>
+          </>
+        )}
       </TableContainer>
   );
 }

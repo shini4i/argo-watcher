@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - Swagger UI /swagger/index.html
+- date and time now is showing in UTC
+- changed primary color for the theme
+- added pagination to the pages
+- other minor improvements
 ### Changed
 - AppBar color
 

@@ -29,15 +29,24 @@ function HistoryTasks() {
     // start date
     Number(searchParams.get('start'))
         ? new Date(Number(searchParams.get('start')) * 1000)
-        : startOfDay(new Date),
+        : startOfDay(new Date()),
     // end date
     Number(searchParams.get('end'))
         ? new Date(Number(searchParams.get('end')) * 1000)
-        : startOfDay(new Date)
+        : startOfDay(new Date())
   ]);
   const [startDate, endDate] = dateRange;
+  const [currentPage, setCurrentPage] = useState(searchParams.get('page') ? Number(searchParams.get('page')) : 1);
 
-  const refreshWithFilters = (start, end, application) => {
+  const updateSearchParameters = (start, end, application, page) => {
+    setSearchParams({
+      app: application ?? "",
+      start: Math.floor(start.getTime()/1000),
+      end: Math.floor(end.getTime()/1000),
+      page
+    });
+  }
+  const refreshWithFilters = (start, end, application, page) => {
    if (start && end) {
       // re-fetch tasks
       refreshTasksInRange(
@@ -46,11 +55,7 @@ function HistoryTasks() {
           application
       );
       // save to filters
-     setSearchParams({
-       app: application ?? "",
-       start: Math.floor(start.getTime()/1000),
-       end: Math.floor(end.getTime()/1000),
-     });
+     updateSearchParameters(start, end, application, page);
    } else {
       // reset list of tasks
       clearTasks();
@@ -58,7 +63,7 @@ function HistoryTasks() {
   };
 
   useEffect(() => {
-    refreshWithFilters(startDate, endDate, currentApplication);
+    refreshWithFilters(startDate, endDate, currentApplication, currentPage);
   }, []);
 
   const DateRangePickerCustomInput = forwardRef(({ value, onClick }, ref) => (
@@ -67,16 +72,18 @@ function HistoryTasks() {
 
   return (
     <Container maxWidth="xl">
-      <Stack direction="row" spacing={2} alignItems="center">
-        <Typography variant="h4" gutterBottom component="div" sx={{flexGrow: 1}}>
-          History tasks
+      <Stack direction="row" spacing={2} alignItems="center" sx={{mb: 2}}>
+        <Typography variant="h4" gutterBottom component="div" sx={{flexGrow: 1, display: 'flex', gap: '10px'}}>
+          <Box>History tasks</Box>
+          <Box sx={{fontSize: '10px'}}>UTC</Box>
         </Typography>
         <Box>
           <ApplicationsFilter
               value={currentApplication}
               onChange={(value) => {
                 setCurrentApplication(value);
-                refreshWithFilters(startDate, endDate, value);
+                setCurrentPage(1);
+                refreshWithFilters(startDate, endDate, value, 1);
               }}
               setLoadingError={setLoadingError}
           />
@@ -88,7 +95,8 @@ function HistoryTasks() {
               endDate={endDate}
               onChange={(update) => {
                 setDateRange(update);
-                refreshWithFilters(update[0], update[1], currentApplication);
+                setCurrentPage(1);
+                refreshWithFilters(update[0], update[1], currentApplication, 1);
               }}
               maxDate={new Date()}
               isClearable={false}
@@ -97,7 +105,8 @@ function HistoryTasks() {
             />
         </Box>
         <IconButton edge="start" color={"primary"} title={"reload table"} onClick={() => {
-          refreshWithFilters(startDate, endDate, currentApplication);
+          setCurrentPage(1);
+          refreshWithFilters(startDate, endDate, currentApplication, 1);
         }}>
           <RefreshIcon/>
         </IconButton>
@@ -106,6 +115,12 @@ function HistoryTasks() {
           tasks={tasks}
           sortField={sortField}
           setSortField={setSortField}
+          relativeDate={false}
+          page={currentPage}
+          onPageChange={(page) => {
+            setCurrentPage(page);
+            updateSearchParameters(startDate, endDate, currentApplication, page);
+          }}
       />
       <ErrorSnackbar message={loadingError} setMessage={setLoadingError}/>
     </Container>

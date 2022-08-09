@@ -30,10 +30,20 @@ function RecentTasks() {
   const autoRefreshIntervalRef = useRef(null);
   const [currentApplication, setCurrentApplication] = useState(searchParams.get('app') ?? null);
   const currentTimeframe = 9 * 60 * 60;
+  const [currentPage, setCurrentPage] = useState(searchParams.get('page') ? Number(searchParams.get('page')) : 1);
+
+  const updateSearchParameters = (application, refresh, page) => {
+    setSearchParams({
+      app: application ?? "",
+      refresh,
+      page,
+    });
+  }
 
   // initial load
   useEffect(() => {
     refreshTasksInTimeframe(currentTimeframe, currentApplication);
+    updateSearchParameters(currentApplication, currentAutoRefresh, currentPage);
   }, []);
 
   // we reset interval on any state change (because we use the state variables for data retrieval)
@@ -62,17 +72,15 @@ function RecentTasks() {
     // change value
     setCurrentAutoRefresh(event.target.value);
     // save to URL
-    setSearchParams({
-      app: currentApplication ?? "",
-      refresh: event.target.value
-    });
+    updateSearchParameters(currentApplication,  event.target.value, 1);
   };
 
   return (
     <Container maxWidth="xl">
-      <Stack direction="row" spacing={2} alignItems="center">
-        <Typography variant="h4" gutterBottom component="div" sx={{flexGrow: 1}}>
-          Recent tasks
+      <Stack direction="row" spacing={2} alignItems="center" sx={{mb: 2}}>
+        <Typography variant="h4" gutterBottom component="div" sx={{flexGrow: 1, display: 'flex', gap: '10px'}}>
+          <Box>Recent tasks</Box>
+          <Box sx={{fontSize: '10px'}}>UTC</Box>
         </Typography>
         <Box>
           <ApplicationsFilter
@@ -80,11 +88,10 @@ function RecentTasks() {
             onChange={(value) => {
               setCurrentApplication(value);
               refreshTasksInTimeframe(currentTimeframe, value);
-              // save to URL
-              setSearchParams({
-                app: value ?? "",
-                refresh: currentAutoRefresh
-              });
+              // reset page
+              setCurrentPage(1);
+              // update url
+              updateSearchParameters(value, currentAutoRefresh, 1);
             }}
             setLoadingError={setLoadingError}
           />
@@ -105,7 +112,11 @@ function RecentTasks() {
           </FormControl>
         </Box>
         <IconButton edge="start" color={"primary"} title={"force table load"} onClick={() => {
+          // update tasks
           refreshTasksInTimeframe(currentTimeframe, currentApplication);
+          // reset page
+          setCurrentPage(1);
+          updateSearchParameters(currentApplication, currentAutoRefresh, 1);
         }}>
           <RefreshIcon/>
         </IconButton>
@@ -114,6 +125,12 @@ function RecentTasks() {
           tasks={tasks}
           sortField={sortField}
           setSortField={setSortField}
+          relativeDate={true}
+          page={currentPage}
+          onPageChange={(page) => {
+            setCurrentPage(page);
+            updateSearchParameters(currentApplication, currentAutoRefresh, page);
+          }}
       />
       <ErrorSnackbar message={loadingError} setMessage={setLoadingError}/>
     </Container>
