@@ -119,7 +119,7 @@ function TableCellSorted({field, sortField, setSortField, children}) {
   </TableCell>
 }
 
-function TasksTable({ tasks, sortField, setSortField, relativeDate, page = 1, onPageChange = () => {} }) {
+function TasksTable({ tasks, sortField, setSortField, relativeDate, onPageChange, page = 1 }) {
   const pages = Math.ceil(tasks.length / 10);
   const tasksPaginated = tasks.slice((page - 1)*10, page*10);
 
@@ -199,8 +199,8 @@ function TasksTable({ tasks, sortField, setSortField, relativeDate, page = 1, on
                   variant="outlined"
                   shape="rounded"
                   page={page}
-                  onChange={(event, value) => {
-                    onPageChange(value);
+                  onChange={(_event, value) => {
+                    onPageChange && onPageChange(value);
                   }}
               />
             </Box>
