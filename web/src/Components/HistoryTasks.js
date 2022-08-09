@@ -36,7 +36,16 @@ function HistoryTasks() {
         : startOfDay(new Date())
   ]);
   const [startDate, endDate] = dateRange;
+  const page = searchParams.get('page') ? Number(searchParams.get('page')) : 1;
 
+  const updateSearchParameters = (start, end, application, page) => {
+    setSearchParams({
+      app: application ?? "",
+      start: Math.floor(start.getTime()/1000),
+      end: Math.floor(end.getTime()/1000),
+      page
+    });
+  }
   const refreshWithFilters = (start, end, application) => {
    if (start && end) {
       // re-fetch tasks
@@ -46,11 +55,7 @@ function HistoryTasks() {
           application
       );
       // save to filters
-     setSearchParams({
-       app: application ?? "",
-       start: Math.floor(start.getTime()/1000),
-       end: Math.floor(end.getTime()/1000),
-     });
+     updateSearchParameters(start, end, application, page);
    } else {
       // reset list of tasks
       clearTasks();
@@ -108,6 +113,11 @@ function HistoryTasks() {
           sortField={sortField}
           setSortField={setSortField}
           relativeDate={false}
+          initialPage={page}
+          onPageChange={(page) => {
+            console.log('new page', page);
+            updateSearchParameters(startDate, endDate, currentApplication, page);
+          }}
       />
       <ErrorSnackbar message={loadingError} setMessage={setLoadingError}/>
     </Container>
