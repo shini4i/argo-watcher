@@ -67,7 +67,7 @@ function HistoryTasks() {
 
   return (
     <Container maxWidth="xl">
-      <Stack direction="row" spacing={2} alignItems="center">
+      <Stack direction="row" spacing={2} alignItems="center" sx={{mb: 2}}>
         <Typography variant="h4" gutterBottom component="div" sx={{flexGrow: 1, display: 'flex', gap: '10px'}}>
           <Box>History tasks</Box>
           <Box sx={{fontSize: '10px'}}>UTC</Box>

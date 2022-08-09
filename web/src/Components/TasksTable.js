@@ -12,9 +12,10 @@ import {fetchTasks} from "../Services/Data";
 import Box from "@mui/material/Box";
 import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
-import {Chip} from "@mui/material";
+import {Chip, Divider} from "@mui/material";
 import Link from "@mui/material/Link";
 import { addMinutes, format } from 'date-fns'
+import Pagination from '@mui/material/Pagination'
 
 const chipColorByStatus = (status) => {
   if (status === 'in progress') {
@@ -119,6 +120,14 @@ function TableCellSorted({field, sortField, setSortField, children}) {
 }
 
 function TasksTable({ tasks, sortField, setSortField, relativeDate }) {
+  const [page, setPage] = React.useState(1);
+  const handleChange = (event, value) => {
+    setPage(value);
+  };
+
+  const pages = Math.ceil(tasks.length / 10);
+  const tasksPaginated = tasks.slice((page - 1)*10, page*10);
+
   return (
       <TableContainer component={Paper}>
         <Table sx={{minWidth: 650}} aria-label="simple table">
@@ -134,7 +143,7 @@ function TasksTable({ tasks, sortField, setSortField, relativeDate }) {
             </TableRow>
           </TableHead>
           <TableBody>
-            {tasks.map((task) => (
+            {tasksPaginated.map((task) => (
                 <TableRow
                     key={task.id}
                     sx={{'&:last-child td, &:last-child th': {border: 0}}}
@@ -185,6 +194,21 @@ function TasksTable({ tasks, sortField, setSortField, relativeDate }) {
             </TableRow>}
           </TableBody>
         </Table>
+        {pages > 1 && (
+          <>
+            <Divider />
+            <Box sx={{m: 1, display: 'flex', justifyContent: 'center'}}>
+              <Pagination
+                  count={Math.ceil(tasks.length / 10)}
+                  size="small"
+                  variant="outlined"
+                  shape="rounded"
+                  page={page}
+                  onChange={handleChange}
+              />
+            </Box>
+          </>
+        )}
       </TableContainer>
   );
 }
