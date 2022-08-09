@@ -50,8 +50,6 @@ function Navbar() {
                             <CalendarMonthIcon />
                         </Tooltip>
                     </NavigationButton>
-                    {/*<NavigationButton to={"/"}>Recent</NavigationButton>*/}
-                    {/*<NavigationButton to={"/history"}>History</NavigationButton>*/}
                 </Stack>
                 <Stack spacing={1} direction={"row"} alignItems={"center"}
                        sx={{
