@@ -112,7 +112,11 @@ function RecentTasks() {
           </FormControl>
         </Box>
         <IconButton edge="start" color={"primary"} title={"force table load"} onClick={() => {
+          // update tasks
           refreshTasksInTimeframe(currentTimeframe, currentApplication);
+          // reset page
+          setCurrentPage(1);
+          updateSearchParameters(currentApplication, currentAutoRefresh, 1);
         }}>
           <RefreshIcon/>
         </IconButton>
