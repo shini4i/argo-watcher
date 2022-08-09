@@ -34,7 +34,7 @@ function Navbar() {
     }, []);
 
     return <Box sx={{ mb: 2 }}>
-        <AppBar position="static" style={{ background: '#2E3B55' }}>
+        <AppBar position="static">
             <Toolbar>
                 <Typography variant="h6" component="div">
                     Argo Watcher
