@@ -9,12 +9,12 @@ A small tool that will help to improve deployment visibility
 [![Go Report Card](https://goreportcard.com/badge/github.com/shini4i/argo-watcher)](https://goreportcard.com/report/github.com/shini4i/argo-watcher)
 ![GitHub](https://img.shields.io/github/license/shini4i/argo-watcher)
 
-![demo](https://i.ibb.co/x3v7t1n/demo.png)
+![demo](https://i.ibb.co/JFqmgbq/demo.png)
 </div>
 
 ## Project Description
 
-This project is in an early development phase; hence some breaking changes might and should be expected.
+Starting from version 0.1.0, the project entered a semi-stable state. No significant changes are expected.
 
 The main idea is that this simple app will act as a "proxy" between pipelines and ArgoCD.
 
