@@ -44,3 +44,12 @@ jobs:
           tags: |
             ghcr.io/shini4i/argo-watcher-client:${{ github.ref_name }}
           push: true
+
+      - name: Update helm chart
+        uses: shini4i/helm-charts-updater@v1
+        with:
+          github_token: ${{ secrets.GH_TOKEN }}
+          gh_user: shini4i
+          gh_repo: charts
+          chart_name: argo-watcher
+          app_version: ${{ github.ref_name }}
