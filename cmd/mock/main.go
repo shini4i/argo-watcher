@@ -21,6 +21,7 @@ func setupRouter() *gin.Engine {
 
 	apiGroup := router.Group("/api/v1")
 	apiGroup.POST("/session", mockGenSession)
+	apiGroup.GET("/session/userinfo", mockUserinfo)
 	apiGroup.GET("/applications/:id", mockReturnAppStatus)
 
 	return router
@@ -30,6 +31,10 @@ func mockGenSession(c *gin.Context) {
 	c.JSON(http.StatusOK, Token{
 		Token: "test_token",
 	})
+}
+
+func mockUserinfo(c *gin.Context) {
+	c.JSON(http.StatusOK, m.Userinfo{LoggedIn: true})
 }
 
 func mockReturnAppStatus(c *gin.Context) {
