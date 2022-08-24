@@ -13,3 +13,8 @@ type Application struct {
 		}
 	} `json:"status"`
 }
+
+type Userinfo struct {
+	LoggedIn bool   `json:"loggedIn"`
+	Username string `json:"username"`
+}

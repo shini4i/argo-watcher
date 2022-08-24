@@ -106,7 +106,8 @@ func (argo *Argo) Check() string {
 
 	resp, err := argo.client.Do(req)
 	if err != nil {
-		panic(err)
+		rlog.Error(err)
+		return "down"
 	}
 
 	body, err := ioutil.ReadAll(resp.Body)
@@ -121,12 +122,7 @@ func (argo *Argo) Check() string {
 		}
 	}(resp.Body)
 
-	type userinfo struct {
-		LoggedIn bool   `json:"loggedIn"`
-		Username string `json:"username"`
-	}
-
-	var userInfo userinfo
+	var userInfo m.Userinfo
 	err = json.Unmarshal(body, &userInfo)
 	if err != nil {
 		panic(err)
