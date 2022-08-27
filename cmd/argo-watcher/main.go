@@ -22,12 +22,11 @@ import (
 var version = "local"
 
 var (
-	argo = Argo{
+	client = Argo{
 		User:     os.Getenv("ARGO_USER"),
 		Password: os.Getenv("ARGO_PASSWORD"),
 		Url:      os.Getenv("ARGO_URL"),
 	}
-	client = argo.Init()
 )
 
 var (
@@ -78,7 +77,6 @@ func setupRouter() *gin.Engine {
 // @Accept json
 // @Produce json
 // @Param task body m.Task true "Task"
-// default({"app":"argo-watcher","author":"John Doe", "project":"Demo", images:["gcr.io/shini4i/argo-watcher:dev"]})
 // @Success 200 {object} m.TaskStatus
 // @Router /api/v1/tasks [post]
 func addTask(c *gin.Context) {
@@ -93,7 +91,15 @@ func addTask(c *gin.Context) {
 		return
 	}
 
-	id := client.AddTask(task)
+	id, err := client.AddTask(task)
+	if err != nil {
+		rlog.Errorf("Couldn't process new task. Got the following error: %s", err)
+		c.JSON(http.StatusServiceUnavailable, m.TaskStatus{
+			Status: id,
+			Error:  err.Error(),
+		})
+		return
+	}
 
 	c.JSON(http.StatusAccepted, m.TaskStatus{
 		Id:     id,
@@ -165,7 +171,8 @@ func getVersion(c *gin.Context) {
 // @Failure 503 {object} m.HealthStatus
 // @Router /healthz [get]
 func healthz(c *gin.Context) {
-	if status := client.Check(); status == "up" {
+	status, err := client.Check()
+	if err != nil && status == "up" {
 		c.JSON(http.StatusOK, m.HealthStatus{
 			Status: "up",
 		})
@@ -194,6 +201,9 @@ func main() {
 	rlog.Info("Starting web server")
 
 	router := setupRouter()
+
+	rlog.Debug("Initializing argo-watcher client...")
+	go client.Init()
 
 	prometheusRegisterMetrics()
 

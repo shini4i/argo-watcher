@@ -39,19 +39,19 @@ func TestArgo_GetTaskStatus(t *testing.T) {
 	var task3 m.Task
 	var task4 m.Task
 
-	taskId = testClient.AddTask(task)
+	taskId, _ = testClient.AddTask(task)
 
 	task2 = task
 	task2.App = "app2"
-	task2Id = testClient.AddTask(task2)
+	task2Id, _ = testClient.AddTask(task2)
 
 	task3 = task
 	task3.App = "app3"
-	task3Id = testClient.AddTask(task3)
+	task3Id, _ = testClient.AddTask(task3)
 
 	task4 = task
 	task4.App = "app4"
-	task4Id = testClient.AddTask(task4)
+	task4Id, _ = testClient.AddTask(task4)
 
 	time.Sleep(1 * time.Second)
 
