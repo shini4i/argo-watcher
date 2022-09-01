@@ -1,5 +1,6 @@
 /** Global CSS goes here */
 /** .... */
-html, body {
-    height: 100%
+html, body, div#root {
+    min-height: 100%;
+    min-width: 640px;
 }

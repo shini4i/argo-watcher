@@ -36,10 +36,10 @@ function Navbar() {
     return <Box sx={{ mb: 2 }}>
         <AppBar position="static">
             <Toolbar>
-                <Typography variant="h6" component="div">
+                <Typography variant="h6" component="div" sx={{minWidth: '120px'}}>
                     Argo Watcher
                 </Typography>
-                <Stack sx={{ flexGrow: 1, px: 2 }} spacing={1} direction={"row"}>
+                <Stack sx={{ flexGrow: 1, px: 2 }} spacing={{xs: 3, md: 1 }} direction={"row"} justifyContent={{ xs: "center", md: "flex-start" }}>
                     <NavigationButton to={"/"}>
                         <Tooltip title="Recent">
                          <RestoreIcon />
@@ -51,12 +51,14 @@ function Navbar() {
                         </Tooltip>
                     </NavigationButton>
                 </Stack>
-                <Stack spacing={1} direction={"row"} alignItems={"center"}
+                <Stack spacing={1} direction={"row"} alignItems={"center"} justifyContent={"flex-end"}
                        sx={{
+                           minWidth: '120px',
                            color: 'white', textTransform: 'unset', textDecoration: "unset",
                            '&:hover': {
                                color: 'rgba(255,255,255,.85)'
                            }
+
                         }}
                        component={Link}
                        href={"https://github.com/shini4i/argo-watcher/tree/" + version}
