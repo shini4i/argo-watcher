@@ -39,7 +39,7 @@ function Navbar() {
                 <Typography variant="h6" component="div">
                     Argo Watcher
                 </Typography>
-                <Stack sx={{ flexGrow: 1, px: 2 }} spacing={1} direction={"row"}>
+                <Stack sx={{ flexGrow: 1, px: 2 }} spacing={{sm: 3, md: 1 }} direction={"row"} justifyContent={{ sm: "center", md: "flex-start" }}>
                     <NavigationButton to={"/"}>
                         <Tooltip title="Recent">
                          <RestoreIcon />

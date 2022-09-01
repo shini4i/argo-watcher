@@ -124,7 +124,8 @@ function TasksTable({ tasks, sortField, setSortField, relativeDate, onPageChange
   const tasksPaginated = tasks.slice((page - 1)*10, page*10);
 
   return (
-      <TableContainer component={Paper}>
+      <>
+      <TableContainer>
         <Table sx={{minWidth: 650}} aria-label="simple table">
           <TableHead>
             <TableRow>
@@ -189,13 +190,13 @@ function TasksTable({ tasks, sortField, setSortField, relativeDate, onPageChange
             </TableRow>}
           </TableBody>
         </Table>
-        {pages > 1 && (
+      </TableContainer>
+      {pages > 1 && (
           <>
             <Divider />
-            <Box sx={{m: 1, display: 'flex', justifyContent: 'center'}}>
+            <Box sx={{m: 1, display: 'flex', justifyContent: 'center'}} >
               <Pagination
                   count={Math.ceil(tasks.length / 10)}
-                  size="small"
                   variant="outlined"
                   shape="rounded"
                   page={page}
@@ -205,8 +206,8 @@ function TasksTable({ tasks, sortField, setSortField, relativeDate, onPageChange
               />
             </Box>
           </>
-        )}
-      </TableContainer>
+      )}
+  </>
   );
 }
 
