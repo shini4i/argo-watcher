@@ -179,6 +179,7 @@ func healthz(c *gin.Context) {
 		c.JSON(http.StatusOK, m.HealthStatus{
 			Status: "up",
 		})
+		return
 	}
 	c.JSON(http.StatusServiceUnavailable, m.HealthStatus{
 		Status: "down",

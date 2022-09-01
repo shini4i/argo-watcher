@@ -87,6 +87,7 @@ func (argo *Argo) Init() {
 		func() error {
 			resp, err := argo.client.Do(req)
 			if err != nil {
+				argocdUnavailable.Set(1)
 				rlog.Errorf("Couldn't establish connection to ArgoCD, got the following error: %s", err)
 				return err
 			}
@@ -165,15 +166,16 @@ func (argo *Argo) AddTask(task m.Task) (string, error) {
 func (argo *Argo) GetTasks(startTime float64, endTime float64, app string) m.TasksResponse {
 	_, err := argo.Check()
 	tasks := argo.state.GetTasks(startTime, endTime, app)
+
 	if err != nil {
 		return m.TasksResponse{
 			Tasks: tasks,
 			Error: err.Error(),
 		}
-	} else {
-		return m.TasksResponse{
-			Tasks: tasks,
-		}
+	}
+
+	return m.TasksResponse{
+		Tasks: tasks,
 	}
 }
 
