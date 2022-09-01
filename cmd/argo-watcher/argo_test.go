@@ -7,10 +7,12 @@ import (
 	"time"
 )
 
-var taskId string
-var task2Id string
-var task3Id string
-var task4Id string
+var (
+	taskId  string
+	task2Id string
+	task3Id string
+	task4Id string
+)
 
 var (
 	testClient = Argo{
@@ -37,6 +39,8 @@ func TestArgo_GetTaskStatus(t *testing.T) {
 	var task2 m.Task
 	var task3 m.Task
 	var task4 m.Task
+
+	testClient.Init()
 
 	taskId, _ = testClient.AddTask(task)
 

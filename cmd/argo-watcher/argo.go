@@ -24,6 +24,11 @@ import (
 	"strings"
 )
 
+const (
+	unavailableMessage = "ArgoCD is unavailable"
+	appNotFoundMessage = "app not found"
+)
+
 type Argo struct {
 	Url      string
 	User     string
@@ -111,7 +116,7 @@ func (argo *Argo) Check() (string, error) {
 	resp, err := argo.client.Do(req)
 	if err != nil {
 		rlog.Error(err)
-		return "ArgoCD is unavailable", err
+		return unavailableMessage, err
 	}
 
 	body, err := ioutil.ReadAll(resp.Body)
@@ -183,11 +188,11 @@ func (argo *Argo) checkAppStatus(app string) (m.Application, error) {
 	resp, err := argo.client.Do(req)
 	if err != nil {
 		rlog.Error(err)
-		return m.Application{}, errors.New("ArgoCD is unavailable")
+		return m.Application{}, errors.New(unavailableMessage)
 	}
 
 	if resp.StatusCode == 404 {
-		return m.Application{}, errors.New("app not found")
+		return m.Application{}, errors.New(appNotFoundMessage)
 	}
 
 	body, err := ioutil.ReadAll(resp.Body)
@@ -221,7 +226,7 @@ func (argo *Argo) waitForRollout(task m.Task) {
 		func() error {
 			app, err := argo.checkAppStatus(task.App)
 
-			if err != nil && h.Contains([]string{"app not found", "ArgoCD is unavailable"}, err.Error()) {
+			if err != nil && h.Contains([]string{appNotFoundMessage, unavailableMessage}, err.Error()) {
 				return err
 			}
 
@@ -244,17 +249,17 @@ func (argo *Argo) waitForRollout(task m.Task) {
 		retry.Delay(15*time.Second),
 		retry.Attempts(retryAttempts),
 		retry.RetryIf(func(err error) bool {
-			return !h.Contains([]string{"app not found", "ArgoCD is unavailable"}, err.Error())
+			return !h.Contains([]string{appNotFoundMessage, unavailableMessage}, err.Error())
 		}),
 	)
 
 	if err != nil {
-		if strings.Contains(err.Error(), "ArgoCD is unavailable") {
+		if strings.Contains(err.Error(), unavailableMessage) {
 			rlog.Errorf("[%s] ArgoCD is unavailable. Aborting.", task.Id)
 			argo.state.SetTaskStatus(task.Id, "aborted")
-		} else if strings.Contains(err.Error(), "app not found") {
+		} else if strings.Contains(err.Error(), appNotFoundMessage) {
 			rlog.Errorf("[%s] Application %s does not exist", task.Id, task.App)
-			argo.state.SetTaskStatus(task.Id, "app not found")
+			argo.state.SetTaskStatus(task.Id, appNotFoundMessage)
 		} else {
 			rlog.Infof("[%s] The expected tag did not become available within expected timeframe. Aborting.", task.Id)
 			failedDeployment.With(prometheus.Labels{"app": task.App}).Inc()
