@@ -45,5 +45,5 @@ jobs:
           STATE_TYPE: in-memory
           ARGO_URL: http://localhost:8081
           ARGO_TIMEOUT: 1
-          RLOG_LOG_LEVEL: NONE
+          RLOG_LOG_LEVEL: DEBUG
         run: cd cmd && go test -v ./...

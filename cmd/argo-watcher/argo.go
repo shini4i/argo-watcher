@@ -253,24 +253,21 @@ func (argo *Argo) waitForRollout(task m.Task) {
 		}),
 	)
 
-	if err != nil {
-		if strings.Contains(err.Error(), unavailableMessage) {
-			rlog.Errorf("[%s] ArgoCD is unavailable. Aborting.", task.Id)
-			argo.state.SetTaskStatus(task.Id, "aborted")
-		} else if strings.Contains(err.Error(), appNotFoundMessage) {
-			rlog.Errorf("[%s] Application %s does not exist", task.Id, task.App)
-			argo.state.SetTaskStatus(task.Id, appNotFoundMessage)
-		} else {
-			rlog.Infof("[%s] The expected tag did not become available within expected timeframe. Aborting.", task.Id)
-			failedDeployment.With(prometheus.Labels{"app": task.App}).Inc()
-			argo.state.SetTaskStatus(task.Id, "failed")
-		}
-		return
+	if err == nil {
+		rlog.Infof("[%s] App is running on the excepted version.", task.Id)
+		failedDeployment.With(prometheus.Labels{"app": task.App}).Set(0)
+		argo.state.SetTaskStatus(task.Id, "deployed")
+	} else if strings.Contains(err.Error(), unavailableMessage) {
+		rlog.Errorf("[%s] ArgoCD is unavailable. Aborting.", task.Id)
+		argo.state.SetTaskStatus(task.Id, "aborted")
+	} else if strings.Contains(err.Error(), appNotFoundMessage) {
+		rlog.Errorf("[%s] Application %s does not exist", task.Id, task.App)
+		argo.state.SetTaskStatus(task.Id, appNotFoundMessage)
+	} else {
+		rlog.Infof("[%s] The expected tag did not become available within expected timeframe. Aborting.", task.Id)
+		failedDeployment.With(prometheus.Labels{"app": task.App}).Inc()
+		argo.state.SetTaskStatus(task.Id, "failed")
 	}
-
-	rlog.Infof("[%s] App is running on the excepted version.", task.Id)
-	failedDeployment.With(prometheus.Labels{"app": task.App}).Set(0)
-	argo.state.SetTaskStatus(task.Id, "deployed")
 }
 
 func (argo *Argo) GetAppList() []string {
