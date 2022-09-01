@@ -38,6 +38,10 @@ var (
 		Name: "processed_deployments",
 		Help: "The amount of deployment processed since startup.",
 	})
+	argocdUnavailable = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "argocd_unavailable",
+		Help: "Whether ArgoCD is available for argo-watcher.",
+	})
 )
 
 func setupRouter() *gin.Engine {
@@ -171,16 +175,14 @@ func getVersion(c *gin.Context) {
 // @Failure 503 {object} m.HealthStatus
 // @Router /healthz [get]
 func healthz(c *gin.Context) {
-	status, err := client.Check()
-	if err != nil && status == "up" {
+	if client.SimpleHealthCheck() {
 		c.JSON(http.StatusOK, m.HealthStatus{
 			Status: "up",
 		})
-	} else {
-		c.JSON(http.StatusServiceUnavailable, m.HealthStatus{
-			Status: "down",
-		})
 	}
+	c.JSON(http.StatusServiceUnavailable, m.HealthStatus{
+		Status: "down",
+	})
 }
 
 func prometheusHandler() gin.HandlerFunc {
@@ -195,6 +197,7 @@ func prometheusRegisterMetrics() {
 	rlog.Debug("Registering prometheus metrics...")
 	prometheus.MustRegister(failedDeployment)
 	prometheus.MustRegister(processedDeployments)
+	prometheus.MustRegister(argocdUnavailable)
 }
 
 func main() {

@@ -5,6 +5,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- An additional metric is exposed to indicate whether argo-watcher is successfully connected to ArgoCD
+### Changed
+- ArgoCD connectivity is no longer considered a requirement to keep argo watcher alive
 ### Fixed
 - Health check endpoint now returns correct response code if ArgoCD is unavailable
 

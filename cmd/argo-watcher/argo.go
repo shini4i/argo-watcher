@@ -107,6 +107,7 @@ func (argo *Argo) Init() {
 
 func (argo *Argo) Check() (string, error) {
 	if argo == nil {
+		argocdUnavailable.Set(1)
 		return "", errors.New("argo-watcher is not initialized yet")
 	}
 
@@ -116,6 +117,7 @@ func (argo *Argo) Check() (string, error) {
 	resp, err := argo.client.Do(req)
 	if err != nil {
 		rlog.Error(err)
+		argocdUnavailable.Set(1)
 		return unavailableMessage, err
 	}
 
@@ -138,8 +140,10 @@ func (argo *Argo) Check() (string, error) {
 	}
 
 	if userInfo.LoggedIn && argo.state.Check() {
+		argocdUnavailable.Set(0)
 		return "up", nil
 	} else {
+		argocdUnavailable.Set(1)
 		return "down", nil
 	}
 }
@@ -272,4 +276,8 @@ func (argo *Argo) waitForRollout(task m.Task) {
 
 func (argo *Argo) GetAppList() []string {
 	return argo.state.GetAppList()
+}
+
+func (argo *Argo) SimpleHealthCheck() bool {
+	return argo.state.Check()
 }
