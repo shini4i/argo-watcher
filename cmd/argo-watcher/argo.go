@@ -221,9 +221,7 @@ func (argo *Argo) waitForRollout(task m.Task) {
 		func() error {
 			app, err := argo.checkAppStatus(task.App)
 
-			if err != nil && err.Error() == "ArgoCD is unavailable" {
-				return err
-			} else if err != nil && err.Error() == "app not found" {
+			if err != nil && h.Contains([]string{"app not found", "ArgoCD is unavailable"}, err.Error()) {
 				return err
 			}
 

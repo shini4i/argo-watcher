@@ -13,13 +13,12 @@ var task3Id string
 var task4Id string
 
 var (
-	testArgo = Argo{
+	testClient = Argo{
 		Url:      "http://localhost:8081",
 		User:     "watcher",
 		Password: "test",
 	}
-	testClient = testArgo.Init()
-	task       = m.Task{
+	task = m.Task{
 		Created: float64(time.Now().Unix()),
 		App:     "app",
 		Author:  "Test Author",
