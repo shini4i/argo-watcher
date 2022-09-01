@@ -23,7 +23,7 @@ jobs:
         ports:
           - 5432:5432
       mock:
-        image: shini4i/argo-watcher-mock:v0.0.3
+        image: shini4i/argo-watcher-mock:v0.0.4
         ports:
           - 8081:8081
 
@@ -45,5 +45,5 @@ jobs:
           STATE_TYPE: in-memory
           ARGO_URL: http://localhost:8081
           ARGO_TIMEOUT: 1
-          RLOG_LOG_LEVEL: DEBUG
+          RLOG_LOG_LEVEL: NONE
         run: cd cmd && go test -v ./...

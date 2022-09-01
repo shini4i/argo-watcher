@@ -14,8 +14,6 @@ A small tool that will help to improve deployment visibility
 
 ## Project Description
 
-Starting from version 0.1.0, the project entered a semi-stable state. No significant changes are expected.
-
 The main idea is that this simple app will act as a "proxy" between pipelines and ArgoCD.
 
 Currently, there is a limitation while using [argocd-image-updater](https://github.com/argoproj-labs/argocd-image-updater) that makes it hard
