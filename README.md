@@ -1,6 +1,6 @@
 <div align="center">
 
-# argo-watcher
+# Argo Watcher
 A small tool that will help to improve deployment visibility
 
 ![GitHub Actions](https://img.shields.io/github/workflow/status/shini4i/argo-watcher/Build%20and%20Publish%20docker%20images)
@@ -13,8 +13,6 @@ A small tool that will help to improve deployment visibility
 </div>
 
 ## Project Description
-
-Starting from version 0.1.0, the project entered a semi-stable state. No significant changes are expected.
 
 The main idea is that this simple app will act as a "proxy" between pipelines and ArgoCD.
 

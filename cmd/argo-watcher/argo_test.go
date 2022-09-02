@@ -7,19 +7,20 @@ import (
 	"time"
 )
 
-var taskId string
-var task2Id string
-var task3Id string
-var task4Id string
+var (
+	taskId  string
+	task2Id string
+	task3Id string
+	task4Id string
+)
 
 var (
-	testArgo = Argo{
+	testClient = Argo{
 		Url:      "http://localhost:8081",
 		User:     "watcher",
 		Password: "test",
 	}
-	testClient = testArgo.Init()
-	task       = m.Task{
+	task = m.Task{
 		Created: float64(time.Now().Unix()),
 		App:     "app",
 		Author:  "Test Author",
@@ -39,19 +40,21 @@ func TestArgo_GetTaskStatus(t *testing.T) {
 	var task3 m.Task
 	var task4 m.Task
 
-	taskId = testClient.AddTask(task)
+	testClient.Init()
+
+	taskId, _ = testClient.AddTask(task)
 
 	task2 = task
 	task2.App = "app2"
-	task2Id = testClient.AddTask(task2)
+	task2Id, _ = testClient.AddTask(task2)
 
 	task3 = task
 	task3.App = "app3"
-	task3Id = testClient.AddTask(task3)
+	task3Id, _ = testClient.AddTask(task3)
 
 	task4 = task
 	task4.App = "app4"
-	task4Id = testClient.AddTask(task4)
+	task4Id, _ = testClient.AddTask(task4)
 
 	time.Sleep(1 * time.Second)
 

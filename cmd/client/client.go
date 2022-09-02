@@ -174,6 +174,9 @@ loop:
 		case "app not found":
 			fmt.Printf("Application %s does not exist.\n", task.App)
 			os.Exit(1)
+		case "ArgoCD is unavailable":
+			fmt.Println("ArgoCD is unavailable. Please investigate.")
+			os.Exit(1)
 		case "deployed":
 			fmt.Printf("The deployment of %s version is done.\n", tag)
 			break loop
