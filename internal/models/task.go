@@ -16,6 +16,11 @@ type Task struct {
 	Status  string  `json:"status,omitempty"`
 }
 
+type TasksResponse struct {
+	Tasks []Task `json:"tasks"`
+	Error string `json:"error,omitempty"`
+}
+
 type HealthStatus struct {
 	Status string `json:"status"`
 }
@@ -23,4 +28,5 @@ type HealthStatus struct {
 type TaskStatus struct {
 	Id     string `json:"id,omitempty"`
 	Status string `json:"status"`
+	Error  string `json:"error,omitempty"`
 }

@@ -15,7 +15,8 @@ export function fetchTasks(fromTimestamp, toTimestamp, application = null) {
           throw new Error(res.statusText);
         }
         return res.json();
-      });
+      })
+      .then(res => res.tasks);
 }
 
 export function fetchApplications() {
