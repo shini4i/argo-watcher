@@ -29,6 +29,11 @@ const (
 	appNotFoundMessage = "app not found"
 )
 
+var (
+	argoTimeout, _ = strconv.Atoi(os.Getenv("ARGO_TIMEOUT"))
+	retryAttempts  = uint((4 * (argoTimeout / 60)) + 1)
+)
+
 type Argo struct {
 	Url      string
 	User     string
@@ -224,11 +229,26 @@ func (argo *Argo) checkAppStatus(app string) (m.Application, error) {
 
 func (argo *Argo) waitForRollout(task m.Task) {
 
-	argoTimeout, err := strconv.Atoi(os.Getenv("ARGO_TIMEOUT"))
-	// Need to reconsider this approach
-	retryAttempts := uint((4 * (argoTimeout / 60)) + 1)
+	err := argo.checkWithRetry(task)
 
-	err = retry.Do(
+	if err != nil {
+		if strings.Contains(err.Error(), unavailableMessage) {
+			argo.handleArgoUnavailable(task)
+		} else if strings.Contains(err.Error(), appNotFoundMessage) {
+			argo.handleAppNotFound(task)
+		} else {
+			argo.handleDeploymentTimeout(task)
+		}
+		return
+	}
+
+	rlog.Infof("[%s] App is running on the excepted version.", task.Id)
+	failedDeployment.With(prometheus.Labels{"app": task.App}).Set(0)
+	argo.state.SetTaskStatus(task.Id, "deployed")
+}
+
+func (argo *Argo) checkWithRetry(task m.Task) error {
+	err := retry.Do(
 		func() error {
 			app, err := argo.checkAppStatus(task.App)
 
@@ -259,21 +279,23 @@ func (argo *Argo) waitForRollout(task m.Task) {
 		}),
 	)
 
-	if err == nil {
-		rlog.Infof("[%s] App is running on the excepted version.", task.Id)
-		failedDeployment.With(prometheus.Labels{"app": task.App}).Set(0)
-		argo.state.SetTaskStatus(task.Id, "deployed")
-	} else if strings.Contains(err.Error(), unavailableMessage) {
-		rlog.Errorf("[%s] ArgoCD is unavailable. Aborting.", task.Id)
-		argo.state.SetTaskStatus(task.Id, "aborted")
-	} else if strings.Contains(err.Error(), appNotFoundMessage) {
-		rlog.Errorf("[%s] Application %s does not exist", task.Id, task.App)
-		argo.state.SetTaskStatus(task.Id, appNotFoundMessage)
-	} else {
-		rlog.Infof("[%s] The expected tag did not become available within expected timeframe. Aborting.", task.Id)
-		failedDeployment.With(prometheus.Labels{"app": task.App}).Inc()
-		argo.state.SetTaskStatus(task.Id, "failed")
-	}
+	return err
+}
+
+func (argo *Argo) handleAppNotFound(task m.Task) {
+	rlog.Errorf("[%s] Application %s does not exist", task.Id, task.App)
+	argo.state.SetTaskStatus(task.Id, appNotFoundMessage)
+}
+
+func (argo *Argo) handleArgoUnavailable(task m.Task) {
+	rlog.Errorf("[%s] ArgoCD is not available", task.Id)
+	argo.state.SetTaskStatus(task.Id, unavailableMessage)
+}
+
+func (argo *Argo) handleDeploymentTimeout(task m.Task) {
+	rlog.Errorf("[%s] Deployment timed out. Aborting.", task.Id)
+	failedDeployment.With(prometheus.Labels{"app": task.App}).Inc()
+	argo.state.SetTaskStatus(task.Id, "failed")
 }
 
 func (argo *Argo) GetAppList() []string {

@@ -1,6 +1,6 @@
 <div align="center">
 
-# argo-watcher
+# Argo Watcher
 A small tool that will help to improve deployment visibility
 
 ![GitHub Actions](https://img.shields.io/github/workflow/status/shini4i/argo-watcher/Build%20and%20Publish%20docker%20images)
