@@ -16,12 +16,12 @@ import (
 	"net/http/cookiejar"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	s "github.com/shini4i/argo-watcher/cmd/argo-watcher/state"
 	h "github.com/shini4i/argo-watcher/internal/helpers"
 	m "github.com/shini4i/argo-watcher/internal/models"
-	"strings"
 )
 
 const (
@@ -74,7 +74,12 @@ func (argo *Argo) Init() {
 		panic(err)
 	}
 
-	req, err := http.NewRequest("POST", argo.Url+"/api/v1/session", bytes.NewBuffer(body))
+	url := fmt.Sprintf("%s/api/v1/session", argo.Url)
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+	if err != nil {
+		panic(err)
+	}
+
 	req.Header.Set("Content-Type", "application/json; charset=UTF-8")
 
 	skipTlsVerify, _ := strconv.ParseBool(h.GetEnv("SKIP_TLS_VERIFY", "false"))
@@ -109,6 +114,10 @@ func (argo *Argo) Init() {
 		retry.Attempts(0),
 		retry.Delay(15*time.Second),
 	)
+
+	if err != nil {
+		panic(err)
+	}
 }
 
 func (argo *Argo) Check() (string, error) {
@@ -117,7 +126,12 @@ func (argo *Argo) Check() (string, error) {
 		return "", errors.New("argo-watcher is not initialized yet")
 	}
 
-	req, err := http.NewRequest("GET", argo.Url+"/api/v1/session/userinfo", nil)
+	url := fmt.Sprintf("%s/api/v1/session/userinfo", argo.Url)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		panic(err)
+	}
+
 	req.Header.Set("Content-Type", "application/json; charset=UTF-8")
 
 	resp, err := argo.client.Do(req)
@@ -189,7 +203,12 @@ func (argo *Argo) GetTaskStatus(id string) string {
 }
 
 func (argo *Argo) checkAppStatus(app string) (m.Application, error) {
-	req, err := http.NewRequest("GET", argo.Url+"/api/v1/applications/"+app, nil)
+	url := fmt.Sprintf("%s/api/v1/applications/%s", argo.Url, app)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		panic(err)
+	}
+
 	req.Header.Set("Content-Type", "application/json; charset=UTF-8")
 
 	q := req.URL.Query()
@@ -231,20 +250,20 @@ func (argo *Argo) waitForRollout(task m.Task) {
 
 	err := argo.checkWithRetry(task)
 
-	if err != nil {
-		if strings.Contains(err.Error(), unavailableMessage) {
-			argo.handleArgoUnavailable(task)
-		} else if strings.Contains(err.Error(), appNotFoundMessage) {
-			argo.handleAppNotFound(task)
-		} else {
-			argo.handleDeploymentTimeout(task)
-		}
+	if err == nil {
+		rlog.Infof("[%s] App is running on the excepted version.", task.Id)
+		failedDeployment.With(prometheus.Labels{"app": task.App}).Set(0)
+		argo.state.SetTaskStatus(task.Id, "deployed")
 		return
 	}
 
-	rlog.Infof("[%s] App is running on the excepted version.", task.Id)
-	failedDeployment.With(prometheus.Labels{"app": task.App}).Set(0)
-	argo.state.SetTaskStatus(task.Id, "deployed")
+	if strings.Contains(err.Error(), unavailableMessage) {
+		argo.handleArgoUnavailable(task)
+	} else if strings.Contains(err.Error(), appNotFoundMessage) {
+		argo.handleAppNotFound(task)
+	} else {
+		argo.handleDeploymentTimeout(task)
+	}
 }
 
 func (argo *Argo) checkWithRetry(task m.Task) error {
@@ -283,13 +302,13 @@ func (argo *Argo) checkWithRetry(task m.Task) error {
 }
 
 func (argo *Argo) handleAppNotFound(task m.Task) {
-	rlog.Errorf("[%s] Application %s does not exist", task.Id, task.App)
+	rlog.Errorf("[%s] Application %s does not exist.", task.Id, task.App)
 	argo.state.SetTaskStatus(task.Id, appNotFoundMessage)
 }
 
 func (argo *Argo) handleArgoUnavailable(task m.Task) {
-	rlog.Errorf("[%s] ArgoCD is not available", task.Id)
-	argo.state.SetTaskStatus(task.Id, unavailableMessage)
+	rlog.Errorf("[%s] ArgoCD is not available. Aborting.", task.Id)
+	argo.state.SetTaskStatus(task.Id, "aborted")
 }
 
 func (argo *Argo) handleDeploymentTimeout(task m.Task) {
