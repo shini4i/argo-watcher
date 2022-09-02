@@ -9,7 +9,7 @@ A small tool that will help to improve deployment visibility
 [![Go Report Card](https://goreportcard.com/badge/github.com/shini4i/argo-watcher)](https://goreportcard.com/report/github.com/shini4i/argo-watcher)
 ![GitHub](https://img.shields.io/github/license/shini4i/argo-watcher)
 
-![demo](https://i.ibb.co/JFqmgbq/demo.png)
+<img src="https://raw.githubusercontent.com/shini4i/assets/main/src/argo-watcher/demo.png" alt="Showcase" height="441" width="620">
 </div>
 
 ## Project Description
