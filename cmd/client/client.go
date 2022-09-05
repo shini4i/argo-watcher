@@ -12,25 +12,17 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	m "github.com/shini4i/argo-watcher/internal/models"
 )
 
-type Image struct {
-	Image string `json:"image"`
-	Tag   string `json:"tag"`
-}
-
-type Task struct {
-	App     string  `json:"app"`
-	Author  string  `json:"author"`
-	Project string  `json:"project"`
-	Images  []Image `json:"images"`
-}
+type Client struct{}
 
 var (
 	url = os.Getenv("ARGO_WATCHER_URL")
 )
 
-func (task *Task) send() string {
+func (client *Client) send(task m.Task) string {
 	body, err := json.Marshal(task)
 	if err != nil {
 		panic(err)
@@ -42,9 +34,9 @@ func (task *Task) send() string {
 	}
 
 	request.Header.Set("Content-Type", "application/json; charset=UTF-8")
-	client := &http.Client{}
+	c := &http.Client{}
 
-	response, err := client.Do(request)
+	response, err := c.Do(request)
 	if err != nil {
 		panic(err)
 	}
@@ -67,12 +59,7 @@ func (task *Task) send() string {
 		os.Exit(1)
 	}
 
-	type AcceptedTask struct {
-		Status string `json:"status"`
-		Id     string `json:"id"`
-	}
-
-	var accepted AcceptedTask
+	var accepted m.TaskStatus
 	err = json.Unmarshal(body, &accepted)
 	if err != nil {
 		panic(err)
@@ -81,16 +68,16 @@ func (task *Task) send() string {
 	return accepted.Id
 }
 
-func (task *Task) getStatus(id string) string {
+func (client *Client) getStatus(id string) string {
 	request, err := http.NewRequest("GET", url+"/api/v1/tasks/"+id, nil)
 	if err != nil {
 		log.Print(err)
 		os.Exit(1)
 	}
 
-	client := &http.Client{}
+	c := &http.Client{}
 
-	response, err := client.Do(request)
+	response, err := c.Do(request)
 	if err != nil {
 		panic(err)
 	}
@@ -110,11 +97,7 @@ func (task *Task) getStatus(id string) string {
 		os.Exit(1)
 	}
 
-	type TaskStatus struct {
-		Status string `json:"status"`
-	}
-
-	var accepted TaskStatus
+	var accepted m.TaskStatus
 	err = json.Unmarshal(body, &accepted)
 	if err != nil {
 		panic(err)
@@ -125,16 +108,19 @@ func (task *Task) getStatus(id string) string {
 
 func main() {
 	tag := os.Getenv("IMAGE_TAG")
-	var images []Image
+
+	client := Client{}
+
+	var images []m.Image
 
 	for _, image := range strings.Split(os.Getenv("IMAGES"), ",") {
-		images = append(images, Image{
-			image,
-			tag,
+		images = append(images, m.Image{
+			Image: image,
+			Tag:   tag,
 		})
 	}
 
-	task := Task{
+	task := m.Task{
 		App:     os.Getenv("ARGO_APP"),
 		Author:  os.Getenv("COMMIT_AUTHOR"),
 		Project: os.Getenv("PROJECT_NAME"),
@@ -158,13 +144,13 @@ func main() {
 			os.Getenv("ARGO_WATCHER_URL"), task.App, task.Author, task.Project, tag, os.Getenv("IMAGES"))
 	}
 
-	id := task.send()
+	id := client.send(task)
 
 	time.Sleep(5 * time.Second)
 
 loop:
 	for {
-		switch status := task.getStatus(id); status {
+		switch status := client.getStatus(id); status {
 		case "failed":
 			fmt.Println("The deployment has failed, please check logs.")
 			os.Exit(1)
