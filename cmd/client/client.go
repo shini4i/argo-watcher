@@ -16,27 +16,30 @@ import (
 	m "github.com/shini4i/argo-watcher/internal/models"
 )
 
-type Client struct{}
+type Watcher struct {
+	url    string
+	client *http.Client
+}
 
 var (
-	url = os.Getenv("ARGO_WATCHER_URL")
+	tag = os.Getenv("IMAGE_TAG")
 )
 
-func (client *Client) send(task m.Task) string {
+func (watcher *Watcher) addTask(task m.Task) string {
 	body, err := json.Marshal(task)
 	if err != nil {
 		panic(err)
 	}
 
-	request, err := http.NewRequest("POST", url+"/api/v1/tasks", bytes.NewBuffer(body))
+	url := fmt.Sprintf("%s/api/v1/tasks", watcher.url)
+	request, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
 	if err != nil {
 		panic(err)
 	}
 
 	request.Header.Set("Content-Type", "application/json; charset=UTF-8")
-	c := &http.Client{}
 
-	response, err := c.Do(request)
+	response, err := watcher.client.Do(request)
 	if err != nil {
 		panic(err)
 	}
@@ -68,16 +71,15 @@ func (client *Client) send(task m.Task) string {
 	return accepted.Id
 }
 
-func (client *Client) getStatus(id string) string {
-	request, err := http.NewRequest("GET", url+"/api/v1/tasks/"+id, nil)
+func (watcher *Watcher) getTaskStatus(id string) string {
+	url := fmt.Sprintf("%s/api/v1/tasks/%s", watcher.url, id)
+	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		log.Print(err)
 		os.Exit(1)
 	}
 
-	c := &http.Client{}
-
-	response, err := c.Do(request)
+	response, err := watcher.client.Do(request)
 	if err != nil {
 		panic(err)
 	}
@@ -107,10 +109,6 @@ func (client *Client) getStatus(id string) string {
 }
 
 func main() {
-	tag := os.Getenv("IMAGE_TAG")
-
-	client := Client{}
-
 	var images []m.Image
 
 	for _, image := range strings.Split(os.Getenv("IMAGES"), ",") {
@@ -120,16 +118,17 @@ func main() {
 		})
 	}
 
+	watcher := Watcher{
+		url:    strings.TrimSuffix(os.Getenv("ARGO_WATCHER_URL"), "/"),
+		client: &http.Client{},
+	}
+
 	task := m.Task{
 		App:     os.Getenv("ARGO_APP"),
 		Author:  os.Getenv("COMMIT_AUTHOR"),
 		Project: os.Getenv("PROJECT_NAME"),
 		Images:  images,
 	}
-
-	fmt.Printf("Waiting for %s app to be running on %s version.\n", task.App, tag)
-
-	url = strings.TrimSuffix(url, "/")
 
 	debug, _ := strconv.ParseBool(os.Getenv("DEBUG"))
 
@@ -140,17 +139,19 @@ func main() {
 			"COMMIT_AUTHOR: %s\n"+
 			"PROJECT_NAME: %s\n"+
 			"IMAGE_TAG: %s\n"+
-			"IMAGES: %s\n",
-			os.Getenv("ARGO_WATCHER_URL"), task.App, task.Author, task.Project, tag, os.Getenv("IMAGES"))
+			"IMAGES: %s\n\n",
+			watcher.url, task.App, task.Author, task.Project, tag, task.Images)
 	}
 
-	id := client.send(task)
+	fmt.Printf("Waiting for %s app to be running on %s version.\n", task.App, tag)
+
+	id := watcher.addTask(task)
 
 	time.Sleep(5 * time.Second)
 
 loop:
 	for {
-		switch status := client.getStatus(id); status {
+		switch status := watcher.getTaskStatus(id); status {
 		case "failed":
 			fmt.Println("The deployment has failed, please check logs.")
 			os.Exit(1)
