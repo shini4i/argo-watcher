@@ -17,12 +17,20 @@ import (
 )
 
 type Watcher struct {
-	url    string
-	client *http.Client
+	baseUrl string
+	client  *http.Client
 }
 
 var (
 	tag = os.Getenv("IMAGE_TAG")
+)
+
+const (
+	statusDeployed          = "deployed"
+	statusFailed            = "failed"
+	statusNotFound          = "app not found"
+	statusInProgrees        = "in progress"
+	statusArgoCDUnavailable = "ArgoCD is unavailable"
 )
 
 func (watcher *Watcher) addTask(task m.Task) string {
@@ -31,7 +39,7 @@ func (watcher *Watcher) addTask(task m.Task) string {
 		panic(err)
 	}
 
-	url := fmt.Sprintf("%s/api/v1/tasks", watcher.url)
+	url := fmt.Sprintf("%s/api/v1/tasks", watcher.baseUrl)
 	request, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
 	if err != nil {
 		panic(err)
@@ -72,7 +80,7 @@ func (watcher *Watcher) addTask(task m.Task) string {
 }
 
 func (watcher *Watcher) getTaskStatus(id string) string {
-	url := fmt.Sprintf("%s/api/v1/tasks/%s", watcher.url, id)
+	url := fmt.Sprintf("%s/api/v1/tasks/%s", watcher.baseUrl, id)
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		log.Print(err)
@@ -119,8 +127,8 @@ func main() {
 	}
 
 	watcher := Watcher{
-		url:    strings.TrimSuffix(os.Getenv("ARGO_WATCHER_URL"), "/"),
-		client: &http.Client{},
+		baseUrl: strings.TrimSuffix(os.Getenv("ARGO_WATCHER_URL"), "/"),
+		client:  &http.Client{},
 	}
 
 	task := m.Task{
@@ -140,7 +148,7 @@ func main() {
 			"PROJECT_NAME: %s\n"+
 			"IMAGE_TAG: %s\n"+
 			"IMAGES: %s\n\n",
-			watcher.url, task.App, task.Author, task.Project, tag, task.Images)
+			watcher.baseUrl, task.App, task.Author, task.Project, tag, task.Images)
 	}
 
 	fmt.Printf("Waiting for %s app to be running on %s version.\n", task.App, tag)
@@ -152,19 +160,19 @@ func main() {
 loop:
 	for {
 		switch status := watcher.getTaskStatus(id); status {
-		case "failed":
+		case statusFailed:
 			fmt.Println("The deployment has failed, please check logs.")
 			os.Exit(1)
-		case "in progress":
+		case statusInProgrees:
 			fmt.Println("Application deployment is in progress...")
 			time.Sleep(15 * time.Second)
-		case "app not found":
+		case statusNotFound:
 			fmt.Printf("Application %s does not exist.\n", task.App)
 			os.Exit(1)
-		case "ArgoCD is unavailable":
+		case statusArgoCDUnavailable:
 			fmt.Println("ArgoCD is unavailable. Please investigate.")
 			os.Exit(1)
-		case "deployed":
+		case statusDeployed:
 			fmt.Printf("The deployment of %s version is done.\n", tag)
 			break loop
 		}
