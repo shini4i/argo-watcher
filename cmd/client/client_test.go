@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -22,6 +23,15 @@ var (
 
 func init() {
 	mux.HandleFunc("/api/v1/tasks", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			_, err := w.Write([]byte(`Method not allowed`))
+			if err != nil {
+				fmt.Println(err)
+			}
+			return
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusAccepted)
 		err := json.NewEncoder(w).Encode(m.TaskStatus{
@@ -33,6 +43,15 @@ func init() {
 		}
 	})
 	mux.HandleFunc("/api/v1/tasks/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			_, err := w.Write([]byte(`Method not allowed`))
+			if err != nil {
+				fmt.Println(err)
+			}
+			return
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 
