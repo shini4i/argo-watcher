@@ -116,15 +116,19 @@ func (watcher *Watcher) getTaskStatus(id string) string {
 	return accepted.Status
 }
 
-func main() {
+func getImagesList() []m.Image {
 	var images []m.Image
-
 	for _, image := range strings.Split(os.Getenv("IMAGES"), ",") {
 		images = append(images, m.Image{
 			Image: image,
 			Tag:   tag,
 		})
 	}
+	return images
+}
+
+func main() {
+	images := getImagesList()
 
 	watcher := Watcher{
 		baseUrl: strings.TrimSuffix(os.Getenv("ARGO_WATCHER_URL"), "/"),

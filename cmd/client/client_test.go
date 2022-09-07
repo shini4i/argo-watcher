@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -126,5 +128,32 @@ func TestGetTaskStatus(t *testing.T) {
 	status = client.getTaskStatus(failedTaskId)
 	if status != "failed" {
 		t.Errorf("Expected status %s, got %s", "failed", status)
+	}
+}
+
+func TestGetImagesList(t *testing.T) {
+
+	tag = "v0.1.0"
+
+	expectedList := []m.Image{
+		{
+			Image: "example/app",
+			Tag:   "v0.1.0",
+		},
+		{
+			Image: "example/web",
+			Tag:   "v0.1.0",
+		},
+	}
+
+	err := os.Setenv("IMAGES", "example/app,example/web")
+	if err != nil {
+		return
+	}
+
+	images := getImagesList()
+
+	if !reflect.DeepEqual(images, expectedList) {
+		t.Errorf("Expected list %v, got %v", expectedList, images)
 	}
 }
