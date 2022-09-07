@@ -29,7 +29,7 @@ const (
 	statusDeployed          = "deployed"
 	statusFailed            = "failed"
 	statusNotFound          = "app not found"
-	statusInProgrees        = "in progress"
+	statusInProgress        = "in progress"
 	statusArgoCDUnavailable = "ArgoCD is unavailable"
 )
 
@@ -163,7 +163,7 @@ loop:
 		case statusFailed:
 			fmt.Println("The deployment has failed, please check logs.")
 			os.Exit(1)
-		case statusInProgrees:
+		case statusInProgress:
 			fmt.Println("Application deployment is in progress...")
 			time.Sleep(15 * time.Second)
 		case statusNotFound:
