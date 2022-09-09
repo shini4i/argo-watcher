@@ -24,63 +24,67 @@ var (
 	argocdUnavailableId = "be8c42c0-a645-11ec-8ea5-f2c4bb72758d"
 )
 
+func addTaskHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		_, err := w.Write([]byte(`Method not allowed`))
+		if err != nil {
+			fmt.Println(err)
+		}
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	err := json.NewEncoder(w).Encode(m.TaskStatus{
+		Status: "accepted",
+		Id:     taskId,
+	})
+	if err != nil {
+		panic(err)
+	}
+}
+
+func getTaskStatusHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		_, err := w.Write([]byte(`Method not allowed`))
+		if err != nil {
+			fmt.Println(err)
+		}
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	var status string
+
+	id := strings.Split(r.URL.Path, "/")[4]
+
+	switch id {
+	case taskId:
+		status = statusDeployed
+	case appNotFoundId:
+		status = statusNotFound
+	case argocdUnavailableId:
+		status = statusArgoCDUnavailable
+	case failedTaskId:
+		status = statusFailed
+	}
+
+	err := json.NewEncoder(w).Encode(m.TaskStatus{
+		Status: status,
+		Id:     taskId,
+	})
+	if err != nil {
+		panic(err)
+	}
+}
+
 func init() {
-	mux.HandleFunc("/api/v1/tasks", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "POST" {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			_, err := w.Write([]byte(`Method not allowed`))
-			if err != nil {
-				fmt.Println(err)
-			}
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusAccepted)
-		err := json.NewEncoder(w).Encode(m.TaskStatus{
-			Status: "accepted",
-			Id:     taskId,
-		})
-		if err != nil {
-			panic(err)
-		}
-	})
-	mux.HandleFunc("/api/v1/tasks/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "GET" {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			_, err := w.Write([]byte(`Method not allowed`))
-			if err != nil {
-				fmt.Println(err)
-			}
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-
-		var status string
-
-		id := strings.Split(r.URL.Path, "/")[4]
-
-		switch id {
-		case taskId:
-			status = statusDeployed
-		case appNotFoundId:
-			status = statusNotFound
-		case argocdUnavailableId:
-			status = statusArgoCDUnavailable
-		case failedTaskId:
-			status = statusFailed
-		}
-
-		err := json.NewEncoder(w).Encode(m.TaskStatus{
-			Status: status,
-			Id:     taskId,
-		})
-		if err != nil {
-			panic(err)
-		}
-	})
+	mux.HandleFunc("/api/v1/tasks", addTaskHandler)
+	mux.HandleFunc("/api/v1/tasks/", getTaskStatusHandler)
 	server = httptest.NewServer(mux)
 	client = &Watcher{baseUrl: server.URL, client: server.Client()}
 }
