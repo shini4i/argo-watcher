@@ -12,39 +12,42 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	m "github.com/shini4i/argo-watcher/internal/models"
 )
 
-type Image struct {
-	Image string `json:"image"`
-	Tag   string `json:"tag"`
-}
-
-type Task struct {
-	App     string  `json:"app"`
-	Author  string  `json:"author"`
-	Project string  `json:"project"`
-	Images  []Image `json:"images"`
+type Watcher struct {
+	baseUrl string
+	client  *http.Client
 }
 
 var (
-	url = os.Getenv("ARGO_WATCHER_URL")
+	tag = os.Getenv("IMAGE_TAG")
 )
 
-func (task *Task) send() string {
+const (
+	statusDeployed          = "deployed"
+	statusFailed            = "failed"
+	statusNotFound          = "app not found"
+	statusInProgress        = "in progress"
+	statusArgoCDUnavailable = "ArgoCD is unavailable"
+)
+
+func (watcher *Watcher) addTask(task m.Task) string {
 	body, err := json.Marshal(task)
 	if err != nil {
 		panic(err)
 	}
 
-	request, err := http.NewRequest("POST", url+"/api/v1/tasks", bytes.NewBuffer(body))
+	url := fmt.Sprintf("%s/api/v1/tasks", watcher.baseUrl)
+	request, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
 	if err != nil {
 		panic(err)
 	}
 
 	request.Header.Set("Content-Type", "application/json; charset=UTF-8")
-	client := &http.Client{}
 
-	response, err := client.Do(request)
+	response, err := watcher.client.Do(request)
 	if err != nil {
 		panic(err)
 	}
@@ -67,12 +70,7 @@ func (task *Task) send() string {
 		os.Exit(1)
 	}
 
-	type AcceptedTask struct {
-		Status string `json:"status"`
-		Id     string `json:"id"`
-	}
-
-	var accepted AcceptedTask
+	var accepted m.TaskStatus
 	err = json.Unmarshal(body, &accepted)
 	if err != nil {
 		panic(err)
@@ -81,16 +79,15 @@ func (task *Task) send() string {
 	return accepted.Id
 }
 
-func (task *Task) getStatus(id string) string {
-	request, err := http.NewRequest("GET", url+"/api/v1/tasks/"+id, nil)
+func (watcher *Watcher) getTaskStatus(id string) string {
+	url := fmt.Sprintf("%s/api/v1/tasks/%s", watcher.baseUrl, id)
+	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		log.Print(err)
 		os.Exit(1)
 	}
 
-	client := &http.Client{}
-
-	response, err := client.Do(request)
+	response, err := watcher.client.Do(request)
 	if err != nil {
 		panic(err)
 	}
@@ -110,11 +107,7 @@ func (task *Task) getStatus(id string) string {
 		os.Exit(1)
 	}
 
-	type TaskStatus struct {
-		Status string `json:"status"`
-	}
-
-	var accepted TaskStatus
+	var accepted m.TaskStatus
 	err = json.Unmarshal(body, &accepted)
 	if err != nil {
 		panic(err)
@@ -123,27 +116,31 @@ func (task *Task) getStatus(id string) string {
 	return accepted.Status
 }
 
-func main() {
-	tag := os.Getenv("IMAGE_TAG")
-	var images []Image
-
+func getImagesList() []m.Image {
+	var images []m.Image
 	for _, image := range strings.Split(os.Getenv("IMAGES"), ",") {
-		images = append(images, Image{
-			image,
-			tag,
+		images = append(images, m.Image{
+			Image: image,
+			Tag:   tag,
 		})
 	}
+	return images
+}
 
-	task := Task{
+func main() {
+	images := getImagesList()
+
+	watcher := Watcher{
+		baseUrl: strings.TrimSuffix(os.Getenv("ARGO_WATCHER_URL"), "/"),
+		client:  &http.Client{},
+	}
+
+	task := m.Task{
 		App:     os.Getenv("ARGO_APP"),
 		Author:  os.Getenv("COMMIT_AUTHOR"),
 		Project: os.Getenv("PROJECT_NAME"),
 		Images:  images,
 	}
-
-	fmt.Printf("Waiting for %s app to be running on %s version.\n", task.App, tag)
-
-	url = strings.TrimSuffix(url, "/")
 
 	debug, _ := strconv.ParseBool(os.Getenv("DEBUG"))
 
@@ -154,30 +151,32 @@ func main() {
 			"COMMIT_AUTHOR: %s\n"+
 			"PROJECT_NAME: %s\n"+
 			"IMAGE_TAG: %s\n"+
-			"IMAGES: %s\n",
-			os.Getenv("ARGO_WATCHER_URL"), task.App, task.Author, task.Project, tag, os.Getenv("IMAGES"))
+			"IMAGES: %s\n\n",
+			watcher.baseUrl, task.App, task.Author, task.Project, tag, task.Images)
 	}
 
-	id := task.send()
+	fmt.Printf("Waiting for %s app to be running on %s version.\n", task.App, tag)
+
+	id := watcher.addTask(task)
 
 	time.Sleep(5 * time.Second)
 
 loop:
 	for {
-		switch status := task.getStatus(id); status {
-		case "failed":
+		switch status := watcher.getTaskStatus(id); status {
+		case statusFailed:
 			fmt.Println("The deployment has failed, please check logs.")
 			os.Exit(1)
-		case "in progress":
+		case statusInProgress:
 			fmt.Println("Application deployment is in progress...")
 			time.Sleep(15 * time.Second)
-		case "app not found":
+		case statusNotFound:
 			fmt.Printf("Application %s does not exist.\n", task.App)
 			os.Exit(1)
-		case "ArgoCD is unavailable":
+		case statusArgoCDUnavailable:
 			fmt.Println("ArgoCD is unavailable. Please investigate.")
 			os.Exit(1)
-		case "deployed":
+		case statusDeployed:
 			fmt.Printf("The deployment of %s version is done.\n", tag)
 			break loop
 		}
