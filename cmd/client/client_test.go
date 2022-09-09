@@ -17,6 +17,7 @@ var (
 	mux                 = http.NewServeMux()
 	server              *httptest.Server
 	client              *Watcher
+	testVersion         = "v0.1.0"
 	taskId              = "be8c42c0-a645-11ec-8ea5-f2c4bb72758a"
 	failedTaskId        = "be8c42c0-a645-11ec-8ea5-f2c4bb72758b"
 	appNotFoundId       = "be8c42c0-a645-11ec-8ea5-f2c4bb72758c"
@@ -96,7 +97,7 @@ func TestAddTask(t *testing.T) {
 		Project: "Example",
 		Images: []m.Image{
 			{
-				Tag:   "v0.1.0",
+				Tag:   testVersion,
 				Image: "example",
 			},
 		},
@@ -110,39 +111,41 @@ func TestAddTask(t *testing.T) {
 }
 
 func TestGetTaskStatus(t *testing.T) {
+	messageTemplate := "Expected status %s, got %s"
+
 	status := client.getTaskStatus(taskId)
 	if status != "deployed" {
-		t.Errorf("Expected status %s, got %s", "deployed", status)
+		t.Errorf(messageTemplate, "deployed", status)
 	}
 
 	status = client.getTaskStatus(appNotFoundId)
 	if status != "app not found" {
-		t.Errorf("Expected status %s, got %s", "app not found", status)
+		t.Errorf(messageTemplate, "app not found", status)
 	}
 
 	status = client.getTaskStatus(argocdUnavailableId)
 	if status != "ArgoCD is unavailable" {
-		t.Errorf("Expected status %s, got %s", "ArgoCD is unavailable", status)
+		t.Errorf(messageTemplate, "ArgoCD is unavailable", status)
 	}
 
 	status = client.getTaskStatus(failedTaskId)
 	if status != "failed" {
-		t.Errorf("Expected status %s, got %s", "failed", status)
+		t.Errorf(messageTemplate, "failed", status)
 	}
 }
 
 func TestGetImagesList(t *testing.T) {
 
-	tag = "v0.1.0"
+	tag = testVersion
 
 	expectedList := []m.Image{
 		{
 			Image: "example/app",
-			Tag:   "v0.1.0",
+			Tag:   testVersion,
 		},
 		{
 			Image: "example/web",
-			Tag:   "v0.1.0",
+			Tag:   testVersion,
 		},
 	}
 
