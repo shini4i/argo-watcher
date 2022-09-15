@@ -172,7 +172,13 @@ func (argo *Argo) AddTask(task m.Task) (string, error) {
 	}
 
 	task.Id = uuid.New().String()
-	rlog.Infof("[%s] A new task was triggered. Expecting tag %s in app %s.", task.Id, task.Images[0].Tag, task.App)
+
+	rlog.Infof("[%s] A new task was triggered. Expecting tag %s in app %s.",
+		task.Id,
+		task.Images[0].Tag,
+		task.App,
+	)
+
 	argo.state.Add(task)
 	processedDeployments.Inc()
 	go argo.waitForRollout(task)
@@ -264,16 +270,16 @@ func (argo *Argo) waitForRollout(task m.Task) {
 }
 
 func (argo *Argo) checkWithRetry(task m.Task) error {
+	criticalErrors := []string{
+		config.StatusAppNotFoundMessage,
+		config.StatusArgoCDUnavailableMessage,
+	}
+
 	err := retry.Do(
 		func() error {
 			app, err := argo.checkAppStatus(task.App)
 
-			if err != nil && h.Contains(
-				[]string{
-					config.StatusAppNotFoundMessage,
-					config.StatusArgoCDUnavailableMessage},
-				err.Error(),
-			) {
+			if err != nil && h.Contains(criticalErrors, err.Error()) {
 				return err
 			}
 
@@ -296,10 +302,7 @@ func (argo *Argo) checkWithRetry(task m.Task) error {
 		retry.Delay(15*time.Second),
 		retry.Attempts(retryAttempts),
 		retry.RetryIf(func(err error) bool {
-			return !h.Contains([]string{
-				config.StatusAppNotFoundMessage,
-				config.StatusArgoCDUnavailableMessage,
-			}, err.Error())
+			return !h.Contains(criticalErrors, err.Error())
 		}),
 	)
 
