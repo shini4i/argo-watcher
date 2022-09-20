@@ -64,13 +64,13 @@ func getTaskStatusHandler(w http.ResponseWriter, r *http.Request) {
 
 	switch id {
 	case taskId:
-		status = statusDeployed
+		status = config.StatusDeployedMessage
 	case appNotFoundId:
-		status = statusNotFound
+		status = config.StatusAppNotFoundMessage
 	case argocdUnavailableId:
-		status = statusArgoCDUnavailable
+		status = config.StatusArgoCDUnavailableMessage
 	case failedTaskId:
-		status = statusFailed
+		status = config.StatusFailedMessage
 	}
 
 	err := json.NewEncoder(w).Encode(m.TaskStatus{
@@ -118,22 +118,22 @@ func TestGetTaskStatus(t *testing.T) {
 	messageTemplate := "Expected status %s, got %s"
 
 	status := client.getTaskStatus(taskId)
-	if status != "deployed" {
+	if status != config.StatusDeployedMessage {
 		t.Errorf(messageTemplate, "deployed", status)
 	}
 
 	status = client.getTaskStatus(appNotFoundId)
-	if status != "app not found" {
+	if status != config.StatusAppNotFoundMessage {
 		t.Errorf(messageTemplate, "app not found", status)
 	}
 
 	status = client.getTaskStatus(argocdUnavailableId)
-	if status != "ArgoCD is unavailable" {
+	if status != config.StatusArgoCDUnavailableMessage {
 		t.Errorf(messageTemplate, "ArgoCD is unavailable", status)
 	}
 
 	status = client.getTaskStatus(failedTaskId)
-	if status != "failed" {
+	if status != config.StatusFailedMessage {
 		t.Errorf(messageTemplate, "failed", status)
 	}
 }

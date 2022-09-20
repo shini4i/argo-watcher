@@ -20,17 +20,14 @@ import (
 	"time"
 
 	s "github.com/shini4i/argo-watcher/cmd/argo-watcher/state"
+	c "github.com/shini4i/argo-watcher/internal/config"
 	h "github.com/shini4i/argo-watcher/internal/helpers"
 	m "github.com/shini4i/argo-watcher/internal/models"
 )
 
-const (
-	unavailableMessage = "ArgoCD is unavailable"
-	appNotFoundMessage = "app not found"
-)
-
 var (
 	argoTimeout, _ = strconv.Atoi(os.Getenv("ARGO_TIMEOUT"))
+	config         = c.GetConfig()
 	retryAttempts  = uint((4 * (argoTimeout / 60)) + 1)
 )
 
@@ -138,7 +135,7 @@ func (argo *Argo) Check() (string, error) {
 	if err != nil {
 		rlog.Error(err)
 		argocdUnavailable.Set(1)
-		return unavailableMessage, err
+		return config.StatusArgoCDUnavailableMessage, err
 	}
 
 	body, err := ioutil.ReadAll(resp.Body)
@@ -175,7 +172,13 @@ func (argo *Argo) AddTask(task m.Task) (string, error) {
 	}
 
 	task.Id = uuid.New().String()
-	rlog.Infof("[%s] A new task was triggered. Expecting tag %s in app %s.", task.Id, task.Images[0].Tag, task.App)
+
+	rlog.Infof("[%s] A new task was triggered. Expecting tag %s in app %s.",
+		task.Id,
+		task.Images[0].Tag,
+		task.App,
+	)
+
 	argo.state.Add(task)
 	processedDeployments.Inc()
 	go argo.waitForRollout(task)
@@ -218,11 +221,11 @@ func (argo *Argo) checkAppStatus(app string) (m.Application, error) {
 	resp, err := argo.client.Do(req)
 	if err != nil {
 		rlog.Error(err)
-		return m.Application{}, errors.New(unavailableMessage)
+		return m.Application{}, errors.New(config.StatusArgoCDUnavailableMessage)
 	}
 
 	if resp.StatusCode == 404 {
-		return m.Application{}, errors.New(appNotFoundMessage)
+		return m.Application{}, errors.New(config.StatusAppNotFoundMessage)
 	}
 
 	body, err := ioutil.ReadAll(resp.Body)
@@ -257,9 +260,9 @@ func (argo *Argo) waitForRollout(task m.Task) {
 		return
 	}
 
-	if strings.Contains(err.Error(), unavailableMessage) {
+	if strings.Contains(err.Error(), config.StatusArgoCDUnavailableMessage) {
 		argo.handleArgoUnavailable(task)
-	} else if strings.Contains(err.Error(), appNotFoundMessage) {
+	} else if strings.Contains(err.Error(), config.StatusAppNotFoundMessage) {
 		argo.handleAppNotFound(task)
 	} else {
 		argo.handleDeploymentTimeout(task)
@@ -267,11 +270,16 @@ func (argo *Argo) waitForRollout(task m.Task) {
 }
 
 func (argo *Argo) checkWithRetry(task m.Task) error {
+	criticalErrors := []string{
+		config.StatusAppNotFoundMessage,
+		config.StatusArgoCDUnavailableMessage,
+	}
+
 	err := retry.Do(
 		func() error {
 			app, err := argo.checkAppStatus(task.App)
 
-			if err != nil && h.Contains([]string{appNotFoundMessage, unavailableMessage}, err.Error()) {
+			if err != nil && h.Contains(criticalErrors, err.Error()) {
 				return err
 			}
 
@@ -294,7 +302,7 @@ func (argo *Argo) checkWithRetry(task m.Task) error {
 		retry.Delay(15*time.Second),
 		retry.Attempts(retryAttempts),
 		retry.RetryIf(func(err error) bool {
-			return !h.Contains([]string{appNotFoundMessage, unavailableMessage}, err.Error())
+			return !h.Contains(criticalErrors, err.Error())
 		}),
 	)
 
@@ -303,7 +311,7 @@ func (argo *Argo) checkWithRetry(task m.Task) error {
 
 func (argo *Argo) handleAppNotFound(task m.Task) {
 	rlog.Errorf("[%s] Application %s does not exist.", task.Id, task.App)
-	argo.state.SetTaskStatus(task.Id, appNotFoundMessage)
+	argo.state.SetTaskStatus(task.Id, config.StatusAppNotFoundMessage)
 }
 
 func (argo *Argo) handleArgoUnavailable(task m.Task) {
@@ -314,7 +322,7 @@ func (argo *Argo) handleArgoUnavailable(task m.Task) {
 func (argo *Argo) handleDeploymentTimeout(task m.Task) {
 	rlog.Errorf("[%s] Deployment timed out. Aborting.", task.Id)
 	failedDeployment.With(prometheus.Labels{"app": task.App}).Inc()
-	argo.state.SetTaskStatus(task.Id, "failed")
+	argo.state.SetTaskStatus(task.Id, config.StatusFailedMessage)
 }
 
 func (argo *Argo) GetAppList() []string {

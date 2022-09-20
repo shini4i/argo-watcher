@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	c "github.com/shini4i/argo-watcher/internal/config"
 	m "github.com/shini4i/argo-watcher/internal/models"
 )
 
@@ -22,15 +23,8 @@ type Watcher struct {
 }
 
 var (
-	tag = os.Getenv("IMAGE_TAG")
-)
-
-const (
-	statusDeployed          = "deployed"
-	statusFailed            = "failed"
-	statusNotFound          = "app not found"
-	statusInProgress        = "in progress"
-	statusArgoCDUnavailable = "ArgoCD is unavailable"
+	tag    = os.Getenv("IMAGE_TAG")
+	config = c.GetConfig()
 )
 
 func (watcher *Watcher) addTask(task m.Task) string {
@@ -164,19 +158,19 @@ func main() {
 loop:
 	for {
 		switch status := watcher.getTaskStatus(id); status {
-		case statusFailed:
+		case config.StatusFailedMessage:
 			fmt.Println("The deployment has failed, please check logs.")
 			os.Exit(1)
-		case statusInProgress:
+		case config.StatusInProgressMessage:
 			fmt.Println("Application deployment is in progress...")
 			time.Sleep(15 * time.Second)
-		case statusNotFound:
+		case config.StatusAppNotFoundMessage:
 			fmt.Printf("Application %s does not exist.\n", task.App)
 			os.Exit(1)
-		case statusArgoCDUnavailable:
+		case config.StatusArgoCDUnavailableMessage:
 			fmt.Println("ArgoCD is unavailable. Please investigate.")
 			os.Exit(1)
-		case statusDeployed:
+		case config.StatusDeployedMessage:
 			fmt.Printf("The deployment of %s version is done.\n", tag)
 			break loop
 		}
