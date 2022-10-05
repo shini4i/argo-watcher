@@ -1,5 +1,11 @@
+.DEFAULT_GOAL := help
+
+.PHONY: help
+help: ## Print this help
+	@grep -E '^[a-z.A-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
+
 .PHONY: test
-test:
+test: ## Run tests
 	@RLOG_LOG_LEVEL=NONE ARGO_TIMEOUT=1 go test -v ./... -count=1
 
 .PHONY: ensure-dirs
@@ -7,10 +13,10 @@ ensure-dirs:
 	@mkdir -p bin
 
 .PHONY: build
-build:
+build: ensure-dirs ## Build the binaries
 	@CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/argo-watcher ./cmd/argo-watcher
 	@CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/client ./cmd/client
 
 .PHONY: docs
-docs:
+docs: ## Generate swagger docs
 	@cd cmd/argo-watcher && swag init --parseDependency --parseInternal
