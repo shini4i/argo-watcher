@@ -1,5 +1,6 @@
-<h1 style='text-align: center'>Argo Watcher</h1>
-<div style='text-align: center'>
+<div align="center">
+
+# Argo Watcher
 Improve visibility of ArgoCD Image Updater deployments
 
 ![GitHub Actions](https://img.shields.io/github/workflow/status/shini4i/argo-watcher/Build%20and%20Publish%20docker%20images)
@@ -26,28 +27,27 @@ Argo Watcher is a standalone application, for it is designed to work with
 
 # How it works
 
-First you deploy Argo Watcher as a separate application.
+First, you deploy Argo Watcher as a separate application.
 
 Argo Watcher needs to know the URL of ArgoCD API and have the credentials to access it.
 
-Deployment monitoring tasks are stored in PostgreSQL database, so Argo Watcher would need to have access to a database.
+Deployment monitoring tasks are stored in the PostgreSQL database so Argo Watcher would need access to a database.
 
 
 ## Argo Watcher workflow
 
 The workflow for deployment should be the following
-1. Build new image of your application in your CI/CD
-2. The next step in CI/CD should be a job that runs Argo Watcher Client, that triggers deployment monitoring
-3. Argo Image Updater detects new image and starts the deployment
-4. Throughout the deployment, the status of your deployment monitoring task changes in Argo Watcher UI
+1. Build a new image of your application in your CI/CD
+2. The next step in CI/CD should be a job that runs Argo Watcher Client, which triggers deployment monitoring
+3. Argo Image Updater detects a new image and starts the deployment
+4. Throughout the deployment, the status of your deployment monitoring task changes in the Argo Watcher UI
 
 ## Author's commentary
 
-Essentially we are trying to solve the following problems with GitOps approach via ArgoCD
-1) Have clear visibility of when the deployment is finished w/o user constantly checking ArgoCD UI
-2) Mark a pipeline as either successful or failed depending on the deployment result
+Essentially we are trying to solve the following problems with the GitOps approach via ArgoCD:
 
-This approach has helped us have visibility over 10+ separate projects developed and deployed with ArgoCD.
+1) Have clear visibility of when the deployment is finished w/o the user constantly checking ArgoCD UI
+2) Mark a pipeline as either successful or failed depending on the deployment result
 
 # Server Installation
 
@@ -60,17 +60,18 @@ Helm chart values configurations example
 ```yaml
 # credentials to access ArgoCD
 argo:
-    url: https://argocd.argocd.svc.cluster.local
-    username: argo-watcher
-    secretName: "argo-watcher"
+  url: https://argocd.argocd.svc.cluster.local
+  username: argo-watcher
+  secretName: "argo-watcher"
 
 # credentials to access postgresql and store deployment monitoring tasks
+# can be omitted if persistence is not required (state will be stored in memory)
 postgres:
-    enabled: true
-    host: argo-watcher-postgresql.argo-watcher-postgresql.svc.cluster.local
-    name: argo-watcher
-    user: argo-watcher
-    secretName: "argo-watcher-postgresql"
+  enabled: true
+  host: argo-watcher-postgresql.argo-watcher-postgresql.svc.cluster.local
+  name: argo-watcher
+  user: argo-watcher
+  secretName: "argo-watcher-postgresql"
 
 # configurations to access Argo Watcher Server API and UI
 ingress:
@@ -98,6 +99,7 @@ Example deployment setup for running with GitLab CI/CD (reference: https://docs.
 # we have only deployment stage
 stages:
   - deploy
+
 # build new image
 build:
   stage: deploy
