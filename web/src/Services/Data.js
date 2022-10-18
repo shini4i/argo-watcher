@@ -10,31 +10,29 @@ export function fetchTasks(fromTimestamp, toTimestamp, application = null) {
     searchParams.app = application;
   }
   return fetch(`/api/v1/tasks?${new URLSearchParams(searchParams)}`)
-      .then(res => {
-        if (res.status !== 200) {
-          throw new Error(res.statusText);
-        }
-        return res.json();
-      })
-      .then(res => res.tasks);
+    .then(res => {
+      if (res.status !== 200) {
+        throw new Error(res.statusText);
+      }
+      return res.json();
+    })
+    .then(res => res.tasks);
 }
 
 export function fetchApplications() {
-  return fetch(`/api/v1/apps`)
-      .then(res => {
-        if (res.status !== 200) {
-          throw new Error(res.statusText);
-        }
-        return res.json();
-      });
+  return fetch(`/api/v1/apps`).then(res => {
+    if (res.status !== 200) {
+      throw new Error(res.statusText);
+    }
+    return res.json();
+  });
 }
 
 export function fetchVersion() {
-  return fetch(`/api/v1/version`)
-      .then(res => {
-        if (res.status !== 200) {
-          throw new Error(res.statusText);
-        }
-        return res.json();
-      });
+  return fetch(`/api/v1/version`).then(res => {
+    if (res.status !== 200) {
+      throw new Error(res.statusText);
+    }
+    return res.json();
+  });
 }
