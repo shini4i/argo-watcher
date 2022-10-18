@@ -5,6 +5,7 @@ import HistoryTasks from "./Components/HistoryTasks";
 import Layout from "./Layout";
 import Page404 from "./Page404";
 import {createTheme, ThemeProvider} from "@mui/material";
+import {ErrorProvider} from "./ErrorContext";
 
 const theme = createTheme({
   palette: {
@@ -17,15 +18,17 @@ const theme = createTheme({
 function App() {
   return (
       <ThemeProvider theme={theme}>
-        <BrowserRouter>
-          <Routes>
-            <Route path="/" element={<Layout />}>
-              <Route index element={<RecentTasks />} />
-              <Route path="/history" element={<HistoryTasks />} />
-            </Route>
-            <Route path="*" element={<Page404 />} />
-          </Routes>
-        </BrowserRouter>
+        <ErrorProvider>
+          <BrowserRouter>
+            <Routes>
+              <Route path="/" element={<Layout />}>
+                <Route index element={<RecentTasks />} />
+                <Route path="/history" element={<HistoryTasks />} />
+              </Route>
+              <Route path="*" element={<Page404 />} />
+            </Routes>
+          </BrowserRouter>
+        </ErrorProvider>
       </ThemeProvider>
   );
 }

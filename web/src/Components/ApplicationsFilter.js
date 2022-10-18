@@ -3,13 +3,13 @@ import TextField from "@mui/material/TextField";
 import React, {useEffect, useState} from "react";
 import {fetchApplications} from "../Services/Data";
 
-function ApplicationsFilter({ value, onChange, setLoadingError }) {
+function ApplicationsFilter({ value, onChange, setError, setSuccess }) {
   const [applications, setApplications] = useState([]);
 
   useEffect(() => {
     fetchApplications()
-        .then(items => { setApplications(items) })
-        .catch(error => { setLoadingError(error.message); });
+        .then(items => { setSuccess('fetchApplications', 'Application filter dropdown fetched'); setApplications(items) })
+        .catch(error => { setError('fetchApplications', error.message); });
   }, []);
 
   const handleApplicationsChange = (_event, newValue) => {

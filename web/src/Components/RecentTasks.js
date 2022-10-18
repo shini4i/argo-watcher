@@ -10,9 +10,9 @@ import FormControl from "@mui/material/FormControl";
 import InputLabel from "@mui/material/InputLabel";
 import Select from "@mui/material/Select";
 import MenuItem from "@mui/material/MenuItem";
-import ErrorSnackbar from "./ErrorSnackbar";
 import ApplicationsFilter from "./ApplicationsFilter";
 import TasksTable, {useTasks} from "./TasksTable";
+import {useErrorContext} from "../ErrorContext";
 
 const autoRefreshIntervals = {
   '5s': 5,
@@ -23,9 +23,9 @@ const autoRefreshIntervals = {
 };
 
 function RecentTasks() {
+  const {setError, setSuccess} = useErrorContext();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [loadingError, setLoadingError] = useState(null);
-  const {tasks, sortField, setSortField, refreshTasksInTimeframe} = useTasks({setLoadingError});
+  const {tasks, sortField, setSortField, refreshTasksInTimeframe} = useTasks({setError, setSuccess});
   const [currentAutoRefresh, setCurrentAutoRefresh] = useState(searchParams.get('refresh') ?? autoRefreshIntervals['30s']);
   const autoRefreshIntervalRef = useRef(null);
   const [currentApplication, setCurrentApplication] = useState(searchParams.get('app') ?? null);
@@ -94,7 +94,8 @@ function RecentTasks() {
                     // update url
                     updateSearchParameters(value, currentAutoRefresh, 1);
                   }}
-                  setLoadingError={setLoadingError}
+                  setError={setError}
+                  setSuccess={setSuccess}
               />
             </Box>
             <Box sx={{minWidth: 120}}>
@@ -136,7 +137,6 @@ function RecentTasks() {
               updateSearchParameters(currentApplication, currentAutoRefresh, page);
             }}
         />
-        <ErrorSnackbar message={loadingError} setMessage={setLoadingError}/>
       </Container>
   );
 }

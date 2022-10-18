@@ -7,23 +7,23 @@ import Typography from "@mui/material/Typography";
 import TextField from "@mui/material/TextField";
 import IconButton from "@mui/material/IconButton";
 import RefreshIcon from "@mui/icons-material/Refresh";
-import ErrorSnackbar from "./ErrorSnackbar";
 import ApplicationsFilter from "./ApplicationsFilter";
 import TasksTable, {useTasks} from "./TasksTable";
 import {endOfDay, startOfDay} from 'date-fns'
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
+import {useErrorContext} from "../ErrorContext";
 
 function HistoryTasks() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [loadingError, setLoadingError] = useState(null);
+  const {setError, setSuccess} = useErrorContext();
   const {
     tasks,
     sortField,
     setSortField,
     refreshTasksInRange,
     clearTasks
-  } = useTasks({setLoadingError});
+  } = useTasks({setError, setSuccess});
   const [currentApplication, setCurrentApplication] = useState(searchParams.get('app') ?? null);
   const [dateRange, setDateRange] = useState([
     // start date
@@ -87,7 +87,8 @@ function HistoryTasks() {
                     setCurrentPage(1);
                     refreshWithFilters(startDate, endDate, value, 1);
                   }}
-                  setLoadingError={setLoadingError}
+                  setError={setError}
+                  setSuccess={setSuccess}
               />
             </Box>
             <Box>
@@ -127,7 +128,6 @@ function HistoryTasks() {
               updateSearchParameters(startDate, endDate, currentApplication, page);
             }}
         />
-        <ErrorSnackbar message={loadingError} setMessage={setLoadingError}/>
       </Container>
   );
 }

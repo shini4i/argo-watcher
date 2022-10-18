@@ -12,6 +12,7 @@ import LocalOfferIcon from '@mui/icons-material/LocalOffer';
 import RestoreIcon from '@mui/icons-material/Restore';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import Tooltip from "@mui/material/Tooltip";
+import {useErrorContext} from "../ErrorContext";
 
 function NavigationButton({to, children}) {
     return <Link
@@ -24,16 +25,15 @@ function NavigationButton({to, children}) {
 }
 
 function Navbar() {
-
     const [version, setVersion] = useState('0.0.0');
-
+    const { setSuccess, setError } = useErrorContext();
     useEffect(() => {
         fetchVersion()
-            .then(version => { setVersion(version); })
-            .catch(error => { console.log(error.message); });
+            .then(version => { setSuccess('fetchVersion', 'Fetched current app version'); setVersion(version); })
+            .catch(error => { setError('fetchVersion', error.message); });
     }, []);
 
-    return <Box sx={{ mb: 2 }}>
+    return <Box>
         <AppBar position="static">
             <Toolbar>
                 <Typography variant="h6" component="div" sx={{minWidth: '120px'}}>

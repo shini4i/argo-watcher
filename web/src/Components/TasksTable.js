@@ -42,22 +42,22 @@ const formatDateTime = (timestamp) => {
   return format(addMinutes(dateTime, dateTime.getTimezoneOffset()),'yyyy/MM/dd HH:mm:ss');
 }
 
-export function useTasks({ setLoadingError }) {
+export function useTasks({ setError, setSuccess }) {
   const [tasks, setTasks] = useState([]);
   const [sortField, setSortField] = useState({field: "created", direction: "ASC"});
 
   const refreshTasksInTimeframe = (timeframe, application) => {
     // get tasks by timestamp
     fetchTasks(relativeTimestamp(timeframe), null, application)
-        .then(items => { setTasksSorted(items, sortField); })
-        .catch(error => { setLoadingError(error.message); });
+        .then(items => { setSuccess('fetchTasks', 'Fetched tasks successfully'); setTasksSorted(items, sortField); })
+        .catch(error => { setError('fetchTasks', error.message); });
   };
 
   const refreshTasksInRange = (fromTimestamp, toTimestamp, application) => {
     // get tasks by timestamp
     fetchTasks(fromTimestamp, toTimestamp, application)
-        .then(items => { setTasksSorted(items, sortField); })
-        .catch(error => { setLoadingError(error.message); });
+        .then(items => { setSuccess('fetchTasks', 'Fetched tasks successfully'); setTasksSorted(items, sortField); })
+        .catch(error => { setError('fetchTasks', error.message); });
   };
 
   const clearTasks = () => {
