@@ -1,9 +1,14 @@
-import { createContext, useContext, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 
 const context = createContext(null);
 
 export const ErrorProvider = ({ children }) => {
   const [stack, setStack] = useState({});
+  const timeouts = useRef([]);
+
+  useEffect(() => {
+    return () => timeouts.current.forEach(timeout => clearTimeout(timeout));
+  }, []);
 
   return (
     <context.Provider
@@ -38,7 +43,18 @@ export const ErrorProvider = ({ children }) => {
               // don't show success message when there wasn't any error
               return stack;
             }
+            // add success message
             stack[id] = { status: 'success', message };
+            // set timer to remove
+            timeouts.current.push(
+              setTimeout(() => {
+                setStack(stack => {
+                  delete stack[id];
+                  return { ...stack };
+                });
+              }, 5000),
+            );
+            // return new stack
             return { ...stack };
           });
         },
