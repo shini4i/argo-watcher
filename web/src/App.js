@@ -1,10 +1,11 @@
-import React from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import RecentTasks from "./Components/RecentTasks";
-import HistoryTasks from "./Components/HistoryTasks";
-import Layout from "./Layout";
-import Page404 from "./Page404";
-import {createTheme, ThemeProvider} from "@mui/material";
+import React from 'react';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import RecentTasks from './Components/RecentTasks';
+import HistoryTasks from './Components/HistoryTasks';
+import Layout from './Layout';
+import Page404 from './Page404';
+import { createTheme, ThemeProvider } from '@mui/material';
+import { ErrorProvider } from './ErrorContext';
 
 const theme = createTheme({
   palette: {
@@ -16,7 +17,8 @@ const theme = createTheme({
 
 function App() {
   return (
-      <ThemeProvider theme={theme}>
+    <ThemeProvider theme={theme}>
+      <ErrorProvider>
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Layout />}>
@@ -26,7 +28,8 @@ function App() {
             <Route path="*" element={<Page404 />} />
           </Routes>
         </BrowserRouter>
-      </ThemeProvider>
+      </ErrorProvider>
+    </ThemeProvider>
   );
 }
 
