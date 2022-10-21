@@ -20,6 +20,9 @@ export function fetchTasks(fromTimestamp, toTimestamp, application = null) {
       if (res?.error) {
         throw new Error(res.error);
       }
+      if (!res?.tasks) {
+        return [];
+      }
       return res.tasks;
     });
 }
