@@ -32,6 +32,9 @@ export const ErrorProvider = ({ children }) => {
           return result;
         }, []),
         setError: (id, message) => {
+          if (!message) {
+            message = 'Unknown error';
+          }
           setStack(stack => {
             stack[id] = { status: 'error', message };
             return { ...stack };
