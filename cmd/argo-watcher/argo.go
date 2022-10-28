@@ -25,10 +25,11 @@ import (
 )
 
 var (
-	argoTimeout, _ = strconv.Atoi(os.Getenv("ARGO_TIMEOUT"))
-	argoAuthRetry  = 15 * time.Second
-	config         = c.GetConfig()
-	retryAttempts  = uint((4 * (argoTimeout / 60)) + 1)
+	argoTimeout, _     = strconv.Atoi(os.Getenv("ARGO_TIMEOUT"))
+	argoSyncRetryDelay = 15 * time.Second
+	retryAttempts      = uint((argoTimeout / 15) + 1)
+	argoAuthRetryDelay = 15 * time.Second
+	config             = c.GetConfig()
 )
 
 const (
@@ -128,10 +129,10 @@ func (argo *Argo) Init() {
 			return nil
 		},
 		retry.Attempts(0),
-		retry.Delay(argoAuthRetry),
+		retry.Delay(argoAuthRetryDelay),
 		retry.OnRetry(func(n uint, err error) {
 			rlog.Error(err)
-			rlog.Infof("Retrying ArgoCD authentication attempt in %s", argoAuthRetry.String())
+			rlog.Infof("Retrying ArgoCD authentication attempt in %s", argoAuthRetryDelay.String())
 		}),
 	)
 
@@ -312,7 +313,7 @@ func (argo *Argo) checkWithRetry(task m.Task) (int, error) {
 			return nil
 		},
 		retry.DelayType(retry.FixedDelay),
-		retry.Delay(15*time.Second),
+		retry.Delay(argoSyncRetryDelay),
 		retry.Attempts(retryAttempts),
 		retry.RetryIf(func(err error) bool {
 			return err.Error() == "retry"
