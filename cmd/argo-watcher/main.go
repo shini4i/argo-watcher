@@ -211,7 +211,7 @@ func main() {
 
 	prometheusRegisterMetrics()
 
-	err := router.Run(":8080")
+	err := router.Run("localhost:8080")
 	if err != nil {
 		rlog.Critical(err)
 	}
