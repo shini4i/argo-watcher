@@ -11,7 +11,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/romana/rlog"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/http/cookiejar"
 	"os"
@@ -27,8 +26,17 @@ import (
 
 var (
 	argoTimeout, _ = strconv.Atoi(os.Getenv("ARGO_TIMEOUT"))
+	argoAuthRetry  = 15 * time.Second
 	config         = c.GetConfig()
 	retryAttempts  = uint((4 * (argoTimeout / 60)) + 1)
+)
+
+const (
+	ArgoAppSuccess = iota
+	ArgoAppNotSynced
+	ArgoAppNotAvailable
+	ArgoAppNotHealthy
+	ArgoAppFailed
 )
 
 type Argo struct {
@@ -95,7 +103,11 @@ func (argo *Argo) Init() {
 			resp, err := argo.client.Do(req)
 			if err != nil {
 				argocdUnavailable.Set(1)
-				rlog.Errorf("Couldn't establish connection to ArgoCD, got the following error: %s", err)
+				return errors.New(fmt.Sprintf("Couldn't establish connection to ArgoCD, got the following error: %s", err))
+			}
+
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
 				return err
 			}
 
@@ -106,10 +118,18 @@ func (argo *Argo) Init() {
 				}
 			}(resp.Body)
 
+			if resp.StatusCode != 200 {
+				return errors.New(fmt.Sprintf("ArgoCD authentication error: %s", bytes.NewBuffer(body).String()))
+			}
+
 			return nil
 		},
 		retry.Attempts(0),
-		retry.Delay(15*time.Second),
+		retry.Delay(argoAuthRetry),
+		retry.OnRetry(func(n uint, err error) {
+			rlog.Error(err)
+			rlog.Infof("Retrying ArgoCD authentication attempt in %s", argoAuthRetry.String())
+		}),
 	)
 
 	if err != nil {
@@ -138,7 +158,7 @@ func (argo *Argo) Check() (string, error) {
 		return config.StatusArgoCDUnavailableMessage, err
 	}
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		panic(err)
 	}
@@ -146,7 +166,7 @@ func (argo *Argo) Check() (string, error) {
 	defer func(Body io.ReadCloser) {
 		err := Body.Close()
 		if err != nil {
-			panic(err)
+			rlog.Error(err)
 		}
 	}(resp.Body)
 
@@ -205,11 +225,11 @@ func (argo *Argo) GetTaskStatus(id string) string {
 	return argo.state.GetTaskStatus(id)
 }
 
-func (argo *Argo) checkAppStatus(app string) (m.Application, error) {
+func (argo *Argo) checkAppStatus(app string) (*m.Application, error) {
 	url := fmt.Sprintf("%s/api/v1/applications/%s", argo.Url, app)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	req.Header.Set("Content-Type", "application/json; charset=UTF-8")
@@ -220,66 +240,79 @@ func (argo *Argo) checkAppStatus(app string) (m.Application, error) {
 
 	resp, err := argo.client.Do(req)
 	if err != nil {
-		rlog.Error(err)
-		return m.Application{}, errors.New(config.StatusArgoCDUnavailableMessage)
+		return nil, errors.New(config.StatusArgoCDUnavailableMessage)
 	}
 
 	if resp.StatusCode == 404 {
-		return m.Application{}, errors.New(config.StatusAppNotFoundMessage)
+		return nil, errors.New(config.StatusAppNotFoundMessage)
 	}
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	defer func(Body io.ReadCloser) {
 		err := Body.Close()
 		if err != nil {
-			panic(err)
+			rlog.Error(err)
 		}
 	}(resp.Body)
+
+	if resp.StatusCode != 200 {
+		return nil, errors.New(bytes.NewBuffer(body).String())
+	}
 
 	var argoApp m.Application
 	err = json.Unmarshal(body, &argoApp)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
-	return argoApp, nil
+	return &argoApp, nil
 }
 
 func (argo *Argo) waitForRollout(task m.Task) {
+	// continuously check for application status change
+	status, err := argo.checkWithRetry(task)
 
-	err := argo.checkWithRetry(task)
+	// we had some unexpected error with ArgoCD API
+	if status == ArgoAppFailed {
+		// notify user that app wasn't found
+		if strings.Contains(err.Error(), config.StatusAppNotFoundMessage) {
+			argo.handleAppNotFound(task)
+			return
+		}
+		// notify user that ArgoCD API isn't available
+		if strings.Contains(err.Error(), config.StatusArgoCDUnavailableMessage) {
+			argo.handleArgoUnavailable(task)
+			return
+		}
 
-	if err == nil {
-		rlog.Infof("[%s] App is running on the excepted version.", task.Id)
-		failedDeployment.With(prometheus.Labels{"app": task.App}).Set(0)
-		argo.state.SetTaskStatus(task.Id, "deployed")
-		return
+		// notify of unexpected error
+		argo.handleDeploymentFailed(task, err)
 	}
 
-	if strings.Contains(err.Error(), config.StatusArgoCDUnavailableMessage) {
-		argo.handleArgoUnavailable(task)
-	} else if strings.Contains(err.Error(), config.StatusAppNotFoundMessage) {
-		argo.handleAppNotFound(task)
-	} else {
+	// last check in the cycle was one of three unfinished statuses
+	if status == ArgoAppNotAvailable || status == ArgoAppNotSynced || status == ArgoAppNotHealthy {
 		argo.handleDeploymentTimeout(task)
+	}
+
+	// application synced successfully
+	if status == ArgoAppSuccess {
+		argo.handleDeploymentSuccess(task)
 	}
 }
 
-func (argo *Argo) checkWithRetry(task m.Task) error {
-	criticalErrors := []string{
-		config.StatusAppNotFoundMessage,
-		config.StatusArgoCDUnavailableMessage,
-	}
+func (argo *Argo) checkWithRetry(task m.Task) (int, error) {
+	var status int
 
 	err := retry.Do(
 		func() error {
 			app, err := argo.checkAppStatus(task.App)
 
-			if err != nil && h.Contains(criticalErrors, err.Error()) {
+			if err != nil {
+				status = ArgoAppFailed
 				return err
 			}
 
@@ -287,26 +320,36 @@ func (argo *Argo) checkWithRetry(task m.Task) error {
 				expected := fmt.Sprintf("%s:%s", image.Image, image.Tag)
 				if !h.Contains(app.Status.Summary.Images, expected) {
 					rlog.Debugf("[%s] %s is not available yet", task.Id, expected)
-					return errors.New("")
+					status = ArgoAppNotAvailable
+					return errors.New("retry")
 				}
 			}
 
-			if app.Status.Sync.Status != "Synced" || app.Status.Health.Status != "Healthy" {
-				rlog.Debugf("[%s] %s is not ready yet", task.Id, task.App)
-				return errors.New("")
+			if app.Status.Sync.Status != "Synced" {
+				rlog.Debugf("[%s] %s is not synced yet", task.Id, task.App)
+				status = ArgoAppNotSynced
+				return errors.New("retry")
 			}
 
+			if app.Status.Health.Status != "Healthy" {
+				rlog.Debugf("[%s] %s is not healthy yet", task.Id, task.App)
+				status = ArgoAppNotHealthy
+				return errors.New("retry")
+			}
+
+			status = ArgoAppSuccess
 			return nil
 		},
 		retry.DelayType(retry.FixedDelay),
 		retry.Delay(15*time.Second),
 		retry.Attempts(retryAttempts),
 		retry.RetryIf(func(err error) bool {
-			return !h.Contains(criticalErrors, err.Error())
+			return err.Error() == "retry"
 		}),
+		retry.LastErrorOnly(true),
 	)
 
-	return err
+	return status, err
 }
 
 func (argo *Argo) handleAppNotFound(task m.Task) {
@@ -323,6 +366,18 @@ func (argo *Argo) handleDeploymentTimeout(task m.Task) {
 	rlog.Errorf("[%s] Deployment timed out. Aborting.", task.Id)
 	failedDeployment.With(prometheus.Labels{"app": task.App}).Inc()
 	argo.state.SetTaskStatus(task.Id, config.StatusFailedMessage)
+}
+
+func (argo *Argo) handleDeploymentFailed(task m.Task, err error) {
+	rlog.Errorf("[%s] Deployment failed. Aborting with error: %s", task.Id, err)
+	failedDeployment.With(prometheus.Labels{"app": task.App}).Inc()
+	argo.state.SetTaskStatus(task.Id, config.StatusFailedMessage)
+}
+
+func (argo *Argo) handleDeploymentSuccess(task m.Task) {
+	rlog.Infof("[%s] App is running on the excepted version.", task.Id)
+	failedDeployment.With(prometheus.Labels{"app": task.App}).Set(0)
+	argo.state.SetTaskStatus(task.Id, "deployed")
 }
 
 func (argo *Argo) GetAppList() []string {
