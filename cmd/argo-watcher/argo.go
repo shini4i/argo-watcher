@@ -26,6 +26,7 @@ import (
 
 var (
 	argoTimeout, _     = strconv.Atoi(os.Getenv("ARGO_TIMEOUT"))
+	argoApiTimeout, _  = strconv.Atoi(os.Getenv("ARGO_API_TIMEOUT"))
 	argoSyncRetryDelay = 15 * time.Second
 	retryAttempts      = uint((argoTimeout / 15) + 1)
 	argoAuthRetryDelay = 15 * time.Second
@@ -99,6 +100,13 @@ func (argo *Argo) Init() {
 	argo.client = &http.Client{
 		Jar:       jar,
 		Transport: transport,
+		Timeout:   time.Duration(argoApiTimeout) * time.Second,
+	}
+	if argoApiTimeout > 0 {
+		argo.client.Timeout = time.Duration(argoApiTimeout) * time.Second
+		rlog.Debugf("Timeout for ArgoCD API calls set to: %s", argo.client.Timeout)
+	} else {
+		rlog.Debugf("Timeout for ArgoCD API is set to default")
 	}
 
 	err = retry.Do(
