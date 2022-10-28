@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -53,7 +52,7 @@ func (watcher *Watcher) addTask(task m.Task) string {
 		}
 	}(response.Body)
 
-	body, err = ioutil.ReadAll(response.Body)
+	body, err = io.ReadAll(response.Body)
 	if err != nil {
 		panic(err)
 	}
@@ -93,7 +92,7 @@ func (watcher *Watcher) getTaskStatus(id string) string {
 		}
 	}(response.Body)
 
-	body, err := ioutil.ReadAll(response.Body)
+	body, err := io.ReadAll(response.Body)
 
 	if response.StatusCode != 200 {
 		fmt.Printf("Received non 200 status code (%d)\n", response.StatusCode)
