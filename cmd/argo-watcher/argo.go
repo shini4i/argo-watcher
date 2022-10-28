@@ -122,6 +122,7 @@ func (argo *Argo) Init() {
 				return errors.New(fmt.Sprintf("ArgoCD authentication error: %s", bytes.NewBuffer(body).String()))
 			}
 
+			rlog.Info("ArgoCD API Authenticated")
 			return nil
 		},
 		retry.Attempts(0),
