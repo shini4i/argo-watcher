@@ -64,6 +64,8 @@ func (argo *Argo) Init() {
 		os.Exit(1)
 	}
 
+	rlog.Infof("Configured retry attempts per ArgoCD application status check: %d", retryAttempts)
+
 	go argo.state.ProcessObsoleteTasks()
 
 	body, err := json.Marshal(argoAuth{
@@ -122,7 +124,7 @@ func (argo *Argo) Init() {
 				return errors.New(fmt.Sprintf("ArgoCD authentication error: %s", bytes.NewBuffer(body).String()))
 			}
 
-			rlog.Info("ArgoCD API Authenticated")
+			rlog.Debug("Authenticated into ArgoCD API")
 			return nil
 		},
 		retry.Attempts(0),
