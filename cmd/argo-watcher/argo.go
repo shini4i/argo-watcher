@@ -272,38 +272,6 @@ func (argo *Argo) checkAppStatus(app string) (*m.Application, error) {
 	return &argoApp, nil
 }
 
-func (argo *Argo) waitForRollout(task m.Task) {
-	// continuously check for application status change
-	status, err := argo.checkWithRetry(task)
-
-	// we had some unexpected error with ArgoCD API
-	if status == ArgoAppFailed {
-		// notify user that app wasn't found
-		if strings.Contains(err.Error(), config.StatusAppNotFoundMessage) {
-			argo.handleAppNotFound(task)
-			return
-		}
-		// notify user that ArgoCD API isn't available
-		if strings.Contains(err.Error(), config.StatusArgoCDUnavailableMessage) {
-			argo.handleArgoUnavailable(task)
-			return
-		}
-
-		// notify of unexpected error
-		argo.handleDeploymentFailed(task, err)
-	}
-
-	// last check in the cycle was one of three unfinished statuses
-	if status == ArgoAppNotAvailable || status == ArgoAppNotSynced || status == ArgoAppNotHealthy {
-		argo.handleDeploymentTimeout(task)
-	}
-
-	// application synced successfully
-	if status == ArgoAppSuccess {
-		argo.handleDeploymentSuccess(task)
-	}
-}
-
 func (argo *Argo) checkWithRetry(task m.Task) (int, error) {
 	var status int
 
@@ -350,6 +318,38 @@ func (argo *Argo) checkWithRetry(task m.Task) (int, error) {
 	)
 
 	return status, err
+}
+
+func (argo *Argo) waitForRollout(task m.Task) {
+	// continuously check for application status change
+	status, err := argo.checkWithRetry(task)
+
+	// we had some unexpected error with ArgoCD API
+	if status == ArgoAppFailed {
+		// notify user that app wasn't found
+		if strings.Contains(err.Error(), config.StatusAppNotFoundMessage) {
+			argo.handleAppNotFound(task)
+			return
+		}
+		// notify user that ArgoCD API isn't available
+		if strings.Contains(err.Error(), config.StatusArgoCDUnavailableMessage) {
+			argo.handleArgoUnavailable(task)
+			return
+		}
+
+		// notify of unexpected error
+		argo.handleDeploymentFailed(task, err)
+	}
+
+	// last check in the cycle was one of three unfinished statuses
+	if status == ArgoAppNotAvailable || status == ArgoAppNotSynced || status == ArgoAppNotHealthy {
+		argo.handleDeploymentTimeout(task)
+	}
+
+	// application synced successfully
+	if status == ArgoAppSuccess {
+		argo.handleDeploymentSuccess(task)
+	}
 }
 
 func (argo *Argo) handleAppNotFound(task m.Task) {
