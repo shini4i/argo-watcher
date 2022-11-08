@@ -188,9 +188,14 @@ function TasksTable({
           vertical: 'bottom',
           horizontal: 'left',
         }}
-        sx={{ maxWidth: '90%' }}
+        sx={{ minWidth: '300px', maxWidth: '500px' }}
       >
-        <Typography sx={{ p: 2 }}>{statusReason}</Typography>
+        <Typography
+          sx={{ p: 2, width: '100%', overflow: 'auto' }}
+          component={'pre'}
+        >
+          {statusReason}
+        </Typography>
       </Popover>
       <TableContainer>
         <Table sx={{ minWidth: 650 }} aria-label="simple table">
