@@ -251,11 +251,7 @@ func (argo *Argo) checkAppStatus(app string) (*m.Application, error) {
 
 	resp, err := argo.client.Do(req)
 	if err != nil {
-		return nil, errors.New(config.StatusArgoCDUnavailableMessage)
-	}
-
-	if resp.StatusCode == 404 {
-		return nil, errors.New(config.StatusAppNotFoundMessage)
+		return nil, err
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -271,7 +267,13 @@ func (argo *Argo) checkAppStatus(app string) (*m.Application, error) {
 	}(resp.Body)
 
 	if resp.StatusCode != 200 {
-		return nil, errors.New(bytes.NewBuffer(body).String())
+		var argoErrorResponse m.ArgoApiErrorResponse
+		err = json.Unmarshal(body, &argoErrorResponse)
+		if err != nil || argoErrorResponse.Message == "" {
+			return nil, errors.New(bytes.NewBuffer(body).String())
+		} else {
+			return nil, errors.New(argoErrorResponse.Message)
+		}
 	}
 
 	var argoApp m.Application
@@ -338,13 +340,15 @@ func (argo *Argo) waitForRollout(task m.Task) {
 	// we had some unexpected error with ArgoCD API
 	if status == ArgoAppFailed {
 		// notify user that app wasn't found
-		if strings.Contains(err.Error(), config.StatusAppNotFoundMessage) {
-			argo.handleAppNotFound(task)
+		appNotFoundError := fmt.Sprintf("applications.argoproj.io \"%s\" not found", task.App)
+		if strings.Contains(err.Error(), appNotFoundError) {
+			argo.handleAppNotFound(task, err)
 			return
 		}
 		// notify user that ArgoCD API isn't available
-		if strings.Contains(err.Error(), config.StatusArgoCDUnavailableMessage) {
-			argo.handleArgoUnavailable(task)
+		argoUnavailableError := "connect: connection refused"
+		if strings.Contains(err.Error(), argoUnavailableError) {
+			argo.handleArgoUnavailable(task, err)
 			return
 		}
 
@@ -352,8 +356,24 @@ func (argo *Argo) waitForRollout(task m.Task) {
 		argo.handleDeploymentFailed(task, err)
 	}
 
-	// last check in the cycle was one of three unfinished statuses
-	if status == ArgoAppNotAvailable || status == ArgoAppNotSynced || status == ArgoAppNotHealthy {
+	// not all images were deployed to the application
+	if status == ArgoAppNotAvailable {
+		// show list of missing images
+		// ...
+		argo.handleDeploymentTimeout(task)
+	}
+
+	// application sync status wasn't valid
+	if status == ArgoAppNotSynced {
+		// display sync status and last sync message
+		// ...
+		argo.handleDeploymentTimeout(task)
+	}
+
+	// application is not in a healthy status
+	if status == ArgoAppNotHealthy {
+		// display current health of pods
+		// ...
 		argo.handleDeploymentTimeout(task)
 	}
 
@@ -363,32 +383,35 @@ func (argo *Argo) waitForRollout(task m.Task) {
 	}
 }
 
-func (argo *Argo) handleAppNotFound(task m.Task) {
+func (argo *Argo) handleAppNotFound(task m.Task, err error) {
 	rlog.Errorf("[%s] Application %s does not exist.", task.Id, task.App)
-	argo.state.SetTaskStatus(task.Id, config.StatusAppNotFoundMessage)
+	reason := fmt.Sprintf("Argo CD API Error\n\r%s", err.Error())
+	argo.state.SetTaskStatus(task.Id, config.StatusAppNotFoundMessage, reason)
 }
 
-func (argo *Argo) handleArgoUnavailable(task m.Task) {
+func (argo *Argo) handleArgoUnavailable(task m.Task, err error) {
 	rlog.Errorf("[%s] ArgoCD is not available. Aborting.", task.Id)
-	argo.state.SetTaskStatus(task.Id, "aborted")
+	reason := fmt.Sprintf("Argo CD API Error\n\r%s", err.Error())
+	argo.state.SetTaskStatus(task.Id, "aborted", reason)
 }
 
 func (argo *Argo) handleDeploymentTimeout(task m.Task) {
 	rlog.Errorf("[%s] Deployment timed out. Aborting.", task.Id)
 	failedDeployment.With(prometheus.Labels{"app": task.App}).Inc()
-	argo.state.SetTaskStatus(task.Id, config.StatusFailedMessage)
+	argo.state.SetTaskStatus(task.Id, config.StatusFailedMessage, "")
 }
 
 func (argo *Argo) handleDeploymentFailed(task m.Task, err error) {
 	rlog.Errorf("[%s] Deployment failed. Aborting with error: %s", task.Id, err)
 	failedDeployment.With(prometheus.Labels{"app": task.App}).Inc()
-	argo.state.SetTaskStatus(task.Id, config.StatusFailedMessage)
+	reason := fmt.Sprintf("Argo CD API Error\n\r%s", err.Error())
+	argo.state.SetTaskStatus(task.Id, config.StatusFailedMessage, reason)
 }
 
 func (argo *Argo) handleDeploymentSuccess(task m.Task) {
 	rlog.Infof("[%s] App is running on the excepted version.", task.Id)
 	failedDeployment.With(prometheus.Labels{"app": task.App}).Set(0)
-	argo.state.SetTaskStatus(task.Id, "deployed")
+	argo.state.SetTaskStatus(task.Id, "deployed", "")
 }
 
 func (argo *Argo) GetAppList() []string {

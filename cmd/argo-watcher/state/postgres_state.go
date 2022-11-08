@@ -158,8 +158,8 @@ func (state *PostgresState) GetTaskStatus(id string) string {
 	return status
 }
 
-func (state *PostgresState) SetTaskStatus(id string, status string) {
-	_, err := state.db.Exec("UPDATE tasks SET status=$1, updated=$2 WHERE id=$3", status, time.Now().UTC(), id)
+func (state *PostgresState) SetTaskStatus(id string, status string, reason string) {
+	_, err := state.db.Exec("UPDATE tasks SET status=$1, reason=$2, updated=$3 WHERE id=$4", status, reason, time.Now().UTC(), id)
 	if err != nil {
 		rlog.Error(err)
 	}

@@ -57,10 +57,11 @@ func (state *InMemoryState) GetTaskStatus(id string) string {
 	return "task not found"
 }
 
-func (state *InMemoryState) SetTaskStatus(id string, status string) {
+func (state *InMemoryState) SetTaskStatus(id string, status string, reason string) {
 	for idx, task := range state.tasks {
 		if task.Id == id {
 			state.tasks[idx].Status = status
+			state.tasks[idx].StatusReason = reason
 			state.tasks[idx].Updated = float64(time.Now().Unix())
 		}
 	}
