@@ -390,13 +390,13 @@ func (argo *Argo) waitForRollout(task m.Task) {
 				message = "could not retrieve details"
 			} else {
 				message = "App status \"" + app.Status.OperationState.Phase + "\"\n"
-				message += "App message " + app.Status.OperationState.Message + "\n\n"
+				message += "App message \"" + app.Status.OperationState.Message + "\"\n"
 				message += "Resources:\n"
 				message += "\t" + strings.Join(app.ListSyncResultResources(), "\n\t")
 
 			}
 			// handle error
-			argo.handleDeploymentTimeout(task, errors.New(message))
+			argo.handleAppOutOfSync(task, errors.New(message))
 		}
 
 		// application is not in a healthy status
@@ -432,6 +432,13 @@ func (argo *Argo) handleAppNotAvailable(task m.Task, err error) {
 	rlog.Errorf("[%s] Deployment failed. Application not available\n%s", task.Id, err.Error())
 	failedDeployment.With(prometheus.Labels{"app": task.App}).Inc()
 	reason := fmt.Sprintf("Application not available\n\n%s", err.Error())
+	argo.state.SetTaskStatus(task.Id, config.StatusFailedMessage, reason)
+}
+
+func (argo *Argo) handleAppOutOfSync(task m.Task, err error) {
+	rlog.Errorf("[%s] Deployment failed. Application out of sync\n%s", task.Id, err.Error())
+	failedDeployment.With(prometheus.Labels{"app": task.App}).Inc()
+	reason := fmt.Sprintf("Application out of sync\n\n%s", err.Error())
 	argo.state.SetTaskStatus(task.Id, config.StatusFailedMessage, reason)
 }
 
