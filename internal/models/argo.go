@@ -1,5 +1,7 @@
 package models
 
+import "fmt"
+
 type Application struct {
 	Status struct {
 		Health struct {
@@ -37,6 +39,15 @@ type Application struct {
 			Status string `json:"status"`
 		}
 	} `json:"status"`
+}
+
+func (app *Application) ListSyncResultResources() []string {
+	list := make([]string, len(app.Status.OperationState.SyncResult.Resources))
+	for index := range app.Status.OperationState.SyncResult.Resources {
+		resource := app.Status.OperationState.SyncResult.Resources[index]
+		list[index] = fmt.Sprintf("%s(%s) %s %s with message %s", resource.Kind, resource.Name, resource.HookType, resource.HookPhase, resource.Message)
+	}
+	return list
 }
 
 type Userinfo struct {

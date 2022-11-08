@@ -356,42 +356,55 @@ func (argo *Argo) waitForRollout(task m.Task) {
 		argo.handleDeploymentFailed(task, err)
 	}
 
-	// not all images were deployed to the application
-	if status == ArgoAppNotAvailable {
-		// show list of missing images
-		app, err := argo.checkAppStatus(task.App)
-		var message string
-
-		if err != nil {
-			message = "could not retrieve details"
-		} else {
-			message = "List of current images (last app check):\n"
-			message += "\t" + strings.Join(app.Status.Summary.Images, "\n\t") + "\n\n"
-			message += "List of expected images:\n"
-			message += "\t" + strings.Join(task.ListImages(), "\n\t")
-		}
-
-		// handle error
-		argo.handleAppNotAvailable(task, errors.New(message))
-	}
-
-	// application sync status wasn't valid
-	if status == ArgoAppNotSynced {
-		// display sync status and last sync message
-		// ...
-		argo.handleDeploymentTimeout(task, errors.New(""))
-	}
-
-	// application is not in a healthy status
-	if status == ArgoAppNotHealthy {
-		// display current health of pods
-		// ...
-		argo.handleDeploymentTimeout(task, errors.New(""))
-	}
-
 	// application synced successfully
 	if status == ArgoAppSuccess {
 		argo.handleDeploymentSuccess(task)
+	} else {
+		// fetch application details
+		app, err := argo.checkAppStatus(task.App)
+
+		// not all images were deployed to the application
+		if status == ArgoAppNotAvailable {
+			// show list of missing images
+			var message string
+			// define details
+			if err != nil {
+				message = "could not retrieve details"
+			} else {
+				message = "List of current images (last app check):\n"
+				message += "\t" + strings.Join(app.Status.Summary.Images, "\n\t") + "\n\n"
+				message += "List of expected images:\n"
+				message += "\t" + strings.Join(task.ListImages(), "\n\t")
+			}
+			// handle error
+			argo.handleAppNotAvailable(task, errors.New(message))
+		}
+
+		// application sync status wasn't valid
+		if status == ArgoAppNotSynced {
+			// display sync status and last sync message
+			// show list of missing images
+			var message string
+			// define details
+			if err != nil {
+				message = "could not retrieve details"
+			} else {
+				message = "App status \"" + app.Status.OperationState.Phase + "\"\n"
+				message += "App message " + app.Status.OperationState.Message + "\n\n"
+				message += "Resources:\n"
+				message += "\t" + strings.Join(app.ListSyncResultResources(), "\n\t")
+
+			}
+			// handle error
+			argo.handleDeploymentTimeout(task, errors.New(message))
+		}
+
+		// application is not in a healthy status
+		if status == ArgoAppNotHealthy {
+			// display current health of pods
+			// ...
+			argo.handleDeploymentTimeout(task, errors.New(""))
+		}
 	}
 }
 
