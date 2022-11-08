@@ -100,7 +100,6 @@ func (argo *Argo) Init() {
 	argo.client = &http.Client{
 		Jar:       jar,
 		Transport: transport,
-		Timeout:   time.Duration(argoApiTimeout) * time.Second,
 	}
 	if argoApiTimeout > 0 {
 		argo.client.Timeout = time.Duration(argoApiTimeout) * time.Second
