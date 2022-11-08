@@ -15,10 +15,13 @@ import { fetchTasks } from '../Services/Data';
 import Box from '@mui/material/Box';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
-import { Chip, Divider } from '@mui/material';
+import { Chip, Divider, Popover } from '@mui/material';
 import Link from '@mui/material/Link';
 import { addMinutes, format } from 'date-fns';
 import Pagination from '@mui/material/Pagination';
+import InfoIcon from '@mui/icons-material/Info';
+import IconButton from '@mui/material/IconButton';
+import Typography from '@mui/material/Typography';
 
 const chipColorByStatus = status => {
   if (status === 'in progress') {
@@ -163,8 +166,32 @@ function TasksTable({
   const pages = Math.ceil(tasks.length / 10);
   const tasksPaginated = tasks.slice((page - 1) * 10, page * 10);
 
+  const [statusReasonElement, setStatusReasonElement] = React.useState(null);
+  const [statusReason, setStatusReason] = React.useState(null);
+
+  const handleClick = (event, content) => {
+    setStatusReasonElement(event.currentTarget);
+    setStatusReason(content);
+  };
+
+  const handleClose = () => {
+    setStatusReasonElement(null);
+  };
+
   return (
     <>
+      <Popover
+        open={Boolean(statusReasonElement)}
+        anchorEl={statusReasonElement}
+        onClose={handleClose}
+        anchorOrigin={{
+          vertical: 'bottom',
+          horizontal: 'left',
+        }}
+        sx={{ maxWidth: '90%' }}
+      >
+        <Typography sx={{ p: 2 }}>{statusReason}</Typography>
+      </Popover>
       <TableContainer>
         <Table sx={{ minWidth: 650 }} aria-label="simple table">
           <TableHead>
@@ -244,6 +271,14 @@ function TasksTable({
                     label={task.status}
                     color={chipColorByStatus(task.status)}
                   />
+                  {task?.status_reason && (
+                    <IconButton
+                      size={'small'}
+                      onClick={e => handleClick(e, task.status_reason)}
+                    >
+                      <InfoIcon fontSize={'small'} />
+                    </IconButton>
+                  )}
                 </TableCell>
                 <TableCell>
                   {relativeDate && (
