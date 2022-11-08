@@ -211,7 +211,16 @@ func main() {
 
 	prometheusRegisterMetrics()
 
-	err := router.Run("localhost:8080")
+	routerHost := os.Getenv("HOST")
+	if routerHost == "" {
+		routerHost = "0.0.0.0"
+	}
+	routerPort := os.Getenv("PORT")
+	if routerPort == "" {
+		routerPort = "8080"
+	}
+	rlog.Debugf("Running on %s:%s", routerHost, routerPort)
+	err := router.Run(routerHost + ":" + routerPort)
 	if err != nil {
 		rlog.Critical(err)
 	}
