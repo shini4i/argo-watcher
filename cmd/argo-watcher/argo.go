@@ -359,22 +359,34 @@ func (argo *Argo) waitForRollout(task m.Task) {
 	// not all images were deployed to the application
 	if status == ArgoAppNotAvailable {
 		// show list of missing images
-		// ...
-		argo.handleDeploymentTimeout(task)
+		app, err := argo.checkAppStatus(task.App)
+		var message string
+
+		if err != nil {
+			message = "could not retrieve details"
+		} else {
+			message = "List of current images (last app check):\n"
+			message += "\t" + strings.Join(app.Status.Summary.Images, "\n\t") + "\n\n"
+			message += "List of expected images:\n"
+			message += "\t" + strings.Join(task.ListImages(), "\n\t")
+		}
+
+		// handle error
+		argo.handleAppNotAvailable(task, errors.New(message))
 	}
 
 	// application sync status wasn't valid
 	if status == ArgoAppNotSynced {
 		// display sync status and last sync message
 		// ...
-		argo.handleDeploymentTimeout(task)
+		argo.handleDeploymentTimeout(task, errors.New(""))
 	}
 
 	// application is not in a healthy status
 	if status == ArgoAppNotHealthy {
 		// display current health of pods
 		// ...
-		argo.handleDeploymentTimeout(task)
+		argo.handleDeploymentTimeout(task, errors.New(""))
 	}
 
 	// application synced successfully
@@ -395,10 +407,19 @@ func (argo *Argo) handleArgoUnavailable(task m.Task, err error) {
 	argo.state.SetTaskStatus(task.Id, "aborted", reason)
 }
 
-func (argo *Argo) handleDeploymentTimeout(task m.Task) {
+func (argo *Argo) handleDeploymentTimeout(task m.Task, err error) {
 	rlog.Errorf("[%s] Deployment timed out. Aborting.", task.Id)
+	rlog.Errorf("[%s] Deployment error\n%s", task.Id, err.Error())
 	failedDeployment.With(prometheus.Labels{"app": task.App}).Inc()
-	argo.state.SetTaskStatus(task.Id, config.StatusFailedMessage, "")
+	reason := fmt.Sprintf("Deployment timeout\n\n%s", err.Error())
+	argo.state.SetTaskStatus(task.Id, config.StatusFailedMessage, reason)
+}
+
+func (argo *Argo) handleAppNotAvailable(task m.Task, err error) {
+	rlog.Errorf("[%s] Deployment failed. Application not available\n%s", task.Id, err.Error())
+	failedDeployment.With(prometheus.Labels{"app": task.App}).Inc()
+	reason := fmt.Sprintf("Application not available\n\n%s", err.Error())
+	argo.state.SetTaskStatus(task.Id, config.StatusFailedMessage, reason)
 }
 
 func (argo *Argo) handleDeploymentFailed(task m.Task, err error) {

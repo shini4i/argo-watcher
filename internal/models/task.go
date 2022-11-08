@@ -1,5 +1,7 @@
 package models
 
+import "fmt"
+
 type Image struct {
 	Image string `json:"image" example:"ghcr.io/shini4i/argo-watcher"`
 	Tag   string `json:"tag" example:"dev"`
@@ -15,6 +17,14 @@ type Task struct {
 	Images       []Image `json:"images" binding:"required"`
 	Status       string  `json:"status,omitempty"`
 	StatusReason string  `json:"status_reason,omitempty"`
+}
+
+func (task *Task) ListImages() []string {
+	list := make([]string, len(task.Images))
+	for index := range task.Images {
+		list[index] = fmt.Sprintf("%s:%s", task.Images[index].Image, task.Images[index].Tag)
+	}
+	return list
 }
 
 type TasksResponse struct {
