@@ -354,106 +354,87 @@ func (argo *Argo) waitForRollout(task m.Task) {
 
 		// notify of unexpected error
 		argo.handleDeploymentFailed(task, err)
+		return
 	}
 
 	// application synced successfully
 	if status == ArgoAppSuccess {
 		argo.handleDeploymentSuccess(task)
-	} else {
-		// fetch application details
-		app, err := argo.checkAppStatus(task.App)
+		return
+	}
 
-		// not all images were deployed to the application
-		if status == ArgoAppNotAvailable {
-			// show list of missing images
-			var message string
-			// define details
-			if err != nil {
-				message = "could not retrieve details"
-			} else {
-				message = "List of current images (last app check):\n"
-				message += "\t" + strings.Join(app.Status.Summary.Images, "\n\t") + "\n\n"
-				message += "List of expected images:\n"
-				message += "\t" + strings.Join(task.ListImages(), "\n\t")
-			}
-			// handle error
-			argo.handleAppNotAvailable(task, errors.New(message))
-		}
+	// fetch application details
+	app, err := argo.checkAppStatus(task.App)
 
-		// application sync status wasn't valid
-		if status == ArgoAppNotSynced {
-			// display sync status and last sync message
-			var message string
-			// define details
-			if err != nil {
-				message = "could not retrieve details"
-			} else {
-				message = "App status \"" + app.Status.OperationState.Phase + "\"\n"
-				message += "App message \"" + app.Status.OperationState.Message + "\"\n"
-				message += "Resources:\n"
-				message += "\t" + strings.Join(app.ListSyncResultResources(), "\n\t")
-			}
-			// handle error
-			argo.handleAppOutOfSync(task, errors.New(message))
+	// handle application sync failure
+	switch status {
+	// not all images were deployed to the application
+	case ArgoAppNotAvailable:
+		// show list of missing images
+		var message string
+		// define details
+		if err != nil {
+			message = "could not retrieve details"
+		} else {
+			message = "List of current images (last app check):\n"
+			message += "\t" + strings.Join(app.Status.Summary.Images, "\n\t") + "\n\n"
+			message += "List of expected images:\n"
+			message += "\t" + strings.Join(task.ListImages(), "\n\t")
 		}
-
-		// application is not in a healthy status
-		if status == ArgoAppNotHealthy {
-			// display current health of pods
-			var message string
-			// define details
-			if err != nil {
-				message = "could not retrieve details"
-			} else {
-				message = "App sync status \"" + app.Status.Sync.Status + "\"\n"
-				message += "App health status \"" + app.Status.Health.Status + "\"\n"
-				message += "Resources:\n"
-				message += "\t" + strings.Join(app.ListUnhealthyResources(), "\n\t")
-			}
-			// handle error
-			argo.handleDeploymentTimeout(task, errors.New(message))
+		// handle error
+		argo.handleAppNotAvailable(task, errors.New(message))
+	// application sync status wasn't valid
+	case ArgoAppNotSynced:
+		// display sync status and last sync message
+		var message string
+		// define details
+		if err != nil {
+			message = "could not retrieve details"
+		} else {
+			message = "App status \"" + app.Status.OperationState.Phase + "\"\n"
+			message += "App message \"" + app.Status.OperationState.Message + "\"\n"
+			message += "Resources:\n"
+			message += "\t" + strings.Join(app.ListSyncResultResources(), "\n\t")
 		}
+		// handle error
+		argo.handleAppOutOfSync(task, errors.New(message))
+	// application is not in a healthy status
+	case ArgoAppNotHealthy:
+		// display current health of pods
+		var message string
+		// define details
+		if err != nil {
+			message = "could not retrieve details"
+		} else {
+			message = "App sync status \"" + app.Status.Sync.Status + "\"\n"
+			message += "App health status \"" + app.Status.Health.Status + "\"\n"
+			message += "Resources:\n"
+			message += "\t" + strings.Join(app.ListUnhealthyResources(), "\n\t")
+		}
+		// handle error
+		argo.handleAppNotHealthy(task, errors.New(message))
+	// handle unexpected status
+	default:
+		argo.handleDeploymentUnexpectedStatus(task, errors.New(fmt.Sprintf("Received unexpected status \"%d\"", status)))
 	}
 }
 
 func (argo *Argo) handleAppNotFound(task m.Task, err error) {
-	rlog.Errorf("[%s] Application %s does not exist.", task.Id, task.App)
-	reason := fmt.Sprintf("Argo CD API Error\n\r%s", err.Error())
+	rlog.Infof("[%s] Application %s does not exist.", task.Id, task.App)
+	reason := fmt.Sprintf("ArgoCD API Error: %s", err.Error())
 	argo.state.SetTaskStatus(task.Id, config.StatusAppNotFoundMessage, reason)
 }
 
 func (argo *Argo) handleArgoUnavailable(task m.Task, err error) {
-	rlog.Errorf("[%s] ArgoCD is not available. Aborting.", task.Id)
-	reason := fmt.Sprintf("Argo CD API Error\n\r%s", err.Error())
+	rlog.Infof("[%s] ArgoCD is not available. Aborting.", task.Id)
+	reason := fmt.Sprintf("ArgoCD API Error: %s", err.Error())
 	argo.state.SetTaskStatus(task.Id, "aborted", reason)
 }
 
-func (argo *Argo) handleDeploymentTimeout(task m.Task, err error) {
-	rlog.Errorf("[%s] Deployment timed out. Aborting.", task.Id)
-	rlog.Errorf("[%s] Deployment error\n%s", task.Id, err.Error())
-	failedDeployment.With(prometheus.Labels{"app": task.App}).Inc()
-	reason := fmt.Sprintf("Deployment timeout\n\n%s", err.Error())
-	argo.state.SetTaskStatus(task.Id, config.StatusFailedMessage, reason)
-}
-
-func (argo *Argo) handleAppNotAvailable(task m.Task, err error) {
-	rlog.Errorf("[%s] Deployment failed. Application not available\n%s", task.Id, err.Error())
-	failedDeployment.With(prometheus.Labels{"app": task.App}).Inc()
-	reason := fmt.Sprintf("Application not available\n\n%s", err.Error())
-	argo.state.SetTaskStatus(task.Id, config.StatusFailedMessage, reason)
-}
-
-func (argo *Argo) handleAppOutOfSync(task m.Task, err error) {
-	rlog.Errorf("[%s] Deployment failed. Application out of sync\n%s", task.Id, err.Error())
-	failedDeployment.With(prometheus.Labels{"app": task.App}).Inc()
-	reason := fmt.Sprintf("Application out of sync\n\n%s", err.Error())
-	argo.state.SetTaskStatus(task.Id, config.StatusFailedMessage, reason)
-}
-
 func (argo *Argo) handleDeploymentFailed(task m.Task, err error) {
-	rlog.Errorf("[%s] Deployment failed. Aborting with error: %s", task.Id, err)
+	rlog.Infof("[%s] Deployment failed. Aborting with error: %s", task.Id, err)
 	failedDeployment.With(prometheus.Labels{"app": task.App}).Inc()
-	reason := fmt.Sprintf("Argo CD API Error\n\r%s", err.Error())
+	reason := fmt.Sprintf("ArgoCD API Error: %s", err.Error())
 	argo.state.SetTaskStatus(task.Id, config.StatusFailedMessage, reason)
 }
 
@@ -461,6 +442,35 @@ func (argo *Argo) handleDeploymentSuccess(task m.Task) {
 	rlog.Infof("[%s] App is running on the excepted version.", task.Id)
 	failedDeployment.With(prometheus.Labels{"app": task.App}).Set(0)
 	argo.state.SetTaskStatus(task.Id, "deployed", "")
+}
+
+func (argo *Argo) handleAppNotAvailable(task m.Task, err error) {
+	rlog.Infof("[%s] Deployment failed. Application not available\n%s", task.Id, err.Error())
+	failedDeployment.With(prometheus.Labels{"app": task.App}).Inc()
+	reason := fmt.Sprintf("Application not available\n\n%s", err.Error())
+	argo.state.SetTaskStatus(task.Id, config.StatusFailedMessage, reason)
+}
+
+func (argo *Argo) handleAppNotHealthy(task m.Task, err error) {
+	rlog.Infof("[%s] Deployment failed. Application not healthy\n%s", task.Id, err.Error())
+	failedDeployment.With(prometheus.Labels{"app": task.App}).Inc()
+	reason := fmt.Sprintf("Deployment timeout\n\n%s", err.Error())
+	argo.state.SetTaskStatus(task.Id, config.StatusFailedMessage, reason)
+}
+
+func (argo *Argo) handleAppOutOfSync(task m.Task, err error) {
+	rlog.Infof("[%s] Deployment failed. Application out of sync\n%s", task.Id, err.Error())
+	failedDeployment.With(prometheus.Labels{"app": task.App}).Inc()
+	reason := fmt.Sprintf("Application out of sync\n\n%s", err.Error())
+	argo.state.SetTaskStatus(task.Id, config.StatusFailedMessage, reason)
+}
+
+func (argo *Argo) handleDeploymentUnexpectedStatus(task m.Task, err error) {
+	rlog.Infof("[%s] Deployment timed out with unexpected status. Aborting.", task.Id)
+	rlog.Infof("[%s] Deployment error\n%s", task.Id, err.Error())
+	failedDeployment.With(prometheus.Labels{"app": task.App}).Inc()
+	reason := fmt.Sprintf("Deployment timeout\n\n%s", err.Error())
+	argo.state.SetTaskStatus(task.Id, config.StatusFailedMessage, reason)
 }
 
 func (argo *Argo) GetAppList() []string {
