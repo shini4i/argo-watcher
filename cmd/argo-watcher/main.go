@@ -26,6 +26,7 @@ var (
 		User:     os.Getenv("ARGO_USER"),
 		Password: os.Getenv("ARGO_PASSWORD"),
 		Url:      os.Getenv("ARGO_URL"),
+		Timeout:  h.GetEnv("ARGO_API_TIMEOUT", "60"),
 	}
 )
 

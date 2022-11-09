@@ -71,7 +71,7 @@ func TestPostgresState_GetTaskStatus(t *testing.T) {
 }
 
 func TestPostgresState_SetTaskStatus(t *testing.T) {
-	postgresState.SetTaskStatus(postgresTaskId, "deployed")
+	postgresState.SetTaskStatus(postgresTaskId, "deployed", "")
 
 	if status := postgresState.GetTaskStatus(postgresTaskId); status != "deployed" {
 		t.Errorf("got %s, expected %s", status, "deployed")

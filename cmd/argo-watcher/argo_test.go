@@ -19,6 +19,7 @@ var (
 		Url:      "http://localhost:8081",
 		User:     "watcher",
 		Password: "test",
+		Timeout:  "10",
 	}
 	task = m.Task{
 		Created: float64(time.Now().Unix()),

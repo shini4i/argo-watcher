@@ -25,8 +25,7 @@ import (
 )
 
 var (
-	argoTimeout, _     = strconv.Atoi(h.GetEnv("ARGO_TIMEOUT", "900"))
-	argoApiTimeout, _  = strconv.Atoi(h.GetEnv("ARGO_API_TIMEOUT", "60"))
+	argoTimeout, _     = strconv.Atoi(h.GetEnv("ARGO_TIMEOUT", "0"))
 	argoSyncRetryDelay = 15 * time.Second
 	retryAttempts      = uint((argoTimeout / 15) + 1)
 	argoAuthRetryDelay = 15 * time.Second
@@ -45,6 +44,7 @@ type Argo struct {
 	Url      string
 	User     string
 	Password string
+	Timeout  string
 	client   *http.Client
 	state    s.State
 }
@@ -97,6 +97,7 @@ func (argo *Argo) Init() {
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: skipTlsVerify},
 	}
 
+	argoApiTimeout, _ := strconv.Atoi(argo.Timeout)
 	argo.client = &http.Client{
 		Jar:       jar,
 		Transport: transport,
