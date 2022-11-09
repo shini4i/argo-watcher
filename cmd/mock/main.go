@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/romana/rlog"
 	"github.com/shini4i/argo-watcher/internal/helpers"
@@ -45,7 +46,7 @@ func mockReturnAppStatus(c *gin.Context) {
 	app := c.Param("id")
 
 	if !helpers.Contains(apps, app) {
-		c.JSON(http.StatusNotFound, nil)
+		c.String(http.StatusNotFound, fmt.Sprintf("applications.argoproj.io \"%s\" not found", app))
 		return
 	}
 
