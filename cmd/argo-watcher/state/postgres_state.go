@@ -90,14 +90,14 @@ func (state *PostgresState) GetTasks(startTime float64, endTime float64, app str
 		rows, err = state.db.Query(
 			"select id, extract(epoch from created) AS created, "+
 				"extract(epoch from updated) AS updated, "+
-				"images, status, app, author, "+
+				"images, status, status_reason, app, author, "+
 				"project from tasks where created >= $1 AND created <= $2",
 			startTimeUTC, endTimeUTC)
 	} else {
 		rows, err = state.db.Query(
 			"select id, extract(epoch from created) AS created, "+
 				"extract(epoch from updated) AS updated, "+
-				"images, status, app, author, "+
+				"images, status, status_reason, app, author, "+
 				"project from tasks where created >= $1 AND created <= $2 AND app = $3",
 			startTimeUTC, endTimeUTC, app)
 	}
@@ -124,7 +124,7 @@ func (state *PostgresState) GetTasks(startTime float64, endTime float64, app str
 	for rows.Next() {
 		var task m.Task
 
-		if err := rows.Scan(&task.Id, &task.Created, &updated, &images, &task.Status, &task.App, &task.Author, &task.Project); err != nil {
+		if err := rows.Scan(&task.Id, &task.Created, &updated, &images, &task.Status, &task.StatusReason, &task.App, &task.Author, &task.Project); err != nil {
 			panic(err)
 		}
 
@@ -159,7 +159,7 @@ func (state *PostgresState) GetTaskStatus(id string) string {
 }
 
 func (state *PostgresState) SetTaskStatus(id string, status string, reason string) {
-	_, err := state.db.Exec("UPDATE tasks SET status=$1, reason=$2, updated=$3 WHERE id=$4", status, reason, time.Now().UTC(), id)
+	_, err := state.db.Exec("UPDATE tasks SET status=$1, status_reason=$2, updated=$3 WHERE id=$4", status, reason, time.Now().UTC(), id)
 	if err != nil {
 		rlog.Error(err)
 	}
