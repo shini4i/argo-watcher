@@ -50,6 +50,23 @@ func (app *Application) ListSyncResultResources() []string {
 	return list
 }
 
+func (app *Application) ListUnhealthyResources() []string {
+	var list []string
+
+	for index := range app.Status.Resources {
+		resource := app.Status.Resources[index]
+		if resource.Health.Status == "" {
+			continue
+		}
+		message := fmt.Sprintf("%s(%s) %s", resource.Kind, resource.Name, resource.Health.Status)
+		if resource.Health.Message != "" {
+			message += " with message " + resource.Health.Message
+		}
+		list = append(list, message)
+	}
+	return list
+}
+
 type Userinfo struct {
 	LoggedIn bool   `json:"loggedIn"`
 	Username string `json:"username"`

@@ -383,7 +383,6 @@ func (argo *Argo) waitForRollout(task m.Task) {
 		// application sync status wasn't valid
 		if status == ArgoAppNotSynced {
 			// display sync status and last sync message
-			// show list of missing images
 			var message string
 			// define details
 			if err != nil {
@@ -393,7 +392,6 @@ func (argo *Argo) waitForRollout(task m.Task) {
 				message += "App message \"" + app.Status.OperationState.Message + "\"\n"
 				message += "Resources:\n"
 				message += "\t" + strings.Join(app.ListSyncResultResources(), "\n\t")
-
 			}
 			// handle error
 			argo.handleAppOutOfSync(task, errors.New(message))
@@ -402,8 +400,18 @@ func (argo *Argo) waitForRollout(task m.Task) {
 		// application is not in a healthy status
 		if status == ArgoAppNotHealthy {
 			// display current health of pods
-			// ...
-			argo.handleDeploymentTimeout(task, errors.New(""))
+			var message string
+			// define details
+			if err != nil {
+				message = "could not retrieve details"
+			} else {
+				message = "App sync status \"" + app.Status.Sync.Status + "\"\n"
+				message += "App health status \"" + app.Status.Health.Status + "\"\n"
+				message += "Resources:\n"
+				message += "\t" + strings.Join(app.ListUnhealthyResources(), "\n\t")
+			}
+			// handle error
+			argo.handleDeploymentTimeout(task, errors.New(message))
 		}
 	}
 }
