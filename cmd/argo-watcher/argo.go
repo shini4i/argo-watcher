@@ -454,7 +454,7 @@ func (argo *Argo) handleAppNotAvailable(task m.Task, err error) {
 func (argo *Argo) handleAppNotHealthy(task m.Task, err error) {
 	rlog.Infof("[%s] Deployment failed. Application not healthy\n%s", task.Id, err.Error())
 	failedDeployment.With(prometheus.Labels{"app": task.App}).Inc()
-	reason := fmt.Sprintf("Deployment timeout\n\n%s", err.Error())
+	reason := fmt.Sprintf("Application not healthy\n\n%s", err.Error())
 	argo.state.SetTaskStatus(task.Id, config.StatusFailedMessage, reason)
 }
 
