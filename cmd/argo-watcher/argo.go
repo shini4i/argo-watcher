@@ -103,9 +103,9 @@ func (argo *Argo) Init() {
 	}
 	if argoApiTimeout > 0 {
 		argo.client.Timeout = time.Duration(argoApiTimeout) * time.Second
-		rlog.Debugf("Timeout for ArgoCD API calls set to: %s", argo.client.Timeout)
+		rlog.Infof("Timeout for ArgoCD API calls set to: %s", argo.client.Timeout)
 	} else {
-		rlog.Debugf("Timeout for ArgoCD API is set to default")
+		rlog.Infof("Timeout for ArgoCD API is set to default")
 	}
 
 	err = retry.Do(
@@ -132,7 +132,7 @@ func (argo *Argo) Init() {
 				return errors.New(fmt.Sprintf("ArgoCD authentication error: %s", bytes.NewBuffer(body).String()))
 			}
 
-			rlog.Debug("Authenticated into ArgoCD API")
+			rlog.Infof("Authenticated into ArgoCD API")
 			return nil
 		},
 		retry.Attempts(0),
