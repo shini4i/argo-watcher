@@ -36,7 +36,7 @@ var (
 	}
 )
 
-func TestArgo_GetTaskStatus(t *testing.T) {
+func TestArgo_GetTask(t *testing.T) {
 	var task2 m.Task
 	var task3 m.Task
 	var task4 m.Task

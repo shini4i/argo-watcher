@@ -51,11 +51,11 @@ func TestInMemoryState_Add(t *testing.T) {
 	}
 }
 
-func TestInMemoryState_GetTaskStatus(t *testing.T) {
-	status := state.GetTaskStatus(taskId)
+func TestInMemoryState_GetTask(t *testing.T) {
+	task, _ := state.GetTask(taskId)
 
-	if status != "in progress" {
-		t.Errorf("got %s, expected %s", status, "in progress")
+	if task.Status != "in progress" {
+		t.Errorf("got %s, expected %s", task.Status, "in progress")
 	}
 }
 
@@ -75,8 +75,8 @@ func TestInMemoryState_GetTasks(t *testing.T) {
 func TestInMemoryState_SetTaskStatus(t *testing.T) {
 	state.SetTaskStatus(taskId, "deployed", "")
 
-	if status := state.GetTaskStatus(taskId); status != "deployed" {
-		t.Errorf("got %s, expected %s", status, "deployed")
+	if taskInfo, _ := state.GetTask(taskId); taskInfo.Status != "deployed" {
+		t.Errorf("got %s, expected %s", taskInfo.Status, "deployed")
 	}
 }
 
