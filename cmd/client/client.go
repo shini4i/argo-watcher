@@ -159,15 +159,18 @@ loop:
 		switch status := watcher.getTaskStatus(id); status.Status {
 		case config.StatusFailedMessage:
 			fmt.Println("The deployment has failed, please check logs.")
+			fmt.Println(status.StatusReason)
 			os.Exit(1)
 		case config.StatusInProgressMessage:
 			fmt.Println("Application deployment is in progress...")
 			time.Sleep(15 * time.Second)
 		case config.StatusAppNotFoundMessage:
 			fmt.Printf("Application %s does not exist.\n", task.App)
+			fmt.Println(status.StatusReason)
 			os.Exit(1)
 		case config.StatusArgoCDUnavailableMessage:
 			fmt.Println("ArgoCD is unavailable. Please investigate.")
+			fmt.Println(status.StatusReason)
 			os.Exit(1)
 		case config.StatusDeployedMessage:
 			fmt.Printf("The deployment of %s version is done.\n", tag)
