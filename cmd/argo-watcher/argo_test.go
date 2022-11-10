@@ -19,6 +19,7 @@ var (
 		Url:      "http://localhost:8081",
 		User:     "watcher",
 		Password: "test",
+		Timeout:  "10",
 	}
 	task = m.Task{
 		Created: float64(time.Now().Unix()),
@@ -35,7 +36,7 @@ var (
 	}
 )
 
-func TestArgo_GetTaskStatus(t *testing.T) {
+func TestArgo_GetTask(t *testing.T) {
 	var task2 m.Task
 	var task3 m.Task
 	var task4 m.Task
@@ -56,22 +57,24 @@ func TestArgo_GetTaskStatus(t *testing.T) {
 	task4.App = "app4"
 	task4Id, _ = testClient.AddTask(task4)
 
-	time.Sleep(1 * time.Second)
+	time.Sleep(2 * time.Second)
 
-	if status := testClient.GetTaskStatus(taskId); status != "deployed" {
-		t.Errorf("got %s, expected %s", status, "deployed")
+	const errorMessageTemplate = "got %s, expected %s"
+
+	if taskInfo, _ := testClient.state.GetTask(taskId); taskInfo.Status != "deployed" {
+		t.Errorf(errorMessageTemplate, taskInfo.Status, "deployed")
 	}
 
-	if status := testClient.GetTaskStatus(task2Id); status != "failed" {
-		t.Errorf("got %s, expected %s", status, "failed")
+	if taskInfo, _ := testClient.state.GetTask(task2Id); taskInfo.Status != "failed" {
+		t.Errorf(errorMessageTemplate, taskInfo.Status, "failed")
 	}
 
-	if status := testClient.GetTaskStatus(task3Id); status != "app not found" {
-		t.Errorf("got %s, expected %s", status, "app not found")
+	if taskInfo, _ := testClient.state.GetTask(task3Id); taskInfo.Status != "app not found" {
+		t.Errorf(errorMessageTemplate, taskInfo.Status, "app not found")
 	}
 
-	if status := testClient.GetTaskStatus(task4Id); status != "failed" {
-		t.Errorf("got %s, expected %s", status, "failed")
+	if taskInfo, _ := testClient.state.GetTask(task4Id); taskInfo.Status != "failed" {
+		t.Errorf(errorMessageTemplate, taskInfo.Status, "failed")
 	}
 }
 

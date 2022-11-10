@@ -90,14 +90,14 @@ func (state *PostgresState) GetTasks(startTime float64, endTime float64, app str
 		rows, err = state.db.Query(
 			"select id, extract(epoch from created) AS created, "+
 				"extract(epoch from updated) AS updated, "+
-				"images, status, app, author, "+
+				"images, status, status_reason, app, author, "+
 				"project from tasks where created >= $1 AND created <= $2",
 			startTimeUTC, endTimeUTC)
 	} else {
 		rows, err = state.db.Query(
 			"select id, extract(epoch from created) AS created, "+
 				"extract(epoch from updated) AS updated, "+
-				"images, status, app, author, "+
+				"images, status, status_reason, app, author, "+
 				"project from tasks where created >= $1 AND created <= $2 AND app = $3",
 			startTimeUTC, endTimeUTC, app)
 	}
@@ -124,7 +124,7 @@ func (state *PostgresState) GetTasks(startTime float64, endTime float64, app str
 	for rows.Next() {
 		var task m.Task
 
-		if err := rows.Scan(&task.Id, &task.Created, &updated, &images, &task.Status, &task.App, &task.Author, &task.Project); err != nil {
+		if err := rows.Scan(&task.Id, &task.Created, &updated, &images, &task.Status, &task.StatusReason, &task.App, &task.Author, &task.Project); err != nil {
 			panic(err)
 		}
 
@@ -146,20 +146,26 @@ func (state *PostgresState) GetTasks(startTime float64, endTime float64, app str
 	}
 }
 
-func (state *PostgresState) GetTaskStatus(id string) string {
-	var status string
+func (state *PostgresState) GetTask(id string) (*m.Task, error) {
+	var task m.Task
 
-	err := state.db.QueryRow("SELECT status FROM tasks WHERE id=$1", id).Scan(&status)
+	query := `
+		SELECT id, status, status_reason, app, author, project
+		FROM tasks
+	    WHERE id=$1
+		LIMIT 1
+	`
+	row := state.db.QueryRow(query, id)
+	err := row.Scan(&task.Id, &task.Status, &task.StatusReason, &task.App, &task.Author, &task.Project)
 	if err != nil {
-		rlog.Errorf("Failed to get task status for task %s: %s", id, err)
-		return "task not found"
+		return nil, err
 	}
 
-	return status
+	return &task, nil
 }
 
-func (state *PostgresState) SetTaskStatus(id string, status string) {
-	_, err := state.db.Exec("UPDATE tasks SET status=$1, updated=$2 WHERE id=$3", status, time.Now().UTC(), id)
+func (state *PostgresState) SetTaskStatus(id string, status string, reason string) {
+	_, err := state.db.Exec("UPDATE tasks SET status=$1, status_reason=$2, updated=$3 WHERE id=$4", status, reason, time.Now().UTC(), id)
 	if err != nil {
 		rlog.Error(err)
 	}

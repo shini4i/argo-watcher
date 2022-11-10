@@ -62,19 +62,19 @@ func TestPostgresState_Add(t *testing.T) {
 	}
 }
 
-func TestPostgresState_GetTaskStatus(t *testing.T) {
-	status := postgresState.GetTaskStatus(postgresTaskId)
+func TestPostgresState_GetTask(t *testing.T) {
+	task, _ := postgresState.GetTask(postgresTaskId)
 
-	if status != "in progress" {
-		t.Errorf("got %s, expected %s", status, "in progress")
+	if task.Status != "in progress" {
+		t.Errorf("got %s, expected %s", task.Status, "in progress")
 	}
 }
 
 func TestPostgresState_SetTaskStatus(t *testing.T) {
-	postgresState.SetTaskStatus(postgresTaskId, "deployed")
+	postgresState.SetTaskStatus(postgresTaskId, "deployed", "")
 
-	if status := postgresState.GetTaskStatus(postgresTaskId); status != "deployed" {
-		t.Errorf("got %s, expected %s", status, "deployed")
+	if taskInfo, _ := postgresState.GetTask(postgresTaskId); taskInfo.Status != "deployed" {
+		t.Errorf("got %s, expected %s", taskInfo.Status, "deployed")
 	}
 }
 

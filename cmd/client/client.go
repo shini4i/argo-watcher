@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -53,7 +52,7 @@ func (watcher *Watcher) addTask(task m.Task) string {
 		}
 	}(response.Body)
 
-	body, err = ioutil.ReadAll(response.Body)
+	body, err = io.ReadAll(response.Body)
 	if err != nil {
 		panic(err)
 	}
@@ -73,7 +72,7 @@ func (watcher *Watcher) addTask(task m.Task) string {
 	return accepted.Id
 }
 
-func (watcher *Watcher) getTaskStatus(id string) string {
+func (watcher *Watcher) getTaskStatus(id string) *m.TaskStatus {
 	url := fmt.Sprintf("%s/api/v1/tasks/%s", watcher.baseUrl, id)
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -93,7 +92,7 @@ func (watcher *Watcher) getTaskStatus(id string) string {
 		}
 	}(response.Body)
 
-	body, err := ioutil.ReadAll(response.Body)
+	body, err := io.ReadAll(response.Body)
 
 	if response.StatusCode != 200 {
 		fmt.Printf("Received non 200 status code (%d)\n", response.StatusCode)
@@ -101,13 +100,13 @@ func (watcher *Watcher) getTaskStatus(id string) string {
 		os.Exit(1)
 	}
 
-	var accepted m.TaskStatus
-	err = json.Unmarshal(body, &accepted)
+	var taskStatus m.TaskStatus
+	err = json.Unmarshal(body, &taskStatus)
 	if err != nil {
 		panic(err)
 	}
 
-	return accepted.Status
+	return &taskStatus
 }
 
 func getImagesList() []m.Image {
@@ -157,18 +156,21 @@ func main() {
 
 loop:
 	for {
-		switch status := watcher.getTaskStatus(id); status {
+		switch taskInfo := watcher.getTaskStatus(id); taskInfo.Status {
 		case config.StatusFailedMessage:
 			fmt.Println("The deployment has failed, please check logs.")
+			fmt.Println(taskInfo.StatusReason)
 			os.Exit(1)
 		case config.StatusInProgressMessage:
 			fmt.Println("Application deployment is in progress...")
 			time.Sleep(15 * time.Second)
 		case config.StatusAppNotFoundMessage:
 			fmt.Printf("Application %s does not exist.\n", task.App)
+			fmt.Println(taskInfo.StatusReason)
 			os.Exit(1)
 		case config.StatusArgoCDUnavailableMessage:
 			fmt.Println("ArgoCD is unavailable. Please investigate.")
+			fmt.Println(taskInfo.StatusReason)
 			os.Exit(1)
 		case config.StatusDeployedMessage:
 			fmt.Printf("The deployment of %s version is done.\n", tag)

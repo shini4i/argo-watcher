@@ -26,6 +26,7 @@ var (
 		User:     os.Getenv("ARGO_USER"),
 		Password: os.Getenv("ARGO_PASSWORD"),
 		Url:      os.Getenv("ARGO_URL"),
+		Timeout:  h.GetEnv("ARGO_API_TIMEOUT", "60"),
 	}
 )
 
@@ -91,6 +92,7 @@ func addTask(c *gin.Context) {
 		rlog.Errorf("Couldn't process new task. Got the following error: %s", err)
 		c.JSON(http.StatusNotAcceptable, m.TaskStatus{
 			Status: "invalid payload",
+			Error:  err.Error(),
 		})
 		return
 	}
@@ -141,9 +143,20 @@ func getState(c *gin.Context) {
 // @Router /api/v1/tasks/{id} [get]
 func getTaskStatus(c *gin.Context) {
 	id := c.Param("id")
-	c.JSON(http.StatusOK, m.TaskStatus{
-		Status: client.GetTaskStatus(id),
-	})
+	task, err := client.state.GetTask(id)
+
+	if err != nil {
+		c.JSON(http.StatusOK, m.TaskStatus{
+			Id:    id,
+			Error: err.Error(),
+		})
+	} else {
+		c.JSON(http.StatusOK, m.TaskStatus{
+			Id:           task.Id,
+			Status:       task.Status,
+			StatusReason: task.StatusReason,
+		})
+	}
 }
 
 // getApps godoc
@@ -211,7 +224,11 @@ func main() {
 
 	prometheusRegisterMetrics()
 
-	err := router.Run(":8080")
+	routerHost := h.GetEnv("HOST", "0.0.0.0")
+	routerPort := h.GetEnv("PORT", "8080")
+
+	rlog.Debugf("Running on %s:%s", routerHost, routerPort)
+	err := router.Run(routerHost + ":" + routerPort)
 	if err != nil {
 		rlog.Critical(err)
 	}
