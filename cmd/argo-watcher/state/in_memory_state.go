@@ -48,13 +48,13 @@ func (state *InMemoryState) GetTasks(startTime float64, endTime float64, app str
 	return tasks
 }
 
-func (state *InMemoryState) GetTaskStatus(id string) string {
+func (state *InMemoryState) GetTask(id string) (*m.Task, error) {
 	for _, task := range state.tasks {
 		if task.Id == id {
-			return task.Status
+			return &task, nil
 		}
 	}
-	return "task not found"
+	return nil, errors.New("task not found")
 }
 
 func (state *InMemoryState) SetTaskStatus(id string, status string, reason string) {

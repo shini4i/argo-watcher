@@ -37,9 +37,10 @@ type HealthStatus struct {
 }
 
 type TaskStatus struct {
-	Id     string `json:"id,omitempty"`
-	Status string `json:"status"`
-	Error  string `json:"error,omitempty"`
+	Id           string `json:"id,omitempty"`
+	Status       string `json:"status"`
+	StatusReason string `json:"status_reason"`
+	Error        string `json:"error,omitempty"`
 }
 
 type ArgoApiErrorResponse struct {

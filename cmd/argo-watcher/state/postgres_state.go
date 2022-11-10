@@ -146,16 +146,22 @@ func (state *PostgresState) GetTasks(startTime float64, endTime float64, app str
 	}
 }
 
-func (state *PostgresState) GetTaskStatus(id string) string {
-	var status string
+func (state *PostgresState) GetTask(id string) (*m.Task, error) {
+	var task m.Task
 
-	err := state.db.QueryRow("SELECT status FROM tasks WHERE id=$1", id).Scan(&status)
+	query := `
+		SELECT id, status, status_reason, app, author, project
+		FROM tasks
+	    WHERE id=$1
+		LIMIT 1
+	`
+	row := state.db.QueryRow(query, id)
+	err := row.Scan(&task.Id, &task.Status, &task.StatusReason, &task.App, &task.Author, &task.Project)
 	if err != nil {
-		rlog.Errorf("Failed to get task status for task %s: %s", id, err)
-		return "task not found"
+		return nil, err
 	}
 
-	return status
+	return &task, nil
 }
 
 func (state *PostgresState) SetTaskStatus(id string, status string, reason string) {

@@ -117,22 +117,22 @@ func TestAddTask(t *testing.T) {
 func TestGetTaskStatus(t *testing.T) {
 	messageTemplate := "Expected status %s, got %s"
 
-	status := client.getTaskStatus(taskId)
+	status := client.getTaskStatus(taskId).Status
 	if status != config.StatusDeployedMessage {
 		t.Errorf(messageTemplate, "deployed", status)
 	}
 
-	status = client.getTaskStatus(appNotFoundId)
+	status = client.getTaskStatus(appNotFoundId).Status
 	if status != config.StatusAppNotFoundMessage {
 		t.Errorf(messageTemplate, "app not found", status)
 	}
 
-	status = client.getTaskStatus(argocdUnavailableId)
+	status = client.getTaskStatus(argocdUnavailableId).Status
 	if status != config.StatusArgoCDUnavailableMessage {
 		t.Errorf(messageTemplate, "ArgoCD is unavailable", status)
 	}
 
-	status = client.getTaskStatus(failedTaskId)
+	status = client.getTaskStatus(failedTaskId).Status
 	if status != config.StatusFailedMessage {
 		t.Errorf(messageTemplate, "failed", status)
 	}

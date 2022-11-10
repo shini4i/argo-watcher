@@ -59,20 +59,20 @@ func TestArgo_GetTaskStatus(t *testing.T) {
 
 	time.Sleep(2 * time.Second)
 
-	if status := testClient.GetTaskStatus(taskId); status != "deployed" {
-		t.Errorf("got %s, expected %s", status, "deployed")
+	if taskInfo, _ := testClient.state.GetTask(taskId); taskInfo.Status != "deployed" {
+		t.Errorf("got %s, expected %s", taskInfo.Status, "deployed")
 	}
 
-	if status := testClient.GetTaskStatus(task2Id); status != "failed" {
-		t.Errorf("got %s, expected %s", status, "failed")
+	if taskInfo, _ := testClient.state.GetTask(task2Id); taskInfo.Status != "failed" {
+		t.Errorf("got %s, expected %s", taskInfo.Status, "failed")
 	}
 
-	if status := testClient.GetTaskStatus(task3Id); status != "app not found" {
-		t.Errorf("got %s, expected %s", status, "app not found")
+	if taskInfo, _ := testClient.state.GetTask(task3Id); taskInfo.Status != "app not found" {
+		t.Errorf("got %s, expected %s", taskInfo.Status, "app not found")
 	}
 
-	if status := testClient.GetTaskStatus(task4Id); status != "failed" {
-		t.Errorf("got %s, expected %s", status, "failed")
+	if taskInfo, _ := testClient.state.GetTask(task4Id); taskInfo.Status != "failed" {
+		t.Errorf("got %s, expected %s", taskInfo.Status, "failed")
 	}
 }
 

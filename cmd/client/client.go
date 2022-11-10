@@ -72,7 +72,7 @@ func (watcher *Watcher) addTask(task m.Task) string {
 	return accepted.Id
 }
 
-func (watcher *Watcher) getTaskStatus(id string) string {
+func (watcher *Watcher) getTaskStatus(id string) *m.TaskStatus {
 	url := fmt.Sprintf("%s/api/v1/tasks/%s", watcher.baseUrl, id)
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -100,13 +100,13 @@ func (watcher *Watcher) getTaskStatus(id string) string {
 		os.Exit(1)
 	}
 
-	var accepted m.TaskStatus
-	err = json.Unmarshal(body, &accepted)
+	var taskStatus m.TaskStatus
+	err = json.Unmarshal(body, &taskStatus)
 	if err != nil {
 		panic(err)
 	}
 
-	return accepted.Status
+	return &taskStatus
 }
 
 func getImagesList() []m.Image {
@@ -156,7 +156,7 @@ func main() {
 
 loop:
 	for {
-		switch status := watcher.getTaskStatus(id); status {
+		switch status := watcher.getTaskStatus(id); status.Status {
 		case config.StatusFailedMessage:
 			fmt.Println("The deployment has failed, please check logs.")
 			os.Exit(1)

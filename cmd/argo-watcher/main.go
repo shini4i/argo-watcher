@@ -92,6 +92,7 @@ func addTask(c *gin.Context) {
 		rlog.Errorf("Couldn't process new task. Got the following error: %s", err)
 		c.JSON(http.StatusNotAcceptable, m.TaskStatus{
 			Status: "invalid payload",
+			Error:  err.Error(),
 		})
 		return
 	}
@@ -142,9 +143,20 @@ func getState(c *gin.Context) {
 // @Router /api/v1/tasks/{id} [get]
 func getTaskStatus(c *gin.Context) {
 	id := c.Param("id")
-	c.JSON(http.StatusOK, m.TaskStatus{
-		Status: client.GetTaskStatus(id),
-	})
+	task, err := client.state.GetTask(id)
+
+	if err != nil {
+		c.JSON(http.StatusOK, m.TaskStatus{
+			Id:    id,
+			Error: err.Error(),
+		})
+	} else {
+		c.JSON(http.StatusOK, m.TaskStatus{
+			Id:           task.Id,
+			Status:       task.Status,
+			StatusReason: task.StatusReason,
+		})
+	}
 }
 
 // getApps godoc

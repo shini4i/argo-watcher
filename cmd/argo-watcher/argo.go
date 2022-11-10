@@ -229,10 +229,6 @@ func (argo *Argo) GetTasks(startTime float64, endTime float64, app string) m.Tas
 	}
 }
 
-func (argo *Argo) GetTaskStatus(id string) string {
-	return argo.state.GetTaskStatus(id)
-}
-
 func (argo *Argo) checkAppStatus(app string) (*m.Application, error) {
 	url := fmt.Sprintf("%s/api/v1/applications/%s", argo.Url, app)
 	req, err := http.NewRequest("GET", url, nil)
