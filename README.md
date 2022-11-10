@@ -87,6 +87,27 @@ ingress:
         - argo-watcher.example.com
 ```
 
+Argo Watcher Server supports the following environment variables
+
+| Variable          | Description                                                     | Mandatory |
+|-------------------|-----------------------------------------------------------------|-----------|
+| STATE_TYPE        | Accepts "in-memory" (non-HA option) and "postgres" (HA option). | Yes       |
+| STATIC_FILES_PATH | Path to the UI website of Argo Watcher                          | Yes       |
+| ARGO_URL          | ArgoCD URL                                                      | Yes       |
+| ARGO_USER         | ArgoCD API User                                                 | Yes       |
+| ARGO_PASSWORD     | ArgoCD API Password                                             | Yes       |
+| ARGO_TIMEOUT      | Time that Argo Watcher is allowed to wait for deployment.       | No        |
+| ARGO_API_TIMEOUT  | Timeout for ArgoCD API calls. Defaults to 60 seconds            | No        |
+| SKIP_TLS_VERIFY   | Skip SSL verification during API calls                          | No        |
+| HOST              | Host for Argo Watcher server. Defaults to 0.0.0.0               | No        |
+| PORT              | Port for Argo Watcher server. Defaults to 8080                  | No        |
+| DB_HOST           | Database host (Required for STATE_TYPE=postgres)                | No        |
+| DB_PORT           | Database port (Required for STATE_TYPE=postgres)                | No        |
+| DB_NAME           | Database name (Required for STATE_TYPE=postgres)                | No        |
+| DB_USER           | Database username(Required for STATE_TYPE=postgres)             | No        |
+| DB_PASSWORD       | Database password (Required for STATE_TYPE=postgres)            | No        |
+
+
 # Client Installation
 
 The client is designed to run on Kubernetes runners. We have a [dedicated docker image](https://ghcr.io/shini4i/argo-watcher-client) for Argo Watcher Client CI/CD jobs.
@@ -138,15 +159,15 @@ watch:
 
 Argo Watcher Client supports the following environment variables
 
-| Variable | Description | Mandatory |
-|---|---|---|
-| ARGO_WATCHER_URL | The url of argo-watcher instance | Yes |
-| ARGO_APP | The name of argo app to check for images rollout | Yes |
-| COMMIT_AUTHOR | The person who made commit/triggered pipeline | Yes |
-| PROJECT_NAME | An identificator of the business project (not related to argo project) | Yes |
-| IMAGES | A list of images (separated by ",") that should contain specific tag | Yes |
-| IMAGE_TAG | An image tag that is expected to be rolled out | Yes |
-| DEBUG | Print various debug information | No |
+| Variable         | Description                                                            | Mandatory |
+|------------------|------------------------------------------------------------------------|-----------|
+| ARGO_WATCHER_URL | The url of argo-watcher instance                                       | Yes       |
+| ARGO_APP         | The name of argo app to check for images rollout                       | Yes       |
+| COMMIT_AUTHOR    | The person who made commit/triggered pipeline                          | Yes       |
+| PROJECT_NAME     | An identificator of the business project (not related to argo project) | Yes       |
+| IMAGES           | A list of images (separated by ",") that should contain specific tag   | Yes       |
+| IMAGE_TAG        | An image tag that is expected to be rolled out                         | Yes       |
+| DEBUG            | Print various debug information                                        | No        |
 
 
 # Development
