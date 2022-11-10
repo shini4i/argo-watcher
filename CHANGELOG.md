@@ -5,7 +5,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [0.2.1] - 2022-11-10
+## [Unreleased] - 2022-11-10
 ### Added
 - Extensive error handling to communication with ArgoCD
 - Display of additional information for predictable errors (app not found, sync failed, health degraded, etc)
