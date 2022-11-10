@@ -40,6 +40,10 @@ const (
 	ArgoAppFailed
 )
 
+const (
+	ArgoAPIErrorTemplate = "ArgoCD API Error: %s"
+)
+
 type Argo struct {
 	Url      string
 	User     string
@@ -330,35 +334,23 @@ func (argo *Argo) waitForRollout(task m.Task) {
 	// continuously check for application status change
 	status, err := argo.checkWithRetry(task)
 
-	// we had some unexpected error with ArgoCD API
-	if status == ArgoAppFailed {
-		// notify user that app wasn't found
-		appNotFoundError := fmt.Sprintf("applications.argoproj.io \"%s\" not found", task.App)
-		if strings.Contains(err.Error(), appNotFoundError) {
-			argo.handleAppNotFound(task, err)
-			return
-		}
-		// notify user that ArgoCD API isn't available
-		argoUnavailableError := "connect: connection refused"
-		if strings.Contains(err.Error(), argoUnavailableError) {
-			argo.handleArgoUnavailable(task, err)
-			return
-		}
-
-		// notify of unexpected error
-		argo.handleDeploymentFailed(task, err)
-		return
-	}
-
 	// application synced successfully
 	if status == ArgoAppSuccess {
 		argo.handleDeploymentSuccess(task)
 		return
 	}
 
+	// we had some unexpected error with ArgoCD API
+	if status == ArgoAppFailed {
+		argo.handleArgoAPIFailure(task, err)
+		return
+	}
+
 	// fetch application details
 	app, err := argo.checkAppStatus(task.App)
 
+	// define default message
+	const defaultErrorMessage string = "could not retrieve details"
 	// handle application sync failure
 	switch status {
 	// not all images were deployed to the application
@@ -367,7 +359,7 @@ func (argo *Argo) waitForRollout(task m.Task) {
 		var message string
 		// define details
 		if err != nil {
-			message = "could not retrieve details"
+			message = defaultErrorMessage
 		} else {
 			message = "List of current images (last app check):\n"
 			message += "\t" + strings.Join(app.Status.Summary.Images, "\n\t") + "\n\n"
@@ -382,7 +374,7 @@ func (argo *Argo) waitForRollout(task m.Task) {
 		var message string
 		// define details
 		if err != nil {
-			message = "could not retrieve details"
+			message = defaultErrorMessage
 		} else {
 			message = "App status \"" + app.Status.OperationState.Phase + "\"\n"
 			message += "App message \"" + app.Status.OperationState.Message + "\"\n"
@@ -397,7 +389,7 @@ func (argo *Argo) waitForRollout(task m.Task) {
 		var message string
 		// define details
 		if err != nil {
-			message = "could not retrieve details"
+			message = defaultErrorMessage
 		} else {
 			message = "App sync status \"" + app.Status.Sync.Status + "\"\n"
 			message += "App health status \"" + app.Status.Health.Status + "\"\n"
@@ -412,22 +404,41 @@ func (argo *Argo) waitForRollout(task m.Task) {
 	}
 }
 
+func (argo *Argo) handleArgoAPIFailure(task m.Task, err error) {
+	// notify user that app wasn't found
+	appNotFoundError := fmt.Sprintf("applications.argoproj.io \"%s\" not found", task.App)
+	if strings.Contains(err.Error(), appNotFoundError) {
+		argo.handleAppNotFound(task, err)
+		return
+	}
+	// notify user that ArgoCD API isn't available
+	argoUnavailableError := "connect: connection refused"
+	if strings.Contains(err.Error(), argoUnavailableError) {
+		argo.handleArgoUnavailable(task, err)
+		return
+	}
+
+	// notify of unexpected error
+	argo.handleDeploymentFailed(task, err)
+	return
+}
+
 func (argo *Argo) handleAppNotFound(task m.Task, err error) {
 	rlog.Infof("[%s] Application %s does not exist.", task.Id, task.App)
-	reason := fmt.Sprintf("ArgoCD API Error: %s", err.Error())
+	reason := fmt.Sprintf(ArgoAPIErrorTemplate, err.Error())
 	argo.state.SetTaskStatus(task.Id, config.StatusAppNotFoundMessage, reason)
 }
 
 func (argo *Argo) handleArgoUnavailable(task m.Task, err error) {
 	rlog.Infof("[%s] ArgoCD is not available. Aborting.", task.Id)
-	reason := fmt.Sprintf("ArgoCD API Error: %s", err.Error())
+	reason := fmt.Sprintf(ArgoAPIErrorTemplate, err.Error())
 	argo.state.SetTaskStatus(task.Id, "aborted", reason)
 }
 
 func (argo *Argo) handleDeploymentFailed(task m.Task, err error) {
 	rlog.Infof("[%s] Deployment failed. Aborting with error: %s", task.Id, err)
 	failedDeployment.With(prometheus.Labels{"app": task.App}).Inc()
-	reason := fmt.Sprintf("ArgoCD API Error: %s", err.Error())
+	reason := fmt.Sprintf(ArgoAPIErrorTemplate, err.Error())
 	argo.state.SetTaskStatus(task.Id, config.StatusFailedMessage, reason)
 }
 

@@ -59,20 +59,22 @@ func TestArgo_GetTask(t *testing.T) {
 
 	time.Sleep(2 * time.Second)
 
+	const errorMessageTemplate = "got %s, expected %s"
+
 	if taskInfo, _ := testClient.state.GetTask(taskId); taskInfo.Status != "deployed" {
-		t.Errorf("got %s, expected %s", taskInfo.Status, "deployed")
+		t.Errorf(errorMessageTemplate, taskInfo.Status, "deployed")
 	}
 
 	if taskInfo, _ := testClient.state.GetTask(task2Id); taskInfo.Status != "failed" {
-		t.Errorf("got %s, expected %s", taskInfo.Status, "failed")
+		t.Errorf(errorMessageTemplate, taskInfo.Status, "failed")
 	}
 
 	if taskInfo, _ := testClient.state.GetTask(task3Id); taskInfo.Status != "app not found" {
-		t.Errorf("got %s, expected %s", taskInfo.Status, "app not found")
+		t.Errorf(errorMessageTemplate, taskInfo.Status, "app not found")
 	}
 
 	if taskInfo, _ := testClient.state.GetTask(task4Id); taskInfo.Status != "failed" {
-		t.Errorf("got %s, expected %s", taskInfo.Status, "failed")
+		t.Errorf(errorMessageTemplate, taskInfo.Status, "failed")
 	}
 }
 
