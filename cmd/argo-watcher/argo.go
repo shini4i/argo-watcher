@@ -67,7 +67,6 @@ func (argo *Argo) Init() {
 	}
 
 	rlog.Infof("Configured retry attempts per ArgoCD application status check: %d", retryAttempts)
-	rlog.Infof("Timeout for ArgoCD API calls set to: %s", argo.client.Timeout)
 
 	go argo.state.ProcessObsoleteTasks()
 
@@ -87,18 +86,18 @@ func (argo *Argo) auth() error {
 		Password: argo.Password,
 	})
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	jar, err := cookiejar.New(nil)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	url := fmt.Sprintf("%s/api/v1/session", argo.Url)
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	req.Header.Set("Content-Type", "application/json; charset=UTF-8")
@@ -115,6 +114,8 @@ func (argo *Argo) auth() error {
 		Transport: transport,
 		Timeout:   time.Duration(argoApiTimeout) * time.Second,
 	}
+
+	rlog.Infof("Timeout for ArgoCD API calls set to: %s", argo.client.Timeout)
 
 	err = retry.Do(
 		func() error {
@@ -188,8 +189,7 @@ func (argo *Argo) Check() (string, error) {
 	}(resp.Body)
 
 	var userInfo m.Userinfo
-	err = json.Unmarshal(body, &userInfo)
-	if err != nil {
+	if err = json.Unmarshal(body, &userInfo); err != nil {
 		panic(err)
 	}
 
@@ -198,7 +198,7 @@ func (argo *Argo) Check() (string, error) {
 		return "up", nil
 	} else {
 		argocdUnavailable.Set(1)
-		return "down", nil
+		return "down", errors.New("ArgoCD is not available")
 	}
 }
 
