@@ -25,12 +25,13 @@ import (
 )
 
 var (
-	argoTimeout, _          = strconv.Atoi(h.GetEnv("ARGO_TIMEOUT", "0"))
-	argoSyncRetryDelay      = 15 * time.Second
-	retryAttempts           = uint((argoTimeout / 15) + 1)
-	argoAuthRetryDelay      = 15 * time.Second
-	config                  = c.GetConfig()
-	argoTokenExpiredMessage = errors.New("invalid session: Token is expired")
+	argoTimeout, _        = strconv.Atoi(h.GetEnv("ARGO_TIMEOUT", "0"))
+	argoSyncRetryDelay    = 15 * time.Second
+	retryAttempts         = uint((argoTimeout / 15) + 1)
+	argoAuthRetryDelay    = 15 * time.Second
+	config                = c.GetConfig()
+	argoTokenExpiredError = errors.New("invalid session: Token is expired")
+	argoPlannedRetryError = errors.New("planned retry")
 )
 
 const (
@@ -43,7 +44,6 @@ const (
 
 const (
 	ArgoAPIErrorTemplate = "ArgoCD API Error: %s"
-	retryMessage         = "planned retry"
 )
 
 type Argo struct {
@@ -56,6 +56,8 @@ type Argo struct {
 }
 
 func (argo *Argo) Init() {
+	rlog.Debug("Initializing argo-watcher client...")
+
 	switch state := os.Getenv("STATE_TYPE"); state {
 	case "postgres":
 		argo.state = &s.PostgresState{}
@@ -305,20 +307,20 @@ func (argo *Argo) checkWithRetry(task m.Task) (int, error) {
 				if !h.Contains(app.Status.Summary.Images, expected) {
 					rlog.Debugf("[%s] %s is not available yet", task.Id, expected)
 					status = ArgoAppNotAvailable
-					return errors.New(retryMessage)
+					return argoPlannedRetryError
 				}
 			}
 
 			if app.Status.Sync.Status != "Synced" {
 				rlog.Debugf("[%s] %s is not synced yet", task.Id, task.App)
 				status = ArgoAppNotSynced
-				return errors.New(retryMessage)
+				return argoPlannedRetryError
 			}
 
 			if app.Status.Health.Status != "Healthy" {
 				rlog.Debugf("[%s] %s is not healthy yet", task.Id, task.App)
 				status = ArgoAppNotHealthy
-				return errors.New(retryMessage)
+				return argoPlannedRetryError
 			}
 
 			status = ArgoAppSuccess
@@ -329,7 +331,7 @@ func (argo *Argo) checkWithRetry(task m.Task) (int, error) {
 		retry.Attempts(retryAttempts),
 		retry.OnRetry(func(n uint, err error) {
 			rlog.Debugf("[%s] Retry reason: %s", task.Id, err.Error())
-			if err == argoTokenExpiredMessage {
+			if errors.Is(err, argoTokenExpiredError) {
 				rlog.Infof("[%s] Token expired. Refreshing token.", task.Id)
 				if err := argo.auth(); err != nil {
 					panic(err)
@@ -337,7 +339,7 @@ func (argo *Argo) checkWithRetry(task m.Task) (int, error) {
 			}
 		}),
 		retry.RetryIf(func(err error) bool {
-			return err.Error() == retryMessage
+			return errors.Is(err, argoPlannedRetryError) || errors.Is(err, argoTokenExpiredError)
 		}),
 		retry.LastErrorOnly(true),
 	)
