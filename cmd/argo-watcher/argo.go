@@ -43,6 +43,7 @@ const (
 
 const (
 	ArgoAPIErrorTemplate = "ArgoCD API Error: %s"
+	retryMessage         = "planned retry"
 )
 
 type Argo struct {
@@ -304,20 +305,20 @@ func (argo *Argo) checkWithRetry(task m.Task) (int, error) {
 				if !h.Contains(app.Status.Summary.Images, expected) {
 					rlog.Debugf("[%s] %s is not available yet", task.Id, expected)
 					status = ArgoAppNotAvailable
-					return errors.New("planned retry")
+					return errors.New(retryMessage)
 				}
 			}
 
 			if app.Status.Sync.Status != "Synced" {
 				rlog.Debugf("[%s] %s is not synced yet", task.Id, task.App)
 				status = ArgoAppNotSynced
-				return errors.New("planned retry")
+				return errors.New(retryMessage)
 			}
 
 			if app.Status.Health.Status != "Healthy" {
 				rlog.Debugf("[%s] %s is not healthy yet", task.Id, task.App)
 				status = ArgoAppNotHealthy
-				return errors.New("planned retry")
+				return errors.New(retryMessage)
 			}
 
 			status = ArgoAppSuccess
@@ -336,7 +337,7 @@ func (argo *Argo) checkWithRetry(task m.Task) (int, error) {
 			}
 		}),
 		retry.RetryIf(func(err error) bool {
-			return err.Error() == "planned retry"
+			return err.Error() == retryMessage
 		}),
 		retry.LastErrorOnly(true),
 	)
