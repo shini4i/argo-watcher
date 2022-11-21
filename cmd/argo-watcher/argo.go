@@ -331,7 +331,7 @@ func (argo *Argo) checkWithRetry(task m.Task) (int, error) {
 			if err == argoTokenExpiredMessage {
 				rlog.Infof("[%s] Token expired. Refreshing token.", task.Id)
 				if err := argo.auth(); err != nil {
-					rlog.Error(err)
+					panic(err)
 				}
 			}
 		}),
