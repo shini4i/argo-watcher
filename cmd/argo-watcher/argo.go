@@ -198,7 +198,7 @@ func (argo *Argo) Check() (string, error) {
 		return "up", nil
 	} else {
 		argocdUnavailable.Set(1)
-		return "down", errors.New("ArgoCD is not available")
+		return "down", errors.New(config.StatusArgoCDUnavailableMessage)
 	}
 }
 
