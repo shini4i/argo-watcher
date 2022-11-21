@@ -25,11 +25,12 @@ import (
 )
 
 var (
-	argoTimeout, _     = strconv.Atoi(h.GetEnv("ARGO_TIMEOUT", "0"))
-	argoSyncRetryDelay = 15 * time.Second
-	retryAttempts      = uint((argoTimeout / 15) + 1)
-	argoAuthRetryDelay = 15 * time.Second
-	config             = c.GetConfig()
+	argoTimeout, _          = strconv.Atoi(h.GetEnv("ARGO_TIMEOUT", "0"))
+	argoSyncRetryDelay      = 15 * time.Second
+	retryAttempts           = uint((argoTimeout / 15) + 1)
+	argoAuthRetryDelay      = 15 * time.Second
+	config                  = c.GetConfig()
+	argoTokenExpiredMessage = errors.New("invalid session: Token is expired")
 )
 
 const (
@@ -54,11 +55,6 @@ type Argo struct {
 }
 
 func (argo *Argo) Init() {
-	type argoAuth struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-	}
-
 	switch state := os.Getenv("STATE_TYPE"); state {
 	case "postgres":
 		argo.state = &s.PostgresState{}
@@ -71,8 +67,20 @@ func (argo *Argo) Init() {
 	}
 
 	rlog.Infof("Configured retry attempts per ArgoCD application status check: %d", retryAttempts)
+	rlog.Infof("Timeout for ArgoCD API calls set to: %s", argo.client.Timeout)
 
 	go argo.state.ProcessObsoleteTasks()
+
+	if err := argo.auth(); err != nil {
+		panic(err)
+	}
+}
+
+func (argo *Argo) auth() error {
+	type argoAuth struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
 
 	body, err := json.Marshal(argoAuth{
 		Username: argo.User,
@@ -107,7 +115,6 @@ func (argo *Argo) Init() {
 		Transport: transport,
 		Timeout:   time.Duration(argoApiTimeout) * time.Second,
 	}
-	rlog.Infof("Timeout for ArgoCD API calls set to: %s", argo.client.Timeout)
 
 	err = retry.Do(
 		func() error {
@@ -144,9 +151,7 @@ func (argo *Argo) Init() {
 		}),
 	)
 
-	if err != nil {
-		panic(err)
-	}
+	return err
 }
 
 func (argo *Argo) Check() (string, error) {
@@ -321,6 +326,15 @@ func (argo *Argo) checkWithRetry(task m.Task) (int, error) {
 		retry.DelayType(retry.FixedDelay),
 		retry.Delay(argoSyncRetryDelay),
 		retry.Attempts(retryAttempts),
+		retry.OnRetry(func(n uint, err error) {
+			rlog.Debugf("[%s] Retry error reason: %s", task.Id, err.Error())
+			if err == argoTokenExpiredMessage {
+				rlog.Infof("[%s] Token expired. Refreshing token.", task.Id)
+				if err := argo.auth(); err != nil {
+					rlog.Error(err)
+				}
+			}
+		}),
 		retry.RetryIf(func(err error) bool {
 			return err.Error() == "retry"
 		}),

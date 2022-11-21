@@ -228,8 +228,7 @@ func main() {
 	routerPort := h.GetEnv("PORT", "8080")
 
 	rlog.Debugf("Running on %s:%s", routerHost, routerPort)
-	err := router.Run(routerHost + ":" + routerPort)
-	if err != nil {
-		rlog.Critical(err)
+	if err := router.Run(routerHost + ":" + routerPort); err != nil {
+		panic(err)
 	}
 }
