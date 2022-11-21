@@ -30,7 +30,6 @@ var (
 	retryAttempts         = uint((argoTimeout / 15) + 1)
 	argoAuthRetryDelay    = 15 * time.Second
 	config                = c.GetConfig()
-	argoTokenExpiredError = errors.New("invalid session: Token is expired")
 	argoPlannedRetryError = errors.New("planned retry")
 )
 
@@ -43,7 +42,9 @@ const (
 )
 
 const (
-	ArgoAPIErrorTemplate = "ArgoCD API Error: %s"
+	ArgoAPIErrorTemplate         = "ArgoCD API Error: %s"
+	argoTokenExpiredErrorMessage = "invalid session: Token is expired"
+	argoUnavailableErrorMessage  = "connect: connection refused"
 )
 
 type Argo struct {
@@ -331,7 +332,7 @@ func (argo *Argo) checkWithRetry(task m.Task) (int, error) {
 		retry.Attempts(retryAttempts),
 		retry.OnRetry(func(n uint, err error) {
 			rlog.Debugf("[%s] Retry reason: %s", task.Id, err.Error())
-			if errors.Is(err, argoTokenExpiredError) {
+			if err.Error() == argoTokenExpiredErrorMessage {
 				rlog.Infof("[%s] Token expired. Refreshing token.", task.Id)
 				if err := argo.auth(); err != nil {
 					panic(err)
@@ -339,7 +340,7 @@ func (argo *Argo) checkWithRetry(task m.Task) (int, error) {
 			}
 		}),
 		retry.RetryIf(func(err error) bool {
-			return errors.Is(err, argoPlannedRetryError) || errors.Is(err, argoTokenExpiredError)
+			return errors.Is(err, argoPlannedRetryError) || err.Error() == argoTokenExpiredErrorMessage
 		}),
 		retry.LastErrorOnly(true),
 	)
@@ -429,8 +430,7 @@ func (argo *Argo) handleArgoAPIFailure(task m.Task, err error) {
 		return
 	}
 	// notify user that ArgoCD API isn't available
-	argoUnavailableError := "connect: connection refused"
-	if strings.Contains(err.Error(), argoUnavailableError) {
+	if strings.Contains(err.Error(), argoUnavailableErrorMessage) {
 		argo.handleArgoUnavailable(task, err)
 		return
 	}
