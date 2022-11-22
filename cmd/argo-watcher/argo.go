@@ -16,6 +16,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	s "github.com/shini4i/argo-watcher/cmd/argo-watcher/state"
@@ -54,10 +55,14 @@ type Argo struct {
 	Timeout  string
 	client   *http.Client
 	state    s.State
+	mutex    sync.Mutex
 }
 
 func (argo *Argo) Init() {
 	rlog.Debug("Initializing argo-watcher client...")
+
+	//// We will use it to make sure that there are no concurrent auth attempts
+	//argo.Mutex = &sync.Mutex{}
 
 	switch state := os.Getenv("STATE_TYPE"); state {
 	case "postgres":
@@ -80,6 +85,15 @@ func (argo *Argo) Init() {
 }
 
 func (argo *Argo) auth() error {
+	if argo.mutex.TryLock() {
+		rlog.Debugf("Trying to authenticate to ArgoCD...")
+		argo.mutex.Lock()
+	} else {
+		rlog.Debugf("Another auth attempt is in progress. Skipping...")
+		return nil
+	}
+	defer argo.mutex.Unlock()
+
 	type argoAuth struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
@@ -202,6 +216,12 @@ func (argo *Argo) Check() (string, error) {
 		return "up", nil
 	} else {
 		argocdUnavailable.Set(1)
+		go func() {
+			err := argo.auth()
+			if err != nil {
+				panic(err)
+			}
+		}()
 		return "down", errors.New(config.StatusArgoCDUnavailableMessage)
 	}
 }
