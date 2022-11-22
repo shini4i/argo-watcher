@@ -85,6 +85,8 @@ func (argo *Argo) Init() {
 
 func (argo *Argo) auth() error {
 	rlog.Debugf("Trying to authenticate to ArgoCD...")
+
+	// we want to avoid concurrent auth requests
 	argo.Lock()
 	defer argo.Unlock()
 
@@ -205,17 +207,24 @@ func (argo *Argo) Check() (string, error) {
 		panic(err)
 	}
 
-	if userInfo.LoggedIn && argo.state.Check() {
+	switch userInfo.LoggedIn {
+	case true:
 		argocdUnavailable.Set(0)
+	case false:
+		rlog.Infof("ArgoCD session has expired, trying to re-authenticate...")
+		if err = argo.auth(); err != nil {
+			panic(err)
+		}
+	default:
+		argocdUnavailable.Set(1)
+		return "down", errors.New(config.StatusArgoCDUnavailableMessage)
+	}
+
+	if argo.state.Check() {
 		return "up", nil
 	} else {
+		// This error is misleading, need to introduce a new one
 		argocdUnavailable.Set(1)
-		go func() {
-			err := argo.auth()
-			if err != nil {
-				panic(err)
-			}
-		}()
 		return "down", errors.New(config.StatusArgoCDUnavailableMessage)
 	}
 }
