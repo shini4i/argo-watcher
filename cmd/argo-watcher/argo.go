@@ -61,9 +61,6 @@ type Argo struct {
 func (argo *Argo) Init() {
 	rlog.Debug("Initializing argo-watcher client...")
 
-	//// We will use it to make sure that there are no concurrent auth attempts
-	//argo.Mutex = &sync.Mutex{}
-
 	switch state := os.Getenv("STATE_TYPE"); state {
 	case "postgres":
 		argo.state = &s.PostgresState{}
