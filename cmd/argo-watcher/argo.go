@@ -55,11 +55,13 @@ type Argo struct {
 	Timeout  string
 	client   *http.Client
 	state    s.State
-	mutex    sync.Mutex
+	*sync.Mutex
 }
 
 func (argo *Argo) Init() {
 	rlog.Debug("Initializing argo-watcher client...")
+
+	argo.Mutex = new(sync.Mutex)
 
 	switch state := os.Getenv("STATE_TYPE"); state {
 	case "postgres":
@@ -82,14 +84,9 @@ func (argo *Argo) Init() {
 }
 
 func (argo *Argo) auth() error {
-	if argo.mutex.TryLock() {
-		rlog.Debugf("Trying to authenticate to ArgoCD...")
-		argo.mutex.Lock()
-	} else {
-		rlog.Debugf("Another auth attempt is in progress. Skipping...")
-		return nil
-	}
-	defer argo.mutex.Unlock()
+	rlog.Debugf("Trying to authenticate to ArgoCD...")
+	argo.Lock()
+	defer argo.Unlock()
 
 	type argoAuth struct {
 		Username string `json:"username"`
