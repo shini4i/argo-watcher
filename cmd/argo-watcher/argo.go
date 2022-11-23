@@ -134,7 +134,7 @@ func (argo *Argo) auth() error {
 		Timeout:   time.Duration(argoApiTimeout) * time.Second,
 	}
 
-	rlog.Infof("Timeout for ArgoCD API calls set to: %s", argo.client.Timeout)
+	rlog.Debugf("Timeout for ArgoCD API calls set to: %s", argo.client.Timeout)
 
 	err = retry.Do(
 		func() error {
