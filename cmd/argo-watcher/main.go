@@ -219,7 +219,6 @@ func main() {
 
 	router := setupRouter()
 
-	rlog.Debug("Initializing argo-watcher client...")
 	go client.Init()
 
 	prometheusRegisterMetrics()
@@ -227,9 +226,10 @@ func main() {
 	routerHost := h.GetEnv("HOST", "0.0.0.0")
 	routerPort := h.GetEnv("PORT", "8080")
 
-	rlog.Debugf("Running on %s:%s", routerHost, routerPort)
-	err := router.Run(routerHost + ":" + routerPort)
-	if err != nil {
-		rlog.Critical(err)
+	routerBind := fmt.Sprintf("%s:%s", routerHost, routerPort)
+
+	rlog.Debugf("Listening on %s", routerBind)
+	if err := router.Run(routerBind); err != nil {
+		panic(err)
 	}
 }

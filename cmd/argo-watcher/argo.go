@@ -16,6 +16,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	s "github.com/shini4i/argo-watcher/cmd/argo-watcher/state"
@@ -25,11 +26,13 @@ import (
 )
 
 var (
-	argoTimeout, _     = strconv.Atoi(h.GetEnv("ARGO_TIMEOUT", "0"))
-	argoSyncRetryDelay = 15 * time.Second
-	retryAttempts      = uint((argoTimeout / 15) + 1)
-	argoAuthRetryDelay = 15 * time.Second
-	config             = c.GetConfig()
+	argoTimeout, _          = strconv.Atoi(h.GetEnv("ARGO_TIMEOUT", "0"))
+	argoSyncRetryDelay      = 15 * time.Second
+	retryAttempts           = uint((argoTimeout / 15) + 1)
+	argoAuthRetryDelay      = 15 * time.Second
+	config                  = c.GetConfig()
+	argoPlannedRetryError   = errors.New("planned retry")
+	argoAuthInProgressError = errors.New("another auth request is in progress")
 )
 
 const (
@@ -41,7 +44,9 @@ const (
 )
 
 const (
-	ArgoAPIErrorTemplate = "ArgoCD API Error: %s"
+	ArgoAPIErrorTemplate         = "ArgoCD API Error: %s"
+	argoTokenExpiredErrorMessage = "invalid session: Token is expired"
+	argoUnavailableErrorMessage  = "connect: connection refused"
 )
 
 type Argo struct {
@@ -51,13 +56,13 @@ type Argo struct {
 	Timeout  string
 	client   *http.Client
 	state    s.State
+	*sync.Mutex
 }
 
 func (argo *Argo) Init() {
-	type argoAuth struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-	}
+	rlog.Debug("Initializing argo-watcher client...")
+
+	argo.Mutex = new(sync.Mutex)
 
 	switch state := os.Getenv("STATE_TYPE"); state {
 	case "postgres":
@@ -70,27 +75,48 @@ func (argo *Argo) Init() {
 		os.Exit(1)
 	}
 
-	rlog.Infof("Configured retry attempts per ArgoCD application status check: %d", retryAttempts)
+	rlog.Debugf("Configured retry attempts per ArgoCD application status check: %d", retryAttempts)
 
 	go argo.state.ProcessObsoleteTasks()
+
+	if err := argo.auth(); err != nil && !errors.Is(err, argoAuthInProgressError) {
+		panic(err)
+	}
+}
+
+func (argo *Argo) auth() error {
+	// we want to avoid concurrent auth requests
+	if !argo.TryLock() {
+		rlog.Debugf("Another auth request is in progress, skipping...")
+		// this value needs to be adjusted in the future
+		time.Sleep(argoAuthRetryDelay * 2)
+		return argoAuthInProgressError
+	}
+	rlog.Debugf("Trying to authenticate to ArgoCD...")
+	defer argo.Unlock()
+
+	type argoAuth struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
 
 	body, err := json.Marshal(argoAuth{
 		Username: argo.User,
 		Password: argo.Password,
 	})
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	jar, err := cookiejar.New(nil)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	url := fmt.Sprintf("%s/api/v1/session", argo.Url)
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	req.Header.Set("Content-Type", "application/json; charset=UTF-8")
@@ -107,7 +133,8 @@ func (argo *Argo) Init() {
 		Transport: transport,
 		Timeout:   time.Duration(argoApiTimeout) * time.Second,
 	}
-	rlog.Infof("Timeout for ArgoCD API calls set to: %s", argo.client.Timeout)
+
+	rlog.Debugf("Timeout for ArgoCD API calls set to: %s", argo.client.Timeout)
 
 	err = retry.Do(
 		func() error {
@@ -144,9 +171,7 @@ func (argo *Argo) Init() {
 		}),
 	)
 
-	if err != nil {
-		panic(err)
-	}
+	return err
 }
 
 func (argo *Argo) Check() (string, error) {
@@ -183,17 +208,29 @@ func (argo *Argo) Check() (string, error) {
 	}(resp.Body)
 
 	var userInfo m.Userinfo
-	err = json.Unmarshal(body, &userInfo)
-	if err != nil {
+	if err = json.Unmarshal(body, &userInfo); err != nil {
 		panic(err)
 	}
 
-	if userInfo.LoggedIn && argo.state.Check() {
+	switch userInfo.LoggedIn {
+	case true:
 		argocdUnavailable.Set(0)
+	case false:
+		rlog.Infof("ArgoCD session has expired, trying to re-authenticate...")
+		if err := argo.auth(); err != nil && !errors.Is(err, argoAuthInProgressError) {
+			panic(err)
+		}
+	default:
+		argocdUnavailable.Set(1)
+		return "down", errors.New(config.StatusArgoCDUnavailableMessage)
+	}
+
+	if argo.state.Check() {
 		return "up", nil
 	} else {
+		// This error is misleading, need to introduce a new one
 		argocdUnavailable.Set(1)
-		return "down", nil
+		return "down", errors.New(config.StatusArgoCDUnavailableMessage)
 	}
 }
 
@@ -299,20 +336,20 @@ func (argo *Argo) checkWithRetry(task m.Task) (int, error) {
 				if !h.Contains(app.Status.Summary.Images, expected) {
 					rlog.Debugf("[%s] %s is not available yet", task.Id, expected)
 					status = ArgoAppNotAvailable
-					return errors.New("retry")
+					return argoPlannedRetryError
 				}
 			}
 
 			if app.Status.Sync.Status != "Synced" {
 				rlog.Debugf("[%s] %s is not synced yet", task.Id, task.App)
 				status = ArgoAppNotSynced
-				return errors.New("retry")
+				return argoPlannedRetryError
 			}
 
 			if app.Status.Health.Status != "Healthy" {
 				rlog.Debugf("[%s] %s is not healthy yet", task.Id, task.App)
 				status = ArgoAppNotHealthy
-				return errors.New("retry")
+				return argoPlannedRetryError
 			}
 
 			status = ArgoAppSuccess
@@ -321,8 +358,17 @@ func (argo *Argo) checkWithRetry(task m.Task) (int, error) {
 		retry.DelayType(retry.FixedDelay),
 		retry.Delay(argoSyncRetryDelay),
 		retry.Attempts(retryAttempts),
+		retry.OnRetry(func(n uint, err error) {
+			rlog.Debugf("[%s] Retry reason: %s", task.Id, err.Error())
+			if err.Error() == argoTokenExpiredErrorMessage {
+				rlog.Infof("[%s] Token expired. Refreshing token.", task.Id)
+				if err := argo.auth(); err != nil && !errors.Is(err, argoAuthInProgressError) {
+					panic(err)
+				}
+			}
+		}),
 		retry.RetryIf(func(err error) bool {
-			return err.Error() == "retry"
+			return errors.Is(err, argoPlannedRetryError) || err.Error() == argoTokenExpiredErrorMessage
 		}),
 		retry.LastErrorOnly(true),
 	)
@@ -412,8 +458,7 @@ func (argo *Argo) handleArgoAPIFailure(task m.Task, err error) {
 		return
 	}
 	// notify user that ArgoCD API isn't available
-	argoUnavailableError := "connect: connection refused"
-	if strings.Contains(err.Error(), argoUnavailableError) {
+	if strings.Contains(err.Error(), argoUnavailableErrorMessage) {
 		argo.handleArgoUnavailable(task, err)
 		return
 	}
