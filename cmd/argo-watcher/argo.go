@@ -26,12 +26,13 @@ import (
 )
 
 var (
-	argoTimeout, _        = strconv.Atoi(h.GetEnv("ARGO_TIMEOUT", "0"))
-	argoSyncRetryDelay    = 15 * time.Second
-	retryAttempts         = uint((argoTimeout / 15) + 1)
-	argoAuthRetryDelay    = 15 * time.Second
-	config                = c.GetConfig()
-	argoPlannedRetryError = errors.New("planned retry")
+	argoTimeout, _          = strconv.Atoi(h.GetEnv("ARGO_TIMEOUT", "0"))
+	argoSyncRetryDelay      = 15 * time.Second
+	retryAttempts           = uint((argoTimeout / 15) + 1)
+	argoAuthRetryDelay      = 15 * time.Second
+	config                  = c.GetConfig()
+	argoPlannedRetryError   = errors.New("planned retry")
+	argoAuthInProgressError = errors.New("another auth request is in progress")
 )
 
 const (
@@ -74,20 +75,24 @@ func (argo *Argo) Init() {
 		os.Exit(1)
 	}
 
-	rlog.Infof("Configured retry attempts per ArgoCD application status check: %d", retryAttempts)
+	rlog.Debugf("Configured retry attempts per ArgoCD application status check: %d", retryAttempts)
 
 	go argo.state.ProcessObsoleteTasks()
 
-	if err := argo.auth(); err != nil {
+	if err := argo.auth(); err != nil && !errors.Is(err, argoAuthInProgressError) {
 		panic(err)
 	}
 }
 
 func (argo *Argo) auth() error {
-	rlog.Debugf("Trying to authenticate to ArgoCD...")
-
 	// we want to avoid concurrent auth requests
-	argo.Lock()
+	if !argo.TryLock() {
+		rlog.Debugf("Another auth request is in progress, skipping...")
+		// this value needs to be adjusted in the future
+		time.Sleep(argoAuthRetryDelay)
+		return argoAuthInProgressError
+	}
+	rlog.Debugf("Trying to authenticate to ArgoCD...")
 	defer argo.Unlock()
 
 	type argoAuth struct {
@@ -212,7 +217,7 @@ func (argo *Argo) Check() (string, error) {
 		argocdUnavailable.Set(0)
 	case false:
 		rlog.Infof("ArgoCD session has expired, trying to re-authenticate...")
-		if err = argo.auth(); err != nil {
+		if err := argo.auth(); err != nil && !errors.Is(err, argoAuthInProgressError) {
 			panic(err)
 		}
 	default:
@@ -357,7 +362,7 @@ func (argo *Argo) checkWithRetry(task m.Task) (int, error) {
 			rlog.Debugf("[%s] Retry reason: %s", task.Id, err.Error())
 			if err.Error() == argoTokenExpiredErrorMessage {
 				rlog.Infof("[%s] Token expired. Refreshing token.", task.Id)
-				if err := argo.auth(); err != nil {
+				if err := argo.auth(); err != nil && !errors.Is(err, argoAuthInProgressError) {
 					panic(err)
 				}
 			}
