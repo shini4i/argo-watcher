@@ -89,7 +89,7 @@ func (argo *Argo) auth() error {
 	if !argo.TryLock() {
 		rlog.Debugf("Another auth request is in progress, skipping...")
 		// this value needs to be adjusted in the future
-		time.Sleep(argoAuthRetryDelay)
+		time.Sleep(argoAuthRetryDelay * 2)
 		return argoAuthInProgressError
 	}
 	rlog.Debugf("Trying to authenticate to ArgoCD...")
