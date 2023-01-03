@@ -218,12 +218,10 @@ func main() {
 
 	router := setupRouter()
 
-	go func() {
-		err := client.Init()
-		if err != nil {
-			panic(err)
-		}
-	}()
+	err := client.Init()
+	if err != nil {
+		panic(err)
+	}
 
 	prometheusRegisterMetrics()
 

@@ -17,7 +17,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	s "github.com/shini4i/argo-watcher/cmd/argo-watcher/state"
@@ -43,9 +42,8 @@ const (
 )
 
 const (
-	ArgoAPIErrorTemplate         = "ArgoCD API Error: %s"
-	argoTokenExpiredErrorMessage = "invalid session: Token is expired"
-	argoUnavailableErrorMessage  = "connect: connection refused"
+	ArgoAPIErrorTemplate        = "ArgoCD API Error: %s"
+	argoUnavailableErrorMessage = "connect: connection refused"
 )
 
 type Argo struct {
@@ -54,13 +52,10 @@ type Argo struct {
 	Timeout string
 	client  *http.Client
 	state   s.State
-	*sync.Mutex
 }
 
 func (argo *Argo) Init() error {
 	rlog.Debug("Initializing argo-watcher client...")
-
-	argo.Mutex = new(sync.Mutex)
 
 	switch state := os.Getenv("STATE_TYPE"); state {
 	case "postgres":
