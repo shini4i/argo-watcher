@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/cookiejar"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -26,13 +27,11 @@ import (
 )
 
 var (
-	argoTimeout, _          = strconv.Atoi(h.GetEnv("ARGO_TIMEOUT", "0"))
-	argoSyncRetryDelay      = 15 * time.Second
-	retryAttempts           = uint((argoTimeout / 15) + 1)
-	argoAuthRetryDelay      = 15 * time.Second
-	config                  = c.GetConfig()
-	argoPlannedRetryError   = errors.New("planned retry")
-	argoAuthInProgressError = errors.New("another auth request is in progress")
+	argoTimeout, _        = strconv.Atoi(h.GetEnv("ARGO_TIMEOUT", "0"))
+	argoSyncRetryDelay    = 15 * time.Second
+	retryAttempts         = uint((argoTimeout / 15) + 1)
+	config                = c.GetConfig()
+	argoPlannedRetryError = errors.New("planned retry")
 )
 
 const (
@@ -50,16 +49,15 @@ const (
 )
 
 type Argo struct {
-	Url      string
-	User     string
-	Password string
-	Timeout  string
-	client   *http.Client
-	state    s.State
+	Url     string
+	Token   string
+	Timeout string
+	client  *http.Client
+	state   s.State
 	*sync.Mutex
 }
 
-func (argo *Argo) Init() {
+func (argo *Argo) Init() error {
 	rlog.Debug("Initializing argo-watcher client...")
 
 	argo.Mutex = new(sync.Mutex)
@@ -79,33 +77,10 @@ func (argo *Argo) Init() {
 
 	go argo.state.ProcessObsoleteTasks()
 
-	if err := argo.auth(); err != nil && !errors.Is(err, argoAuthInProgressError) {
-		panic(err)
-	}
-}
+	skipTlsVerify, _ := strconv.ParseBool(h.GetEnv("SKIP_TLS_VERIFY", "false"))
 
-func (argo *Argo) auth() error {
-	// we want to avoid concurrent auth requests
-	if !argo.TryLock() {
-		rlog.Debugf("Another auth request is in progress, skipping...")
-		// this value needs to be adjusted in the future
-		time.Sleep(argoAuthRetryDelay * 2)
-		return argoAuthInProgressError
-	}
-	rlog.Debugf("Trying to authenticate to ArgoCD...")
-	defer argo.Unlock()
-
-	type argoAuth struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-	}
-
-	body, err := json.Marshal(argoAuth{
-		Username: argo.User,
-		Password: argo.Password,
-	})
-	if err != nil {
-		return err
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: skipTlsVerify},
 	}
 
 	jar, err := cookiejar.New(nil)
@@ -113,65 +88,28 @@ func (argo *Argo) auth() error {
 		return err
 	}
 
-	url := fmt.Sprintf("%s/api/v1/session", argo.Url)
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+	cookie := &http.Cookie{
+		Name:  "argocd.token",
+		Value: argo.Token,
+	}
+
+	argoUrl, err := url.Parse(argo.Url)
 	if err != nil {
 		return err
 	}
 
-	req.Header.Set("Content-Type", "application/json; charset=UTF-8")
-
-	skipTlsVerify, _ := strconv.ParseBool(h.GetEnv("SKIP_TLS_VERIFY", "false"))
-
-	transport := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: skipTlsVerify},
-	}
+	jar.SetCookies(argoUrl, []*http.Cookie{cookie})
 
 	argoApiTimeout, _ := strconv.Atoi(argo.Timeout)
 	argo.client = &http.Client{
-		Jar:       jar,
 		Transport: transport,
+		Jar:       jar,
 		Timeout:   time.Duration(argoApiTimeout) * time.Second,
 	}
 
 	rlog.Debugf("Timeout for ArgoCD API calls set to: %s", argo.client.Timeout)
 
-	err = retry.Do(
-		func() error {
-			resp, err := argo.client.Do(req)
-			if err != nil {
-				argocdUnavailable.Set(1)
-				return errors.New(fmt.Sprintf("Couldn't establish connection to ArgoCD, got the following error: %s", err))
-			}
-
-			body, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return err
-			}
-
-			defer func(Body io.ReadCloser) {
-				err := Body.Close()
-				if err != nil {
-					panic(err)
-				}
-			}(resp.Body)
-
-			if resp.StatusCode != 200 {
-				return errors.New(fmt.Sprintf("ArgoCD authentication error: %s", bytes.NewBuffer(body).String()))
-			}
-
-			rlog.Infof("Authenticated into ArgoCD API")
-			return nil
-		},
-		retry.Attempts(0),
-		retry.Delay(argoAuthRetryDelay),
-		retry.OnRetry(func(n uint, err error) {
-			rlog.Error(err)
-			rlog.Infof("Retrying ArgoCD authentication attempt in %s", argoAuthRetryDelay.String())
-		}),
-	)
-
-	return err
+	return nil
 }
 
 func (argo *Argo) Check() (string, error) {
@@ -180,8 +118,8 @@ func (argo *Argo) Check() (string, error) {
 		return "", errors.New("argo-watcher is not initialized yet")
 	}
 
-	url := fmt.Sprintf("%s/api/v1/session/userinfo", argo.Url)
-	req, err := http.NewRequest("GET", url, nil)
+	apiUrl := fmt.Sprintf("%s/api/v1/session/userinfo", argo.Url)
+	req, err := http.NewRequest("GET", apiUrl, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -212,20 +150,8 @@ func (argo *Argo) Check() (string, error) {
 		panic(err)
 	}
 
-	switch userInfo.LoggedIn {
-	case true:
+	if argo.state.Check() && userInfo.LoggedIn {
 		argocdUnavailable.Set(0)
-	case false:
-		rlog.Infof("ArgoCD session has expired, trying to re-authenticate...")
-		if err := argo.auth(); err != nil && !errors.Is(err, argoAuthInProgressError) {
-			panic(err)
-		}
-	default:
-		argocdUnavailable.Set(1)
-		return "down", errors.New(config.StatusArgoCDUnavailableMessage)
-	}
-
-	if argo.state.Check() {
 		return "up", nil
 	} else {
 		// This error is misleading, need to introduce a new one
@@ -271,8 +197,8 @@ func (argo *Argo) GetTasks(startTime float64, endTime float64, app string) m.Tas
 }
 
 func (argo *Argo) checkAppStatus(app string) (*m.Application, error) {
-	url := fmt.Sprintf("%s/api/v1/applications/%s", argo.Url, app)
-	req, err := http.NewRequest("GET", url, nil)
+	apiUrl := fmt.Sprintf("%s/api/v1/applications/%s", argo.Url, app)
+	req, err := http.NewRequest("GET", apiUrl, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -358,17 +284,8 @@ func (argo *Argo) checkWithRetry(task m.Task) (int, error) {
 		retry.DelayType(retry.FixedDelay),
 		retry.Delay(argoSyncRetryDelay),
 		retry.Attempts(retryAttempts),
-		retry.OnRetry(func(n uint, err error) {
-			rlog.Debugf("[%s] Retry reason: %s", task.Id, err.Error())
-			if err.Error() == argoTokenExpiredErrorMessage {
-				rlog.Infof("[%s] Token expired. Refreshing token.", task.Id)
-				if err := argo.auth(); err != nil && !errors.Is(err, argoAuthInProgressError) {
-					panic(err)
-				}
-			}
-		}),
 		retry.RetryIf(func(err error) bool {
-			return errors.Is(err, argoPlannedRetryError) || err.Error() == argoTokenExpiredErrorMessage
+			return errors.Is(err, argoPlannedRetryError)
 		}),
 		retry.LastErrorOnly(true),
 	)

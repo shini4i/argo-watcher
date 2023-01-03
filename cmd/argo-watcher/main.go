@@ -23,10 +23,9 @@ var version = "local"
 
 var (
 	client = Argo{
-		User:     os.Getenv("ARGO_USER"),
-		Password: os.Getenv("ARGO_PASSWORD"),
-		Url:      os.Getenv("ARGO_URL"),
-		Timeout:  h.GetEnv("ARGO_API_TIMEOUT", "60"),
+		Url:     os.Getenv("ARGO_URL"),
+		Token:   os.Getenv("ARGO_TOKEN"),
+		Timeout: h.GetEnv("ARGO_API_TIMEOUT", "60"),
 	}
 )
 
@@ -219,7 +218,12 @@ func main() {
 
 	router := setupRouter()
 
-	go client.Init()
+	go func() {
+		err := client.Init()
+		if err != nil {
+			panic(err)
+		}
+	}()
 
 	prometheusRegisterMetrics()
 
