@@ -218,9 +218,9 @@ func main() {
 
 	router := setupRouter()
 
-	err := client.Init()
-	if err != nil {
-		panic(err)
+	if err := client.Init(); err != nil {
+		rlog.Errorf("Couldn't initialize the client. Got the following error: %s", err)
+		os.Exit(1)
 	}
 
 	prometheusRegisterMetrics()
