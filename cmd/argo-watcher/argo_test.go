@@ -16,10 +16,9 @@ var (
 
 var (
 	testClient = Argo{
-		Url:      "http://localhost:8081",
-		User:     "watcher",
-		Password: "test",
-		Timeout:  "10",
+		Url:     "http://localhost:8081",
+		Token:   "dummy",
+		Timeout: "10",
 	}
 	task = m.Task{
 		Created: float64(time.Now().Unix()),
@@ -41,7 +40,9 @@ func TestArgo_GetTask(t *testing.T) {
 	var task3 m.Task
 	var task4 m.Task
 
-	testClient.Init()
+	if err := testClient.Init(); err != nil {
+		t.Error(err)
+	}
 
 	taskId, _ = testClient.AddTask(task)
 
