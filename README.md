@@ -39,6 +39,13 @@ The workflow for deployment might be the following
 
 - Installation instructions and more information can be found in the [docs](docs/installation.md).
 - Development instructions can be found in the [docs](docs/development.md).
+- A short story about why this project was created can be found [here](https://medium.com/dyninno/a-journey-to-gitops-9aa445474eb6).
+
+<div align="center">
+<img src="https://raw.githubusercontent.com/shini4i/assets/main/src/argo-watcher/simplified_diagram.png" alt="Showcase" height="540" width="540">
+
+A simplified version of the workflow
+</div>
 
 ## Contributing
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
