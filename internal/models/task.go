@@ -38,6 +38,12 @@ type HealthStatus struct {
 
 type TaskStatus struct {
 	Id           string `json:"id,omitempty"`
+	Created      float64 `json:"created,omitempty"`
+	Updated      float64 `json:"updated,omitempty"`
+	App          string  `json:"app" binding:"required" example:"argo-watcher"`
+	Author       string  `json:"author" binding:"required" example:"John Doe"`
+	Project      string  `json:"project" binding:"required" example:"Demo"`
+	Images       []Image `json:"images" binding:"required"`
 	Status       string `json:"status"`
 	StatusReason string `json:"status_reason"`
 	Error        string `json:"error,omitempty"`

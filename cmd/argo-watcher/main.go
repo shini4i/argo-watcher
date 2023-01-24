@@ -2,6 +2,11 @@ package main
 
 import (
 	"fmt"
+	"net/http"
+	"os"
+	"strconv"
+	"time"
+
 	"github.com/gin-gonic/contrib/static"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
@@ -9,10 +14,6 @@ import (
 	"github.com/romana/rlog"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
-	"net/http"
-	"os"
-	"strconv"
-	"time"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/docs"
 	h "github.com/shini4i/argo-watcher/internal/helpers"
@@ -152,6 +153,12 @@ func getTaskStatus(c *gin.Context) {
 	} else {
 		c.JSON(http.StatusOK, m.TaskStatus{
 			Id:           task.Id,
+			Created: 	  task.Created,
+			Updated:      task.Updated,
+			App:          task.App,
+			Author:       task.Author,
+			Project:      task.Project,
+			Images:       task.Images,
 			Status:       task.Status,
 			StatusReason: task.StatusReason,
 		})
