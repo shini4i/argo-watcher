@@ -15,15 +15,28 @@ import { fetchTasks } from '../Services/Data';
 import Box from '@mui/material/Box';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
-import { Chip, Divider, Popover } from '@mui/material';
-import Link from '@mui/material/Link';
+import { Chip, Divider, Link, Popover } from '@mui/material';
 import { addMinutes, format } from 'date-fns';
 import Pagination from '@mui/material/Pagination';
-import InfoIcon from '@mui/icons-material/Info';
 import IconButton from '@mui/material/IconButton';
 import Typography from '@mui/material/Typography';
+import { Link as ReactLink } from 'react-router-dom';
+import LaunchIcon from '@mui/icons-material/Launch';
+import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 
-const chipColorByStatus = status => {
+export function ProjectDisplay({ project }) {
+  console.log(project);
+  if (project.indexOf('http') === 0) {
+    return (
+      <Link href={project}>
+        {project.replace(/^http(s)?:\/\//, '').replace(/\/+$/, '')}
+      </Link>
+    );
+  }
+  return <Typography variant={'body2'}>{project}</Typography>;
+}
+
+export const chipColorByStatus = status => {
   if (status === 'in progress') {
     return 'primary';
   }
@@ -36,6 +49,22 @@ const chipColorByStatus = status => {
   return undefined;
 };
 
+export function StatusReasonDisplay({ reason }) {
+  return (
+    <Typography
+      sx={{
+        p: 2,
+        width: '100%',
+        overflow: 'auto',
+        backgroundColor: 'neutral.light',
+      }}
+      component={'pre'}
+    >
+      {reason}
+    </Typography>
+  );
+}
+
 const taskDuration = (created, updated) => {
   if (!updated) {
     updated = Math.round(Date.now() / 1000);
@@ -44,7 +73,7 @@ const taskDuration = (created, updated) => {
   return relativeHumanDuration(seconds);
 };
 
-const formatDateTime = timestamp => {
+export const formatDateTime = timestamp => {
   let dateTime = new Date(timestamp * 1000);
   return format(
     addMinutes(dateTime, dateTime.getTimezoneOffset()),
@@ -188,19 +217,25 @@ function TasksTable({
           vertical: 'bottom',
           horizontal: 'left',
         }}
-        sx={{ minWidth: '300px', maxWidth: '500px' }}
+        PaperProps={{
+          elevation: 1,
+          square: true,
+        }}
+        sx={{ minWidth: '300px', maxWidth: '50%' }}
       >
-        <Typography
-          sx={{ p: 2, width: '100%', overflow: 'auto' }}
-          component={'pre'}
-        >
-          {statusReason}
-        </Typography>
+        <StatusReasonDisplay reason={statusReason} />
       </Popover>
       <TableContainer>
-        <Table sx={{ minWidth: 650 }} aria-label="simple table">
+        <Table sx={{ minWidth: 650 }}>
           <TableHead>
             <TableRow>
+              <TableCellSorted
+                sortField={sortField}
+                setSortField={setSortField}
+                field={'id'}
+              >
+                Id
+              </TableCellSorted>
               <TableCellSorted
                 sortField={sortField}
                 setSortField={setSortField}
@@ -258,17 +293,27 @@ function TasksTable({
                 key={task.id}
                 sx={{ '&:last-child td, &:last-child th': { border: 0 } }}
               >
+                <TableCell>
+                  <Typography
+                    to={`/task/${task.id}`}
+                    sx={{
+                      textDecoration: 'none',
+                      color: 'neutral.main',
+                      '&:hover': {
+                        textDecoration: 'underline',
+                      },
+                      display: 'flex',
+                    }}
+                    component={ReactLink}
+                    variant={'body2'}
+                  >
+                    <span>{task.id.substring(0, 8)}</span>
+                    <LaunchIcon fontSize="small" sx={{ marginLeft: '5px' }} />
+                  </Typography>
+                </TableCell>
                 <TableCell>{task.app}</TableCell>
                 <TableCell>
-                  {task.project.indexOf('http') === 0 ? (
-                    <Link href={task.project}>
-                      {task.project
-                        .replace(/^http(s)?:\/\//, '')
-                        .replace(/\/+$/, '')}
-                    </Link>
-                  ) : (
-                    task.project
-                  )}
+                  <ProjectDisplay project={task.project} />
                 </TableCell>
                 <TableCell>{task.author}</TableCell>
                 <TableCell>
@@ -279,9 +324,10 @@ function TasksTable({
                   {task?.status_reason && (
                     <IconButton
                       size={'small'}
+                      sx={{ marginLeft: '5px' }}
                       onClick={e => handleClick(e, task.status_reason)}
                     >
-                      <InfoIcon fontSize={'small'} />
+                      <HelpOutlineIcon fontSize={'small'} />
                     </IconButton>
                   )}
                 </TableCell>
@@ -313,7 +359,7 @@ function TasksTable({
             {tasks.length === 0 && (
               <TableRow>
                 <TableCell colSpan={100} sx={{ textAlign: 'center' }}>
-                  No tasks were found within provided timeframe
+                  No tasks were found within provided time frame
                 </TableCell>
               </TableRow>
             )}
