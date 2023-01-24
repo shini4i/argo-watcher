@@ -37,6 +37,8 @@ The workflow for deployment might be the following
 
 ## Documentation
 
+> Starting from version `v0.3.2` ARGO_USER and ARGO_PASSWORD was replaced with ARGO_TOKEN
+
 - Installation instructions and more information can be found in the [docs](docs/installation.md).
 - Development instructions can be found in the [docs](docs/development.md).
 - A short story about why this project was created can be found [here](https://medium.com/dyninno/a-journey-to-gitops-9aa445474eb6).

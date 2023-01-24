@@ -15,8 +15,7 @@ argo:
   # p, role:watcher, applications, get, */*, allow
   # p, role:watcher, applications, sync, */*, allow
   # g, watcher, role:watcher
-  username: watcher
-  # secret with ARGO_PASSWORD key
+  # secret with ARGO_TOKEN key
   secretName: "argo-watcher"
 
 # credentials to access postgresql and store deployment monitoring tasks
@@ -49,8 +48,7 @@ Argo Watcher Server supports the following environment variables
 | STATE_TYPE        | Accepts "in-memory" (non-HA option) and "postgres" (HA option). | Yes       |
 | STATIC_FILES_PATH | Path to the UI website of Argo Watcher                          | Yes       |
 | ARGO_URL          | ArgoCD URL                                                      | Yes       |
-| ARGO_USER         | ArgoCD API User                                                 | Yes       |
-| ARGO_PASSWORD     | ArgoCD API Password                                             | Yes       |
+| ARGO_TOKEN        | ArgoCD API token                                                | Yes       |
 | ARGO_TIMEOUT      | Time that Argo Watcher is allowed to wait for deployment.       | No        |
 | ARGO_API_TIMEOUT  | Timeout for ArgoCD API calls. Defaults to 60 seconds            | No        |
 | SKIP_TLS_VERIFY   | Skip SSL verification during API calls                          | No        |
@@ -63,7 +61,7 @@ Argo Watcher Server supports the following environment variables
 | DB_PASSWORD       | Database password (Required for STATE_TYPE=postgres)            | No        |
 
 
-# Client Installation
+# Client setup
 
 The client is designed to run on Kubernetes runners. We have a [dedicated docker image](https://ghcr.io/shini4i/argo-watcher-client) for Argo Watcher Client CI/CD jobs.
 
