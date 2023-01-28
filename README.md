@@ -35,6 +35,13 @@ The workflow for deployment might be the following
 4. Throughout the deployment, ArgoWatcher monitors the current status of the Application
 5. The client returns the exit code based on the resulting task status, marking the pipeline as either successful or failed
 
+<details>
+<summary>A simplified diagram</summary>
+<div align="center">
+<img src="https://raw.githubusercontent.com/shini4i/assets/main/src/argo-watcher/simplified_diagram.png" alt="Showcase" height="540" width="540">
+</div>
+</details>
+
 ## Documentation
 
 > Starting from version `v0.3.2` ARGO_USER and ARGO_PASSWORD was replaced with ARGO_TOKEN
@@ -42,12 +49,6 @@ The workflow for deployment might be the following
 - Installation instructions and more information can be found in the [docs](docs/installation.md).
 - Development instructions can be found in the [docs](docs/development.md).
 - A short story about why this project was created can be found [here](https://medium.com/dyninno/a-journey-to-gitops-9aa445474eb6).
-
-<div align="center">
-<img src="https://raw.githubusercontent.com/shini4i/assets/main/src/argo-watcher/simplified_diagram.png" alt="Showcase" height="540" width="540">
-
-A simplified version of the workflow
-</div>
 
 ## Contributing
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
