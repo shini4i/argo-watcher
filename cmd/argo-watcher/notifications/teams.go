@@ -27,7 +27,7 @@ func (t *Teams) Send(app string, message string) (bool, error) {
 	}
 
 	if err := t.client.Send(t.WebhookUrl, msg); err != nil {
-		rlog.Printf("Failed to send message: %s", err.Error())
+		rlog.Warnf("Failed to send message: %s", err.Error())
 		return false, err
 	}
 
