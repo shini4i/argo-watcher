@@ -71,7 +71,7 @@ export default function TaskView() {
           </Grid>
           <Grid item xs={9}>
             <Typography variant="body2">
-              <span>{formatDateTime(task.updated)}</span>
+              <span>{task.updated ? formatDateTime(task.updated) : '---'}</span>
             </Typography>
           </Grid>
           <Grid item xs={3}>
@@ -90,23 +90,21 @@ export default function TaskView() {
             <Typography>Project</Typography>
           </Grid>
           <Grid item xs={9}>
-            <Typography variant="body2">
-              <ProjectDisplay project={task.project}></ProjectDisplay>
-            </Typography>
+            <ProjectDisplay project={task.project}></ProjectDisplay>
           </Grid>
           <Grid item xs={3}>
             <Typography>Images</Typography>
           </Grid>
           <Grid item xs={9}>
-            <Typography variant="body2">
-              {task.images.map((item, index) => {
-                return (
-                  <div key={index}>
+            {task.images.map((item, index) => {
+              return (
+                <div key={index}>
+                  <Typography variant="body2">
                     {item.image}:{item.tag}
-                  </div>
-                );
-              })}
-            </Typography>
+                  </Typography>
+                </div>
+              );
+            })}
           </Grid>
           <Grid item xs={3}>
             <Typography>Status</Typography>
@@ -118,9 +116,7 @@ export default function TaskView() {
             <Typography>Status details</Typography>
           </Grid>
           <Grid item xs={9}>
-            <Typography variant="body2">
-              <StatusReasonDisplay reason={task.status_reason} />
-            </Typography>
+            <StatusReasonDisplay reason={task.status_reason} />
           </Grid>
         </Grid>
       )}
