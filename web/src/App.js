@@ -6,11 +6,16 @@ import Layout from './Layout';
 import Page404 from './Page404';
 import { createTheme, ThemeProvider } from '@mui/material';
 import { ErrorProvider } from './ErrorContext';
+import TaskView from './Components/TaskView';
 
 const theme = createTheme({
   palette: {
     primary: {
       main: '#2E3B55',
+    },
+    neutral: {
+      main: 'gray',
+      light: '#F8F8F8',
     },
   },
 });
@@ -24,6 +29,7 @@ function App() {
             <Route path="/" element={<Layout />}>
               <Route index element={<RecentTasks />} />
               <Route path="/history" element={<HistoryTasks />} />
+              <Route path="/task/:id" element={<TaskView />} />
             </Route>
             <Route path="*" element={<Page404 />} />
           </Routes>
