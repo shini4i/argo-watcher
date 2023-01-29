@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	n "github.com/shini4i/argo-watcher/cmd/argo-watcher/notifications"
 	s "github.com/shini4i/argo-watcher/cmd/argo-watcher/state"
 	c "github.com/shini4i/argo-watcher/internal/config"
 	h "github.com/shini4i/argo-watcher/internal/helpers"
@@ -31,6 +32,7 @@ var (
 	retryAttempts         = uint((argoTimeout / 15) + 1)
 	config                = c.GetConfig()
 	argoPlannedRetryError = errors.New("planned retry")
+	notificationsEnabled  = false
 )
 
 const (
@@ -47,11 +49,12 @@ const (
 )
 
 type Argo struct {
-	Url     string
-	Token   string
-	Timeout string
-	client  *http.Client
-	state   s.State
+	Url          string
+	Token        string
+	Timeout      string
+	client       *http.Client
+	state        s.State
+	notification n.Notification
 }
 
 func (argo *Argo) Init() error {
@@ -66,6 +69,18 @@ func (argo *Argo) Init() error {
 	default:
 		rlog.Critical("Variable STATE_TYPE must be one of [\"postgres\", \"in-memory\"]. Aborting.")
 		os.Exit(1)
+	}
+
+	switch notificationType := os.Getenv("NOTIFICATIONS_TYPE"); notificationType {
+	case "slack":
+		argo.notification = &n.Slack{}
+		notificationsEnabled = true
+		argo.notification.Init("testing")
+		rlog.Debugf("Configured notifications type: %s", notificationType)
+	case "teams":
+		argo.notification = &n.Teams{}
+		notificationsEnabled = true
+		rlog.Debugf("Configured notifications type: %s", notificationType)
 	}
 
 	rlog.Debugf("Configured retry attempts per ArgoCD application status check: %d", retryAttempts)
@@ -291,6 +306,15 @@ func (argo *Argo) checkWithRetry(task m.Task) (int, error) {
 func (argo *Argo) waitForRollout(task m.Task) {
 	// continuously check for application status change
 	status, err := argo.checkWithRetry(task)
+	if err != nil {
+		if notificationsEnabled {
+			_, _ = argo.notification.Send(task, "failed")
+		}
+	} else {
+		if notificationsEnabled {
+			_, _ = argo.notification.Send(task, "success")
+		}
+	}
 
 	// application synced successfully
 	if status == ArgoAppSuccess {
