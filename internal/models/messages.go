@@ -1,14 +1,15 @@
 package models
 
 type SlackMessage struct {
-	Channel     string                    `json:"channel"`
-	Blocks      []SlackMessageBlock       `json:"blocks"`
-	Attachments *[]SlackMessageAttachment `json:"attachments,omitempty"`
+	Channel string              `json:"channel"`
+	Blocks  []SlackMessageBlock `json:"blocks"`
 }
 
 type SlackMessageBlock struct {
-	Type string                 `json:"type"`
-	Text *SlackMessageBlockText `json:"text,omitempty"`
+	Type     string                       `json:"type"`
+	Text     *SlackMessageBlockText       `json:"text,omitempty"`
+	Elements *[]SlackMessageBlockElements `json:"elements,omitempty"`
+	Fields   *[]SlackMessageSectionFields `json:"fields,omitempty"`
 }
 
 type SlackMessageBlockText struct {
@@ -16,7 +17,24 @@ type SlackMessageBlockText struct {
 	Text string `json:"text"`
 }
 
-type SlackMessageAttachment struct {
-	Color string `json:"color"`
-	Text  string `json:"text"`
+type SlackMessageSection struct {
+	Type   string                      `json:"type"`
+	Fields []SlackMessageSectionFields `json:"fields"`
+}
+
+type SlackMessageSectionFields struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+type SlackMessageBlockElements struct {
+	Type  string                        `json:"type"`
+	Text  SlackMessageBlockElementsText `json:"text"`
+	Value string                        `json:"value"`
+	Url   string                        `json:"url"`
+}
+
+type SlackMessageBlockElementsText struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
 }

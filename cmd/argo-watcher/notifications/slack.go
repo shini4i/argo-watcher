@@ -33,19 +33,6 @@ func (s *Slack) Init(channel string) {
 }
 
 func (s *Slack) Send(task m.Task, status string) (bool, error) {
-	messageBody := fmt.Sprintf(
-		"Application: *%s*\n"+
-			"Task ID: %s\n"+
-			"Status: *%s*",
-		task.App,
-		fmt.Sprintf("<%s|%s>", s.argoWatcherUrl+"/task/"+task.Id, task.Id[0:8]),
-		status)
-
-	messageColor := map[string]string{
-		"success": "good",
-		"failed":  "danger",
-	}
-
 	msg := m.SlackMessage{
 		Channel: s.Channel,
 		Blocks: []m.SlackMessageBlock{
@@ -56,11 +43,49 @@ func (s *Slack) Send(task m.Task, status string) (bool, error) {
 					Text: "Deployment Status Notification",
 				},
 			},
-		},
-		Attachments: &[]m.SlackMessageAttachment{
 			{
-				Color: messageColor[status],
-				Text:  messageBody,
+				Type: "section",
+				Fields: &[]m.SlackMessageSectionFields{
+					{
+						Type: "mrkdwn",
+						Text: fmt.Sprintf("*Application:*\n%s", task.App),
+					},
+					{
+						Type: "mrkdwn",
+						Text: fmt.Sprintf("*Version:*\n%s", "placeholder"),
+					},
+					{
+						Type: "mrkdwn",
+						Text: fmt.Sprintf("*Status:*\n%s", status),
+					},
+					{
+						Type: "mrkdwn",
+						Text: fmt.Sprintf("*Duration:*\n%s", "placeholder"),
+					},
+				},
+			},
+			{
+				Type: "actions",
+				Elements: &[]m.SlackMessageBlockElements{
+					{
+						Type: "button",
+						Text: m.SlackMessageBlockElementsText{
+							Type: "plain_text",
+							Text: "View Task",
+						},
+						Value: "view_task",
+						Url:   s.argoWatcherUrl + "/task/" + task.Id,
+					},
+					{
+						Type: "button",
+						Text: m.SlackMessageBlockElementsText{
+							Type: "plain_text",
+							Text: "View Application",
+						},
+						Value: "view_app",
+						Url:   s.argoWatcherUrl + "/app/" + task.App,
+					},
+				},
 			},
 		},
 	}
