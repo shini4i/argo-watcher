@@ -33,6 +33,15 @@ func (s *Slack) Init(channel string) {
 }
 
 func (s *Slack) Send(task m.Task, status string) (bool, error) {
+	// Making an educated guess here that we don't expect different tags for different images in the same task
+	// If you do, please open an issue and describe your use case
+	imageTag := task.Images[0].Tag
+
+	statusIcons := map[string]string{
+		"success": ":white_check_mark:",
+		"failed":  ":x:",
+	}
+
 	msg := m.SlackMessage{
 		Channel: s.Channel,
 		Blocks: []m.SlackMessageBlock{
@@ -48,19 +57,19 @@ func (s *Slack) Send(task m.Task, status string) (bool, error) {
 				Fields: &[]m.SlackMessageSectionFields{
 					{
 						Type: "mrkdwn",
-						Text: fmt.Sprintf("*Application:*\n%s", task.App),
+						Text: fmt.Sprintf("*Application:*\n%s", ":mega: "+task.App),
 					},
 					{
 						Type: "mrkdwn",
-						Text: fmt.Sprintf("*Version:*\n%s", "placeholder"),
+						Text: fmt.Sprintf("*Version:*\n%s", ":clap: "+imageTag),
 					},
 					{
 						Type: "mrkdwn",
-						Text: fmt.Sprintf("*Status:*\n%s", status),
+						Text: fmt.Sprintf("*Status:*\n%s", statusIcons[status]+" "+status),
 					},
 					{
 						Type: "mrkdwn",
-						Text: fmt.Sprintf("*Duration:*\n%s", "placeholder"),
+						Text: fmt.Sprintf("*Duration:*\n%s", ":clock1: placeholder"),
 					},
 				},
 			},
