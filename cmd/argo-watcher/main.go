@@ -224,9 +224,12 @@ func prometheusRegisterMetrics() {
 func main() {
 	logLevel, err := zerolog.ParseLevel(h.GetEnv("LOG_LEVEL", "info"))
 	if err != nil {
-		return
+		log.Warn().Msgf("Couldn't parse log level. Got the following error: %s", err)
+		logLevel = zerolog.InfoLevel
+	} else {
+		log.Debug().Msgf("Setting log level to %s", logLevel)
+		zerolog.SetGlobalLevel(logLevel)
 	}
-	zerolog.SetGlobalLevel(logLevel)
 
 	log.Info().Msg("Starting web server")
 
