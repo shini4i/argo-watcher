@@ -404,7 +404,7 @@ func (argo *Argo) handleDeploymentSuccess(task m.Task) {
 }
 
 func (argo *Argo) handleAppNotAvailable(task m.Task, err error) {
-	log.Warn().Str("id", task.Id).Msgf("[%s] Deployment failed. Application not available\n%s", err.Error())
+	log.Warn().Str("id", task.Id).Msgf("Deployment failed. Application not available\n%s", err.Error())
 	failedDeployment.With(prometheus.Labels{"app": task.App}).Inc()
 	reason := fmt.Sprintf("Application not available\n\n%s", err.Error())
 	argo.state.SetTaskStatus(task.Id, config.StatusFailedMessage, reason)
