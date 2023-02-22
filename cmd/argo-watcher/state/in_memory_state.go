@@ -3,7 +3,7 @@ package state
 import (
 	"errors"
 	"github.com/avast/retry-go/v4"
-	"github.com/romana/rlog"
+	"github.com/rs/zerolog/log"
 	"time"
 
 	h "github.com/shini4i/argo-watcher/internal/helpers"
@@ -15,7 +15,7 @@ type InMemoryState struct {
 }
 
 func (state *InMemoryState) Connect() {
-	rlog.Debug("InMemoryState does not connect to anything. Skipping.")
+	log.Debug().Msg("InMemoryState does not connect to anything. Skipping.")
 }
 
 func (state *InMemoryState) Add(task m.Task) {
@@ -88,7 +88,7 @@ func (state *InMemoryState) Check() bool {
 }
 
 func (state *InMemoryState) ProcessObsoleteTasks() {
-	rlog.Debug("Starting watching for obsolete tasks...")
+	log.Debug().Msg("Starting watching for obsolete tasks...")
 	err := retry.Do(
 		func() error {
 			for i := 0; i < len(state.tasks); i++ {
@@ -114,6 +114,6 @@ func (state *InMemoryState) ProcessObsoleteTasks() {
 	)
 
 	if err != nil {
-		rlog.Errorf("Couldn't process obsolete tasks. Got the following error: %s", err)
+		log.Error().Msgf("Couldn't process obsolete tasks. Got the following error: %s", err)
 	}
 }

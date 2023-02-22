@@ -9,7 +9,7 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/lib/pq"
-	"github.com/romana/rlog"
+	"github.com/rs/zerolog/log"
 	"os"
 	"time"
 
@@ -47,11 +47,11 @@ func (state *PostgresState) Connect() {
 		migrationsPath,
 		"postgres", driver)
 
-	rlog.Debug("Running database migrations...")
+	log.Debug().Msg("Running database migrations...")
 
 	switch err = migrations.Up(); err {
 	case migrate.ErrNoChange, nil:
-		rlog.Debug("Database schema is up to date.")
+		log.Debug().Msg("Database schema is up to date.")
 	default:
 		panic(err)
 	}
@@ -103,14 +103,14 @@ func (state *PostgresState) GetTasks(startTime float64, endTime float64, app str
 	}
 
 	if err != nil {
-		rlog.Error(err)
+		log.Error().Msg(err.Error())
 		return nil
 	}
 
 	defer func(rows *sql.Rows) {
 		err := rows.Close()
 		if err != nil {
-			rlog.Error(err)
+			log.Error().Msg(err.Error())
 		}
 	}(rows)
 
@@ -167,7 +167,7 @@ func (state *PostgresState) GetTask(id string) (*m.Task, error) {
 func (state *PostgresState) SetTaskStatus(id string, status string, reason string) {
 	_, err := state.db.Exec("UPDATE tasks SET status=$1, status_reason=$2, updated=$3 WHERE id=$4", status, reason, time.Now().UTC(), id)
 	if err != nil {
-		rlog.Error(err)
+		log.Error().Msg(err.Error())
 	}
 }
 
@@ -176,13 +176,13 @@ func (state *PostgresState) GetAppList() []string {
 
 	rows, err := state.db.Query("SELECT DISTINCT app FROM tasks")
 	if err != nil {
-		rlog.Error(err)
+		log.Error().Msg(err.Error())
 	}
 
 	defer func(rows *sql.Rows) {
 		err := rows.Close()
 		if err != nil {
-			rlog.Error(err)
+			log.Error().Msg(err.Error())
 		}
 	}(rows)
 
@@ -204,24 +204,24 @@ func (state *PostgresState) GetAppList() []string {
 func (state *PostgresState) Check() bool {
 	_, err := state.db.Exec("SELECT 1")
 	if err != nil {
-		rlog.Error(err)
+		log.Error().Msg(err.Error())
 		return false
 	}
 	return true
 }
 
 func (state *PostgresState) ProcessObsoleteTasks() {
-	rlog.Debug("Starting watching for obsolete tasks...")
+	log.Debug().Msg("Starting watching for obsolete tasks...")
 	err := retry.Do(
 		func() error {
 			_, err := state.db.Exec("DELETE FROM tasks WHERE status = 'app not found'")
 			if err != nil {
-				rlog.Error(err)
+				log.Error().Msg(err.Error())
 			}
 
 			_, err = state.db.Exec("UPDATE tasks SET status='aborted' WHERE status = 'in progress' AND created < now() - interval '1 hour'")
 			if err != nil {
-				rlog.Error(err)
+				log.Error().Msg(err.Error())
 			}
 
 			return errors.New("returning error to retry")
@@ -232,6 +232,6 @@ func (state *PostgresState) ProcessObsoleteTasks() {
 	)
 
 	if err != nil {
-		rlog.Errorf("Couldn't process obsolete tasks. Got the following error: %s", err)
+		log.Error().Msgf("Couldn't process obsolete tasks. Got the following error: %s", err)
 	}
 }

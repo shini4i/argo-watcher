@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"net/http"
 	"os"
 	"strconv"
@@ -11,7 +13,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/romana/rlog"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 
@@ -89,7 +90,7 @@ func addTask(c *gin.Context) {
 
 	err := c.ShouldBindJSON(&task)
 	if err != nil {
-		rlog.Errorf("Couldn't process new task. Got the following error: %s", err)
+		log.Error().Msgf("Couldn't process new task. Got the following error: %s", err)
 		c.JSON(http.StatusNotAcceptable, m.TaskStatus{
 			Status: "invalid payload",
 			Error:  err.Error(),
@@ -99,7 +100,7 @@ func addTask(c *gin.Context) {
 
 	id, err := client.AddTask(task)
 	if err != nil {
-		rlog.Errorf("Couldn't process new task. Got the following error: %s", err)
+		log.Error().Msgf("Couldn't process new task. Got the following error: %s", err)
 		c.JSON(http.StatusServiceUnavailable, m.TaskStatus{
 			Status: id,
 			Error:  err.Error(),
@@ -153,7 +154,7 @@ func getTaskStatus(c *gin.Context) {
 	} else {
 		c.JSON(http.StatusOK, m.TaskStatus{
 			Id:           task.Id,
-			Created: 	  task.Created,
+			Created:      task.Created,
 			Updated:      task.Updated,
 			App:          task.App,
 			Author:       task.Author,
@@ -214,19 +215,25 @@ func prometheusHandler() gin.HandlerFunc {
 }
 
 func prometheusRegisterMetrics() {
-	rlog.Debug("Registering prometheus metrics...")
+	log.Debug().Msg("Registering prometheus metrics...")
 	prometheus.MustRegister(failedDeployment)
 	prometheus.MustRegister(processedDeployments)
 	prometheus.MustRegister(argocdUnavailable)
 }
 
 func main() {
-	rlog.Info("Starting web server")
+	logLevel, err := zerolog.ParseLevel(h.GetEnv("LOG_LEVEL", "info"))
+	if err != nil {
+		return
+	}
+	zerolog.SetGlobalLevel(logLevel)
+
+	log.Info().Msg("Starting web server")
 
 	router := setupRouter()
 
 	if err := client.Init(); err != nil {
-		rlog.Errorf("Couldn't initialize the client. Got the following error: %s", err)
+		log.Error().Msgf("Couldn't initialize the client. Got the following error: %s", err)
 		os.Exit(1)
 	}
 
@@ -237,7 +244,7 @@ func main() {
 
 	routerBind := fmt.Sprintf("%s:%s", routerHost, routerPort)
 
-	rlog.Debugf("Listening on %s", routerBind)
+	log.Debug().Msgf("Listening on %s", routerBind)
 	if err := router.Run(routerBind); err != nil {
 		panic(err)
 	}
