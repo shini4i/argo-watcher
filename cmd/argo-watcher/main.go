@@ -227,8 +227,8 @@ func main() {
 		log.Warn().Msgf("Couldn't parse log level. Got the following error: %s", err)
 		logLevel = zerolog.InfoLevel
 	} else {
-		log.Debug().Msgf("Setting log level to %s", logLevel)
 		zerolog.SetGlobalLevel(logLevel)
+		log.Debug().Msgf("Setting log level to %s", logLevel)
 	}
 
 	log.Info().Msg("Starting web server")

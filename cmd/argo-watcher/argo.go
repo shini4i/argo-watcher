@@ -75,11 +75,11 @@ func (argo *Argo) Init() error {
 		argo.notification = &n.Slack{}
 		notificationsEnabled = true
 		argo.notification.Init("testing")
-		rlog.Debugf("Configured notifications type: %s", notificationType)
+		log.Debug().Msgf("Configured notifications type: %s", notificationType)
 	case "teams":
 		argo.notification = &n.Teams{}
 		notificationsEnabled = true
-		rlog.Debugf("Configured notifications type: %s", notificationType)
+		log.Debug().Msgf("Configured notifications type: %s", notificationType)
 	}
 
 	log.Debug().Msgf("Configured retry attempts per ArgoCD application status check: %d", retryAttempts)
