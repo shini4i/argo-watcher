@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/romana/rlog"
+	"github.com/rs/zerolog/log"
 	h "github.com/shini4i/argo-watcher/internal/helpers"
 	m "github.com/shini4i/argo-watcher/internal/models"
 	"net/http"
@@ -104,7 +104,7 @@ func (s *Slack) Send(task m.Task, status string) (bool, error) {
 		return false, err
 	}
 
-	rlog.Debugf("Sending the following payload: %s", string(body))
+	log.Debug().Msgf("Sending the following payload: %s", string(body))
 	req, err := http.NewRequest("POST", slackApiUrl, bytes.NewBuffer(body))
 	if err != nil {
 		return false, err
@@ -119,7 +119,7 @@ func (s *Slack) Send(task m.Task, status string) (bool, error) {
 	}
 
 	if resp.StatusCode != 200 {
-		rlog.Info(resp.StatusCode)
+		log.Warn().Int("status_code", resp.StatusCode).Msg("Slack API returned non-200 status code")
 		return false, fmt.Errorf("slack api returned status code %d", resp.StatusCode)
 	}
 	return true, nil

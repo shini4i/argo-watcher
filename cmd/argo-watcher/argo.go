@@ -70,15 +70,13 @@ func (argo *Argo) Init() error {
 		log.Fatal().Msg("Variable STATE_TYPE must be one of [\"postgres\", \"in-memory\"]. Aborting.")
 	}
 
+	// for now, we only support slack notifications, but we can easily add more
+	// in the future
 	switch notificationType := os.Getenv("NOTIFICATIONS_TYPE"); notificationType {
 	case "slack":
 		argo.notification = &n.Slack{}
 		notificationsEnabled = true
 		argo.notification.Init("testing")
-		log.Debug().Msgf("Configured notifications type: %s", notificationType)
-	case "teams":
-		argo.notification = &n.Teams{}
-		notificationsEnabled = true
 		log.Debug().Msgf("Configured notifications type: %s", notificationType)
 	}
 
