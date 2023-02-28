@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/gin-gonic/gin"
-	"github.com/romana/rlog"
+	"github.com/rs/zerolog/log"
 	"github.com/shini4i/argo-watcher/internal/helpers"
 	m "github.com/shini4i/argo-watcher/internal/models"
 	"net/http"
@@ -59,20 +59,20 @@ func mockReturnAppStatus(c *gin.Context) {
 	appStatus.Status.Summary.Images = []string{"app:v0.0.1", "nginx:1.21.6", "migrations:v0.0.1"}
 
 	if app == "app4" && requestsCount < 5 {
-		rlog.Infof("app4 requests count %d", requestsCount)
+		log.Info().Msgf("app4 requests count %d", requestsCount)
 		requestsCount++
 		if requestsCount < 2 {
 			appStatus.Status.Summary.Images = []string{"app:v0.0.1-rc1", "nginx:1.21.6", "migrations:v0.0.1"}
 		}
 		appStatus.Status.Health.Status = "UhHealthy"
-		rlog.Infof("app4 sync status is %s", appStatus.Status.Sync.Status)
-		rlog.Infof("app4 health status is %s", appStatus.Status.Health.Status)
+		log.Info().Msgf("app4 sync status is %s", appStatus.Status.Sync.Status)
+		log.Info().Msgf("app4 health status is %s", appStatus.Status.Health.Status)
 	} else if app == "app4" {
 		requestsCount = 0
 		appStatus.Status.Health.Status = "Healthy"
 		appStatus.Status.Sync.Status = "Synced"
-		rlog.Infof("app4 sync status is %s", appStatus.Status.Sync.Status)
-		rlog.Infof("app4 health status is %s", appStatus.Status.Health.Status)
+		log.Info().Msgf("app4 sync status is %s", appStatus.Status.Sync.Status)
+		log.Info().Msgf("app4 health status is %s", appStatus.Status.Health.Status)
 	} else {
 		appStatus.Status.Health.Status = "Healthy"
 	}
@@ -81,12 +81,12 @@ func mockReturnAppStatus(c *gin.Context) {
 }
 
 func main() {
-	rlog.Info("Starting mock web server")
+	log.Info().Msg("Starting mock web server")
 
 	router := setupRouter()
 
 	err := router.Run(":8081")
 	if err != nil {
-		rlog.Critical(err)
+		log.Error().Msg(err.Error())
 	}
 }
