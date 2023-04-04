@@ -46,19 +46,19 @@ const (
 )
 
 type Argo struct {
-	Url     		string
-	Token   		string
-	Timeout 		string
-	client  		*http.Client
-	state   		s.State
-	retryAttempts 	uint
+	Url           string
+	Token         string
+	Timeout       string
+	client        *http.Client
+	state         s.State
+	retryAttempts uint
 }
 
 func (argo *Argo) InitArgo(config *conf.Container) error {
 	log.Debug().Msg("Initializing argo-watcher client...")
 
 	// parse retry attempts
-	argoTimeout ,_ := strconv.Atoi(config.ArgoTimeout)
+	argoTimeout, _ := strconv.Atoi(config.ArgoTimeout)
 	argo.retryAttempts = uint((argoTimeout / 15) + 1)
 
 	switch state := config.StateType; state {

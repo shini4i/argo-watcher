@@ -66,7 +66,7 @@ type Env struct {
 
 func main() {
 	// initialize config
-	config, err := conf.InitConfig(); 
+	config, err := conf.InitConfig()
 	if err != nil {
 		log.Error().Msgf("Couldn't initialize config. Error: %s", err)
 		os.Exit(1)
@@ -82,7 +82,6 @@ func main() {
 	log.Debug().Msgf("Setting log level to %s", logLevel)
 	zerolog.SetGlobalLevel(logLevel)
 
-
 	// initialize argo client
 	client := Argo{
 		Url:     config.ArgoUrl,
@@ -96,7 +95,7 @@ func main() {
 	}
 
 	// create environment
-    env := &Env{ config: config, client: &client }
+	env := &Env{config: config, client: &client}
 
 	// setup prometheus metrics
 	prometheusRegisterMetrics()
