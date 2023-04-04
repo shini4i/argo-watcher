@@ -1,10 +1,12 @@
 package main
 
 import (
-	"github.com/shini4i/argo-watcher/internal/helpers"
-	m "github.com/shini4i/argo-watcher/internal/models"
 	"testing"
 	"time"
+
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/conf"
+	"github.com/shini4i/argo-watcher/internal/helpers"
+	m "github.com/shini4i/argo-watcher/internal/models"
 )
 
 var (
@@ -40,7 +42,8 @@ func TestArgo_GetTask(t *testing.T) {
 	var task3 m.Task
 	var task4 m.Task
 
-	if err := testClient.Init(); err != nil {
+	config := &conf.Container{StateType: "in-memory"}
+	if err := testClient.InitArgo(config); err != nil {
 		t.Error(err)
 	}
 

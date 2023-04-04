@@ -2,34 +2,19 @@ package main
 
 import (
 	"fmt"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 	"net/http"
 	"os"
-	"strconv"
-	"time"
 
-	"github.com/gin-gonic/contrib/static"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/conf"
+
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	swaggerFiles "github.com/swaggo/files"
-	ginSwagger "github.com/swaggo/gin-swagger"
-
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/docs"
-	h "github.com/shini4i/argo-watcher/internal/helpers"
-	m "github.com/shini4i/argo-watcher/internal/models"
 )
 
 var version = "local"
-
-var (
-	client = Argo{
-		Url:     os.Getenv("ARGO_URL"),
-		Token:   os.Getenv("ARGO_TOKEN"),
-		Timeout: h.GetEnv("ARGO_API_TIMEOUT", "60"),
-	}
-)
 
 var (
 	failedDeployment = prometheus.NewGaugeVec(prometheus.GaugeOpts{
@@ -46,136 +31,6 @@ var (
 	})
 )
 
-func setupRouter() *gin.Engine {
-	staticFilesPath := h.GetEnv("STATIC_FILES_PATH", "static")
-
-	docs.SwaggerInfo.Title = "Argo-Watcher API"
-	docs.SwaggerInfo.Version = version
-	docs.SwaggerInfo.Description = "A small tool that will help to improve deployment visibility"
-
-	gin.SetMode(gin.ReleaseMode)
-
-	router := gin.New()
-	router.Use(gin.Recovery())
-
-	router.Use(static.Serve("/", static.LocalFile(staticFilesPath, true)))
-	router.NoRoute(func(c *gin.Context) {
-		c.File(fmt.Sprintf("%s/index.html", staticFilesPath))
-	})
-	router.GET("/healthz", healthz)
-	router.GET("/metrics", prometheusHandler())
-	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
-
-	apiGroup := router.Group("/api/v1")
-	apiGroup.POST("/tasks", addTask)
-	apiGroup.GET("/tasks", getState)
-	apiGroup.GET("/tasks/:id", getTaskStatus)
-	apiGroup.GET("/apps", getApps)
-	apiGroup.GET("/version", getVersion)
-
-	return router
-}
-
-// addTask godoc
-// @Summary Add a new task
-// @Description Add a new task
-// @Tags backend
-// @Accept json
-// @Produce json
-// @Param task body m.Task true "Task"
-// @Success 200 {object} m.TaskStatus
-// @Router /api/v1/tasks [post]
-func addTask(c *gin.Context) {
-	var task m.Task
-
-	err := c.ShouldBindJSON(&task)
-	if err != nil {
-		log.Error().Msgf("Couldn't process new task. Got the following error: %s", err)
-		c.JSON(http.StatusNotAcceptable, m.TaskStatus{
-			Status: "invalid payload",
-			Error:  err.Error(),
-		})
-		return
-	}
-
-	id, err := client.AddTask(task)
-	if err != nil {
-		log.Error().Msgf("Couldn't process new task. Got the following error: %s", err)
-		c.JSON(http.StatusServiceUnavailable, m.TaskStatus{
-			Status: id,
-			Error:  err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusAccepted, m.TaskStatus{
-		Id:     id,
-		Status: "accepted",
-	})
-}
-
-// getState godoc
-// @Summary Get state content
-// @Description Get all tasks that match the provided parameters
-// @Tags backend, frontend
-// @Param app query string false "App name"
-// @Param from_timestamp query int true "From timestamp" default(1648390029)
-// @Param to_timestamp query int false "To timestamp"
-// @Success 200 {array} m.Task
-// @Router /api/v1/tasks [get]
-func getState(c *gin.Context) {
-	startTime, _ := strconv.ParseFloat(c.Query("from_timestamp"), 64)
-	endTime, _ := strconv.ParseFloat(c.Query("to_timestamp"), 64)
-	if endTime == 0 {
-		endTime = float64(time.Now().Unix())
-	}
-	app := c.Query("app")
-
-	c.JSON(http.StatusOK, client.GetTasks(startTime, endTime, app))
-}
-
-// getTaskStatus godoc
-// @Summary Get the status of a task
-// @Description Get the status of a task
-// @Param id path string true "Task id" default(9185fae0-add5-11ec-87f3-56b185c552fa)
-// @Tags backend
-// @Produce json
-// @Success 200 {object} m.TaskStatus
-// @Router /api/v1/tasks/{id} [get]
-func getTaskStatus(c *gin.Context) {
-	id := c.Param("id")
-	task, err := client.state.GetTask(id)
-
-	if err != nil {
-		c.JSON(http.StatusOK, m.TaskStatus{
-			Id:    id,
-			Error: err.Error(),
-		})
-	} else {
-		c.JSON(http.StatusOK, m.TaskStatus{
-			Id:           task.Id,
-			Created:      task.Created,
-			Updated:      task.Updated,
-			App:          task.App,
-			Author:       task.Author,
-			Project:      task.Project,
-			Images:       task.Images,
-			Status:       task.Status,
-			StatusReason: task.StatusReason,
-		})
-	}
-}
-
-// getApps godoc
-// @Summary Get the list of apps
-// @Description Get the list of apps
-// @Tags frontend
-// @Success 200 {array} string
-// @Router /api/v1/apps [get]
-func getApps(c *gin.Context) {
-	c.JSON(http.StatusOK, client.GetAppList())
-}
-
 // getVersion godoc
 // @Summary Get the version of the server
 // @Description Get the version of the server
@@ -184,26 +39,6 @@ func getApps(c *gin.Context) {
 // @Router /api/v1/version [get]
 func getVersion(c *gin.Context) {
 	c.JSON(http.StatusOK, version)
-}
-
-// healthz godoc
-// @Summary Check if the server is healthy
-// @Description Check if the argo-watcher is ready to process new tasks
-// @Tags service
-// @Produce json
-// @Success 200 {object} m.HealthStatus
-// @Failure 503 {object} m.HealthStatus
-// @Router /healthz [get]
-func healthz(c *gin.Context) {
-	if client.SimpleHealthCheck() {
-		c.JSON(http.StatusOK, m.HealthStatus{
-			Status: "up",
-		})
-		return
-	}
-	c.JSON(http.StatusServiceUnavailable, m.HealthStatus{
-		Status: "down",
-	})
 }
 
 func prometheusHandler() gin.HandlerFunc {
@@ -221,32 +56,55 @@ func prometheusRegisterMetrics() {
 	prometheus.MustRegister(argocdUnavailable)
 }
 
+// reference: https://www.alexedwards.net/blog/organising-database-access
+type Env struct {
+	// environment configurations
+	config *conf.Container
+	// argo client
+	client *Argo
+}
+
 func main() {
-	logLevel, err := zerolog.ParseLevel(h.GetEnv("LOG_LEVEL", "info"))
+	// initialize config
+	config, err := conf.InitConfig(); 
+	if err != nil {
+		log.Error().Msgf("Couldn't initialize config. Error: %s", err)
+		os.Exit(1)
+	}
+
+	// initialize logs
+	logLevel, err := zerolog.ParseLevel(config.LogLevel)
 	if err != nil {
 		log.Warn().Msgf("Couldn't parse log level. Got the following error: %s", err)
 		logLevel = zerolog.InfoLevel
-	} else {
-		log.Debug().Msgf("Setting log level to %s", logLevel)
-		zerolog.SetGlobalLevel(logLevel)
 	}
 
-	log.Info().Msg("Starting web server")
+	log.Debug().Msgf("Setting log level to %s", logLevel)
+	zerolog.SetGlobalLevel(logLevel)
 
-	router := setupRouter()
 
-	if err := client.Init(); err != nil {
+	// initialize argo client
+	client := Argo{
+		Url:     config.ArgoUrl,
+		Token:   config.ArgoToken,
+		Timeout: config.ArgoApiTimeout,
+	}
+
+	if err := client.InitArgo(config); err != nil {
 		log.Error().Msgf("Couldn't initialize the client. Got the following error: %s", err)
 		os.Exit(1)
 	}
 
+	// create environment
+    env := &Env{ config: config, client: &client }
+
+	// setup prometheus metrics
 	prometheusRegisterMetrics()
 
-	routerHost := h.GetEnv("HOST", "0.0.0.0")
-	routerPort := h.GetEnv("PORT", "8080")
-
-	routerBind := fmt.Sprintf("%s:%s", routerHost, routerPort)
-
+	// start the server
+	log.Info().Msg("Starting web server")
+	router := createRouter(env)
+	routerBind := fmt.Sprintf("%s:%s", config.Host, config.Port)
 	log.Debug().Msgf("Listening on %s", routerBind)
 	if err := router.Run(routerBind); err != nil {
 		panic(err)
