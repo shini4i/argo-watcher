@@ -8,12 +8,23 @@ import (
 
 	"github.com/gin-gonic/contrib/static"
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog/log"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/docs"
 	"github.com/shini4i/argo-watcher/internal/models"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 )
+
+var version = "local"
+
+func prometheusHandler() gin.HandlerFunc {
+	ph := promhttp.Handler()
+
+	return func(c *gin.Context) {
+		ph.ServeHTTP(c.Writer, c.Request)
+	}
+}
 
 // initialize router
 func createRouter(env *Env) *gin.Engine {
@@ -45,6 +56,16 @@ func createRouter(env *Env) *gin.Engine {
 	}
 
 	return router
+}
+
+// getVersion godoc
+// @Summary Get the version of the server
+// @Description Get the version of the server
+// @Tags frontend
+// @Success 200 {string} string
+// @Router /api/v1/version [get]
+func getVersion(c *gin.Context) {
+	c.JSON(http.StatusOK, version)
 }
 
 // addTask godoc

@@ -2,59 +2,12 @@ package main
 
 import (
 	"fmt"
-	"net/http"
 	"os"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/conf"
-
-	"github.com/gin-gonic/gin"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
-
-var version = "local"
-
-var (
-	failedDeployment = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "failed_deployment",
-		Help: "Per application failed deployment count before first success.",
-	}, []string{"app"})
-	processedDeployments = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "processed_deployments",
-		Help: "The amount of deployment processed since startup.",
-	})
-	argocdUnavailable = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "argocd_unavailable",
-		Help: "Whether ArgoCD is available for argo-watcher.",
-	})
-)
-
-// getVersion godoc
-// @Summary Get the version of the server
-// @Description Get the version of the server
-// @Tags frontend
-// @Success 200 {string} string
-// @Router /api/v1/version [get]
-func getVersion(c *gin.Context) {
-	c.JSON(http.StatusOK, version)
-}
-
-func prometheusHandler() gin.HandlerFunc {
-	ph := promhttp.Handler()
-
-	return func(c *gin.Context) {
-		ph.ServeHTTP(c.Writer, c.Request)
-	}
-}
-
-func prometheusRegisterMetrics() {
-	log.Debug().Msg("Registering prometheus metrics...")
-	prometheus.MustRegister(failedDeployment)
-	prometheus.MustRegister(processedDeployments)
-	prometheus.MustRegister(argocdUnavailable)
-}
 
 // reference: https://www.alexedwards.net/blog/organising-database-access
 type Env struct {
@@ -62,6 +15,8 @@ type Env struct {
 	config *conf.Container
 	// argo client
 	client *Argo
+	// metrics
+	metrics *Metrics
 }
 
 func main() {
@@ -82,6 +37,11 @@ func main() {
 	log.Debug().Msgf("Setting log level to %s", logLevel)
 	zerolog.SetGlobalLevel(logLevel)
 
+	// initialize metrics
+	metrics := Metrics{}
+	metrics.Init()
+	metrics.Register()
+
 	// initialize argo client
 	client := Argo{
 		Url:     config.ArgoUrl,
@@ -89,16 +49,13 @@ func main() {
 		Timeout: config.ArgoApiTimeout,
 	}
 
-	if err := client.InitArgo(config); err != nil {
+	if err := client.InitArgo(config, &metrics); err != nil {
 		log.Error().Msgf("Couldn't initialize the client. Got the following error: %s", err)
 		os.Exit(1)
 	}
 
 	// create environment
-	env := &Env{config: config, client: &client}
-
-	// setup prometheus metrics
-	prometheusRegisterMetrics()
+	env := &Env{config: config, client: &client, metrics: &metrics}
 
 	// start the server
 	log.Info().Msg("Starting web server")
