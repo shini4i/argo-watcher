@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/conf"
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/state"
 	"github.com/shini4i/argo-watcher/internal/helpers"
 	"github.com/shini4i/argo-watcher/internal/models"
 )
@@ -17,11 +18,7 @@ var (
 )
 
 var (
-	testClient = Argo{
-		Url:     "http://localhost:8081",
-		Token:   "dummy",
-		Timeout: "10",
-	}
+	testClient = Argo{}
 	task = models.Task{
 		Created: float64(time.Now().Unix()),
 		App:     "app",
@@ -42,13 +39,22 @@ func TestArgo_GetTask(t *testing.T) {
 	var task3 models.Task
 	var task4 models.Task
 
-	config := &conf.Container{StateType: "in-memory"}
+	
+	config := &conf.ServerConfig{StateType: "in-memory", ArgoUrl: "http://localhost:8081", ArgoToken: "dummy", ArgoTimeout: "10"}
+	state, err := state.NewState(config)
+	if err != nil {
+		t.Error(err)
+	}
+	
+	api := ArgoApi{}
+	if err := api.Init(config); err != nil {
+		t.Error(err)
+	}
+
 	metrics := Metrics{}
 	metrics.Init()
 
-	if err := testClient.InitArgo(config, &metrics); err != nil {
-		t.Error(err)
-	}
+	testClient.Init(&state, &api, &metrics, 0)
 
 	taskId, _ = testClient.AddTask(task)
 

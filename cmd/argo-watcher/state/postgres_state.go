@@ -24,7 +24,7 @@ type PostgresState struct {
 	db *sql.DB
 }
 
-func (state *PostgresState) Connect(config *conf.Container) {
+func (state *PostgresState) Connect(config *conf.ServerConfig) {
 	c := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable", config.DbHost, config.DbPort, config.DbUser, config.DbPassword, config.DbName)
 
 	db, err := sql.Open("postgres", c)

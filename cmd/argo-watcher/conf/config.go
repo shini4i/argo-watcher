@@ -2,12 +2,13 @@ package conf
 
 import (
 	"errors"
+	"strconv"
 
 	envConfig "github.com/kelseyhightower/envconfig"
 	"github.com/shini4i/argo-watcher/internal/helpers"
 )
 
-type Container struct {
+type ServerConfig struct {
 	ArgoUrl string `required:"false" envconfig:"ARGO_URL"` 
 	ArgoToken string `required:"false" envconfig:"ARGO_TOKEN"` 
     ArgoApiTimeout string `required:"false" envconfig:"ARGO_API_TIMEOUT" default:"60"` 
@@ -26,9 +27,9 @@ type Container struct {
 	SkipTlsVerify string `required:"false" envconfig:"SKIP_TLS_VERIFY" default:"false"` 
 }
 
-func InitConfig() (*Container, error) {
+func Init() (*ServerConfig, error) {
 	// parse config
-	var config Container
+	var config ServerConfig
     err := envConfig.Process("", &config)
 	// custom checks
 	allowedTypes := []string {"postgres", "in-memory"}
@@ -37,4 +38,9 @@ func InitConfig() (*Container, error) {
 	}
 	// return config
     return &config, err
+}
+
+func (config *ServerConfig) GetRetryAttempts() uint {
+	argoTimeout, _ := strconv.Atoi(config.ArgoTimeout)
+	return uint((argoTimeout / 15) + 1)
 }

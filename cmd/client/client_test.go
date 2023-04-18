@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	m "github.com/shini4i/argo-watcher/internal/models"
+	"github.com/shini4i/argo-watcher/internal/models"
 )
 
 var (
@@ -36,7 +36,7 @@ func addTaskHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
-	err := json.NewEncoder(w).Encode(m.TaskStatus{
+	err := json.NewEncoder(w).Encode(models.TaskStatus{
 		Status: "accepted",
 		Id:     taskId,
 	})
@@ -64,16 +64,16 @@ func getTaskStatusHandler(w http.ResponseWriter, r *http.Request) {
 
 	switch id {
 	case taskId:
-		status = config.StatusDeployedMessage
+		status = models.StatusDeployedMessage
 	case appNotFoundId:
-		status = config.StatusAppNotFoundMessage
+		status = models.StatusAppNotFoundMessage
 	case argocdUnavailableId:
-		status = config.StatusArgoCDUnavailableMessage
+		status = models.StatusArgoCDUnavailableMessage
 	case failedTaskId:
-		status = config.StatusFailedMessage
+		status = models.StatusFailedMessage
 	}
 
-	err := json.NewEncoder(w).Encode(m.TaskStatus{
+	err := json.NewEncoder(w).Encode(models.TaskStatus{
 		Status: status,
 		Id:     taskId,
 	})
@@ -90,16 +90,16 @@ func init() {
 }
 
 func TestAddTask(t *testing.T) {
-	expected := m.TaskStatus{
+	expected := models.TaskStatus{
 		Status: "accepted",
 		Id:     taskId,
 	}
 
-	task := m.Task{
+	task := models.Task{
 		App:     "test",
 		Author:  "John Doe",
 		Project: "Example",
-		Images: []m.Image{
+		Images: []models.Image{
 			{
 				Tag:   testVersion,
 				Image: "example",
@@ -118,22 +118,22 @@ func TestGetTaskStatus(t *testing.T) {
 	messageTemplate := "Expected status %s, got %s"
 
 	status := client.getTaskStatus(taskId).Status
-	if status != config.StatusDeployedMessage {
+	if status != models.StatusDeployedMessage {
 		t.Errorf(messageTemplate, "deployed", status)
 	}
 
 	status = client.getTaskStatus(appNotFoundId).Status
-	if status != config.StatusAppNotFoundMessage {
+	if status != models.StatusAppNotFoundMessage {
 		t.Errorf(messageTemplate, "app not found", status)
 	}
 
 	status = client.getTaskStatus(argocdUnavailableId).Status
-	if status != config.StatusArgoCDUnavailableMessage {
+	if status != models.StatusArgoCDUnavailableMessage {
 		t.Errorf(messageTemplate, "ArgoCD is unavailable", status)
 	}
 
 	status = client.getTaskStatus(failedTaskId).Status
-	if status != config.StatusFailedMessage {
+	if status != models.StatusFailedMessage {
 		t.Errorf(messageTemplate, "failed", status)
 	}
 }
@@ -142,7 +142,7 @@ func TestGetImagesList(t *testing.T) {
 
 	tag = testVersion
 
-	expectedList := []m.Image{
+	expectedList := []models.Image{
 		{
 			Image: "example/app",
 			Tag:   testVersion,

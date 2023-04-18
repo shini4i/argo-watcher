@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog/log"
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/conf"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/docs"
 	"github.com/shini4i/argo-watcher/internal/models"
 	swaggerFiles "github.com/swaggo/files"
@@ -18,16 +19,18 @@ import (
 
 var version = "local"
 
-func prometheusHandler() gin.HandlerFunc {
-	ph := promhttp.Handler()
-
-	return func(c *gin.Context) {
-		ph.ServeHTTP(c.Writer, c.Request)
-	}
+// reference: https://www.alexedwards.net/blog/organising-database-access
+type Env struct {
+	// environment configurations
+	config *conf.ServerConfig
+	// argo client
+	client *Argo
+	// metrics
+	metrics *Metrics
 }
 
 // initialize router
-func createRouter(env *Env) *gin.Engine {
+func (env *Env) CreateRouter() *gin.Engine {
 	docs.SwaggerInfo.Title = "Argo-Watcher API"
 	docs.SwaggerInfo.Version = version
 	docs.SwaggerInfo.Description = "A small tool that will help to improve deployment visibility"
@@ -52,11 +55,28 @@ func createRouter(env *Env) *gin.Engine {
 		v1.GET("/tasks", env.getState)
 		v1.GET("/tasks/:id", env.getTaskStatus)
 		v1.GET("/apps", env.getApps)
-		v1.GET("/version", getVersion)
+		v1.GET("/version", env.getVersion)
 	}
 
 	return router
 }
+
+func (env *Env) StartRouter(router *gin.Engine) {
+	routerBind := fmt.Sprintf("%s:%s", env.config.Host, env.config.Port)
+	log.Debug().Msgf("Listening on %s", routerBind)
+	if err := router.Run(routerBind); err != nil {
+		panic(err)
+	}
+}
+
+func prometheusHandler() gin.HandlerFunc {
+	ph := promhttp.Handler()
+
+	return func(c *gin.Context) {
+		ph.ServeHTTP(c.Writer, c.Request)
+	}
+}
+
 
 // getVersion godoc
 // @Summary Get the version of the server
@@ -64,7 +84,7 @@ func createRouter(env *Env) *gin.Engine {
 // @Tags frontend
 // @Success 200 {string} string
 // @Router /api/v1/version [get]
-func getVersion(c *gin.Context) {
+func (env *Env) getVersion(c *gin.Context) {
 	c.JSON(http.StatusOK, version)
 }
 

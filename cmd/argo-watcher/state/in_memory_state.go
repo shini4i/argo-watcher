@@ -16,7 +16,7 @@ type InMemoryState struct {
 	tasks []m.Task
 }
 
-func (state *InMemoryState) Connect(config *conf.Container) {
+func (state *InMemoryState) Connect(config *conf.ServerConfig) {
 	log.Debug().Msg("InMemoryState does not connect to anything. Skipping.")
 }
 

@@ -12,8 +12,7 @@ import (
 	"strings"
 	"time"
 
-	c "github.com/shini4i/argo-watcher/internal/config"
-	m "github.com/shini4i/argo-watcher/internal/models"
+	"github.com/shini4i/argo-watcher/internal/models"
 )
 
 type Watcher struct {
@@ -23,10 +22,9 @@ type Watcher struct {
 
 var (
 	tag    = os.Getenv("IMAGE_TAG")
-	config = c.GetConfig()
 )
 
-func (watcher *Watcher) addTask(task m.Task) string {
+func (watcher *Watcher) addTask(task models.Task) string {
 	body, err := json.Marshal(task)
 	if err != nil {
 		panic(err)
@@ -63,7 +61,7 @@ func (watcher *Watcher) addTask(task m.Task) string {
 		os.Exit(1)
 	}
 
-	var accepted m.TaskStatus
+	var accepted models.TaskStatus
 	err = json.Unmarshal(body, &accepted)
 	if err != nil {
 		panic(err)
@@ -72,7 +70,7 @@ func (watcher *Watcher) addTask(task m.Task) string {
 	return accepted.Id
 }
 
-func (watcher *Watcher) getTaskStatus(id string) *m.TaskStatus {
+func (watcher *Watcher) getTaskStatus(id string) *models.TaskStatus {
 	url := fmt.Sprintf("%s/api/v1/tasks/%s", watcher.baseUrl, id)
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -92,7 +90,7 @@ func (watcher *Watcher) getTaskStatus(id string) *m.TaskStatus {
 		}
 	}(response.Body)
 
-	body, err := io.ReadAll(response.Body)
+	body, _ := io.ReadAll(response.Body)
 
 	if response.StatusCode != 200 {
 		fmt.Printf("Received non 200 status code (%d)\n", response.StatusCode)
@@ -100,7 +98,7 @@ func (watcher *Watcher) getTaskStatus(id string) *m.TaskStatus {
 		os.Exit(1)
 	}
 
-	var taskStatus m.TaskStatus
+	var taskStatus models.TaskStatus
 	err = json.Unmarshal(body, &taskStatus)
 	if err != nil {
 		panic(err)
@@ -109,10 +107,10 @@ func (watcher *Watcher) getTaskStatus(id string) *m.TaskStatus {
 	return &taskStatus
 }
 
-func getImagesList() []m.Image {
-	var images []m.Image
+func getImagesList() []models.Image {
+	var images []models.Image
 	for _, image := range strings.Split(os.Getenv("IMAGES"), ",") {
-		images = append(images, m.Image{
+		images = append(images, models.Image{
 			Image: image,
 			Tag:   tag,
 		})
@@ -128,7 +126,7 @@ func main() {
 		client:  &http.Client{},
 	}
 
-	task := m.Task{
+	task := models.Task{
 		App:     os.Getenv("ARGO_APP"),
 		Author:  os.Getenv("COMMIT_AUTHOR"),
 		Project: os.Getenv("PROJECT_NAME"),
@@ -157,22 +155,22 @@ func main() {
 loop:
 	for {
 		switch taskInfo := watcher.getTaskStatus(id); taskInfo.Status {
-		case config.StatusFailedMessage:
+		case models.StatusFailedMessage:
 			fmt.Println("The deployment has failed, please check logs.")
 			fmt.Println(taskInfo.StatusReason)
 			os.Exit(1)
-		case config.StatusInProgressMessage:
+		case models.StatusInProgressMessage:
 			fmt.Println("Application deployment is in progress...")
 			time.Sleep(15 * time.Second)
-		case config.StatusAppNotFoundMessage:
+		case models.StatusAppNotFoundMessage:
 			fmt.Printf("Application %s does not exist.\n", task.App)
 			fmt.Println(taskInfo.StatusReason)
 			os.Exit(1)
-		case config.StatusArgoCDUnavailableMessage:
+		case models.StatusArgoCDUnavailableMessage:
 			fmt.Println("ArgoCD is unavailable. Please investigate.")
 			fmt.Println(taskInfo.StatusReason)
 			os.Exit(1)
-		case config.StatusDeployedMessage:
+		case models.StatusDeployedMessage:
 			fmt.Printf("The deployment of %s version is done.\n", tag)
 			break loop
 		}

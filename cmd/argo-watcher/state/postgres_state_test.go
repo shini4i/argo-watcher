@@ -50,7 +50,7 @@ var (
 )
 
 func TestPostgresState_Add(t *testing.T) {
-	config := &conf.Container{
+	config := &conf.ServerConfig{
 		StateType: "postgresql",
 		DbHost: os.Getenv("DB_HOST"),
 		DbPort: "5432",

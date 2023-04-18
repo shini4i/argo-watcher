@@ -6,26 +6,26 @@ import (
 )
 
 type Metrics struct {
-	failedDeployment *prometheus.GaugeVec
+	failedDeployment     *prometheus.GaugeVec
 	processedDeployments prometheus.Counter
-	argocdUnavailable prometheus.Gauge
+	argocdUnavailable    prometheus.Gauge
 }
 
 func (metrics *Metrics) Init() {
 	metrics.failedDeployment = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "failed_deployment",
 		Help: "Per application failed deployment count before first success.",
-	}, []string{"app"});
+	}, []string{"app"})
 
 	metrics.processedDeployments = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "processed_deployments",
 		Help: "The amount of deployment processed since startup.",
-	});
+	})
 
 	metrics.argocdUnavailable = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "argocd_unavailable",
 		Help: "Whether ArgoCD is available for argo-watcher.",
-	});
+	})
 }
 
 func (metrics *Metrics) Register() {
