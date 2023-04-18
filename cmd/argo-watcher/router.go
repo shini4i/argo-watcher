@@ -10,7 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog/log"
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/conf"
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/docs"
 	"github.com/shini4i/argo-watcher/internal/models"
 	swaggerFiles "github.com/swaggo/files"
@@ -22,7 +22,7 @@ var version = "local"
 // reference: https://www.alexedwards.net/blog/organising-database-access
 type Env struct {
 	// environment configurations
-	config *conf.ServerConfig
+	config *config.ServerConfig
 	// argo client
 	client *Argo
 	// metrics

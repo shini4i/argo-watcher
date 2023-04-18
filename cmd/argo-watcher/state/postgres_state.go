@@ -15,7 +15,7 @@ import (
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/conf"
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
@@ -24,15 +24,15 @@ type PostgresState struct {
 	db *sql.DB
 }
 
-func (state *PostgresState) Connect(config *conf.ServerConfig) {
-	c := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable", config.DbHost, config.DbPort, config.DbUser, config.DbPassword, config.DbName)
+func (state *PostgresState) Connect(serverConfig *config.ServerConfig) {
+	c := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable", serverConfig.DbHost, serverConfig.DbPort, serverConfig.DbUser, serverConfig.DbPassword, serverConfig.DbName)
 
 	db, err := sql.Open("postgres", c)
 	if err != nil {
 		panic(err)
 	}
 
-	migrationsPath := fmt.Sprintf("file://%s", config.DbMigrationsPath)
+	migrationsPath := fmt.Sprintf("file://%s", serverConfig.DbMigrationsPath)
 
 	driver, _ := postgres.WithInstance(db, &postgres.Config{})
 	migrations, _ := migrate.NewWithDatabaseInstance(

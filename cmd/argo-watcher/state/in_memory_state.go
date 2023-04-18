@@ -7,7 +7,7 @@ import (
 	"github.com/avast/retry-go/v4"
 	"github.com/rs/zerolog/log"
 
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/conf"
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	h "github.com/shini4i/argo-watcher/internal/helpers"
 	m "github.com/shini4i/argo-watcher/internal/models"
 )
@@ -16,7 +16,7 @@ type InMemoryState struct {
 	tasks []m.Task
 }
 
-func (state *InMemoryState) Connect(config *conf.ServerConfig) {
+func (state *InMemoryState) Connect(serverConfig *config.ServerConfig) {
 	log.Debug().Msg("InMemoryState does not connect to anything. Skipping.")
 }
 

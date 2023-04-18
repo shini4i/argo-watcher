@@ -1,4 +1,4 @@
-package conf
+package config
 
 import (
 	"errors"
@@ -27,7 +27,7 @@ type ServerConfig struct {
 	SkipTlsVerify string `required:"false" envconfig:"SKIP_TLS_VERIFY" default:"false"` 
 }
 
-func Init() (*ServerConfig, error) {
+func NewServerConfig() (*ServerConfig, error) {
 	// parse config
 	var config ServerConfig
     err := envConfig.Process("", &config)

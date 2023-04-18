@@ -5,20 +5,20 @@ import (
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/conf"
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/state"
 )
 
 func main() {
-	// initialize config
-	config, err := conf.Init()
+	// initialize serverConfig
+	serverConfig, err := config.NewServerConfig()
 	if err != nil {
 		log.Error().Msgf("Couldn't initialize config. Error: %s", err)
 		os.Exit(1)
 	}
 
 	// initialize logs
-	logLevel, err := zerolog.ParseLevel(config.LogLevel)
+	logLevel, err := zerolog.ParseLevel(serverConfig.LogLevel)
 	if err != nil {
 		log.Warn().Msgf("Couldn't parse log level. Got the following error: %s", err)
 		logLevel = zerolog.InfoLevel
@@ -34,13 +34,13 @@ func main() {
 
 	// create API client
 	api := ArgoApi{}
-	if err := api.Init(config); err != nil {
+	if err := api.Init(serverConfig); err != nil {
 		log.Error().Msgf("Couldn't initialize the Argo API. Got the following error: %s", err)
 		os.Exit(1)
 	}
 
 	// create state management
-	state, err := state.NewState(config)
+	state, err := state.NewState(serverConfig)
 	if err != nil {
 		log.Error().Msgf("Couldn't create state manager (in-memory / database). Got the following error: %s", err)
 		os.Exit(1)
@@ -50,10 +50,10 @@ func main() {
 
 	// initialize argo client
 	client := Argo{}
-	client.Init(&state, &api, &metrics, config.GetRetryAttempts())
+	client.Init(&state, &api, &metrics, serverConfig.GetRetryAttempts())
 
 	// create environment
-	env := &Env{config: config, client: &client, metrics: &metrics}
+	env := &Env{config: serverConfig, client: &client, metrics: &metrics}
 
 	// start the server
 	log.Info().Msg("Starting web server")

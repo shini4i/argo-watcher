@@ -4,12 +4,12 @@ import (
 	"fmt"
 
 	"github.com/rs/zerolog/log"
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/conf"
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
 type State interface {
-	Connect(config *conf.ServerConfig)
+	Connect(serverConfig *config.ServerConfig)
 	Add(task models.Task)
 	GetTasks(startTime float64, endTime float64, app string) []models.Task
 	GetTask(id string) (*models.Task, error)
@@ -20,10 +20,10 @@ type State interface {
 }
 
 
-func NewState(config *conf.ServerConfig) (State, error) {
+func NewState(serverConfig *config.ServerConfig) (State, error) {
 	log.Debug().Msg("Initializing argo-watcher state...")
 	var state State
-	switch name := config.StateType; name {
+	switch name := serverConfig.StateType; name {
 		case "postgres":
 			state = &PostgresState{}
 		case "in-memory":
@@ -32,6 +32,6 @@ func NewState(config *conf.ServerConfig) (State, error) {
 			return nil, fmt.Errorf("unexpected state type received: %s", name)
 	}
 	
-	state.Connect(config)
+	state.Connect(serverConfig)
 	return state, nil
 }

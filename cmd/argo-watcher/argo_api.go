@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/conf"
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
@@ -23,10 +23,10 @@ type ArgoApi struct {
 	client  *http.Client
 }
 
-func (api *ArgoApi) Init(config *conf.ServerConfig) error {
+func (api *ArgoApi) Init(serverConfig *config.ServerConfig) error {
 	log.Debug().Msg("Initializing argo-watcher client...")
 	// set base url
-	api.baseUrl = config.ArgoUrl
+	api.baseUrl = serverConfig.ArgoUrl
 	// parse url for cookies
 	argoUrl, err := url.Parse(api.baseUrl)
 	if err != nil {
@@ -40,17 +40,17 @@ func (api *ArgoApi) Init(config *conf.ServerConfig) error {
 	// prepare cookie token
 	cookie := &http.Cookie{
 		Name:  "argocd.token",
-		Value: config.ArgoToken,
+		Value: serverConfig.ArgoToken,
 	}
 	// set cookies
 	jar.SetCookies(argoUrl, []*http.Cookie{cookie})
 	// parse skip tls verify
-	skipTlsVerify, _ := strconv.ParseBool(config.SkipTlsVerify)
+	skipTlsVerify, _ := strconv.ParseBool(serverConfig.SkipTlsVerify)
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: skipTlsVerify},
 	}
 	// create http client
-	argoApiTimeout, _ := strconv.Atoi(config.ArgoApiTimeout)
+	argoApiTimeout, _ := strconv.Atoi(serverConfig.ArgoApiTimeout)
 	api.client = &http.Client{
 		Transport: transport,
 		Jar:       jar,

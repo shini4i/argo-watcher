@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/conf"
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/state"
 	"github.com/shini4i/argo-watcher/internal/helpers"
 	"github.com/shini4i/argo-watcher/internal/models"
@@ -40,14 +40,14 @@ func TestArgo_GetTask(t *testing.T) {
 	var task4 models.Task
 
 	
-	config := &conf.ServerConfig{StateType: "in-memory", ArgoUrl: "http://localhost:8081", ArgoToken: "dummy", ArgoTimeout: "10"}
-	state, err := state.NewState(config)
+	serverConfig := &config.ServerConfig{StateType: "in-memory", ArgoUrl: "http://localhost:8081", ArgoToken: "dummy", ArgoTimeout: "10"}
+	state, err := state.NewState(serverConfig)
 	if err != nil {
 		t.Error(err)
 	}
 	
 	api := ArgoApi{}
-	if err := api.Init(config); err != nil {
+	if err := api.Init(serverConfig); err != nil {
 		t.Error(err)
 	}
 
