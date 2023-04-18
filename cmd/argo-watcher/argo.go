@@ -89,7 +89,9 @@ func (argo *Argo) AddTask(task models.Task) (string, error) {
 
 	argo.state.Add(task)
 	argo.metrics.processedDeployments.Inc()
+	
 	go argo.waitForRollout(task)
+
 	return task.Id, nil
 }
 

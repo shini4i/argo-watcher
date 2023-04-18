@@ -6,10 +6,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/conf"
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	"github.com/shini4i/argo-watcher/internal/helpers"
 
-	m "github.com/shini4i/argo-watcher/internal/models"
+	"github.com/shini4i/argo-watcher/internal/models"
 )
 
 const postgresTaskId = "782e6e84-e67d-11ec-9f2f-8a68373f0f50"
@@ -17,14 +17,14 @@ const postgresTaskId = "782e6e84-e67d-11ec-9f2f-8a68373f0f50"
 var (
 	created       = float64(time.Now().Unix())
 	postgresState = PostgresState{}
-	postgresTasks = []m.Task{
+	postgresTasks = []models.Task{
 		{
 			Id:      postgresTaskId,
 			Created: created,
 			App:     "Test",
 			Author:  "Test Author",
 			Project: "Test Project",
-			Images: []m.Image{
+			Images: []models.Image{
 				{
 					Image: "test",
 					Tag:   "v0.0.1",
@@ -38,7 +38,7 @@ var (
 			App:     "Test2",
 			Author:  "Test Author",
 			Project: "Test Project",
-			Images: []m.Image{
+			Images: []models.Image{
 				{
 					Image: "test2",
 					Tag:   "v0.0.1",
@@ -50,7 +50,7 @@ var (
 )
 
 func TestPostgresState_Add(t *testing.T) {
-	config := &conf.ServerConfig{
+	config := &config.ServerConfig{
 		StateType: "postgresql",
 		DbHost: os.Getenv("DB_HOST"),
 		DbPort: "5432",

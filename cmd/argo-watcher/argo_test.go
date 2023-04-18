@@ -34,6 +34,12 @@ var (
 	}
 )
 
+func TestArgo_GetTasks(t *testing.T) {
+	t.Run("application status deployed", func(t *testing.T) {
+		
+	});
+}
+
 func TestArgo_GetTask(t *testing.T) {
 	var task2 models.Task
 	var task3 models.Task

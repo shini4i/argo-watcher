@@ -23,8 +23,8 @@ var version = "local"
 type Env struct {
 	// environment configurations
 	config *config.ServerConfig
-	// argo client
-	client *Argo
+	// argo argo
+	argo *Argo
 	// metrics
 	metrics *Metrics
 }
@@ -110,7 +110,7 @@ func (env *Env) addTask(c *gin.Context) {
 		return
 	}
 
-	id, err := env.client.AddTask(task)
+	id, err := env.argo.AddTask(task)
 	if err != nil {
 		log.Error().Msgf("Couldn't process new task. Got the following error: %s", err)
 		c.JSON(http.StatusServiceUnavailable, models.TaskStatus{
@@ -143,7 +143,7 @@ func (env *Env) getState(c *gin.Context) {
 	}
 	app := c.Query("app")
 
-	c.JSON(http.StatusOK, env.client.GetTasks(startTime, endTime, app))
+	c.JSON(http.StatusOK, env.argo.GetTasks(startTime, endTime, app))
 }
 
 // getTaskStatus godoc
@@ -156,7 +156,7 @@ func (env *Env) getState(c *gin.Context) {
 // @Router /api/v1/tasks/{id} [get]
 func (env *Env) getTaskStatus(c *gin.Context) {
 	id := c.Param("id")
-	task, err := env.client.state.GetTask(id)
+	task, err := env.argo.state.GetTask(id)
 
 	if err != nil {
 		c.JSON(http.StatusOK, models.TaskStatus{
@@ -185,7 +185,7 @@ func (env *Env) getTaskStatus(c *gin.Context) {
 // @Success 200 {array} string
 // @Router /api/v1/apps [get]
 func (env *Env) getApps(c *gin.Context) {
-	c.JSON(http.StatusOK, env.client.GetAppList())
+	c.JSON(http.StatusOK, env.argo.GetAppList())
 }
 
 // healthz godoc
@@ -197,7 +197,7 @@ func (env *Env) getApps(c *gin.Context) {
 // @Failure 503 {object} m.HealthStatus
 // @Router /healthz [get]
 func (env *Env) healthz(c *gin.Context) {
-	if env.client.SimpleHealthCheck() {
+	if env.argo.SimpleHealthCheck() {
 		c.JSON(http.StatusOK, models.HealthStatus{
 			Status: "up",
 		})

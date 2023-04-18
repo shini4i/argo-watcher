@@ -53,7 +53,7 @@ func main() {
 	client.Init(&state, &api, &metrics, serverConfig.GetRetryAttempts())
 
 	// create environment
-	env := &Env{config: serverConfig, client: &client, metrics: &metrics}
+	env := &Env{config: serverConfig, argo: &client, metrics: &metrics}
 
 	// start the server
 	log.Info().Msg("Starting web server")
