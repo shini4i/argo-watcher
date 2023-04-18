@@ -201,9 +201,10 @@ func (env *Env) healthz(c *gin.Context) {
 		c.JSON(http.StatusOK, models.HealthStatus{
 			Status: "up",
 		})
-		return
+	} else {
+		c.JSON(http.StatusServiceUnavailable, models.HealthStatus{
+			Status: "down",
+		})
 	}
-	c.JSON(http.StatusServiceUnavailable, models.HealthStatus{
-		Status: "down",
-	})
+	
 }
