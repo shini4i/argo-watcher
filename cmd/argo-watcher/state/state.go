@@ -10,7 +10,7 @@ import (
 
 type State interface {
 	Connect(serverConfig *config.ServerConfig)
-	Add(task models.Task)
+	Add(task models.Task) error
 	GetTasks(startTime float64, endTime float64, app string) []models.Task
 	GetTask(id string) (*models.Task, error)
 	SetTaskStatus(id string, status string, reason string)

@@ -66,23 +66,40 @@ func (argo *Argo) Check() (string, error) {
 	return "up", nil
 }
 
-func (argo *Argo) AddTask(task models.Task) (string, error) {
-	status, err := argo.Check()
+func (argo *Argo) AddTask(task models.Task) (*string, error) {
+	_, err := argo.Check()
 	if err != nil {
-		return status, errors.New(err.Error())
+		return nil, errors.New(err.Error())
 	}
 
 	task.Id = uuid.New().String()
+	log.Info().Str("id", task.Id).Msg("Starting new task creation")
+	
+	if task.Images == nil || len(task.Images) == 0 {
+		return nil, fmt.Errorf("trying to create task without images")
+	}
+	
+	if task.App == "" {
+		return nil, fmt.Errorf("trying to create task without app name")
+	}
 
-	log.Info().Str("id", task.Id).Msgf("A new task was triggered. Expecting tag %s in app %s.",
-		task.Images[0].Tag,
-		task.App,
-	)
+	log.Info().Str("id", task.Id).Msgf("A new task was triggered",)
 
-	argo.state.Add(task)
-	argo.metrics.AddProcessedDeployment()
+	for index, value := range task.Images {
+		log.Info().Str("id", task.Id).Msgf("Task image [%d] expecting tag %s in app %s.",
+			index,
+			value.Tag,
+			task.App,
+		)
+	}
 
-	return task.Id, nil
+	err = argo.state.Add(task)
+	if err != nil {
+		return nil, err
+	}
+
+ 	argo.metrics.AddProcessedDeployment()
+	return &task.Id, nil
 }
 
 func (argo *Argo) GetTasks(startTime float64, endTime float64, app string) models.TasksResponse {
