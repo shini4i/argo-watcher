@@ -10,6 +10,22 @@ They can be installed by running:
 pre-commit install
 ```
 
+### Mock classes
+
+To generate mock classes for unit tests, first install `gomock` tool.
+
+```shell
+go install github.com/golang/mock/mockgen@v1.6.0
+```
+
+Then run the mock generation from interfaces.
+
+```shell
+make mocks
+```
+
+> Note: you need to run this only when you're changing the interfaces
+
 ## Back-End Development
 
 To start developing argo-watcher you will need golang 1.19+
