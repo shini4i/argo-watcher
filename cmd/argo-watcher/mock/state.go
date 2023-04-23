@@ -36,9 +36,11 @@ func (m *MockState) EXPECT() *MockStateMockRecorder {
 }
 
 // Add mocks base method.
-func (m *MockState) Add(task models.Task) {
+func (m *MockState) Add(task models.Task) error {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "Add", task)
+	ret := m.ctrl.Call(m, "Add", task)
+	ret0, _ := ret[0].(error)
+	return ret0
 }
 
 // Add indicates an expected call of Add.

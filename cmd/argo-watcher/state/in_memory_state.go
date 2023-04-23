@@ -20,10 +20,11 @@ func (state *InMemoryState) Connect(serverConfig *config.ServerConfig) {
 	log.Debug().Msg("InMemoryState does not connect to anything. Skipping.")
 }
 
-func (state *InMemoryState) Add(task models.Task) {
+func (state *InMemoryState) Add(task models.Task) error {
 	task.Created = float64(time.Now().Unix())
 	task.Status = "in progress"
 	state.tasks = append(state.tasks, task)
+	return nil
 }
 
 func (state *InMemoryState) GetTasks(startTime float64, endTime float64, app string) []models.Task {

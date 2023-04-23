@@ -51,10 +51,10 @@ func (state *PostgresState) Connect(serverConfig *config.ServerConfig) {
 	state.db = db
 }
 
-func (state *PostgresState) Add(task models.Task) {
+func (state *PostgresState) Add(task models.Task) error {
 	images, err := json.Marshal(task.Images)
 	if err != nil {
-		return
+		return fmt.Errorf("could not marshal images into json")
 	}
 	_, err = state.db.Exec("INSERT INTO tasks(id, created, images, status, app, author, project) VALUES ($1, $2, $3, $4, $5, $6, $7)",
 		task.Id,
@@ -67,8 +67,11 @@ func (state *PostgresState) Add(task models.Task) {
 	)
 
 	if err != nil {
-		panic(err)
+		log.Error().Str("id", task.Id).Msgf("Failed to create task database record with error: %s", err)
+		return fmt.Errorf("failed to create task in database")
 	}
+
+	return nil
 }
 
 func (state *PostgresState) GetTasks(startTime float64, endTime float64, app string) []models.Task {
