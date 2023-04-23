@@ -1,26 +1,27 @@
 package state
 
 import (
-	"github.com/google/uuid"
 	"reflect"
 	"testing"
 	"time"
 
-	m "github.com/shini4i/argo-watcher/internal/models"
+	"github.com/google/uuid"
+
+	"github.com/shini4i/argo-watcher/internal/models"
 )
 
 const taskId = "9b67e344-e5b5-11ec-bc56-8a68373f0f50"
 
 var (
 	state = InMemoryState{}
-	tasks = []m.Task{
+	tasks = []models.Task{
 		{
 			Id:      taskId,
 			Created: float64(time.Now().Unix()),
 			App:     "Test",
 			Author:  "Test Author",
 			Project: "Test Project",
-			Images: []m.Image{
+			Images: []models.Image{
 				{
 					Image: "test",
 					Tag:   "v0.0.1",
@@ -34,7 +35,7 @@ var (
 			App:     "Test2",
 			Author:  "Test Author",
 			Project: "Test Project",
-			Images: []m.Image{
+			Images: []models.Image{
 				{
 					Image: "test2",
 					Tag:   "v0.0.1",

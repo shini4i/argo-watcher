@@ -11,7 +11,7 @@ import (
 type ServerConfig struct {
 	ArgoUrl string `required:"false" envconfig:"ARGO_URL"` 
 	ArgoToken string `required:"false" envconfig:"ARGO_TOKEN"` 
-    ArgoApiTimeout string `required:"false" envconfig:"ARGO_API_TIMEOUT" default:"60"` 
+	ArgoApiTimeout string `required:"false" envconfig:"ARGO_API_TIMEOUT" default:"60"` 
 	ArgoTimeout string `required:"false" envconfig:"ARGO_TIMEOUT" default:"0"` 
 	StateType string `required:"false" envconfig:"STATE_TYPE"` 
 	StaticFilePath string `required:"false" envconfig:"STATIC_FILES_PATH" default:"static"` 
