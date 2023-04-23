@@ -24,7 +24,7 @@ func main() {
 		logLevel = zerolog.InfoLevel
 	}
 
-	log.Debug().Msgf("Setting log level to %s", logLevel)
+	log.Info().Msgf("Setting log level to %s", logLevel)
 	zerolog.SetGlobalLevel(logLevel)
 
 	// initialize metrics

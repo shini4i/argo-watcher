@@ -66,7 +66,7 @@ func (argo *Argo) Check() (string, error) {
 	return "up", nil
 }
 
-func (argo *Argo) AddTask(task models.Task) (*string, error) {
+func (argo *Argo) AddTask(task models.Task) (*models.Task, error) {
 	_, err := argo.Check()
 	if err != nil {
 		return nil, errors.New(err.Error())
@@ -99,7 +99,7 @@ func (argo *Argo) AddTask(task models.Task) (*string, error) {
 	}
 
  	argo.metrics.AddProcessedDeployment()
-	return &task.Id, nil
+	return &task, nil
 }
 
 func (argo *Argo) GetTasks(startTime float64, endTime float64, app string) models.TasksResponse {

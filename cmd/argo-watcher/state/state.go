@@ -25,8 +25,10 @@ func NewState(serverConfig *config.ServerConfig) (State, error) {
 	var state State
 	switch name := serverConfig.StateType; name {
 		case "postgres":
+			log.Debug().Msg("Created postgres state..")
 			state = &PostgresState{}
 		case "in-memory":
+			log.Debug().Msg("Created in-memory state..")
 			state = &InMemoryState{}
 		default:
 			return nil, fmt.Errorf("unexpected state type received: %s", name)

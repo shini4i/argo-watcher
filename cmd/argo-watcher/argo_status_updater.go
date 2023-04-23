@@ -103,6 +103,7 @@ func (updater *ArgoStatusUpdater) checkWithRetry(task models.Task) (int, error) 
 			app, err := updater.argo.api.GetApplication(task.App)
 
 			if err != nil {
+				log.Warn().Str("app", task.App).Msg(err.Error())
 				lastStatus = ArgoAppFailed
 				return err
 			}
@@ -110,7 +111,7 @@ func (updater *ArgoStatusUpdater) checkWithRetry(task models.Task) (int, error) 
 			for _, image := range task.Images {
 				expected := fmt.Sprintf("%s:%s", image.Image, image.Tag)
 				if !helpers.Contains(app.Status.Summary.Images, expected) {
-					log.Debug().Str("id", task.Id).Msgf("%s is not available yet", expected)
+					log.Debug().Str("app", task.App).Str("id", task.Id).Msgf("%s is not available yet", expected)
 					lastStatus = ArgoAppNotAvailable
 					return errorArgoPlannedRetry
 				}

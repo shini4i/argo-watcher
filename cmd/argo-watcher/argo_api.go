@@ -105,6 +105,7 @@ func (api *ArgoApi) GetApplication(app string) (*models.Application, error) {
 	apiUrl := fmt.Sprintf("%s/api/v1/applications/%s", api.baseUrl, app)
 	req, err := http.NewRequest("GET", apiUrl, nil)
 	if err != nil {
+		log.Error().Msg(err.Error())
 		return nil, err
 	}
 
@@ -116,11 +117,13 @@ func (api *ArgoApi) GetApplication(app string) (*models.Application, error) {
 
 	resp, err := api.client.Do(req)
 	if err != nil {
+		log.Error().Msg(err.Error())
 		return nil, err
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
+		log.Error().Msg(err.Error())
 		return nil, err
 	}
 
@@ -134,7 +137,7 @@ func (api *ArgoApi) GetApplication(app string) (*models.Application, error) {
 	if resp.StatusCode != 200 {
 		var argoErrorResponse models.ArgoApiErrorResponse
 		if err = json.Unmarshal(body, &argoErrorResponse); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("could not parse json error response: %s", body)
 		}
 
 		if argoErrorResponse.Message == "" {

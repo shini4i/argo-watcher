@@ -112,7 +112,7 @@ func (env *Env) addTask(c *gin.Context) {
 		return
 	}
 
-	taskId, err := env.argo.AddTask(task)
+	newTask, err := env.argo.AddTask(task)
 	if err != nil {
 		log.Error().Msgf("Couldn't process new task. Got the following error: %s", err)
 		c.JSON(http.StatusServiceUnavailable, models.TaskStatus{
@@ -123,11 +123,16 @@ func (env *Env) addTask(c *gin.Context) {
 	}
 
 	// start rollout monitor
-	go env.updater.WaitForRollout(task)
+	go env.updater.WaitForRollout(*newTask)
 
-	c.JSON(http.StatusAccepted, models.TaskStatus{
-		Id:     *taskId,
-		Status: "accepted",
+	// return information about created task
+	c.JSON(http.StatusOK, models.TaskStatus{
+		Id:           newTask.Id,
+		App:          newTask.App,
+		Author:       newTask.Author,
+		Project:      newTask.Project,
+		Images:       newTask.Images,
+		Status:       "accepted",
 	})
 }
 

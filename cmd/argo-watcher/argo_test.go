@@ -136,10 +136,10 @@ func TestArgoAddTask(t *testing.T) {
 		argo := &Argo{}
 		argo.Init(state, api, metrics)
 		task := models.Task{} // empty task
-		taskId, err := argo.AddTask(task)
+		newTask, err := argo.AddTask(task)
 		
 		// assertions
-		assert.Nil(t, taskId)
+		assert.Nil(t, newTask)
 		assert.EqualError(t, err, models.StatusArgoCDUnavailableMessage)
 	});
 
@@ -161,10 +161,10 @@ func TestArgoAddTask(t *testing.T) {
 		argo := &Argo{}
 		argo.Init(state, api, metrics)
 		task := models.Task{} // empty task
-		taskId, err := argo.AddTask(task)
+		newTask, err := argo.AddTask(task)
 		
 		// assertions
-		assert.Nil(t, taskId)
+		assert.Nil(t, newTask)
 		assert.EqualError(t, err, "trying to create task without images")
 	});
 	
@@ -190,10 +190,10 @@ func TestArgoAddTask(t *testing.T) {
 				{ Tag: taskImageTag },
 			 },
 		} 
-		taskId, err := argo.AddTask(task)
+		newTask, err := argo.AddTask(task)
 		
 		// assertions
-		assert.Nil(t, taskId)
+		assert.Nil(t, newTask)
 		assert.EqualError(t, err, "trying to create task without app name")
 	});
 
@@ -224,10 +224,10 @@ func TestArgoAddTask(t *testing.T) {
 				{ Tag: taskImageTag },
 			 },
 		} 
-		taskId, err := argo.AddTask(task)
+		newTask, err := argo.AddTask(task)
 		
 		// assertions
-		assert.Nil(t, taskId)
+		assert.Nil(t, newTask)
 		assert.EqualError(t, err, stateError.Error())
 	});
 
@@ -258,12 +258,12 @@ func TestArgoAddTask(t *testing.T) {
 				{ Tag: taskImageTag },
 			 },
 		} 
-		taskId, err := argo.AddTask(task)
+		newTask, err := argo.AddTask(task)
 		
 		// assertions
 		assert.Nil(t, err)
-		assert.NotNil(t, taskId)
+		assert.NotNil(t, newTask)
 		uuidRegexp := regexp.MustCompile("^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-4[a-fA-F0-9]{3}-[8|9|aA|bB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}$")
-		assert.Regexp(t, uuidRegexp, *taskId, "Must match Regexp for uuid v4")
+		assert.Regexp(t, uuidRegexp, newTask.Id, "Must match Regexp for uuid v4")
 	});
 }
