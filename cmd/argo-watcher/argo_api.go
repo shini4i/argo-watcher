@@ -18,6 +18,12 @@ import (
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
+type ArgoApiInterface interface {
+	Init(serverConfig *config.ServerConfig) error;
+	GetUserInfo() (*models.Userinfo, error);
+	GetApplication(app string) (*models.Application, error);
+}
+
 type ArgoApi struct {
 	baseUrl string
 	client  *http.Client
@@ -61,7 +67,7 @@ func (api *ArgoApi) Init(serverConfig *config.ServerConfig) error {
 	return nil
 }
 
-func (api *ArgoApi) UserInfo() (*models.Userinfo, error) {
+func (api *ArgoApi) GetUserInfo() (*models.Userinfo, error) {
 	apiUrl := fmt.Sprintf("%s/api/v1/session/userinfo", api.baseUrl)
 	req, err := http.NewRequest("GET", apiUrl, nil)
 	if err != nil {
@@ -95,7 +101,7 @@ func (api *ArgoApi) UserInfo() (*models.Userinfo, error) {
 	return &userInfo, nil
 }
 
-func (api *ArgoApi) ApplicationStatus(app string) (*models.Application, error) {
+func (api *ArgoApi) GetApplication(app string) (*models.Application, error) {
 	apiUrl := fmt.Sprintf("%s/api/v1/applications/%s", api.baseUrl, app)
 	req, err := http.NewRequest("GET", apiUrl, nil)
 	if err != nil {

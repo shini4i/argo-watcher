@@ -5,6 +5,13 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+type MetricsInterface interface {
+	AddFailedDeployment(app string)
+	ResetFailedDeployment(app string)
+	AddProcessedDeployment()
+	SetArgoUnavailable(unavailable bool)
+}
+
 type Metrics struct {
 	failedDeployment     *prometheus.GaugeVec
 	processedDeployments prometheus.Counter
@@ -33,4 +40,24 @@ func (metrics *Metrics) Register() {
 	prometheus.MustRegister(metrics.failedDeployment)
 	prometheus.MustRegister(metrics.processedDeployments)
 	prometheus.MustRegister(metrics.argocdUnavailable)
+}
+
+func (metrics *Metrics) AddFailedDeployment(app string) {
+	metrics.failedDeployment.With(prometheus.Labels{"app": app}).Inc()
+}
+
+func (metrics *Metrics) ResetFailedDeployment(app string) {
+	metrics.failedDeployment.With(prometheus.Labels{"app": app}).Set(0)
+}
+
+func (metrics *Metrics) AddProcessedDeployment() {
+	metrics.processedDeployments.Inc()
+}
+
+func (metrics *Metrics) SetArgoUnavailable(unavailable bool) {
+	if unavailable {
+		metrics.argocdUnavailable.Set(1)
+	} else {
+		metrics.argocdUnavailable.Set(0)
+	}
 }

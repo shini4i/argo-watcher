@@ -25,6 +25,8 @@ type Env struct {
 	config *config.ServerConfig
 	// argo argo
 	argo *Argo
+	// argo updater
+	updater *ArgoStatusUpdater
 	// metrics
 	metrics *Metrics
 }
@@ -119,6 +121,9 @@ func (env *Env) addTask(c *gin.Context) {
 		})
 		return
 	}
+
+	// start rollout monitor
+	go env.updater.WaitForRollout(task)
 
 	c.JSON(http.StatusAccepted, models.TaskStatus{
 		Id:     id,

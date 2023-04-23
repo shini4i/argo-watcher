@@ -28,12 +28,12 @@ func main() {
 	zerolog.SetGlobalLevel(logLevel)
 
 	// initialize metrics
-	metrics := Metrics{}
+	metrics := &Metrics{}
 	metrics.Init()
 	metrics.Register()
 
 	// create API client
-	api := ArgoApi{}
+	api := &ArgoApi{}
 	if err := api.Init(serverConfig); err != nil {
 		log.Error().Msgf("Couldn't initialize the Argo API. Got the following error: %s", err)
 		os.Exit(1)
@@ -49,11 +49,15 @@ func main() {
 	go state.ProcessObsoleteTasks()
 
 	// initialize argo client
-	client := Argo{}
-	client.Init(&state, &api, &metrics, serverConfig.GetRetryAttempts())
+	argo := &Argo{}
+	argo.Init(state, api, metrics)
 
+	// initialize argo updater
+	updater := &ArgoStatusUpdater{}
+	updater.Init(*argo, serverConfig.GetRetryAttempts())
+	
 	// create environment
-	env := &Env{config: serverConfig, argo: &client, metrics: &metrics}
+	env := &Env{config: serverConfig, argo: argo, metrics: metrics, updater: updater}
 
 	// start the server
 	log.Info().Msg("Starting web server")
