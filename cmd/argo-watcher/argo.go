@@ -57,7 +57,7 @@ func (argo *Argo) Check() (string, error) {
 		return "down", errors.New(models.StatusArgoCDUnavailableMessage)
 	}
 
-	if userLoggedIn == nil {
+	if userLoggedIn == nil || !userLoggedIn.LoggedIn {
 		argo.metrics.SetArgoUnavailable(true)
 		return "down", errors.New(models.StatusArgoCDFailedLogin)
 	}
