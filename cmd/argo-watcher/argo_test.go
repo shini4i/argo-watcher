@@ -11,7 +11,10 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestArgo_Check(t *testing.T) {
+const loggedInUsername = "unit-test"
+const taskImageTag = "test:v0.0.1"
+
+func TestArgoCheck(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	
@@ -25,7 +28,7 @@ func TestArgo_Check(t *testing.T) {
 		stateMock.EXPECT().Check().Return(true)
 		testUserInfo := &models.Userinfo{
 			LoggedIn: true,
-			Username: "unit-test",
+			Username: loggedInUsername,
 		}
 		apiMock.EXPECT().GetUserInfo().Return(testUserInfo, nil)
 		metricsMock.EXPECT().SetArgoUnavailable(false)
@@ -50,7 +53,7 @@ func TestArgo_Check(t *testing.T) {
 		state.EXPECT().Check().Return(false)
 		testUserInfo := &models.Userinfo{
 			LoggedIn: true,
-			Username: "unit-test",
+			Username: loggedInUsername,
 		}
 		api.EXPECT().GetUserInfo().Return(testUserInfo, nil)
 		metrics.EXPECT().SetArgoUnavailable(true)
@@ -76,7 +79,7 @@ func TestArgo_Check(t *testing.T) {
 		state.EXPECT().Check().Return(true)
 		testUserInfo := &models.Userinfo{
 			LoggedIn: false,
-			Username: "unit-test",
+			Username: loggedInUsername,
 		}
 		api.EXPECT().GetUserInfo().Return(testUserInfo, nil)
 		metrics.EXPECT().SetArgoUnavailable(true)
@@ -114,7 +117,7 @@ func TestArgo_Check(t *testing.T) {
 }
 
 
-func TestArgo_AddTask(t *testing.T) {
+func TestArgoAddTask(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -184,7 +187,7 @@ func TestArgo_AddTask(t *testing.T) {
 		argo.Init(state, api, metrics)
 		task := models.Task{
 			Images: []models.Image{ 
-				{ Tag: "test:v0.0.1" },
+				{ Tag: taskImageTag },
 			 },
 		} 
 		taskId, err := argo.AddTask(task)
@@ -218,7 +221,7 @@ func TestArgo_AddTask(t *testing.T) {
 		task := models.Task{
 			App: "test-app",
 			Images: []models.Image{ 
-				{ Tag: "test:v0.0.1" },
+				{ Tag: taskImageTag },
 			 },
 		} 
 		taskId, err := argo.AddTask(task)
@@ -252,7 +255,7 @@ func TestArgo_AddTask(t *testing.T) {
 		task := models.Task{
 			App: "test-app",
 			Images: []models.Image{ 
-				{ Tag: "test:v0.0.1" },
+				{ Tag: taskImageTag },
 			 },
 		} 
 		taskId, err := argo.AddTask(task)
