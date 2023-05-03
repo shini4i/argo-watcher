@@ -252,7 +252,7 @@ func (argo *Argo) checkWithRetry(task m.Task) (int, error) {
 
 			for _, image := range task.Images {
 				expected := fmt.Sprintf("%s:%s", image.Image, image.Tag)
-				if !h.Contains(app.Status.Summary.Images, expected) {
+				if !h.ImageContains(app.Status.Summary.Images, expected) {
 					log.Debug().Str("id", task.Id).Msgf("%s is not available yet", expected)
 					status = ArgoAppNotAvailable
 					return argoPlannedRetryError
