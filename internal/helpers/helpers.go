@@ -2,7 +2,6 @@ package helpers
 
 import (
 	"os"
-	"strings"
 )
 
 func GetEnv(key, fallback string) string {
@@ -21,14 +20,23 @@ func Contains(slice []string, s string) bool {
 	return false
 }
 
-func ImageContains(slice []string, s string) bool {
-	for _, item := range slice {
-		if item == s {
+// ImageMatch Is a temporary setup to allow for a more flexible image matching
+type ImageMatch func(images []string, image, registryProxy string) bool
+
+func ImageContains(images []string, image string, registryProxy string) bool {
+	for _, item := range images {
+		if item == image {
 			return true
-		} else {
-			if strings.HasSuffix(item, "/"+s) {
-				return true
-			}
+		}
+	}
+	return false
+}
+
+func ImageContainsWithProxy(images []string, image string, registryProxy string) bool {
+	imageWithProxy := registryProxy + "/" + image
+	for _, item := range images {
+		if item == image || item == imageWithProxy {
+			return true
 		}
 	}
 	return false

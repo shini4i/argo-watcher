@@ -31,6 +31,7 @@ var (
 	retryAttempts         = uint((argoTimeout / 15) + 1)
 	config                = c.GetConfig()
 	argoPlannedRetryError = errors.New("planned retry")
+	imagesProxy           = os.Getenv("DOCKER_IMAGES_PROXY")
 )
 
 const (
@@ -240,6 +241,13 @@ func (argo *Argo) checkAppStatus(app string) (*m.Application, error) {
 
 func (argo *Argo) checkWithRetry(task m.Task) (int, error) {
 	var status int
+	var imageMatched h.ImageMatch
+
+	if imagesProxy != "" {
+		imageMatched = h.ImageContainsWithProxy
+	} else {
+		imageMatched = h.ImageContains
+	}
 
 	err := retry.Do(
 		func() error {
@@ -252,7 +260,7 @@ func (argo *Argo) checkWithRetry(task m.Task) (int, error) {
 
 			for _, image := range task.Images {
 				expected := fmt.Sprintf("%s:%s", image.Image, image.Tag)
-				if !h.ImageContains(app.Status.Summary.Images, expected) {
+				if !imageMatched(app.Status.Summary.Images, expected, imagesProxy) {
 					log.Debug().Str("id", task.Id).Msgf("%s is not available yet", expected)
 					status = ArgoAppNotAvailable
 					return argoPlannedRetryError
