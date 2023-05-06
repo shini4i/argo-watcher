@@ -20,24 +20,13 @@ func Contains(slice []string, s string) bool {
 	return false
 }
 
-// ImageMatch Is a temporary setup to allow for a more flexible image matching
-type ImageMatch func(images []string, image, registryProxy string) bool
-
 func ImageContains(images []string, image string, registryProxy string) bool {
-	for _, item := range images {
-		if item == image {
-			return true
-		}
+	if registryProxy != "" {
+		imageWithProxy := registryProxy + "/" + image
+		// We need to check image with and without proxy because mutating webhook
+		// might not have finished image copy during first rollout part. (due to 30s timeout)
+		return Contains(images, image) || Contains(images, imageWithProxy)
+	} else {
+		return Contains(images, image)
 	}
-	return false
-}
-
-func ImageContainsWithProxy(images []string, image string, registryProxy string) bool {
-	imageWithProxy := registryProxy + "/" + image
-	for _, item := range images {
-		if item == image || item == imageWithProxy {
-			return true
-		}
-	}
-	return false
 }
