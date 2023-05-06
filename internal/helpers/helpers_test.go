@@ -62,7 +62,7 @@ func TestContains(t *testing.T) {
 }
 func TestImageContains(t *testing.T) {
 	for _, test := range imageContainsTest {
-		if result := ImageContains(test.strs, test.substr); result != test.expected {
+		if result := ImagesContains(test.strs, test.substr, ""); result != test.expected {
 			t.Errorf("Output %v not equal to expected %v with %v and %v", result, test.expected, test.strs, test.substr)
 		}
 	}

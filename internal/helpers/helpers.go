@@ -20,7 +20,7 @@ func Contains(slice []string, s string) bool {
 	return false
 }
 
-func ImageContains(images []string, image string, registryProxy string) bool {
+func ImagesContains(images []string, image string, registryProxy string) bool {
 	if registryProxy != "" {
 		imageWithProxy := registryProxy + "/" + image
 		// We need to check image with and without proxy because mutating webhook
