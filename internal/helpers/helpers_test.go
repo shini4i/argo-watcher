@@ -1,8 +1,16 @@
 package helpers
 
 import (
+	"fmt"
 	"github.com/stretchr/testify/assert"
 	"testing"
+)
+
+const (
+	image1        = "app:v0.0.1"
+	image2        = "nginx:1.21.6"
+	image3        = "migrations:v0.0.1"
+	registryProxy = "registry.example.local"
 )
 
 type containsTest struct {
@@ -27,10 +35,10 @@ var (
 	}
 
 	imageContainsTest = []imagesContainsTest{
-		{[]string{"app:v0.0.1", "nginx:1.21.6", "migrations:v0.0.1"}, "app:v0.0.1", "", true},
-		{[]string{"app:v0.0.1", "nginx:1.21.6", "migrations:v0.0.1"}, "nginx:1.21.7", "", false},
-		{[]string{"registry.example.local/app:v0.0.1", "nginx:1.21.6", "migrations:v0.0.1"}, "app:v0.0.1", "registry.example.local", true},
-		{[]string{"app:v0.0.1", "nginx:1.21.6", "migrations:v0.0.1"}, "app:v0.0.1", "registry.example.local", true},
+		{[]string{image1, image2, image3}, image1, "", true},
+		{[]string{image1, image2, image3}, "nginx:1.21.7", "", false},
+		{[]string{fmt.Sprintf("%s/%s", registryProxy, image1), image2, image3}, image1, registryProxy, true},
+		{[]string{image1, image2, image3}, image1, registryProxy, true},
 	}
 )
 
