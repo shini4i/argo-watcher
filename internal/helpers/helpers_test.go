@@ -39,17 +39,18 @@ var (
 		{[]string{image1, image2, image3}, "nginx:1.21.7", "", false},
 		{[]string{fmt.Sprintf("%s/%s", registryProxy, image1), image2, image3}, image1, registryProxy, true},
 		{[]string{image1, image2, image3}, image1, registryProxy, true},
+		{[]string{image1, image2, image3}, "v0.0.2", registryProxy, false},
 	}
 )
 
 func TestContains(t *testing.T) {
 	for _, test := range containsTestSuite {
-		assert.Equal(t, test.expected, Contains(test.strs, test.substr))
+		assert.Equal(t, test.expected, Contains(test.strs, test.substr), "Contains(%s, %s) should be %t", test.strs, test.substr, test.expected)
 	}
 }
 
 func TestImageContains(t *testing.T) {
 	for _, test := range imageContainsTest {
-		assert.Equal(t, test.expected, ImagesContains(test.images, test.image, test.registryProxy))
+		assert.Equal(t, test.expected, ImagesContains(test.images, test.image, test.registryProxy), "ImagesContains(%s, %s, %s) should be %t", test.images, test.image, test.registryProxy, test.expected)
 	}
 }
