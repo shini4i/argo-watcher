@@ -45,12 +45,14 @@ var (
 
 func TestContains(t *testing.T) {
 	for _, test := range containsTestSuite {
-		assert.Equal(t, test.expected, Contains(test.strs, test.substr), "Contains(%s, %s) should be %t", test.strs, test.substr, test.expected)
+		testErrorMsg := fmt.Sprintf("Contains(%s, %s) should be %t", test.strs, test.substr, test.expected)
+		assert.Equal(t, test.expected, Contains(test.strs, test.substr), testErrorMsg)
 	}
 }
 
 func TestImageContains(t *testing.T) {
 	for _, test := range imageContainsTest {
-		assert.Equal(t, test.expected, ImagesContains(test.images, test.image, test.registryProxy), "ImagesContains(%s, %s, %s) should be %t", test.images, test.image, test.registryProxy, test.expected)
+		testErrorMsg := fmt.Sprintf("ImageContains(%s, %s, %s) should be %t", test.images, test.image, test.registryProxy, test.expected)
+		assert.Equal(t, test.expected, ImagesContains(test.images, test.image, test.registryProxy), testErrorMsg)
 	}
 }
