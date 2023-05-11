@@ -151,9 +151,8 @@ func (api *ArgoApi) GetApplication(app string) (*models.Application, error) {
 	}
 
 	var argoApp models.Application
-	err = json.Unmarshal(body, &argoApp)
-	if err != nil {
-		return nil, err
+	if err = json.Unmarshal(body, &argoApp); err != nil {
+		return nil, fmt.Errorf("could not parse json response: %s", body)
 	}
 
 	return &argoApp, nil
