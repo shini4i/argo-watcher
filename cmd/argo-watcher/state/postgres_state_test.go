@@ -1,13 +1,15 @@
 package state
 
 import (
-	"github.com/google/uuid"
-	"github.com/shini4i/argo-watcher/internal/helpers"
 	"os"
 	"testing"
 	"time"
 
-	m "github.com/shini4i/argo-watcher/internal/models"
+	"github.com/google/uuid"
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
+	"github.com/shini4i/argo-watcher/internal/helpers"
+
+	"github.com/shini4i/argo-watcher/internal/models"
 )
 
 const postgresTaskId = "782e6e84-e67d-11ec-9f2f-8a68373f0f50"
@@ -15,14 +17,14 @@ const postgresTaskId = "782e6e84-e67d-11ec-9f2f-8a68373f0f50"
 var (
 	created       = float64(time.Now().Unix())
 	postgresState = PostgresState{}
-	postgresTasks = []m.Task{
+	postgresTasks = []models.Task{
 		{
 			Id:      postgresTaskId,
 			Created: created,
 			App:     "Test",
 			Author:  "Test Author",
 			Project: "Test Project",
-			Images: []m.Image{
+			Images: []models.Image{
 				{
 					Image: "test",
 					Tag:   "v0.0.1",
@@ -36,7 +38,7 @@ var (
 			App:     "Test2",
 			Author:  "Test Author",
 			Project: "Test Project",
-			Images: []m.Image{
+			Images: []models.Image{
 				{
 					Image: "test2",
 					Tag:   "v0.0.1",
@@ -48,12 +50,17 @@ var (
 )
 
 func TestPostgresState_Add(t *testing.T) {
-	err := os.Setenv("DB_MIGRATIONS_PATH", "../../../db/migrations")
-	if err != nil {
-		panic(err)
+	config := &config.ServerConfig{
+		StateType: "postgresql",
+		DbHost: os.Getenv("DB_HOST"),
+		DbPort: "5432",
+		DbUser: os.Getenv("DB_USER"),
+		DbName: os.Getenv("DB_NAME"),
+		DbPassword: os.Getenv("DB_PASSWORD"),
+		DbMigrationsPath: "../../../db/migrations",
 	}
-	postgresState.Connect()
-	_, err = postgresState.db.Exec("TRUNCATE TABLE tasks")
+	postgresState.Connect(config)
+	_, err := postgresState.db.Exec("TRUNCATE TABLE tasks")
 	if err != nil {
 		panic(err)
 	}

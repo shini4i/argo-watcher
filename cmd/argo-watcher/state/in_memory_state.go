@@ -2,34 +2,37 @@ package state
 
 import (
 	"errors"
-	"github.com/avast/retry-go/v4"
-	"github.com/rs/zerolog/log"
 	"time"
 
-	h "github.com/shini4i/argo-watcher/internal/helpers"
-	m "github.com/shini4i/argo-watcher/internal/models"
+	"github.com/avast/retry-go/v4"
+	"github.com/rs/zerolog/log"
+
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
+	"github.com/shini4i/argo-watcher/internal/helpers"
+	"github.com/shini4i/argo-watcher/internal/models"
 )
 
 type InMemoryState struct {
-	tasks []m.Task
+	tasks []models.Task
 }
 
-func (state *InMemoryState) Connect() {
+func (state *InMemoryState) Connect(serverConfig *config.ServerConfig) {
 	log.Debug().Msg("InMemoryState does not connect to anything. Skipping.")
 }
 
-func (state *InMemoryState) Add(task m.Task) {
+func (state *InMemoryState) Add(task models.Task) error {
 	task.Created = float64(time.Now().Unix())
 	task.Status = "in progress"
 	state.tasks = append(state.tasks, task)
+	return nil
 }
 
-func (state *InMemoryState) GetTasks(startTime float64, endTime float64, app string) []m.Task {
+func (state *InMemoryState) GetTasks(startTime float64, endTime float64, app string) []models.Task {
 	if state.tasks == nil {
-		return []m.Task{}
+		return []models.Task{}
 	}
 
-	var tasks []m.Task
+	var tasks []models.Task
 
 	for _, task := range state.tasks {
 		if task.Created >= startTime && task.Created <= endTime {
@@ -42,13 +45,13 @@ func (state *InMemoryState) GetTasks(startTime float64, endTime float64, app str
 	}
 
 	if tasks == nil {
-		return []m.Task{}
+		return []models.Task{}
 	}
 
 	return tasks
 }
 
-func (state *InMemoryState) GetTask(id string) (*m.Task, error) {
+func (state *InMemoryState) GetTask(id string) (*models.Task, error) {
 	for _, task := range state.tasks {
 		if task.Id == id {
 			return &task, nil
@@ -71,7 +74,7 @@ func (state *InMemoryState) GetAppList() []string {
 	var apps []string
 
 	for _, app := range state.tasks {
-		if !h.Contains(apps, app.App) {
+		if !helpers.Contains(apps, app.App) {
 			apps = append(apps, app.App)
 		}
 	}

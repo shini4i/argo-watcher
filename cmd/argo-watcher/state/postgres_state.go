@@ -5,42 +5,34 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/avast/retry-go/v4"
-	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database/postgres"
-	_ "github.com/lib/pq"
-	"github.com/rs/zerolog/log"
-	"os"
 	"time"
 
-	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	"github.com/avast/retry-go/v4"
+	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/lib/pq"
+	"github.com/rs/zerolog/log"
+
+	"github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 
-	h "github.com/shini4i/argo-watcher/internal/helpers"
-	m "github.com/shini4i/argo-watcher/internal/models"
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
+	"github.com/shini4i/argo-watcher/internal/models"
 )
 
-var (
-	dbHost     = os.Getenv("DB_HOST")
-	dbPort     = h.GetEnv("DB_PORT", "5432")
-	dbName     = os.Getenv("DB_NAME")
-	dbUser     = os.Getenv("DB_USER")
-	dbPassword = os.Getenv("DB_PASSWORD")
-)
 
 type PostgresState struct {
 	db *sql.DB
 }
 
-func (state *PostgresState) Connect() {
-	c := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable", dbHost, dbPort, dbUser, dbPassword, dbName)
+func (state *PostgresState) Connect(serverConfig *config.ServerConfig) {
+	c := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable", serverConfig.DbHost, serverConfig.DbPort, serverConfig.DbUser, serverConfig.DbPassword, serverConfig.DbName)
 
 	db, err := sql.Open("postgres", c)
 	if err != nil {
 		panic(err)
 	}
 
-	migrationsPath := fmt.Sprintf("file://%s", h.GetEnv("DB_MIGRATIONS_PATH", "db/migrations"))
+	migrationsPath := fmt.Sprintf("file://%s", serverConfig.DbMigrationsPath)
 
 	driver, _ := postgres.WithInstance(db, &postgres.Config{})
 	migrations, _ := migrate.NewWithDatabaseInstance(
@@ -59,10 +51,10 @@ func (state *PostgresState) Connect() {
 	state.db = db
 }
 
-func (state *PostgresState) Add(task m.Task) {
+func (state *PostgresState) Add(task models.Task) error {
 	images, err := json.Marshal(task.Images)
 	if err != nil {
-		return
+		return fmt.Errorf("could not marshal images into json")
 	}
 	_, err = state.db.Exec("INSERT INTO tasks(id, created, images, status, app, author, project) VALUES ($1, $2, $3, $4, $5, $6, $7)",
 		task.Id,
@@ -75,11 +67,14 @@ func (state *PostgresState) Add(task m.Task) {
 	)
 
 	if err != nil {
-		panic(err)
+		log.Error().Str("id", task.Id).Msgf("Failed to create task database record with error: %s", err)
+		return fmt.Errorf("failed to create task in database")
 	}
+
+	return nil
 }
 
-func (state *PostgresState) GetTasks(startTime float64, endTime float64, app string) []m.Task {
+func (state *PostgresState) GetTasks(startTime float64, endTime float64, app string) []models.Task {
 	startTimeUTC := time.Unix(int64(startTime), 0).UTC()
 	endTimeUTC := time.Unix(int64(endTime), 0).UTC()
 
@@ -114,7 +109,7 @@ func (state *PostgresState) GetTasks(startTime float64, endTime float64, app str
 		}
 	}(rows)
 
-	var tasks []m.Task
+	var tasks []models.Task
 
 	// This is required to handle potential null values in updated column
 	var updated sql.NullFloat64
@@ -122,7 +117,7 @@ func (state *PostgresState) GetTasks(startTime float64, endTime float64, app str
 	var images []uint8
 
 	for rows.Next() {
-		var task m.Task
+		var task models.Task
 
 		if err := rows.Scan(&task.Id, &task.Created, &updated, &images, &task.Status, &task.StatusReason, &task.App, &task.Author, &task.Project); err != nil {
 			panic(err)
@@ -140,14 +135,14 @@ func (state *PostgresState) GetTasks(startTime float64, endTime float64, app str
 	}
 
 	if tasks == nil {
-		return []m.Task{}
+		return []models.Task{}
 	} else {
 		return tasks
 	}
 }
 
-func (state *PostgresState) GetTask(id string) (*m.Task, error) {
-	var task m.Task
+func (state *PostgresState) GetTask(id string) (*models.Task, error) {
+	var task models.Task
 
 	query := `
 		SELECT id, status, status_reason, app, author, project

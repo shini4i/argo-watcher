@@ -21,3 +21,12 @@ build: ensure-dirs ## Build the binaries
 .PHONY: docs
 docs: ## Generate swagger docs
 	@cd cmd/argo-watcher && swag init --parseDependency --parseInternal
+
+.PHONY: mocks
+mocks:
+# generate API mock
+	@mockgen --source=cmd/argo-watcher/argo_api.go --destination=cmd/argo-watcher/mock/argo_api.go --package=mock
+# generate State mock
+	@mockgen --source=cmd/argo-watcher/state/state.go --destination=cmd/argo-watcher/mock/state.go --package=mock
+# generate Metrics mock
+	@mockgen --source=cmd/argo-watcher/metrics.go --destination=cmd/argo-watcher/mock/metrics.go --package=mock

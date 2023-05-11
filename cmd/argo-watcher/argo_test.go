@@ -1,94 +1,267 @@
 package main
 
 import (
-	"github.com/shini4i/argo-watcher/internal/helpers"
-	m "github.com/shini4i/argo-watcher/internal/models"
+	"fmt"
+	"regexp"
 	"testing"
-	"time"
+
+	"github.com/golang/mock/gomock"
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/mock"
+	"github.com/shini4i/argo-watcher/internal/models"
+	"github.com/stretchr/testify/assert"
 )
 
-var (
-	taskId  string
-	task2Id string
-	task3Id string
-	task4Id string
-)
+const loggedInUsername = "unit-test"
+const taskImageTag = "test:v0.0.1"
 
-var (
-	testClient = Argo{
-		Url:     "http://localhost:8081",
-		Token:   "dummy",
-		Timeout: "10",
-	}
-	task = m.Task{
-		Created: float64(time.Now().Unix()),
-		App:     "app",
-		Author:  "Test Author",
-		Project: "Test Project",
-		Images: []m.Image{
-			{
-				Image: "app",
-				Tag:   "v0.0.1",
-			},
-		},
-		Status: "in progress",
-	}
-)
+func TestArgoCheck(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
 
-func TestArgo_GetTask(t *testing.T) {
-	var task2 m.Task
-	var task3 m.Task
-	var task4 m.Task
+	t.Run("Argo Watcher - Up", func(t *testing.T) {
+		// mocks
+		apiMock := mock.NewMockArgoApiInterface(ctrl)
+		metricsMock := mock.NewMockMetricsInterface(ctrl)
+		stateMock := mock.NewMockState(ctrl)
 
-	if err := testClient.Init(); err != nil {
-		t.Error(err)
-	}
+		// mock calls
+		stateMock.EXPECT().Check().Return(true)
+		testUserInfo := &models.Userinfo{
+			LoggedIn: true,
+			Username: loggedInUsername,
+		}
+		apiMock.EXPECT().GetUserInfo().Return(testUserInfo, nil)
+		metricsMock.EXPECT().SetArgoUnavailable(false)
 
-	taskId, _ = testClient.AddTask(task)
+		// argo manager
+		argo := &Argo{}
+		argo.Init(stateMock, apiMock, metricsMock)
+		status, err := argo.Check()
 
-	task2 = task
-	task2.App = "app2"
-	task2Id, _ = testClient.AddTask(task2)
+		// assertions
+		assert.Nil(t, err)
+		assert.Equal(t, "up", status)
+	})
 
-	task3 = task
-	task3.App = "app3"
-	task3Id, _ = testClient.AddTask(task3)
+	t.Run("Argo Watcher - Down - Cannot connect to state manager", func(t *testing.T) {
+		// mocks
+		api := mock.NewMockArgoApiInterface(ctrl)
+		metrics := mock.NewMockMetricsInterface(ctrl)
+		state := mock.NewMockState(ctrl)
 
-	task4 = task
-	task4.App = "app4"
-	task4Id, _ = testClient.AddTask(task4)
+		// mock calls
+		state.EXPECT().Check().Return(false)
+		testUserInfo := &models.Userinfo{
+			LoggedIn: true,
+			Username: loggedInUsername,
+		}
+		api.EXPECT().GetUserInfo().Return(testUserInfo, nil)
+		metrics.EXPECT().SetArgoUnavailable(true)
 
-	time.Sleep(2 * time.Second)
+		// argo manager
+		argo := &Argo{}
+		argo.Init(state, api, metrics)
+		status, err := argo.Check()
 
-	const errorMessageTemplate = "got %s, expected %s"
+		// assertions
+		assert.EqualError(t, err, models.StatusConnectionUnavailable)
+		assert.Equal(t, "down", status)
+	})
 
-	if taskInfo, _ := testClient.state.GetTask(taskId); taskInfo.Status != "deployed" {
-		t.Errorf(errorMessageTemplate, taskInfo.Status, "deployed")
-	}
+	t.Run("Argo Watcher - Down - Cannot login", func(t *testing.T) {
+		// mocks
+		api := mock.NewMockArgoApiInterface(ctrl)
+		metrics := mock.NewMockMetricsInterface(ctrl)
+		state := mock.NewMockState(ctrl)
 
-	if taskInfo, _ := testClient.state.GetTask(task2Id); taskInfo.Status != "failed" {
-		t.Errorf(errorMessageTemplate, taskInfo.Status, "failed")
-	}
+		// mock calls
+		state.EXPECT().Check().Return(true)
+		testUserInfo := &models.Userinfo{
+			LoggedIn: false,
+			Username: loggedInUsername,
+		}
+		api.EXPECT().GetUserInfo().Return(testUserInfo, nil)
+		metrics.EXPECT().SetArgoUnavailable(true)
 
-	if taskInfo, _ := testClient.state.GetTask(task3Id); taskInfo.Status != "app not found" {
-		t.Errorf(errorMessageTemplate, taskInfo.Status, "app not found")
-	}
+		// argo manager
+		argo := &Argo{}
+		argo.Init(state, api, metrics)
+		status, err := argo.Check()
 
-	if taskInfo, _ := testClient.state.GetTask(task4Id); taskInfo.Status != "failed" {
-		t.Errorf(errorMessageTemplate, taskInfo.Status, "failed")
-	}
+		// assertions
+		assert.EqualError(t, err, models.StatusArgoCDFailedLogin)
+		assert.Equal(t, "down", status)
+	})
+
+	t.Run("Argo Watcher - Down - Unexpected login failure", func(t *testing.T) {
+		// mocks
+		api := mock.NewMockArgoApiInterface(ctrl)
+		metrics := mock.NewMockMetricsInterface(ctrl)
+		state := mock.NewMockState(ctrl)
+
+		// mock calls
+		state.EXPECT().Check().Return(true)
+		api.EXPECT().GetUserInfo().Return(nil, fmt.Errorf("Unexpected login error"))
+		metrics.EXPECT().SetArgoUnavailable(true)
+
+		// argo manager
+		argo := &Argo{}
+		argo.Init(state, api, metrics)
+		status, err := argo.Check()
+
+		// assertions
+		assert.EqualError(t, err, models.StatusArgoCDUnavailableMessage)
+		assert.Equal(t, "down", status)
+	})
 }
 
-func TestArgo_GetAppList(t *testing.T) {
-	apps := testClient.GetAppList()
+func TestArgoAddTask(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
 
-	for _, app := range apps {
-		if !helpers.Contains([]string{"app", "app2", "app3", "app4"}, app) {
-			t.Errorf("Got unexpected value %s", app)
+	t.Run("Argo Unavailable", func(t *testing.T) {
+		// mocks
+		api := mock.NewMockArgoApiInterface(ctrl)
+		metrics := mock.NewMockMetricsInterface(ctrl)
+		state := mock.NewMockState(ctrl)
+
+		// mock calls
+		state.EXPECT().Check().Return(true)
+		api.EXPECT().GetUserInfo().Return(nil, fmt.Errorf("Unexpected login error"))
+		metrics.EXPECT().SetArgoUnavailable(true)
+
+		// argo manager
+		argo := &Argo{}
+		argo.Init(state, api, metrics)
+		task := models.Task{} // empty task
+		newTask, err := argo.AddTask(task)
+
+		// assertions
+		assert.Nil(t, newTask)
+		assert.EqualError(t, err, models.StatusArgoCDUnavailableMessage)
+	})
+
+	t.Run("Argo - Image not passed", func(t *testing.T) {
+		// mocks
+		api := mock.NewMockArgoApiInterface(ctrl)
+		metrics := mock.NewMockMetricsInterface(ctrl)
+		state := mock.NewMockState(ctrl)
+
+		// mock calls
+		state.EXPECT().Check().Return(true)
+		user := &models.Userinfo{
+			LoggedIn: true,
 		}
-	}
+		api.EXPECT().GetUserInfo().Return(user, nil)
+		metrics.EXPECT().SetArgoUnavailable(false)
 
-	if len(apps) != 4 {
-		t.Errorf("Got %d apps, but expected %d", len(apps), 4)
-	}
+		// argo manager
+		argo := &Argo{}
+		argo.Init(state, api, metrics)
+		task := models.Task{} // empty task
+		newTask, err := argo.AddTask(task)
+
+		// assertions
+		assert.Nil(t, newTask)
+		assert.EqualError(t, err, "trying to create task without images")
+	})
+
+	t.Run("Argo - App not passed", func(t *testing.T) {
+		// mocks
+		api := mock.NewMockArgoApiInterface(ctrl)
+		metrics := mock.NewMockMetricsInterface(ctrl)
+		state := mock.NewMockState(ctrl)
+
+		// mock calls
+		state.EXPECT().Check().Return(true)
+		user := &models.Userinfo{
+			LoggedIn: true,
+		}
+		api.EXPECT().GetUserInfo().Return(user, nil)
+		metrics.EXPECT().SetArgoUnavailable(false)
+
+		// argo manager
+		argo := &Argo{}
+		argo.Init(state, api, metrics)
+		task := models.Task{
+			Images: []models.Image{
+				{Tag: taskImageTag},
+			},
+		}
+		newTask, err := argo.AddTask(task)
+
+		// assertions
+		assert.Nil(t, newTask)
+		assert.EqualError(t, err, "trying to create task without app name")
+	})
+
+	t.Run("Argo - State add failed", func(t *testing.T) {
+		// mocks
+		api := mock.NewMockArgoApiInterface(ctrl)
+		metrics := mock.NewMockMetricsInterface(ctrl)
+		state := mock.NewMockState(ctrl)
+
+		// mock calls
+		state.EXPECT().Check().Return(true)
+		user := &models.Userinfo{
+			LoggedIn: true,
+		}
+		api.EXPECT().GetUserInfo().Return(user, nil)
+		metrics.EXPECT().SetArgoUnavailable(false)
+
+		// mock calls to add task
+		stateError := fmt.Errorf("database error")
+		state.EXPECT().Add(gomock.Any()).Return(stateError)
+
+		// argo manager
+		argo := &Argo{}
+		argo.Init(state, api, metrics)
+		task := models.Task{
+			App: "test-app",
+			Images: []models.Image{
+				{Tag: taskImageTag},
+			},
+		}
+		newTask, err := argo.AddTask(task)
+
+		// assertions
+		assert.Nil(t, newTask)
+		assert.EqualError(t, err, stateError.Error())
+	})
+
+	t.Run("Argo - Task added", func(t *testing.T) {
+		// mocks
+		api := mock.NewMockArgoApiInterface(ctrl)
+		metrics := mock.NewMockMetricsInterface(ctrl)
+		state := mock.NewMockState(ctrl)
+
+		// mock calls
+		state.EXPECT().Check().Return(true)
+		user := &models.Userinfo{
+			LoggedIn: true,
+		}
+		api.EXPECT().GetUserInfo().Return(user, nil)
+		metrics.EXPECT().SetArgoUnavailable(false)
+		metrics.EXPECT().AddProcessedDeployment()
+
+		// mock calls to add task
+		state.EXPECT().Add(gomock.Any()).Return(nil)
+
+		// argo manager
+		argo := &Argo{}
+		argo.Init(state, api, metrics)
+		task := models.Task{
+			App: "test-app",
+			Images: []models.Image{
+				{Tag: taskImageTag},
+			},
+		}
+		newTask, err := argo.AddTask(task)
+
+		// assertions
+		assert.Nil(t, err)
+		assert.NotNil(t, newTask)
+		uuidRegexp := regexp.MustCompile("^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-4[a-fA-F0-9]{3}-[8|9|aA|bB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}$")
+		assert.Regexp(t, uuidRegexp, newTask.Id, "Must match Regexp for uuid v4")
+	})
 }

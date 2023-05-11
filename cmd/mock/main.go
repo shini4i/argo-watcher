@@ -2,11 +2,12 @@ package main
 
 import (
 	"fmt"
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
 	"github.com/shini4i/argo-watcher/internal/helpers"
-	m "github.com/shini4i/argo-watcher/internal/models"
-	"net/http"
+	"github.com/shini4i/argo-watcher/internal/models"
 )
 
 type Token struct {
@@ -35,11 +36,11 @@ func mockGenSession(c *gin.Context) {
 }
 
 func mockUserinfo(c *gin.Context) {
-	c.JSON(http.StatusOK, m.Userinfo{LoggedIn: true})
+	c.JSON(http.StatusOK, models.Userinfo{LoggedIn: true})
 }
 
 func mockReturnAppStatus(c *gin.Context) {
-	var appStatus m.Application
+	var appStatus models.Application
 
 	apps := []string{"app", "app2", "app4"}
 
