@@ -14,8 +14,8 @@ import (
 const defaultErrorMessage string = "could not retrieve details"
 
 type ArgoStatusUpdater struct {
-	argo       Argo
-	retryAttempts uint
+	argo             Argo
+	retryAttempts    uint
 	registryProxyUrl string
 }
 
@@ -55,10 +55,10 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 			message = defaultErrorMessage
 		} else {
 			message = fmt.Sprintf(
-				"List of current images (last app check):\n" + 
-				"\t%s\n\n" + 
-				"List of expected images:\n" + 
-				"\t%s",
+				"List of current images (last app check):\n"+
+					"\t%s\n\n"+
+					"List of expected images:\n"+
+					"\t%s",
 				strings.Join(app.Status.Summary.Images, "\n\t"),
 				strings.Join(task.ListImages(), "\n\t"),
 			)
@@ -74,10 +74,10 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 			message = defaultErrorMessage
 		} else {
 			message = fmt.Sprintf(
-				"App status \"%s\"\n" + 
-				"App message \"%s\"\n" + 
-				"Resources:\n" + 
-				"\t%s",
+				"App status \"%s\"\n"+
+					"App message \"%s\"\n"+
+					"Resources:\n"+
+					"\t%s",
 				app.Status.OperationState.Phase,
 				app.Status.OperationState.Message,
 				strings.Join(app.ListSyncResultResources(), "\n\t"),
@@ -94,10 +94,10 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 			message = defaultErrorMessage
 		} else {
 			message = fmt.Sprintf(
-				"App sync status \"%s\"\n" + 
-				"App health status \"%s\"\n" + 
-				"Resources:\n" + 
-				"\t%s",
+				"App sync status \"%s\"\n"+
+					"App health status \"%s\"\n"+
+					"Resources:\n"+
+					"\t%s",
 				app.Status.Sync.Status,
 				app.Status.Health.Status,
 				strings.Join(app.ListUnhealthyResources(), "\n\t"),
@@ -159,7 +159,6 @@ func (updater *ArgoStatusUpdater) checkWithRetry(task models.Task) (int, error) 
 
 	return lastStatus, err
 }
-
 
 func (updater *ArgoStatusUpdater) handleArgoAPIFailure(task models.Task, err error) {
 	// notify user that app wasn't found

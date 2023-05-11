@@ -55,7 +55,7 @@ func main() {
 	// initialize argo updater
 	updater := &ArgoStatusUpdater{}
 	updater.Init(*argo, serverConfig.GetRetryAttempts(), serverConfig.RegistryProxyUrl)
-	
+
 	// create environment
 	env := &Env{config: serverConfig, argo: argo, metrics: metrics, updater: updater}
 

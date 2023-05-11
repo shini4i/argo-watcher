@@ -79,7 +79,6 @@ func prometheusHandler() gin.HandlerFunc {
 	}
 }
 
-
 // getVersion godoc
 // @Summary Get the version of the server
 // @Description Get the version of the server
@@ -127,12 +126,12 @@ func (env *Env) addTask(c *gin.Context) {
 
 	// return information about created task
 	c.JSON(http.StatusOK, models.TaskStatus{
-		Id:           newTask.Id,
-		App:          newTask.App,
-		Author:       newTask.Author,
-		Project:      newTask.Project,
-		Images:       newTask.Images,
-		Status:       "accepted",
+		Id:      newTask.Id,
+		App:     newTask.App,
+		Author:  newTask.Author,
+		Project: newTask.Project,
+		Images:  newTask.Images,
+		Status:  "accepted",
 	})
 }
 
@@ -216,5 +215,5 @@ func (env *Env) healthz(c *gin.Context) {
 			Status: "down",
 		})
 	}
-	
+
 }

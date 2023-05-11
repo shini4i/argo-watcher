@@ -19,9 +19,9 @@ import (
 )
 
 type ArgoApiInterface interface {
-	Init(serverConfig *config.ServerConfig) error;
-	GetUserInfo() (*models.Userinfo, error);
-	GetApplication(app string) (*models.Application, error);
+	Init(serverConfig *config.ServerConfig) error
+	GetUserInfo() (*models.Userinfo, error)
+	GetApplication(app string) (*models.Application, error)
 }
 
 type ArgoApi struct {
@@ -142,7 +142,7 @@ func (api *ArgoApi) GetApplication(app string) (*models.Application, error) {
 
 		if argoErrorResponse.Message == "" {
 			return nil, fmt.Errorf(
-				"failed parsing argocd API response: %s", 
+				"failed parsing argocd API response: %s",
 				bytes.NewBuffer(body).String(),
 			)
 		}

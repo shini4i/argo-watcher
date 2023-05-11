@@ -31,9 +31,9 @@ const (
 )
 
 type Argo struct {
-	metrics       MetricsInterface
-	api           ArgoApiInterface
-	state         state.State
+	metrics MetricsInterface
+	api     ArgoApiInterface
+	state   state.State
 }
 
 func (argo *Argo) Init(state state.State, api ArgoApiInterface, metrics MetricsInterface) {
@@ -74,16 +74,16 @@ func (argo *Argo) AddTask(task models.Task) (*models.Task, error) {
 
 	task.Id = uuid.New().String()
 	log.Info().Str("id", task.Id).Msg("Starting new task creation")
-	
+
 	if task.Images == nil || len(task.Images) == 0 {
 		return nil, fmt.Errorf("trying to create task without images")
 	}
-	
+
 	if task.App == "" {
 		return nil, fmt.Errorf("trying to create task without app name")
 	}
 
-	log.Info().Str("id", task.Id).Msgf("A new task was triggered",)
+	log.Info().Str("id", task.Id).Msgf("A new task was triggered")
 
 	for index, value := range task.Images {
 		log.Info().Str("id", task.Id).Msgf("Task image [%d] expecting tag %s in app %s.",
@@ -98,7 +98,7 @@ func (argo *Argo) AddTask(task models.Task) (*models.Task, error) {
 		return nil, err
 	}
 
- 	argo.metrics.AddProcessedDeployment()
+	argo.metrics.AddProcessedDeployment()
 	return &task, nil
 }
 
