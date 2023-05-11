@@ -11,6 +11,8 @@ import (
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
+const defaultErrorMessage string = "could not retrieve details"
+
 type ArgoStatusUpdater struct {
 	argo       Argo
 	retryAttempts uint
@@ -40,8 +42,6 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 	// fetch application details
 	app, err := updater.argo.api.GetApplication(task.App)
 
-	// define default message
-	const defaultErrorMessage string = "could not retrieve details"
 	// handle application sync failure
 	switch status {
 	// not all images were deployed to the application
@@ -52,10 +52,14 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 		if err != nil {
 			message = defaultErrorMessage
 		} else {
-			message = "List of current images (last app check):\n"
-			message += "\t" + strings.Join(app.Status.Summary.Images, "\n\t") + "\n\n"
-			message += "List of expected images:\n"
-			message += "\t" + strings.Join(task.ListImages(), "\n\t")
+			message = fmt.Sprintf(
+				"List of current images (last app check):\n" + 
+				"\t%s\n\n" + 
+				"List of expected images:\n" + 
+				"\t%s",
+				strings.Join(app.Status.Summary.Images, "\n\t"),
+				strings.Join(task.ListImages(), "\n\t"),
+			)
 		}
 		// handle error
 		updater.handleAppNotAvailable(task, errors.New(message))
@@ -67,10 +71,15 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 		if err != nil {
 			message = defaultErrorMessage
 		} else {
-			message = "App status \"" + app.Status.OperationState.Phase + "\"\n"
-			message += "App message \"" + app.Status.OperationState.Message + "\"\n"
-			message += "Resources:\n"
-			message += "\t" + strings.Join(app.ListSyncResultResources(), "\n\t")
+			message = fmt.Sprintf(
+				"App status \"%s\"\n" + 
+				"App message \"%s\"\n" + 
+				"Resources:\n" + 
+				"\t%s",
+				app.Status.OperationState.Phase,
+				app.Status.OperationState.Message,
+				strings.Join(app.ListSyncResultResources(), "\n\t"),
+			)
 		}
 		// handle error
 		updater.handleAppOutOfSync(task, errors.New(message))
@@ -82,10 +91,15 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 		if err != nil {
 			message = defaultErrorMessage
 		} else {
-			message = "App sync status \"" + app.Status.Sync.Status + "\"\n"
-			message += "App health status \"" + app.Status.Health.Status + "\"\n"
-			message += "Resources:\n"
-			message += "\t" + strings.Join(app.ListUnhealthyResources(), "\n\t")
+			message = fmt.Sprintf(
+				"App sync status \"%s\"\n" + 
+				"App health status \"%s\"\n" + 
+				"Resources:\n" + 
+				"\t%s",
+				app.Status.Sync.Status,
+				app.Status.Health.Status,
+				strings.Join(app.ListUnhealthyResources(), "\n\t"),
+			)
 		}
 		// handle error
 		updater.handleAppNotHealthy(task, errors.New(message))
