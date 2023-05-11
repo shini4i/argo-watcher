@@ -1,7 +1,7 @@
 #######################
 # Backend build
 #######################
-FROM golang:1.19-alpine3.16 as builder-backend
+FROM golang:1.20-alpine3.16 as builder-backend
 
 ARG APP_VERSION
 

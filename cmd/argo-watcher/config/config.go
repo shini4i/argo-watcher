@@ -13,6 +13,7 @@ type ServerConfig struct {
 	ArgoToken string `required:"false" envconfig:"ARGO_TOKEN"` 
 	ArgoApiTimeout string `required:"false" envconfig:"ARGO_API_TIMEOUT" default:"60"` 
 	ArgoTimeout string `required:"false" envconfig:"ARGO_TIMEOUT" default:"0"` 
+	RegistryProxyUrl string `required:"false" envconfig:"DOCKER_IMAGES_PROXY"` 
 	StateType string `required:"false" envconfig:"STATE_TYPE"` 
 	StaticFilePath string `required:"false" envconfig:"STATIC_FILES_PATH" default:"static"` 
 	LogLevel string `required:"false" envconfig:"LOG_LEVEL" default:"info"` 

@@ -16,11 +16,13 @@ const defaultErrorMessage string = "could not retrieve details"
 type ArgoStatusUpdater struct {
 	argo       Argo
 	retryAttempts uint
+	registryProxyUrl string
 }
 
-func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint) {
+func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, registryProxyUrl string) {
 	updater.argo = argo
 	updater.retryAttempts = retryAttempts
+	updater.registryProxyUrl = registryProxyUrl
 }
 
 func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
@@ -124,7 +126,7 @@ func (updater *ArgoStatusUpdater) checkWithRetry(task models.Task) (int, error) 
 
 			for _, image := range task.Images {
 				expected := fmt.Sprintf("%s:%s", image.Image, image.Tag)
-				if !helpers.Contains(app.Status.Summary.Images, expected) {
+				if !helpers.ImagesContains(app.Status.Summary.Images, expected, updater.registryProxyUrl) {
 					log.Debug().Str("app", task.App).Str("id", task.Id).Msgf("%s is not available yet", expected)
 					lastStatus = ArgoAppNotAvailable
 					return errorArgoPlannedRetry
