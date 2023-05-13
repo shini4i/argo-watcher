@@ -1,35 +1,28 @@
+import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
+import LaunchIcon from '@mui/icons-material/Launch';
+import { Chip, Link, MenuItem, TextField } from '@mui/material';
+import Box from '@mui/material/Box';
+import IconButton from '@mui/material/IconButton';
+import Pagination from '@mui/material/Pagination';
 import Table from '@mui/material/Table';
-import TableHead from '@mui/material/TableHead';
-import TableRow from '@mui/material/TableRow';
 import TableBody from '@mui/material/TableBody';
 import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
 import Tooltip from '@mui/material/Tooltip';
+import Typography from '@mui/material/Typography';
+import { addMinutes, format } from 'date-fns';
+import React, { useEffect, useState } from 'react';
+import { Link as ReactLink } from 'react-router-dom';
+import { fetchTasks } from '../Services/Data';
 import {
   relativeHumanDuration,
   relativeTime,
   relativeTimestamp,
 } from '../Utils';
-import TableContainer from '@mui/material/TableContainer';
-import React, { useEffect, useState } from 'react';
-import { fetchTasks } from '../Services/Data';
-import Box from '@mui/material/Box';
-import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
-import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
-import {
-  Chip,
-  Divider,
-  Link,
-  MenuItem,
-  Popover,
-  TextField,
-} from '@mui/material';
-import { addMinutes, format } from 'date-fns';
-import Pagination from '@mui/material/Pagination';
-import IconButton from '@mui/material/IconButton';
-import Typography from '@mui/material/Typography';
-import { Link as ReactLink } from 'react-router-dom';
-import LaunchIcon from '@mui/icons-material/Launch';
-import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 
 export function ProjectDisplay({ project }) {
   if (project.indexOf('http') === 0) {
@@ -55,15 +48,13 @@ export const chipColorByStatus = status => {
   return undefined;
 };
 
-export function StatusReasonDisplay({ reason, sx = {} }) {
+export function StatusReasonDisplay({ reason }) {
   return (
     <Typography
       sx={{
-        p: 2,
         width: '100%',
         overflow: 'auto',
-        backgroundColor: 'neutral.light',
-        ...sx,
+        fontSize: '13px',
       }}
       component={'pre'}
     >
@@ -211,8 +202,17 @@ function TasksTable({
   page = 1,
 }) {
   const [itemsPerPage, setItemsPerPage] = useState(getCachedItemsPerPage());
-  const [statusReasonElement, setStatusReasonElement] = useState(null);
-  const [statusReason, setStatusReason] = useState(null);
+  const [visibleReasons, setVisibleReasons] = useState([]);
+
+  const toggleReason = task => {
+    setVisibleReasons(visibleReasons => {
+      if (visibleReasons.includes(task?.id)) {
+        return [...visibleReasons.filter(id => id !== task?.id)];
+      } else {
+        return [...visibleReasons, task?.id];
+      }
+    });
+  };
 
   const pages = Math.ceil(tasks.length / itemsPerPage);
   const tasksPaginated = tasks.slice(
@@ -225,34 +225,8 @@ function TasksTable({
     localStorage.setItem(cacheKeyItemsPerPage, event.target.value);
   };
 
-  const handleClick = (event, content) => {
-    setStatusReasonElement(event.currentTarget);
-    setStatusReason(content);
-  };
-
-  const handleClose = () => {
-    setStatusReasonElement(null);
-  };
-
   return (
     <>
-      <Popover
-        open={Boolean(statusReasonElement)}
-        anchorEl={statusReasonElement}
-        onClose={handleClose}
-        anchorOrigin={{
-          vertical: 'bottom',
-          horizontal: 'left',
-        }}
-        PaperProps={{
-          elevation: 1,
-          square: true,
-        }}
-        transitionDuration={0}
-        sx={{ minWidth: '300px', maxWidth: '50%' }}
-      >
-        <StatusReasonDisplay reason={statusReason} />
-      </Popover>
       <TableContainer>
         <Table sx={{ minWidth: 650 }}>
           <TableHead>
@@ -317,72 +291,86 @@ function TasksTable({
           </TableHead>
           <TableBody>
             {tasksPaginated.map(task => (
-              <TableRow
-                key={task.id}
-                sx={{ '&:last-child td, &:last-child th': { border: 0 } }}
-              >
-                <TableCell>
-                  <Typography
-                    to={`/task/${task.id}`}
-                    sx={{
-                      textDecoration: 'none',
-                      color: 'neutral.main',
-                      '&:hover': {
-                        textDecoration: 'underline',
-                      },
-                      display: 'flex',
-                    }}
-                    component={ReactLink}
-                    variant={'body2'}
-                  >
-                    <span>{task.id.substring(0, 8)}</span>
-                    <LaunchIcon fontSize="small" sx={{ marginLeft: '5px' }} />
-                  </Typography>
-                </TableCell>
-                <TableCell>{task.app}</TableCell>
-                <TableCell>
-                  <ProjectDisplay project={task.project} />
-                </TableCell>
-                <TableCell>{task.author}</TableCell>
-                <TableCell>
-                  <Chip
-                    label={task.status}
-                    color={chipColorByStatus(task.status)}
-                  />
-                  {task?.status_reason && (
-                    <IconButton
-                      size={'small'}
-                      sx={{ marginLeft: '5px' }}
-                      onClick={e => handleClick(e, task.status_reason)}
+              <React.Fragment key={task.id}>
+                <TableRow>
+                  <TableCell>
+                    <Typography
+                      to={`/task/${task.id}`}
+                      sx={{
+                        textDecoration: 'none',
+                        color: 'neutral.main',
+                        '&:hover': {
+                          textDecoration: 'underline',
+                        },
+                        display: 'flex',
+                      }}
+                      component={ReactLink}
+                      variant={'body2'}
                     >
-                      <HelpOutlineIcon fontSize={'small'} />
-                    </IconButton>
-                  )}
-                </TableCell>
-                <TableCell>
-                  {relativeDate && (
-                    <Tooltip title={formatDateTime(task.created)}>
-                      <span>{relativeTime(task.created * 1000)}</span>
-                    </Tooltip>
-                  )}
-                  {!relativeDate && <span>{formatDateTime(task.created)}</span>}
-                </TableCell>
-                <TableCell>
-                  {task.updated && (
-                    <span>{taskDuration(task.created, task.updated)}</span>
-                  )}
-                  {!task.updated && <span>-</span>}
-                </TableCell>
-                <TableCell>
-                  {task.images.map((item, index) => {
-                    return (
-                      <div key={index}>
-                        {item.image}:{item.tag}
-                      </div>
-                    );
-                  })}
-                </TableCell>
-              </TableRow>
+                      <span>{task.id.substring(0, 8)}</span>
+                      <LaunchIcon fontSize="small" sx={{ marginLeft: '5px' }} />
+                    </Typography>
+                  </TableCell>
+                  <TableCell>{task.app}</TableCell>
+                  <TableCell>
+                    <ProjectDisplay project={task.project} />
+                  </TableCell>
+                  <TableCell>{task.author}</TableCell>
+                  <TableCell>
+                    <Chip
+                      label={task.status}
+                      color={chipColorByStatus(task.status)}
+                    />
+                    {task?.status_reason && (
+                      <IconButton
+                        size={'small'}
+                        sx={{ marginLeft: '5px' }}
+                        onClick={() => {
+                          toggleReason(task);
+                        }}
+                      >
+                        <HelpOutlineIcon fontSize={'small'} />
+                      </IconButton>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {relativeDate && (
+                      <Tooltip title={formatDateTime(task.created)}>
+                        <span>{relativeTime(task.created * 1000)}</span>
+                      </Tooltip>
+                    )}
+                    {!relativeDate && (
+                      <span>{formatDateTime(task.created)}</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {task.updated && (
+                      <span>{taskDuration(task.created, task.updated)}</span>
+                    )}
+                    {!task.updated && <span>-</span>}
+                  </TableCell>
+                  <TableCell>
+                    {task.images.map((item, index) => {
+                      return (
+                        <div key={index}>
+                          {item.image}:{item.tag}
+                        </div>
+                      );
+                    })}
+                  </TableCell>
+                </TableRow>
+                {task?.status_reason && visibleReasons.includes(task?.id) && (
+                  <TableRow
+                    sx={{
+                      backgroundColor: 'reason_color.main',
+                    }}
+                  >
+                    <TableCell colSpan={8}>
+                      <StatusReasonDisplay reason={task.status_reason} />
+                    </TableCell>
+                  </TableRow>
+                )}
+              </React.Fragment>
             ))}
             {tasks.length === 0 && (
               <TableRow>
@@ -394,7 +382,6 @@ function TasksTable({
           </TableBody>
         </Table>
       </TableContainer>
-      <Divider />
       <Box
         sx={{
           my: 3,

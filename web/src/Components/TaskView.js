@@ -116,7 +116,7 @@ export default function TaskView() {
             <Typography>Status details</Typography>
           </Grid>
           <Grid item xs={9}>
-            <StatusReasonDisplay reason={task.status_reason} sx={{ p: 0 }} />
+            <StatusReasonDisplay reason={task.status_reason} />
           </Grid>
         </Grid>
       )}
