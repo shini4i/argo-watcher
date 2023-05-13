@@ -18,6 +18,15 @@ const theme = createTheme({
       light: '#F8F8F8',
     },
   },
+  components: {
+    MuiTableCell: {
+      styleOverrides: {
+        root: {
+          padding: '12px',
+        },
+      },
+    },
+  },
 });
 
 function App() {

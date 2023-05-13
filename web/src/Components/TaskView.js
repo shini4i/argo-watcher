@@ -38,7 +38,7 @@ export default function TaskView() {
         sx={{ mb: 2 }}
       >
         <Typography
-          variant="h4"
+          variant="h5"
           gutterBottom
           component="div"
           sx={{ flexGrow: 1, display: 'flex', gap: '10px' }}
@@ -116,7 +116,7 @@ export default function TaskView() {
             <Typography>Status details</Typography>
           </Grid>
           <Grid item xs={9}>
-            <StatusReasonDisplay reason={task.status_reason} />
+            <StatusReasonDisplay reason={task.status_reason} sx={{ p: 0 }} />
           </Grid>
         </Grid>
       )}

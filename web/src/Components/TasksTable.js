@@ -15,7 +15,14 @@ import { fetchTasks } from '../Services/Data';
 import Box from '@mui/material/Box';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
-import { Chip, Divider, Link, Popover } from '@mui/material';
+import {
+  Chip,
+  Divider,
+  Link,
+  MenuItem,
+  Popover,
+  TextField,
+} from '@mui/material';
 import { addMinutes, format } from 'date-fns';
 import Pagination from '@mui/material/Pagination';
 import IconButton from '@mui/material/IconButton';
@@ -25,7 +32,6 @@ import LaunchIcon from '@mui/icons-material/Launch';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 
 export function ProjectDisplay({ project }) {
-  console.log(project);
   if (project.indexOf('http') === 0) {
     return (
       <Link href={project}>
@@ -49,7 +55,7 @@ export const chipColorByStatus = status => {
   return undefined;
 };
 
-export function StatusReasonDisplay({ reason }) {
+export function StatusReasonDisplay({ reason, sx = {} }) {
   return (
     <Typography
       sx={{
@@ -57,6 +63,7 @@ export function StatusReasonDisplay({ reason }) {
         width: '100%',
         overflow: 'auto',
         backgroundColor: 'neutral.light',
+        ...sx,
       }}
       component={'pre'}
     >
@@ -184,6 +191,17 @@ function TableCellSorted({ field, sortField, setSortField, children }) {
   );
 }
 
+const cacheKeyItemsPerPage = 'items_per_page';
+const itemsPerPageList = [10, 25, 50];
+const defaultItemsPerPage = itemsPerPageList[0];
+const getCachedItemsPerPage = () => {
+  const itemsPerPage = Number(localStorage.getItem(cacheKeyItemsPerPage));
+  if (itemsPerPageList.includes(itemsPerPage)) {
+    return itemsPerPage;
+  }
+  return defaultItemsPerPage;
+};
+
 function TasksTable({
   tasks,
   sortField,
@@ -192,11 +210,20 @@ function TasksTable({
   onPageChange,
   page = 1,
 }) {
-  const pages = Math.ceil(tasks.length / 10);
-  const tasksPaginated = tasks.slice((page - 1) * 10, page * 10);
+  const [itemsPerPage, setItemsPerPage] = useState(getCachedItemsPerPage());
+  const [statusReasonElement, setStatusReasonElement] = useState(null);
+  const [statusReason, setStatusReason] = useState(null);
 
-  const [statusReasonElement, setStatusReasonElement] = React.useState(null);
-  const [statusReason, setStatusReason] = React.useState(null);
+  const pages = Math.ceil(tasks.length / itemsPerPage);
+  const tasksPaginated = tasks.slice(
+    (page - 1) * itemsPerPage,
+    page * itemsPerPage,
+  );
+
+  const handleItemsPerPageChange = event => {
+    setItemsPerPage(event.target.value);
+    localStorage.setItem(cacheKeyItemsPerPage, event.target.value);
+  };
 
   const handleClick = (event, content) => {
     setStatusReasonElement(event.currentTarget);
@@ -221,6 +248,7 @@ function TasksTable({
           elevation: 1,
           square: true,
         }}
+        transitionDuration={0}
         sx={{ minWidth: '300px', maxWidth: '50%' }}
       >
         <StatusReasonDisplay reason={statusReason} />
@@ -366,22 +394,40 @@ function TasksTable({
           </TableBody>
         </Table>
       </TableContainer>
-      {pages > 1 && (
-        <>
-          <Divider />
-          <Box sx={{ m: 1, display: 'flex', justifyContent: 'center' }}>
-            <Pagination
-              count={Math.ceil(tasks.length / 10)}
-              variant="outlined"
-              shape="rounded"
-              page={page}
-              onChange={(_event, value) => {
-                onPageChange && onPageChange(value);
-              }}
-            />
-          </Box>
-        </>
-      )}
+      <Divider />
+      <Box
+        sx={{
+          my: 3,
+          display: 'flex',
+          justifyContent: 'space-between',
+        }}
+      >
+        <Pagination
+          count={pages}
+          variant="outlined"
+          shape="rounded"
+          page={page}
+          onChange={(_event, value) => {
+            onPageChange && onPageChange(value);
+          }}
+        />
+        <TextField
+          select
+          sx={{ width: '100px' }}
+          label="Items on page"
+          value={itemsPerPage}
+          onChange={handleItemsPerPageChange}
+          size="small"
+        >
+          {itemsPerPageList.map(value => {
+            return (
+              <MenuItem key={value} value={value}>
+                {value}
+              </MenuItem>
+            );
+          })}
+        </TextField>
+      </Box>
     </>
   );
 }
