@@ -85,10 +85,10 @@ function HistoryTasks() {
         sx={{ mb: 2 }}
       >
         <Typography
-          variant="h4"
+          variant="h5"
           gutterBottom
           component="div"
-          sx={{ flexGrow: 1, display: 'flex', gap: '10px' }}
+          sx={{ flexGrow: 1, display: 'flex', gap: '10px', m: 0 }}
         >
           <Box>History tasks</Box>
           <Box sx={{ fontSize: '10px' }}>UTC</Box>

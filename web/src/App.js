@@ -4,7 +4,7 @@ import RecentTasks from './Components/RecentTasks';
 import HistoryTasks from './Components/HistoryTasks';
 import Layout from './Layout';
 import Page404 from './Page404';
-import { createTheme, ThemeProvider } from '@mui/material';
+import { createTheme, ThemeProvider, lighten } from '@mui/material';
 import { ErrorProvider } from './ErrorContext';
 import TaskView from './Components/TaskView';
 
@@ -15,7 +15,18 @@ const theme = createTheme({
     },
     neutral: {
       main: 'gray',
-      light: '#F8F8F8',
+    },
+    reason_color: {
+      main: lighten('#ff9800', 0.5),
+    },
+  },
+  components: {
+    MuiTableCell: {
+      styleOverrides: {
+        root: {
+          padding: '12px',
+        },
+      },
     },
   },
 });
