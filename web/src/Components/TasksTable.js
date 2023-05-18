@@ -71,12 +71,21 @@ const taskDuration = (created, updated) => {
   return relativeHumanDuration(seconds);
 };
 
+const defaultFormatTime = '---';
 export const formatDateTime = timestamp => {
-  let dateTime = new Date(timestamp * 1000);
-  return format(
-    addMinutes(dateTime, dateTime.getTimezoneOffset()),
-    'yyyy/MM/dd HH:mm:ss',
-  );
+  if (!timestamp) {
+    return defaultFormatTime;
+  }
+  try {
+    let dateTime = new Date(timestamp * 1000);
+    return format(
+      addMinutes(dateTime, dateTime.getTimezoneOffset()),
+      'yyyy/MM/dd HH:mm:ss',
+    );
+  } catch (error) {
+    console.error(error);
+    return defaultFormatTime;
+  }
 };
 
 export function useTasks({ setError, setSuccess }) {
