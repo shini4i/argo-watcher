@@ -71,7 +71,7 @@ export default function TaskView() {
           </Grid>
           <Grid item xs={9}>
             <Typography variant="body2">
-              <span>{task.updated ? formatDateTime(task.updated) : '---'}</span>
+              <span>{formatDateTime(task.updated)}</span>
             </Typography>
           </Grid>
           <Grid item xs={3}>
