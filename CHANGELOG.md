@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.0] - 2023-05-18
 
 ### Added
 
@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Logs are now sent in JSON format
 - Table style minor improvements
 - Rework for item errors in the table. Replace popup with slide-in
+
+### Fixed
 - Fix for date-time invalid format breaking the page
 
 ## [0.3.2] - 2023-01-24
