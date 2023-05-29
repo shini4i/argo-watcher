@@ -41,4 +41,4 @@ COPY --from=builder-backend /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder-frontend /app/build /static
 COPY db /db
 
-CMD ["/argo-watcher"]
+CMD ["/argo-watcher", "-server"]
