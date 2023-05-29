@@ -21,7 +21,7 @@ type Watcher struct {
 }
 
 var (
-	tag    = os.Getenv("IMAGE_TAG")
+	tag = os.Getenv("IMAGE_TAG")
 )
 
 func (watcher *Watcher) addTask(task models.Task) string {
@@ -118,7 +118,7 @@ func getImagesList() []models.Image {
 	return images
 }
 
-func main() {
+func clientWatcher() {
 	images := getImagesList()
 
 	watcher := Watcher{
