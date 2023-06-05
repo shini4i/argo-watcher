@@ -142,12 +142,13 @@ func (state *PostgresState) GetTasks(startTime float64, endTime float64, app str
 
 func (state *PostgresState) GetTask(id string) (*models.Task, error) {
 	var (
-		task                   models.Task
-		imagesBytes            []uint8
-		images                 []models.Image
-		createdStr, updatedStr string
-		created, updated       time.Time
-		err                    error
+		task        models.Task
+		imagesBytes []uint8
+		images      []models.Image
+		createdStr  string
+		updatedNull sql.NullTime
+		created     time.Time
+		err         error
 	)
 
 	query := `
@@ -158,7 +159,7 @@ func (state *PostgresState) GetTask(id string) (*models.Task, error) {
 
 	row := state.db.QueryRow(query, id)
 
-	if err := row.Scan(&task.Id, &task.Status, &task.StatusReason, &task.App, &task.Author, &task.Project, &imagesBytes, &createdStr, &updatedStr); err != nil {
+	if err := row.Scan(&task.Id, &task.Status, &task.StatusReason, &task.App, &task.Author, &task.Project, &imagesBytes, &createdStr, &updatedNull); err != nil {
 		return nil, err
 	}
 
@@ -171,13 +172,12 @@ func (state *PostgresState) GetTask(id string) (*models.Task, error) {
 	if created, err = time.Parse(time.RFC3339, createdStr); err != nil {
 		return nil, err
 	}
-
-	if updated, err = time.Parse(time.RFC3339, updatedStr); err != nil {
-		return nil, err
-	}
-
 	task.Created = float64(created.Unix())
-	task.Updated = float64(updated.Unix())
+
+	if updatedNull.Valid {
+		updatedFloat := updatedNull.Time.Unix()
+		task.Updated = float64(updatedFloat)
+	}
 
 	return &task, nil
 }

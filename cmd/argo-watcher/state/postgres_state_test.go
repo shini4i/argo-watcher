@@ -16,6 +16,7 @@ const postgresTaskId = "782e6e84-e67d-11ec-9f2f-8a68373f0f50"
 
 var (
 	created       = float64(time.Now().Unix())
+	updated       = created + 100
 	postgresState = PostgresState{}
 	postgresTasks = []models.Task{
 		{
@@ -51,12 +52,12 @@ var (
 
 func TestPostgresState_Add(t *testing.T) {
 	config := &config.ServerConfig{
-		StateType: "postgresql",
-		DbHost: os.Getenv("DB_HOST"),
-		DbPort: "5432",
-		DbUser: os.Getenv("DB_USER"),
-		DbName: os.Getenv("DB_NAME"),
-		DbPassword: os.Getenv("DB_PASSWORD"),
+		StateType:        "postgresql",
+		DbHost:           os.Getenv("DB_HOST"),
+		DbPort:           "5432",
+		DbUser:           os.Getenv("DB_USER"),
+		DbName:           os.Getenv("DB_NAME"),
+		DbPassword:       os.Getenv("DB_PASSWORD"),
 		DbMigrationsPath: "../../../db/migrations",
 	}
 	postgresState.Connect(config)
@@ -65,12 +66,20 @@ func TestPostgresState_Add(t *testing.T) {
 		panic(err)
 	}
 	for _, task := range postgresTasks {
-		postgresState.Add(task)
+		err := postgresState.Add(task)
+		if err != nil {
+			return
+		}
 	}
 }
 
 func TestPostgresState_GetTask(t *testing.T) {
-	task, _ := postgresState.GetTask(postgresTaskId)
+	var task *models.Task
+	var err error
+
+	if task, err = postgresState.GetTask(postgresTaskId); err != nil {
+		t.Errorf("got error %s, expected nil", err.Error())
+	}
 
 	if task.Status != "in progress" {
 		t.Errorf("got %s, expected %s", task.Status, "in progress")
