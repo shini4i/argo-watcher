@@ -68,7 +68,7 @@ func TestPostgresState_Add(t *testing.T) {
 	for _, task := range postgresTasks {
 		err := postgresState.Add(task)
 		if err != nil {
-			return
+			t.Errorf("got error %s, expected nil", err.Error())
 		}
 	}
 }
