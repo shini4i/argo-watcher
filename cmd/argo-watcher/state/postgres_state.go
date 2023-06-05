@@ -141,19 +141,24 @@ func (state *PostgresState) GetTasks(startTime float64, endTime float64, app str
 }
 
 func (state *PostgresState) GetTask(id string) (*models.Task, error) {
-	var task models.Task
-
-	var imagesBytes []uint8
-	var images []models.Image
+	var (
+		task                   models.Task
+		imagesBytes            []uint8
+		images                 []models.Image
+		createdStr, updatedStr string
+		created, updated       time.Time
+		err                    error
+	)
 
 	query := `
-		SELECT id, status, status_reason, app, author, project, images
+		SELECT id, status, status_reason, app, author, project, images, created, updated
 		FROM tasks
 	    WHERE id=$1
 	`
+
 	row := state.db.QueryRow(query, id)
-	err := row.Scan(&task.Id, &task.Status, &task.StatusReason, &task.App, &task.Author, &task.Project, &imagesBytes)
-	if err != nil {
+
+	if err := row.Scan(&task.Id, &task.Status, &task.StatusReason, &task.App, &task.Author, &task.Project, &imagesBytes, &createdStr, &updatedStr); err != nil {
 		return nil, err
 	}
 
@@ -162,6 +167,18 @@ func (state *PostgresState) GetTask(id string) (*models.Task, error) {
 	}
 
 	task.Images = images
+
+	if created, err = time.Parse(time.RFC3339, createdStr); err != nil {
+		return nil, err
+	}
+
+	if updated, err = time.Parse(time.RFC3339, updatedStr); err != nil {
+		return nil, err
+	}
+
+	task.Created = float64(created.Unix())
+	task.Updated = float64(updated.Unix())
+
 	return &task, nil
 }
 
