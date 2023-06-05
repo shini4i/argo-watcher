@@ -19,7 +19,6 @@ import (
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
-
 type PostgresState struct {
 	db *sql.DB
 }
@@ -144,18 +143,25 @@ func (state *PostgresState) GetTasks(startTime float64, endTime float64, app str
 func (state *PostgresState) GetTask(id string) (*models.Task, error) {
 	var task models.Task
 
+	var imagesBytes []uint8
+	var images []models.Image
+
 	query := `
-		SELECT id, status, status_reason, app, author, project
+		SELECT id, status, status_reason, app, author, project, images
 		FROM tasks
 	    WHERE id=$1
-		LIMIT 1
 	`
 	row := state.db.QueryRow(query, id)
-	err := row.Scan(&task.Id, &task.Status, &task.StatusReason, &task.App, &task.Author, &task.Project)
+	err := row.Scan(&task.Id, &task.Status, &task.StatusReason, &task.App, &task.Author, &task.Project, &imagesBytes)
 	if err != nil {
 		return nil, err
 	}
 
+	if err := json.Unmarshal(imagesBytes, &images); err != nil {
+		return nil, err
+	}
+
+	task.Images = images
 	return &task, nil
 }
 
