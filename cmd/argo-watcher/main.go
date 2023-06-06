@@ -5,14 +5,14 @@ import (
 	"os"
 
 	"github.com/rs/zerolog/log"
-	"github.com/shini4i/argo-watcher/internal/client"
+	c "github.com/shini4i/argo-watcher/internal/client"
 )
 
 var (
 	mode string
 )
 
-func init() {
+func main() {
 	server := flag.Bool("server", false, "Server mode")
 	client := flag.Bool("client", false, "Client mode")
 
@@ -30,15 +30,11 @@ func init() {
 	if *client {
 		mode = "client"
 	}
-}
-
-func main() {
-
 	switch mode {
 	case "server":
 		serverWatcher()
 	case "client":
-		client.ClientWatcher()
+		c.ClientWatcher()
 	}
 
 }
