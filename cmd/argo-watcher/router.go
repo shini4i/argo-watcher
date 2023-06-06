@@ -125,7 +125,7 @@ func (env *Env) addTask(c *gin.Context) {
 	go env.updater.WaitForRollout(*newTask)
 
 	// return information about created task
-	c.JSON(http.StatusOK, models.TaskStatus{
+	c.JSON(http.StatusAccepted, models.TaskStatus{
 		Id:      newTask.Id,
 		App:     newTask.App,
 		Author:  newTask.Author,
