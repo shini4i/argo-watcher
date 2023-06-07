@@ -5,7 +5,7 @@ import (
 	"os"
 
 	"github.com/rs/zerolog/log"
-	c "github.com/shini4i/argo-watcher/internal/client"
+	c "github.com/shini4i/argo-watcher/pkg/client"
 )
 
 var (
