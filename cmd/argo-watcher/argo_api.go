@@ -25,8 +25,9 @@ type ArgoApiInterface interface {
 }
 
 type ArgoApi struct {
-	baseUrl string
-	client  *http.Client
+	baseUrl    string
+	client     *http.Client
+	refreshApp bool
 }
 
 func (api *ArgoApi) Init(serverConfig *config.ServerConfig) error {
@@ -64,6 +65,11 @@ func (api *ArgoApi) Init(serverConfig *config.ServerConfig) error {
 	}
 
 	log.Debug().Msgf("Timeout for ArgoCD API calls set to: %s", api.client.Timeout)
+
+	// whether to refresh the app during status check
+	api.refreshApp = serverConfig.ArgoRefreshApp
+	log.Debug().Msgf("Refresh app set to: %s", api.refreshApp)
+
 	return nil
 }
 
@@ -111,9 +117,11 @@ func (api *ArgoApi) GetApplication(app string) (*models.Application, error) {
 
 	req.Header.Set("Content-Type", "application/json; charset=UTF-8")
 
-	q := req.URL.Query()
-	q.Add("refresh", "normal")
-	req.URL.RawQuery = q.Encode()
+	if api.refreshApp {
+		q := req.URL.Query()
+		q.Add("refresh", "normal")
+		req.URL.RawQuery = q.Encode()
+	}
 
 	resp, err := api.client.Do(req)
 	if err != nil {
