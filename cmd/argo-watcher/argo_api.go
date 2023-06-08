@@ -68,7 +68,7 @@ func (api *ArgoApi) Init(serverConfig *config.ServerConfig) error {
 
 	// whether to refresh the app during status check
 	api.refreshApp = serverConfig.ArgoRefreshApp
-	log.Debug().Msgf("Refresh app set to: %s", api.refreshApp)
+	log.Debug().Msgf("Refresh app set to: %t", api.refreshApp)
 
 	return nil
 }
