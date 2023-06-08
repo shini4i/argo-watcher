@@ -30,3 +30,11 @@ mocks:
 	@mockgen --source=cmd/argo-watcher/state/state.go --destination=cmd/argo-watcher/mock/state.go --package=mock
 # generate Metrics mock
 	@mockgen --source=cmd/argo-watcher/metrics.go --destination=cmd/argo-watcher/mock/metrics.go --package=mock
+
+.PHONY: bootstrap
+bootstrap: ## Boostrap docker compose setup
+	@docker compose up -d
+
+.PHONY: teardown
+teardown: ## Teardown docker compose setup
+	@docker compose down
