@@ -9,8 +9,8 @@ import (
 )
 
 type ServerConfig struct {
-	ArgoUrl          string `required:"false" envconfig:"ARGO_URL"`
-	ArgoToken        string `required:"false" envconfig:"ARGO_TOKEN"`
+	ArgoUrl          string `required:"true" envconfig:"ARGO_URL"`
+	ArgoToken        string `required:"true" envconfig:"ARGO_TOKEN"`
 	ArgoApiTimeout   string `required:"false" envconfig:"ARGO_API_TIMEOUT" default:"60"`
 	ArgoTimeout      string `required:"false" envconfig:"ARGO_TIMEOUT" default:"0"`
 	ArgoRefreshApp   bool   `required:"false" envconfig:"ARGO_REFRESH_APP" default:"true"`
