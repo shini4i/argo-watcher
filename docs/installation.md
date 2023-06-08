@@ -91,7 +91,7 @@ build:
 
 # deployment monitoring with Argo Watcher
 watch:
-  image: ghcr.io/shini4i/argo-watcher-client:v0.0.12
+  image: ghcr.io/shini4i/argo-watcher:<VERSION>
   variables:
     ARGO_WATCHER_URL: https://argo-watcher.example.com
     ARGO_APP: example
@@ -100,7 +100,8 @@ watch:
     IMAGES: $CI_REGISTRY_IMAGE
     IMAGE_TAG: $CI_COMMIT_TAG
     DEBUG: 1
-  script: ["/bin/client"]
+  script:
+    - /argo-watcher -client
   # run after we build the image
   needs: [build]
   # wait only on main and only when build was successfull
