@@ -38,3 +38,7 @@ bootstrap: ## Boostrap docker compose setup
 .PHONY: teardown
 teardown: ## Teardown docker compose setup
 	@docker compose down
+
+.PHONY: bootstrap-minimal
+bootstrap-minimal: ## Boostrap docker compose setup
+	@docker compose up -d postgres mock
