@@ -32,13 +32,13 @@ mocks:
 	@mockgen --source=cmd/argo-watcher/metrics.go --destination=cmd/argo-watcher/mock/metrics.go --package=mock
 
 .PHONY: bootstrap
-bootstrap: ## Boostrap docker compose setup
+bootstrap: ## Bootstrap docker compose setup
 	@docker compose up -d
+
+.PHONY: bootstrap-minimal
+bootstrap-minimal: ## Bootstrap docker compose setup with mock and postgres only
+	@docker compose up -d postgres mock
 
 .PHONY: teardown
 teardown: ## Teardown docker compose setup
 	@docker compose down
-
-.PHONY: bootstrap-minimal
-bootstrap-minimal: ## Boostrap docker compose setup with mock and postgres only
-	@docker compose up -d postgres mock
