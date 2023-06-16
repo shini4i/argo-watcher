@@ -95,8 +95,8 @@ func (env *Env) getVersion(c *gin.Context) {
 // @Tags backend
 // @Accept json
 // @Produce json
-// @Param task body m.Task true "Task"
-// @Success 202 {object} m.TaskStatus
+// @Param task body models.Task true "Task"
+// @Success 202 {object} models.TaskStatus
 // @Router /api/v1/tasks [post]
 func (env *Env) addTask(c *gin.Context) {
 	var task models.Task
@@ -138,7 +138,7 @@ func (env *Env) addTask(c *gin.Context) {
 // @Param app query string false "App name"
 // @Param from_timestamp query int true "From timestamp" default(1648390029)
 // @Param to_timestamp query int false "To timestamp"
-// @Success 200 {array} m.Task
+// @Success 200 {array} models.Task
 // @Router /api/v1/tasks [get]
 func (env *Env) getState(c *gin.Context) {
 	startTime, _ := strconv.ParseFloat(c.Query("from_timestamp"), 64)
@@ -157,7 +157,7 @@ func (env *Env) getState(c *gin.Context) {
 // @Param id path string true "Task id" default(9185fae0-add5-11ec-87f3-56b185c552fa)
 // @Tags backend
 // @Produce json
-// @Success 200 {object} m.TaskStatus
+// @Success 200 {object} models.TaskStatus
 // @Router /api/v1/tasks/{id} [get]
 func (env *Env) getTaskStatus(c *gin.Context) {
 	id := c.Param("id")
@@ -198,8 +198,8 @@ func (env *Env) getApps(c *gin.Context) {
 // @Description Check if the argo-watcher is ready to process new tasks
 // @Tags service
 // @Produce json
-// @Success 200 {object} m.HealthStatus
-// @Failure 503 {object} m.HealthStatus
+// @Success 200 {object} models.HealthStatus
+// @Failure 503 {object} models.HealthStatus
 // @Router /healthz [get]
 func (env *Env) healthz(c *gin.Context) {
 	if env.argo.SimpleHealthCheck() {

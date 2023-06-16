@@ -19,3 +19,6 @@ bin/
 
 # code coverage files
 **/coverage.*
+
+# docs that are generated automatically
+cmd/argo-watcher/docs
