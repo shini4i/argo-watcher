@@ -1,5 +1,10 @@
 .DEFAULT_GOAL := help
 
+VERSION ?= local
+
+CYAN := $$(tput setaf 6)
+RESET := $$(tput sgr0)
+
 .PHONY: help
 help: ## Print this help
 	@echo "Usage: make [target]"
@@ -7,19 +12,21 @@ help: ## Print this help
 
 .PHONY: test
 test: ## Run tests
-	@RLOG_LOG_LEVEL=NONE ARGO_TIMEOUT=1 go test -v ./... -count=1
+	@ARGO_TIMEOUT=1 go test -v ./... -count=1 -coverprofile coverage.out `go list ./... | egrep -v '(test|mocks)'`
 
 .PHONY: ensure-dirs
 ensure-dirs:
 	@mkdir -p bin
 
 .PHONY: build
-build: ensure-dirs ## Build the binaries
-	@CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/argo-watcher ./cmd/argo-watcher
-	@CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/client ./cmd/client
+build: ensure-dirs docs ## Build the binaries
+	@echo "===> Building [$(CYAN)${VERSION}$(RESET)] version of [$(CYAN)argo-watcher$(RESET)] binary"
+	@CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${VERSION}" -o bin/argo-watcher ./cmd/argo-watcher
+	@echo "===> Done"
 
 .PHONY: docs
 docs: ## Generate swagger docs
+	@echo "===> Generating swagger docs"
 	@cd cmd/argo-watcher && swag init --parseDependency --parseInternal
 
 .PHONY: mocks
