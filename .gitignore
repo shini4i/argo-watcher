@@ -20,5 +20,6 @@ bin/
 # code coverage files
 **/coverage.*
 
-# docs that are generated automatically
+# dynamicly generated files
 cmd/argo-watcher/docs
+cmd/argo-watcher/mock

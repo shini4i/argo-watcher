@@ -11,7 +11,7 @@ help: ## Print this help
 	@grep -E '^[a-z.A-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST)  | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
 .PHONY: test
-test: ## Run tests
+test: mocks ## Run tests
 	@ARGO_TIMEOUT=1 go test -v ./... -count=1 -coverprofile coverage.out `go list ./... | egrep -v '(test|mocks)'`
 
 .PHONY: ensure-dirs
@@ -31,6 +31,7 @@ docs: ## Generate swagger docs
 
 .PHONY: mocks
 mocks:
+	@echo "===> Generating mocks"
 # generate API mock
 	@mockgen --source=cmd/argo-watcher/argo_api.go --destination=cmd/argo-watcher/mock/argo_api.go --package=mock
 # generate State mock
