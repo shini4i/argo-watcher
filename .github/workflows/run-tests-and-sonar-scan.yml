@@ -36,6 +36,12 @@ jobs:
         with:
           go-version: '1.20.4'
 
+      - name: Install swag
+        run: go install github.com/swaggo/swag/cmd/swag@latest
+
+      - name: Generate swagger docs
+        run: make docs
+
       - name: Run tests
         env:
           DB_HOST: localhost
