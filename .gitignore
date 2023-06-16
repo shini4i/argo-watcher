@@ -16,3 +16,6 @@ bin/
 
 # swagger files
 **/swagger.*
+
+# code coverage files
+**/coverage.*

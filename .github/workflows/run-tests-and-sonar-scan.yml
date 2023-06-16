@@ -28,7 +28,7 @@ jobs:
           - 8081:8081
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
           fetch-depth: 0
 
@@ -44,6 +44,10 @@ jobs:
           DB_PASSWORD: postgres
           STATE_TYPE: in-memory
           ARGO_URL: http://localhost:8081
-          ARGO_TIMEOUT: 1
-          RLOG_LOG_LEVEL: NONE
-        run: cd cmd && go test ./...
+        run: make test
+
+      - name: SonarCloud Scan
+        uses: sonarsource/sonarcloud-github-action@v1.9.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

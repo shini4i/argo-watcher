@@ -7,7 +7,7 @@ help: ## Print this help
 
 .PHONY: test
 test: ## Run tests
-	@RLOG_LOG_LEVEL=NONE ARGO_TIMEOUT=1 go test -v ./... -count=1
+	@ARGO_TIMEOUT=1 go test -v ./... -count=1 -coverprofile coverage.out `go list ./... | egrep -v '(test|mocks)'`
 
 .PHONY: ensure-dirs
 ensure-dirs:
