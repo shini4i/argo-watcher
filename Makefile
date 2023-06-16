@@ -1,5 +1,7 @@
 .DEFAULT_GOAL := help
 
+VERSION ?= local
+
 .PHONY: help
 help: ## Print this help
 	@echo "Usage: make [target]"
@@ -15,8 +17,7 @@ ensure-dirs:
 
 .PHONY: build
 build: ensure-dirs ## Build the binaries
-	@CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/argo-watcher ./cmd/argo-watcher
-	@CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/client ./cmd/client
+	@CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${VERSION}" -o bin/argo-watcher ./cmd/argo-watcher
 
 .PHONY: docs
 docs: ## Generate swagger docs

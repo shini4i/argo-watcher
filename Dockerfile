@@ -1,17 +1,4 @@
 #######################
-# Backend build
-#######################
-FROM golang:1.20-alpine3.16 as builder-backend
-
-ARG APP_VERSION
-
-WORKDIR /src
-
-COPY . .
-
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X main.version=$APP_VERSION" -o argo-watcher ./cmd/argo-watcher
-
-#######################
 # Frontend build
 #######################
 FROM node:17.7-alpine3.15 as builder-frontend
@@ -33,7 +20,7 @@ RUN npm run build
 #######################
 FROM alpine:3.18
 
-COPY --from=builder-backend /src/argo-watcher /argo-watcher
+COPY ./bin/argo-watcher /argo-watcher
 COPY --from=builder-frontend /app/build /static
 
 RUN addgroup -S argo-watcher && adduser -S argo-watcher -G argo-watcher
