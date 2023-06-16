@@ -101,7 +101,7 @@ func TestArgoCheck(t *testing.T) {
 
 		// mock calls
 		state.EXPECT().Check().Return(true)
-		api.EXPECT().GetUserInfo().Return(nil, fmt.Errorf("Unexpected login error"))
+		api.EXPECT().GetUserInfo().Return(nil, fmt.Errorf("unexpected login error"))
 		metrics.EXPECT().SetArgoUnavailable(true)
 
 		// argo manager
@@ -127,7 +127,7 @@ func TestArgoAddTask(t *testing.T) {
 
 		// mock calls
 		state.EXPECT().Check().Return(true)
-		api.EXPECT().GetUserInfo().Return(nil, fmt.Errorf("Unexpected login error"))
+		api.EXPECT().GetUserInfo().Return(nil, fmt.Errorf("unexpected login error"))
 		metrics.EXPECT().SetArgoUnavailable(true)
 
 		// argo manager

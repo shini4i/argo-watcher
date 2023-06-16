@@ -24,6 +24,12 @@ build: ensure-dirs docs ## Build the binaries
 	@CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${VERSION}" -o bin/argo-watcher ./cmd/argo-watcher
 	@echo "===> Done"
 
+.PHONY: build-ui
+build-ui: ## Build the UI
+	@echo "===> Building UI"
+	@cd web && npm ci --silent && npm install react-scripts --silent && npm run build
+	@echo "===> Done"
+
 .PHONY: docs
 docs: ## Generate swagger docs
 	@echo "===> Generating swagger docs"
