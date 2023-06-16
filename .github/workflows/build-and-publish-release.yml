@@ -45,4 +45,4 @@ jobs:
           gh_repo: charts
           chart_name: argo-watcher
           app_version: ${{ github.ref_name }}
-          update_chart_annotation: true
+          update_chart_annotations: true
