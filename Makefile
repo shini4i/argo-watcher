@@ -12,7 +12,7 @@ help: ## Print this help
 
 .PHONY: test
 test: mocks ## Run tests
-	@ARGO_TIMEOUT=1 go test -v ./... -count=1 -coverprofile coverage.out `go list ./... | egrep -v '(test|mocks)'`
+	@ARGO_TIMEOUT=1 go test -v ./... -count=1 -coverprofile coverage.out `go list ./... | egrep -v '(test|mock)'`
 
 .PHONY: ensure-dirs
 ensure-dirs:
