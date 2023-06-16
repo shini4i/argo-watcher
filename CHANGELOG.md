@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2023-06-11
+
+### Changed
+- Client was merged into the server. Now it's a single binary.
+- The amount of information returned while adding task was reduced to a minimum
+- App refresh was made optional. It can be disabled in the settings
+
 ## [0.4.2] - 2023-06-06
 
 ### Fixed

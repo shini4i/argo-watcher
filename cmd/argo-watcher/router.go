@@ -96,7 +96,7 @@ func (env *Env) getVersion(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param task body m.Task true "Task"
-// @Success 200 {object} m.TaskStatus
+// @Success 202 {object} m.TaskStatus
 // @Router /api/v1/tasks [post]
 func (env *Env) addTask(c *gin.Context) {
 	var task models.Task
@@ -126,12 +126,8 @@ func (env *Env) addTask(c *gin.Context) {
 
 	// return information about created task
 	c.JSON(http.StatusAccepted, models.TaskStatus{
-		Id:      newTask.Id,
-		App:     newTask.App,
-		Author:  newTask.Author,
-		Project: newTask.Project,
-		Images:  newTask.Images,
-		Status:  "accepted",
+		Id:     newTask.Id,
+		Status: "accepted",
 	})
 }
 

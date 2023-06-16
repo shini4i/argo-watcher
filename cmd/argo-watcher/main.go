@@ -1,66 +1,40 @@
 package main
 
 import (
+	"flag"
 	"os"
 
-	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/state"
+	c "github.com/shini4i/argo-watcher/pkg/client"
+)
+
+var (
+	mode string
 )
 
 func main() {
-	// initialize serverConfig
-	serverConfig, err := config.NewServerConfig()
-	if err != nil {
-		log.Error().Msgf("Couldn't initialize config. Error: %s", err)
+	server := flag.Bool("server", false, "Server mode")
+	client := flag.Bool("client", false, "Client mode")
+
+	flag.Parse()
+
+	if *server == *client {
+		log.Error().Msgf("server=%v client=%v. Whether server or client should be", *server, *client)
 		os.Exit(1)
 	}
 
-	// initialize logs
-	logLevel, err := zerolog.ParseLevel(serverConfig.LogLevel)
-	if err != nil {
-		log.Warn().Msgf("Couldn't parse log level. Got the following error: %s", err)
-		logLevel = zerolog.InfoLevel
+	if *server {
+		mode = "server"
 	}
 
-	log.Info().Msgf("Setting log level to %s", logLevel)
-	zerolog.SetGlobalLevel(logLevel)
-
-	// initialize metrics
-	metrics := &Metrics{}
-	metrics.Init()
-	metrics.Register()
-
-	// create API client
-	api := &ArgoApi{}
-	if err := api.Init(serverConfig); err != nil {
-		log.Error().Msgf("Couldn't initialize the Argo API. Got the following error: %s", err)
-		os.Exit(1)
+	if *client {
+		mode = "client"
+	}
+	switch mode {
+	case "server":
+		serverWatcher()
+	case "client":
+		c.ClientWatcher()
 	}
 
-	// create state management
-	state, err := state.NewState(serverConfig)
-	if err != nil {
-		log.Error().Msgf("Couldn't create state manager (in-memory / database). Got the following error: %s", err)
-		os.Exit(1)
-	}
-	// start cleanup go routine
-	go state.ProcessObsoleteTasks()
-
-	// initialize argo client
-	argo := &Argo{}
-	argo.Init(state, api, metrics)
-
-	// initialize argo updater
-	updater := &ArgoStatusUpdater{}
-	updater.Init(*argo, serverConfig.GetRetryAttempts(), serverConfig.RegistryProxyUrl)
-
-	// create environment
-	env := &Env{config: serverConfig, argo: argo, metrics: metrics, updater: updater}
-
-	// start the server
-	log.Info().Msg("Starting web server")
-	router := env.CreateRouter()
-	env.StartRouter(router)
 }

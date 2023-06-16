@@ -7,12 +7,9 @@ ARG APP_VERSION
 
 WORKDIR /src
 
-RUN apk add --no-cache ca-certificates upx
-
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X main.version=$APP_VERSION" -o argo-watcher ./cmd/argo-watcher \
- && upx --brute argo-watcher
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X main.version=$APP_VERSION" -o argo-watcher ./cmd/argo-watcher
 
 #######################
 # Frontend build
@@ -34,11 +31,16 @@ RUN npm run build
 #######################
 # Final image
 #######################
-FROM scratch
+FROM alpine:3.18
 
 COPY --from=builder-backend /src/argo-watcher /argo-watcher
-COPY --from=builder-backend /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder-frontend /app/build /static
+
+RUN addgroup -S argo-watcher && adduser -S argo-watcher -G argo-watcher
+RUN apk add --no-cache ca-certificates
+
 COPY db /db
 
-CMD ["/argo-watcher"]
+USER argo-watcher
+
+CMD ["/argo-watcher", "-server"]

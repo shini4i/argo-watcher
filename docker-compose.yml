@@ -1,0 +1,52 @@
+version: '3'
+services:
+  postgres:
+    image: postgres:15.3
+    restart: always
+    environment:
+      POSTGRES_USER: watcher
+      POSTGRES_PASSWORD: watcher
+      POSTGRES_DB: watcher
+    volumes:
+      - ./db/data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+  backend:
+    image: golang:1.20-alpine3.16
+    volumes:
+      - .:/app
+    working_dir: /app
+    command: go run ./cmd/argo-watcher -server
+    environment:
+      STATE_TYPE: postgres
+      ARGO_URL: http://mock:8081
+      ARGO_TOKEN: example
+      ARGO_TIMEOUT: 120
+      DB_HOST: postgres
+      DB_USER: watcher
+      DB_NAME: watcher
+      DB_PASSWORD: watcher
+      DB_MIGRATIONS_PATH: /app/db/migrations
+    depends_on:
+      - postgres
+      - mock
+    ports:
+      - "8080:8080"
+  frontend:
+    image: node:17.7-alpine3.15
+    volumes:
+      - ./web:/app
+    working_dir: /app
+    command: npm start
+    environment:
+      PROXY: http://backend:8080
+    ports:
+      - "3000:3000"
+  mock:
+    image: golang:1.20-alpine3.16
+    volumes:
+      - .:/app
+    working_dir: /app
+    command: go run ./cmd/mock
+    ports:
+      - "8081:8081"
