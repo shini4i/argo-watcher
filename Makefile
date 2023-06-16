@@ -2,6 +2,9 @@
 
 VERSION ?= local
 
+CYAN := $$(tput setaf 6)
+RESET := $$(tput sgr0)
+
 .PHONY: help
 help: ## Print this help
 	@echo "Usage: make [target]"
@@ -16,11 +19,14 @@ ensure-dirs:
 	@mkdir -p bin
 
 .PHONY: build
-build: ensure-dirs ## Build the binaries
+build: ensure-dirs docs ## Build the binaries
+	@echo "===> Building [$(CYAN)${VERSION}$(RESET)] version of [$(CYAN)argo-watcher$(RESET)] binary"
 	@CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${VERSION}" -o bin/argo-watcher ./cmd/argo-watcher
+	@echo "===> Done"
 
 .PHONY: docs
 docs: ## Generate swagger docs
+	@echo "===> Generating swagger docs"
 	@cd cmd/argo-watcher && swag init --parseDependency --parseInternal
 
 .PHONY: mocks
