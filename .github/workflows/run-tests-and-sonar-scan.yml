@@ -42,6 +42,9 @@ jobs:
       - name: Generate swagger docs
         run: make docs
 
+      - name: Install mockgen
+        run: go install github.com/golang/mock/mockgen@v1.6.0
+
       - name: Run tests
         env:
           DB_HOST: localhost

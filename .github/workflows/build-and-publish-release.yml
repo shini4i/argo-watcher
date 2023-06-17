@@ -39,6 +39,14 @@ jobs:
       - name: Build argo-watcher binary
         run: make build VERSION=${{ github.ref_name }}
 
+      - name: Install NodeJS
+        uses: actions/setup-node@v3
+        with:
+          node-version: '17'
+
+      - name: Build argo-watcher UI
+        run: make build-ui
+
       - name: Build and publish argo-watcher image
         uses: docker/build-push-action@v4
         with:

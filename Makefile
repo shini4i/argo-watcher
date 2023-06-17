@@ -11,8 +11,8 @@ help: ## Print this help
 	@grep -E '^[a-z.A-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST)  | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
 .PHONY: test
-test: ## Run tests
-	@ARGO_TIMEOUT=1 go test -v ./... -count=1 -coverprofile coverage.out `go list ./... | egrep -v '(test|mocks)'`
+test: mocks ## Run tests
+	@ARGO_TIMEOUT=1 go test -v ./... -count=1 -coverprofile coverage.out `go list ./... | egrep -v '(test|mock)'`
 
 .PHONY: ensure-dirs
 ensure-dirs:
@@ -24,6 +24,12 @@ build: ensure-dirs docs ## Build the binaries
 	@CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${VERSION}" -o bin/argo-watcher ./cmd/argo-watcher
 	@echo "===> Done"
 
+.PHONY: build-ui
+build-ui: ## Build the UI
+	@echo "===> Building UI"
+	@cd web && npm ci --silent && npm install react-scripts --silent && npm run build
+	@echo "===> Done"
+
 .PHONY: docs
 docs: ## Generate swagger docs
 	@echo "===> Generating swagger docs"
@@ -31,6 +37,7 @@ docs: ## Generate swagger docs
 
 .PHONY: mocks
 mocks:
+	@echo "===> Generating mocks"
 # generate API mock
 	@mockgen --source=cmd/argo-watcher/argo_api.go --destination=cmd/argo-watcher/mock/argo_api.go --package=mock
 # generate State mock
