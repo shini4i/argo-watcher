@@ -1,34 +1,67 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"reflect"
 	"testing"
 
-	"github.com/golang/mock/gomock"
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/mock"
 	"github.com/shini4i/argo-watcher/internal/models"
-
-	"github.com/stretchr/testify/assert"
 )
 
-func TestArgoApi_GetUserInfo(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
+var (
+	mux    = http.NewServeMux()
+	server *httptest.Server
+	api    *ArgoApi
 
-	t.Run("Argo API - Get Userinfo", func(t *testing.T) {
-		api := mock.NewMockArgoApiInterface(ctrl)
+	userinfo = models.Userinfo{
+		Username: "test",
+		LoggedIn: true,
+	}
+)
 
-		userinfo := models.Userinfo{
-			Username: "test",
-			LoggedIn: true,
+func getUserInfoHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		_, err := w.Write([]byte(`Method not allowed`))
+		if err != nil {
+			fmt.Println(err)
 		}
+		return
+	}
 
-		api.EXPECT().GetUserInfo().Return(&userinfo, nil)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
 
-		receivedUserinfo, err := api.GetUserInfo()
+	if err := json.NewEncoder(w).Encode(userinfo); err != nil {
+		fmt.Println("error encoding userinfo")
+		panic(err)
+	}
+}
 
-		assert.Nil(t, err)
-		assert.Equal(t, &userinfo, receivedUserinfo)
-	})
+func getApplicationHandler(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("OK"))
+}
+
+func init() {
+	mux.HandleFunc("/api/v1/session/userinfo", getUserInfoHandler)
+	mux.HandleFunc("/api/v1/applications/", getApplicationHandler)
+	server = httptest.NewServer(mux)
+	api = &ArgoApi{baseUrl: server.URL, client: server.Client()}
+}
+
+func TestArgoApi_GetUserInfo(t *testing.T) {
+	receivedUserinfo, err := api.GetUserInfo()
+	if err != nil {
+		t.Error(err)
+	}
+
+	if !reflect.DeepEqual(receivedUserinfo, &userinfo) {
+		t.Errorf("Expected: %v, received: %v", userinfo, receivedUserinfo)
+	}
 }
 
 func TestArgoApi_GetApplication(t *testing.T) {
