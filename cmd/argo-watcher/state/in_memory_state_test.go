@@ -1,6 +1,7 @@
 package state
 
 import (
+	"github.com/stretchr/testify/assert"
 	"reflect"
 	"testing"
 	"time"
@@ -87,4 +88,37 @@ func TestInMemoryState_GetAppList(t *testing.T) {
 	if !reflect.DeepEqual(apps, []string{"Test", "Test2"}) {
 		t.Errorf("got %s, expected %s", apps, []string{"Test", "Test2"})
 	}
+}
+
+func TestProcessObsoleteTasks(t *testing.T) {
+	tasks := []models.Task{
+		{
+			Id:      "1",
+			Created: float64(time.Now().Unix()),
+			Updated: float64(time.Now().Unix()),
+			Images:  []models.Image{{Image: "image1", Tag: "tag1"}},
+			Status:  "app not found",
+		},
+		{
+			Id:      "2",
+			Created: float64(time.Now().Unix()),
+			Updated: float64(time.Now().Unix() - 7200), // Older than 1 hour
+			Images:  []models.Image{{Image: "image2", Tag: "tag2"}},
+			Status:  "in progress",
+		},
+		{
+			Id:      "3",
+			Created: float64(time.Now().Unix()),
+			Updated: float64(time.Now().Unix()),
+			Images:  []models.Image{{Image: "image3", Tag: "tag3"}},
+			Status:  "deployed",
+		},
+	}
+
+	// Call the function under test
+	tasks = processInMemoryObsoleteTasks(tasks)
+
+	// Assert the expected results
+	assert.Len(t, tasks, 2) // Only non-obsolete tasks should remain
+	assert.Equal(t, "aborted", tasks[0].Status)
 }

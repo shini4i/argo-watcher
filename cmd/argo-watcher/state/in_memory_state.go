@@ -12,6 +12,8 @@ import (
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
+var taskIsObsolete = errors.New("task is obsolete")
+
 type InMemoryState struct {
 	tasks []models.Task
 }
@@ -94,29 +96,28 @@ func (state *InMemoryState) ProcessObsoleteTasks() {
 	log.Debug().Msg("Starting watching for obsolete tasks...")
 	err := retry.Do(
 		func() error {
-			for i := 0; i < len(state.tasks); i++ {
-				if state.tasks[i].Status == "app not found" {
-					state.tasks = append(state.tasks[:i], state.tasks[i+1:]...)
-					i--
-				}
-			}
-
-			for idx, task := range state.tasks {
-				if task.Status == "app not found" {
-					if task.Status == "in progress" && task.Updated+3600 < float64(time.Now().Unix()) {
-						state.tasks[idx].Status = "aborted"
-					}
-				}
-			}
-
-			return errors.New("returning error to retry")
+			state.tasks = processInMemoryObsoleteTasks(state.tasks)
+			return desiredRetryError
 		},
 		retry.DelayType(retry.FixedDelay),
 		retry.Delay(60*time.Minute),
 		retry.Attempts(0),
 	)
-
 	if err != nil {
 		log.Error().Msgf("Couldn't process obsolete tasks. Got the following error: %s", err)
 	}
+}
+
+func processInMemoryObsoleteTasks(tasks []models.Task) []models.Task {
+	var updatedTasks []models.Task
+	for _, task := range tasks {
+		if task.Status == "app not found" {
+			continue
+		}
+		if task.Status == "in progress" && task.Updated+3600 < float64(time.Now().Unix()) {
+			task.Status = "aborted"
+		}
+		updatedTasks = append(updatedTasks, task)
+	}
+	return updatedTasks
 }
