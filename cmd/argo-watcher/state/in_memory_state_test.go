@@ -120,5 +120,7 @@ func TestProcessObsoleteTasks(t *testing.T) {
 
 	// Assert the expected results
 	assert.Len(t, tasks, 2) // Only non-obsolete tasks should remain
+
+	// Check that the status of the obsolete task has been updated
 	assert.Equal(t, "aborted", tasks[0].Status)
 }
