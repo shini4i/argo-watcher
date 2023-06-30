@@ -93,21 +93,21 @@ func TestInMemoryState_GetAppList(t *testing.T) {
 func TestProcessObsoleteTasks(t *testing.T) {
 	tasks := []models.Task{
 		{
-			Id:      "1",
+			Id:      "d4776428-6a95-4a54-a3f4-509aafb4f444",
 			Created: float64(time.Now().Unix()),
 			Updated: float64(time.Now().Unix()),
 			Images:  []models.Image{{Image: "image1", Tag: "tag1"}},
 			Status:  "app not found",
 		},
 		{
-			Id:      "2",
+			Id:      "df43ec06-4e47-46bf-b526-a24c3b0fe58f",
 			Created: float64(time.Now().Unix()),
 			Updated: float64(time.Now().Unix() - 7200), // Older than 1 hour
 			Images:  []models.Image{{Image: "image2", Tag: "tag2"}},
 			Status:  "in progress",
 		},
 		{
-			Id:      "3",
+			Id:      "231f576b-d9bf-463c-b233-d30a7c12e10e",
 			Created: float64(time.Now().Unix()),
 			Updated: float64(time.Now().Unix()),
 			Images:  []models.Image{{Image: "image3", Tag: "tag3"}},
