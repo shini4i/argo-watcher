@@ -231,16 +231,10 @@ func (state *PostgresState) ProcessObsoleteTasks() {
 	log.Debug().Msg("Starting watching for obsolete tasks...")
 	err := retry.Do(
 		func() error {
-			_, err := state.db.Exec("DELETE FROM tasks WHERE status = 'app not found'")
-			if err != nil {
-				log.Error().Msg(err.Error())
+			if err := processPostgresObsoleteTasks(state.db); err != nil {
+				log.Error().Msgf("Couldn't process obsolete tasks. Got the following error: %s", err)
+				return err
 			}
-
-			_, err = state.db.Exec("UPDATE tasks SET status='aborted' WHERE status = 'in progress' AND created < now() - interval '1 hour'")
-			if err != nil {
-				log.Error().Msg(err.Error())
-			}
-
 			return desiredRetryError
 		},
 		retry.DelayType(retry.FixedDelay),
@@ -251,4 +245,18 @@ func (state *PostgresState) ProcessObsoleteTasks() {
 	if err != nil {
 		log.Error().Msgf("Couldn't process obsolete tasks. Got the following error: %s", err)
 	}
+}
+
+func processPostgresObsoleteTasks(db *sql.DB) error {
+	log.Debug().Msg("Removing obsolete tasks...")
+	if _, err := db.Exec("DELETE FROM tasks WHERE status = 'app not found'"); err != nil {
+		return err
+	}
+
+	log.Debug().Msg("Marking tasks older than 1 hour as aborted...")
+	if _, err := db.Exec("UPDATE tasks SET status='aborted' WHERE status = 'in progress' AND created < now() - interval '1 hour'"); err != nil {
+		return err
+	}
+
+	return nil
 }
