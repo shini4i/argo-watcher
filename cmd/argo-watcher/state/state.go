@@ -1,12 +1,15 @@
 package state
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/rs/zerolog/log"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	"github.com/shini4i/argo-watcher/internal/models"
 )
+
+var desiredRetryError = errors.New("desired retry error")
 
 type State interface {
 	Connect(serverConfig *config.ServerConfig)
@@ -19,21 +22,20 @@ type State interface {
 	ProcessObsoleteTasks()
 }
 
-
 func NewState(serverConfig *config.ServerConfig) (State, error) {
 	log.Debug().Msg("Initializing argo-watcher state...")
 	var state State
 	switch name := serverConfig.StateType; name {
-		case "postgres":
-			log.Debug().Msg("Created postgres state..")
-			state = &PostgresState{}
-		case "in-memory":
-			log.Debug().Msg("Created in-memory state..")
-			state = &InMemoryState{}
-		default:
-			return nil, fmt.Errorf("unexpected state type received: %s", name)
+	case "postgres":
+		log.Debug().Msg("Created postgres state..")
+		state = &PostgresState{}
+	case "in-memory":
+		log.Debug().Msg("Created in-memory state..")
+		state = &InMemoryState{}
+	default:
+		return nil, fmt.Errorf("unexpected state type received: %s", name)
 	}
-	
+
 	state.Connect(serverConfig)
 	return state, nil
 }
