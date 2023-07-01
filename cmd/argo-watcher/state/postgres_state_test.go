@@ -16,7 +16,6 @@ const postgresTaskId = "782e6e84-e67d-11ec-9f2f-8a68373f0f50"
 
 var (
 	created       = float64(time.Now().Unix())
-	updated       = created + 100
 	postgresState = PostgresState{}
 	postgresTasks = []models.Task{
 		{
