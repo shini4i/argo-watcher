@@ -3,7 +3,6 @@ package state
 import (
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
 
@@ -242,7 +241,7 @@ func (state *PostgresState) ProcessObsoleteTasks() {
 				log.Error().Msg(err.Error())
 			}
 
-			return errors.New("returning error to retry")
+			return desiredRetryError
 		},
 		retry.DelayType(retry.FixedDelay),
 		retry.Delay(60*time.Minute),
