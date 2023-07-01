@@ -130,7 +130,7 @@ func TestPostgresState_GetAppList(t *testing.T) {
 }
 
 func TestPostgresState_processPostgresObsoleteTasks(t *testing.T) {
-	// set updated time to 1 hour ago for obsolete task
+	// set updated time to 2 hour ago for obsolete task
 	updatedTime := time.Now().UTC().Add(-2 * time.Hour)
 	if _, err := postgresState.db.Exec("UPDATE tasks SET created = $1 WHERE id = $2", updatedTime, abortedTaskId); err != nil {
 		t.Errorf("got error %s, expected nil", err.Error())
@@ -144,10 +144,10 @@ func TestPostgresState_processPostgresObsoleteTasks(t *testing.T) {
 	// Check that obsolete task was deleted
 	assert.Len(t, postgresState.GetAppList(), 2)
 
-	task, err := postgresState.GetTask(abortedTaskId)
-	if err != nil {
-		return
+	// Check that task status was changed to aborted
+	if task, err := postgresState.GetTask(abortedTaskId); err != nil {
+		t.Errorf("got error %s, expected nil", err.Error())
+	} else {
+		assert.Equal(t, "aborted", task.Status)
 	}
-
-	assert.Equal(t, "aborted", task.Status)
 }
