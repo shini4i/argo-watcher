@@ -97,9 +97,7 @@ func TestPostgresState_GetTask(t *testing.T) {
 		t.Errorf("got error %s, expected nil", err.Error())
 	}
 
-	if task.Status != "in progress" {
-		t.Errorf("got %s, expected %s", task.Status, "in progress")
-	}
+	assert.Equal(t, "in progress", task.Status)
 }
 
 func TestPostgresState_SetTaskStatus(t *testing.T) {
@@ -118,15 +116,11 @@ func TestPostgresState_SetTaskStatus(t *testing.T) {
 func TestPostgresState_GetAppList(t *testing.T) {
 	apps := postgresState.GetAppList()
 
-	for _, app := range apps {
-		if !helpers.Contains([]string{"Test", "Test2", "ObsoleteApp"}, app) {
-			t.Errorf("Got unexpected value %s", app)
-		}
+	for _, app := range postgresState.GetAppList() {
+		assert.Equal(t, true, helpers.Contains([]string{"Test", "Test2", "ObsoleteApp"}, app))
 	}
 
-	if len(apps) != 3 {
-		t.Errorf("Got %d apps, but expected %d", len(apps), 3)
-	}
+	assert.Len(t, apps, 3)
 }
 
 func TestPostgresState_processPostgresObsoleteTasks(t *testing.T) {
