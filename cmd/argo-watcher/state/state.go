@@ -22,6 +22,11 @@ type State interface {
 	ProcessObsoleteTasks(retryTimes uint)
 }
 
+// NewState creates a new instance of the state based on the provided server configuration.
+// It initializes the appropriate state based on the StateType field in the server configuration.
+// Currently, it supports "postgres" and "in-memory" state types.
+// It returns the created state instance and an error if the state type is not recognized or if there was an error connecting to the state.
+// The created state instance is already connected to the state storage based on the provided server configuration.
 func NewState(serverConfig *config.ServerConfig) (State, error) {
 	log.Debug().Msg("Initializing argo-watcher state...")
 	var state State

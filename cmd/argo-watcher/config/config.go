@@ -29,6 +29,10 @@ type ServerConfig struct {
 	SkipTlsVerify    string `required:"false" envconfig:"SKIP_TLS_VERIFY" default:"false"`
 }
 
+// NewServerConfig parses the server configuration from environment variables using the envconfig package.
+// It performs custom checks to ensure that the StateType is a valid value.
+// If the StateType is empty or not one of the allowed types ("postgres" or "in-memory"), it returns an error.
+// Otherwise, it returns the parsed server configuration and any error encountered during the parsing process.
 func NewServerConfig() (*ServerConfig, error) {
 	// parse config
 	var config ServerConfig
@@ -42,6 +46,10 @@ func NewServerConfig() (*ServerConfig, error) {
 	return &config, err
 }
 
+// GetRetryAttempts calculates the number of retry attempts based on the Argo timeout value in the server configuration.
+// It converts the Argo timeout to an integer value and divides it by 15 to determine the number of 15-second intervals.
+// The calculated value is incremented by 1 to account for the initial attempt.
+// It returns the number of retry attempts as an unsigned integer.
 func (config *ServerConfig) GetRetryAttempts() uint {
 	argoTimeout, _ := strconv.Atoi(config.ArgoTimeout)
 	return uint((argoTimeout / 15) + 1)
