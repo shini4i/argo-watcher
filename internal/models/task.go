@@ -19,6 +19,9 @@ type Task struct {
 	StatusReason string  `json:"status_reason,omitempty"`
 }
 
+// ListImages returns a list of strings representing the images of the task.
+// Each string in the list is in the format "{image}:{tag}".
+// The list is generated based on the Task's Images field.
 func (task *Task) ListImages() []string {
 	list := make([]string, len(task.Images))
 	for index := range task.Images {
