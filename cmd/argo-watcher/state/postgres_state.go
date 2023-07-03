@@ -255,7 +255,7 @@ func (state *PostgresState) Check() bool {
 // It initiates a process to remove tasks with a status of 'app not found' and mark tasks older than 1 hour as 'aborted'.
 // The function utilizes retry logic to handle potential errors and retry the process if necessary.
 // The retry interval is set to 60 minutes, and the retry attempts are set to 0 (no limit).
-func (state *PostgresState) ProcessObsoleteTasks() {
+func (state *PostgresState) ProcessObsoleteTasks(retryTimes uint) {
 	log.Debug().Msg("Starting watching for obsolete tasks...")
 	err := retry.Do(
 		func() error {
@@ -267,7 +267,7 @@ func (state *PostgresState) ProcessObsoleteTasks() {
 		},
 		retry.DelayType(retry.FixedDelay),
 		retry.Delay(60*time.Minute),
-		retry.Attempts(0),
+		retry.Attempts(retryTimes),
 	)
 
 	if err != nil {

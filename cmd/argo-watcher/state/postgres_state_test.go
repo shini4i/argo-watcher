@@ -123,17 +123,14 @@ func TestPostgresState_GetAppList(t *testing.T) {
 	assert.Len(t, apps, 3)
 }
 
-func TestPostgresState_processPostgresObsoleteTasks(t *testing.T) {
+func TestPostgresState_ProcessObsoleteTasks(t *testing.T) {
 	// set updated time to 2 hour ago for obsolete task
 	updatedTime := time.Now().UTC().Add(-2 * time.Hour)
 	if _, err := postgresState.db.Exec("UPDATE tasks SET created = $1 WHERE id = $2", updatedTime, abortedTaskId); err != nil {
 		t.Errorf("got error %s, expected nil", err.Error())
 	}
 
-	err := processPostgresObsoleteTasks(postgresState.db)
-
-	// Check that no error occurred
-	assert.NoError(t, err)
+	postgresState.ProcessObsoleteTasks(1)
 
 	// Check that obsolete task was deleted
 	assert.Len(t, postgresState.GetAppList(), 2)

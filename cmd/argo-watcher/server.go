@@ -45,8 +45,8 @@ func serverWatcher() {
 		log.Error().Msgf("Couldn't create state manager (in-memory / database). Got the following error: %s", err)
 		os.Exit(1)
 	}
-	// start cleanup go routine
-	go state.ProcessObsoleteTasks()
+	// start cleanup go routine (retryTimes set to 0 to retry indefinitely)
+	go state.ProcessObsoleteTasks(0)
 
 	// initialize argo client
 	argo := &Argo{}

@@ -121,7 +121,7 @@ func (state *InMemoryState) Check() bool {
 // ProcessObsoleteTasks scans the in-memory tasks for obsolete tasks and updates their status.
 // It starts a process to watch for obsolete tasks by invoking the `processInMemoryObsoleteTasks` function.
 // The function uses the `retry` package to periodically retry the task processing with a fixed delay of 60 minutes.
-func (state *InMemoryState) ProcessObsoleteTasks() {
+func (state *InMemoryState) ProcessObsoleteTasks(retryTimes uint) {
 	log.Debug().Msg("Starting watching for obsolete tasks...")
 	err := retry.Do(
 		func() error {
@@ -130,7 +130,7 @@ func (state *InMemoryState) ProcessObsoleteTasks() {
 		},
 		retry.DelayType(retry.FixedDelay),
 		retry.Delay(60*time.Minute),
-		retry.Attempts(0),
+		retry.Attempts(retryTimes),
 	)
 	if err != nil {
 		log.Error().Msgf("Couldn't process obsolete tasks. Got the following error: %s", err)

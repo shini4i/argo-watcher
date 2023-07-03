@@ -80,7 +80,7 @@ func TestInMemoryState_GetAppList(t *testing.T) {
 	assert.Equal(t, state.GetAppList(), []string{"Test", "Test2"})
 }
 
-func TestProcessObsoleteTasks(t *testing.T) {
+func TestInMemoryState_ProcessObsoleteTasks(t *testing.T) {
 	tasks := []models.Task{
 		{
 			Id:      "d4776428-6a95-4a54-a3f4-509aafb4f444",
@@ -105,12 +105,14 @@ func TestProcessObsoleteTasks(t *testing.T) {
 		},
 	}
 
+	state.ProcessObsoleteTasks(1)
+
 	// Call the function under test
-	tasks = processInMemoryObsoleteTasks(tasks)
+	tasks = state.GetTasks(float64(time.Now().Unix())-60, float64(time.Now().Unix()), "")
 
 	// Assert the expected results
 	assert.Len(t, tasks, 2) // Only non-obsolete tasks should remain
 
 	// Check that the status of the obsolete task has been updated
-	assert.Equal(t, "aborted", tasks[0].Status)
+	assert.Equal(t, "aborted", tasks[1].Status)
 }
