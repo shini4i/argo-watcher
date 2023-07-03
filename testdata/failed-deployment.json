@@ -1,0 +1,65 @@
+{
+  "status": {
+    "health": {
+      "status": "Healthy"
+    },
+    "operationState": {
+      "phase": "Running",
+      "message": "",
+      "syncResult": {
+        "resources": [
+          {
+            "hookPhase": "Succeeded",
+            "hookType": "PreSync",
+            "kind": "Pod",
+            "message": "",
+            "status": "Synced",
+            "syncPhase": "PreSync",
+            "name": "app-migrations",
+            "namespace": "app"
+          },
+          {
+            "hookPhase": "Failed",
+            "hookType": "PostSync",
+            "kind": "Job",
+            "message": "Job has reached the specified backoff limit",
+            "status": "Synced",
+            "syncPhase": "PostSync",
+            "name": "app-job",
+            "namespace": "app"
+          }
+        ]
+      }
+    },
+    "resources": [
+      {
+        "kind": "Pod",
+        "name": "app-pod",
+        "namespace": "app",
+        "health": {
+          "message": "",
+          "status": "Synced"
+        }
+      },
+      {
+        "kind": "Job",
+        "name": "app-job",
+        "namespace": "app",
+        "health": {
+          "message": "Job has reached the specified backoff limit",
+          "status": "Unhealthy"
+        }
+      }
+    ],
+    "summary": {
+      "images": [
+        "image1",
+        "image2",
+        "image3"
+      ]
+    },
+    "sync": {
+      "status": "Synced"
+    }
+  }
+}
