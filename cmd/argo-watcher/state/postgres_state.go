@@ -22,6 +22,10 @@ type PostgresState struct {
 	db *sql.DB
 }
 
+// Connect establishes a connection to the PostgreSQL database using the provided server configuration.
+// It takes a pointer to a config.ServerConfig parameter and initializes the database connection.
+// The method also performs database migrations using the specified migrations path.
+// If any errors occur during connection establishment or migrations, they are logged and may cause a panic.
 func (state *PostgresState) Connect(serverConfig *config.ServerConfig) {
 	c := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable", serverConfig.DbHost, serverConfig.DbPort, serverConfig.DbUser, serverConfig.DbPassword, serverConfig.DbName)
 
@@ -49,6 +53,9 @@ func (state *PostgresState) Connect(serverConfig *config.ServerConfig) {
 	state.db = db
 }
 
+// Add inserts a new task into the PostgreSQL database with the provided details.
+// It takes a models.Task parameter and returns an error if the insertion fails.
+// The method executes an INSERT query to add a new record with the task details, including the current UTC time
 func (state *PostgresState) Add(task models.Task) error {
 	images, err := json.Marshal(task.Images)
 	if err != nil {
@@ -72,6 +79,10 @@ func (state *PostgresState) Add(task models.Task) error {
 	return nil
 }
 
+// GetTasks retrieves a list of tasks from the PostgreSQL database based on the provided time range and optional app filter.
+// It returns the tasks as a slice of models.Task.
+// Tasks are filtered based on the time range (start time and end time) and, optionally, the app value.
+// The method handles converting timestamps and unmarshalling images from the database.
 func (state *PostgresState) GetTasks(startTime float64, endTime float64, app string) []models.Task {
 	startTimeUTC := time.Unix(int64(startTime), 0).UTC()
 	endTimeUTC := time.Unix(int64(endTime), 0).UTC()
@@ -139,6 +150,10 @@ func (state *PostgresState) GetTasks(startTime float64, endTime float64, app str
 	}
 }
 
+// GetTask retrieves a task from the PostgreSQL database based on the provided task ID.
+// It returns the task as a pointer to models.Task and an error if the task is not found or an error occurs during retrieval.
+// The method executes a SELECT query with the given task ID and scans the result into the task struct.
+// It handles converting the created and updated timestamps to float64 values and unmarshalling the images from the database.
 func (state *PostgresState) GetTask(id string) (*models.Task, error) {
 	var (
 		task        models.Task
@@ -181,6 +196,9 @@ func (state *PostgresState) GetTask(id string) (*models.Task, error) {
 	return &task, nil
 }
 
+// SetTaskStatus updates the status, status_reason, and updated fields of a task in the PostgreSQL database.
+// It takes the task ID, new status, and status reason as input parameters.
+// The updated field is set to the current UTC time.
 func (state *PostgresState) SetTaskStatus(id string, status string, reason string) {
 	_, err := state.db.Exec("UPDATE tasks SET status=$1, status_reason=$2, updated=$3 WHERE id=$4", status, reason, time.Now().UTC(), id)
 	if err != nil {
@@ -188,6 +206,9 @@ func (state *PostgresState) SetTaskStatus(id string, status string, reason strin
 	}
 }
 
+// GetAppList retrieves a list of distinct application names from the tasks table in the PostgreSQL database.
+// It executes a SELECT query to fetch the distinct app values and returns them as a slice of strings.
+// If an error occurs during the database query or result processing, it logs the error and returns an empty slice.
 func (state *PostgresState) GetAppList() []string {
 	var apps []string
 
@@ -218,6 +239,9 @@ func (state *PostgresState) GetAppList() []string {
 	return apps
 }
 
+// Check verifies the connection to the PostgreSQL database by executing a simple test query.
+// It returns true if the database connection is successful and the test query is executed without errors.
+// It returns false if there is an error in the database connection or the test query execution.
 func (state *PostgresState) Check() bool {
 	_, err := state.db.Exec("SELECT 1")
 	if err != nil {
@@ -227,28 +251,44 @@ func (state *PostgresState) Check() bool {
 	return true
 }
 
-func (state *PostgresState) ProcessObsoleteTasks() {
+// ProcessObsoleteTasks monitors and handles obsolete tasks in the PostgreSQL state.
+// It initiates a process to remove tasks with a status of 'app not found' and mark tasks older than 1 hour as 'aborted'.
+// The function utilizes retry logic to handle potential errors and retry the process if necessary.
+// The retry interval is set to 60 minutes, and the retry attempts are set to 0 (no limit).
+func (state *PostgresState) ProcessObsoleteTasks(retryTimes uint) {
 	log.Debug().Msg("Starting watching for obsolete tasks...")
 	err := retry.Do(
 		func() error {
-			_, err := state.db.Exec("DELETE FROM tasks WHERE status = 'app not found'")
-			if err != nil {
-				log.Error().Msg(err.Error())
+			if err := processPostgresObsoleteTasks(state.db); err != nil {
+				log.Error().Msgf("Couldn't process obsolete tasks. Got the following error: %s", err)
+				return err
 			}
-
-			_, err = state.db.Exec("UPDATE tasks SET status='aborted' WHERE status = 'in progress' AND created < now() - interval '1 hour'")
-			if err != nil {
-				log.Error().Msg(err.Error())
-			}
-
 			return desiredRetryError
 		},
 		retry.DelayType(retry.FixedDelay),
 		retry.Delay(60*time.Minute),
-		retry.Attempts(0),
+		retry.Attempts(retryTimes),
 	)
 
 	if err != nil {
 		log.Error().Msgf("Couldn't process obsolete tasks. Got the following error: %s", err)
 	}
+}
+
+// processPostgresObsoleteTasks processes and handles obsolete tasks in the PostgreSQL database.
+// It removes tasks with a status of 'app not found' and marks tasks older than 1 hour as 'aborted'.
+// The function expects a valid *sql.DB connection to the PostgreSQL database.
+// It returns an error if any database operation encounters an error; otherwise, it returns nil.
+func processPostgresObsoleteTasks(db *sql.DB) error {
+	log.Debug().Msg("Removing obsolete tasks...")
+	if _, err := db.Exec("DELETE FROM tasks WHERE status = 'app not found'"); err != nil {
+		return err
+	}
+
+	log.Debug().Msg("Marking tasks older than 1 hour as aborted...")
+	if _, err := db.Exec("UPDATE tasks SET status='aborted' WHERE status = 'in progress' AND created < now() - interval '1 hour'"); err != nil {
+		return err
+	}
+
+	return nil
 }

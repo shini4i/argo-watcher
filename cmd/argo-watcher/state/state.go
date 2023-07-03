@@ -19,7 +19,7 @@ type State interface {
 	SetTaskStatus(id string, status string, reason string)
 	GetAppList() []string
 	Check() bool
-	ProcessObsoleteTasks()
+	ProcessObsoleteTasks(retryTimes uint)
 }
 
 func NewState(serverConfig *config.ServerConfig) (State, error) {

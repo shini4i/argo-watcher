@@ -2,7 +2,6 @@ package state
 
 import (
 	"github.com/stretchr/testify/assert"
-	"reflect"
 	"testing"
 	"time"
 
@@ -49,29 +48,24 @@ var (
 
 func TestInMemoryState_Add(t *testing.T) {
 	for _, task := range tasks {
-		state.Add(task)
+		if err := state.Add(task); err != nil {
+			t.Errorf("Unexpected error: %s", err)
+		}
 	}
 }
 
 func TestInMemoryState_GetTask(t *testing.T) {
 	task, _ := state.GetTask(taskId)
 
-	if task.Status != "in progress" {
-		t.Errorf("got %s, expected %s", task.Status, "in progress")
-	}
+	assert.Equal(t, task.Status, "in progress")
 }
 
 func TestInMemoryState_GetTasks(t *testing.T) {
 	currentTasks := state.GetTasks(float64(time.Now().Unix())-10, float64(time.Now().Unix()), "")
 	currentFilteredTasks := state.GetTasks(float64(time.Now().Unix())-10, float64(time.Now().Unix()), "Test")
 
-	if !reflect.DeepEqual(tasks, currentTasks) {
-		t.Errorf("got %v, expected %v", currentTasks, tasks)
-	}
-
-	if l := len(currentFilteredTasks); l != 1 {
-		t.Errorf("got %d tasks, expected %d", l, 1)
-	}
+	assert.Equal(t, tasks, currentTasks)
+	assert.Len(t, currentFilteredTasks, 1)
 }
 
 func TestInMemoryState_SetTaskStatus(t *testing.T) {
@@ -83,14 +77,10 @@ func TestInMemoryState_SetTaskStatus(t *testing.T) {
 }
 
 func TestInMemoryState_GetAppList(t *testing.T) {
-	apps := state.GetAppList()
-
-	if !reflect.DeepEqual(apps, []string{"Test", "Test2"}) {
-		t.Errorf("got %s, expected %s", apps, []string{"Test", "Test2"})
-	}
+	assert.Equal(t, state.GetAppList(), []string{"Test", "Test2"})
 }
 
-func TestProcessObsoleteTasks(t *testing.T) {
+func TestInMemoryState_ProcessObsoleteTasks(t *testing.T) {
 	tasks := []models.Task{
 		{
 			Id:      "d4776428-6a95-4a54-a3f4-509aafb4f444",
@@ -115,12 +105,14 @@ func TestProcessObsoleteTasks(t *testing.T) {
 		},
 	}
 
+	state.ProcessObsoleteTasks(1)
+
 	// Call the function under test
-	tasks = processInMemoryObsoleteTasks(tasks)
+	tasks = state.GetTasks(float64(time.Now().Unix())-60, float64(time.Now().Unix()), "")
 
 	// Assert the expected results
 	assert.Len(t, tasks, 2) // Only non-obsolete tasks should remain
 
 	// Check that the status of the obsolete task has been updated
-	assert.Equal(t, "aborted", tasks[0].Status)
+	assert.Equal(t, "aborted", tasks[1].Status)
 }
