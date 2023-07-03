@@ -41,6 +41,10 @@ type Application struct {
 	} `json:"status"`
 }
 
+// ListSyncResultResources returns a list of strings representing the sync result resources of the application.
+// Each string in the list contains information about the resource's kind, name, hook type, hook phase, and message.
+// The information is formatted as "{kind}({name}) {hookType} {hookPhase} with message {message}".
+// The list is generated based on the Application's status and its operation state's sync result resources.
 func (app *Application) ListSyncResultResources() []string {
 	list := make([]string, len(app.Status.OperationState.SyncResult.Resources))
 	for index := range app.Status.OperationState.SyncResult.Resources {
@@ -50,6 +54,11 @@ func (app *Application) ListSyncResultResources() []string {
 	return list
 }
 
+// ListUnhealthyResources returns a list of strings representing the unhealthy resources of the application.
+// Each string in the list contains information about the resource's kind, name, and health status.
+// If available, the resource's health message is also included in the string.
+// The format of each string is "{kind}({name}) {status}" or "{kind}({name}) {status} with message {message}".
+// The list is generated based on the Application's status and its resources with non-empty health status.
 func (app *Application) ListUnhealthyResources() []string {
 	var list []string
 

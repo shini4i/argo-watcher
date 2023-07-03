@@ -89,6 +89,19 @@ func TestPostgresState_Add(t *testing.T) {
 	}
 }
 
+func TestPostgresState_GetTasks(t *testing.T) {
+	// a temporary solution to wait for the task to be added to the database
+	time.Sleep(1 * time.Second)
+
+	// get all tasks without app filter
+	tasks := postgresState.GetTasks(created, float64(time.Now().Unix()), "")
+	assert.Len(t, tasks, 3)
+
+	// get all tasks with app filter
+	tasks = postgresState.GetTasks(created, float64(time.Now().Unix()), "Test")
+	assert.Len(t, tasks, 1)
+}
+
 func TestPostgresState_GetTask(t *testing.T) {
 	var task *models.Task
 	var err error
