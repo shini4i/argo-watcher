@@ -69,3 +69,16 @@ func TestNewServerConfig_RequiredFieldsMissing(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, cfg)
 }
+
+func TestServerConfig_GetRetryAttempts(t *testing.T) {
+	// Create a ServerConfig instance with a specific ArgoTimeout value
+	config := &ServerConfig{
+		ArgoTimeout: "60",
+	}
+
+	// Call the GetRetryAttempts function
+	retryAttempts := config.GetRetryAttempts()
+
+	// Assert that the retryAttempts value matches the expected result
+	assert.Equal(t, uint(5), retryAttempts)
+}
