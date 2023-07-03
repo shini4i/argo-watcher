@@ -19,7 +19,7 @@ func TestServer_initLogs_correct(t *testing.T) {
 
 func TestServer_initLogs_invalid(t *testing.T) {
 	// Invoke the function being tested
-	initLogs("invalid-123")
+	initLogs("invalid")
 
 	// Assert that the global log level is set to info level when the log level is invalid
 	assert.Equal(t, zerolog.InfoLevel, zerolog.GlobalLevel())
