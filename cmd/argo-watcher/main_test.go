@@ -21,7 +21,7 @@ func TestUsage(t *testing.T) {
 	os.Stderr = pw
 
 	// Run the usage function
-	usage()
+	printUsage()
 
 	// Close the pipe writer and restore os.Stderr
 	if err := pw.Close(); err != nil {

@@ -23,7 +23,7 @@ func runWatcher(serverFlag, clientFlag bool) error {
 	return nil
 }
 
-func usage() {
+func printUsage() {
 	if _, err := fmt.Fprintf(os.Stderr, "Usage: argo-watcher [options]\n"); err != nil {
 		return
 	}
@@ -31,6 +31,7 @@ func usage() {
 	if _, err := fmt.Fprintf(os.Stderr, "Invalid mode specified. Please specify either -server or -client.\n"); err != nil {
 		return
 	}
+
 	flag.PrintDefaults()
 }
 
@@ -38,8 +39,7 @@ func main() {
 	serverFlag := flag.Bool("server", false, "Run in server mode")
 	clientFlag := flag.Bool("client", false, "Run in client mode")
 
-	flag.Usage = usage
-
+	flag.Usage = printUsage
 	flag.Parse()
 
 	if err := runWatcher(*serverFlag, *clientFlag); err != nil {
