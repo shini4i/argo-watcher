@@ -1,28 +1,49 @@
 package main
 
 import (
+	"errors"
 	"flag"
+	"fmt"
 	"github.com/shini4i/argo-watcher/pkg/client"
 	"os"
-
-	"github.com/rs/zerolog/log"
 )
+
+var invalidModeError = errors.New("invalid mode")
+
+func runWatcher(serverFlag, clientFlag bool) error {
+	if serverFlag && clientFlag {
+		return invalidModeError
+	} else if serverFlag {
+		serverWatcher()
+	} else if clientFlag {
+		client.ClientWatcher()
+	} else {
+		return invalidModeError
+	}
+	return nil
+}
+
+func printUsage() {
+	if _, err := fmt.Fprintf(os.Stderr, "Usage: argo-watcher [options]\n"); err != nil {
+		return
+	}
+
+	if _, err := fmt.Fprintf(os.Stderr, "Invalid mode specified. Please specify either -server or -client.\n"); err != nil {
+		return
+	}
+
+	flag.PrintDefaults()
+}
 
 func main() {
 	serverFlag := flag.Bool("server", false, "Run in server mode")
 	clientFlag := flag.Bool("client", false, "Run in client mode")
 
+	flag.Usage = printUsage
 	flag.Parse()
 
-	if *serverFlag && *clientFlag {
-		log.Error().Msg("Both server and client modes cannot be specified simultaneously")
-		os.Exit(1)
-	} else if *serverFlag {
-		serverWatcher()
-	} else if *clientFlag {
-		client.ClientWatcher()
-	} else {
-		log.Error().Msg("Either server or client mode should be specified")
+	if err := runWatcher(*serverFlag, *clientFlag); err != nil {
+		flag.Usage()
 		os.Exit(1)
 	}
 }

@@ -80,6 +80,12 @@ func TestInMemoryState_GetAppList(t *testing.T) {
 	assert.Equal(t, state.GetAppList(), []string{"Test", "Test2"})
 }
 
+func TestInMemoryState_GetAppListEmpty(t *testing.T) {
+	state := InMemoryState{}
+	// We must make sure that we are returning an empty slice and not nil
+	assert.Equal(t, state.GetAppList(), []string{})
+}
+
 func TestInMemoryState_ProcessObsoleteTasks(t *testing.T) {
 	tasks := []models.Task{
 		{
@@ -115,4 +121,9 @@ func TestInMemoryState_ProcessObsoleteTasks(t *testing.T) {
 
 	// Check that the status of the obsolete task has been updated
 	assert.Equal(t, "aborted", tasks[1].Status)
+}
+
+func TestInMemoryState_Check(t *testing.T) {
+	// semi-useless test, but it's here for completeness
+	assert.True(t, state.Check())
 }

@@ -155,3 +155,8 @@ func TestPostgresState_ProcessObsoleteTasks(t *testing.T) {
 		assert.Equal(t, "aborted", task.Status)
 	}
 }
+
+func TestPostgresState_Check(t *testing.T) {
+	// Check that we return true if connection is ok
+	assert.True(t, postgresState.Check())
+}
