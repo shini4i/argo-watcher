@@ -1,7 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"net/http"
 	"strconv"
 	"time"
@@ -41,6 +44,7 @@ func (env *Env) CreateRouter() *gin.Engine {
 
 	router := gin.New()
 	router.Use(gin.Recovery())
+	router.Use(loggingMiddleware())
 
 	staticFilesPath := env.config.StaticFilePath
 	router.Use(static.Serve("/", static.LocalFile(staticFilesPath, true)))
@@ -61,6 +65,27 @@ func (env *Env) CreateRouter() *gin.Engine {
 	}
 
 	return router
+}
+
+func loggingMiddleware() gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		reqMethod := ctx.Request.Method
+		reqUri := ctx.Request.RequestURI
+		statusCode := ctx.Writer.Status()
+		if reqMethod == "POST" {
+			var buf bytes.Buffer
+			tee := io.TeeReader(ctx.Request.Body, &buf)
+			reqBody, _ := ioutil.ReadAll(tee)
+			ctx.Request.Body = ioutil.NopCloser(&buf)
+
+			log.Debug().Msgf("reqMethod = %s, reqUri = %s, reqBody = %s, statusCode = %d", reqMethod, reqUri, string(reqBody), statusCode)
+		} else {
+			reqParams := ctx.Params
+			log.Debug().Msgf("reqMethod = %s, reqUri = %s, reqParams = %s, statusCode = %d", reqMethod, reqUri, reqParams, statusCode)
+		}
+
+		ctx.Next()
+	}
 }
 
 func (env *Env) StartRouter(router *gin.Engine) {

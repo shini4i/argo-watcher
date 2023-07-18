@@ -47,7 +47,7 @@ cd cmd/argo-watcher
 # install dependencies
 go mod tidy
 # start argo-watcher
-ARGO_URL=http://localhost:8081 STATE_TYPE=in-memory go run .
+ARGO_URL=http://localhost:8081 ARGO_TOKEN=test_token STATE_TYPE=in-memory go run . -server
 ```
 
 ## Front-End Development
@@ -77,14 +77,17 @@ Post request:
 ```bash
 curl --header "Content-Type: application/json" \
      --request POST \
-     --data '{"app":"test-app","author":"name","project":"example","images":[{"image":"example", "tag":"v1.8.0"}]}' \
+     --data '{"app":"app","author":"name","project":"example","images":[{"image":"app", "tag":"v0.0.1"}]}' \
      http://localhost:8080/api/v1/tasks
 ```
 
 Example response:
 
 ```bash
-{"status":"accepted","id":"be8c42c0-a645-11ec-8ea5-f2c4bb72758a"}
+{
+  "status":"accepted",
+  "id":"be8c42c0-a645-11ec-8ea5-f2c4bb72758a"
+}
 ```
 
 ### Get task details
@@ -98,7 +101,21 @@ curl http://localhost:8080/api/v1/tasks/be8c42c0-a645-11ec-8ea5-f2c4bb72758a
 Example response:
 
 ```bash
-{"status":"in progress"}
+{
+  "id": "524d989c-5afe-4e9b-943f-f6910d154199",
+  "created": 1689689766,
+  "updated": 1689689766,
+  "app": "app",
+  "author": "name",
+  "project": "example",
+  "images": [
+    {
+      "image": "app",
+      "tag": "v0.0.1"
+    }
+  ],
+  "status": "deployed"
+}
 ```
 
 ## Swagger
