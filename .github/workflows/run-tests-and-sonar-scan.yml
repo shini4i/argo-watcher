@@ -61,14 +61,8 @@ jobs:
         with:
           go-version: ${{ env.GOLANG_VERSION }}
 
-      - name: Install swag
-        run: go install github.com/swaggo/swag/cmd/swag@latest
-
-      - name: Generate swagger docs
-        run: make docs
-
-      - name: Install mockgen
-        run: go install github.com/golang/mock/mockgen@v1.6.0
+      - name: Install project dependencies
+        run: make install-deps mocks docs
 
       - name: Run tests
         env:
