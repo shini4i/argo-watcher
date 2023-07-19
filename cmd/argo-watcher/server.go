@@ -13,7 +13,7 @@ import (
 func initLogs(logLevel string) {
 	if logLevel, err := zerolog.ParseLevel(logLevel); err != nil {
 		log.Warn().Msgf("Couldn't parse log level. Got the following error: %s", err)
-		logLevel = zerolog.InfoLevel
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
 	} else {
 		log.Info().Msgf("Setting log level to %s", logLevel)
 		zerolog.SetGlobalLevel(logLevel)

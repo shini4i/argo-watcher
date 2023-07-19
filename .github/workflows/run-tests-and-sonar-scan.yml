@@ -5,7 +5,32 @@ on:
       - main
   pull_request:
     types: [opened, synchronize, reopened]
+env:
+  GOLANG_VERSION: '1.20.4'
+
 jobs:
+  golangci:
+    name: GolangCI
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-go@v4
+        with:
+          go-version: ${{ env.GOLANG_VERSION }}
+          cache: false
+
+      - name: Install project dependencies
+        run: make install-deps mocks docs
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: v1.53
+
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -32,9 +57,9 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-go@v3
+      - uses: actions/setup-go@v4
         with:
-          go-version: '1.20.4'
+          go-version: ${{ env.GOLANG_VERSION }}
 
       - name: Install swag
         run: go install github.com/swaggo/swag/cmd/swag@latest

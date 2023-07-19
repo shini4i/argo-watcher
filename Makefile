@@ -10,6 +10,13 @@ help: ## Print this help
 	@echo "Usage: make [target]"
 	@grep -E '^[a-z.A-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST)  | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
+.PHONY: install-deps
+install-deps: ## Install dependencies
+	@echo "===> Installing dependencies"
+	@go install github.com/swaggo/swag/cmd/swag@latest
+	@go install github.com/golang/mock/mockgen@latest
+	@echo "===> Done"
+
 .PHONY: test
 test: mocks ## Run tests
 	@ARGO_TIMEOUT=1 go test -v ./... -count=1 -coverprofile coverage.out `go list ./... | egrep -v '(test|mock)'`
