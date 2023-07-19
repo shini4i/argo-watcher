@@ -14,7 +14,7 @@ help: ## Print this help
 install-deps: ## Install dependencies
 	@echo "===> Installing dependencies"
 	@go install github.com/swaggo/swag/cmd/swag@latest
-	@go install github.com/golang/mock/mockgen@latest
+	@go install go.uber.org/mock/mockgen@latest
 	@echo "===> Done"
 
 .PHONY: test
