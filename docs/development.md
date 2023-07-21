@@ -66,6 +66,19 @@ go mod tidy
 ARGO_URL=http://localhost:8081 STATE_TYPE=in-memory go run .
 ```
 
+### Running the unit tests
+
+Use the following snippets to run argo-watcher unit tests
+
+```shell
+# go to backend directory
+cd cmd/argo-watcher
+# run all tests
+go test -v
+# run single test suite
+go test -v -run TestArgoStatusUpdaterCheck
+```
+
 ## Front-End Development
 
 To start developing front-end you will need
