@@ -10,6 +10,8 @@ They can be installed by running:
 pre-commit install
 ```
 
+To compile the project locally, you would also need to generate mocks (for testing) and swagger docs (for api documentation).
+
 ### Mock classes
 
 To generate mock classes for unit tests, first install `gomock` tool.
@@ -22,6 +24,20 @@ Then run the mock generation from interfaces.
 
 ```shell
 make mocks
+```
+
+### Swagger documentation
+
+To generate documentation dependencies, first install `swag` tool.
+
+```shell
+go install github.com/swaggo/swag/cmd/swag@latest
+```
+
+Then run the swagger doc generation.
+
+```shell
+make docs
 ```
 
 > Note: you need to run this only when you're changing the interfaces
