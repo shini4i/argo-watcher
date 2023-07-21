@@ -15,7 +15,7 @@ func initLogs(logLevel string) {
 		log.Warn().Msgf("Couldn't parse log level. Got the following error: %s", err)
 	} else {
 		zerolog.SetGlobalLevel(logLevel)
-		log.Debug().Msgf("Setting log level to %s", logLevel)
+		log.Debug().Msgf("Configured log level: %s", logLevel)
 	}
 }
 
