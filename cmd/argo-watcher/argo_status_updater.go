@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/avast/retry-go/v4"
 	"github.com/rs/zerolog/log"
@@ -16,12 +17,14 @@ const defaultErrorMessage string = "could not retrieve details"
 type ArgoStatusUpdater struct {
 	argo             Argo
 	retryAttempts    uint
+	retryDelay       time.Duration
 	registryProxyUrl string
 }
 
-func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, registryProxyUrl string) {
+func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, retryDelay time.Duration, registryProxyUrl string) {
 	updater.argo = argo
 	updater.retryAttempts = retryAttempts
+	updater.retryDelay = retryDelay
 	updater.registryProxyUrl = registryProxyUrl
 }
 
@@ -151,7 +154,7 @@ func (updater *ArgoStatusUpdater) checkWithRetry(task models.Task) (int, error) 
 			return nil
 		},
 		retry.DelayType(retry.FixedDelay),
-		retry.Delay(argoSyncRetryDelay),
+		retry.Delay(updater.retryDelay),
 		retry.Attempts(updater.retryAttempts),
 		retry.RetryIf(func(err error) bool {
 			return errors.Is(err, errorArgoPlannedRetry)
