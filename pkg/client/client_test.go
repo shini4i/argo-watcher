@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -153,10 +152,7 @@ func TestGetImagesList(t *testing.T) {
 		},
 	}
 
-	err := os.Setenv("IMAGES", "example/app,example/web")
-	if err != nil {
-		return
-	}
+	t.Setenv("IMAGES", "example/app,example/web")
 
 	images := getImagesList()
 
