@@ -9,14 +9,13 @@ import (
 
 // initLogs initializes the logging configuration based on the provided log level.
 // It parses the log level string and sets the global log level accordingly using the zerolog library.
-// If the log level string is invalid, it sets the log level to the default InfoLevel.
+// If the log level string is invalid, it falls back to the default InfoLevel.
 func initLogs(logLevel string) {
 	if logLevel, err := zerolog.ParseLevel(logLevel); err != nil {
 		log.Warn().Msgf("Couldn't parse log level. Got the following error: %s", err)
-		logLevel = zerolog.InfoLevel
 	} else {
-		log.Info().Msgf("Setting log level to %s", logLevel)
 		zerolog.SetGlobalLevel(logLevel)
+		log.Debug().Msgf("Configured log level: %s", logLevel)
 	}
 }
 

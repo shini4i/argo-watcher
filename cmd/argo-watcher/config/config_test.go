@@ -1,7 +1,6 @@
 package config
 
 import (
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -9,32 +8,9 @@ import (
 
 func TestNewServerConfig(t *testing.T) {
 	// Set up the required environment variables
-	if err := os.Setenv("ARGO_URL", "https://example.com"); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.Setenv("ARGO_TOKEN", "secret-token"); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.Setenv("STATE_TYPE", "postgres"); err != nil {
-		t.Fatal(err)
-	}
-
-	// Cleanup the environment variables after the test
-	defer func() {
-		if err := os.Unsetenv("ARGO_URL"); err != nil {
-			t.Fatal(err)
-		}
-
-		if err := os.Unsetenv("ARGO_TOKEN"); err != nil {
-			t.Fatal(err)
-		}
-
-		if err := os.Unsetenv("STATE_TYPE"); err != nil {
-			t.Fatal(err)
-		}
-	}()
+	t.Setenv("ARGO_URL", "https://example.com")
+	t.Setenv("ARGO_TOKEN", "secret-token")
+	t.Setenv("STATE_TYPE", "postgres")
 
 	// Call the NewServerConfig function
 	cfg, err := NewServerConfig()
@@ -50,17 +26,7 @@ func TestNewServerConfig(t *testing.T) {
 }
 
 func TestNewServerConfig_RequiredFieldsMissing(t *testing.T) {
-	// Set up environment variables with missing required fields
-	if err := os.Setenv("ARGO_URL", "https://example.com"); err != nil {
-		t.Fatal(err)
-	}
-
-	// Cleanup the environment variables after the test
-	defer func() {
-		if err := os.Unsetenv("ARGO_URL"); err != nil {
-			t.Fatal(err)
-		}
-	}()
+	t.Setenv("ARGO_URL", "https://example.com")
 
 	// Call the NewServerConfig function
 	cfg, err := NewServerConfig()
