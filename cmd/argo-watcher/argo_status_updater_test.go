@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/mock/gomock"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/mock"
 	"github.com/shini4i/argo-watcher/internal/models"
+	"go.uber.org/mock/gomock"
 )
 
 func TestArgoStatusUpdaterCheck(t *testing.T) {
