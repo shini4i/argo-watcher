@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	envConfig "github.com/kelseyhightower/envconfig"
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
@@ -20,9 +21,20 @@ type Watcher struct {
 	client  *http.Client
 }
 
-var (
-	tag = os.Getenv("IMAGE_TAG")
-)
+type ClientConfig struct {
+	ArgoWatcherUrl string `required:"true" envconfig:"ARGO_WATCHER_URL"`
+	Images         string `required:"true" envconfig:"IMAGES"`
+	Tag            string `required:"true" envconfig:"IMAGE_TAG"`
+	App            string `required:"true" envconfig:"ARGO_APP"`
+	Author         string `required:"true" envconfig:"COMMIT_AUTHOR"`
+	Project        string `required:"true" envconfig:"PROJECT_NAME"`
+}
+
+func NewClientConfig() (*ClientConfig, error) {
+	var config ClientConfig
+	err := envConfig.Process("", &config)
+	return &config, err
+}
 
 func (watcher *Watcher) addTask(task models.Task) string {
 	body, err := json.Marshal(task)
@@ -107,46 +119,55 @@ func (watcher *Watcher) getTaskStatus(id string) *models.TaskStatus {
 	return &taskStatus
 }
 
-func getImagesList() []models.Image {
+func getImagesList(config *ClientConfig) []models.Image {
 	var images []models.Image
-	for _, image := range strings.Split(os.Getenv("IMAGES"), ",") {
+	for _, image := range strings.Split(config.Images, ",") {
 		images = append(images, models.Image{
 			Image: image,
-			Tag:   tag,
+			Tag:   config.Tag,
 		})
 	}
 	return images
 }
 
+func printDebugInformation(config *ClientConfig, task *models.Task) {
+	fmt.Printf("Got the following configuration:\n"+
+		"ARGO_WATCHER_URL: %s\n"+
+		"ARGO_APP: %s\n"+
+		"COMMIT_AUTHOR: %s\n"+
+		"PROJECT_NAME: %s\n"+
+		"IMAGE_TAG: %s\n"+
+		"IMAGES: %s\n\n",
+		config.ArgoWatcherUrl, task.App, task.Author, task.Project, config.Tag, task.Images)
+}
+
 func ClientWatcher() {
-	images := getImagesList()
+	config, err := NewClientConfig()
+	if err != nil {
+		panic(err)
+	}
+
+	images := getImagesList(config)
 
 	watcher := Watcher{
-		baseUrl: strings.TrimSuffix(os.Getenv("ARGO_WATCHER_URL"), "/"),
+		baseUrl: strings.TrimSuffix(config.ArgoWatcherUrl, "/"),
 		client:  &http.Client{},
 	}
 
 	task := models.Task{
-		App:     os.Getenv("ARGO_APP"),
-		Author:  os.Getenv("COMMIT_AUTHOR"),
-		Project: os.Getenv("PROJECT_NAME"),
+		App:     config.App,
+		Author:  config.Author,
+		Project: config.Project,
 		Images:  images,
 	}
 
 	debug, _ := strconv.ParseBool(os.Getenv("DEBUG"))
 
 	if debug {
-		fmt.Printf("Got the following configuration:\n"+
-			"ARGO_WATCHER_URL: %s\n"+
-			"ARGO_APP: %s\n"+
-			"COMMIT_AUTHOR: %s\n"+
-			"PROJECT_NAME: %s\n"+
-			"IMAGE_TAG: %s\n"+
-			"IMAGES: %s\n\n",
-			watcher.baseUrl, task.App, task.Author, task.Project, tag, task.Images)
+		printDebugInformation(config, &task)
 	}
 
-	fmt.Printf("Waiting for %s app to be running on %s version.\n", task.App, tag)
+	fmt.Printf("Waiting for %s app to be running on %s version.\n", task.App, config.Tag)
 
 	id := watcher.addTask(task)
 
@@ -171,7 +192,7 @@ loop:
 			fmt.Println(taskInfo.StatusReason)
 			os.Exit(1)
 		case models.StatusDeployedMessage:
-			fmt.Printf("The deployment of %s version is done.\n", tag)
+			fmt.Printf("The deployment of %s version is done.\n", config.Tag)
 			break loop
 		}
 	}
