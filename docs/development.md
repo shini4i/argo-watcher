@@ -17,7 +17,7 @@ To compile the project locally, you would also need to generate mocks (for testi
 To generate mock classes for unit tests, first install `gomock` tool.
 
 ```shell
-go install github.com/golang/mock/mockgen@v1.6.0
+go install go.uber.org/mock/mockgen@latest
 ```
 
 Then run the mock generation from interfaces.
