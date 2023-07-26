@@ -109,7 +109,7 @@ func TestAddTask(t *testing.T) {
 	id, err := client.addTask(task)
 
 	assert.NoError(t, err)
-	assert.Equal(t, expected, id)
+	assert.Equal(t, expected.Id, id)
 }
 
 func TestGetTaskStatus(t *testing.T) {
