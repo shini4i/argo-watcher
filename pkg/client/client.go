@@ -45,14 +45,14 @@ func (watcher *Watcher) addTask(task models.Task) (string, error) {
 	url := fmt.Sprintf("%s/api/v1/tasks", watcher.baseUrl)
 	request, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
 	if err != nil {
-		panic(err)
+		return "", err
 	}
 
 	request.Header.Set("Content-Type", "application/json; charset=UTF-8")
 
 	response, err := watcher.client.Do(request)
 	if err != nil {
-		panic(err)
+		return "", err
 	}
 
 	defer func(Body io.ReadCloser) {
@@ -61,12 +61,6 @@ func (watcher *Watcher) addTask(task models.Task) (string, error) {
 			panic(err)
 		}
 	}(response.Body)
-
-	if response.StatusCode != 202 {
-		fmt.Printf("Something went wrong on argo-watcher side. Got the following response code %d\n", response.StatusCode)
-		fmt.Printf("Body: %s\n", string(body))
-		os.Exit(1)
-	}
 
 	var accepted models.TaskStatus
 	if err := json.NewDecoder(response.Body).Decode(&accepted); err != nil {
@@ -76,17 +70,16 @@ func (watcher *Watcher) addTask(task models.Task) (string, error) {
 	return accepted.Id, nil
 }
 
-func (watcher *Watcher) getTaskStatus(id string) *models.TaskStatus {
+func (watcher *Watcher) getTaskStatus(id string) (*models.TaskStatus, error) {
 	url := fmt.Sprintf("%s/api/v1/tasks/%s", watcher.baseUrl, id)
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		log.Print(err)
-		os.Exit(1)
+		return nil, err
 	}
 
 	response, err := watcher.client.Do(request)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	defer func(Body io.ReadCloser) {
@@ -96,21 +89,12 @@ func (watcher *Watcher) getTaskStatus(id string) *models.TaskStatus {
 		}
 	}(response.Body)
 
-	body, _ := io.ReadAll(response.Body)
-
-	if response.StatusCode != 200 {
-		fmt.Printf("Received non 200 status code (%d)\n", response.StatusCode)
-		fmt.Printf("Body: %s\n", string(body))
-		os.Exit(1)
-	}
-
 	var taskStatus models.TaskStatus
-	err = json.Unmarshal(body, &taskStatus)
-	if err != nil {
-		panic(err)
+	if err := json.NewDecoder(response.Body).Decode(&taskStatus); err != nil {
+		return nil, err
 	}
 
-	return &taskStatus
+	return &taskStatus, nil
 }
 
 func getImagesList(config *Config) []models.Image {
@@ -171,7 +155,12 @@ func WatcherClient() {
 
 loop:
 	for {
-		switch taskInfo := watcher.getTaskStatus(id); taskInfo.Status {
+		taskInfo, err := watcher.getTaskStatus(id)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		switch taskInfo.Status {
 		case models.StatusFailedMessage:
 			fmt.Println("The deployment has failed, please check logs.")
 			fmt.Println(taskInfo.StatusReason)

@@ -113,27 +113,21 @@ func TestAddTask(t *testing.T) {
 }
 
 func TestGetTaskStatus(t *testing.T) {
-	messageTemplate := "Expected status %s, got %s"
+	status, err := client.getTaskStatus(taskId)
+	assert.NoError(t, err)
+	assert.Equal(t, models.StatusDeployedMessage, status.Status)
 
-	status := client.getTaskStatus(taskId).Status
-	if status != models.StatusDeployedMessage {
-		t.Errorf(messageTemplate, "deployed", status)
-	}
+	status, err = client.getTaskStatus(appNotFoundId)
+	assert.NoError(t, err)
+	assert.Equal(t, models.StatusAppNotFoundMessage, status.Status)
 
-	status = client.getTaskStatus(appNotFoundId).Status
-	if status != models.StatusAppNotFoundMessage {
-		t.Errorf(messageTemplate, "app not found", status)
-	}
+	status, err = client.getTaskStatus(argocdUnavailableId)
+	assert.NoError(t, err)
+	assert.Equal(t, models.StatusArgoCDUnavailableMessage, status.Status)
 
-	status = client.getTaskStatus(argocdUnavailableId).Status
-	if status != models.StatusArgoCDUnavailableMessage {
-		t.Errorf(messageTemplate, "ArgoCD is unavailable", status)
-	}
-
-	status = client.getTaskStatus(failedTaskId).Status
-	if status != models.StatusFailedMessage {
-		t.Errorf(messageTemplate, "failed", status)
-	}
+	status, err = client.getTaskStatus(failedTaskId)
+	assert.NoError(t, err)
+	assert.Equal(t, models.StatusFailedMessage, status.Status)
 }
 
 func TestGetImagesList(t *testing.T) {
