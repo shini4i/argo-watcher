@@ -15,12 +15,7 @@ import (
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
-type Watcher struct {
-	baseUrl string
-	client  *http.Client
-}
-
-type ClientConfig struct {
+type Config struct {
 	ArgoWatcherUrl string `required:"true" envconfig:"ARGO_WATCHER_URL"`
 	Images         string `required:"true" envconfig:"IMAGES"`
 	Tag            string `required:"true" envconfig:"IMAGE_TAG"`
@@ -30,10 +25,15 @@ type ClientConfig struct {
 	Debug          bool   `default:"false" envconfig:"DEBUG"`
 }
 
-func NewClientConfig() (*ClientConfig, error) {
-	var config ClientConfig
+func NewClientConfig() (*Config, error) {
+	var config Config
 	err := envConfig.Process("", &config)
 	return &config, err
+}
+
+type Watcher struct {
+	baseUrl string
+	client  *http.Client
 }
 
 func (watcher *Watcher) addTask(task models.Task) (string, error) {
@@ -113,7 +113,7 @@ func (watcher *Watcher) getTaskStatus(id string) *models.TaskStatus {
 	return &taskStatus
 }
 
-func getImagesList(config *ClientConfig) []models.Image {
+func getImagesList(config *Config) []models.Image {
 	var images []models.Image
 	for _, image := range strings.Split(config.Images, ",") {
 		images = append(images, models.Image{
@@ -124,7 +124,7 @@ func getImagesList(config *ClientConfig) []models.Image {
 	return images
 }
 
-func printDebugInformation(config *ClientConfig, task *models.Task) {
+func printDebugInformation(config *Config, task *models.Task) {
 	fmt.Printf("Got the following configuration:\n"+
 		"ARGO_WATCHER_URL: %s\n"+
 		"ARGO_APP: %s\n"+
@@ -135,7 +135,7 @@ func printDebugInformation(config *ClientConfig, task *models.Task) {
 		config.ArgoWatcherUrl, task.App, task.Author, task.Project, config.Tag, task.Images)
 }
 
-func ClientWatcher() {
+func WatcherClient() {
 	config, err := NewClientConfig()
 	if err != nil {
 		panic(err)
@@ -175,7 +175,6 @@ loop:
 		case models.StatusFailedMessage:
 			fmt.Println("The deployment has failed, please check logs.")
 			fmt.Println(taskInfo.StatusReason)
-			os.Exit(1)
 		case models.StatusInProgressMessage:
 			fmt.Println("Application deployment is in progress...")
 			time.Sleep(15 * time.Second)

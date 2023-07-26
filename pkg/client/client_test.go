@@ -3,9 +3,9 @@ package client
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/stretchr/testify/assert"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -106,11 +106,10 @@ func TestAddTask(t *testing.T) {
 		},
 	}
 
-	id := client.addTask(task)
+	id, err := client.addTask(task)
 
-	if id != expected.Id {
-		t.Errorf("Expected id %s, got %s", expected.Id, id)
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, expected, id)
 }
 
 func TestGetTaskStatus(t *testing.T) {
@@ -138,8 +137,10 @@ func TestGetTaskStatus(t *testing.T) {
 }
 
 func TestGetImagesList(t *testing.T) {
-
-	tag = testVersion
+	config := &Config{
+		Images: "example/app,example/web",
+		Tag:    testVersion,
+	}
 
 	expectedList := []models.Image{
 		{
@@ -154,9 +155,7 @@ func TestGetImagesList(t *testing.T) {
 
 	t.Setenv("IMAGES", "example/app,example/web")
 
-	images := getImagesList()
+	images := getImagesList(config)
 
-	if !reflect.DeepEqual(images, expectedList) {
-		t.Errorf("Expected list %v, got %v", expectedList, images)
-	}
+	assert.Equal(t, expectedList, images)
 }

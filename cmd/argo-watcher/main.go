@@ -20,7 +20,7 @@ func runWatcher(serverFlag, clientFlag bool) error {
 
 	// start client if requested
 	if clientFlag && !serverFlag {
-		client.ClientWatcher()
+		client.WatcherClient()
 		return nil
 	}
 
