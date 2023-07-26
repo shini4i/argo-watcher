@@ -8,7 +8,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -28,6 +27,7 @@ type ClientConfig struct {
 	App            string `required:"true" envconfig:"ARGO_APP"`
 	Author         string `required:"true" envconfig:"COMMIT_AUTHOR"`
 	Project        string `required:"true" envconfig:"PROJECT_NAME"`
+	Debug          bool   `default:"false" envconfig:"DEBUG"`
 }
 
 func NewClientConfig() (*ClientConfig, error) {
@@ -36,7 +36,7 @@ func NewClientConfig() (*ClientConfig, error) {
 	return &config, err
 }
 
-func (watcher *Watcher) addTask(task models.Task) string {
+func (watcher *Watcher) addTask(task models.Task) (string, error) {
 	body, err := json.Marshal(task)
 	if err != nil {
 		panic(err)
@@ -62,11 +62,6 @@ func (watcher *Watcher) addTask(task models.Task) string {
 		}
 	}(response.Body)
 
-	body, err = io.ReadAll(response.Body)
-	if err != nil {
-		panic(err)
-	}
-
 	if response.StatusCode != 202 {
 		fmt.Printf("Something went wrong on argo-watcher side. Got the following response code %d\n", response.StatusCode)
 		fmt.Printf("Body: %s\n", string(body))
@@ -74,12 +69,11 @@ func (watcher *Watcher) addTask(task models.Task) string {
 	}
 
 	var accepted models.TaskStatus
-	err = json.Unmarshal(body, &accepted)
-	if err != nil {
-		panic(err)
+	if err := json.NewDecoder(response.Body).Decode(&accepted); err != nil {
+		return "", err
 	}
 
-	return accepted.Id
+	return accepted.Id, nil
 }
 
 func (watcher *Watcher) getTaskStatus(id string) *models.TaskStatus {
@@ -161,15 +155,17 @@ func ClientWatcher() {
 		Images:  images,
 	}
 
-	debug, _ := strconv.ParseBool(os.Getenv("DEBUG"))
-
-	if debug {
+	if config.Debug {
 		printDebugInformation(config, &task)
 	}
 
-	fmt.Printf("Waiting for %s app to be running on %s version.\n", task.App, config.Tag)
+	id, err := watcher.addTask(task)
+	if err != nil {
+		fmt.Printf("Something went wrong on argo-watcher side. Got the following error %s\n", err.Error())
+		os.Exit(1)
+	}
 
-	id := watcher.addTask(task)
+	fmt.Printf("Waiting for %s app to be running on %s version.\n", task.App, config.Tag)
 
 	time.Sleep(5 * time.Second)
 
