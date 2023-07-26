@@ -19,7 +19,7 @@ import (
 
 var version = "local"
 
-// reference: https://www.alexedwards.net/blog/organising-database-access
+// Env reference: https://www.alexedwards.net/blog/organising-database-access
 type Env struct {
 	// environment configurations
 	config *config.ServerConfig
@@ -31,7 +31,7 @@ type Env struct {
 	metrics *Metrics
 }
 
-// initialize router.
+// CreateRouter initialize router.
 func (env *Env) CreateRouter() *gin.Engine {
 	docs.SwaggerInfo.Title = "Argo-Watcher API"
 	docs.SwaggerInfo.Version = version

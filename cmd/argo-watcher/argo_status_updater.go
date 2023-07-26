@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/avast/retry-go/v4"
 	"github.com/rs/zerolog/log"
@@ -16,12 +17,14 @@ const defaultErrorMessage string = "could not retrieve details"
 type ArgoStatusUpdater struct {
 	argo             Argo
 	retryAttempts    uint
+	retryDelay       time.Duration
 	registryProxyUrl string
 }
 
-func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, registryProxyUrl string) {
+func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, retryDelay time.Duration, registryProxyUrl string) {
 	updater.argo = argo
 	updater.retryAttempts = retryAttempts
+	updater.retryDelay = retryDelay
 	updater.registryProxyUrl = registryProxyUrl
 }
 
@@ -130,6 +133,8 @@ func (updater *ArgoStatusUpdater) checkWithRetry(task models.Task) (int, error) 
 					log.Debug().Str("app", task.App).Str("id", task.Id).Msgf("%s is not available yet", expected)
 					lastStatus = ArgoAppNotAvailable
 					return errorArgoPlannedRetry
+				} else {
+					log.Debug().Str("app", task.App).Str("id", task.Id).Msgf("Expected image is in the app summary")
 				}
 			}
 
@@ -149,7 +154,7 @@ func (updater *ArgoStatusUpdater) checkWithRetry(task models.Task) (int, error) 
 			return nil
 		},
 		retry.DelayType(retry.FixedDelay),
-		retry.Delay(argoSyncRetryDelay),
+		retry.Delay(updater.retryDelay),
 		retry.Attempts(updater.retryAttempts),
 		retry.RetryIf(func(err error) bool {
 			return errors.Is(err, errorArgoPlannedRetry)
@@ -186,7 +191,7 @@ func (updater *ArgoStatusUpdater) handleAppNotFound(task models.Task, err error)
 func (updater *ArgoStatusUpdater) handleArgoUnavailable(task models.Task, err error) {
 	log.Error().Str("id", task.Id).Msg("ArgoCD is not available. Aborting.")
 	reason := fmt.Sprintf(ArgoAPIErrorTemplate, err.Error())
-	updater.argo.state.SetTaskStatus(task.Id, "aborted", reason)
+	updater.argo.state.SetTaskStatus(task.Id, models.StatusAborted, reason)
 }
 
 func (updater *ArgoStatusUpdater) handleDeploymentFailed(task models.Task, err error) {
@@ -199,7 +204,7 @@ func (updater *ArgoStatusUpdater) handleDeploymentFailed(task models.Task, err e
 func (updater *ArgoStatusUpdater) handleDeploymentSuccess(task models.Task) {
 	log.Info().Str("id", task.Id).Msg("App is running on the excepted version.")
 	updater.argo.metrics.ResetFailedDeployment(task.App)
-	updater.argo.state.SetTaskStatus(task.Id, "deployed", "")
+	updater.argo.state.SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
 }
 
 func (updater *ArgoStatusUpdater) handleAppNotAvailable(task models.Task, err error) {

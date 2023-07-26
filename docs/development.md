@@ -10,18 +10,34 @@ They can be installed by running:
 pre-commit install
 ```
 
+To compile the project locally, you would also need to generate mocks (for testing) and swagger docs (for api documentation).
+
 ### Mock classes
 
 To generate mock classes for unit tests, first install `gomock` tool.
 
 ```shell
-go install github.com/golang/mock/mockgen@v1.6.0
+go install go.uber.org/mock/mockgen@latest
 ```
 
 Then run the mock generation from interfaces.
 
 ```shell
 make mocks
+```
+
+### Swagger documentation
+
+To generate documentation dependencies, first install `swag` tool.
+
+```shell
+go install github.com/swaggo/swag/cmd/swag@latest
+```
+
+Then run the swagger doc generation.
+
+```shell
+make docs
 ```
 
 > Note: you need to run this only when you're changing the interfaces
@@ -48,6 +64,19 @@ cd cmd/argo-watcher
 go mod tidy
 # start argo-watcher
 ARGO_URL=http://localhost:8081 STATE_TYPE=in-memory go run .
+```
+
+### Running the unit tests
+
+Use the following snippets to run argo-watcher unit tests
+
+```shell
+# go to backend directory
+cd cmd/argo-watcher
+# run all tests
+go test -v
+# run single test suite
+go test -v -run TestArgoStatusUpdaterCheck
 ```
 
 ## Front-End Development
