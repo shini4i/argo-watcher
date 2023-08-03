@@ -63,7 +63,7 @@ cd cmd/argo-watcher
 # install dependencies
 go mod tidy
 # start argo-watcher
-ARGO_URL=http://localhost:8081 STATE_TYPE=in-memory go run .
+ARGO_URL=http://localhost:8081 STATE_TYPE=in-memory go run . -server
 ```
 
 ### Running the unit tests
