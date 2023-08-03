@@ -2,10 +2,10 @@ package config
 
 import (
 	"errors"
+	"github.com/shini4i/argo-watcher/internal/helpers"
 	"strconv"
 
 	envConfig "github.com/kelseyhightower/envconfig"
-	"github.com/shini4i/argo-watcher/internal/helpers"
 )
 
 type ServerConfig struct {
@@ -35,13 +35,21 @@ type ServerConfig struct {
 // Otherwise, it returns the parsed server configuration and any error encountered during the parsing process.
 func NewServerConfig() (*ServerConfig, error) {
 	// parse config
-	var config ServerConfig
-	err := envConfig.Process("", &config)
+	var (
+		err    error
+		config ServerConfig
+	)
+
+	if err := envConfig.Process("", &config); err != nil {
+		panic(err)
+	}
+
 	// custom checks
 	allowedTypes := []string{"postgres", "in-memory"}
 	if config.StateType == "" || !helpers.Contains(allowedTypes, config.StateType) {
 		return nil, errors.New("variable STATE_TYPE must be one of [\"postgres\", \"in-memory\"]")
 	}
+
 	// return config
 	return &config, err
 }
