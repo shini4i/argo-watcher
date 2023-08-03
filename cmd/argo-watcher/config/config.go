@@ -41,7 +41,7 @@ func NewServerConfig() (*ServerConfig, error) {
 	)
 
 	if err := envConfig.Process("", &config); err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	// custom checks
