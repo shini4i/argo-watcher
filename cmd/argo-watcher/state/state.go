@@ -9,10 +9,10 @@ import (
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
-var desiredRetryError = errors.New("desired retry error")
+var errDesiredRetry = errors.New("desired retry error")
 
 type State interface {
-	Connect(serverConfig *config.ServerConfig)
+	Connect(serverConfig *config.ServerConfig) error
 	Add(task models.Task) error
 	GetTasks(startTime float64, endTime float64, app string) []models.Task
 	GetTask(id string) (*models.Task, error)
@@ -41,6 +41,10 @@ func NewState(serverConfig *config.ServerConfig) (State, error) {
 		return nil, fmt.Errorf("unexpected state type received: %s", name)
 	}
 
-	state.Connect(serverConfig)
+	err := state.Connect(serverConfig)
+	if err != nil {
+		return nil, err
+	}
+
 	return state, nil
 }

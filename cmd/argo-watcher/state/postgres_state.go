@@ -26,31 +26,37 @@ type PostgresState struct {
 // It takes a pointer to a config.ServerConfig parameter and initializes the database connection.
 // The method also performs database migrations using the specified migrations path.
 // If any errors occur during connection establishment or migrations, they are logged and may cause a panic.
-func (state *PostgresState) Connect(serverConfig *config.ServerConfig) {
+func (state *PostgresState) Connect(serverConfig *config.ServerConfig) error {
 	c := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable", serverConfig.DbHost, serverConfig.DbPort, serverConfig.DbUser, serverConfig.DbPassword, serverConfig.DbName)
+
+	log.Debug().Msg(c)
 
 	db, err := sql.Open("postgres", c)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	migrationsPath := fmt.Sprintf("file://%s", serverConfig.DbMigrationsPath)
 
-	driver, _ := postgres.WithInstance(db, &postgres.Config{})
-	migrations, _ := migrate.NewWithDatabaseInstance(
-		migrationsPath,
-		"postgres", driver)
-
-	log.Debug().Msg("Running database migrations...")
-
-	switch err = migrations.Up(); err {
-	case migrate.ErrNoChange, nil:
-		log.Debug().Msg("Database schema is up to date.")
-	default:
-		panic(err)
+	driver, err := postgres.WithInstance(db, &postgres.Config{})
+	if err != nil {
+		return err
 	}
 
+	migrations, err := migrate.NewWithDatabaseInstance(migrationsPath, "postgres", driver)
+	if err != nil {
+		return err
+	}
+
+	log.Debug().Msg("Running database migrations...")
+	err = migrations.Up()
+	if err != nil {
+		return err
+	}
+	log.Debug().Msg("Database schema is up to date.")
+
 	state.db = db
+	return nil
 }
 
 // Add inserts a new task into the PostgreSQL database with the provided details.
@@ -263,7 +269,7 @@ func (state *PostgresState) ProcessObsoleteTasks(retryTimes uint) {
 				log.Error().Msgf("Couldn't process obsolete tasks. Got the following error: %s", err)
 				return err
 			}
-			return desiredRetryError
+			return errDesiredRetry
 		},
 		retry.DelayType(retry.FixedDelay),
 		retry.Delay(60*time.Minute),
