@@ -9,6 +9,10 @@ import (
 	envConfig "github.com/kelseyhightower/envconfig"
 )
 
+const (
+	LOG_FORMAT_TEXT = "text"
+)
+
 type ServerConfig struct {
 	ArgoUrl          string `required:"true" envconfig:"ARGO_URL"`
 	ArgoToken        string `required:"true" envconfig:"ARGO_TOKEN"`

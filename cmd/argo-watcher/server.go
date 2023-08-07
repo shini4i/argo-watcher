@@ -10,16 +10,12 @@ import (
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/state"
 )
 
-const (
-	LOG_FORMAT_TEXT = "text"
-)
-
 // initLogs initializes the logging configuration based on the provided log level.
 // It parses the log level string and sets the global log level accordingly using the zerolog library.
 // If the log level string is invalid, it falls back to the default InfoLevel.
 func initLogs(logLevel string, logFormat string) {
 	// set log format
-	if logFormat == LOG_FORMAT_TEXT {
+	if logFormat == config.LOG_FORMAT_TEXT {
 		output := zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}
 		log.Logger = zerolog.New(output).With().Timestamp().Logger()
 	}
