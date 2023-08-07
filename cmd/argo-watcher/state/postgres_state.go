@@ -6,11 +6,15 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/uptrace/bun"
+	"github.com/uptrace/bun/dialect/pgdialect"
+	"github.com/uptrace/bun/driver/pgdriver"
+
 	"github.com/avast/retry-go/v4"
-	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/lib/pq"
 	"github.com/rs/zerolog/log"
 
+	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 
@@ -19,43 +23,75 @@ import (
 )
 
 type PostgresState struct {
-	db *sql.DB
+	db  *sql.DB // for backwards compatibility. NOTE: note save when using multiple connections in ORM (connection POOL or reconnecting)
+	orm *bun.DB
 }
 
 // Connect establishes a connection to the PostgreSQL database using the provided server configuration.
-// It takes a pointer to a config.ServerConfig parameter and initializes the database connection.
-// The method also performs database migrations using the specified migrations path.
-// If any errors occur during connection establishment or migrations, they are logged and may cause a panic.
 func (state *PostgresState) Connect(serverConfig *config.ServerConfig) error {
-	c := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable", serverConfig.DbHost, serverConfig.DbPort, serverConfig.DbUser, serverConfig.DbPassword, serverConfig.DbName)
+	// create options
+	options := []pgdriver.Option{
+		// connection options
+		pgdriver.WithNetwork("tcp"),
+		pgdriver.WithAddr(fmt.Sprintf("%s:%s", serverConfig.DbHost, serverConfig.DbPort)), // localhost:5432
+		pgdriver.WithTLSConfig(nil), // sslmode=disable
+		// DB timeout configrations
+		pgdriver.WithTimeout(5 * time.Second),
+		pgdriver.WithDialTimeout(5 * time.Second),
+		pgdriver.WithReadTimeout(5 * time.Second),
+		pgdriver.WithWriteTimeout(5 * time.Second),
+	}
+	if serverConfig.DbName != "" {
+		options = append(options, pgdriver.WithDatabase(serverConfig.DbName))
+	}
+	if serverConfig.DbUser != "" {
+		options = append(options, pgdriver.WithUser(serverConfig.DbUser))
+	}
+	if serverConfig.DbPassword != "" {
+		options = append(options, pgdriver.WithPassword(serverConfig.DbPassword))
+	}
 
-	log.Debug().Msg(c)
+	// create driver
+	connector := pgdriver.NewConnector(options...)
+	driver := sql.OpenDB(connector)
 
-	db, err := sql.Open("postgres", c)
+	// Confirm a successful connection.
+	if err := driver.Ping(); err != nil {
+		return err
+	}
+
+	// create ORM database connection
+	state.orm = bun.NewDB(driver, pgdialect.New())
+	state.db = state.orm.DB
+
+	// do migrations (temporary version)
+	// TODO: change to use ORM migrations
+	err := runMigrations(serverConfig, state.db)
 	if err != nil {
 		return err
 	}
 
+	return nil
+}
+
+func runMigrations(serverConfig *config.ServerConfig, db *sql.DB) error {
 	migrationsPath := fmt.Sprintf("file://%s", serverConfig.DbMigrationsPath)
-
-	driver, err := postgres.WithInstance(db, &postgres.Config{})
+	migrationDriver, err := postgres.WithInstance(db, &postgres.Config{})
 	if err != nil {
 		return err
 	}
-
-	migrations, err := migrate.NewWithDatabaseInstance(migrationsPath, "postgres", driver)
+	migrations, err := migrate.NewWithDatabaseInstance(migrationsPath, "postgres", migrationDriver)
 	if err != nil {
 		return err
 	}
 
 	log.Debug().Msg("Running database migrations...")
 	err = migrations.Up()
-	if err != nil {
+	if err != nil && err != migrate.ErrNoChange {
 		return err
 	}
-	log.Debug().Msg("Database schema is up to date.")
 
-	state.db = db
+	log.Debug().Msg("Database schema is up to date.")
 	return nil
 }
 
