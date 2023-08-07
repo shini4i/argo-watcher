@@ -1,9 +1,10 @@
 package state
 
 import (
-	"github.com/stretchr/testify/assert"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 
 	"github.com/google/uuid"
 
@@ -27,7 +28,7 @@ var (
 					Tag:   "v0.0.1",
 				},
 			},
-			Status: "in progress",
+			Status: models.StatusInProgressMessage,
 		},
 		{
 			Id:      uuid.New().String(),
@@ -41,14 +42,14 @@ var (
 					Tag:   "v0.0.1",
 				},
 			},
-			Status: "in progress",
+			Status: models.StatusInProgressMessage,
 		},
 	}
 )
 
 func TestInMemoryState_Add(t *testing.T) {
 	for _, task := range tasks {
-		if err := state.Add(task); err != nil {
+		if _, err := state.Add(task); err != nil {
 			t.Errorf("Unexpected error: %s", err)
 		}
 	}
@@ -57,7 +58,7 @@ func TestInMemoryState_Add(t *testing.T) {
 func TestInMemoryState_GetTask(t *testing.T) {
 	task, _ := state.GetTask(taskId)
 
-	assert.Equal(t, task.Status, "in progress")
+	assert.Equal(t, task.Status, models.StatusInProgressMessage)
 }
 
 func TestInMemoryState_GetTasks(t *testing.T) {

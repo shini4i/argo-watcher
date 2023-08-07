@@ -13,7 +13,7 @@ var errDesiredRetry = errors.New("desired retry error")
 
 type State interface {
 	Connect(serverConfig *config.ServerConfig) error
-	Add(task models.Task) error
+	Add(task models.Task) (*models.Task, error)
 	GetTasks(startTime float64, endTime float64, app string) []models.Task
 	GetTask(id string) (*models.Task, error)
 	SetTaskStatus(id string, status string, reason string)

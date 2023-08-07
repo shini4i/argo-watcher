@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/state"
@@ -72,9 +71,6 @@ func (argo *Argo) AddTask(task models.Task) (*models.Task, error) {
 		return nil, errors.New(err.Error())
 	}
 
-	task.Id = uuid.New().String()
-	log.Info().Str("id", task.Id).Msg("Starting new task creation")
-
 	if task.Images == nil || len(task.Images) == 0 {
 		return nil, fmt.Errorf("trying to create task without images")
 	}
@@ -83,23 +79,22 @@ func (argo *Argo) AddTask(task models.Task) (*models.Task, error) {
 		return nil, fmt.Errorf("trying to create task without app name")
 	}
 
-	log.Info().Str("id", task.Id).Msgf("A new task was triggered")
+	newTask, err := argo.state.Add(task)
+	if err != nil {
+		return nil, err
+	}
 
-	for index, value := range task.Images {
-		log.Info().Str("id", task.Id).Msgf("Task image [%d] expecting tag %s in app %s.",
+	log.Info().Str("id", newTask.Id).Msgf("A new task was triggered")
+	for index, value := range newTask.Images {
+		log.Info().Str("id", newTask.Id).Msgf("Task image [%d] expecting tag %s in app %s.",
 			index,
 			value.Tag,
 			task.App,
 		)
 	}
 
-	err = argo.state.Add(task)
-	if err != nil {
-		return nil, err
-	}
-
 	argo.metrics.AddProcessedDeployment()
-	return &task, nil
+	return newTask, nil
 }
 
 func (argo *Argo) GetTasks(startTime float64, endTime float64, app string) models.TasksResponse {

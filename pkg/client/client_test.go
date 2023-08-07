@@ -36,7 +36,7 @@ func addTaskHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	err := json.NewEncoder(w).Encode(models.TaskStatus{
-		Status: "accepted",
+		Status: models.StatusAccepted,
 		Id:     taskId,
 	})
 	if err != nil {
@@ -90,7 +90,7 @@ func init() {
 
 func TestAddTask(t *testing.T) {
 	expected := models.TaskStatus{
-		Status: "accepted",
+		Status: models.StatusAccepted,
 		Id:     taskId,
 	}
 

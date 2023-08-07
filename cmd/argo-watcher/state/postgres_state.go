@@ -6,119 +6,87 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/uptrace/bun"
-	"github.com/uptrace/bun/dialect/pgdialect"
-	"github.com/uptrace/bun/driver/pgdriver"
+	"github.com/rs/zerolog/log"
+	"gorm.io/datatypes"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 
 	"github.com/avast/retry-go/v4"
 	_ "github.com/lib/pq"
-	"github.com/rs/zerolog/log"
 
-	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/state/state_models"
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
 type PostgresState struct {
 	db  *sql.DB // for backwards compatibility. NOTE: note save when using multiple connections in ORM (connection POOL or reconnecting)
-	orm *bun.DB
+	orm *gorm.DB
 }
 
 // Connect establishes a connection to the PostgreSQL database using the provided server configuration.
 func (state *PostgresState) Connect(serverConfig *config.ServerConfig) error {
-	// create options
-	options := []pgdriver.Option{
-		// connection options
-		pgdriver.WithNetwork("tcp"),
-		pgdriver.WithAddr(fmt.Sprintf("%s:%s", serverConfig.DbHost, serverConfig.DbPort)), // localhost:5432
-		pgdriver.WithTLSConfig(nil), // sslmode=disable
-		// DB timeout configrations
-		pgdriver.WithTimeout(5 * time.Second),
-		pgdriver.WithDialTimeout(5 * time.Second),
-		pgdriver.WithReadTimeout(5 * time.Second),
-		pgdriver.WithWriteTimeout(5 * time.Second),
-	}
-	if serverConfig.DbName != "" {
-		options = append(options, pgdriver.WithDatabase(serverConfig.DbName))
-	}
-	if serverConfig.DbUser != "" {
-		options = append(options, pgdriver.WithUser(serverConfig.DbUser))
-	}
-	if serverConfig.DbPassword != "" {
-		options = append(options, pgdriver.WithPassword(serverConfig.DbPassword))
-	}
+	dsnTemplate := "host=%s port=%s user=%s password=%s dbname=%s sslmode=disable TimeZone=UTC"
+	dsn := fmt.Sprintf(dsnTemplate, serverConfig.DbHost, serverConfig.DbPort, serverConfig.DbUser, serverConfig.DbPassword, serverConfig.DbName)
 
-	// create driver
-	connector := pgdriver.NewConnector(options...)
-	driver := sql.OpenDB(connector)
-
-	// Confirm a successful connection.
-	if err := driver.Ping(); err != nil {
-		return err
+	// create connection
+	ormConfig := &gorm.Config{}
+	// we can leave logger enabled only for text format
+	if serverConfig.LogFormat != config.LOG_FORMAT_TEXT {
+		// disable logging until we implement zerolog logger for ORM
+		ormConfig.Logger = logger.Default.LogMode(logger.Silent)
 	}
-
-	// create ORM database connection
-	state.orm = bun.NewDB(driver, pgdialect.New())
-	state.db = state.orm.DB
-
-	// do migrations (temporary version)
-	// TODO: change to use ORM migrations
-	err := runMigrations(serverConfig, state.db)
+	orm, err := gorm.Open(postgres.Open(dsn), ormConfig)
 	if err != nil {
 		return err
 	}
 
-	return nil
-}
+	// save orm object
+	state.orm = orm
 
-func runMigrations(serverConfig *config.ServerConfig, db *sql.DB) error {
-	migrationsPath := fmt.Sprintf("file://%s", serverConfig.DbMigrationsPath)
-	migrationDriver, err := postgres.WithInstance(db, &postgres.Config{})
-	if err != nil {
-		return err
-	}
-	migrations, err := migrate.NewWithDatabaseInstance(migrationsPath, "postgres", migrationDriver)
+	// run migrations
+	err = orm.AutoMigrate(&state_models.TaskModel{})
 	if err != nil {
 		return err
 	}
 
-	log.Debug().Msg("Running database migrations...")
-	err = migrations.Up()
-	if err != nil && err != migrate.ErrNoChange {
+	// save connection for backwards compatibility
+	state.db, err = orm.DB()
+	if err != nil {
 		return err
 	}
 
-	log.Debug().Msg("Database schema is up to date.")
 	return nil
 }
 
 // Add inserts a new task into the PostgreSQL database with the provided details.
 // It takes a models.Task parameter and returns an error if the insertion fails.
 // The method executes an INSERT query to add a new record with the task details, including the current UTC time.
-func (state *PostgresState) Add(task models.Task) error {
-	images, err := json.Marshal(task.Images)
-	if err != nil {
-		return fmt.Errorf("could not marshal images into json")
-	}
-	_, err = state.db.Exec("INSERT INTO tasks(id, created, images, status, app, author, project) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-		task.Id,
-		time.Now().UTC(),
-		images,
-		"in progress",
-		task.App,
-		task.Author,
-		task.Project,
-	)
-
-	if err != nil {
-		log.Error().Str("id", task.Id).Msgf("Failed to create task database record with error: %s", err)
-		return fmt.Errorf("failed to create task in database")
+func (state *PostgresState) Add(task models.Task) (*models.Task, error) {
+	ormTask := state_models.TaskModel{
+		Images:          datatypes.NewJSONSlice(task.Images),
+		Status:          models.StatusInProgressMessage,
+		ApplicationName: sql.NullString{String: task.App, Valid: true},
+		Author:          sql.NullString{String: task.Author, Valid: true},
+		Project:         sql.NullString{String: task.Project, Valid: true},
 	}
 
-	return nil
+	result := state.orm.Create(&ormTask)
+	if result.Error != nil {
+		log.Error().Msgf("Failed to create task database record with error: %s", result.Error)
+		return nil, fmt.Errorf("failed to create task in database")
+	}
+
+	log.Info().Msg(ormTask.Id.String())
+
+	// pass new values to the task object
+	task.Id = ormTask.Id.String()
+	task.Created = float64(ormTask.Created.UnixMilli())
+
+	return &task, nil
 }
 
 // GetTasks retrieves a list of tasks from the PostgreSQL database based on the provided time range and optional app filter.

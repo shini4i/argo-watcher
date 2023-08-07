@@ -28,11 +28,11 @@ func (state *InMemoryState) Connect(serverConfig *config.ServerConfig) error {
 // It takes a models.Task parameter and updates the task's created timestamp and status.
 // The method appends the task to the list of tasks in the in-memory state.
 // It always returns nil as there is no error handling in the in-memory implementation.
-func (state *InMemoryState) Add(task models.Task) error {
+func (state *InMemoryState) Add(task models.Task) (*models.Task, error) {
 	task.Created = float64(time.Now().Unix())
-	task.Status = "in progress"
+	task.Status = models.StatusInProgressMessage
 	state.tasks = append(state.tasks, task)
-	return nil
+	return &task, nil
 }
 
 // GetTasks retrieves tasks from the in-memory state based on the provided time range and app filter.
@@ -148,11 +148,11 @@ func (state *InMemoryState) ProcessObsoleteTasks(retryTimes uint) {
 func processInMemoryObsoleteTasks(tasks []models.Task) []models.Task {
 	var updatedTasks []models.Task
 	for _, task := range tasks {
-		if task.Status == "app not found" {
+		if task.Status == models.StatusAppNotFoundMessage {
 			continue
 		}
-		if task.Status == "in progress" && task.Updated+3600 < float64(time.Now().Unix()) {
-			task.Status = "aborted"
+		if task.Status == models.StatusInProgressMessage && task.Updated+3600 < float64(time.Now().Unix()) {
+			task.Status = models.StatusAborted
 		}
 		updatedTasks = append(updatedTasks, task)
 	}

@@ -1,10 +1,11 @@
 package state
 
 import (
-	"github.com/stretchr/testify/assert"
 	"os"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	"github.com/shini4i/argo-watcher/internal/helpers"
@@ -34,7 +35,7 @@ var (
 					Tag:   "v0.0.1",
 				},
 			},
-			Status: "in progress",
+			Status: models.StatusInProgressMessage,
 		},
 		{
 			Id:      abortedTaskId,
@@ -48,7 +49,7 @@ var (
 					Tag:   "v0.0.1",
 				},
 			},
-			Status: "in progress",
+			Status: models.StatusInProgressMessage,
 		},
 		{
 			Id:      appNotFoundTaskId,
@@ -82,7 +83,7 @@ func TestPostgresState_Add(t *testing.T) {
 		panic(err)
 	}
 	for _, task := range postgresTasks {
-		err := postgresState.Add(task)
+		_, err := postgresState.Add(task)
 		if err != nil {
 			t.Errorf("got error %s, expected nil", err.Error())
 		}
@@ -110,7 +111,7 @@ func TestPostgresState_GetTask(t *testing.T) {
 		t.Errorf("got error %s, expected nil", err.Error())
 	}
 
-	assert.Equal(t, "in progress", task.Status)
+	assert.Equal(t, task.Status, models.StatusInProgressMessage)
 }
 
 func TestPostgresState_SetTaskStatus(t *testing.T) {
