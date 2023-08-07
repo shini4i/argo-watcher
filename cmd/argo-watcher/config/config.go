@@ -2,8 +2,9 @@ package config
 
 import (
 	"errors"
-	"github.com/shini4i/argo-watcher/internal/helpers"
 	"strconv"
+
+	"github.com/shini4i/argo-watcher/internal/helpers"
 
 	envConfig "github.com/kelseyhightower/envconfig"
 )
@@ -18,6 +19,7 @@ type ServerConfig struct {
 	StateType        string `required:"false" envconfig:"STATE_TYPE"`
 	StaticFilePath   string `required:"false" envconfig:"STATIC_FILES_PATH" default:"static"`
 	LogLevel         string `required:"false" envconfig:"LOG_LEVEL" default:"info"`
+	LogFormat        string `required:"false" envconfig:"LOG_FORMAT" default:"json"`
 	Host             string `required:"false" envconfig:"HOST" default:"0.0.0.0"`
 	Port             string `required:"false" envconfig:"PORT" default:"8080"`
 	DbHost           string `required:"false" envconfig:"DB_HOST" default:"localhost"`

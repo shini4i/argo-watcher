@@ -85,6 +85,13 @@ go mod tidy
 LOG_LEVEL=debug ARGO_URL=http://localhost:8081 ARGO_TOKEN=example STATE_TYPE=postgres DB_USER=watcher DB_PASSWORD=watcher DB_NAME=watcher DB_MIGRATIONS_PATH="./../../db/migrations" go run . -server
 ```
 
+#### Logs in simple text
+
+```shell
+# add LOG_FORMAT=text for simple text logs
+LOG_LEVEL=debug LOG_FORMAT=text go run . -server
+```
+
 ### Running the unit tests
 
 Use the following snippets to run argo-watcher unit tests
