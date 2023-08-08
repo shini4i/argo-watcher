@@ -216,7 +216,7 @@ func (state *PostgresState) doProcessPostgresObsoleteTasks() error {
 	}
 
 	log.Debug().Msg("Marking in progress tasks older than 1 hour as aborted...")
-	result = state.orm.Where("status = ?", models.StatusInProgressMessage).Where("created < now() - interval '1 hour'").Delete(&state_models.TaskModel{})
+	result = state.orm.Where("status = ?", models.StatusInProgressMessage).Where("created < now() - interval '1 hour'").Updates(&state_models.TaskModel{Status: models.StatusAborted})
 	if result.Error != nil {
 		return result.Error
 	}

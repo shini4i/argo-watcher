@@ -13,55 +13,46 @@ import (
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
-const (
-	deployedTaskId    = "782e6e84-e67d-11ec-9f2f-8a68373f0f50"
-	appNotFoundTaskId = "5fa2d291-506a-42ab-804a-8bd75dba53e1"
-	abortedTaskId     = "1c35d840-41d1-4b4f-a393-b8b71145686b"
-)
-
 var (
 	created       = float64(time.Now().Unix())
 	postgresState = PostgresState{}
-	postgresTasks = []models.Task{
-		{
-			Id:      deployedTaskId,
-			Created: created,
-			App:     "Test",
-			Author:  "Test Author",
-			Project: "Test Project",
-			Images: []models.Image{
-				{
-					Image: "test",
-					Tag:   "v0.0.1",
-				},
+
+	deployedTaskId string
+	deployedTask   = models.Task{
+		Created: created,
+		App:     "Test",
+		Author:  "Test Author",
+		Project: "Test Project",
+		Images: []models.Image{
+			{
+				Image: "test",
+				Tag:   "v0.0.1",
 			},
-			Status: models.StatusInProgressMessage,
 		},
-		{
-			Id:      abortedTaskId,
-			Created: created,
-			App:     "Test2",
-			Author:  "Test Author",
-			Project: "Test Project",
-			Images: []models.Image{
-				{
-					Image: "test2",
-					Tag:   "v0.0.1",
-				},
+	}
+	appNotFoundTaskId string
+	appNotFoundTask   = models.Task{
+		Created: created,
+		App:     "Test2",
+		Author:  "Test Author",
+		Project: "Test Project",
+		Images: []models.Image{
+			{
+				Image: "test2",
+				Tag:   "v0.0.1",
 			},
-			Status: models.StatusInProgressMessage,
 		},
-		{
-			Id:      appNotFoundTaskId,
-			Created: created,
-			App:     "ObsoleteApp",
-			Author:  "Test Author",
-			Project: "Test Project",
-			Images: []models.Image{
-				{
-					Image: "test",
-					Tag:   "v0.0.1",
-				},
+	}
+	abortedTaskId string
+	abortedTask   = models.Task{
+		Created: created,
+		App:     "ObsoleteApp",
+		Author:  "Test Author",
+		Project: "Test Project",
+		Images: []models.Image{
+			{
+				Image: "test",
+				Tag:   "v0.0.1",
 			},
 		},
 	}
@@ -69,14 +60,18 @@ var (
 
 func TestPostgresState_Add(t *testing.T) {
 	config := &config.ServerConfig{
-		StateType:  "postgresql",
+		StateType:  "postgres",
 		DbHost:     os.Getenv("DB_HOST"),
 		DbPort:     "5432",
 		DbUser:     os.Getenv("DB_USER"),
 		DbName:     os.Getenv("DB_NAME"),
 		DbPassword: os.Getenv("DB_PASSWORD"),
+		LogFormat:  config.LOG_FORMAT_TEXT,
 	}
-	postgresState.Connect(config)
+	err := postgresState.Connect(config)
+	if err != nil {
+		panic(err)
+	}
 	db, err := postgresState.orm.DB()
 	if err != nil {
 		panic(err)
@@ -85,12 +80,23 @@ func TestPostgresState_Add(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	for _, task := range postgresTasks {
-		_, err := postgresState.Add(task)
-		if err != nil {
-			t.Errorf("got error %s, expected nil", err.Error())
-		}
+	deployedTaskResult, err := postgresState.Add(deployedTask)
+	if err != nil {
+		t.Errorf("got error %s, expected nil", err.Error())
 	}
+	deployedTaskId = deployedTaskResult.Id
+
+	appNotFoundTaskResult, err := postgresState.Add(appNotFoundTask)
+	if err != nil {
+		t.Errorf("got error %s, expected nil", err.Error())
+	}
+	appNotFoundTaskId = appNotFoundTaskResult.Id
+
+	abortedTaskResult, err := postgresState.Add(abortedTask)
+	if err != nil {
+		t.Errorf("got error %s, expected nil", err.Error())
+	}
+	abortedTaskId = abortedTaskResult.Id
 }
 
 func TestPostgresState_GetTasks(t *testing.T) {
@@ -143,11 +149,20 @@ func TestPostgresState_GetAppList(t *testing.T) {
 func TestPostgresState_ProcessObsoleteTasks(t *testing.T) {
 	// set updated time to 2 hour ago for obsolete task
 	updatedTime := time.Now().UTC().Add(-2 * time.Hour)
+
+	// get connections
 	db, err := postgresState.orm.DB()
 	if err != nil {
 		panic(err)
 	}
+
+	// update obsolete task
 	if _, err := db.Exec("UPDATE tasks SET created = $1 WHERE id = $2", updatedTime, abortedTaskId); err != nil {
+		t.Errorf("got error %s, expected nil", err.Error())
+	}
+
+	// update not found task
+	if _, err := db.Exec("UPDATE tasks SET created = $1 WHERE id = $2", updatedTime, appNotFoundTaskId); err != nil {
 		t.Errorf("got error %s, expected nil", err.Error())
 	}
 
@@ -160,7 +175,7 @@ func TestPostgresState_ProcessObsoleteTasks(t *testing.T) {
 	if task, err := postgresState.GetTask(abortedTaskId); err != nil {
 		t.Errorf("got error %s, expected nil", err.Error())
 	} else {
-		assert.Equal(t, "aborted", task.Status)
+		assert.Equal(t, models.StatusAborted, task.Status)
 	}
 }
 
