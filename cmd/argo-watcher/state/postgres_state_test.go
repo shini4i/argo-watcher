@@ -69,13 +69,12 @@ var (
 
 func TestPostgresState_Add(t *testing.T) {
 	config := &config.ServerConfig{
-		StateType:        "postgresql",
-		DbHost:           os.Getenv("DB_HOST"),
-		DbPort:           "5432",
-		DbUser:           os.Getenv("DB_USER"),
-		DbName:           os.Getenv("DB_NAME"),
-		DbPassword:       os.Getenv("DB_PASSWORD"),
-		DbMigrationsPath: "../../../db/migrations",
+		StateType:  "postgresql",
+		DbHost:     os.Getenv("DB_HOST"),
+		DbPort:     "5432",
+		DbUser:     os.Getenv("DB_USER"),
+		DbName:     os.Getenv("DB_NAME"),
+		DbPassword: os.Getenv("DB_PASSWORD"),
 	}
 	postgresState.Connect(config)
 	db, err := postgresState.orm.DB()

@@ -22,6 +22,7 @@ type ServerConfig struct {
 	RegistryProxyUrl string `required:"false" envconfig:"DOCKER_IMAGES_PROXY"`
 	StateType        string `required:"false" envconfig:"STATE_TYPE"`
 	StaticFilePath   string `required:"false" envconfig:"STATIC_FILES_PATH" default:"static"`
+	SkipTlsVerify    string `required:"false" envconfig:"SKIP_TLS_VERIFY" default:"false"`
 	LogLevel         string `required:"false" envconfig:"LOG_LEVEL" default:"info"`
 	LogFormat        string `required:"false" envconfig:"LOG_FORMAT" default:"json"`
 	Host             string `required:"false" envconfig:"HOST" default:"0.0.0.0"`
@@ -31,8 +32,6 @@ type ServerConfig struct {
 	DbName           string `required:"false" envconfig:"DB_NAME"`
 	DbUser           string `required:"false" envconfig:"DB_USER"`
 	DbPassword       string `required:"false" envconfig:"DB_PASSWORD"`
-	DbMigrationsPath string `required:"false" envconfig:"DB_MIGRATIONS_PATH" default:"db/migrations"`
-	SkipTlsVerify    string `required:"false" envconfig:"SKIP_TLS_VERIFY" default:"false"`
 }
 
 // NewServerConfig parses the server configuration from environment variables using the envconfig package.
