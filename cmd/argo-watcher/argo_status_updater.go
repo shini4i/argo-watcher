@@ -13,6 +13,7 @@ import (
 )
 
 const defaultErrorMessage string = "could not retrieve details"
+const failedToUpdateTaskStatusTemplate string = "Failed to change task status: %s"
 
 type ArgoStatusUpdater struct {
 	argo             Argo
@@ -187,7 +188,7 @@ func (updater *ArgoStatusUpdater) handleAppNotFound(task models.Task, err error)
 	reason := fmt.Sprintf(ArgoAPIErrorTemplate, err.Error())
 	errStatusChange := updater.argo.state.SetTaskStatus(task.Id, models.StatusAppNotFoundMessage, reason)
 	if errStatusChange != nil {
-		log.Error().Str("id", task.Id).Msgf("Failed to change task status: %s", errStatusChange)
+		log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, errStatusChange)
 	}
 }
 
@@ -196,7 +197,7 @@ func (updater *ArgoStatusUpdater) handleArgoUnavailable(task models.Task, err er
 	reason := fmt.Sprintf(ArgoAPIErrorTemplate, err.Error())
 	errStatusChange := updater.argo.state.SetTaskStatus(task.Id, models.StatusAborted, reason)
 	if errStatusChange != nil {
-		log.Error().Str("id", task.Id).Msgf("Failed to change task status: %s", errStatusChange)
+		log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, errStatusChange)
 	}
 }
 
@@ -206,7 +207,7 @@ func (updater *ArgoStatusUpdater) handleDeploymentFailed(task models.Task, err e
 	reason := fmt.Sprintf(ArgoAPIErrorTemplate, err.Error())
 	errStatusChange := updater.argo.state.SetTaskStatus(task.Id, models.StatusFailedMessage, reason)
 	if errStatusChange != nil {
-		log.Error().Str("id", task.Id).Msgf("Failed to change task status: %s", errStatusChange)
+		log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, errStatusChange)
 	}
 }
 
@@ -215,7 +216,7 @@ func (updater *ArgoStatusUpdater) handleDeploymentSuccess(task models.Task) {
 	updater.argo.metrics.ResetFailedDeployment(task.App)
 	errStatusChange := updater.argo.state.SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
 	if errStatusChange != nil {
-		log.Error().Str("id", task.Id).Msgf("Failed to change task status: %s", errStatusChange)
+		log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, errStatusChange)
 	}
 }
 
@@ -225,7 +226,7 @@ func (updater *ArgoStatusUpdater) handleAppNotAvailable(task models.Task, err er
 	reason := fmt.Sprintf("Application not available\n\n%s", err.Error())
 	errStatusChange := updater.argo.state.SetTaskStatus(task.Id, models.StatusFailedMessage, reason)
 	if errStatusChange != nil {
-		log.Error().Str("id", task.Id).Msgf("Failed to change task status: %s", errStatusChange)
+		log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, errStatusChange)
 	}
 }
 
@@ -235,7 +236,7 @@ func (updater *ArgoStatusUpdater) handleAppNotHealthy(task models.Task, err erro
 	reason := fmt.Sprintf("Application not healthy\n\n%s", err.Error())
 	errStatusChange := updater.argo.state.SetTaskStatus(task.Id, models.StatusFailedMessage, reason)
 	if errStatusChange != nil {
-		log.Error().Str("id", task.Id).Msgf("Failed to change task status: %s", errStatusChange)
+		log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, errStatusChange)
 	}
 }
 
@@ -245,7 +246,7 @@ func (updater *ArgoStatusUpdater) handleAppOutOfSync(task models.Task, err error
 	reason := fmt.Sprintf("Application out of sync\n\n%s", err.Error())
 	errStatusChange := updater.argo.state.SetTaskStatus(task.Id, models.StatusFailedMessage, reason)
 	if errStatusChange != nil {
-		log.Error().Str("id", task.Id).Msgf("Failed to change task status: %s", errStatusChange)
+		log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, errStatusChange)
 	}
 }
 
@@ -256,6 +257,6 @@ func (updater *ArgoStatusUpdater) handleDeploymentUnexpectedStatus(task models.T
 	reason := fmt.Sprintf("Deployment timeout\n\n%s", err.Error())
 	errStatusChange := updater.argo.state.SetTaskStatus(task.Id, models.StatusFailedMessage, reason)
 	if errStatusChange != nil {
-		log.Error().Str("id", task.Id).Msgf("Failed to change task status: %s", errStatusChange)
+		log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, errStatusChange)
 	}
 }
