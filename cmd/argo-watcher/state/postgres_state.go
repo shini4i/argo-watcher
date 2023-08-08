@@ -23,7 +23,6 @@ import (
 )
 
 type PostgresState struct {
-	db  *sql.DB // for backwards compatibility. NOTE: note save when using multiple connections in ORM (connection POOL or reconnecting)
 	orm *gorm.DB
 }
 
@@ -53,13 +52,8 @@ func (state *PostgresState) Connect(serverConfig *config.ServerConfig) error {
 	state.orm = orm
 
 	// run migrations
+	// note: this doesn't delete existing columns. only adds new ones
 	err = orm.AutoMigrate(&state_models.TaskModel{})
-	if err != nil {
-		return err
-	}
-
-	// save connection for backwards compatibility
-	state.db, err = orm.DB()
 	if err != nil {
 		return err
 	}
