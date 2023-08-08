@@ -16,7 +16,7 @@ type State interface {
 	Add(task models.Task) (*models.Task, error)
 	GetTasks(startTime float64, endTime float64, app string) []models.Task
 	GetTask(id string) (*models.Task, error)
-	SetTaskStatus(id string, status string, reason string)
+	SetTaskStatus(id string, status string, reason string) error
 	GetAppList() []string
 	Check() bool
 	ProcessObsoleteTasks(retryTimes uint)

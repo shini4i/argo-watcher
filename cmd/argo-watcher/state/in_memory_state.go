@@ -81,7 +81,7 @@ func (state *InMemoryState) GetTask(id string) (*models.Task, error) {
 // It takes a string parameter for the task ID, status, and reason.
 // The method iterates over the tasks in the in-memory state and updates the task with the matching ID.
 // Note that this method does not perform any error handling if the task ID is not found.
-func (state *InMemoryState) SetTaskStatus(id string, status string, reason string) {
+func (state *InMemoryState) SetTaskStatus(id string, status string, reason string) error {
 	for idx, task := range state.tasks {
 		if task.Id == id {
 			state.tasks[idx].Status = status
@@ -89,6 +89,7 @@ func (state *InMemoryState) SetTaskStatus(id string, status string, reason strin
 			state.tasks[idx].Updated = float64(time.Now().Unix())
 		}
 	}
+	return nil
 }
 
 // GetAppList retrieves a list of unique app names from the tasks in the in-memory state.
