@@ -70,7 +70,10 @@ func TestInMemoryState_GetTasks(t *testing.T) {
 }
 
 func TestInMemoryState_SetTaskStatus(t *testing.T) {
-	state.SetTaskStatus(taskId, "deployed", "")
+	err := state.SetTaskStatus(taskId, "deployed", "")
+	if err != nil {
+		t.Errorf("got %s, expected %s", err, "nil")
+	}
 
 	if taskInfo, _ := state.GetTask(taskId); taskInfo.Status != "deployed" {
 		t.Errorf("got %s, expected %s", taskInfo.Status, "deployed")

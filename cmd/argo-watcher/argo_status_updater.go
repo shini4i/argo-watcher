@@ -185,47 +185,68 @@ func (updater *ArgoStatusUpdater) handleArgoAPIFailure(task models.Task, err err
 func (updater *ArgoStatusUpdater) handleAppNotFound(task models.Task, err error) {
 	log.Info().Str("id", task.Id).Msgf("Application %s does not exist.", task.App)
 	reason := fmt.Sprintf(ArgoAPIErrorTemplate, err.Error())
-	updater.argo.state.SetTaskStatus(task.Id, models.StatusAppNotFoundMessage, reason)
+	errStatusChange := updater.argo.state.SetTaskStatus(task.Id, models.StatusAppNotFoundMessage, reason)
+	if errStatusChange != nil {
+		log.Error().Str("id", task.Id).Msgf("Failed to change task status: %s", errStatusChange)
+	}
 }
 
 func (updater *ArgoStatusUpdater) handleArgoUnavailable(task models.Task, err error) {
 	log.Error().Str("id", task.Id).Msg("ArgoCD is not available. Aborting.")
 	reason := fmt.Sprintf(ArgoAPIErrorTemplate, err.Error())
-	updater.argo.state.SetTaskStatus(task.Id, models.StatusAborted, reason)
+	errStatusChange := updater.argo.state.SetTaskStatus(task.Id, models.StatusAborted, reason)
+	if errStatusChange != nil {
+		log.Error().Str("id", task.Id).Msgf("Failed to change task status: %s", errStatusChange)
+	}
 }
 
 func (updater *ArgoStatusUpdater) handleDeploymentFailed(task models.Task, err error) {
 	log.Warn().Str("id", task.Id).Msgf("Deployment failed. Aborting with error: %s", err)
 	updater.argo.metrics.AddFailedDeployment(task.App)
 	reason := fmt.Sprintf(ArgoAPIErrorTemplate, err.Error())
-	updater.argo.state.SetTaskStatus(task.Id, models.StatusFailedMessage, reason)
+	errStatusChange := updater.argo.state.SetTaskStatus(task.Id, models.StatusFailedMessage, reason)
+	if errStatusChange != nil {
+		log.Error().Str("id", task.Id).Msgf("Failed to change task status: %s", errStatusChange)
+	}
 }
 
 func (updater *ArgoStatusUpdater) handleDeploymentSuccess(task models.Task) {
 	log.Info().Str("id", task.Id).Msg("App is running on the excepted version.")
 	updater.argo.metrics.ResetFailedDeployment(task.App)
-	updater.argo.state.SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
+	errStatusChange := updater.argo.state.SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
+	if errStatusChange != nil {
+		log.Error().Str("id", task.Id).Msgf("Failed to change task status: %s", errStatusChange)
+	}
 }
 
 func (updater *ArgoStatusUpdater) handleAppNotAvailable(task models.Task, err error) {
 	log.Warn().Str("id", task.Id).Msgf("Deployment failed. Application not available\n%s", err.Error())
 	updater.argo.metrics.AddFailedDeployment(task.App)
 	reason := fmt.Sprintf("Application not available\n\n%s", err.Error())
-	updater.argo.state.SetTaskStatus(task.Id, models.StatusFailedMessage, reason)
+	errStatusChange := updater.argo.state.SetTaskStatus(task.Id, models.StatusFailedMessage, reason)
+	if errStatusChange != nil {
+		log.Error().Str("id", task.Id).Msgf("Failed to change task status: %s", errStatusChange)
+	}
 }
 
 func (updater *ArgoStatusUpdater) handleAppNotHealthy(task models.Task, err error) {
 	log.Warn().Str("id", task.Id).Msgf("Deployment failed. Application not healthy\n%s", err.Error())
 	updater.argo.metrics.AddFailedDeployment(task.App)
 	reason := fmt.Sprintf("Application not healthy\n\n%s", err.Error())
-	updater.argo.state.SetTaskStatus(task.Id, models.StatusFailedMessage, reason)
+	errStatusChange := updater.argo.state.SetTaskStatus(task.Id, models.StatusFailedMessage, reason)
+	if errStatusChange != nil {
+		log.Error().Str("id", task.Id).Msgf("Failed to change task status: %s", errStatusChange)
+	}
 }
 
 func (updater *ArgoStatusUpdater) handleAppOutOfSync(task models.Task, err error) {
 	log.Warn().Str("id", task.Id).Msgf("Deployment failed. Application out of sync\n%s", err.Error())
 	updater.argo.metrics.AddFailedDeployment(task.App)
 	reason := fmt.Sprintf("Application out of sync\n\n%s", err.Error())
-	updater.argo.state.SetTaskStatus(task.Id, models.StatusFailedMessage, reason)
+	errStatusChange := updater.argo.state.SetTaskStatus(task.Id, models.StatusFailedMessage, reason)
+	if errStatusChange != nil {
+		log.Error().Str("id", task.Id).Msgf("Failed to change task status: %s", errStatusChange)
+	}
 }
 
 func (updater *ArgoStatusUpdater) handleDeploymentUnexpectedStatus(task models.Task, err error) {
@@ -233,5 +254,8 @@ func (updater *ArgoStatusUpdater) handleDeploymentUnexpectedStatus(task models.T
 	log.Error().Str("id", task.Id).Msgf("Deployment error\n%s", err.Error())
 	updater.argo.metrics.AddFailedDeployment(task.App)
 	reason := fmt.Sprintf("Deployment timeout\n\n%s", err.Error())
-	updater.argo.state.SetTaskStatus(task.Id, models.StatusFailedMessage, reason)
+	errStatusChange := updater.argo.state.SetTaskStatus(task.Id, models.StatusFailedMessage, reason)
+	if errStatusChange != nil {
+		log.Error().Str("id", task.Id).Msgf("Failed to change task status: %s", errStatusChange)
+	}
 }

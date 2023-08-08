@@ -66,7 +66,6 @@ func TestPostgresState_Add(t *testing.T) {
 		DbUser:     os.Getenv("DB_USER"),
 		DbName:     os.Getenv("DB_NAME"),
 		DbPassword: os.Getenv("DB_PASSWORD"),
-		LogFormat:  config.LOG_FORMAT_TEXT,
 	}
 	err := postgresState.Connect(config)
 	if err != nil {
@@ -124,8 +123,13 @@ func TestPostgresState_GetTask(t *testing.T) {
 }
 
 func TestPostgresState_SetTaskStatus(t *testing.T) {
-	postgresState.SetTaskStatus(deployedTaskId, "deployed", "")
-	postgresState.SetTaskStatus(appNotFoundTaskId, "app not found", "")
+	if err := postgresState.SetTaskStatus(deployedTaskId, "deployed", ""); err != nil {
+		t.Errorf("got error %s, expected nil", err.Error())
+	}
+
+	if err := postgresState.SetTaskStatus(appNotFoundTaskId, "app not found", ""); err != nil {
+		t.Errorf("got error %s, expected nil", err.Error())
+	}
 
 	if taskInfo, _ := postgresState.GetTask(deployedTaskId); taskInfo.Status != "deployed" {
 		t.Errorf("got %s, expected %s", taskInfo.Status, "deployed")
