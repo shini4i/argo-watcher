@@ -78,7 +78,11 @@ func TestPostgresState_Add(t *testing.T) {
 		DbMigrationsPath: "../../../db/migrations",
 	}
 	postgresState.Connect(config)
-	_, err := postgresState.db.Exec("TRUNCATE TABLE tasks")
+	db, err := postgresState.orm.DB()
+	if err != nil {
+		panic(err)
+	}
+	_, err = db.Exec("TRUNCATE TABLE tasks")
 	if err != nil {
 		panic(err)
 	}
@@ -140,7 +144,11 @@ func TestPostgresState_GetAppList(t *testing.T) {
 func TestPostgresState_ProcessObsoleteTasks(t *testing.T) {
 	// set updated time to 2 hour ago for obsolete task
 	updatedTime := time.Now().UTC().Add(-2 * time.Hour)
-	if _, err := postgresState.db.Exec("UPDATE tasks SET created = $1 WHERE id = $2", updatedTime, abortedTaskId); err != nil {
+	db, err := postgresState.orm.DB()
+	if err != nil {
+		panic(err)
+	}
+	if _, err := db.Exec("UPDATE tasks SET created = $1 WHERE id = $2", updatedTime, abortedTaskId); err != nil {
 		t.Errorf("got error %s, expected nil", err.Error())
 	}
 
