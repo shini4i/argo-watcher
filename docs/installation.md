@@ -43,22 +43,26 @@ ingress:
 
 Argo Watcher Server supports the following environment variables
 
-| Variable          | Description                                                     | Mandatory |
-|-------------------|-----------------------------------------------------------------|-----------|
-| STATE_TYPE        | Accepts "in-memory" (non-HA option) and "postgres" (HA option). | Yes       |
-| STATIC_FILES_PATH | Path to the UI website of Argo Watcher                          | Yes       |
-| ARGO_URL          | ArgoCD URL                                                      | Yes       |
-| ARGO_TOKEN        | ArgoCD API token                                                | Yes       |
-| ARGO_TIMEOUT      | Time that Argo Watcher is allowed to wait for deployment.       | No        |
-| ARGO_API_TIMEOUT  | Timeout for ArgoCD API calls. Defaults to 60 seconds            | No        |
-| SKIP_TLS_VERIFY   | Skip SSL verification during API calls                          | No        |
-| HOST              | Host for Argo Watcher server. Defaults to 0.0.0.0               | No        |
-| PORT              | Port for Argo Watcher server. Defaults to 8080                  | No        |
-| DB_HOST           | Database host (Required for STATE_TYPE=postgres)                | No        |
-| DB_PORT           | Database port (Required for STATE_TYPE=postgres)                | No        |
-| DB_NAME           | Database name (Required for STATE_TYPE=postgres)                | No        |
-| DB_USER           | Database username(Required for STATE_TYPE=postgres)             | No        |
-| DB_PASSWORD       | Database password (Required for STATE_TYPE=postgres)            | No        |
+| Variable            | Description                                                                 | Default   | Mandatory     |
+|---------------------|-----------------------------------------------------------------------------|-----------|---------------|
+| ARGO_URL            | ArgoCD URL                                                                  |           | Yes           |
+| ARGO_TOKEN          | ArgoCD API token                                                            |           | Yes           |
+| ARGO_API_TIMEOUT    | Timeout for ArgoCD API calls. Defaults to 60 seconds                        | 60        | No            |
+| ARGO_TIMEOUT        | Time that Argo Watcher is allowed to wait for deployment.                   | 0         | No            |
+| ARGO_REFRESH_APP    | Refresh application during status check                                     | true      | No            |
+| DOCKER_IMAGES_PROXY | Define registry proxy url for image checks                                  |           | No            |
+| STATE_TYPE          | Accepts "in-memory" (non-HA option) and "postgres" (HA option).             |           | Yes           |
+| STATIC_FILES_PATH   | Path to the UI website of Argo Watcher                                      | static    | No            |
+| SKIP_TLS_VERIFY     | Skip SSL verification during API calls                                      | false     | No            |
+| LOG_LEVEL           | Severity for logging (trace,debug,info,warn,error,fatal, panic)             | info      | No            |
+| LOG_FORMAT          | json (used for production by default) or text (used for development)        | json      | No            |
+| HOST                | Host for Argo Watcher server.                                               | 0.0.0.0   | No            |
+| PORT                | Port for Argo Watcher server.                                               | 8080      | No            |
+| DB_HOST             | Database host (Required for STATE_TYPE=postgres)                            | localhost | Conditional   |
+| DB_PORT             | Database port (Required for STATE_TYPE=postgres)                            | 5432      | Conditional   |
+| DB_NAME             | Database name (Required for STATE_TYPE=postgres)                            |           | Conditional   |
+| DB_USER             | Database username(Required for STATE_TYPE=postgres)                         |           | Conditional   |
+| DB_PASSWORD         | Database password (Required for STATE_TYPE=postgres)                        |           | Conditional   |
 
 
 # Client setup

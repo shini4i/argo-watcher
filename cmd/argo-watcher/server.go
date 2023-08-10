@@ -1,6 +1,9 @@
 package main
 
 import (
+	"os"
+	"time"
+
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
@@ -10,7 +13,13 @@ import (
 // initLogs initializes the logging configuration based on the provided log level.
 // It parses the log level string and sets the global log level accordingly using the zerolog library.
 // If the log level string is invalid, it falls back to the default InfoLevel.
-func initLogs(logLevel string) {
+func initLogs(logLevel string, logFormat string) {
+	// set log format
+	if logFormat == config.LOG_FORMAT_TEXT {
+		output := zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}
+		log.Logger = zerolog.New(output).With().Timestamp().Logger()
+	}
+	// set log level
 	if logLevel, err := zerolog.ParseLevel(logLevel); err != nil {
 		log.Warn().Msgf("Couldn't parse log level. Got the following error: %s", err)
 	} else {
@@ -27,7 +36,7 @@ func serverWatcher() {
 	}
 
 	// initialize logs
-	initLogs(serverConfig.LogLevel)
+	initLogs(serverConfig.LogLevel, serverConfig.LogFormat)
 
 	// initialize metrics
 	metrics := &Metrics{}

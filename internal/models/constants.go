@@ -9,4 +9,5 @@ const (
 	StatusConnectionUnavailable    = "cannot connect to database"
 	StatusArgoCDFailedLogin        = "failed to login to argocd"
 	StatusDeployedMessage          = "deployed"
+	StatusAccepted                 = "accepted"
 )

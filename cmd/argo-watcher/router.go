@@ -127,7 +127,7 @@ func (env *Env) addTask(c *gin.Context) {
 	// return information about created task
 	c.JSON(http.StatusAccepted, models.TaskStatus{
 		Id:     newTask.Id,
-		Status: "accepted",
+		Status: models.StatusAccepted,
 	})
 }
 

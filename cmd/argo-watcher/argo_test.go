@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/mock"
 	"github.com/shini4i/argo-watcher/internal/models"
 	"github.com/stretchr/testify/assert"
@@ -211,7 +212,7 @@ func TestArgoAddTask(t *testing.T) {
 
 		// mock calls to add task
 		stateError := fmt.Errorf("database error")
-		state.EXPECT().Add(gomock.Any()).Return(stateError)
+		state.EXPECT().Add(gomock.Any()).Return(nil, stateError)
 
 		// argo manager
 		argo := &Argo{}
@@ -244,24 +245,33 @@ func TestArgoAddTask(t *testing.T) {
 		metrics.EXPECT().SetArgoUnavailable(false)
 		metrics.EXPECT().AddProcessedDeployment()
 
-		// mock calls to add task
-		state.EXPECT().Add(gomock.Any()).Return(nil)
-
-		// argo manager
-		argo := &Argo{}
-		argo.Init(state, api, metrics)
+		// tasks
 		task := models.Task{
 			App: "test-app",
 			Images: []models.Image{
 				{Tag: taskImageTag},
 			},
 		}
-		newTask, err := argo.AddTask(task)
+		newTask := models.Task{
+			Id:  uuid.NewString(),
+			App: "test-app",
+			Images: []models.Image{
+				{Tag: taskImageTag},
+			},
+		}
+
+		// mock calls to add task
+		state.EXPECT().Add(gomock.Any()).Return(&newTask, nil)
+
+		// argo manager
+		argo := &Argo{}
+		argo.Init(state, api, metrics)
+		newTaskReturned, err := argo.AddTask(task)
 
 		// assertions
 		assert.Nil(t, err)
-		assert.NotNil(t, newTask)
+		assert.NotNil(t, newTaskReturned)
 		uuidRegexp := regexp.MustCompile("^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-4[a-fA-F0-9]{3}-[8|9|aA|bB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}$")
-		assert.Regexp(t, uuidRegexp, newTask.Id, "Must match Regexp for uuid v4")
+		assert.Regexp(t, uuidRegexp, newTaskReturned.Id, "Must match Regexp for uuid v4")
 	})
 }

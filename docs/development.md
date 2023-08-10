@@ -55,15 +55,41 @@ cd cmd/mock
 go run .
 ```
 
-Start the argo-watcher server
+### Start the argo-watcher server (in-memory)
 
 ```shell
 # go to backend directory
 cd cmd/argo-watcher
 # install dependencies
 go mod tidy
-# start argo-watcher
-ARGO_URL=http://localhost:8081 STATE_TYPE=in-memory go run . -server
+# start argo-watcher (in-memory)
+LOG_LEVEL=debug LOG_FORMAT=text ARGO_URL=http://localhost:8081 ARGO_TOKEN=example STATE_TYPE=in-memory go run . -server
+```
+
+
+### Start the argo-watcher server (postgres)
+
+Start database
+```shell
+# start the database in a separate terminal window
+docker compose up postgres 
+```
+
+Start server
+```shell
+# go to backend directory
+cd cmd/argo-watcher
+# install dependencies
+go mod tidy
+# OR start argo-watcher (postgres)
+LOG_LEVEL=debug LOG_FORMAT=text ARGO_URL=http://localhost:8081 ARGO_TOKEN=example STATE_TYPE=postgres DB_USER=watcher DB_PASSWORD=watcher DB_NAME=watcher go run . -server
+```
+
+#### Logs in simple text
+
+```shell
+# add LOG_FORMAT=text for simple text logs
+LOG_LEVEL=debug LOG_FORMAT=text go run . -server
 ```
 
 ### Running the unit tests

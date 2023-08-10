@@ -1,9 +1,10 @@
 package state
 
 import (
-	"github.com/stretchr/testify/assert"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 
 	"github.com/google/uuid"
 
@@ -27,7 +28,7 @@ var (
 					Tag:   "v0.0.1",
 				},
 			},
-			Status: "in progress",
+			Status: models.StatusInProgressMessage,
 		},
 		{
 			Id:      uuid.New().String(),
@@ -41,14 +42,14 @@ var (
 					Tag:   "v0.0.1",
 				},
 			},
-			Status: "in progress",
+			Status: models.StatusInProgressMessage,
 		},
 	}
 )
 
 func TestInMemoryState_Add(t *testing.T) {
 	for _, task := range tasks {
-		if err := state.Add(task); err != nil {
+		if _, err := state.Add(task); err != nil {
 			t.Errorf("Unexpected error: %s", err)
 		}
 	}
@@ -57,7 +58,7 @@ func TestInMemoryState_Add(t *testing.T) {
 func TestInMemoryState_GetTask(t *testing.T) {
 	task, _ := state.GetTask(taskId)
 
-	assert.Equal(t, task.Status, "in progress")
+	assert.Equal(t, models.StatusInProgressMessage, task.Status)
 }
 
 func TestInMemoryState_GetTasks(t *testing.T) {
@@ -69,21 +70,21 @@ func TestInMemoryState_GetTasks(t *testing.T) {
 }
 
 func TestInMemoryState_SetTaskStatus(t *testing.T) {
-	state.SetTaskStatus(taskId, "deployed", "")
+	err := state.SetTaskStatus(taskId, models.StatusDeployedMessage, "")
+	assert.NoError(t, err)
 
-	if taskInfo, _ := state.GetTask(taskId); taskInfo.Status != "deployed" {
-		t.Errorf("got %s, expected %s", taskInfo.Status, "deployed")
-	}
+	taskInfo, _ := state.GetTask(taskId)
+	assert.Equal(t, models.StatusDeployedMessage, taskInfo.Status)
 }
 
 func TestInMemoryState_GetAppList(t *testing.T) {
-	assert.Equal(t, state.GetAppList(), []string{"Test", "Test2"})
+	assert.Equal(t, []string{"Test", "Test2"}, state.GetAppList())
 }
 
 func TestInMemoryState_GetAppListEmpty(t *testing.T) {
 	state := InMemoryState{}
 	// We must make sure that we are returning an empty slice and not nil
-	assert.Equal(t, state.GetAppList(), []string{})
+	assert.Equal(t, []string{}, state.GetAppList())
 }
 
 func TestInMemoryState_ProcessObsoleteTasks(t *testing.T) {
@@ -96,7 +97,7 @@ func TestInMemoryState_ProcessObsoleteTasks(t *testing.T) {
 	assert.Len(t, tasks, 2) // Only non-obsolete tasks should remain
 
 	// Check that the status of the obsolete task has been updated
-	assert.Equal(t, "aborted", tasks[1].Status)
+	assert.Equal(t, models.StatusAborted, tasks[1].Status)
 }
 
 func TestInMemoryState_Check(t *testing.T) {

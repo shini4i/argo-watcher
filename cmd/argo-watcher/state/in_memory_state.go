@@ -19,19 +19,20 @@ type InMemoryState struct {
 // Connect is a placeholder method that does not establish any connection.
 // It logs a debug message indicating that the InMemoryState does not connect to anything and skips the connection process.
 // This method exists to fulfill the State interface requirement and has no functional value.
-func (state *InMemoryState) Connect(serverConfig *config.ServerConfig) {
+func (state *InMemoryState) Connect(serverConfig *config.ServerConfig) error {
 	log.Debug().Msg("InMemoryState does not connect to anything. Skipping.")
+	return nil
 }
 
 // Add adds a new task to the in-memory state.
 // It takes a models.Task parameter and updates the task's created timestamp and status.
 // The method appends the task to the list of tasks in the in-memory state.
 // It always returns nil as there is no error handling in the in-memory implementation.
-func (state *InMemoryState) Add(task models.Task) error {
+func (state *InMemoryState) Add(task models.Task) (*models.Task, error) {
 	task.Created = float64(time.Now().Unix())
-	task.Status = "in progress"
+	task.Status = models.StatusInProgressMessage
 	state.tasks = append(state.tasks, task)
-	return nil
+	return &task, nil
 }
 
 // GetTasks retrieves tasks from the in-memory state based on the provided time range and app filter.
@@ -80,7 +81,7 @@ func (state *InMemoryState) GetTask(id string) (*models.Task, error) {
 // It takes a string parameter for the task ID, status, and reason.
 // The method iterates over the tasks in the in-memory state and updates the task with the matching ID.
 // Note that this method does not perform any error handling if the task ID is not found.
-func (state *InMemoryState) SetTaskStatus(id string, status string, reason string) {
+func (state *InMemoryState) SetTaskStatus(id string, status string, reason string) error {
 	for idx, task := range state.tasks {
 		if task.Id == id {
 			state.tasks[idx].Status = status
@@ -88,6 +89,7 @@ func (state *InMemoryState) SetTaskStatus(id string, status string, reason strin
 			state.tasks[idx].Updated = float64(time.Now().Unix())
 		}
 	}
+	return nil
 }
 
 // GetAppList retrieves a list of unique app names from the tasks in the in-memory state.
@@ -126,7 +128,7 @@ func (state *InMemoryState) ProcessObsoleteTasks(retryTimes uint) {
 	err := retry.Do(
 		func() error {
 			state.tasks = processInMemoryObsoleteTasks(state.tasks)
-			return desiredRetryError
+			return errDesiredRetry
 		},
 		retry.DelayType(retry.FixedDelay),
 		retry.Delay(60*time.Minute),
@@ -147,11 +149,11 @@ func (state *InMemoryState) ProcessObsoleteTasks(retryTimes uint) {
 func processInMemoryObsoleteTasks(tasks []models.Task) []models.Task {
 	var updatedTasks []models.Task
 	for _, task := range tasks {
-		if task.Status == "app not found" {
+		if task.Status == models.StatusAppNotFoundMessage {
 			continue
 		}
-		if task.Status == "in progress" && task.Updated+3600 < float64(time.Now().Unix()) {
-			task.Status = "aborted"
+		if task.Status == models.StatusInProgressMessage && task.Updated+3600 < float64(time.Now().Unix()) {
+			task.Status = models.StatusAborted
 		}
 		updatedTasks = append(updatedTasks, task)
 	}
