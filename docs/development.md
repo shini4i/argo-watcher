@@ -82,7 +82,7 @@ cd cmd/argo-watcher
 # install dependencies
 go mod tidy
 # OR start argo-watcher (postgres)
-LOG_LEVEL=debug LOG_FORMAT=text ARGO_URL=http://localhost:8081 ARGO_TOKEN=example STATE_TYPE=postgres DB_USER=watcher DB_PASSWORD=watcher DB_NAME=watcher DB_MIGRATIONS_PATH="./../../db/migrations" go run . -server
+LOG_LEVEL=debug LOG_FORMAT=text ARGO_URL=http://localhost:8081 ARGO_TOKEN=example STATE_TYPE=postgres DB_USER=watcher DB_PASSWORD=watcher DB_NAME=watcher go run . -server
 ```
 
 #### Logs in simple text
