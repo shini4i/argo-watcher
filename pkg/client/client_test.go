@@ -118,22 +118,22 @@ func TestGetTaskStatus(t *testing.T) {
 
 	status := client.getTaskStatus(taskId).Status
 	if status != models.StatusDeployedMessage {
-		t.Errorf(messageTemplate, "deployed", status)
+		t.Errorf(messageTemplate, models.StatusDeployedMessage, status)
 	}
 
 	status = client.getTaskStatus(appNotFoundId).Status
 	if status != models.StatusAppNotFoundMessage {
-		t.Errorf(messageTemplate, "app not found", status)
+		t.Errorf(messageTemplate, models.StatusAppNotFoundMessage, status)
 	}
 
 	status = client.getTaskStatus(argocdUnavailableId).Status
 	if status != models.StatusArgoCDUnavailableMessage {
-		t.Errorf(messageTemplate, "ArgoCD is unavailable", status)
+		t.Errorf(messageTemplate, models.StatusArgoCDUnavailableMessage, status)
 	}
 
 	status = client.getTaskStatus(failedTaskId).Status
 	if status != models.StatusFailedMessage {
-		t.Errorf(messageTemplate, "failed", status)
+		t.Errorf(messageTemplate, models.StatusFailedMessage, status)
 	}
 }
 

@@ -115,29 +115,27 @@ func TestPostgresState_GetTask(t *testing.T) {
 	var task *models.Task
 	var err error
 
-	if task, err = postgresState.GetTask(deployedTaskId); err != nil {
-		t.Errorf("got error %s, expected nil", err.Error())
-	}
+	task, err = postgresState.GetTask(deployedTaskId)
+	assert.NoError(t, err)
 
-	assert.Equal(t, task.Status, models.StatusInProgressMessage)
+	assert.Equal(t, models.StatusInProgressMessage, task.Status)
 }
 
 func TestPostgresState_SetTaskStatus(t *testing.T) {
-	if err := postgresState.SetTaskStatus(deployedTaskId, "deployed", ""); err != nil {
-		t.Errorf("got error %s, expected nil", err.Error())
-	}
+	var err error
 
-	if err := postgresState.SetTaskStatus(appNotFoundTaskId, "app not found", ""); err != nil {
-		t.Errorf("got error %s, expected nil", err.Error())
-	}
+	err = postgresState.SetTaskStatus(deployedTaskId, models.StatusDeployedMessage, "")
+	assert.NoError(t, err)
 
-	if taskInfo, _ := postgresState.GetTask(deployedTaskId); taskInfo.Status != "deployed" {
-		t.Errorf("got %s, expected %s", taskInfo.Status, "deployed")
-	}
+	err = postgresState.SetTaskStatus(appNotFoundTaskId, models.StatusAppNotFoundMessage, "")
+	assert.NoError(t, err)
 
-	if taskInfo, _ := postgresState.GetTask(appNotFoundTaskId); taskInfo.Status != "app not found" {
-		t.Errorf("got %s, expected %s", taskInfo.Status, "app not found")
-	}
+	var taskInfo *models.Task
+	taskInfo, _ = postgresState.GetTask(deployedTaskId)
+	assert.Equal(t, models.StatusDeployedMessage, taskInfo.Status)
+
+	taskInfo, _ = postgresState.GetTask(appNotFoundTaskId)
+	assert.Equal(t, models.StatusAppNotFoundMessage, taskInfo.Status)
 }
 
 func TestPostgresState_GetAppList(t *testing.T) {
