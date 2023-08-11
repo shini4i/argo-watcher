@@ -1,0 +1,81 @@
+name: release
+
+on:
+  push:
+    tags:
+      - v*.*.* # stable release, v0.0.1
+      - v*.*.*-pre.* # pre-release, v0.0.1-pre.calendardate
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write # needed for signing the images with GitHub OIDC Token
+
+jobs:
+  release:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Set up QEMU # required for multi architecture build - https://goreleaser.com/cookbooks/multi-platform-docker-images/?h=multi#other-things-to-pay-attention-to
+        uses: docker/setup-qemu-action@v2
+
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0 # required for changelog to work properly - https://github.com/goreleaser/goreleaser-action#usage
+          submodules: true
+
+      - name: Install NodeJS
+        uses: actions/setup-node@v3
+        with:
+          node-version: '17'
+
+      - name: Build argo-watcher UI
+        run: make build-ui
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.1.1
+
+      - name: Install Syft for SBOM Generation
+        uses: anchore/sbom-action@v0
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version-file: go.mod
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run GoReleaser for stable release
+        uses: goreleaser/goreleaser-action@v4
+        if: (!contains(github.ref, 'pre'))
+        with:
+          version: v1.19.2
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run GoReleaser for pre-release
+        uses: goreleaser/goreleaser-action@v4
+        if: contains(github.ref, 'pre')
+        with:
+          version: v1.19.2
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ steps.changelog.outputs.RELEASE_TAG }}
+
+      - name: Update helm chart
+        uses: shini4i/helm-charts-updater@v1
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          github_token: ${{ secrets.GH_TOKEN }}
+          gh_user: shini4i
+          gh_repo: charts
+          chart_name: argo-watcher
+          app_version: ${{ github.ref_name }}
+          update_chart_annotations: true

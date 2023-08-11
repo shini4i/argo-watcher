@@ -23,3 +23,6 @@ bin/
 # dynamicly generated files
 cmd/argo-watcher/docs
 cmd/argo-watcher/mock
+
+# goreleaser
+dist/

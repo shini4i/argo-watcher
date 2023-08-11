@@ -1,0 +1,94 @@
+before:
+  hooks:
+    - make install-deps docs mocks
+    - go mod tidy
+
+builds:
+  - id: argo-watcher
+    main: ./cmd/argo-watcher
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+
+dockers:
+  - image_templates:
+      - 'ghcr.io/shini4i/{{.ProjectName}}:{{ .Tag }}-amd64'
+    use: buildx
+    build_flag_templates:
+      - "--pull"
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.licenses=MIT"
+    goos: linux
+    goarch: amd64
+    extra_files:
+      - web/build
+  - image_templates:
+      - 'ghcr.io/shini4i/{{.ProjectName}}:{{ .Tag }}-arm64'
+    use: buildx
+    build_flag_templates:
+      - "--pull"
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.licenses=MIT"
+    goos: linux
+    goarch: arm64
+    extra_files:
+      - web/build
+
+docker_manifests:
+  - name_template: 'ghcr.io/shini4i/{{.ProjectName}}:{{ .Tag }}'
+    image_templates:
+      - 'ghcr.io/shini4i/{{.ProjectName}}:{{ .Tag }}-amd64'
+      - 'ghcr.io/shini4i/{{.ProjectName}}:{{ .Tag }}-arm64'
+
+archives:
+  - format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Tag }}_{{ .Os }}_{{ .Arch }}"
+
+sboms:
+  - artifacts: archive
+
+signs:
+  - cmd: cosign
+    certificate: "${artifact}.pem"
+    output: true
+    artifacts: checksum
+    args:
+      - "sign-blob"
+      - "--output-certificate=${certificate}"
+      - "--output-signature=${signature}"
+      - "${artifact}"
+      - "--yes"
+
+docker_signs:
+  - cmd: cosign
+    artifacts: manifests
+    args:
+      - "sign"
+      - "${artifact}@${digest}"
+      - "--yes"
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  name_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  use:
+    github-native
+
+release:
+  prerelease: auto
+  draft: false
