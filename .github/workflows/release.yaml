@@ -71,7 +71,7 @@ jobs:
 
       - name: Update helm chart
         uses: shini4i/helm-charts-updater@v1
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') && (!contains(github.ref, 'pre'))
         with:
           github_token: ${{ secrets.GH_TOKEN }}
           gh_user: shini4i
