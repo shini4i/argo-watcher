@@ -31,6 +31,12 @@ build: ensure-dirs docs ## Build the binaries
 	@CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${VERSION}" -o bin/argo-watcher ./cmd/argo-watcher
 	@echo "===> Done"
 
+.PHONY: build-goreleaser
+build-goreleaser:
+	@echo "===> Building [$(CYAN)${VERSION}$(RESET)] version of [$(CYAN)argo-watcher$(RESET)] binary"
+	@goreleaser build --snapshot --clean --single-target
+	@echo "===> Done"
+
 .PHONY: build-ui
 build-ui: ## Build the UI
 	@echo "===> Building UI"
