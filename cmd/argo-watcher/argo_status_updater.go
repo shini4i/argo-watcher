@@ -31,7 +31,6 @@ func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, retryDelay
 }
 
 func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
-
 	// wait for application to get into deployed status or timeout
 	application, err := updater.waitForApplicationDeployment(task)
 
@@ -82,6 +81,11 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 	retry.Do(func() error {
 		application, err = updater.argo.api.GetApplication(task.App)
 		if err != nil {
+			// check if ArgoCD didn't have the app
+			if task.IsAppNotFoundError(err) {
+				// no need to retry in such cases
+				return retry.Unrecoverable(err)
+			}
 			// print application api failure here
 			log.Debug().Str("id", task.Id).Msgf("Failed fetching application status. Error: %s", err.Error())
 			return err
@@ -104,10 +108,9 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 
 func (updater *ArgoStatusUpdater) handleArgoAPIFailure(task models.Task, err error) {
 	var apiFailureStatus string = models.StatusFailedMessage
-	var appNotFoundError string = fmt.Sprintf("applications.argoproj.io \"%s\" not found", task.App)
 
 	// check if ArgoCD didn't have the app
-	if strings.Contains(err.Error(), appNotFoundError) {
+	if task.IsAppNotFoundError(err) {
 		apiFailureStatus = models.StatusAppNotFoundMessage
 	}
 	// check if ArgoCD was unavailable
