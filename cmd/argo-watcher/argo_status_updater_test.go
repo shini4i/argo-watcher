@@ -208,6 +208,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// mock calls
 		apiMock.EXPECT().GetApplication(task.App).Return(nil, fmt.Errorf("applications.argoproj.io \"test-app\" not found"))
+		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusAppNotFoundMessage, "ArgoCD API Error: applications.argoproj.io \"test-app\" not found")
 
 		// run the rollout
@@ -236,6 +237,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// mock calls
 		apiMock.EXPECT().GetApplication(task.App).Return(nil, fmt.Errorf(argoUnavailableErrorMessage))
+		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusAborted, "ArgoCD API Error: connect: connection refused")
 
 		// run the rollout
