@@ -1,6 +1,18 @@
 package models
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+
+	"github.com/shini4i/argo-watcher/internal/helpers"
+)
+
+const (
+	ArgoRolloutAppSuccess      = "success"
+	ArgoRolloutAppNotSynced    = "not synced"
+	ArgoRolloutAppNotAvailable = "not available"
+	ArgoRolloutAppNotHealthy   = "not healthy"
+)
 
 type Application struct {
 	Status struct {
@@ -39,6 +51,82 @@ type Application struct {
 			Status string `json:"status"`
 		}
 	} `json:"status"`
+}
+
+// Calculates application rollout status depending on the expected images and proxy configuration
+func (app *Application) GetRolloutStatus(rolloutImages []string, registryProxyUrl string) string {
+	// check if all the images rolled out
+	for _, image := range rolloutImages {
+		if !helpers.ImagesContains(app.Status.Summary.Images, image, registryProxyUrl) {
+			return ArgoRolloutAppNotAvailable
+		}
+	}
+
+	// verify app sync status
+	if app.Status.Sync.Status != "Synced" {
+		return ArgoRolloutAppNotSynced
+	}
+
+	// verify app health status
+	if app.Status.Health.Status != "Healthy" {
+		return ArgoRolloutAppNotHealthy
+	}
+
+	// all good
+	return ArgoRolloutAppSuccess
+}
+
+// Generate rollout failure message
+func (app *Application) GetRolloutMessage(status string, rolloutImages []string) string {
+	// handle application sync failure
+	switch status {
+	// not all images were deployed to the application
+	case ArgoRolloutAppNotAvailable:
+		// define details
+		return fmt.Sprintf(
+			"List of current images (last app check):\n"+
+				"\t%s\n\n"+
+				"List of expected images:\n"+
+				"\t%s",
+			strings.Join(app.Status.Summary.Images, "\n\t"),
+			strings.Join(rolloutImages, "\n\t"),
+		)
+	// application sync status wasn't valid
+	case ArgoRolloutAppNotSynced:
+		// display sync status and last sync message
+		return fmt.Sprintf(
+			"App status \"%s\"\n"+
+				"App message \"%s\"\n"+
+				"Resources:\n"+
+				"\t%s",
+			app.Status.OperationState.Phase,
+			app.Status.OperationState.Message,
+			strings.Join(app.ListSyncResultResources(), "\n\t"),
+		)
+	// application is not in a healthy status
+	case ArgoRolloutAppNotHealthy:
+		// display current health of pods
+		return fmt.Sprintf(
+			"App sync status \"%s\"\n"+
+				"App health status \"%s\"\n"+
+				"Resources:\n"+
+				"\t%s",
+			app.Status.Sync.Status,
+			app.Status.Health.Status,
+			strings.Join(app.ListUnhealthyResources(), "\n\t"),
+		)
+	}
+
+	// handle unexpected status
+	return fmt.Sprintf(
+		"received unexpected rollout status \"%s\"",
+		status,
+	)
+}
+
+// check if rollout status is final
+func (app *Application) IsFinalRolloutStatus(status string) bool {
+	return status == ArgoRolloutAppSuccess
 }
 
 // ListSyncResultResources returns a list of strings representing the sync result resources of the application.

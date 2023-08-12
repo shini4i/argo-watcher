@@ -12,8 +12,7 @@ import (
 )
 
 var (
-	argoSyncRetryDelay    = 15 * time.Second
-	errorArgoPlannedRetry = fmt.Errorf("planned retry")
+	argoSyncRetryDelay = 15 * time.Second
 )
 
 const (
