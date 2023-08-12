@@ -78,7 +78,7 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 
 	// wait for application to get into deployed status or timeout
 	log.Debug().Str("id", task.Id).Msg("Waiting for rollout")
-	retry.Do(func() error {
+	_ = retry.Do(func() error {
 		application, err = updater.argo.api.GetApplication(task.App)
 		if err != nil {
 			// check if ArgoCD didn't have the app

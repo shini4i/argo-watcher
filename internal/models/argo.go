@@ -14,6 +14,27 @@ const (
 	ArgoRolloutAppNotHealthy   = "not healthy"
 )
 
+type ApplicationOperationResource struct {
+	HookPhase string `json:"hookPhase"` // example: Failed
+	HookType  string `json:"hookType"`  // example: PreSync
+	Kind      string `json:"kind"`      // example: Pod | Job
+	Message   string `json:"message"`   // example: Job has reached the specified backoff limit
+	Status    string `json:"status"`    // example: Synced
+	SyncPhase string `json:"syncPhase"` // example: PreSync
+	Name      string `json:"name"`      // example: app-migrations
+	Namespace string `json:"namespace"` // example: app
+}
+
+type ApplicationResource struct {
+	Kind      string `json:"kind"`      // example: Pod | Job
+	Name      string `json:"name"`      // example: app-migrations
+	Namespace string `json:"namespace"` // example: app
+	Health    struct {
+		Message string `json:"message"` // example: Job has reached the specified backoff limit
+		Status  string `json:"status"`  // example: Synced
+	} `json:"health"`
+}
+
 type Application struct {
 	Status struct {
 		Health struct {
@@ -23,28 +44,11 @@ type Application struct {
 			Phase      string `json:"phase"`
 			Message    string `json:"message"`
 			SyncResult struct {
-				Resources []struct {
-					HookPhase string `json:"hookPhase"` // example: Failed
-					HookType  string `json:"hookType"`  // example: PreSync
-					Kind      string `json:"kind"`      // example: Pod | Job
-					Message   string `json:"message"`   // example: Job has reached the specified backoff limit
-					Status    string `json:"status"`    // example: Synced
-					SyncPhase string `json:"syncPhase"` // example: PreSync
-					Name      string `json:"name"`      // example: app-migrations
-					Namespace string `json:"namespace"` // example: app
-				} `json:"resources"`
+				Resources []ApplicationOperationResource `json:"resources"`
 			} `json:"syncResult"`
 		} `json:"operationState"`
-		Resources []struct {
-			Kind      string `json:"kind"`      // example: Pod | Job
-			Name      string `json:"name"`      // example: app-migrations
-			Namespace string `json:"namespace"` // example: app
-			Health    struct {
-				Message string `json:"message"` // example: Job has reached the specified backoff limit
-				Status  string `json:"status"`  // example: Synced
-			} `json:"health"`
-		} `json:"resources"`
-		Summary struct {
+		Resources []ApplicationResource `json:"resources"`
+		Summary   struct {
 			Images []string `json:"images"`
 		}
 		Sync struct {
@@ -53,7 +57,7 @@ type Application struct {
 	} `json:"status"`
 }
 
-// Calculates application rollout status depending on the expected images and proxy configuration
+// Calculates application rollout status depending on the expected images and proxy configuration.
 func (app *Application) GetRolloutStatus(rolloutImages []string, registryProxyUrl string) string {
 	// check if all the images rolled out
 	for _, image := range rolloutImages {
@@ -76,7 +80,7 @@ func (app *Application) GetRolloutStatus(rolloutImages []string, registryProxyUr
 	return ArgoRolloutAppSuccess
 }
 
-// Generate rollout failure message
+// Generate rollout failure message.
 func (app *Application) GetRolloutMessage(status string, rolloutImages []string) string {
 	// handle application sync failure
 	switch status {
@@ -124,7 +128,7 @@ func (app *Application) GetRolloutMessage(status string, rolloutImages []string)
 	)
 }
 
-// check if rollout status is final
+// Check if rollout status is final.
 func (app *Application) IsFinalRolloutStatus(status string) bool {
 	return status == ArgoRolloutAppSuccess
 }
