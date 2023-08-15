@@ -1,6 +1,9 @@
 package models
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 type Image struct {
 	Image string `json:"image" example:"ghcr.io/shini4i/argo-watcher"`
@@ -28,6 +31,12 @@ func (task *Task) ListImages() []string {
 		list[index] = fmt.Sprintf("%s:%s", task.Images[index].Image, task.Images[index].Tag)
 	}
 	return list
+}
+
+// Check if app not found error.
+func (task *Task) IsAppNotFoundError(err error) bool {
+	var appNotFoundError string = fmt.Sprintf("applications.argoproj.io \"%s\" not found", task.App)
+	return strings.Contains(err.Error(), appNotFoundError)
 }
 
 type TasksResponse struct {

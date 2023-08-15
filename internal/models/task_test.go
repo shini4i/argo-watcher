@@ -1,6 +1,7 @@
 package models
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -24,4 +25,29 @@ func TestTask_ListImages(t *testing.T) {
 	result := task.ListImages()
 
 	assert.Equal(t, expected, result, "List of images does not match")
+}
+
+func TestTask_ListImages_Empty(t *testing.T) {
+	task := Task{
+		Images: []Image{},
+	}
+
+	expected := []string{}
+	result := task.ListImages()
+
+	assert.Equal(t, expected, result, "List of images does not match")
+}
+
+func TestTask_IsAppNotFoundError(t *testing.T) {
+	task := Task{
+		App: "test",
+	}
+	assert.Equal(t, true, task.IsAppNotFoundError(errors.New("applications.argoproj.io \"test\" not found")))
+}
+
+func TestTask_IsAppNotFoundError_Fail(t *testing.T) {
+	task := Task{
+		App: "test",
+	}
+	assert.Equal(t, false, task.IsAppNotFoundError(errors.New("random but very important error")))
 }
