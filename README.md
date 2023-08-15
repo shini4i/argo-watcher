@@ -6,7 +6,7 @@ Improve visibility of deployments managed by Argo CD Image Updater
 ![GitHub Actions](https://img.shields.io/github/actions/workflow/status/shini4i/argo-watcher/run-tests-and-sonar-scan.yml?branch=main)
 ![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/shini4i/argo-watcher)
 ![GitHub release (latest by date)](https://img.shields.io/github/v/release/shini4i/argo-watcher)
-[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=shini4i_argo-watcher&metric=coverage)](https://sonarcloud.io/summary/new_code?id=shini4i_argo-watcher)
+[![codecov](https://codecov.io/gh/shini4i/argo-watcher/graph/badge.svg?token=9JI19X0BIN)](https://codecov.io/gh/shini4i/argo-watcher)
 [![Go Report Card](https://goreportcard.com/badge/github.com/shini4i/argo-watcher)](https://goreportcard.com/report/github.com/shini4i/argo-watcher)
 ![GitHub](https://img.shields.io/github/license/shini4i/argo-watcher)
 
