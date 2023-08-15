@@ -18,7 +18,7 @@ type TaskModel struct {
 	ApplicationName sql.NullString                    `gorm:"column:app;type:VARCHAR(255);"`
 	Author          sql.NullString                    `gorm:"column:author;type:VARCHAR(255);"`
 	Project         sql.NullString                    `gorm:"column:project;type:VARCHAR(255);"`
-	StatusReason    sql.NullString                    `gorm:"column:status_reason;default:''"`
+	StatusReason    sql.NullString                    `gorm:"column:status_reason;"`
 }
 
 func (TaskModel) TableName() string {
