@@ -8,254 +8,121 @@ import (
 
 	"github.com/avast/retry-go/v4"
 	"github.com/rs/zerolog/log"
-	"github.com/shini4i/argo-watcher/internal/helpers"
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
-const defaultErrorMessage string = "could not retrieve details"
 const failedToUpdateTaskStatusTemplate string = "Failed to change task status: %s"
 
 type ArgoStatusUpdater struct {
 	argo             Argo
-	retryAttempts    uint
-	retryDelay       time.Duration
 	registryProxyUrl string
+	retryOptions     []retry.Option
 }
 
 func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, retryDelay time.Duration, registryProxyUrl string) {
 	updater.argo = argo
-	updater.retryAttempts = retryAttempts
-	updater.retryDelay = retryDelay
 	updater.registryProxyUrl = registryProxyUrl
+	updater.retryOptions = []retry.Option{
+		retry.DelayType(retry.FixedDelay),
+		retry.Attempts(retryAttempts),
+		retry.Delay(retryDelay),
+		retry.LastErrorOnly(true),
+	}
 }
 
 func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
-	// continuously check for application status change
-	status, err := updater.checkWithRetry(task)
+	// wait for application to get into deployed status or timeout
+	application, err := updater.waitForApplicationDeployment(task)
 
-	// application synced successfully
-	if status == ArgoAppSuccess {
-		updater.handleDeploymentSuccess(task)
-		return
-	}
-
-	// we had some unexpected error with ArgoCD API
-	if status == ArgoAppFailed {
+	// handle application failure
+	if err != nil {
+		// deployment failed
+		updater.argo.metrics.AddFailedDeployment(task.App)
+		// update task status regarding failure
 		updater.handleArgoAPIFailure(task, err)
 		return
 	}
 
-	// fetch application details
-	app, err := updater.argo.api.GetApplication(task.App)
-
-	// handle application sync failure
-	switch status {
-	// not all images were deployed to the application
-	case ArgoAppNotAvailable:
-		// show list of missing images
-		var message string
-		// define details
-		if err != nil {
-			message = defaultErrorMessage
-		} else {
-			message = fmt.Sprintf(
-				"List of current images (last app check):\n"+
-					"\t%s\n\n"+
-					"List of expected images:\n"+
-					"\t%s",
-				strings.Join(app.Status.Summary.Images, "\n\t"),
-				strings.Join(task.ListImages(), "\n\t"),
-			)
+	// get application status
+	status := application.GetRolloutStatus(task.ListImages(), updater.registryProxyUrl)
+	if application.IsFinalRolloutStatus(status) {
+		log.Info().Str("id", task.Id).Msg("App is running on the excepted version.")
+		// deployment success
+		updater.argo.metrics.ResetFailedDeployment(task.App)
+		// update task status
+		errStatusChange := updater.argo.state.SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
+		if errStatusChange != nil {
+			log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, errStatusChange)
 		}
-		// handle error
-		updater.handleAppNotAvailable(task, errors.New(message))
-	// application sync status wasn't valid
-	case ArgoAppNotSynced:
-		// display sync status and last sync message
-		var message string
-		// define details
-		if err != nil {
-			message = defaultErrorMessage
-		} else {
-			message = fmt.Sprintf(
-				"App status \"%s\"\n"+
-					"App message \"%s\"\n"+
-					"Resources:\n"+
-					"\t%s",
-				app.Status.OperationState.Phase,
-				app.Status.OperationState.Message,
-				strings.Join(app.ListSyncResultResources(), "\n\t"),
-			)
+	} else {
+		log.Info().Str("id", task.Id).Msg("App deployment failed.")
+		// deployment failed
+		updater.argo.metrics.AddFailedDeployment(task.App)
+		// generate failure reason
+		reason := fmt.Sprintf(
+			"Application deployment failed. Rollout status \"%s\"\n\n%s",
+			status,
+			application.GetRolloutMessage(status, task.ListImages()),
+		)
+		// update task status
+		errStatusChange := updater.argo.state.SetTaskStatus(task.Id, models.StatusFailedMessage, reason)
+		if errStatusChange != nil {
+			log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, errStatusChange)
 		}
-		// handle error
-		updater.handleAppOutOfSync(task, errors.New(message))
-	// application is not in a healthy status
-	case ArgoAppNotHealthy:
-		// display current health of pods
-		var message string
-		// define details
-		if err != nil {
-			message = defaultErrorMessage
-		} else {
-			message = fmt.Sprintf(
-				"App sync status \"%s\"\n"+
-					"App health status \"%s\"\n"+
-					"Resources:\n"+
-					"\t%s",
-				app.Status.Sync.Status,
-				app.Status.Health.Status,
-				strings.Join(app.ListUnhealthyResources(), "\n\t"),
-			)
-		}
-		// handle error
-		updater.handleAppNotHealthy(task, errors.New(message))
-	// handle unexpected status
-	default:
-		updater.handleDeploymentUnexpectedStatus(task, fmt.Errorf("received unexpected status \"%d\"", status))
 	}
 }
 
-func (updater *ArgoStatusUpdater) checkWithRetry(task models.Task) (int, error) {
-	var lastStatus int
+func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task) (*models.Application, error) {
+	var application *models.Application
+	var err error
 
-	err := retry.Do(
-		func() error {
-			app, err := updater.argo.api.GetApplication(task.App)
-
-			if err != nil {
-				log.Warn().Str("app", task.App).Msg(err.Error())
-				lastStatus = ArgoAppFailed
-				return err
+	// wait for application to get into deployed status or timeout
+	log.Debug().Str("id", task.Id).Msg("Waiting for rollout")
+	_ = retry.Do(func() error {
+		application, err = updater.argo.api.GetApplication(task.App)
+		if err != nil {
+			// check if ArgoCD didn't have the app
+			if task.IsAppNotFoundError(err) {
+				// no need to retry in such cases
+				return retry.Unrecoverable(err)
 			}
+			// print application api failure here
+			log.Debug().Str("id", task.Id).Msgf("Failed fetching application status. Error: %s", err.Error())
+			return err
+		}
+		// print application debug here
+		status := application.GetRolloutStatus(task.ListImages(), updater.registryProxyUrl)
+		if !application.IsFinalRolloutStatus(status) {
+			// print status debug here
+			log.Debug().Str("id", task.Id).Msgf("Application status is not final. Status received \"%s\"", status)
+			return errors.New("force retry")
+		}
+		// all good
+		log.Debug().Str("id", task.Id).Msgf("Application rollout finished")
+		return nil
+	}, updater.retryOptions...)
 
-			for _, image := range task.Images {
-				expected := fmt.Sprintf("%s:%s", image.Image, image.Tag)
-				if !helpers.ImagesContains(app.Status.Summary.Images, expected, updater.registryProxyUrl) {
-					log.Debug().Str("app", task.App).Str("id", task.Id).Msgf("%s is not available yet", expected)
-					lastStatus = ArgoAppNotAvailable
-					return errorArgoPlannedRetry
-				} else {
-					log.Debug().Str("app", task.App).Str("id", task.Id).Msgf("Expected image is in the app summary")
-				}
-			}
-
-			if app.Status.Sync.Status != "Synced" {
-				log.Debug().Str("id", task.Id).Msgf("%s is not synced yet", task.App)
-				lastStatus = ArgoAppNotSynced
-				return errorArgoPlannedRetry
-			}
-
-			if app.Status.Health.Status != "Healthy" {
-				log.Debug().Str("id", task.Id).Msgf("%s is not healthy yet", task.App)
-				lastStatus = ArgoAppNotHealthy
-				return errorArgoPlannedRetry
-			}
-
-			lastStatus = ArgoAppSuccess
-			return nil
-		},
-		retry.DelayType(retry.FixedDelay),
-		retry.Delay(updater.retryDelay),
-		retry.Attempts(updater.retryAttempts),
-		retry.RetryIf(func(err error) bool {
-			return errors.Is(err, errorArgoPlannedRetry)
-		}),
-		retry.LastErrorOnly(true),
-	)
-
-	return lastStatus, err
+	// return application and latest error
+	return application, err
 }
 
 func (updater *ArgoStatusUpdater) handleArgoAPIFailure(task models.Task, err error) {
-	// notify user that app wasn't found
-	appNotFoundError := fmt.Sprintf("applications.argoproj.io \"%s\" not found", task.App)
-	if strings.Contains(err.Error(), appNotFoundError) {
-		updater.handleAppNotFound(task, err)
-		return
+	var apiFailureStatus string = models.StatusFailedMessage
+
+	// check if ArgoCD didn't have the app
+	if task.IsAppNotFoundError(err) {
+		apiFailureStatus = models.StatusAppNotFoundMessage
 	}
-	// notify user that ArgoCD API isn't available
+	// check if ArgoCD was unavailable
 	if strings.Contains(err.Error(), argoUnavailableErrorMessage) {
-		updater.handleArgoUnavailable(task, err)
-		return
+		apiFailureStatus = models.StatusAborted
 	}
 
-	// notify of unexpected error
-	updater.handleDeploymentFailed(task, err)
-}
-
-func (updater *ArgoStatusUpdater) handleAppNotFound(task models.Task, err error) {
-	log.Info().Str("id", task.Id).Msgf("Application %s does not exist.", task.App)
+	// write debug reason
 	reason := fmt.Sprintf(ArgoAPIErrorTemplate, err.Error())
-	errStatusChange := updater.argo.state.SetTaskStatus(task.Id, models.StatusAppNotFoundMessage, reason)
-	if errStatusChange != nil {
-		log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, errStatusChange)
-	}
-}
+	log.Warn().Str("id", task.Id).Msgf("Deployment failed with status \"%s\". Aborting with error: %s", apiFailureStatus, reason)
 
-func (updater *ArgoStatusUpdater) handleArgoUnavailable(task models.Task, err error) {
-	log.Error().Str("id", task.Id).Msg("ArgoCD is not available. Aborting.")
-	reason := fmt.Sprintf(ArgoAPIErrorTemplate, err.Error())
-	errStatusChange := updater.argo.state.SetTaskStatus(task.Id, models.StatusAborted, reason)
-	if errStatusChange != nil {
-		log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, errStatusChange)
-	}
-}
-
-func (updater *ArgoStatusUpdater) handleDeploymentFailed(task models.Task, err error) {
-	log.Warn().Str("id", task.Id).Msgf("Deployment failed. Aborting with error: %s", err)
-	updater.argo.metrics.AddFailedDeployment(task.App)
-	reason := fmt.Sprintf(ArgoAPIErrorTemplate, err.Error())
-	errStatusChange := updater.argo.state.SetTaskStatus(task.Id, models.StatusFailedMessage, reason)
-	if errStatusChange != nil {
-		log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, errStatusChange)
-	}
-}
-
-func (updater *ArgoStatusUpdater) handleDeploymentSuccess(task models.Task) {
-	log.Info().Str("id", task.Id).Msg("App is running on the excepted version.")
-	updater.argo.metrics.ResetFailedDeployment(task.App)
-	errStatusChange := updater.argo.state.SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
-	if errStatusChange != nil {
-		log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, errStatusChange)
-	}
-}
-
-func (updater *ArgoStatusUpdater) handleAppNotAvailable(task models.Task, err error) {
-	log.Warn().Str("id", task.Id).Msgf("Deployment failed. Application not available\n%s", err.Error())
-	updater.argo.metrics.AddFailedDeployment(task.App)
-	reason := fmt.Sprintf("Application not available\n\n%s", err.Error())
-	errStatusChange := updater.argo.state.SetTaskStatus(task.Id, models.StatusFailedMessage, reason)
-	if errStatusChange != nil {
-		log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, errStatusChange)
-	}
-}
-
-func (updater *ArgoStatusUpdater) handleAppNotHealthy(task models.Task, err error) {
-	log.Warn().Str("id", task.Id).Msgf("Deployment failed. Application not healthy\n%s", err.Error())
-	updater.argo.metrics.AddFailedDeployment(task.App)
-	reason := fmt.Sprintf("Application not healthy\n\n%s", err.Error())
-	errStatusChange := updater.argo.state.SetTaskStatus(task.Id, models.StatusFailedMessage, reason)
-	if errStatusChange != nil {
-		log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, errStatusChange)
-	}
-}
-
-func (updater *ArgoStatusUpdater) handleAppOutOfSync(task models.Task, err error) {
-	log.Warn().Str("id", task.Id).Msgf("Deployment failed. Application out of sync\n%s", err.Error())
-	updater.argo.metrics.AddFailedDeployment(task.App)
-	reason := fmt.Sprintf("Application out of sync\n\n%s", err.Error())
-	errStatusChange := updater.argo.state.SetTaskStatus(task.Id, models.StatusFailedMessage, reason)
-	if errStatusChange != nil {
-		log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, errStatusChange)
-	}
-}
-
-func (updater *ArgoStatusUpdater) handleDeploymentUnexpectedStatus(task models.Task, err error) {
-	log.Error().Str("id", task.Id).Msg("Deployment timed out with unexpected status. Aborting.")
-	log.Error().Str("id", task.Id).Msgf("Deployment error\n%s", err.Error())
-	updater.argo.metrics.AddFailedDeployment(task.App)
-	reason := fmt.Sprintf("Deployment timeout\n\n%s", err.Error())
-	errStatusChange := updater.argo.state.SetTaskStatus(task.Id, models.StatusFailedMessage, reason)
+	errStatusChange := updater.argo.state.SetTaskStatus(task.Id, apiFailureStatus, reason)
 	if errStatusChange != nil {
 		log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, errStatusChange)
 	}

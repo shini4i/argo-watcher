@@ -79,7 +79,7 @@ function Navbar() {
               },
             }}
             component={Link}
-            href={'https://github.com/shini4i/argo-watcher/tree/' + version}
+            href={'https://github.com/shini4i/argo-watcher/tree/v' + version}
           >
             <GitHubIcon sx={{ fontSize: '1.7em' }} />
             <Stack>
