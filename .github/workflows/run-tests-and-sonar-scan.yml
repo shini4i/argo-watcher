@@ -74,8 +74,8 @@ jobs:
           ARGO_URL: http://localhost:8081
         run: make test
 
-      - name: SonarCloud Scan
-        uses: sonarsource/sonarcloud-github-action@v1.9.1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage.out
