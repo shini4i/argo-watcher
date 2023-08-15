@@ -82,9 +82,6 @@ docker_signs:
 checksum:
   name_template: 'checksums.txt'
 
-snapshot:
-  name_template: "{{ incpatch .Version }}-next"
-
 changelog:
   use:
     github-native
@@ -92,3 +89,7 @@ changelog:
 release:
   prerelease: auto
   draft: false
+
+  footer: |
+    ## Docker Images
+    - `ghcr.io/shini4i/{{ .ProjectName }}:{{ .Version }}`
