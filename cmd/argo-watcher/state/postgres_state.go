@@ -15,6 +15,8 @@ import (
 	"github.com/avast/retry-go/v4"
 	_ "github.com/lib/pq"
 
+	"github.com/golang-migrate/migrate/v4"
+	migrate_postgres "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
@@ -52,12 +54,43 @@ func (state *PostgresState) Connect(serverConfig *config.ServerConfig) error {
 	state.orm = orm
 
 	// run migrations
-	// note: this doesn't delete existing columns. only adds new ones
-	err = orm.AutoMigrate(&state_models.TaskModel{})
+	err = state.runMigrations(serverConfig.DbMigrationsPath)
+	if err != nil {
+		return fmt.Errorf("failed running migrations: %s", err.Error())
+	}
+
+	return nil
+}
+
+// Runs migrations
+// TODO: migrate to gorm supported migrations library - https://gorm.io/docs/migration.html#Atlas-Integration
+func (state *PostgresState) runMigrations(dbMigrationPath string) error {
+	migrationsPath := fmt.Sprintf("file://%s", dbMigrationPath)
+
+	connection, err := state.orm.DB()
 	if err != nil {
 		return err
 	}
 
+	driver, err := migrate_postgres.WithInstance(connection, &migrate_postgres.Config{})
+	if err != nil {
+		return err
+	}
+
+	migrations, err := migrate.NewWithDatabaseInstance(
+		migrationsPath,
+		"postgres", driver)
+	if err != nil {
+		return err
+	}
+
+	log.Debug().Msg("Running database migrations...")
+	err = migrations.Up()
+	if err != nil && err != migrate.ErrNoChange {
+		return err
+	}
+
+	log.Debug().Msg("Database schema is up to date.")
 	return nil
 }
 
