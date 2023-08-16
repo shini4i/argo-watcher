@@ -11,8 +11,8 @@ import (
 
 type TaskModel struct {
 	Id              uuid.UUID                         `gorm:"column:id;type:uuid;not null;default:gen_random_uuid();"`
-	Created         time.Time                         `gorm:"column:created;autoCreateTime;type:timestamp;not null;index;"`
-	Updated         time.Time                         `gorm:"column:updated;autoUpdateTime;type:timestamp;not null;"`
+	Created         time.Time                         `gorm:"column:created;autoCreateTime;not null;index;"`
+	Updated         time.Time                         `gorm:"column:updated;autoUpdateTime;not null;"`
 	Images          datatypes.JSONSlice[models.Image] `gorm:"column:images;type:jsonb;not null;"`
 	Status          string                            `gorm:"column:status;type:VARCHAR(20);not null;index;"`
 	ApplicationName sql.NullString                    `gorm:"column:app;type:VARCHAR(255);not null;"`

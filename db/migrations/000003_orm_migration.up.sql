@@ -7,6 +7,8 @@ UPDATE public.tasks SET author = '' WHERE author IS NULL;
 UPDATE public.tasks SET project = '' WHERE project IS NULL;
 UPDATE public.tasks SET status_reason = '' WHERE status_reason IS NULL;
 
+ALTER TABLE public.tasks ALTER COLUMN created TYPE timestamptz;
+ALTER TABLE public.tasks ALTER COLUMN updated TYPE timestamptz;
 ALTER TABLE public.tasks ALTER COLUMN updated SET NOT NULL;
 ALTER TABLE public.tasks ALTER COLUMN app SET NOT NULL;
 ALTER TABLE public.tasks ALTER COLUMN app DROP DEFAULT;
