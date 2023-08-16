@@ -6,18 +6,15 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/google/uuid"
-
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
-const taskId = "9b67e344-e5b5-11ec-bc56-8a68373f0f50"
-
 var (
-	state = InMemoryState{}
-	tasks = []models.Task{
+	state        = InMemoryState{}
+	firstTaskId  string
+	secondTaskId string
+	tasks        = []models.Task{
 		{
-			Id:      taskId,
 			Created: float64(time.Now().Unix()),
 			App:     "Test",
 			Author:  "Test Author",
@@ -31,7 +28,6 @@ var (
 			Status: models.StatusInProgressMessage,
 		},
 		{
-			Id:      uuid.New().String(),
 			Created: float64(time.Now().Unix()),
 			App:     "Test2",
 			Author:  "Test Author",
@@ -48,16 +44,23 @@ var (
 )
 
 func TestInMemoryState_Add(t *testing.T) {
-	for _, task := range tasks {
-		if _, err := state.Add(task); err != nil {
-			t.Errorf("Unexpected error: %s", err)
-		}
+	firstTask, err := state.Add(tasks[0])
+	if err != nil {
+		t.Errorf("Unexpected error: %s", err)
 	}
+	firstTaskId = firstTask.Id
+
+	secondTask, err := state.Add(tasks[1])
+	if err != nil {
+		t.Errorf("Unexpected error: %s", err)
+	}
+	secondTaskId = secondTask.Id
 }
 
 func TestInMemoryState_GetTask(t *testing.T) {
-	task, _ := state.GetTask(taskId)
+	task, _ := state.GetTask(firstTaskId)
 
+	assert.NotNil(t, task)
 	assert.Equal(t, models.StatusInProgressMessage, task.Status)
 }
 
@@ -65,15 +68,18 @@ func TestInMemoryState_GetTasks(t *testing.T) {
 	currentTasks := state.GetTasks(float64(time.Now().Unix())-10, float64(time.Now().Unix()), "")
 	currentFilteredTasks := state.GetTasks(float64(time.Now().Unix())-10, float64(time.Now().Unix()), "Test")
 
-	assert.Equal(t, tasks, currentTasks)
+	assert.Len(t, currentTasks, 2)
+	assert.Equal(t, []string{firstTaskId, secondTaskId}, []string{currentTasks[0].Id, currentTasks[1].Id})
 	assert.Len(t, currentFilteredTasks, 1)
+	assert.Equal(t, []string{firstTaskId}, []string{currentFilteredTasks[0].Id})
+
 }
 
 func TestInMemoryState_SetTaskStatus(t *testing.T) {
-	err := state.SetTaskStatus(taskId, models.StatusDeployedMessage, "")
+	err := state.SetTaskStatus(firstTaskId, models.StatusDeployedMessage, "")
 	assert.NoError(t, err)
 
-	taskInfo, _ := state.GetTask(taskId)
+	taskInfo, _ := state.GetTask(firstTaskId)
 	assert.Equal(t, models.StatusDeployedMessage, taskInfo.Status)
 }
 
@@ -88,6 +94,10 @@ func TestInMemoryState_GetAppListEmpty(t *testing.T) {
 }
 
 func TestInMemoryState_ProcessObsoleteTasks(t *testing.T) {
+	// update task update time
+	state.tasks[1].Updated = state.tasks[1].Updated - 3601
+
+	// run processing
 	state.ProcessObsoleteTasks(1)
 
 	// Call the function under test

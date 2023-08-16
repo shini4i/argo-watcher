@@ -32,6 +32,7 @@ type ServerConfig struct {
 	DbName           string `required:"false" envconfig:"DB_NAME"`
 	DbUser           string `required:"false" envconfig:"DB_USER"`
 	DbPassword       string `required:"false" envconfig:"DB_PASSWORD"`
+	DbMigrationsPath string `required:"false" envconfig:"DB_MIGRATIONS_PATH" default:"db/migrations"` // deprecated
 }
 
 // NewServerConfig parses the server configuration from environment variables using the envconfig package.

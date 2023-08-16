@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/avast/retry-go/v4"
+	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
@@ -29,7 +30,9 @@ func (state *InMemoryState) Connect(serverConfig *config.ServerConfig) error {
 // The method appends the task to the list of tasks in the in-memory state.
 // It always returns nil as there is no error handling in the in-memory implementation.
 func (state *InMemoryState) Add(task models.Task) (*models.Task, error) {
+	task.Id = uuid.New().String()
 	task.Created = float64(time.Now().Unix())
+	task.Updated = float64(time.Now().Unix())
 	task.Status = models.StatusInProgressMessage
 	state.tasks = append(state.tasks, task)
 	return &task, nil
