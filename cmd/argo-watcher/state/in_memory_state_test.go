@@ -68,8 +68,11 @@ func TestInMemoryState_GetTasks(t *testing.T) {
 	currentTasks := state.GetTasks(float64(time.Now().Unix())-10, float64(time.Now().Unix()), "")
 	currentFilteredTasks := state.GetTasks(float64(time.Now().Unix())-10, float64(time.Now().Unix()), "Test")
 
-	assert.Equal(t, tasks, currentTasks)
+	assert.Len(t, currentTasks, 2)
+	assert.Equal(t, []string{firstTaskId, secondTaskId}, []string{currentTasks[0].Id, currentTasks[1].Id})
 	assert.Len(t, currentFilteredTasks, 1)
+	assert.Equal(t, []string{firstTaskId}, []string{currentFilteredTasks[0].Id})
+
 }
 
 func TestInMemoryState_SetTaskStatus(t *testing.T) {
