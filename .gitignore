@@ -11,8 +11,8 @@ static/
 **/.envrc
 **/.env
 
-# directory for built binary files
-bin/
+# built binary file
+argo-watcher
 
 # swagger files
 **/swagger.*

@@ -16,14 +16,6 @@ var (
 )
 
 const (
-	ArgoAppSuccess = iota
-	ArgoAppNotSynced
-	ArgoAppNotAvailable
-	ArgoAppNotHealthy
-	ArgoAppFailed
-)
-
-const (
 	ArgoAPIErrorTemplate        = "ArgoCD API Error: %s"
 	argoUnavailableErrorMessage = "connect: connection refused"
 )

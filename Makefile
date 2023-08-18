@@ -21,15 +21,22 @@ install-deps: ## Install dependencies
 test: mocks ## Run tests
 	@ARGO_TIMEOUT=1 go test -v ./... -count=1 -coverprofile coverage.out `go list ./... | egrep -v '(test|mock)'`
 
-.PHONY: ensure-dirs
-ensure-dirs:
-	@mkdir -p bin
-
 .PHONY: build
-build: ensure-dirs docs ## Build the binaries
+build: docs ## Build the binaries
 	@echo "===> Building [$(CYAN)${VERSION}$(RESET)] version of [$(CYAN)argo-watcher$(RESET)] binary"
-	@CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${VERSION}" -o bin/argo-watcher ./cmd/argo-watcher
+	@CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${VERSION}" -o argo-watcher ./cmd/argo-watcher
 	@echo "===> Done"
+
+.PHONY: kind-upload
+kind-upload:
+	@echo "===> Building [$(CYAN)dev$(RESET)] version of [$(CYAN)argo-watcher$(RESET)] binary"
+	@CGO_ENABLED=0 GOARCH=arm64 GOOS=linux go build -ldflags="-s -w -X main.version=dev" -o argo-watcher ./cmd/argo-watcher
+	@echo "===> Building [$(CYAN)argo-watcher$(RESET)] docker image"
+	@docker build -t argo-watcher:dev .
+	@echo "===> Loading [$(CYAN)argo-watcher$(RESET)] docker image into [$(CYAN)kind$(RESET)] cluster"
+	@kind load docker-image argo-watcher:dev -n disposable-cluster
+	@echo "===> Restarting [$(CYAN)argo-watcher$(RESET)] deployment"
+	@kubectl rollout restart deploy argo-watcher -n argo-watcher
 
 .PHONY: build-goreleaser
 build-goreleaser:

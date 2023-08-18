@@ -76,6 +76,14 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 	var application *models.Application
 	var err error
 
+	app, err := updater.argo.api.GetApplication(task.App)
+	if app.IsManagedByWatcher() {
+		log.Debug().Str("id", task.Id).Msg("Application is managed by watcher. Updating git repository.")
+		app.UpdateGitImageTag(&task)
+	} else {
+		log.Debug().Str("id", task.Id).Msg("Application is not managed by watcher. Skipping git repository update.")
+	}
+
 	// wait for application to get into deployed status or timeout
 	log.Debug().Str("id", task.Id).Msg("Waiting for rollout")
 	_ = retry.Do(func() error {
@@ -107,7 +115,7 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 }
 
 func (updater *ArgoStatusUpdater) handleArgoAPIFailure(task models.Task, err error) {
-	var apiFailureStatus string = models.StatusFailedMessage
+	var apiFailureStatus = models.StatusFailedMessage
 
 	// check if ArgoCD didn't have the app
 	if task.IsAppNotFoundError(err) {
