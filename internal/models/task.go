@@ -33,9 +33,9 @@ func (task *Task) ListImages() []string {
 	return list
 }
 
-// Check if app not found error.
+// IsAppNotFoundError check if app not found error.
 func (task *Task) IsAppNotFoundError(err error) bool {
-	var appNotFoundError string = fmt.Sprintf("applications.argoproj.io \"%s\" not found", task.App)
+	var appNotFoundError = fmt.Sprintf("applications.argoproj.io \"%s\" not found", task.App)
 	return strings.Contains(err.Error(), appNotFoundError)
 }
 

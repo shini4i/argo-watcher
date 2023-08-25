@@ -77,6 +77,10 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 	var err error
 
 	app, err := updater.argo.api.GetApplication(task.App)
+	if err != nil {
+		return nil, err
+	}
+
 	if app.IsManagedByWatcher() {
 		log.Debug().Str("id", task.Id).Msg("Application is managed by watcher. Updating git repository.")
 		app.UpdateGitImageTag(&task)
