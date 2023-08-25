@@ -67,6 +67,9 @@ func (repo *GitRepo) UpdateApp(appName string, overrideContent *ArgoOverrideFile
 	if err := repo.commit(overrideFileName, commitMsg, overrideContent); err != nil {
 		return err
 	}
+
+	repo.close()
+
 	return nil
 }
 
@@ -116,14 +119,13 @@ func (repo *GitRepo) mergeOverrideFileContent(overrideFileName string, overrideC
 	return &existingOverrideFile, nil
 }
 
+// overrideFileExists checks if the override file exists in the repository.
 func (repo *GitRepo) overrideFileExists(filename string) bool {
 	_, err := repo.fs.Stat(filename)
-	if err != nil {
-		return false
-	}
-	return true
+	return err == nil
 }
 
+// commit commits the override file to the repository.
 func (repo *GitRepo) commit(fileName, commitMsg string, overrideContent *ArgoOverrideFile) error {
 	create, err := repo.fs.Create(fileName)
 	if err != nil {
@@ -172,4 +174,11 @@ func (repo *GitRepo) commit(fileName, commitMsg string, overrideContent *ArgoOve
 	}
 
 	return nil
+}
+
+// close sets both the filesystem and the local repository to nil.
+// This will allow the garbage collector to free the memory.
+func (repo *GitRepo) close() {
+	repo.fs = nil
+	repo.localRepo = nil
 }

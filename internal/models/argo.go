@@ -204,8 +204,9 @@ func (app *Application) processAppAnnotations(annotations map[string]string, tas
 			if image.Image == appImage {
 				if tagPath, exists := annotations[fmt.Sprintf("argo-watcher/%s.helm.image-tag", appAlias)]; exists {
 					overrideFileContent.Helm.Parameters = append(overrideFileContent.Helm.Parameters, updater.ArgoParameterOverride{
-						Name:  tagPath,
-						Value: image.Tag,
+						Name:        tagPath,
+						Value:       image.Tag,
+						ForceString: true,
 					})
 				} else {
 					log.Error().Msgf("argo-watcher/%s.helm.image-tag annotation not found, skipping image %s update", appAlias, image.Image)
