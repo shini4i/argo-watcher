@@ -136,7 +136,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		application.Status.Health.Status = "Healthy"
 
 		// mock calls
-		apiMock.EXPECT().GetApplication(task.App).Return(&application, nil)
+		apiMock.EXPECT().GetApplication(task.App).Return(&application, nil).Times(2)
 		metricsMock.EXPECT().ResetFailedDeployment(task.App)
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
 
