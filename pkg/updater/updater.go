@@ -40,8 +40,7 @@ func (repo *GitRepo) Clone() error {
 
 	repo.fs = memfs.New()
 
-	repo.sshAuth, err = ssh.NewPublicKeysFromFile("git", "/tmp/id_rsa", "")
-	if err != nil {
+	if repo.sshAuth, err = ssh.NewPublicKeysFromFile("git", "/tmp/id_rsa", ""); err != nil {
 		return err
 	}
 

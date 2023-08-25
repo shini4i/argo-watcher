@@ -47,7 +47,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		application.Status.Health.Status = "Healthy"
 
 		// mock calls
-		apiMock.EXPECT().GetApplication(task.App).Return(&application, nil)
+		apiMock.EXPECT().GetApplication(task.App).Return(&application, nil).Times(2)
 		metricsMock.EXPECT().ResetFailedDeployment(task.App)
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
 
@@ -265,7 +265,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		}
 
 		// mock calls
-		apiMock.EXPECT().GetApplication(task.App).Return(nil, fmt.Errorf("Unexpected failure"))
+		apiMock.EXPECT().GetApplication(task.App).Return(nil, fmt.Errorf("unexpected failure"))
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage, "ArgoCD API Error: Unexpected failure")
 
