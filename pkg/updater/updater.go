@@ -9,6 +9,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v2"
 	"io"
 	"time"
@@ -147,6 +148,18 @@ func (repo *GitRepo) commit(fileName, commitMsg string, overrideContent *ArgoOve
 	worktree, err := repo.localRepo.Worktree()
 	if err != nil {
 		return err
+	}
+
+	// Check for changes in the working tree
+	status, err := worktree.Status()
+	if err != nil {
+		return err
+	}
+
+	// If there are no changes, skip the commit
+	if status.IsClean() {
+		log.Debug().Msg("No changes detected. Skipping commit.")
+		return nil
 	}
 
 	if _, err = worktree.Add(fileName); err != nil {
