@@ -127,7 +127,7 @@ func (repo *GitRepo) overrideFileExists(filename string) bool {
 
 // commit commits the override file to the repository.
 func (repo *GitRepo) commit(fileName, commitMsg string, overrideContent *ArgoOverrideFile) error {
-	create, err := repo.fs.Create(fileName)
+	file, err := repo.fs.Create(fileName)
 	if err != nil {
 		return err
 	}
@@ -137,8 +137,11 @@ func (repo *GitRepo) commit(fileName, commitMsg string, overrideContent *ArgoOve
 		return err
 	}
 
-	_, err = create.Write(content)
-	if err := create.Close(); err != nil {
+	if _, err = file.Write(content); err != nil {
+		return err
+	}
+
+	if err := file.Close(); err != nil {
 		return err
 	}
 
@@ -147,29 +150,28 @@ func (repo *GitRepo) commit(fileName, commitMsg string, overrideContent *ArgoOve
 		return err
 	}
 
-	_, err = worktree.Add(fileName)
-	if err != nil {
+	if _, err = worktree.Add(fileName); err != nil {
 		return err
 	}
 
-	_, err = worktree.Commit(commitMsg, &git.CommitOptions{
+	commitOpts := &git.CommitOptions{
 		Author: &object.Signature{
 			Name:  "argo-watcher",
-			Email: "argo-watcher@linux-tech.io",
+			Email: "automation@linux-tech.io",
 			When:  time.Now(),
 		},
-	})
+	}
 
-	if err != nil {
+	if _, err = worktree.Commit(commitMsg, commitOpts); err != nil {
 		return err
 	}
 
-	err = repo.localRepo.Push(&git.PushOptions{
+	pushOpts := &git.PushOptions{
 		Auth:       repo.sshAuth,
 		RemoteName: "origin",
-	})
+	}
 
-	if err != nil {
+	if err = repo.localRepo.Push(pushOpts); err != nil {
 		return err
 	}
 

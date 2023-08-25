@@ -130,8 +130,7 @@ func (updater *ArgoStatusUpdater) handleArgoAPIFailure(task models.Task, err err
 	reason := fmt.Sprintf(ArgoAPIErrorTemplate, err.Error())
 	log.Warn().Str("id", task.Id).Msgf("Deployment failed with status \"%s\". Aborting with error: %s", apiFailureStatus, reason)
 
-	errStatusChange := updater.argo.state.SetTaskStatus(task.Id, apiFailureStatus, reason)
-	if errStatusChange != nil {
-		log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, errStatusChange)
+	if err := updater.argo.state.SetTaskStatus(task.Id, apiFailureStatus, reason); err != nil {
+		log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, err)
 	}
 }
