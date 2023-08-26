@@ -100,21 +100,7 @@ func (repo *GitRepo) mergeOverrideFileContent(overrideFileName string, overrideC
 		return nil, err
 	}
 
-	for _, newParam := range overrideContent.Helm.Parameters {
-		found := false
-		for idx, existingParam := range existingOverrideFile.Helm.Parameters {
-			if existingParam.Name == newParam.Name {
-				// Update existing parameter
-				existingOverrideFile.Helm.Parameters[idx] = newParam
-				found = true
-				break
-			}
-		}
-		// If parameter with the same name doesn't exist, append it
-		if !found {
-			existingOverrideFile.Helm.Parameters = append(existingOverrideFile.Helm.Parameters, newParam)
-		}
-	}
+	mergeParameters(&existingOverrideFile, overrideContent)
 
 	return &existingOverrideFile, nil
 }
@@ -150,15 +136,9 @@ func (repo *GitRepo) commit(fileName, commitMsg string, overrideContent *ArgoOve
 		return err
 	}
 
-	// Check for changes in the working tree
-	status, err := worktree.Status()
-	if err != nil {
+	if changed, err := versionChanged(worktree); err != nil {
 		return err
-	}
-
-	// If there are no changes, skip the commit
-	if status.IsClean() {
-		log.Debug().Msg("No changes detected. Skipping commit.")
+	} else if !changed {
 		return nil
 	}
 
@@ -195,4 +175,37 @@ func (repo *GitRepo) commit(fileName, commitMsg string, overrideContent *ArgoOve
 func (repo *GitRepo) close() {
 	repo.fs = nil
 	repo.localRepo = nil
+}
+
+// versionChanged checks if the override file has changed.
+func versionChanged(worktree *git.Worktree) (bool, error) {
+	status, err := worktree.Status()
+	if err != nil {
+		return false, err
+	}
+
+	if status.IsClean() {
+		log.Debug().Msg("No changes detected. Skipping commit.")
+		return false, nil
+	}
+	return true, nil
+}
+
+// mergeParameters merges the parameters from the new override file into the existing override file.
+func mergeParameters(existing *ArgoOverrideFile, newContent *ArgoOverrideFile) {
+	for _, newParam := range newContent.Helm.Parameters {
+		found := false
+		for idx, existingParam := range existing.Helm.Parameters {
+			if existingParam.Name == newParam.Name {
+				// Update existing parameter
+				existing.Helm.Parameters[idx] = newParam
+				found = true
+				break
+			}
+		}
+		// If parameter with the same name doesn't exist, append it
+		if !found {
+			existing.Helm.Parameters = append(existing.Helm.Parameters, newParam)
+		}
+	}
 }
