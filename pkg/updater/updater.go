@@ -148,8 +148,8 @@ func (repo *GitRepo) commit(fileName, commitMsg string, overrideContent *ArgoOve
 
 	commitOpts := &git.CommitOptions{
 		Author: &object.Signature{
-			Name:  "argo-watcher",
-			Email: "automation@linux-tech.io",
+			Name:  "github-actions[bot]",
+			Email: "github-actions[bot]@users.noreply.github.com",
 			When:  time.Now(),
 		},
 	}
