@@ -16,6 +16,12 @@ const (
 	ArgoRolloutAppNotHealthy   = "not healthy"
 )
 
+const (
+	managedAnnotation       = "argo-watcher/managed"
+	managedImagesAnnotation = "argo-watcher/managed-images"
+	managedImageTagPattern  = "argo-watcher/%s.helm.image-tag"
+)
+
 type ApplicationOperationResource struct {
 	HookPhase string `json:"hookPhase"` // example: Failed
 	HookType  string `json:"hookType"`  // example: PreSync
@@ -187,7 +193,7 @@ func (app *Application) IsManagedByWatcher() bool {
 	if app.Metadata.Annotations == nil {
 		return false
 	}
-	return app.Metadata.Annotations["argo-watcher/managed"] == "true"
+	return app.Metadata.Annotations[managedAnnotation] == "true"
 }
 
 func (app *Application) processAppAnnotations(annotations map[string]string, task *Task) *updater.ArgoOverrideFile {
@@ -195,21 +201,21 @@ func (app *Application) processAppAnnotations(annotations map[string]string, tas
 	managedImages := extractManagedImages(annotations)
 
 	if len(managedImages) == 0 {
-		log.Error().Msgf("argo-watcher/managed-images annotation not found, skipping image update")
+		log.Error().Msgf("%s annotation not found, skipping image update", managedImagesAnnotation)
 		return nil
 	}
 
 	for _, image := range task.Images {
 		for appAlias, appImage := range managedImages {
 			if image.Image == appImage {
-				if tagPath, exists := annotations[fmt.Sprintf("argo-watcher/%s.helm.image-tag", appAlias)]; exists {
+				if tagPath, exists := annotations[fmt.Sprintf(managedImageTagPattern, appAlias)]; exists {
 					overrideFileContent.Helm.Parameters = append(overrideFileContent.Helm.Parameters, updater.ArgoParameterOverride{
 						Name:        tagPath,
 						Value:       image.Tag,
 						ForceString: true,
 					})
 				} else {
-					log.Error().Msgf("argo-watcher/%s.helm.image-tag annotation not found, skipping image %s update", appAlias, image.Image)
+					log.Error().Msgf("%s annotation not found, skipping image %s update", fmt.Sprintf(managedImageTagPattern, appAlias), image.Image)
 				}
 			}
 		}
@@ -248,7 +254,7 @@ func extractManagedImages(annotations map[string]string) map[string]string {
 	managedImages := map[string]string{}
 
 	for annotation, value := range annotations {
-		if annotation == "argo-watcher/managed-images" {
+		if annotation == managedImagesAnnotation {
 			for _, image := range strings.Split(value, ",") {
 				managedImages[strings.Split(image, "=")[0]] = strings.Split(image, "=")[1]
 			}

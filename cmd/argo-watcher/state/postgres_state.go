@@ -242,7 +242,7 @@ func (state *PostgresState) doProcessPostgresObsoleteTasks() error {
 
 	var result *gorm.DB
 
-	log.Debug().Msg("Marking app not found tasks older than 1 hour as aborted...")
+	log.Debug().Msg("Removing app not found tasks older than 1 hour from the database...")
 	result = state.orm.Where("status = ?", models.StatusAppNotFoundMessage).Where("created < now() - interval '1 hour'").Delete(&state_models.TaskModel{})
 	if result.Error != nil {
 		return result.Error

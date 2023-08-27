@@ -230,7 +230,7 @@ func TestIsManagedByWatcher(t *testing.T) {
 					Annotations map[string]string `json:"annotations"`
 				}{
 					Annotations: map[string]string{
-						"argo-watcher/managed": "true",
+						managedAnnotation: "true",
 					},
 				},
 			},
@@ -244,7 +244,7 @@ func TestIsManagedByWatcher(t *testing.T) {
 					Annotations map[string]string `json:"annotations"`
 				}{
 					Annotations: map[string]string{
-						"argo-watcher/managed": "false",
+						managedAnnotation: "false",
 					},
 				},
 			},
@@ -268,7 +268,7 @@ func TestExtractManagedImages(t *testing.T) {
 		{
 			name: "Extracts multiple managed images",
 			annotation: map[string]string{
-				"argo-watcher/managed-images": "alias1=image1,alias2=image2",
+				managedImagesAnnotation: "alias1=image1,alias2=image2",
 			},
 			expected: map[string]string{
 				"alias1": "image1",
@@ -278,7 +278,7 @@ func TestExtractManagedImages(t *testing.T) {
 		{
 			name: "Extracts single managed image",
 			annotation: map[string]string{
-				"argo-watcher/managed-images": "alias1=image1",
+				managedImagesAnnotation: "alias1=image1",
 			},
 			expected: map[string]string{
 				"alias1": "image1",
@@ -299,8 +299,8 @@ func TestExtractManagedImages(t *testing.T) {
 		{
 			name: "Mixed annotations",
 			annotation: map[string]string{
-				"argo-watcher/managed-images": "alias1=image1",
-				"another-annotation":          "somethingelse",
+				managedImagesAnnotation: "alias1=image1",
+				"another-annotation":    "somethingelse",
 			},
 			expected: map[string]string{
 				"alias1": "image1",
