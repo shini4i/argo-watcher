@@ -205,3 +205,112 @@ func TestApplication_IsFinalRollout(t *testing.T) {
 	assert.Equal(t, false, application.IsFinalRolloutStatus(ArgoRolloutAppNotHealthy))
 	assert.Equal(t, false, application.IsFinalRolloutStatus(ArgoRolloutAppNotSynced))
 }
+
+func TestIsManagedByWatcher(t *testing.T) {
+	tests := []struct {
+		name        string
+		application Application
+		expected    bool
+	}{
+		{
+			name: "No annotations",
+			application: Application{
+				Metadata: struct {
+					Name        string            `json:"name"`
+					Annotations map[string]string `json:"annotations"`
+				}{},
+			},
+			expected: false,
+		},
+		{
+			name: "Managed by Watcher",
+			application: Application{
+				Metadata: struct {
+					Name        string            `json:"name"`
+					Annotations map[string]string `json:"annotations"`
+				}{
+					Annotations: map[string]string{
+						"argo-watcher/managed": "true",
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "Not managed by Watcher",
+			application: Application{
+				Metadata: struct {
+					Name        string            `json:"name"`
+					Annotations map[string]string `json:"annotations"`
+				}{
+					Annotations: map[string]string{
+						"argo-watcher/managed": "false",
+					},
+				},
+			},
+			expected: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert.Equal(t, test.expected, test.application.IsManagedByWatcher())
+		})
+	}
+}
+
+func TestExtractManagedImages(t *testing.T) {
+	tests := []struct {
+		name       string
+		annotation map[string]string
+		expected   map[string]string
+	}{
+		{
+			name: "Extracts multiple managed images",
+			annotation: map[string]string{
+				"argo-watcher/managed-images": "alias1=image1,alias2=image2",
+			},
+			expected: map[string]string{
+				"alias1": "image1",
+				"alias2": "image2",
+			},
+		},
+		{
+			name: "Extracts single managed image",
+			annotation: map[string]string{
+				"argo-watcher/managed-images": "alias1=image1",
+			},
+			expected: map[string]string{
+				"alias1": "image1",
+			},
+		},
+		{
+			name:       "No managed images",
+			annotation: map[string]string{},
+			expected:   map[string]string{},
+		},
+		{
+			name: "Non-related annotations",
+			annotation: map[string]string{
+				"another-annotation": "alias1=image1",
+			},
+			expected: map[string]string{},
+		},
+		{
+			name: "Mixed annotations",
+			annotation: map[string]string{
+				"argo-watcher/managed-images": "alias1=image1",
+				"another-annotation":          "somethingelse",
+			},
+			expected: map[string]string{
+				"alias1": "image1",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert.Equal(t, test.expected, extractManagedImages(test.annotation))
+		})
+	}
+}
