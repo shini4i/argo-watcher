@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	LOG_FORMAT_TEXT = "text"
+	LogFormatText = "text"
 )
 
 type ServerConfig struct {

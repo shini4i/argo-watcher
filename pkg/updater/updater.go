@@ -12,7 +12,14 @@ import (
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v2"
 	"io"
+	"os"
 	"time"
+)
+
+var (
+	sshKeyPath    = os.Getenv("SSH_KEY_PATH")
+	sshKeyPass    = os.Getenv("SSH_KEY_PASS")
+	sshKnownHosts = os.Getenv("SSH_KNOWN_HOSTS")
 )
 
 type ArgoOverrideFile struct {
@@ -41,7 +48,7 @@ func (repo *GitRepo) Clone() error {
 
 	repo.fs = memfs.New()
 
-	if repo.sshAuth, err = ssh.NewPublicKeysFromFile("git", "/tmp/id_rsa", ""); err != nil {
+	if repo.sshAuth, err = ssh.NewPublicKeysFromFile("git", sshKeyPath, sshKeyPass); err != nil {
 		return err
 	}
 

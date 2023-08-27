@@ -36,7 +36,7 @@ func (state *PostgresState) Connect(serverConfig *config.ServerConfig) error {
 	// create connection
 	ormConfig := &gorm.Config{}
 	// we can leave logger enabled only for text format
-	if serverConfig.LogFormat != config.LOG_FORMAT_TEXT {
+	if serverConfig.LogFormat != config.LogFormatText {
 		// disable logging until we implement zerolog logger for ORM
 		ormConfig.Logger = logger.Default.LogMode(logger.Silent)
 	} else {

@@ -236,7 +236,12 @@ func (app *Application) UpdateGitImageTag(task *Task) {
 		return
 	}
 
-	git := updater.GitRepo{RepoURL: app.Spec.Source.RepoURL, BranchName: app.Spec.Source.TargetRevision, Path: app.Spec.Source.Path}
+	git := updater.GitRepo{
+		RepoURL:    app.Spec.Source.RepoURL,
+		BranchName: app.Spec.Source.TargetRevision,
+		Path:       app.Spec.Source.Path,
+	}
+
 	if err := git.Clone(); err != nil {
 		log.Error().Str("id", task.Id).Msgf("Failed to clone git repository %s", app.Spec.Source.RepoURL)
 		return
