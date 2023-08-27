@@ -19,7 +19,8 @@ import (
 var (
 	sshKeyPath    = os.Getenv("SSH_KEY_PATH")
 	sshKeyPass    = os.Getenv("SSH_KEY_PASS")
-	sshKnownHosts = os.Getenv("SSH_KNOWN_HOSTS")
+	sshCommitUser = os.Getenv("SSH_COMMIT_USER")
+	sshCommitMail = os.Getenv("SSH_COMMIT_MAIL")
 )
 
 type ArgoOverrideFile struct {
@@ -155,8 +156,8 @@ func (repo *GitRepo) commit(fileName, commitMsg string, overrideContent *ArgoOve
 
 	commitOpts := &git.CommitOptions{
 		Author: &object.Signature{
-			Name:  "github-actions[bot]",
-			Email: "github-actions[bot]@users.noreply.github.com",
+			Name:  sshCommitUser,
+			Email: sshCommitMail,
 			When:  time.Now(),
 		},
 	}
