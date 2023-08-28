@@ -127,10 +127,11 @@ func ClientWatcher() {
 	}
 
 	task := models.Task{
-		App:     os.Getenv("ARGO_APP"),
-		Author:  os.Getenv("COMMIT_AUTHOR"),
-		Project: os.Getenv("PROJECT_NAME"),
-		Images:  images,
+		App:           os.Getenv("ARGO_APP"),
+		Author:        os.Getenv("COMMIT_AUTHOR"),
+		Project:       os.Getenv("PROJECT_NAME"),
+		ProvidedToken: os.Getenv("ARGO_WATCHER_TOKEN"),
+		Images:        images,
 	}
 
 	debug, _ := strconv.ParseBool(os.Getenv("DEBUG"))
@@ -144,6 +145,9 @@ func ClientWatcher() {
 			"IMAGE_TAG: %s\n"+
 			"IMAGES: %s\n\n",
 			watcher.baseUrl, task.App, task.Author, task.Project, tag, task.Images)
+		if task.ProvidedToken == "" {
+			fmt.Println("ARGO_WATCHER_TOKEN is not set, git commit will not be performed.")
+		}
 	}
 
 	fmt.Printf("Waiting for %s app to be running on %s version.\n", task.App, tag)

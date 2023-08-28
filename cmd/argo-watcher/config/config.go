@@ -33,6 +33,7 @@ type ServerConfig struct {
 	DbUser           string `required:"false" envconfig:"DB_USER"`
 	DbPassword       string `required:"false" envconfig:"DB_PASSWORD"`
 	DbMigrationsPath string `required:"false" envconfig:"DB_MIGRATIONS_PATH" default:"db/migrations"` // deprecated
+	DeployToken      string `required:"false" envoconfig:"ARGO_WATCHER_DEPLOY_TOKEN"`
 }
 
 // NewServerConfig parses the server configuration from environment variables using the envconfig package.

@@ -81,11 +81,11 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 		return nil, err
 	}
 
-	if app.IsManagedByWatcher() {
-		log.Debug().Str("id", task.Id).Msg("Application is managed by watcher. Updating git repository.")
+	if app.IsManagedByWatcher() && task.Validated {
+		log.Debug().Str("id", task.Id).Msg("Application managed by watcher. Initiating git repo update.")
 		app.UpdateGitImageTag(&task)
 	} else {
-		log.Debug().Str("id", task.Id).Msg("Application is not managed by watcher. Skipping git repository update.")
+		log.Debug().Str("id", task.Id).Msg("Skipping git repo update: Application not managed by watcher or token is absent/invalid.")
 	}
 
 	// wait for application to get into deployed status or timeout

@@ -111,6 +111,14 @@ func (env *Env) addTask(c *gin.Context) {
 		return
 	}
 
+	// not an optimal solution, but for PoC it's fine
+	// need to find a better way to pass the token later
+	if c.GetHeader("ARGO_DEPLOY_TOKEN") == env.config.DeployToken {
+		log.Debug().Msgf("Deploy token is valid for task %s", task.Id)
+		task.Validated = true
+	}
+	log.Debug().Msgf("Deploy token is missing or invalid for task %s", task.Id)
+
 	newTask, err := env.argo.AddTask(task)
 	if err != nil {
 		log.Error().Msgf("Couldn't process new task. Got the following error: %s", err)

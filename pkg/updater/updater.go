@@ -87,19 +87,8 @@ func (repo *GitRepo) mergeOverrideFileContent(overrideFileName string, overrideC
 	}
 
 	existingOverrideFile := ArgoOverrideFile{}
-	tmp, err := repo.fs.Open(overrideFileName)
-	if err != nil {
-		return nil, err
-	}
 
-	defer func(tmp billy.File) {
-		err := tmp.Close()
-		if err != nil {
-			fmt.Println(err)
-		}
-	}(tmp)
-
-	content, err := io.ReadAll(tmp)
+	content, err := repo.getFileContent(overrideFileName)
 	if err != nil {
 		return nil, err
 	}
@@ -111,6 +100,22 @@ func (repo *GitRepo) mergeOverrideFileContent(overrideFileName string, overrideC
 	mergeParameters(&existingOverrideFile, overrideContent)
 
 	return &existingOverrideFile, nil
+}
+
+func (repo *GitRepo) getFileContent(filename string) ([]byte, error) {
+	tmp, err := repo.fs.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func(tmp billy.File) {
+		err := tmp.Close()
+		if err != nil {
+			fmt.Println(err)
+		}
+	}(tmp)
+
+	return io.ReadAll(tmp)
 }
 
 // overrideFileExists checks if the override file exists in the repository.
