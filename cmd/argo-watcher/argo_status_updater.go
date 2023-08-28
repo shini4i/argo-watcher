@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/avast/retry-go/v4"
@@ -17,6 +18,7 @@ type ArgoStatusUpdater struct {
 	argo             Argo
 	registryProxyUrl string
 	retryOptions     []retry.Option
+	sync.Mutex
 }
 
 func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, retryDelay time.Duration, registryProxyUrl string) {
@@ -82,6 +84,8 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 	}
 
 	if app.IsManagedByWatcher() && task.Validated {
+		updater.Lock()
+		defer updater.Unlock()
 		log.Debug().Str("id", task.Id).Msg("Application managed by watcher. Initiating git repo update.")
 		app.UpdateGitImageTag(&task)
 	} else {
