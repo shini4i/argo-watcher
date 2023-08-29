@@ -14,11 +14,21 @@ import (
 
 const failedToUpdateTaskStatusTemplate string = "Failed to change task status: %s"
 
+type MutexMap struct {
+	m sync.Map
+}
+
+func (mm *MutexMap) Get(key string) *sync.Mutex {
+	log.Debug().Msgf("getting mutex for key %s", key)
+	m, _ := mm.m.LoadOrStore(key, &sync.Mutex{})
+	return m.(*sync.Mutex)
+}
+
 type ArgoStatusUpdater struct {
 	argo             Argo
 	registryProxyUrl string
 	retryOptions     []retry.Option
-	sync.Mutex
+	mutex            MutexMap
 }
 
 func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, retryDelay time.Duration, registryProxyUrl string) {
@@ -83,15 +93,23 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 		return nil, err
 	}
 
+	// This mutex is used only to avoid concurrent updates of the same application.
+	mutex := updater.mutex.Get(task.App)
+
+	// Locking the mutex explicitly to potentially unlock within the next if block,
+	// avoiding defer to unlock before the function's end. This approach may be revised later
+	mutex.Lock()
+
 	if app.IsManagedByWatcher() && task.Validated {
-		updater.Lock()
-		defer updater.Unlock()
 		log.Debug().Str("id", task.Id).Msg("Application managed by watcher. Initiating git repo update.")
-		if err := app.UpdateGitImageTag(&task); err != nil {
+		err := app.UpdateGitImageTag(&task)
+		mutex.Unlock()
+		if err != nil {
 			log.Error().Str("id", task.Id).Msgf("Failed to update git repo. Error: %s", err.Error())
 			return nil, err
 		}
 	} else {
+		mutex.Unlock()
 		log.Debug().Str("id", task.Id).Msg("Skipping git repo update: Application not managed by watcher or token is absent/invalid.")
 	}
 

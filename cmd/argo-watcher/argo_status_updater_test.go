@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"github.com/stretchr/testify/assert"
+	"sync"
 	"testing"
 	"time"
 
@@ -398,4 +400,32 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		// run the rollout
 		updater.WaitForRollout(task)
 	})
+}
+
+func TestMutexMapGet(t *testing.T) {
+	mm := &MutexMap{}
+
+	key := "testKey"
+	mutex1 := mm.Get(key)
+	assert.NotNil(t, mutex1)
+
+	// Fetch the mutex again
+	mutex2 := mm.Get(key)
+	assert.NotNil(t, mutex2)
+
+	// Ensure they're the same
+	assert.Equal(t, mutex1, mutex2)
+
+	// Test concurrency
+	wg := &sync.WaitGroup{}
+	const numRoutines = 50
+	for i := 0; i < numRoutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			m := mm.Get(key)
+			assert.Equal(t, mutex1, m)
+		}()
+	}
+	wg.Wait()
 }
