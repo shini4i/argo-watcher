@@ -130,7 +130,7 @@ func ClientWatcher() {
 		App:           os.Getenv("ARGO_APP"),
 		Author:        os.Getenv("COMMIT_AUTHOR"),
 		Project:       os.Getenv("PROJECT_NAME"),
-		ProvidedToken: os.Getenv("ARGO_WATCHER_TOKEN"),
+		ProvidedToken: os.Getenv("ARGO_WATCHER_DEPLOY_TOKEN"),
 		Images:        images,
 	}
 
@@ -146,7 +146,7 @@ func ClientWatcher() {
 			"IMAGES: %s\n\n",
 			watcher.baseUrl, task.App, task.Author, task.Project, tag, task.Images)
 		if task.ProvidedToken == "" {
-			fmt.Println("ARGO_WATCHER_TOKEN is not set, git commit will not be performed.")
+			fmt.Println("ARGO_WATCHER_DEPLOY_TOKEN is not set, git commit will not be performed.")
 		}
 	}
 
