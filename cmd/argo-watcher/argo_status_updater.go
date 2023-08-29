@@ -87,7 +87,10 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 		updater.Lock()
 		defer updater.Unlock()
 		log.Debug().Str("id", task.Id).Msg("Application managed by watcher. Initiating git repo update.")
-		app.UpdateGitImageTag(&task)
+		if err := app.UpdateGitImageTag(&task); err != nil {
+			log.Error().Str("id", task.Id).Msgf("Failed to update git repo. Error: %s", err.Error())
+			return nil, err
+		}
 	} else {
 		log.Debug().Str("id", task.Id).Msg("Skipping git repo update: Application not managed by watcher or token is absent/invalid.")
 	}

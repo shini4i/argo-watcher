@@ -113,7 +113,7 @@ func (env *Env) addTask(c *gin.Context) {
 
 	// not an optimal solution, but for PoC it's fine
 	// need to find a better way to pass the token later
-	deployToken := c.GetHeader("ARGO_DEPLOY_TOKEN")
+	deployToken := c.GetHeader("ARGO_WATCHER_DEPLOY_TOKEN")
 
 	if deployToken != "" && deployToken == env.config.DeployToken {
 		log.Debug().Msgf("deploy token is validated for app %s", task.App)

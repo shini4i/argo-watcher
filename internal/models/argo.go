@@ -196,13 +196,16 @@ func (app *Application) IsManagedByWatcher() bool {
 	return app.Metadata.Annotations[managedAnnotation] == "true"
 }
 
-func (app *Application) processAppAnnotations(annotations map[string]string, task *Task) *updater.ArgoOverrideFile {
+func (app *Application) processAppAnnotations(annotations map[string]string, task *Task) (*updater.ArgoOverrideFile, error) {
 	overrideFileContent := updater.ArgoOverrideFile{}
-	managedImages := extractManagedImages(annotations)
+	managedImages, err := extractManagedImages(annotations)
+	if err != nil {
+		return nil, err
+	}
 
 	if len(managedImages) == 0 {
 		log.Error().Msgf("%s annotation not found, skipping image update", managedImagesAnnotation)
-		return nil
+		return nil, nil
 	}
 
 	for _, image := range task.Images {
@@ -221,19 +224,24 @@ func (app *Application) processAppAnnotations(annotations map[string]string, tas
 		}
 	}
 
-	return &overrideFileContent
+	return &overrideFileContent, nil
 }
 
-func (app *Application) UpdateGitImageTag(task *Task) {
+func (app *Application) UpdateGitImageTag(task *Task) error {
 	if app.Spec.Source.Path == "" {
 		log.Warn().Str("id", task.Id).Msgf("No path found for app %s, unsupported Application configuration", app.Metadata.Name)
-		return
+		// technically, unsupported Application configuration is not an error (or is it?)
+		return nil
 	}
 
-	releaseOverrides := app.processAppAnnotations(app.Metadata.Annotations, task)
+	releaseOverrides, err := app.processAppAnnotations(app.Metadata.Annotations, task)
+	if err != nil {
+		return err
+	}
+
 	if releaseOverrides == nil {
 		log.Warn().Str("id", task.Id).Msgf("No release overrides found for app %s", app.Metadata.Name)
-		return
+		return nil
 	}
 
 	git := updater.GitRepo{
@@ -244,18 +252,20 @@ func (app *Application) UpdateGitImageTag(task *Task) {
 
 	if err := git.Clone(); err != nil {
 		log.Error().Str("id", task.Id).Msgf("Failed to clone git repository %s", app.Spec.Source.RepoURL)
-		return
+		return err
 	}
 
 	if err := git.UpdateApp(app.Metadata.Name, releaseOverrides); err != nil {
 		log.Error().Str("id", task.Id).Msgf("Failed to update git repository %s", app.Spec.Source.RepoURL)
-		return
+		return err
 	}
+
+	return nil
 }
 
 // extractManagedImages extracts the managed images from the application's annotations.
 // It returns a map of the managed images, where the key is the application alias and the value is the image name.
-func extractManagedImages(annotations map[string]string) map[string]string {
+func extractManagedImages(annotations map[string]string) (map[string]string, error) {
 	managedImages := map[string]string{}
 
 	for annotation, value := range annotations {
@@ -266,7 +276,7 @@ func extractManagedImages(annotations map[string]string) map[string]string {
 		}
 	}
 
-	return managedImages
+	return managedImages, nil
 }
 
 type Userinfo struct {
