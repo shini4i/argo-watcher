@@ -96,7 +96,7 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 	// This mutex is used only to avoid concurrent updates of the same application.
 	mutex := updater.mutex.Get(task.App)
 
-	// Locking the mutex explicitly to potentially unlock within the next if block,
+	// Locking the mutex here to unlock within the next if block without duplicating the code,
 	// avoiding defer to unlock before the function's end. This approach may be revised later
 	mutex.Lock()
 
