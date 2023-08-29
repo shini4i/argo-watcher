@@ -271,7 +271,11 @@ func extractManagedImages(annotations map[string]string) (map[string]string, err
 	for annotation, value := range annotations {
 		if annotation == managedImagesAnnotation {
 			for _, image := range strings.Split(value, ",") {
-				managedImages[strings.Split(image, "=")[0]] = strings.Split(image, "=")[1]
+				if !strings.Contains(image, "=") {
+					return nil, fmt.Errorf("invalid format for %s annotation", managedImagesAnnotation)
+				}
+				managedImage := strings.Split(image, "=")
+				managedImages[managedImage[0]] = managedImage[1]
 			}
 		}
 	}

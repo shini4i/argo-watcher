@@ -310,7 +310,9 @@ func TestExtractManagedImages(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			assert.Equal(t, test.expected, extractManagedImages(test.annotation))
+			extractedImages, err := extractManagedImages(test.annotation)
+			assert.NoError(t, err)
+			assert.Equal(t, test.expected, extractedImages)
 		})
 	}
 }

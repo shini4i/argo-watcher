@@ -106,7 +106,7 @@ func TestAddTask(t *testing.T) {
 		},
 	}
 
-	id := client.addTask(task)
+	id := client.addTask(task, "")
 
 	if id != expected.Id {
 		t.Errorf("Expected id %s, got %s", expected.Id, id)
