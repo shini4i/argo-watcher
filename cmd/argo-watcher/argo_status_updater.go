@@ -19,7 +19,7 @@ type MutexMap struct {
 }
 
 func (mm *MutexMap) Get(key string) *sync.Mutex {
-	log.Debug().Msgf("getting mutex for key %s", key)
+	log.Debug().Msgf("acquiring mutex for %s app", key)
 	m, _ := mm.m.LoadOrStore(key, &sync.Mutex{})
 	return m.(*sync.Mutex)
 }
@@ -102,7 +102,24 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 
 	if app.IsManagedByWatcher() && task.Validated {
 		log.Debug().Str("id", task.Id).Msg("Application managed by watcher. Initiating git repo update.")
-		err := app.UpdateGitImageTag(&task)
+
+		// simplest way to deal with potential git conflicts
+		// need to be replaced with a more sophisticated solution after PoC
+		err := retry.Do(
+			func() error {
+				if err := app.UpdateGitImageTag(&task); err != nil {
+					return err
+				}
+				return nil
+			},
+			retry.DelayType(retry.FixedDelay),
+			retry.Attempts(3),
+			retry.OnRetry(func(n uint, err error) {
+				log.Warn().Str("id", task.Id).Msgf("Failed to update git repo. Error: %s, retrying...", err.Error())
+			}),
+			retry.LastErrorOnly(true),
+		)
+
 		mutex.Unlock()
 		if err != nil {
 			log.Error().Str("id", task.Id).Msgf("Failed to update git repo. Error: %s", err.Error())

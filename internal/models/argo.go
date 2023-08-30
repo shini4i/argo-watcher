@@ -3,10 +3,9 @@ package models
 import (
 	"fmt"
 	"github.com/rs/zerolog/log"
+	"github.com/shini4i/argo-watcher/internal/helpers"
 	"github.com/shini4i/argo-watcher/pkg/updater"
 	"strings"
-
-	"github.com/shini4i/argo-watcher/internal/helpers"
 )
 
 const (
