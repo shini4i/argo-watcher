@@ -92,4 +92,6 @@ release:
 
   footer: |
     ## Docker Images
-    - `ghcr.io/shini4i/{{ .ProjectName }}:{{ .Version }}`
+    - `ghcr.io/shini4i/{{.ProjectName}}:{{ .Tag }}`
+    - `ghcr.io/shini4i/{{.ProjectName}}:{{ .Tag }}-amd64`
+    - `ghcr.io/shini4i/{{.ProjectName}}:{{ .Tag }}-arm64`
