@@ -21,7 +21,7 @@ type MutexMap struct {
 func (mm *MutexMap) Get(key string) *sync.Mutex {
 	log.Debug().Msgf("acquiring mutex for %s app", key)
 	m, _ := mm.m.LoadOrStore(key, &sync.Mutex{})
-	return m.(*sync.Mutex)
+	return m.(*sync.Mutex) // nolint:forcetypeassert // type assertion is guaranteed to be correct
 }
 
 type ArgoStatusUpdater struct {
