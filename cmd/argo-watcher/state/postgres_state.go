@@ -36,7 +36,7 @@ func (state *PostgresState) Connect(serverConfig *config.ServerConfig) error {
 	// create connection
 	ormConfig := &gorm.Config{}
 	// we can leave logger enabled only for text format
-	if serverConfig.LogFormat != config.LOG_FORMAT_TEXT {
+	if serverConfig.LogFormat != config.LogFormatText {
 		// disable logging until we implement zerolog logger for ORM
 		ormConfig.Logger = logger.Default.LogMode(logger.Silent)
 	} else {
@@ -242,7 +242,7 @@ func (state *PostgresState) doProcessPostgresObsoleteTasks() error {
 
 	var result *gorm.DB
 
-	log.Debug().Msg("Marking app not found tasks older than 1 hour as aborted...")
+	log.Debug().Msg("Removing app not found tasks older than 1 hour from the database...")
 	result = state.orm.Where("status = ?", models.StatusAppNotFoundMessage).Where("created < now() - interval '1 hour'").Delete(&state_models.TaskModel{})
 	if result.Error != nil {
 		return result.Error

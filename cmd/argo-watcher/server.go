@@ -15,7 +15,7 @@ import (
 // If the log level string is invalid, it falls back to the default InfoLevel.
 func initLogs(logLevel string, logFormat string) {
 	// set log format
-	if logFormat == config.LOG_FORMAT_TEXT {
+	if logFormat == config.LogFormatText {
 		output := zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}
 		log.Logger = zerolog.New(output).With().Timestamp().Logger()
 	}

@@ -20,6 +20,7 @@ type Task struct {
 	Images       []Image `json:"images" binding:"required"`
 	Status       string  `json:"status,omitempty"`
 	StatusReason string  `json:"status_reason,omitempty"`
+	Validated    bool
 }
 
 // ListImages returns a list of strings representing the images of the task.
@@ -33,9 +34,9 @@ func (task *Task) ListImages() []string {
 	return list
 }
 
-// Check if app not found error.
+// IsAppNotFoundError check if app not found error.
 func (task *Task) IsAppNotFoundError(err error) bool {
-	var appNotFoundError string = fmt.Sprintf("applications.argoproj.io \"%s\" not found", task.App)
+	var appNotFoundError = fmt.Sprintf("applications.argoproj.io \"%s\" not found", task.App)
 	return strings.Contains(err.Error(), appNotFoundError)
 }
 

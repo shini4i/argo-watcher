@@ -111,6 +111,22 @@ func (env *Env) addTask(c *gin.Context) {
 		return
 	}
 
+	// not an optimal solution, but for PoC it's fine
+	// need to find a better way to pass the token later
+	deployToken := c.GetHeader("ARGO_WATCHER_DEPLOY_TOKEN")
+
+	if deployToken != "" && deployToken == env.config.DeployToken {
+		log.Debug().Msgf("deploy token is validated for app %s", task.App)
+		task.Validated = true
+	} else if deployToken != "" && deployToken != env.config.DeployToken {
+		// if token is provided, but it's not valid we should not process the task
+		log.Warn().Msgf("deploy token is invalid for app %s, aborting", task.App)
+		c.JSON(http.StatusUnauthorized, models.TaskStatus{})
+		return
+	} else {
+		log.Debug().Msgf("deploy token is not provided for app %s", task.App)
+	}
+
 	newTask, err := env.argo.AddTask(task)
 	if err != nil {
 		log.Error().Msgf("Couldn't process new task. Got the following error: %s", err)

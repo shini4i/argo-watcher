@@ -24,7 +24,7 @@ var (
 	tag = os.Getenv("IMAGE_TAG")
 )
 
-func (watcher *Watcher) addTask(task models.Task) string {
+func (watcher *Watcher) addTask(task models.Task, token string) string {
 	body, err := json.Marshal(task)
 	if err != nil {
 		panic(err)
@@ -37,6 +37,10 @@ func (watcher *Watcher) addTask(task models.Task) string {
 	}
 
 	request.Header.Set("Content-Type", "application/json; charset=UTF-8")
+
+	if token != "" {
+		request.Header.Set("ARGO_WATCHER_DEPLOY_TOKEN", token)
+	}
 
 	response, err := watcher.client.Do(request)
 	if err != nil {
@@ -135,6 +139,8 @@ func ClientWatcher() {
 
 	debug, _ := strconv.ParseBool(os.Getenv("DEBUG"))
 
+	deployToken := os.Getenv("ARGO_WATCHER_DEPLOY_TOKEN")
+
 	if debug {
 		fmt.Printf("Got the following configuration:\n"+
 			"ARGO_WATCHER_URL: %s\n"+
@@ -144,11 +150,14 @@ func ClientWatcher() {
 			"IMAGE_TAG: %s\n"+
 			"IMAGES: %s\n\n",
 			watcher.baseUrl, task.App, task.Author, task.Project, tag, task.Images)
+		if deployToken == "" {
+			fmt.Println("ARGO_WATCHER_DEPLOY_TOKEN is not set, git commit will not be performed.")
+		}
 	}
 
 	fmt.Printf("Waiting for %s app to be running on %s version.\n", task.App, tag)
 
-	id := watcher.addTask(task)
+	id := watcher.addTask(task, deployToken)
 
 	time.Sleep(5 * time.Second)
 

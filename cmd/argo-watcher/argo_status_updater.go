@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/avast/retry-go/v4"
@@ -13,10 +14,21 @@ import (
 
 const failedToUpdateTaskStatusTemplate string = "Failed to change task status: %s"
 
+type MutexMap struct {
+	m sync.Map
+}
+
+func (mm *MutexMap) Get(key string) *sync.Mutex {
+	log.Debug().Msgf("acquiring mutex for %s app", key)
+	m, _ := mm.m.LoadOrStore(key, &sync.Mutex{})
+	return m.(*sync.Mutex) // nolint:forcetypeassert // type assertion is guaranteed to be correct
+}
+
 type ArgoStatusUpdater struct {
 	argo             Argo
 	registryProxyUrl string
 	retryOptions     []retry.Option
+	mutex            MutexMap
 }
 
 func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, retryDelay time.Duration, registryProxyUrl string) {
@@ -76,6 +88,48 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 	var application *models.Application
 	var err error
 
+	app, err := updater.argo.api.GetApplication(task.App)
+	if err != nil {
+		return nil, err
+	}
+
+	// This mutex is used only to avoid concurrent updates of the same application.
+	mutex := updater.mutex.Get(task.App)
+
+	// Locking the mutex here to unlock within the next if block without duplicating the code,
+	// avoiding defer to unlock before the function's end. This approach may be revised later
+	mutex.Lock()
+
+	if app.IsManagedByWatcher() && task.Validated {
+		log.Debug().Str("id", task.Id).Msg("Application managed by watcher. Initiating git repo update.")
+
+		// simplest way to deal with potential git conflicts
+		// need to be replaced with a more sophisticated solution after PoC
+		err := retry.Do(
+			func() error {
+				if err := app.UpdateGitImageTag(&task); err != nil {
+					return err
+				}
+				return nil
+			},
+			retry.DelayType(retry.FixedDelay),
+			retry.Attempts(3),
+			retry.OnRetry(func(n uint, err error) {
+				log.Warn().Str("id", task.Id).Msgf("Failed to update git repo. Error: %s, retrying...", err.Error())
+			}),
+			retry.LastErrorOnly(true),
+		)
+
+		mutex.Unlock()
+		if err != nil {
+			log.Error().Str("id", task.Id).Msgf("Failed to update git repo. Error: %s", err.Error())
+			return nil, err
+		}
+	} else {
+		mutex.Unlock()
+		log.Debug().Str("id", task.Id).Msg("Skipping git repo update: Application not managed by watcher or token is absent/invalid.")
+	}
+
 	// wait for application to get into deployed status or timeout
 	log.Debug().Str("id", task.Id).Msg("Waiting for rollout")
 	_ = retry.Do(func() error {
@@ -107,7 +161,7 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 }
 
 func (updater *ArgoStatusUpdater) handleArgoAPIFailure(task models.Task, err error) {
-	var apiFailureStatus string = models.StatusFailedMessage
+	var apiFailureStatus = models.StatusFailedMessage
 
 	// check if ArgoCD didn't have the app
 	if task.IsAppNotFoundError(err) {
@@ -122,8 +176,7 @@ func (updater *ArgoStatusUpdater) handleArgoAPIFailure(task models.Task, err err
 	reason := fmt.Sprintf(ArgoAPIErrorTemplate, err.Error())
 	log.Warn().Str("id", task.Id).Msgf("Deployment failed with status \"%s\". Aborting with error: %s", apiFailureStatus, reason)
 
-	errStatusChange := updater.argo.state.SetTaskStatus(task.Id, apiFailureStatus, reason)
-	if errStatusChange != nil {
-		log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, errStatusChange)
+	if err := updater.argo.state.SetTaskStatus(task.Id, apiFailureStatus, reason); err != nil {
+		log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, err)
 	}
 }
