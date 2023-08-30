@@ -72,7 +72,7 @@ LOG_LEVEL=debug LOG_FORMAT=text ARGO_URL=http://localhost:8081 ARGO_TOKEN=exampl
 Start database
 ```shell
 # start the database in a separate terminal window
-docker compose up postgres 
+docker compose up postgres
 ```
 
 Start server
