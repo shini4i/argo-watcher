@@ -1,6 +1,7 @@
 package updater
 
 import (
+	"errors"
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5"
@@ -19,25 +20,52 @@ func TestGitRepoClone(t *testing.T) {
 
 	mockGitHandler := mock.NewMockGitHandler(ctrl)
 
-	// Mock NewPublicKeysFromFile method to return a dummy ssh.PublicKeys and nil error
-	mockGitHandler.EXPECT().NewPublicKeysFromFile("git", sshKeyPath, sshKeyPass).Return(&ssh.PublicKeys{}, nil)
-
-	// Mock Clone method to return a dummy git.Repository and nil error
-	mockGitHandler.EXPECT().Clone(memory.NewStorage(), memfs.New(), &git.CloneOptions{
-		URL:           "mockRepoURL",
-		ReferenceName: "refs/heads/mockBranch",
-		SingleBranch:  true,
-		Auth:          &ssh.PublicKeys{},
-	}).Return(&git.Repository{}, nil)
-
-	gitRepo := GitRepo{
-		RepoURL:    "mockRepoURL",
-		BranchName: "mockBranch",
-		GitHandler: mockGitHandler,
+	tests := []struct {
+		name     string
+		mockSSH  func()
+		expected error
+	}{
+		{
+			name: "successful clone",
+			mockSSH: func() {
+				mockGitHandler.EXPECT().NewPublicKeysFromFile("git", sshKeyPath, sshKeyPass).Return(&ssh.PublicKeys{}, nil)
+				mockGitHandler.EXPECT().Clone(memory.NewStorage(), memfs.New(), &git.CloneOptions{
+					URL:           "mockRepoURL",
+					ReferenceName: "refs/heads/mockBranch",
+					SingleBranch:  true,
+					Auth:          &ssh.PublicKeys{},
+				}).Return(&git.Repository{}, nil)
+			},
+			expected: nil,
+		},
+		{
+			name: "failed NewPublicKeysFromFile",
+			mockSSH: func() {
+				mockGitHandler.EXPECT().NewPublicKeysFromFile("git", sshKeyPath, sshKeyPass).Return(nil, errors.New("failed to fetch keys"))
+			},
+			expected: errors.New("failed to fetch keys"),
+		},
 	}
 
-	err := gitRepo.Clone()
-	assert.NoError(t, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.mockSSH()
+
+			gitRepo := GitRepo{
+				RepoURL:    "mockRepoURL",
+				BranchName: "mockBranch",
+				GitHandler: mockGitHandler,
+			}
+
+			err := gitRepo.Clone()
+
+			if tt.expected == nil {
+				assert.NoError(t, err, "Expected no error")
+			} else {
+				assert.EqualError(t, err, tt.expected.Error(), "Error mismatch")
+			}
+		})
+	}
 }
 
 func TestMergeParameters(t *testing.T) {
