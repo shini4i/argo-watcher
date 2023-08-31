@@ -4,9 +4,41 @@ import (
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
+	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/stretchr/testify/assert"
 	"testing"
+
+	"github.com/shini4i/argo-watcher/pkg/updater/mock"
+	"go.uber.org/mock/gomock"
 )
+
+func TestGitRepoClone(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockGitHandler := mock.NewMockGitHandler(ctrl)
+
+	// Mock NewPublicKeysFromFile method to return a dummy ssh.PublicKeys and nil error
+	mockGitHandler.EXPECT().NewPublicKeysFromFile("git", sshKeyPath, sshKeyPass).Return(&ssh.PublicKeys{}, nil)
+
+	// Mock Clone method to return a dummy git.Repository and nil error
+	mockGitHandler.EXPECT().Clone(memory.NewStorage(), memfs.New(), &git.CloneOptions{
+		URL:           "mockRepoURL",
+		ReferenceName: "refs/heads/mockBranch",
+		SingleBranch:  true,
+		Auth:          &ssh.PublicKeys{},
+	}).Return(&git.Repository{}, nil)
+
+	gitRepo := GitRepo{
+		RepoURL:    "mockRepoURL",
+		BranchName: "mockBranch",
+		GitHandler: mockGitHandler,
+	}
+
+	err := gitRepo.Clone()
+	assert.NoError(t, err)
+}
 
 func TestMergeParameters(t *testing.T) {
 	tests := []struct {

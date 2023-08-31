@@ -23,6 +23,7 @@ argo-watcher
 # dynamicly generated files
 cmd/argo-watcher/docs
 cmd/argo-watcher/mock
+pkg/updater/mock
 
 # goreleaser
 dist/
