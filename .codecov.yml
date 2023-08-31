@@ -1,0 +1,2 @@
+ignore:
+  - "pkg/updater/interfaces.go"
