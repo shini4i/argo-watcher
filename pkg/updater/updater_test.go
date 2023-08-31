@@ -5,10 +5,12 @@ import (
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/stretchr/testify/assert"
 	"testing"
+	"time"
 
 	"github.com/shini4i/argo-watcher/pkg/updater/mock"
 	"go.uber.org/mock/gomock"
@@ -258,4 +260,68 @@ func TestGitRepo_Close(t *testing.T) {
 	// Check if the fs and localRepo fields are nil after calling close
 	assert.Nil(t, repo.fs)
 	assert.Nil(t, repo.localRepo)
+}
+
+func TestVersionChanged(t *testing.T) {
+	t.Run("Repo without changes", func(t *testing.T) {
+		fs := memfs.New()
+		storer := memory.NewStorage()
+
+		repo, err := git.Init(storer, fs)
+		assert.NoError(t, err)
+
+		w, err := repo.Worktree()
+		assert.NoError(t, err)
+
+		changed, err := versionChanged(w)
+		assert.NoError(t, err)
+		assert.False(t, changed, "Expected no changes in a newly initialized repo")
+	})
+
+	t.Run("Repo with changes", func(t *testing.T) {
+		fs := memfs.New()
+		storer := memory.NewStorage()
+
+		repo, err := git.Init(storer, fs)
+		assert.NoError(t, err)
+
+		w, err := repo.Worktree()
+		assert.NoError(t, err)
+
+		// Create and commit a file
+		file, err := fs.Create("test.txt")
+		assert.NoError(t, err)
+		_, err = file.Write([]byte("Initial content"))
+		assert.NoError(t, err)
+		err = file.Close()
+		assert.NoError(t, err)
+
+		_, err = w.Add("test.txt")
+		assert.NoError(t, err)
+
+		_, err = w.Commit("Initial commit", &git.CommitOptions{
+			Author: &object.Signature{
+				Name:  "John Doe",
+				Email: "johndoe@example.com",
+				When:  time.Now(),
+			},
+		})
+		assert.NoError(t, err)
+
+		// Make changes to the file
+		file, err = fs.Create("test.txt")
+		assert.NoError(t, err)
+		_, err = file.Write([]byte("Updated content"))
+		assert.NoError(t, err)
+		err = file.Close()
+		assert.NoError(t, err)
+
+		_, err = w.Add("test.txt")
+		assert.NoError(t, err)
+
+		// Test versionChanged function
+		changed, err := versionChanged(w)
+		assert.NoError(t, err)
+		assert.True(t, changed, "Expected changes after modifying the file")
+	})
 }
