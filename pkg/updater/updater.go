@@ -59,6 +59,7 @@ func (repo *GitRepo) Clone() error {
 		URL:           repo.RepoURL,
 		ReferenceName: plumbing.ReferenceName("refs/heads/" + repo.BranchName),
 		SingleBranch:  true,
+		Depth:         1, // This is needed to avoid fetching the entire history, which is not needed in this case
 		Auth:          repo.sshAuth,
 	})
 

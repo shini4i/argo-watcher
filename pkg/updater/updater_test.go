@@ -35,6 +35,7 @@ func TestGitRepoClone(t *testing.T) {
 					URL:           "mockRepoURL",
 					ReferenceName: "refs/heads/mockBranch",
 					SingleBranch:  true,
+					Depth:         1,
 					Auth:          &ssh.PublicKeys{},
 				}).Return(&git.Repository{}, nil)
 			},
