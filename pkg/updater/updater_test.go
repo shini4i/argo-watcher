@@ -8,13 +8,13 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/shini4i/argo-watcher/pkg/updater/mock"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
+	"gopkg.in/yaml.v2"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/shini4i/argo-watcher/pkg/updater/mock"
-	"go.uber.org/mock/gomock"
 )
 
 func TestGitRepoClone(t *testing.T) {
@@ -100,6 +100,96 @@ func TestGetFileContent(t *testing.T) {
 	t.Run("Error on non-existent file", func(t *testing.T) {
 		_, err := repo.getFileContent("non-existent.txt")
 		assert.Error(t, err)
+	})
+}
+
+func TestMergeOverrideFileContent(t *testing.T) {
+	fs := memfs.New()
+	repo := &GitRepo{
+		fs: fs,
+	}
+
+	// Test when the override file doesn't exist
+	t.Run("no existing file", func(t *testing.T) {
+		overrideContent := &ArgoOverrideFile{
+			Helm: struct {
+				Parameters []ArgoParameterOverride `yaml:"parameters"`
+			}{
+				Parameters: []ArgoParameterOverride{
+					{
+						Name:  "param1",
+						Value: "value1",
+					},
+				},
+			},
+		}
+		result, err := repo.mergeOverrideFileContent("nonexistent.yaml", overrideContent)
+		assert.NoError(t, err)
+		assert.Equal(t, overrideContent, result)
+	})
+
+	// Test when the override file does exist
+	t.Run("existing file", func(t *testing.T) {
+		// Creating a dummy existing file
+		existingContent := ArgoOverrideFile{
+			Helm: struct {
+				Parameters []ArgoParameterOverride `yaml:"parameters"`
+			}{
+				Parameters: []ArgoParameterOverride{
+					{
+						Name:  "param1",
+						Value: "oldValue1",
+					},
+					{
+						Name:  "param2",
+						Value: "value2",
+					},
+				},
+			},
+		}
+
+		fileName := "existing.yaml"
+		contentBytes, _ := yaml.Marshal(existingContent)
+		file, _ := fs.Create(fileName)
+		_, err := file.Write(contentBytes)
+		assert.NoError(t, err)
+		err = file.Close()
+		assert.NoError(t, err)
+
+		// Merge with this content
+		overrideContent := &ArgoOverrideFile{
+			Helm: struct {
+				Parameters []ArgoParameterOverride `yaml:"parameters"`
+			}{
+				Parameters: []ArgoParameterOverride{
+					{
+						Name:  "param1",
+						Value: "newValue1",
+					},
+				},
+			},
+		}
+
+		expectedMergedContent := &ArgoOverrideFile{
+			Helm: struct {
+				Parameters []ArgoParameterOverride `yaml:"parameters"`
+			}{
+				Parameters: []ArgoParameterOverride{
+					{
+						Name:  "param1",
+						Value: "newValue1", // This assumes newValue1 overwrites oldValue1
+					},
+					{
+						Name:  "param2",
+						Value: "value2",
+					},
+				},
+			},
+		}
+
+		result, err := repo.mergeOverrideFileContent(fileName, overrideContent)
+		assert.NoError(t, err)
+		assert.Equal(t, expectedMergedContent, result)
 	})
 }
 
