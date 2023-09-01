@@ -9,6 +9,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/stretchr/testify/assert"
+	"strings"
 	"testing"
 	"time"
 
@@ -69,6 +70,37 @@ func TestGitRepoClone(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGetFileContent(t *testing.T) {
+	// 1. Setup an in-memory file system using billy
+	fs := memfs.New()
+	content := "Hello, World!"
+	fileName := "test.txt"
+
+	// 2. Create a test file in that filesystem
+	file, err := fs.Create(fileName)
+	assert.NoError(t, err)
+	_, err = file.Write([]byte(content))
+	assert.NoError(t, err)
+	err = file.Close()
+	assert.NoError(t, err)
+
+	// 3. Create a GitRepo instance using the in-memory filesystem
+	repo := &GitRepo{
+		fs: fs,
+	}
+
+	t.Run("Successfully read content", func(t *testing.T) {
+		readContent, err := repo.getFileContent(fileName)
+		assert.NoError(t, err)
+		assert.Equal(t, content, strings.TrimSpace(string(readContent)))
+	})
+
+	t.Run("Error on non-existent file", func(t *testing.T) {
+		_, err := repo.getFileContent("non-existent.txt")
+		assert.Error(t, err)
+	})
 }
 
 func TestMergeParameters(t *testing.T) {
