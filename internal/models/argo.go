@@ -247,6 +247,8 @@ func (app *Application) UpdateGitImageTag(task *Task) error {
 		RepoURL:    app.Spec.Source.RepoURL,
 		BranchName: app.Spec.Source.TargetRevision,
 		Path:       app.Spec.Source.Path,
+
+		GitHandler: updater.GitClient{},
 	}
 
 	if err := git.Clone(); err != nil {

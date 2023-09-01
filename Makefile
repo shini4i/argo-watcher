@@ -58,12 +58,10 @@ docs: ## Generate swagger docs
 .PHONY: mocks
 mocks:
 	@echo "===> Generating mocks"
-# generate API mock
 	@mockgen --source=cmd/argo-watcher/argo_api.go --destination=cmd/argo-watcher/mock/argo_api.go --package=mock
-# generate State mock
 	@mockgen --source=cmd/argo-watcher/state/state.go --destination=cmd/argo-watcher/mock/state.go --package=mock
-# generate Metrics mock
 	@mockgen --source=cmd/argo-watcher/metrics.go --destination=cmd/argo-watcher/mock/metrics.go --package=mock
+	@mockgen --source=pkg/updater/interfaces.go --destination=pkg/updater/mock/interfaces.go --package=mock
 
 .PHONY: bootstrap
 bootstrap: ## Bootstrap docker compose setup

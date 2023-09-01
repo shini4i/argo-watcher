@@ -42,6 +42,8 @@ type GitRepo struct {
 	fs         billy.Filesystem
 	localRepo  *git.Repository
 	sshAuth    *ssh.PublicKeys
+
+	GitHandler GitHandler
 }
 
 func (repo *GitRepo) Clone() error {
@@ -49,14 +51,15 @@ func (repo *GitRepo) Clone() error {
 
 	repo.fs = memfs.New()
 
-	if repo.sshAuth, err = ssh.NewPublicKeysFromFile("git", sshKeyPath, sshKeyPass); err != nil {
+	if repo.sshAuth, err = repo.GitHandler.NewPublicKeysFromFile("git", sshKeyPath, sshKeyPass); err != nil {
 		return err
 	}
 
-	repo.localRepo, err = git.Clone(memory.NewStorage(), repo.fs, &git.CloneOptions{
+	repo.localRepo, err = repo.GitHandler.Clone(memory.NewStorage(), repo.fs, &git.CloneOptions{
 		URL:           repo.RepoURL,
 		ReferenceName: plumbing.ReferenceName("refs/heads/" + repo.BranchName),
 		SingleBranch:  true,
+		Depth:         1, // This is needed to avoid fetching the entire history, which is not needed in this case
 		Auth:          repo.sshAuth,
 	})
 
