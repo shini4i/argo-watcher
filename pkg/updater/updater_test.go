@@ -191,6 +191,38 @@ func TestMergeOverrideFileContent(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, expectedMergedContent, result)
 	})
+
+	// Test when the existing override file has invalid YAML format
+	t.Run("invalid YAML file", func(t *testing.T) {
+		// Creating a dummy existing file with invalid YAML
+		invalidYAMLContent := `helm:
+  parameters:
+  - name: param1
+	value: value1` // The indentation is intentionally wrong to create an invalid YAML
+
+		fileName := "invalid.yaml"
+		file, _ := fs.Create(fileName)
+		_, err := file.Write([]byte(invalidYAMLContent))
+		assert.NoError(t, err)
+		err = file.Close()
+		assert.NoError(t, err)
+
+		overrideContent := &ArgoOverrideFile{
+			Helm: struct {
+				Parameters []ArgoParameterOverride `yaml:"parameters"`
+			}{
+				Parameters: []ArgoParameterOverride{
+					{
+						Name:  "param1",
+						Value: "newValue1",
+					},
+				},
+			},
+		}
+
+		_, err = repo.mergeOverrideFileContent(fileName, overrideContent)
+		assert.Error(t, err)
+	})
 }
 
 func TestMergeParameters(t *testing.T) {
