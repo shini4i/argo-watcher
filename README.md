@@ -39,6 +39,7 @@ The workflow for deployment might be the following
 <details>
 <summary>A simplified diagram</summary>
 <div align="center">
+
 ```mermaid
 graph TD
     Dev[Dev] --> Commit{Commit changes to the git repository}
@@ -53,6 +54,7 @@ graph TD
     TimeoutDecision -->|Yes| Failed[Pipeline is marked as failed]
     TimeoutDecision -->|No| Check
 ```
+
 </div>
 </details>
 
