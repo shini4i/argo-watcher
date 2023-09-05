@@ -39,7 +39,22 @@ The workflow for deployment might be the following
 <details>
 <summary>A simplified diagram</summary>
 <div align="center">
-<img src="https://raw.githubusercontent.com/shini4i/assets/main/src/argo-watcher/simplified_diagram.png" alt="Showcase" height="540" width="540">
+
+```mermaid
+graph TD
+    Dev[Dev] --> Commit{Commit changes to the git repository}
+    Commit --> Pipeline[Build pipeline triggered]
+    Pipeline --> Docker[Docker image built and published]
+    Docker --> Task[Pipeline adds a task to Argo-Watcher]
+    Task --> Check[Argo-Watcher checks Argo CD Api for an update]
+    Check --> Decision{Is ArgoCD Application running on the expected image?}
+    Decision -->|Yes| Success[Pipeline is marked as a success]
+    Decision -->|No| Retry[Check API again]
+    Retry --> TimeoutDecision{Has pre-defined timeout elapsed?}
+    TimeoutDecision -->|Yes| Failed[Pipeline is marked as failed]
+    TimeoutDecision -->|No| Check
+```
+
 </div>
 </details>
 
