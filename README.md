@@ -44,7 +44,7 @@ The workflow for deployment might be the following
 graph TD
     Dev[Dev] --> Commit{Commit changes to the git repository}
     Commit --> Pipeline[Build pipeline triggered]
-    Pipeline --> Docker[Docker image build and published]
+    Pipeline --> Docker[Docker image built and published]
     Docker --> Task[Pipeline adds a task to Argo-Watcher]
     Task --> Check[Argo-Watcher checks Argo CD Api for an update]
     Check --> Decision{Is ArgoCD Application running on the expected image?}
