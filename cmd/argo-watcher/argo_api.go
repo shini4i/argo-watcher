@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
-	"strconv"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -51,17 +50,14 @@ func (api *ArgoApi) Init(serverConfig *config.ServerConfig) error {
 	}
 	// set cookies
 	jar.SetCookies(argoUrl, []*http.Cookie{cookie})
-	// parse skip tls verify
-	skipTlsVerify, _ := strconv.ParseBool(serverConfig.SkipTlsVerify)
 	transport := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: skipTlsVerify},
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: serverConfig.SkipTlsVerify},
 	}
 	// create http client
-	argoApiTimeout, _ := strconv.Atoi(serverConfig.ArgoApiTimeout)
 	api.client = &http.Client{
 		Transport: transport,
 		Jar:       jar,
-		Timeout:   time.Duration(argoApiTimeout) * time.Second,
+		Timeout:   time.Duration(serverConfig.ArgoApiTimeout) * time.Second,
 	}
 
 	log.Debug().Msgf("Timeout for ArgoCD API calls set to: %s", api.client.Timeout)

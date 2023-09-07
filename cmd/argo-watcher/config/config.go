@@ -2,8 +2,6 @@ package config
 
 import (
 	"errors"
-	"strconv"
-
 	"github.com/shini4i/argo-watcher/internal/helpers"
 
 	envConfig "github.com/caarlos0/env/v9"
@@ -16,13 +14,13 @@ const (
 type ServerConfig struct {
 	ArgoUrl          string `env:"ARGO_URL,required"`
 	ArgoToken        string `env:"ARGO_TOKEN,required"`
-	ArgoApiTimeout   string `env:"ARGO_API_TIMEOUT" envDefault:"60"`
-	ArgoTimeout      string `env:"ARGO_TIMEOUT" envDefault:"0"`
+	ArgoApiTimeout   int64  `env:"ARGO_API_TIMEOUT" envDefault:"60"`
+	ArgoTimeout      int    `env:"ARGO_TIMEOUT" envDefault:"0"`
 	ArgoRefreshApp   bool   `env:"ARGO_REFRESH_APP" envDefault:"true"`
 	RegistryProxyUrl string `env:"DOCKER_IMAGES_PROXY"`
-	StateType        string `env:"STATE_TYPE"`
+	StateType        string `env:"STATE_TYPE,required"`
 	StaticFilePath   string `env:"STATIC_FILES_PATH" envDefault:"static"`
-	SkipTlsVerify    string `env:"SKIP_TLS_VERIFY" envDefault:"false"`
+	SkipTlsVerify    bool   `env:"SKIP_TLS_VERIFY" envDefault:"false"`
 	LogLevel         string `env:"LOG_LEVEL" envDefault:"info"`
 	LogFormat        string `env:"LOG_FORMAT" envDefault:"json"`
 	Host             string `env:"HOST" envDefault:"0.0.0.0"`
@@ -66,6 +64,5 @@ func NewServerConfig() (*ServerConfig, error) {
 // The calculated value is incremented by 1 to account for the initial attempt.
 // It returns the number of retry attempts as an unsigned integer.
 func (config *ServerConfig) GetRetryAttempts() uint {
-	argoTimeout, _ := strconv.Atoi(config.ArgoTimeout)
-	return uint((argoTimeout / 15) + 1)
+	return uint((config.ArgoTimeout / 15) + 1)
 }
