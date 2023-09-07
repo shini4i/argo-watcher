@@ -22,7 +22,7 @@ func TestNewServerConfig(t *testing.T) {
 
 	// Assert specific field values
 	expectedUrl, _ := url.Parse("https://example.com")
-	assert.Equal(t, expectedUrl, cfg.ArgoUrl)
+	assert.Equal(t, *expectedUrl, cfg.ArgoUrl)
 	assert.Equal(t, "secret-token", cfg.ArgoToken)
 	assert.Equal(t, "postgres", cfg.StateType)
 }
