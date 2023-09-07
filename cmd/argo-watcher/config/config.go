@@ -6,7 +6,7 @@ import (
 
 	"github.com/shini4i/argo-watcher/internal/helpers"
 
-	envConfig "github.com/kelseyhightower/envconfig"
+	envConfig "github.com/caarlos0/env/v9"
 )
 
 const (
@@ -14,26 +14,26 @@ const (
 )
 
 type ServerConfig struct {
-	ArgoUrl          string `required:"true" envconfig:"ARGO_URL"`
-	ArgoToken        string `required:"true" envconfig:"ARGO_TOKEN"`
-	ArgoApiTimeout   string `required:"false" envconfig:"ARGO_API_TIMEOUT" default:"60"`
-	ArgoTimeout      string `required:"false" envconfig:"ARGO_TIMEOUT" default:"0"`
-	ArgoRefreshApp   bool   `required:"false" envconfig:"ARGO_REFRESH_APP" default:"true"`
-	RegistryProxyUrl string `required:"false" envconfig:"DOCKER_IMAGES_PROXY"`
-	StateType        string `required:"false" envconfig:"STATE_TYPE"`
-	StaticFilePath   string `required:"false" envconfig:"STATIC_FILES_PATH" default:"static"`
-	SkipTlsVerify    string `required:"false" envconfig:"SKIP_TLS_VERIFY" default:"false"`
-	LogLevel         string `required:"false" envconfig:"LOG_LEVEL" default:"info"`
-	LogFormat        string `required:"false" envconfig:"LOG_FORMAT" default:"json"`
-	Host             string `required:"false" envconfig:"HOST" default:"0.0.0.0"`
-	Port             string `required:"false" envconfig:"PORT" default:"8080"`
-	DbHost           string `required:"false" envconfig:"DB_HOST" default:"localhost"`
-	DbPort           string `required:"false" envconfig:"DB_PORT" default:"5432"`
-	DbName           string `required:"false" envconfig:"DB_NAME"`
-	DbUser           string `required:"false" envconfig:"DB_USER"`
-	DbPassword       string `required:"false" envconfig:"DB_PASSWORD"`
-	DbMigrationsPath string `required:"false" envconfig:"DB_MIGRATIONS_PATH" default:"db/migrations"` // deprecated
-	DeployToken      string `required:"false" envconfig:"ARGO_WATCHER_DEPLOY_TOKEN"`
+	ArgoUrl          string `env:"ARGO_URL,required"`
+	ArgoToken        string `env:"ARGO_TOKEN,required"`
+	ArgoApiTimeout   string `env:"ARGO_API_TIMEOUT" envDefault:"60"`
+	ArgoTimeout      string `env:"ARGO_TIMEOUT" envDefault:"0"`
+	ArgoRefreshApp   bool   `env:"ARGO_REFRESH_APP" envDefault:"true"`
+	RegistryProxyUrl string `env:"DOCKER_IMAGES_PROXY"`
+	StateType        string `env:"STATE_TYPE"`
+	StaticFilePath   string `env:"STATIC_FILES_PATH" envDefault:"static"`
+	SkipTlsVerify    string `env:"SKIP_TLS_VERIFY" envDefault:"false"`
+	LogLevel         string `env:"LOG_LEVEL" envDefault:"info"`
+	LogFormat        string `env:"LOG_FORMAT" envDefault:"json"`
+	Host             string `env:"HOST" envDefault:"0.0.0.0"`
+	Port             string `env:"PORT" envDefault:"8080"`
+	DbHost           string `env:"DB_HOST" envDefault:"localhost"`
+	DbPort           string `env:"DB_PORT" envDefault:"5432"`
+	DbName           string `env:"DB_NAME"`
+	DbUser           string `env:"DB_USER"`
+	DbPassword       string `env:"DB_PASSWORD"`
+	DbMigrationsPath string `env:"DB_MIGRATIONS_PATH" envDefault:"db/migrations"` // deprecated
+	DeployToken      string `env:"ARGO_WATCHER_DEPLOY_TOKEN"`
 }
 
 // NewServerConfig parses the server configuration from environment variables using the envconfig package.
@@ -47,7 +47,7 @@ func NewServerConfig() (*ServerConfig, error) {
 		config ServerConfig
 	)
 
-	if err := envConfig.Process("", &config); err != nil {
+	if err := envConfig.Parse(&config); err != nil {
 		return nil, err
 	}
 
