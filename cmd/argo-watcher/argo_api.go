@@ -24,7 +24,7 @@ type ArgoApiInterface interface {
 }
 
 type ArgoApi struct {
-	baseUrl    string
+	baseUrl    url.URL
 	client     *http.Client
 	refreshApp bool
 }
@@ -33,11 +33,7 @@ func (api *ArgoApi) Init(serverConfig *config.ServerConfig) error {
 	log.Debug().Msg("Initializing argo-watcher client...")
 	// set base url
 	api.baseUrl = serverConfig.ArgoUrl
-	// parse url for cookies
-	argoUrl, err := url.Parse(api.baseUrl)
-	if err != nil {
-		return err
-	}
+
 	// create cookie jar
 	jar, err := cookiejar.New(nil)
 	if err != nil {
@@ -49,7 +45,7 @@ func (api *ArgoApi) Init(serverConfig *config.ServerConfig) error {
 		Value: serverConfig.ArgoToken,
 	}
 	// set cookies
-	jar.SetCookies(argoUrl, []*http.Cookie{cookie})
+	jar.SetCookies(&api.baseUrl, []*http.Cookie{cookie})
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: serverConfig.SkipTlsVerify},
 	}
@@ -70,7 +66,7 @@ func (api *ArgoApi) Init(serverConfig *config.ServerConfig) error {
 }
 
 func (api *ArgoApi) GetUserInfo() (*models.Userinfo, error) {
-	apiUrl := fmt.Sprintf("%s/api/v1/session/userinfo", api.baseUrl)
+	apiUrl := fmt.Sprintf("%s/api/v1/session/userinfo", api.baseUrl.String())
 	req, err := http.NewRequest("GET", apiUrl, nil)
 	if err != nil {
 		return nil, err
@@ -104,7 +100,7 @@ func (api *ArgoApi) GetUserInfo() (*models.Userinfo, error) {
 }
 
 func (api *ArgoApi) GetApplication(app string) (*models.Application, error) {
-	apiUrl := fmt.Sprintf("%s/api/v1/applications/%s", api.baseUrl, app)
+	apiUrl := fmt.Sprintf("%s/api/v1/applications/%s", api.baseUrl.String(), app)
 	req, err := http.NewRequest("GET", apiUrl, nil)
 	if err != nil {
 		log.Error().Msg(err.Error())

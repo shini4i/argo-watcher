@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"github.com/shini4i/argo-watcher/internal/helpers"
+	"net/url"
 
 	envConfig "github.com/caarlos0/env/v9"
 )
@@ -12,26 +13,26 @@ const (
 )
 
 type ServerConfig struct {
-	ArgoUrl          string `env:"ARGO_URL,required"`
-	ArgoToken        string `env:"ARGO_TOKEN,required"`
-	ArgoApiTimeout   int64  `env:"ARGO_API_TIMEOUT" envDefault:"60"`
-	ArgoTimeout      int    `env:"ARGO_TIMEOUT" envDefault:"0"`
-	ArgoRefreshApp   bool   `env:"ARGO_REFRESH_APP" envDefault:"true"`
-	RegistryProxyUrl string `env:"DOCKER_IMAGES_PROXY"`
-	StateType        string `env:"STATE_TYPE,required"`
-	StaticFilePath   string `env:"STATIC_FILES_PATH" envDefault:"static"`
-	SkipTlsVerify    bool   `env:"SKIP_TLS_VERIFY" envDefault:"false"`
-	LogLevel         string `env:"LOG_LEVEL" envDefault:"info"`
-	LogFormat        string `env:"LOG_FORMAT" envDefault:"json"`
-	Host             string `env:"HOST" envDefault:"0.0.0.0"`
-	Port             string `env:"PORT" envDefault:"8080"`
-	DbHost           string `env:"DB_HOST" envDefault:"localhost"`
-	DbPort           string `env:"DB_PORT" envDefault:"5432"`
-	DbName           string `env:"DB_NAME"`
-	DbUser           string `env:"DB_USER"`
-	DbPassword       string `env:"DB_PASSWORD"`
-	DbMigrationsPath string `env:"DB_MIGRATIONS_PATH" envDefault:"db/migrations"` // deprecated
-	DeployToken      string `env:"ARGO_WATCHER_DEPLOY_TOKEN"`
+	ArgoUrl          url.URL `env:"ARGO_URL,required"`
+	ArgoToken        string  `env:"ARGO_TOKEN,required"`
+	ArgoApiTimeout   int64   `env:"ARGO_API_TIMEOUT" envDefault:"60"`
+	ArgoTimeout      int     `env:"ARGO_TIMEOUT" envDefault:"0"`
+	ArgoRefreshApp   bool    `env:"ARGO_REFRESH_APP" envDefault:"true"`
+	RegistryProxyUrl string  `env:"DOCKER_IMAGES_PROXY"`
+	StateType        string  `env:"STATE_TYPE,required"`
+	StaticFilePath   string  `env:"STATIC_FILES_PATH" envDefault:"static"`
+	SkipTlsVerify    bool    `env:"SKIP_TLS_VERIFY" envDefault:"false"`
+	LogLevel         string  `env:"LOG_LEVEL" envDefault:"info"`
+	LogFormat        string  `env:"LOG_FORMAT" envDefault:"json"`
+	Host             string  `env:"HOST" envDefault:"0.0.0.0"`
+	Port             string  `env:"PORT" envDefault:"8080"`
+	DbHost           string  `env:"DB_HOST" envDefault:"localhost"`
+	DbPort           string  `env:"DB_PORT" envDefault:"5432"`
+	DbName           string  `env:"DB_NAME"`
+	DbUser           string  `env:"DB_USER"`
+	DbPassword       string  `env:"DB_PASSWORD"`
+	DbMigrationsPath string  `env:"DB_MIGRATIONS_PATH" envDefault:"db/migrations"` // deprecated
+	DeployToken      string  `env:"ARGO_WATCHER_DEPLOY_TOKEN"`
 }
 
 // NewServerConfig parses the server configuration from environment variables using the envconfig package.
