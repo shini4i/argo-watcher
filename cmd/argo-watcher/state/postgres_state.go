@@ -2,6 +2,7 @@ package state
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -16,7 +17,7 @@ import (
 	_ "github.com/lib/pq"
 
 	"github.com/golang-migrate/migrate/v4"
-	migrate_postgres "github.com/golang-migrate/migrate/v4/database/postgres"
+	migratePostgres "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
@@ -72,7 +73,7 @@ func (state *PostgresState) runMigrations(dbMigrationPath string) error {
 		return err
 	}
 
-	driver, err := migrate_postgres.WithInstance(connection, &migrate_postgres.Config{})
+	driver, err := migratePostgres.WithInstance(connection, &migratePostgres.Config{})
 	if err != nil {
 		return err
 	}
@@ -86,7 +87,7 @@ func (state *PostgresState) runMigrations(dbMigrationPath string) error {
 
 	log.Debug().Msg("Running database migrations...")
 	err = migrations.Up()
-	if err != nil && err != migrate.ErrNoChange {
+	if err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return err
 	}
 
@@ -154,12 +155,10 @@ func (state *PostgresState) GetTasks(startTime float64, endTime float64, app str
 // It handles converting the created and updated timestamps to float64 values and unmarshalling the images from the database.
 func (state *PostgresState) GetTask(id string) (*models.Task, error) {
 	var ormTask state_models.TaskModel
-	result := state.orm.Take(&ormTask, "id = ?", id)
-	if result.Error != nil {
-		return nil, result.Error
+	if err := state.orm.Take(&ormTask, "id = ?", id).Error; err != nil {
+		return nil, fmt.Errorf("error retrieving task with ID %s: %w", id, err)
 	}
-	task := ormTask.ConvertToExternalTask()
-	return task, nil
+	return ormTask.ConvertToExternalTask(), nil
 }
 
 // SetTaskStatus updates the status, status_reason, and updated fields of a task in the PostgreSQL database.
@@ -170,7 +169,7 @@ func (state *PostgresState) SetTaskStatus(id string, status string, reason strin
 	if err != nil {
 		return err
 	}
-	var ormTask state_models.TaskModel = state_models.TaskModel{Id: uuidv4}
+	var ormTask = state_models.TaskModel{Id: uuidv4}
 	result := state.orm.Model(ormTask).Updates(state_models.TaskModel{Status: status, StatusReason: sql.NullString{String: reason, Valid: true}})
 	if result.Error != nil {
 		return result.Error
