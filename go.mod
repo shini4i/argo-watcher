@@ -4,13 +4,13 @@ go 1.21
 
 require (
 	github.com/avast/retry-go/v4 v4.5.0
+	github.com/caarlos0/env/v9 v9.0.0
 	github.com/gin-gonic/contrib v0.0.0-20201101042839-6a891bf89f19
 	github.com/gin-gonic/gin v1.9.1
 	github.com/go-git/go-billy/v5 v5.4.1
 	github.com/go-git/go-git/v5 v5.8.1
 	github.com/golang-migrate/migrate/v4 v4.15.2
 	github.com/google/uuid v1.3.1
-	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/lib/pq v1.10.6
 	github.com/prometheus/client_golang v1.16.0
 	github.com/rs/zerolog v1.30.0

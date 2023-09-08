@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/rs/zerolog/log"
@@ -72,7 +73,8 @@ func init() {
 	mux.HandleFunc("/api/v1/session/userinfo", getUserInfoHandler)
 	mux.HandleFunc("/api/v1/applications/test", getApplicationHandler)
 	server = httptest.NewServer(mux)
-	api = &ArgoApi{baseUrl: server.URL, client: server.Client()}
+	parsedURL, _ := url.Parse(server.URL) // we assume that the server.URL is valid
+	api = &ArgoApi{baseUrl: *parsedURL, client: server.Client()}
 }
 
 func TestArgoApi_GetUserInfo(t *testing.T) {

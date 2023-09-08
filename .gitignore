@@ -1,5 +1,6 @@
 # IDE settings
 .idea
+.run
 
 # database for development
 db/data

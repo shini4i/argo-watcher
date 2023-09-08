@@ -1,6 +1,7 @@
 package config
 
 import (
+	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -20,7 +21,8 @@ func TestNewServerConfig(t *testing.T) {
 	assert.NotNil(t, cfg)
 
 	// Assert specific field values
-	assert.Equal(t, "https://example.com", cfg.ArgoUrl)
+	expectedUrl, _ := url.Parse("https://example.com")
+	assert.Equal(t, *expectedUrl, cfg.ArgoUrl)
 	assert.Equal(t, "secret-token", cfg.ArgoToken)
 	assert.Equal(t, "postgres", cfg.StateType)
 }
@@ -39,7 +41,7 @@ func TestNewServerConfig_RequiredFieldsMissing(t *testing.T) {
 func TestServerConfig_GetRetryAttempts(t *testing.T) {
 	// Create a ServerConfig instance with a specific ArgoTimeout value
 	config := &ServerConfig{
-		ArgoTimeout: "60",
+		ArgoTimeout: 60,
 	}
 
 	// Call the GetRetryAttempts function
