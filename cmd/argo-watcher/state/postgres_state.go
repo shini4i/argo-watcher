@@ -94,25 +94,15 @@ func (state *PostgresState) runMigrations(dbMigrationPath string) error {
 // The method executes an INSERT query to add a new record with the task details, including the current UTC time.
 func (state *PostgresState) Add(task models.Task) (*models.Task, error) {
 	ormTask := state_models.TaskModel{
-		Images: datatypes.NewJSONSlice(task.Images),
-		Status: models.StatusInProgressMessage,
-		ApplicationName: sql.NullString{
-			String: task.App,
-			Valid:  true,
-		},
-		Author: sql.NullString{
-			String: task.Author,
-			Valid:  true,
-		},
-		Project: sql.NullString{
-			String: task.Project,
-			Valid:  true,
-		},
+		Images:          datatypes.NewJSONSlice(task.Images),
+		Status:          models.StatusInProgressMessage,
+		ApplicationName: sql.NullString{String: task.App, Valid: true},
+		Author:          sql.NullString{String: task.Author, Valid: true},
+		Project:         sql.NullString{String: task.Project, Valid: true},
 	}
 
-	result := state.orm.Create(&ormTask)
-	if result.Error != nil {
-		log.Error().Msgf("Failed to create task database record with error: %s", result.Error)
+	if err := state.orm.Create(&ormTask).Error; err != nil {
+		log.Error().Msgf("Failed to create task database record with error: %s", err.Error())
 		return nil, fmt.Errorf("failed to create task in database")
 	}
 
