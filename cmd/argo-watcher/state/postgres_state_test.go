@@ -59,7 +59,7 @@ var (
 )
 
 func TestPostgresState_Add(t *testing.T) {
-	config := &config.ServerConfig{
+	testConfig := &config.ServerConfig{
 		StateType:        "postgres",
 		DbHost:           os.Getenv("DB_HOST"),
 		DbPort:           "5432",
@@ -68,7 +68,7 @@ func TestPostgresState_Add(t *testing.T) {
 		DbPassword:       os.Getenv("DB_PASSWORD"),
 		DbMigrationsPath: "../../../db/migrations",
 	}
-	err := postgresState.Connect(config)
+	err := postgresState.Connect(testConfig)
 	if err != nil {
 		panic(err)
 	}
@@ -185,4 +185,18 @@ func TestPostgresState_ProcessObsoleteTasks(t *testing.T) {
 func TestPostgresState_Check(t *testing.T) {
 	// Check that we return true if connection is ok
 	assert.True(t, postgresState.Check())
+}
+
+func TestGetDsn(t *testing.T) {
+	testConfig := &config.ServerConfig{
+		DbHost:     "localhost",
+		DbPort:     "5432",
+		DbUser:     "admin",
+		DbPassword: "password123",
+		DbName:     "testdb",
+	}
+
+	expectedDsn := "host=localhost port=5432 user=admin password=password123 dbname=testdb sslmode=disable TimeZone=UTC"
+
+	assert.Equal(t, expectedDsn, getDsn(testConfig))
 }

@@ -31,22 +31,8 @@ type PostgresState struct {
 
 // Connect establishes a connection to the PostgreSQL database using the provided server configuration.
 func (state *PostgresState) Connect(serverConfig *config.ServerConfig) error {
-	dsnTemplate := "host=%s port=%s user=%s password=%s dbname=%s sslmode=disable TimeZone=UTC"
-	dsn := fmt.Sprintf(dsnTemplate, serverConfig.DbHost, serverConfig.DbPort, serverConfig.DbUser, serverConfig.DbPassword, serverConfig.DbName)
-
-	// create connection
-	ormConfig := &gorm.Config{}
-	// we can leave logger enabled only for text format
-	if serverConfig.LogFormat != config.LogFormatText {
-		// disable logging until we implement zerolog logger for ORM
-		ormConfig.Logger = logger.Default.LogMode(logger.Silent)
-	} else {
-		// output all the SQL queries
-		ormConfig.Logger = logger.Default.LogMode(logger.Info)
-	}
-
 	// create ORM driver
-	if orm, err := gorm.Open(postgres.Open(dsn), ormConfig); err != nil {
+	if orm, err := gorm.Open(postgres.Open(getDsn(serverConfig)), getOrmLogger(serverConfig)); err != nil {
 		return err
 	} else {
 		state.orm = orm
@@ -245,4 +231,19 @@ func (state *PostgresState) doProcessPostgresObsoleteTasks() error {
 	}
 
 	return nil
+}
+
+func getDsn(serverConfig *config.ServerConfig) string {
+	dsnTemplate := "host=%s port=%s user=%s password=%s dbname=%s sslmode=disable TimeZone=UTC"
+	return fmt.Sprintf(dsnTemplate, serverConfig.DbHost, serverConfig.DbPort, serverConfig.DbUser, serverConfig.DbPassword, serverConfig.DbName)
+}
+
+func getOrmLogger(serverConfig *config.ServerConfig) *gorm.Config {
+	ormConfig := &gorm.Config{}
+	if serverConfig.LogFormat != config.LogFormatText {
+		ormConfig.Logger = logger.Default.LogMode(logger.Silent)
+	} else {
+		ormConfig.Logger = logger.Default.LogMode(logger.Info)
+	}
+	return ormConfig
 }
