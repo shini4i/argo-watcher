@@ -133,18 +133,16 @@ func (state *PostgresState) GetTasks(startTime float64, endTime float64, app str
 	if app != "" {
 		query.Where("app = ?", app)
 	}
+
 	var ormTasks []state_models.TaskModel
-	result := query.Find(&ormTasks)
-	if result.Error != nil {
-		log.Error().Msg(result.Error.Error())
+	if err := query.Find(&ormTasks).Error; err != nil {
+		log.Error().Msg(err.Error())
 		return nil
 	}
 
-	var tasks []models.Task = []models.Task{}
-	for index := 0; index < len(ormTasks); index++ {
-		ormTask := ormTasks[index]
-		task := ormTask.ConvertToExternalTask()
-		tasks = append(tasks, *task)
+	tasks := make([]models.Task, len(ormTasks))
+	for i, ormTask := range ormTasks {
+		tasks[i] = *ormTask.ConvertToExternalTask()
 	}
 
 	return tasks
