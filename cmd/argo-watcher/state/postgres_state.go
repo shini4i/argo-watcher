@@ -46,17 +46,14 @@ func (state *PostgresState) Connect(serverConfig *config.ServerConfig) error {
 	}
 
 	// create ORM driver
-	orm, err := gorm.Open(postgres.Open(dsn), ormConfig)
-	if err != nil {
+	if orm, err := gorm.Open(postgres.Open(dsn), ormConfig); err != nil {
 		return err
+	} else {
+		state.orm = orm
 	}
 
-	// save orm object
-	state.orm = orm
-
 	// run migrations
-	err = state.runMigrations(serverConfig.DbMigrationsPath)
-	if err != nil {
+	if err := state.runMigrations(serverConfig.DbMigrationsPath); err != nil {
 		return fmt.Errorf("failed running migrations: %s", err.Error())
 	}
 
@@ -78,16 +75,13 @@ func (state *PostgresState) runMigrations(dbMigrationPath string) error {
 		return err
 	}
 
-	migrations, err := migrate.NewWithDatabaseInstance(
-		migrationsPath,
-		"postgres", driver)
+	migrations, err := migrate.NewWithDatabaseInstance(migrationsPath, "postgres", driver)
 	if err != nil {
 		return err
 	}
 
 	log.Debug().Msg("Running database migrations...")
-	err = migrations.Up()
-	if err != nil && !errors.Is(err, migrate.ErrNoChange) {
+	if err := migrations.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return err
 	}
 
@@ -100,11 +94,20 @@ func (state *PostgresState) runMigrations(dbMigrationPath string) error {
 // The method executes an INSERT query to add a new record with the task details, including the current UTC time.
 func (state *PostgresState) Add(task models.Task) (*models.Task, error) {
 	ormTask := state_models.TaskModel{
-		Images:          datatypes.NewJSONSlice(task.Images),
-		Status:          models.StatusInProgressMessage,
-		ApplicationName: sql.NullString{String: task.App, Valid: true},
-		Author:          sql.NullString{String: task.Author, Valid: true},
-		Project:         sql.NullString{String: task.Project, Valid: true},
+		Images: datatypes.NewJSONSlice(task.Images),
+		Status: models.StatusInProgressMessage,
+		ApplicationName: sql.NullString{
+			String: task.App,
+			Valid:  true,
+		},
+		Author: sql.NullString{
+			String: task.Author,
+			Valid:  true,
+		},
+		Project: sql.NullString{
+			String: task.Project,
+			Valid:  true,
+		},
 	}
 
 	result := state.orm.Create(&ormTask)
