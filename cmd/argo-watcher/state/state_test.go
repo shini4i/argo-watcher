@@ -1,9 +1,10 @@
 package state
 
 import (
+	"testing"
+
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	"github.com/stretchr/testify/assert"
-	"testing"
 )
 
 func TestNewState_success(t *testing.T) {

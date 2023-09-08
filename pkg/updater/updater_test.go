@@ -2,6 +2,10 @@ package updater
 
 import (
 	"errors"
+	"strings"
+	"testing"
+	"time"
+
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5"
@@ -12,9 +16,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 	"gopkg.in/yaml.v2"
-	"strings"
-	"testing"
-	"time"
 )
 
 func TestGitRepoClone(t *testing.T) {
