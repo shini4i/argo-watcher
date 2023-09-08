@@ -2,8 +2,9 @@ package config
 
 import (
 	"errors"
-	"github.com/shini4i/argo-watcher/internal/helpers"
 	"net/url"
+
+	"github.com/shini4i/argo-watcher/internal/helpers"
 
 	envConfig "github.com/caarlos0/env/v9"
 )

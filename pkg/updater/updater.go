@@ -2,6 +2,10 @@ package updater
 
 import (
 	"fmt"
+	"io"
+	"os"
+	"time"
+
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5"
@@ -11,9 +15,6 @@ import (
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v2"
-	"io"
-	"os"
-	"time"
 )
 
 var (
