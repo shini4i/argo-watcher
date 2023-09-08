@@ -241,15 +241,13 @@ func (state *PostgresState) ProcessObsoleteTasks(retryTimes uint) {
 func (state *PostgresState) doProcessPostgresObsoleteTasks() error {
 	log.Debug().Msg("Removing obsolete tasks...")
 
-	// Removing app not found tasks older than 1 hour from the database.
-	if err := state.orm.Where("status = ?", models.StatusAppNotFoundMessage).Where("created < now() - interval ?", taskExpirationInterval).Delete(&state_models.TaskModel{}).Error; err != nil {
-		log.Error().Msgf("Failed to remove obsolete 'app not found' tasks: %s", err.Error())
+	log.Debug().Msg("Removing app not found tasks older than 1 hour from the database...")
+	if err := state.orm.Where("status = ?", models.StatusAppNotFoundMessage).Where("created < now() - interval '1 hour'").Delete(&state_models.TaskModel{}).Error; err != nil {
 		return err
 	}
 
-	// Marking in-progress tasks older than 1 hour as aborted.
-	if err := state.orm.Where("status = ?", models.StatusInProgressMessage).Where("created < now() - interval ?", taskExpirationInterval).Updates(&state_models.TaskModel{Status: models.StatusAborted}).Error; err != nil {
-		log.Error().Msgf("Failed to mark 'in progress' tasks as aborted: %s", err.Error())
+	log.Debug().Msg("Marking in progress tasks older than 1 hour as aborted...")
+	if err := state.orm.Where("status = ?", models.StatusInProgressMessage).Where("created < now() - interval '1 hour'").Updates(&state_models.TaskModel{Status: models.StatusAborted}).Error; err != nil {
 		return err
 	}
 

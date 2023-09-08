@@ -9,8 +9,6 @@ import (
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
-const taskExpirationInterval = "1 hour"
-
 var errDesiredRetry = errors.New("desired retry error")
 
 type State interface {
