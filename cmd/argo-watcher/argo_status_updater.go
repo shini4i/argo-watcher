@@ -58,7 +58,7 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 	// get application status
 	status := application.GetRolloutStatus(task.ListImages(), updater.registryProxyUrl)
 	if application.IsFinalRolloutStatus(status) {
-		log.Info().Str("id", task.Id).Msg("App is running on the excepted version.")
+		log.Info().Str("id", task.Id).Msg("App is running on the expected version.")
 		// deployment success
 		updater.argo.metrics.ResetFailedDeployment(task.App)
 		// update task status

@@ -2,6 +2,7 @@ package state
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -16,7 +17,7 @@ import (
 	_ "github.com/lib/pq"
 
 	"github.com/golang-migrate/migrate/v4"
-	migrate_postgres "github.com/golang-migrate/migrate/v4/database/postgres"
+	migratePostgres "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
@@ -30,32 +31,15 @@ type PostgresState struct {
 
 // Connect establishes a connection to the PostgreSQL database using the provided server configuration.
 func (state *PostgresState) Connect(serverConfig *config.ServerConfig) error {
-	dsnTemplate := "host=%s port=%s user=%s password=%s dbname=%s sslmode=disable TimeZone=UTC"
-	dsn := fmt.Sprintf(dsnTemplate, serverConfig.DbHost, serverConfig.DbPort, serverConfig.DbUser, serverConfig.DbPassword, serverConfig.DbName)
-
-	// create connection
-	ormConfig := &gorm.Config{}
-	// we can leave logger enabled only for text format
-	if serverConfig.LogFormat != config.LogFormatText {
-		// disable logging until we implement zerolog logger for ORM
-		ormConfig.Logger = logger.Default.LogMode(logger.Silent)
-	} else {
-		// output all the SQL queries
-		ormConfig.Logger = logger.Default.LogMode(logger.Info)
-	}
-
 	// create ORM driver
-	orm, err := gorm.Open(postgres.Open(dsn), ormConfig)
-	if err != nil {
+	if orm, err := gorm.Open(postgres.Open(getDsn(serverConfig)), getOrmLogger(serverConfig)); err != nil {
 		return err
+	} else {
+		state.orm = orm
 	}
-
-	// save orm object
-	state.orm = orm
 
 	// run migrations
-	err = state.runMigrations(serverConfig.DbMigrationsPath)
-	if err != nil {
+	if err := state.runMigrations(serverConfig.DbMigrationsPath); err != nil {
 		return fmt.Errorf("failed running migrations: %s", err.Error())
 	}
 
@@ -72,21 +56,18 @@ func (state *PostgresState) runMigrations(dbMigrationPath string) error {
 		return err
 	}
 
-	driver, err := migrate_postgres.WithInstance(connection, &migrate_postgres.Config{})
+	driver, err := migratePostgres.WithInstance(connection, &migratePostgres.Config{})
 	if err != nil {
 		return err
 	}
 
-	migrations, err := migrate.NewWithDatabaseInstance(
-		migrationsPath,
-		"postgres", driver)
+	migrations, err := migrate.NewWithDatabaseInstance(migrationsPath, "postgres", driver)
 	if err != nil {
 		return err
 	}
 
 	log.Debug().Msg("Running database migrations...")
-	err = migrations.Up()
-	if err != nil && err != migrate.ErrNoChange {
+	if err := migrations.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return err
 	}
 
@@ -106,9 +87,8 @@ func (state *PostgresState) Add(task models.Task) (*models.Task, error) {
 		Project:         sql.NullString{String: task.Project, Valid: true},
 	}
 
-	result := state.orm.Create(&ormTask)
-	if result.Error != nil {
-		log.Error().Msgf("Failed to create task database record with error: %s", result.Error)
+	if err := state.orm.Create(&ormTask).Error; err != nil {
+		log.Error().Msgf("Failed to create task database record with error: %s", err.Error())
 		return nil, fmt.Errorf("failed to create task in database")
 	}
 
@@ -133,18 +113,16 @@ func (state *PostgresState) GetTasks(startTime float64, endTime float64, app str
 	if app != "" {
 		query.Where("app = ?", app)
 	}
+
 	var ormTasks []state_models.TaskModel
-	result := query.Find(&ormTasks)
-	if result.Error != nil {
-		log.Error().Msg(result.Error.Error())
+	if err := query.Find(&ormTasks).Error; err != nil {
+		log.Error().Msg(err.Error())
 		return nil
 	}
 
-	var tasks []models.Task = []models.Task{}
-	for index := 0; index < len(ormTasks); index++ {
-		ormTask := ormTasks[index]
-		task := ormTask.ConvertToExternalTask()
-		tasks = append(tasks, *task)
+	tasks := make([]models.Task, len(ormTasks))
+	for i, ormTask := range ormTasks {
+		tasks[i] = *ormTask.ConvertToExternalTask()
 	}
 
 	return tasks
@@ -156,12 +134,10 @@ func (state *PostgresState) GetTasks(startTime float64, endTime float64, app str
 // It handles converting the created and updated timestamps to float64 values and unmarshalling the images from the database.
 func (state *PostgresState) GetTask(id string) (*models.Task, error) {
 	var ormTask state_models.TaskModel
-	result := state.orm.Take(&ormTask, "id = ?", id)
-	if result.Error != nil {
-		return nil, result.Error
+	if err := state.orm.Take(&ormTask, "id = ?", id).Error; err != nil {
+		return nil, fmt.Errorf("error retrieving task with ID %s: %w", id, err)
 	}
-	task := ormTask.ConvertToExternalTask()
-	return task, nil
+	return ormTask.ConvertToExternalTask(), nil
 }
 
 // SetTaskStatus updates the status, status_reason, and updated fields of a task in the PostgreSQL database.
@@ -172,7 +148,7 @@ func (state *PostgresState) SetTaskStatus(id string, status string, reason strin
 	if err != nil {
 		return err
 	}
-	var ormTask state_models.TaskModel = state_models.TaskModel{Id: uuidv4}
+	var ormTask = state_models.TaskModel{Id: uuidv4}
 	result := state.orm.Model(ormTask).Updates(state_models.TaskModel{Status: status, StatusReason: sql.NullString{String: reason, Valid: true}})
 	if result.Error != nil {
 		return result.Error
@@ -187,11 +163,11 @@ func (state *PostgresState) SetTaskStatus(id string, status string, reason strin
 func (state *PostgresState) GetAppList() []string {
 	var apps []string
 
-	result := state.orm.Model(&state_models.TaskModel{}).Distinct().Pluck("ApplicationName", &apps)
-	if result.Error != nil {
-		log.Error().Msg(result.Error.Error())
+	if err := state.orm.Model(&state_models.TaskModel{}).Distinct().Pluck("ApplicationName", &apps).Error; err != nil {
+		log.Error().Msgf("Failed to retrieve distinct app names: %s", err.Error())
 		return []string{}
 	}
+
 	return apps
 }
 
@@ -201,12 +177,16 @@ func (state *PostgresState) GetAppList() []string {
 func (state *PostgresState) Check() bool {
 	connection, err := state.orm.DB()
 	if err != nil {
-		log.Error().Msg(err.Error())
+		log.Error().Msgf("Failed to retrieve DB connection: %s", err.Error())
 		return false
 	}
 
-	err = connection.Ping()
-	return err == nil
+	if err = connection.Ping(); err != nil {
+		log.Error().Msgf("Failed to ping DB: %s", err.Error())
+		return false
+	}
+
+	return true
 }
 
 // ProcessObsoleteTasks monitors and handles obsolete tasks in the PostgreSQL state.
@@ -240,19 +220,30 @@ func (state *PostgresState) ProcessObsoleteTasks(retryTimes uint) {
 func (state *PostgresState) doProcessPostgresObsoleteTasks() error {
 	log.Debug().Msg("Removing obsolete tasks...")
 
-	var result *gorm.DB
-
 	log.Debug().Msg("Removing app not found tasks older than 1 hour from the database...")
-	result = state.orm.Where("status = ?", models.StatusAppNotFoundMessage).Where("created < now() - interval '1 hour'").Delete(&state_models.TaskModel{})
-	if result.Error != nil {
-		return result.Error
+	if err := state.orm.Where("status = ?", models.StatusAppNotFoundMessage).Where("created < now() - interval '1 hour'").Delete(&state_models.TaskModel{}).Error; err != nil {
+		return err
 	}
 
 	log.Debug().Msg("Marking in progress tasks older than 1 hour as aborted...")
-	result = state.orm.Where("status = ?", models.StatusInProgressMessage).Where("created < now() - interval '1 hour'").Updates(&state_models.TaskModel{Status: models.StatusAborted})
-	if result.Error != nil {
-		return result.Error
+	if err := state.orm.Where("status = ?", models.StatusInProgressMessage).Where("created < now() - interval '1 hour'").Updates(&state_models.TaskModel{Status: models.StatusAborted}).Error; err != nil {
+		return err
 	}
 
 	return nil
+}
+
+func getDsn(serverConfig *config.ServerConfig) string {
+	dsnTemplate := "host=%s port=%s user=%s password=%s dbname=%s sslmode=disable TimeZone=UTC"
+	return fmt.Sprintf(dsnTemplate, serverConfig.DbHost, serverConfig.DbPort, serverConfig.DbUser, serverConfig.DbPassword, serverConfig.DbName)
+}
+
+func getOrmLogger(serverConfig *config.ServerConfig) *gorm.Config {
+	ormConfig := &gorm.Config{}
+	if serverConfig.LogFormat != config.LogFormatText {
+		ormConfig.Logger = logger.Default.LogMode(logger.Silent)
+	} else {
+		ormConfig.Logger = logger.Default.LogMode(logger.Info)
+	}
+	return ormConfig
 }
