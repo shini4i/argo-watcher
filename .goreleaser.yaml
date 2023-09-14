@@ -30,6 +30,7 @@ dockers:
     goarch: amd64
     extra_files:
       - web/build
+      - db
   - image_templates:
       - 'ghcr.io/shini4i/{{.ProjectName}}:{{ .Tag }}-arm64'
     use: buildx
@@ -45,6 +46,7 @@ dockers:
     goarch: arm64
     extra_files:
       - web/build
+      - db
 
 docker_manifests:
   - name_template: 'ghcr.io/shini4i/{{.ProjectName}}:{{ .Tag }}'
