@@ -276,6 +276,36 @@ func TestExtractManagedImages(t *testing.T) {
 			},
 		},
 		{
+			name: "Extracts multiple managed images with whitespace in alias",
+			annotation: map[string]string{
+				managedImagesAnnotation: "alias1=image1, alias2=image2",
+			},
+			expected: map[string]string{
+				"alias1": "image1",
+				"alias2": "image2",
+			},
+		},
+		{
+			name: "Extracts multiple managed images with whitespace in image",
+			annotation: map[string]string{
+				managedImagesAnnotation: "alias1=image1 ,alias2=image2",
+			},
+			expected: map[string]string{
+				"alias1": "image1",
+				"alias2": "image2",
+			},
+		},
+		{
+			name: "Extracts multiple managed images with whitespace in alias and image",
+			annotation: map[string]string{
+				managedImagesAnnotation: "alias1=image1 , alias2=image2",
+			},
+			expected: map[string]string{
+				"alias1": "image1",
+				"alias2": "image2",
+			},
+		},
+		{
 			name: "Extracts single managed image",
 			annotation: map[string]string{
 				managedImagesAnnotation: "alias1=image1",

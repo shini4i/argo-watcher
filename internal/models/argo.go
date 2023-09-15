@@ -276,7 +276,7 @@ func extractManagedImages(annotations map[string]string) (map[string]string, err
 				if !strings.Contains(image, "=") {
 					return nil, fmt.Errorf("invalid format for %s annotation", managedImagesAnnotation)
 				}
-				managedImage := strings.Split(image, "=")
+				managedImage := strings.Split(strings.TrimSpace(image), "=")
 				managedImages[managedImage[0]] = managedImage[1]
 			}
 		}
