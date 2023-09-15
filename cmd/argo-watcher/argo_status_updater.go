@@ -112,8 +112,8 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 				}
 				return nil
 			},
-			retry.DelayType(retry.FixedDelay),
-			retry.Attempts(3),
+			retry.DelayType(retry.BackOffDelay),
+			retry.Attempts(5),
 			retry.OnRetry(func(n uint, err error) {
 				log.Warn().Str("id", task.Id).Msgf("Failed to update git repo. Error: %s, retrying...", err.Error())
 			}),
