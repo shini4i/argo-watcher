@@ -50,6 +50,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Get previous stable release tag
+        id: previous-stable-release-tag
+        if: (!contains(github.ref, 'pre'))
+        run: |
+          git fetch --tags
+          previous_stable_tag=$(git tag | sort -V | grep -v "pre" | tail -2 | head -1)
+          echo "GORELEASER_PREVIOUS_TAG=$previous_stable_tag" >> $GITHUB_OUTPUT
+
       - name: Run GoReleaser for stable release
         uses: goreleaser/goreleaser-action@v4
         if: (!contains(github.ref, 'pre'))
@@ -58,6 +66,8 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
+          GORELEASER_PREVIOUS_TAG: ${{ steps.previous-stable-release-tag.outputs.GORELEASER_PREVIOUS_TAG }}
 
       - name: Run GoReleaser for pre-release
         uses: goreleaser/goreleaser-action@v4
