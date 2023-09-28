@@ -1,0 +1,12 @@
+site_name: Argo-Watcher
+site_url: https://github.com/shini4i/argo-watcher
+site_description: Documentation for Argo-Watcher project
+site_author: Vadim Gedz
+
+theme:
+  name: 'readthedocs'
+
+nav:
+  - Home: 'index.md'
+  - Installation: 'installation.md'
+  - Development: "development.md"
