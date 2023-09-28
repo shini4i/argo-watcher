@@ -1,7 +1,7 @@
 <div align="center">
 
 # Argo Watcher
-Improve visibility of deployments managed by Argo CD Image Updater
+Enhancing Deployment Visibility with Argo CD Image Updater & Direct GitOps Repository Commit Support
 
 ![GitHub Actions](https://img.shields.io/github/actions/workflow/status/shini4i/argo-watcher/run-tests-and-sonar-scan.yml?branch=main)
 ![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/shini4i/argo-watcher)
@@ -15,9 +15,9 @@ Improve visibility of deployments managed by Argo CD Image Updater
 
 ## Why use Argo Watcher
 
-Argo Watcher solves an essential problem of visibility when deploying projects with Argo CD Image Updater.
+Argo Watcher not only addresses the critical challenge of visibility during deployments with Argo CD Image Updater but also introduces experimental support for direct commits to the GitOps repository.
 
-Argo Watcher monitors ArgoCD API for changes in your application and syncs the status for your image-related changes.
+It actively monitors the ArgoCD API for application changes and synchronizes the status of your image-related modifications, streamlining and potentially accelerating your deployment processes.
 
 ## Prerequisites
 
