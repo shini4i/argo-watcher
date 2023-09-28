@@ -42,17 +42,17 @@ The workflow for deployment might be the following
 
 ```mermaid
 graph TD
-    Dev[Dev] --> Commit{Commit changes to the git repository}
-    Commit --> Pipeline[Build pipeline triggered]
-    Pipeline --> Docker[Docker image built and published]
-    Docker --> Task[Pipeline adds a task to Argo-Watcher]
-    Task --> Check[Argo-Watcher checks Argo CD Api for an update]
-    Check --> Decision{Is ArgoCD Application running on the expected image?}
-    Decision -->|Yes| Success[Pipeline is marked as a success]
-    Decision -->|No| Retry[Check API again]
-    Retry --> TimeoutDecision{Has pre-defined timeout elapsed?}
-    TimeoutDecision -->|Yes| Failed[Pipeline is marked as failed]
-    TimeoutDecision -->|No| Check
+    Dev[Dev] --> Commit{Commit}
+    Commit --> Pipeline[Pipeline Triggered]
+    Pipeline --> Docker[Image Built]
+    Docker --> Task[Task to Argo-Watcher]
+    Task --> Check[Check Argo CD Api]
+    Check --> Decision{Expected Image?}
+    Decision -->|Yes| Success[Success]
+    Decision -->|No| Retry[Retry API Check]
+    Retry --> Timeout{Timeout?}
+    Timeout -->|Yes| Failed[Failed]
+    Timeout -->|No| Check
 ```
 
 </div>
