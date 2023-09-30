@@ -1,7 +1,9 @@
 version: 2
-formats: all
+
+build:
+  os: ubuntu-22.04
+  tools:
+    python: "3.11"
+
 mkdocs:
-  fail_on_warning: false
-python:
-  install:
-    - requirements: docs/requirements.txt
+  configuration: mkdocs.yml
