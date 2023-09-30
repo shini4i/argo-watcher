@@ -11,18 +11,32 @@ import { useEffect, useState } from 'react';
 import LocalOfferIcon from '@mui/icons-material/LocalOffer';
 import RestoreIcon from '@mui/icons-material/Restore';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
+import DescriptionIcon from '@mui/icons-material/Description';
 import Tooltip from '@mui/material/Tooltip';
 import { useErrorContext } from '../ErrorContext';
 
-function NavigationButton({ to, children }) {
+function NavigationButton({ to, children, external = false }) {
+  if (external) {
+    return (
+        <Link
+            sx={{ color: 'white', mx: '10px', display: 'flex' }}
+            href={to}
+            target="_blank"
+            rel="noopener noreferrer"
+        >
+          {children}
+        </Link>
+    );
+  }
+
   return (
-    <Link
-      sx={{ color: 'white', mx: '10px', display: 'flex' }}
-      component={RouterLink}
-      to={to}
-    >
-      {children}
-    </Link>
+      <Link
+          sx={{ color: 'white', mx: '10px', display: 'flex' }}
+          component={RouterLink}
+          to={to}
+      >
+        {children}
+      </Link>
   );
 }
 
@@ -61,6 +75,11 @@ function Navbar() {
             <NavigationButton to={'/history'}>
               <Tooltip title="History">
                 <CalendarMonthIcon />
+              </Tooltip>
+            </NavigationButton>
+            <NavigationButton to={`https://argo-watcher.readthedocs.io/en/${version}`} external>
+              <Tooltip title="Docs">
+                <DescriptionIcon />
               </Tooltip>
             </NavigationButton>
           </Stack>
