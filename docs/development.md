@@ -44,7 +44,7 @@ make docs
 
 ## Back-End Development
 
-To start developing argo-watcher you will need golang 1.19+
+To start developing argo-watcher you will need golang `1.21+`
 
 Start mock of the argo-cd server
 
@@ -61,7 +61,7 @@ go run .
 # go to backend directory
 cd cmd/argo-watcher
 # install dependencies
-go mod tidy
+go mod download
 # start argo-watcher (in-memory)
 LOG_LEVEL=debug LOG_FORMAT=text ARGO_URL=http://localhost:8081 ARGO_TOKEN=example STATE_TYPE=in-memory go run . -server
 ```

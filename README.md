@@ -1,7 +1,7 @@
 <div align="center">
 
 # Argo Watcher
-Improve visibility of deployments managed by Argo CD Image Updater
+Enhancing Deployment Visibility with Argo CD Image Updater & Direct GitOps Repository Commit Support
 
 ![GitHub Actions](https://img.shields.io/github/actions/workflow/status/shini4i/argo-watcher/run-tests-and-sonar-scan.yml?branch=main)
 ![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/shini4i/argo-watcher)
@@ -15,9 +15,9 @@ Improve visibility of deployments managed by Argo CD Image Updater
 
 ## Why use Argo Watcher
 
-Argo Watcher solves an essential problem of visibility when deploying projects with Argo CD Image Updater.
+Argo Watcher not only addresses the critical challenge of visibility during deployments with Argo CD Image Updater but also introduces experimental support for direct commits to the GitOps repository.
 
-Argo Watcher monitors ArgoCD API for changes in your application and syncs the status for your image-related changes.
+It actively monitors the ArgoCD API for application changes and synchronizes the status of your image-related modifications, streamlining and potentially accelerating your deployment processes.
 
 ## Prerequisites
 
@@ -42,17 +42,17 @@ The workflow for deployment might be the following
 
 ```mermaid
 graph TD
-    Dev[Dev] --> Commit{Commit changes to the git repository}
-    Commit --> Pipeline[Build pipeline triggered]
-    Pipeline --> Docker[Docker image built and published]
-    Docker --> Task[Pipeline adds a task to Argo-Watcher]
-    Task --> Check[Argo-Watcher checks Argo CD Api for an update]
-    Check --> Decision{Is ArgoCD Application running on the expected image?}
-    Decision -->|Yes| Success[Pipeline is marked as a success]
-    Decision -->|No| Retry[Check API again]
-    Retry --> TimeoutDecision{Has pre-defined timeout elapsed?}
-    TimeoutDecision -->|Yes| Failed[Pipeline is marked as failed]
-    TimeoutDecision -->|No| Check
+    Dev[Dev] --> Commit{Commit}
+    Commit --> Pipeline[Pipeline Triggered]
+    Pipeline --> Docker[Image Built]
+    Docker --> Task[Task to Argo-Watcher]
+    Task --> Check[Check Argo CD Api]
+    Check --> Decision{Expected Image?}
+    Decision -->|Yes| Success[Success]
+    Decision -->|No| Retry[Retry API Check]
+    Retry --> Timeout{Timeout?}
+    Timeout -->|Yes| Failed[Failed]
+    Timeout -->|No| Check
 ```
 
 </div>

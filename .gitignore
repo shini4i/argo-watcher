@@ -28,3 +28,6 @@ pkg/updater/mock
 
 # goreleaser
 dist/
+
+# generated docs
+site/
