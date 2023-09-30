@@ -43,7 +43,7 @@ argocd-image-updater.argoproj.io/image-list: app=registry.example.com/group-name
 argocd-image-updater.argoproj.io/app.update-strategy: latest
 argocd-image-updater.argoproj.io/app.helm.image-name: app.image.repository
 argocd-image-updater.argoproj.io/app.helm.image-tag: app.image.tag
-argocd-image-updater.argoproj.io/app.allow-tags: regexp:^\d{7}-mainstg
+argocd-image-updater.argoproj.io/app.allow-tags: regexp:^\d{7}-stage
 ```
 
 to the following:
