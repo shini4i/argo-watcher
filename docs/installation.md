@@ -1,10 +1,12 @@
-# Server Installation
+# Installation
 
-Argo Watcher Server is designed to run in Kubernetes environment.
+## Server Installation
 
-We provide a separate [helm chart](https://artifacthub.io/packages/helm/shini4i/argo-watcher) for deploying the server.
+Argo Watcher Server is intended to be run in Kubernetes environment.
 
-Helm chart values configurations example
+You can deploy the server using our dedicated [helm chart](https://artifacthub.io/packages/helm/shini4i/argo-watcher).
+
+Helm chart values configurations example:
 
 ```yaml
 # credentials to access ArgoCD
@@ -72,12 +74,12 @@ Argo Watcher Server supports the following environment variables
 | SSH_COMMIT_USER     | Git user name for commit                                             |           | No          |
 | SSH_COMMIT_EMAIL    | Git user email for commit                                            |           | No          |
 
-# Client setup
+## Client setup
 
 The client is designed to run on Kubernetes runners. We have
 a [dedicated docker image](https://ghcr.io/shini4i/argo-watcher-client) for Argo Watcher Client CI/CD jobs.
 
-## Running on GitLab CI/CD
+### Running on GitLab CI/CD
 
 Example deployment setup for running with GitLab CI/CD (
 reference: https://docs.gitlab.com/ee/ci/docker/using_kaniko.html)
