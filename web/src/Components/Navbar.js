@@ -79,7 +79,7 @@ function Navbar() {
                                 <CalendarMonthIcon/>
                             </Tooltip>
                         </NavigationButton>
-                        <NavigationButton to={`${readTheDocsUrl}/en/${version}`} external>
+                        <NavigationButton to={`${readTheDocsUrl}/en/v${version}`} external>
                             <Tooltip title="Docs">
                                 <DescriptionIcon/>
                             </Tooltip>
