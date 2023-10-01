@@ -43,6 +43,7 @@ function NavigationButton({to, children, external = false}) {
 function Navbar() {
     const [version, setVersion] = useState('0.0.0');
     const {setSuccess, setError} = useErrorContext();
+    const readTheDocsUrl = 'https://argo-watcher.readthedocs.io';
     useEffect(() => {
         fetchVersion()
             .then(version => {
@@ -77,7 +78,7 @@ function Navbar() {
                                 <CalendarMonthIcon/>
                             </Tooltip>
                         </NavigationButton>
-                        <NavigationButton to={`https://argo-watcher.readthedocs.io/en/${version}`} external>
+                        <NavigationButton to={`${readTheDocsUrl}/en/${version}`} external>
                             <Tooltip title="Docs">
                                 <DescriptionIcon/>
                             </Tooltip>
