@@ -44,6 +44,7 @@ function Navbar() {
     const [version, setVersion] = useState('0.0.0');
     const {setSuccess, setError} = useErrorContext();
     const readTheDocsUrl = 'https://argo-watcher.readthedocs.io';
+    const githubProjectUrl = 'https://github.com/shini4i/argo-watcher';
     useEffect(() => {
         fetchVersion()
             .then(version => {
@@ -99,7 +100,7 @@ function Navbar() {
                             },
                         }}
                         component={Link}
-                        href={'https://github.com/shini4i/argo-watcher/tree/v' + version}
+                        href={`${githubProjectUrl}/tree/v${version}`}
                     >
                         <GitHubIcon sx={{fontSize: '1.7em'}}/>
                         <Stack>
