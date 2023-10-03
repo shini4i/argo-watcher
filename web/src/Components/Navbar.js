@@ -11,7 +11,7 @@ import {useEffect, useState} from 'react';
 import LocalOfferIcon from '@mui/icons-material/LocalOffer';
 import RestoreIcon from '@mui/icons-material/Restore';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
-import DescriptionIcon from '@mui/icons-material/Description';
+import QuizRoundedIcon from '@mui/icons-material/QuizRounded';
 import Tooltip from '@mui/material/Tooltip';
 import {useErrorContext} from '../ErrorContext';
 
@@ -67,10 +67,10 @@ function Navbar() {
                         <img
                             src={process.env.PUBLIC_URL + '/logo.png'}
                             alt="Argo Watcher Logo"
-                            style={{width: 40, height: 'auto'}}
+                            style={{width: 45, height: 'auto'}}
                         />
                         <Box ml={0.5}>  {/* ml = margin-left: To add some space between logo and text */}
-                            <Typography fontSize={'16px'}>
+                            <Typography fontSize={'15px'}>
                                 Argo Watcher
                             </Typography>
                         </Box>
@@ -91,11 +91,6 @@ function Navbar() {
                                 <CalendarMonthIcon/>
                             </Tooltip>
                         </NavigationButton>
-                        <NavigationButton to={`${readTheDocsUrl}/en/v${version}`} external>
-                            <Tooltip title="Docs">
-                                <DescriptionIcon/>
-                            </Tooltip>
-                        </NavigationButton>
                     </Stack>
                     <Stack
                         spacing={1}
@@ -114,6 +109,13 @@ function Navbar() {
                         component={Link}
                         href={`${githubProjectUrl}/tree/v${version}`}
                     >
+                        <Stack>
+                            <NavigationButton to={`${readTheDocsUrl}/en/v${version}`} external>
+                                <Tooltip title="Docs">
+                                    <QuizRoundedIcon />
+                                </Tooltip>
+                            </NavigationButton>
+                        </Stack>
                         <GitHubIcon sx={{fontSize: '1.7em'}}/>
                         <Stack>
                             <Typography fontSize={'14px'}>GitHub</Typography>
