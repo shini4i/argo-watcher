@@ -67,9 +67,9 @@ function Navbar() {
                         <img
                             src={process.env.PUBLIC_URL + '/logo.png'}
                             alt="Argo Watcher Logo"
-                            style={{width: 45, height: 'auto'}}
+                            style={{width: 35, height: 'auto'}}
                         />
-                        <Box ml={0.5}>  {/* ml = margin-left: To add some space between logo and text */}
+                        <Box ml={1}>  {/* ml = margin-left: To add some space between logo and text */}
                             <Typography fontSize={'15px'}>
                                 Argo Watcher
                             </Typography>
