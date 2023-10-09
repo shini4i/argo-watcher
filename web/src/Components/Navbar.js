@@ -21,6 +21,7 @@ function NavigationButton({to, children, external = false}) {
             <Link
                 sx={{color: 'white', display: 'flex'}}
                 href={to}
+                underline="none"
                 target="_blank"
                 rel="noopener noreferrer"
             >
@@ -34,6 +35,7 @@ function NavigationButton({to, children, external = false}) {
             sx={{color: 'white', display: 'flex'}}
             component={RouterLink}
             to={to}
+            underline="none"
         >
             {children}
         </Link>
@@ -93,7 +95,7 @@ function Navbar() {
                         </NavigationButton>
                     </Stack>
                     <Stack
-                        spacing={1}
+                        spacing={1.5}
                         direction={'row'}
                         alignItems={'center'}
                         justifyContent={'flex-end'}
@@ -106,23 +108,30 @@ function Navbar() {
                                 color: 'rgba(255,255,255,.85)',
                             },
                         }}
-                        component={Link}
-                        href={`${githubProjectUrl}/tree/v${version}`}
                     >
-                        <Stack>
-                            <NavigationButton to={`${readTheDocsUrl}/en/v${version}`} external>
-                                <Tooltip title="Docs">
-                                    <QuizRoundedIcon />
-                                </Tooltip>
-                            </NavigationButton>
-                        </Stack>
-                        <GitHubIcon sx={{fontSize: '1.7em'}}/>
-                        <Stack>
-                            <Typography fontSize={'14px'}>GitHub</Typography>
-                            <Typography fontSize={'11px'}>
-                                <LocalOfferIcon fontSize={'6px'}/> {version}
-                            </Typography>
-                        </Stack>
+                        {/* Docs Button */}
+                        <NavigationButton to={`${readTheDocsUrl}/en/v${version}`} external>
+                            <Tooltip title="Docs">
+                                <QuizRoundedIcon/>
+                            </Tooltip>
+                        </NavigationButton>
+
+                        {/* GitHub Section */}
+                        <NavigationButton to={`${githubProjectUrl}/tree/v${version}`} external>
+                            <Stack
+                                spacing={1}
+                                direction={'row'}
+                                alignItems={'center'}
+                            >
+                                <GitHubIcon sx={{fontSize: '1.7em'}}/>
+                                <Stack>
+                                    <Typography fontSize={'14px'}>GitHub</Typography>
+                                    <Typography fontSize={'11px'}>
+                                        <LocalOfferIcon fontSize={'6px'}/> {version}
+                                    </Typography>
+                                </Stack>
+                            </Stack>
+                        </NavigationButton>
                     </Stack>
                 </Toolbar>
             </AppBar>
