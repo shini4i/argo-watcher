@@ -95,7 +95,7 @@ function Navbar() {
                         </NavigationButton>
                     </Stack>
                     <Stack
-                        spacing={1}
+                        spacing={1.5}
                         direction={'row'}
                         alignItems={'center'}
                         justifyContent={'flex-end'}
@@ -112,7 +112,7 @@ function Navbar() {
                         {/* Docs Button */}
                         <NavigationButton to={`${readTheDocsUrl}/en/v${version}`} external>
                             <Tooltip title="Docs">
-                                <QuizRoundedIcon />
+                                <QuizRoundedIcon/>
                             </Tooltip>
                         </NavigationButton>
 
