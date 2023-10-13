@@ -353,10 +353,12 @@ function TasksTable({
                     )}
                   </TableCell>
                   <TableCell>
-                    {task.updated && (
-                      <span>{taskDuration(task.created, task.updated)}</span>
+                    {task.status === 'in progress' && (
+                      <span>{taskDuration(task.created, null)}</span>
                     )}
-                    {!task.updated && <span>-</span>}
+                    {task.status !== 'in progress' && (
+                      <span>{taskDuration(task.created, task?.updated)}</span>
+                    )}
                   </TableCell>
                   <TableCell>
                     {task.images.map((item, index) => {
