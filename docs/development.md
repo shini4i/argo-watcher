@@ -66,23 +66,24 @@ go mod download
 LOG_LEVEL=debug LOG_FORMAT=text ARGO_URL=http://localhost:8081 ARGO_TOKEN=example STATE_TYPE=in-memory go run . -server
 ```
 
-
 ### Start the argo-watcher server (postgres)
 
 Start database
+
 ```shell
 # start the database in a separate terminal window
 docker compose up postgres
 ```
 
 Start server
+
 ```shell
 # go to backend directory
 cd cmd/argo-watcher
 # install dependencies
 go mod tidy
 # OR start argo-watcher (postgres)
-LOG_LEVEL=debug LOG_FORMAT=text ARGO_URL=http://localhost:8081 ARGO_TOKEN=example STATE_TYPE=postgres DB_USER=watcher DB_PASSWORD=watcher DB_NAME=watcher go run . -server
+LOG_LEVEL=debug LOG_FORMAT=text ARGO_URL=http://localhost:8081 ARGO_TOKEN=example STATE_TYPE=postgres DB_USER=watcher DB_PASSWORD=watcher DB_NAME=watcher DB_MIGRATIONS_PATH=../../db/migrations go run . -server
 ```
 
 #### Logs in simple text
