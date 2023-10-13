@@ -8,21 +8,29 @@ export const relativeTime = oldTimestamp => {
 };
 
 export const relativeHumanDuration = seconds => {
+  function numberEnding(number) {
+    return number > 1 ? 's' : '';
+  }
+
   if (seconds < 60) {
     // Less than a minute has passed:
     return `< 1 minute`;
   } else if (seconds < 3600) {
     // Less than an hour has passed:
-    return `${Math.floor(seconds / 60)} minutes`;
+    const minutes = Math.floor(seconds / 60);
+    return `${minutes} minute${numberEnding(minutes)}`;
   } else if (seconds < 86400) {
     // Less than a day has passed:
-    return `${Math.floor(seconds / 3600)} hours`;
+    const hours = Math.floor(seconds / 3600);
+    return `${hours} hour${numberEnding(hours)}`;
   } else if (seconds < 2620800) {
     // Less than a month has passed:
-    return `${Math.floor(seconds / 86400)} days`;
+    const days = Math.floor(seconds / 86400);
+    return `${days} day${numberEnding(days)}`;
   } else if (seconds < 31449600) {
     // Less than a year has passed:
-    return `${Math.floor(seconds / 2620800)} months`;
+    const months = Math.floor(seconds / 2620800);
+    return `${months} month${numberEnding(months)}`;
   }
 
   // More than a year has passed:
