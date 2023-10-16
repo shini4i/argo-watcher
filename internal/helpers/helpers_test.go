@@ -62,14 +62,15 @@ func TestImageContains(t *testing.T) {
 }
 
 func TestCurlCommandFromRequest(t *testing.T) {
-	// Create a sample HTTP request
-	request, _ := http.NewRequest("POST", "https://example.com/api", nil)
+	// Create a sample HTTP request with a non-empty request body
+	requestBody := `{"key": "value"}`
+	request, _ := http.NewRequest("POST", "https://example.com/api", strings.NewReader(requestBody))
 	request.Header.Add("Content-Type", "application/json")
 	request.Header.Add("Authorization", "Bearer Token123")
 	request.Header.Add("X-Custom-Header", "CustomValue")
 
 	// Create the expected cURL command
-	expectedCurl := `curl -X POST -H 'Authorization: Bearer Token123' -H 'Content-Type: application/json' -H 'X-Custom-Header: CustomValue' 'https://example.com/api'`
+	expectedCurl := `curl -X POST -H 'Authorization: Bearer Token123' -H 'Content-Type: application/json' -H 'X-Custom-Header: CustomValue' -d '{"key": "value"}' 'https://example.com/api'`
 
 	// Call the function to get the actual cURL command
 	actualCurl, err := CurlCommandFromRequest(request)
