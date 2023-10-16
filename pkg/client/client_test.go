@@ -24,7 +24,7 @@ var (
 )
 
 func addTaskHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
+	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		_, err := w.Write([]byte(`Method not allowed`))
 		if err != nil {

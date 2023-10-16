@@ -29,7 +29,7 @@ var (
 
 func (watcher *Watcher) addTask(task models.Task, token string) (string, error) {
 	// Marshal the task into JSON
-	responseBody, err := json.Marshal(task)
+	requestBody, err := json.Marshal(task)
 	if err != nil {
 		return "", err
 	}
@@ -37,7 +37,7 @@ func (watcher *Watcher) addTask(task models.Task, token string) (string, error) 
 	url := fmt.Sprintf("%s/api/v1/tasks", watcher.baseUrl)
 
 	// Create a new HTTP request with the JSON responseBody
-	request, err := http.NewRequest("POST", url, bytes.NewBuffer(responseBody))
+	request, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(requestBody))
 	if err != nil {
 		return "", err
 	}
@@ -53,6 +53,8 @@ func (watcher *Watcher) addTask(task models.Task, token string) (string, error) 
 	curlCommand := helpers.CurlCommandFromRequest(request)
 	log.Printf("Equivalent cURL command:\n%s\n", curlCommand)
 
+	log.Printf("Request Headers: %+v", request.Header)
+
 	// Send the HTTP request
 	response, err := watcher.client.Do(request)
 	if err != nil {
@@ -66,7 +68,7 @@ func (watcher *Watcher) addTask(task models.Task, token string) (string, error) 
 		}
 	}(response.Body)
 
-	responseBody, err = io.ReadAll(response.Body)
+	responseBody, err := io.ReadAll(response.Body)
 	if err != nil {
 		return "", err
 	}
