@@ -125,6 +125,30 @@ func (watcher *Watcher) getTaskStatus(id string) (*models.TaskStatus, error) {
 	return &taskStatus, nil
 }
 
+func (watcher *Watcher) waitForDeployment(id, appName string) error {
+	for {
+		taskInfo, err := watcher.getTaskStatus(id)
+		if err != nil {
+			return err
+		}
+
+		switch taskInfo.Status {
+		case models.StatusFailedMessage:
+			return fmt.Errorf("The deployment has failed, please check logs.\n%s", taskInfo.StatusReason)
+		case models.StatusInProgressMessage:
+			log.Println("Application deployment is in progress...")
+			time.Sleep(15 * time.Second)
+		case models.StatusAppNotFoundMessage:
+			return fmt.Errorf("Application %s does not exist.\n%s", appName, taskInfo.StatusReason)
+		case models.StatusArgoCDUnavailableMessage:
+			return fmt.Errorf("ArgoCD is unavailable. Please investigate.\n%s", taskInfo.StatusReason)
+		case models.StatusDeployedMessage:
+			log.Printf("The deployment of %s version is done.\n", tag)
+			return nil
+		}
+	}
+}
+
 func getImagesList() []models.Image {
 	var images []models.Image
 	for _, image := range strings.Split(os.Getenv("IMAGES"), ",") {
@@ -179,25 +203,8 @@ func Run() {
 	// Giving Argo-Watcher some time to process the task
 	time.Sleep(5 * time.Second)
 
-	for {
-		taskInfo, err := watcher.getTaskStatus(id)
-		if err != nil {
-			log.Panicf("Couldn't get task status. Got the following error: %s", err)
-		}
-
-		switch taskInfo.Status {
-		case models.StatusFailedMessage:
-			log.Panicf("The deployment has failed, please check logs.\n%s", taskInfo.StatusReason)
-		case models.StatusInProgressMessage:
-			log.Println("Application deployment is in progress...")
-			time.Sleep(15 * time.Second)
-		case models.StatusAppNotFoundMessage:
-			log.Panicf("Application %s does not exist.\n%s", task.App, taskInfo.StatusReason)
-		case models.StatusArgoCDUnavailableMessage:
-			log.Panicf("ArgoCD is unavailable. Please investigate.\n%s", taskInfo.StatusReason)
-		case models.StatusDeployedMessage:
-			log.Printf("The deployment of %s version is done.\n", tag)
-			return
-		}
+	if err := watcher.waitForDeployment(id, task.App); err != nil {
+		log.Println(err)
+		os.Exit(1)
 	}
 }
