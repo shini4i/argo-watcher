@@ -3,6 +3,7 @@ package client
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -11,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/shini4i/argo-watcher/internal/helpers"
 
 	"github.com/shini4i/argo-watcher/internal/models"
 )
@@ -24,27 +27,36 @@ var (
 	tag = os.Getenv("IMAGE_TAG")
 )
 
-func (watcher *Watcher) addTask(task models.Task, token string) string {
-	body, err := json.Marshal(task)
+func (watcher *Watcher) addTask(task models.Task, token string) (string, error) {
+	// Marshal the task into JSON
+	responseBody, err := json.Marshal(task)
 	if err != nil {
-		panic(err)
+		return "", err
 	}
 
 	url := fmt.Sprintf("%s/api/v1/tasks", watcher.baseUrl)
-	request, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+
+	// Create a new HTTP request with the JSON responseBody
+	request, err := http.NewRequest("POST", url, bytes.NewBuffer(responseBody))
 	if err != nil {
-		panic(err)
+		return "", err
 	}
 
 	request.Header.Set("Content-Type", "application/json; charset=UTF-8")
 
+	// Set the deploy token header if provided
 	if token != "" {
 		request.Header.Set("ARGO_WATCHER_DEPLOY_TOKEN", token)
 	}
 
+	// Print the equivalent cURL command for troubleshooting
+	curlCommand := helpers.CurlCommandFromRequest(request)
+	log.Printf("Equivalent cURL command:\n%s\n", curlCommand)
+
+	// Send the HTTP request
 	response, err := watcher.client.Do(request)
 	if err != nil {
-		panic(err)
+		return "", err
 	}
 
 	defer func(Body io.ReadCloser) {
@@ -54,37 +66,37 @@ func (watcher *Watcher) addTask(task models.Task, token string) string {
 		}
 	}(response.Body)
 
-	body, err = io.ReadAll(response.Body)
+	responseBody, err = io.ReadAll(response.Body)
 	if err != nil {
-		panic(err)
+		return "", err
 	}
 
-	if response.StatusCode != 202 {
-		fmt.Printf("Something went wrong on argo-watcher side. Got the following response code %d\n", response.StatusCode)
-		fmt.Printf("Body: %s\n", string(body))
-		os.Exit(1)
+	// Check the HTTP status code for success
+	if response.StatusCode != http.StatusAccepted {
+		errMsg := fmt.Sprintf("Something went wrong on argo-watcher side. Got the following response code %d\n", response.StatusCode)
+		errMsg += fmt.Sprintf("Body: %s\n", string(responseBody))
+		return "", errors.New(errMsg)
 	}
 
 	var accepted models.TaskStatus
-	err = json.Unmarshal(body, &accepted)
+	err = json.Unmarshal(responseBody, &accepted)
 	if err != nil {
-		panic(err)
+		return "", err
 	}
 
-	return accepted.Id
+	return accepted.Id, nil
 }
 
-func (watcher *Watcher) getTaskStatus(id string) *models.TaskStatus {
+func (watcher *Watcher) getTaskStatus(id string) (*models.TaskStatus, error) {
 	url := fmt.Sprintf("%s/api/v1/tasks/%s", watcher.baseUrl, id)
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		log.Print(err)
-		os.Exit(1)
+		return nil, err
 	}
 
 	response, err := watcher.client.Do(request)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	defer func(Body io.ReadCloser) {
@@ -94,21 +106,19 @@ func (watcher *Watcher) getTaskStatus(id string) *models.TaskStatus {
 		}
 	}(response.Body)
 
-	body, _ := io.ReadAll(response.Body)
-
-	if response.StatusCode != 200 {
-		fmt.Printf("Received non 200 status code (%d)\n", response.StatusCode)
-		fmt.Printf("Body: %s\n", string(body))
-		os.Exit(1)
+	if response.StatusCode != http.StatusOK {
+		log.Printf("Received non-200 status code (%d)\n", response.StatusCode)
+		body, _ := io.ReadAll(response.Body)
+		log.Printf("Body: %s\n", string(body))
+		return nil, fmt.Errorf("received non-200 status code: %d", response.StatusCode)
 	}
 
 	var taskStatus models.TaskStatus
-	err = json.Unmarshal(body, &taskStatus)
-	if err != nil {
-		panic(err)
+	if err := json.NewDecoder(response.Body).Decode(&taskStatus); err != nil {
+		return nil, err
 	}
 
-	return &taskStatus
+	return &taskStatus, nil
 }
 
 func getImagesList() []models.Image {
@@ -122,7 +132,7 @@ func getImagesList() []models.Image {
 	return images
 }
 
-func ClientWatcher() {
+func Run() {
 	images := getImagesList()
 
 	watcher := Watcher{
@@ -157,30 +167,33 @@ func ClientWatcher() {
 
 	fmt.Printf("Waiting for %s app to be running on %s version.\n", task.App, tag)
 
-	id := watcher.addTask(task, deployToken)
+	id, err := watcher.addTask(task, deployToken)
+	if err != nil {
+		log.Panicf("Couldn't add task. Got the following error: %s", err)
+	}
 
+	// Giving Argo-Watcher some time to process the task
 	time.Sleep(5 * time.Second)
 
 loop:
 	for {
-		switch taskInfo := watcher.getTaskStatus(id); taskInfo.Status {
+		taskInfo, err := watcher.getTaskStatus(id)
+		if err != nil {
+			log.Panicf("Couldn't get task status. Got the following error: %s", err)
+		}
+
+		switch taskInfo.Status {
 		case models.StatusFailedMessage:
-			fmt.Println("The deployment has failed, please check logs.")
-			fmt.Println(taskInfo.StatusReason)
-			os.Exit(1)
+			log.Panicf("The deployment has failed, please check logs.\n%s", taskInfo.StatusReason)
 		case models.StatusInProgressMessage:
-			fmt.Println("Application deployment is in progress...")
+			log.Println("Application deployment is in progress...")
 			time.Sleep(15 * time.Second)
 		case models.StatusAppNotFoundMessage:
-			fmt.Printf("Application %s does not exist.\n", task.App)
-			fmt.Println(taskInfo.StatusReason)
-			os.Exit(1)
+			log.Panicf("Application %s does not exist.\n%s", task.App, taskInfo.StatusReason)
 		case models.StatusArgoCDUnavailableMessage:
-			fmt.Println("ArgoCD is unavailable. Please investigate.")
-			fmt.Println(taskInfo.StatusReason)
-			os.Exit(1)
+			log.Panicf("ArgoCD is unavailable. Please investigate.\n%s", taskInfo.StatusReason)
 		case models.StatusDeployedMessage:
-			fmt.Printf("The deployment of %s version is done.\n", tag)
+			log.Printf("The deployment of %s version is done.\n", tag)
 			break loop
 		}
 	}

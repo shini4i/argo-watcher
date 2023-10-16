@@ -14,13 +14,13 @@ var errorInvalidMode = errors.New("invalid mode")
 func runWatcher(serverFlag, clientFlag bool) error {
 	// start server if requested
 	if serverFlag && !clientFlag {
-		serverWatcher()
+		runServer()
 		return nil
 	}
 
 	// start client if requested
 	if clientFlag && !serverFlag {
-		client.ClientWatcher()
+		client.Run()
 		return nil
 	}
 
