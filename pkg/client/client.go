@@ -50,10 +50,11 @@ func (watcher *Watcher) addTask(task models.Task, token string) (string, error) 
 	}
 
 	// Print the equivalent cURL command for troubleshooting
-	curlCommand := helpers.CurlCommandFromRequest(request)
-	log.Printf("Equivalent cURL command:\n%s\n", curlCommand)
-
-	log.Printf("Request Headers: %+v", request.Header)
+	if curlCommand, err := helpers.CurlCommandFromRequest(request); err != nil {
+		log.Printf("Couldn't get cURL command. Got the following error: %s", err)
+	} else {
+		log.Printf("Equivalent cURL command: %s\n", curlCommand)
+	}
 
 	// Send the HTTP request
 	response, err := watcher.client.Do(request)

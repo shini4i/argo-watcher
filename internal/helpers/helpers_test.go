@@ -72,7 +72,8 @@ func TestCurlCommandFromRequest(t *testing.T) {
 	expectedCurl := `curl -X POST -H 'Authorization: Bearer Token123' -H 'Content-Type: application/json' -H 'X-Custom-Header: CustomValue' 'https://example.com/api'`
 
 	// Call the function to get the actual cURL command
-	actualCurl := CurlCommandFromRequest(request)
+	actualCurl, err := CurlCommandFromRequest(request)
+	assert.NoError(t, err)
 
 	// Split the cURL commands by space
 	expectedParts := strings.Fields(expectedCurl)

@@ -2,8 +2,9 @@ package helpers
 
 import (
 	"fmt"
-	"io"
 	"net/http"
+	"net/http/httputil"
+	"strings"
 )
 
 func Contains(slice []string, s string) bool {
@@ -26,7 +27,12 @@ func ImagesContains(images []string, image string, registryProxy string) bool {
 	}
 }
 
-func CurlCommandFromRequest(request *http.Request) string {
+func CurlCommandFromRequest(request *http.Request) (string, error) {
+	clonedRequest, err := httputil.DumpRequest(request, true)
+	if err != nil {
+		return "", err
+	}
+
 	cmd := "curl -X " + request.Method
 
 	// Iterate over request headers and add them to the cURL command
@@ -37,13 +43,14 @@ func CurlCommandFromRequest(request *http.Request) string {
 	}
 
 	// Add request body to cURL command
-	if request.Body != nil {
-		body, _ := io.ReadAll(request.Body)
-		cmd += " -d '" + string(body) + "'"
+	if len(clonedRequest) > 0 {
+		// Exclude the request line and headers when adding the body
+		body := string(clonedRequest[strings.Index(string(clonedRequest), "\r\n\r\n")+4:])
+		cmd += " -d '" + body + "'"
 	}
 
 	// Add request URL to cURL command
 	cmd += " '" + request.URL.String() + "'"
 
-	return cmd
+	return cmd, nil
 }

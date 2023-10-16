@@ -17,6 +17,7 @@ require (
 	github.com/stretchr/testify v1.8.3
 	github.com/swaggo/files v1.0.1
 	github.com/swaggo/gin-swagger v1.6.0
+	github.com/swaggo/swag v1.16.1
 	go.uber.org/mock v0.2.0
 	gopkg.in/yaml.v2 v2.4.0
 	gorm.io/datatypes v1.2.0
@@ -78,7 +79,6 @@ require (
 	github.com/prometheus/procfs v0.10.1 // indirect
 	github.com/sergi/go-diff v1.1.0 // indirect
 	github.com/skeema/knownhosts v1.2.0 // indirect
-	github.com/swaggo/swag v1.16.1 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.2.11 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
