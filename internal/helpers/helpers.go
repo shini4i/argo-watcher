@@ -56,7 +56,9 @@ func CurlCommandFromRequest(request *http.Request) (string, error) {
 	if len(clonedRequest) > 0 {
 		// Exclude the request line and headers when adding the body
 		body := string(clonedRequest[strings.Index(string(clonedRequest), "\r\n\r\n")+4:])
-		cmd += " -d '" + body + "'"
+		if len(body) > 0 {
+			cmd += " -d '" + body + "'"
+		}
 	}
 
 	// Add request URL to cURL command
