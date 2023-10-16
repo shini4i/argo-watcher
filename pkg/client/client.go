@@ -19,12 +19,14 @@ import (
 )
 
 type Watcher struct {
-	baseUrl string
-	client  *http.Client
+	baseUrl   string
+	client    *http.Client
+	debugMode bool
 }
 
 var (
-	tag = os.Getenv("IMAGE_TAG")
+	tag      = os.Getenv("IMAGE_TAG")
+	debug, _ = strconv.ParseBool(os.Getenv("DEBUG"))
 )
 
 func (watcher *Watcher) addTask(task models.Task, token string) (string, error) {
@@ -52,8 +54,8 @@ func (watcher *Watcher) addTask(task models.Task, token string) (string, error) 
 	// Print the equivalent cURL command for troubleshooting
 	if curlCommand, err := helpers.CurlCommandFromRequest(request); err != nil {
 		log.Printf("Couldn't get cURL command. Got the following error: %s", err)
-	} else {
-		log.Printf("Equivalent cURL command: %s\n", curlCommand)
+	} else if watcher.debugMode {
+		log.Printf("Adding task to argo-watcher. Equivalent cURL command: %s\n", curlCommand)
 	}
 
 	// Send the HTTP request
@@ -76,8 +78,7 @@ func (watcher *Watcher) addTask(task models.Task, token string) (string, error) 
 
 	// Check the HTTP status code for success
 	if response.StatusCode != http.StatusAccepted {
-		errMsg := fmt.Sprintf("Something went wrong on argo-watcher side. Got the following response code %d\n", response.StatusCode)
-		errMsg += fmt.Sprintf("Body: %s\n", string(responseBody))
+		errMsg := fmt.Sprintf("Something went wrong on argo-watcher side. Got the following response code %d", response.StatusCode)
 		return "", errors.New(errMsg)
 	}
 
@@ -139,8 +140,9 @@ func Run() {
 	images := getImagesList()
 
 	watcher := Watcher{
-		baseUrl: strings.TrimSuffix(os.Getenv("ARGO_WATCHER_URL"), "/"),
-		client:  &http.Client{},
+		baseUrl:   strings.TrimSuffix(os.Getenv("ARGO_WATCHER_URL"), "/"),
+		client:    &http.Client{},
+		debugMode: debug,
 	}
 
 	task := models.Task{
@@ -150,11 +152,9 @@ func Run() {
 		Images:  images,
 	}
 
-	debug, _ := strconv.ParseBool(os.Getenv("DEBUG"))
-
 	deployToken := os.Getenv("ARGO_WATCHER_DEPLOY_TOKEN")
 
-	if debug {
+	if watcher.debugMode {
 		fmt.Printf("Got the following configuration:\n"+
 			"ARGO_WATCHER_URL: %s\n"+
 			"ARGO_APP: %s\n"+
@@ -168,17 +168,17 @@ func Run() {
 		}
 	}
 
-	fmt.Printf("Waiting for %s app to be running on %s version.\n", task.App, tag)
+	log.Printf("Waiting for %s app to be running on %s version.\n", task.App, tag)
 
 	id, err := watcher.addTask(task, deployToken)
 	if err != nil {
-		log.Panicf("Couldn't add task. Got the following error: %s", err)
+		log.Printf("Couldn't add task. Got the following error: %s", err)
+		os.Exit(1)
 	}
 
 	// Giving Argo-Watcher some time to process the task
 	time.Sleep(5 * time.Second)
 
-loop:
 	for {
 		taskInfo, err := watcher.getTaskStatus(id)
 		if err != nil {
@@ -197,7 +197,7 @@ loop:
 			log.Panicf("ArgoCD is unavailable. Please investigate.\n%s", taskInfo.StatusReason)
 		case models.StatusDeployedMessage:
 			log.Printf("The deployment of %s version is done.\n", tag)
-			break loop
+			return
 		}
 	}
 }
