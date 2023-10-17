@@ -23,11 +23,9 @@ function HistoryTasks() {
     searchParams.get('app') ?? null,
   );
   const [dateRange, setDateRange] = useState([
-    // start date
     Number(searchParams.get('start'))
       ? new Date(Number(searchParams.get('start')) * 1000)
       : startOfDay(new Date()),
-    // end date
     Number(searchParams.get('end'))
       ? new Date(Number(searchParams.get('end')) * 1000)
       : startOfDay(new Date()),
@@ -45,18 +43,16 @@ function HistoryTasks() {
       page,
     });
   };
+
   const refreshWithFilters = (start, end, application, page) => {
     if (start && end) {
-      // re-fetch tasks
       refreshTasksInRange(
         Math.floor(startOfDay(start).getTime() / 1000),
         Math.floor(endOfDay(end).getTime() / 1000),
         application,
       );
-      // save to filters
       updateSearchParameters(start, end, application, page);
     } else {
-      // reset list of tasks
       clearTasks();
     }
   };
@@ -88,7 +84,13 @@ function HistoryTasks() {
           variant="h5"
           gutterBottom
           component="div"
-          sx={{ flexGrow: 1, display: 'flex', gap: '10px', m: 0 }}
+          sx={{
+            flexGrow: 1,
+            display: 'flex',
+            gap: '10px',
+            m: 0,
+            alignItems: 'center',
+          }}
         >
           <Box>History tasks</Box>
           <Box sx={{ fontSize: '10px' }}>UTC</Box>
@@ -126,7 +128,7 @@ function HistoryTasks() {
             <IconButton
               edge="start"
               color={'primary'}
-              title={'reload table'}
+              title={'Reload table'}
               onClick={() => {
                 setCurrentPage(1);
                 refreshWithFilters(startDate, endDate, currentApplication, 1);
@@ -137,17 +139,24 @@ function HistoryTasks() {
           </Box>
         </Stack>
       </Stack>
-      <TasksTable
-        tasks={tasks}
-        sortField={sortField}
-        setSortField={setSortField}
-        relativeDate={false}
-        page={currentPage}
-        onPageChange={page => {
-          setCurrentPage(page);
-          updateSearchParameters(startDate, endDate, currentApplication, page);
-        }}
-      />
+      <Box sx={{ boxShadow: 2, borderRadius: 2, p: 2 }}>
+        <TasksTable
+          tasks={tasks}
+          sortField={sortField}
+          setSortField={setSortField}
+          relativeDate={false}
+          page={currentPage}
+          onPageChange={page => {
+            setCurrentPage(page);
+            updateSearchParameters(
+              startDate,
+              endDate,
+              currentApplication,
+              page,
+            );
+          }}
+        />
+      </Box>
     </Container>
   );
 }
