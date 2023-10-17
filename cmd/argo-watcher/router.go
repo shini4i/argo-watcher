@@ -121,7 +121,9 @@ func (env *Env) addTask(c *gin.Context) {
 	} else if deployToken != "" && deployToken != env.config.DeployToken {
 		// if token is provided, but it's not valid we should not process the task
 		log.Warn().Msgf("deploy token is invalid for app %s, aborting", task.App)
-		c.JSON(http.StatusUnauthorized, models.TaskStatus{})
+		c.JSON(http.StatusUnauthorized, models.TaskStatus{
+			Status: "invalid token",
+		})
 		return
 	} else {
 		log.Debug().Msgf("deploy token is not provided for app %s", task.App)
