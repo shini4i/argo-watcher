@@ -29,6 +29,7 @@ function RecentTasks() {
     setError,
     setSuccess,
   });
+
   const [currentAutoRefresh, setCurrentAutoRefresh] = useState(
     searchParams.get('refresh') ?? autoRefreshIntervals['30s'],
   );
@@ -49,28 +50,30 @@ function RecentTasks() {
     });
   };
 
-  // initial load
+  // Initial load
   useEffect(() => {
     refreshTasksInTimeframe(currentTimeframe, currentApplication);
     updateSearchParameters(currentApplication, currentAutoRefresh, currentPage);
   }, []);
 
-  // we reset interval on any state change (because we use the state variables for data retrieval)
+  // Reset the interval on any state change (because we use the state variables for data retrieval)
   useEffect(() => {
-    // reset current interval
+    // Reset the current interval
     if (autoRefreshIntervalRef.current !== null) {
       clearInterval(autoRefreshIntervalRef.current);
     }
+
     if (!currentAutoRefresh) {
-      // value is 0 for "off"
+      // Value is 0 for "off"
       return;
     }
-    // set interval
+
+    // Set interval
     autoRefreshIntervalRef.current = setInterval(() => {
       refreshTasksInTimeframe(currentTimeframe, currentApplication);
     }, currentAutoRefresh * 1000);
 
-    // clear interval on exit
+    // Clear interval on exit
     return () => {
       if (autoRefreshIntervalRef.current !== null) {
         clearInterval(autoRefreshIntervalRef.current);
@@ -79,9 +82,9 @@ function RecentTasks() {
   });
 
   const handleAutoRefreshChange = event => {
-    // change value
+    // Change the value
     setCurrentAutoRefresh(event.target.value);
-    // save to URL
+    // Save to URL
     updateSearchParameters(currentApplication, event.target.value, 1);
   };
 
@@ -97,7 +100,13 @@ function RecentTasks() {
           variant="h5"
           gutterBottom
           component="div"
-          sx={{ flexGrow: 1, display: 'flex', gap: '10px', m: 0 }}
+          sx={{
+            flexGrow: 1,
+            display: 'flex',
+            gap: '10px',
+            m: 0,
+            alignItems: 'center', // Center text vertically
+          }}
         >
           <Box>Recent tasks</Box>
           <Box sx={{ fontSize: '10px' }}>UTC</Box>
@@ -109,9 +118,9 @@ function RecentTasks() {
               onChange={value => {
                 setCurrentApplication(value);
                 refreshTasksInTimeframe(currentTimeframe, value);
-                // reset page
+                // Reset page
                 setCurrentPage(1);
-                // update url
+                // Update URL
                 updateSearchParameters(value, currentAutoRefresh, 1);
               }}
               setError={setError}
@@ -141,11 +150,11 @@ function RecentTasks() {
             <IconButton
               edge="start"
               color={'primary'}
-              title={'force table load'}
+              title={'Force table load'}
               onClick={() => {
-                // update tasks
+                // Update tasks
                 refreshTasksInTimeframe(currentTimeframe, currentApplication);
-                // reset page
+                // Reset page
                 setCurrentPage(1);
                 updateSearchParameters(
                   currentApplication,
@@ -159,17 +168,24 @@ function RecentTasks() {
           </Box>
         </Stack>
       </Stack>
-      <TasksTable
-        tasks={tasks}
-        sortField={sortField}
-        setSortField={setSortField}
-        relativeDate={true}
-        page={currentPage}
-        onPageChange={page => {
-          setCurrentPage(page);
-          updateSearchParameters(currentApplication, currentAutoRefresh, page);
-        }}
-      />
+      {/* Style the table with Material-UI Paper component */}
+      <Box sx={{ boxShadow: 2, borderRadius: 2, p: 2 }}>
+        <TasksTable
+          tasks={tasks}
+          sortField={sortField}
+          setSortField={setSortField}
+          relativeDate={true}
+          page={currentPage}
+          onPageChange={page => {
+            setCurrentPage(page);
+            updateSearchParameters(
+              currentApplication,
+              currentAutoRefresh,
+              page,
+            );
+          }}
+        />
+      </Box>
     </Container>
   );
 }
