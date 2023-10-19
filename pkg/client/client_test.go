@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/shini4i/argo-watcher/internal/models"
+	"github.com/stretchr/testify/assert"
 )
 
 var (
@@ -24,7 +24,7 @@ var (
 )
 
 func addTaskHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
+	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		_, err := w.Write([]byte(`Method not allowed`))
 		if err != nil {
@@ -106,39 +106,30 @@ func TestAddTask(t *testing.T) {
 		},
 	}
 
-	id := client.addTask(task, "")
-
-	if id != expected.Id {
-		t.Errorf("Expected id %s, got %s", expected.Id, id)
-	}
+	taskId, err := client.addTask(task, "")
+	assert.NoError(t, err)
+	assert.Equal(t, expected.Id, taskId)
 }
 
 func TestGetTaskStatus(t *testing.T) {
-	messageTemplate := "Expected status %s, got %s"
+	task, err := client.getTaskStatus(taskId)
+	assert.NoError(t, err)
+	assert.Equal(t, models.StatusDeployedMessage, task.Status)
 
-	status := client.getTaskStatus(taskId).Status
-	if status != models.StatusDeployedMessage {
-		t.Errorf(messageTemplate, models.StatusDeployedMessage, status)
-	}
+	task, err = client.getTaskStatus(appNotFoundId)
+	assert.NoError(t, err)
+	assert.Equal(t, models.StatusAppNotFoundMessage, task.Status)
 
-	status = client.getTaskStatus(appNotFoundId).Status
-	if status != models.StatusAppNotFoundMessage {
-		t.Errorf(messageTemplate, models.StatusAppNotFoundMessage, status)
-	}
+	task, err = client.getTaskStatus(argocdUnavailableId)
+	assert.NoError(t, err)
+	assert.Equal(t, models.StatusArgoCDUnavailableMessage, task.Status)
 
-	status = client.getTaskStatus(argocdUnavailableId).Status
-	if status != models.StatusArgoCDUnavailableMessage {
-		t.Errorf(messageTemplate, models.StatusArgoCDUnavailableMessage, status)
-	}
-
-	status = client.getTaskStatus(failedTaskId).Status
-	if status != models.StatusFailedMessage {
-		t.Errorf(messageTemplate, models.StatusFailedMessage, status)
-	}
+	task, err = client.getTaskStatus(failedTaskId)
+	assert.NoError(t, err)
+	assert.Equal(t, models.StatusFailedMessage, task.Status)
 }
 
 func TestGetImagesList(t *testing.T) {
-
 	tag = testVersion
 
 	expectedList := []models.Image{
@@ -156,7 +147,5 @@ func TestGetImagesList(t *testing.T) {
 
 	images := getImagesList()
 
-	if !reflect.DeepEqual(images, expectedList) {
-		t.Errorf("Expected list %v, got %v", expectedList, images)
-	}
+	assert.Equal(t, expectedList, images)
 }

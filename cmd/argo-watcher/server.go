@@ -28,7 +28,7 @@ func initLogs(logLevel string, logFormat string) {
 	}
 }
 
-func serverWatcher() {
+func runServer() {
 	// initialize serverConfig
 	serverConfig, err := config.NewServerConfig()
 	if err != nil {

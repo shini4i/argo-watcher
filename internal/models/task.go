@@ -20,7 +20,7 @@ type Task struct {
 	Images       []Image `json:"images" binding:"required"`
 	Status       string  `json:"status,omitempty"`
 	StatusReason string  `json:"status_reason,omitempty"`
-	Validated    bool
+	Validated    bool    `json:"validated,omitempty"`
 }
 
 // ListImages returns a list of strings representing the images of the task.

@@ -2,6 +2,9 @@ package helpers
 
 import (
 	"fmt"
+	"net/http"
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -56,4 +59,35 @@ func TestImageContains(t *testing.T) {
 		testErrorMsg := fmt.Sprintf("ImageContains(%s, %s, %s) should be %t", test.images, test.image, test.registryProxy, test.expected)
 		assert.Equal(t, test.expected, ImagesContains(test.images, test.image, test.registryProxy), testErrorMsg)
 	}
+}
+
+func TestCurlCommandFromRequest(t *testing.T) {
+	// Create a sample HTTP request with a non-empty request body
+	requestBody := `{"key": "value"}`
+	request, _ := http.NewRequest("POST", "https://example.com/api", strings.NewReader(requestBody))
+	request.Header.Add("Content-Type", "application/json")
+	request.Header.Add("Authorization", "Bearer Token123")
+	request.Header.Add("X-Custom-Header", "CustomValue")
+
+	// Create the expected cURL command
+	expectedCurl := `curl -X POST -H 'Authorization: Bearer Token123' -H 'Content-Type: application/json' -H 'X-Custom-Header: CustomValue' -d '{"key": "value"}' 'https://example.com/api'`
+
+	// Call the function to get the actual cURL command
+	actualCurl, err := CurlCommandFromRequest(request)
+	assert.NoError(t, err)
+
+	// Split the cURL commands by space
+	expectedParts := strings.Fields(expectedCurl)
+	actualParts := strings.Fields(actualCurl)
+
+	// Sort the headers alphabetically, excluding the first part (curl command and method)
+	sort.Strings(expectedParts[3:])
+	sort.Strings(actualParts[3:])
+
+	// Reconstruct the cURL commands with sorted headers
+	sortedExpectedCurl := strings.Join(expectedParts, " ")
+	sortedActualCurl := strings.Join(actualParts, " ")
+
+	// Compare the expected and actual cURL commands
+	assert.Equal(t, sortedExpectedCurl, sortedActualCurl)
 }
