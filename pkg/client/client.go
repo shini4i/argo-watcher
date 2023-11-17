@@ -15,6 +15,7 @@ import (
 
 	"github.com/shini4i/argo-watcher/internal/helpers"
 
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
@@ -149,6 +150,40 @@ func (watcher *Watcher) waitForDeployment(id, appName string) error {
 	}
 }
 
+func (watcher *Watcher) getWatcherConfig() (*config.ServerConfig, error) {
+	url := fmt.Sprintf("%s/api/v1/config", watcher.baseUrl)
+	request, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	response, err := watcher.client.Do(request)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			panic(err)
+		}
+	}(response.Body)
+
+	if response.StatusCode != http.StatusOK {
+		log.Printf("Received non-200 status code (%d)\n", response.StatusCode)
+		body, _ := io.ReadAll(response.Body)
+		log.Printf("Body: %s\n", string(body))
+		return nil, fmt.Errorf("received non-200 status code: %d", response.StatusCode)
+	}
+
+	var serverConfig config.ServerConfig
+	if err := json.NewDecoder(response.Body).Decode(&serverConfig); err != nil {
+		return nil, err
+	}
+
+	return &serverConfig, nil
+}
+
 func getImagesList() []models.Image {
 	var images []models.Image
 	for _, image := range strings.Split(os.Getenv("IMAGES"), ",") {
@@ -204,7 +239,22 @@ func Run() {
 	time.Sleep(5 * time.Second)
 
 	if err := watcher.waitForDeployment(id, task.App); err != nil {
+		cfg, err := watcher.getWatcherConfig()
+		if err != nil {
+			log.Println(err)
+			os.Exit(1)
+		}
+
+		var appUrl string
+
+		if cfg.ArgoUrlAlias != "" {
+			appUrl = fmt.Sprintf("%s/applications/%s", cfg.ArgoUrlAlias, task.App)
+		} else {
+			appUrl = fmt.Sprintf("%s://%s/applications/%s", cfg.ArgoUrl.Scheme, cfg.ArgoUrl.Host, task.App)
+		}
+
 		log.Println(err)
+		log.Printf("To get more information about the problem, please check ArgoCD UI: %s\n", appUrl)
 		os.Exit(1)
 	}
 }
