@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"net/url"
 	"testing"
 
@@ -49,4 +50,25 @@ func TestServerConfig_GetRetryAttempts(t *testing.T) {
 
 	// Assert that the retryAttempts value matches the expected result
 	assert.Equal(t, uint(5), retryAttempts)
+}
+
+func TestServerConfig_JSONExcludesSensitiveFields(t *testing.T) {
+	// Create a ServerConfig instance with some dummy data
+	config := &ServerConfig{
+		ArgoToken:   "secret-token",
+		DbPassword:  "db-password",
+		DeployToken: "deploy-token",
+	}
+
+	// Marshal the ServerConfig instance to JSON
+	jsonBytes, err := json.Marshal(config)
+	assert.NoError(t, err)
+
+	// Convert the JSON bytes to a string
+	jsonString := string(jsonBytes)
+
+	// Check that the sensitive fields are not present in the JSON string
+	assert.NotContains(t, jsonString, "secret-token")
+	assert.NotContains(t, jsonString, "db-password")
+	assert.NotContains(t, jsonString, "deploy-token")
 }
