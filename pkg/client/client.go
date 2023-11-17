@@ -10,19 +10,18 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
+
 	"github.com/shini4i/argo-watcher/internal/helpers"
 
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
 var (
-	tag      = os.Getenv("IMAGE_TAG")
-	debug, _ = strconv.ParseBool(os.Getenv("DEBUG"))
+	clientConfig *ClientConfig
 )
 
 type Watcher struct {
@@ -173,7 +172,7 @@ func (watcher *Watcher) waitForDeployment(id, appName string) error {
 		case models.StatusArgoCDUnavailableMessage:
 			return fmt.Errorf("ArgoCD is unavailable. Please investigate.\n%s", taskInfo.StatusReason)
 		case models.StatusDeployedMessage:
-			log.Printf("The deployment of %s version is done.\n", tag)
+			log.Printf("The deployment of %s version is done.\n", clientConfig.Tag)
 			return nil
 		}
 	}
@@ -181,32 +180,39 @@ func (watcher *Watcher) waitForDeployment(id, appName string) error {
 
 func getImagesList() []models.Image {
 	var images []models.Image
-	for _, image := range strings.Split(os.Getenv("IMAGES"), ",") {
+	for _, image := range clientConfig.Images {
 		images = append(images, models.Image{
 			Image: image,
-			Tag:   tag,
+			Tag:   clientConfig.Tag,
 		})
 	}
 	return images
 }
 
 func Run() {
+	var err error
+
+	if clientConfig, err = NewClientConfig(); err != nil {
+		log.Printf("Couldn't get client configuration. Got the following error: %s", err)
+		os.Exit(1)
+	}
+
 	images := getImagesList()
 
 	watcher := NewWatcher(
-		strings.TrimSuffix(os.Getenv("ARGO_WATCHER_URL"), "/"),
-		debug,
-		30*time.Second,
+		strings.TrimSuffix(clientConfig.Url, "/"),
+		clientConfig.Debug,
+		clientConfig.Timeout,
 	)
 
 	task := models.Task{
-		App:     os.Getenv("ARGO_APP"),
-		Author:  os.Getenv("COMMIT_AUTHOR"),
-		Project: os.Getenv("PROJECT_NAME"),
+		App:     clientConfig.App,
+		Author:  clientConfig.Author,
+		Project: clientConfig.Project,
 		Images:  images,
 	}
 
-	deployToken := os.Getenv("ARGO_WATCHER_DEPLOY_TOKEN")
+	deployToken := clientConfig.Token
 
 	if watcher.debugMode {
 		fmt.Printf("Got the following configuration:\n"+
@@ -216,13 +222,13 @@ func Run() {
 			"PROJECT_NAME: %s\n"+
 			"IMAGE_TAG: %s\n"+
 			"IMAGES: %s\n\n",
-			watcher.baseUrl, task.App, task.Author, task.Project, tag, task.Images)
+			watcher.baseUrl, task.App, task.Author, task.Project, clientConfig.Tag, task.Images)
 		if deployToken == "" {
 			fmt.Println("ARGO_WATCHER_DEPLOY_TOKEN is not set, git commit will not be performed.")
 		}
 	}
 
-	log.Printf("Waiting for %s app to be running on %s version.\n", task.App, tag)
+	log.Printf("Waiting for %s app to be running on %s version.\n", task.App, clientConfig.Tag)
 
 	id, err := watcher.addTask(task, deployToken)
 	if err != nil {
