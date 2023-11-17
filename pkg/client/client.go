@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,16 +20,60 @@ import (
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
-type Watcher struct {
-	baseUrl   string
-	client    *http.Client
-	debugMode bool
-}
-
 var (
 	tag      = os.Getenv("IMAGE_TAG")
 	debug, _ = strconv.ParseBool(os.Getenv("DEBUG"))
 )
+
+type Watcher struct {
+	baseUrl   string
+	client    *http.Client
+	debugMode bool
+	timeout   time.Duration
+}
+
+func NewWatcher(baseUrl string, debugMode bool, timeout time.Duration) *Watcher {
+	return &Watcher{
+		baseUrl:   baseUrl,
+		client:    &http.Client{Timeout: timeout},
+		debugMode: debugMode,
+		timeout:   timeout,
+	}
+}
+
+func (watcher *Watcher) doRequest(method, url string, body io.Reader) (*http.Response, error) {
+	req, err := http.NewRequest(method, url, body)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), watcher.timeout)
+	defer cancel()
+
+	req = req.WithContext(ctx)
+
+	return watcher.client.Do(req)
+}
+
+func (watcher *Watcher) getJSON(url string, v interface{}) error {
+	resp, err := watcher.doRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			panic(err)
+		}
+	}(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("received non-200 status code: %d", resp.StatusCode)
+	}
+
+	return json.NewDecoder(resp.Body).Decode(v)
+}
 
 func (watcher *Watcher) addTask(task models.Task, token string) (string, error) {
 	// Marshal the task into JSON
@@ -94,36 +139,20 @@ func (watcher *Watcher) addTask(task models.Task, token string) (string, error) 
 
 func (watcher *Watcher) getTaskStatus(id string) (*models.TaskStatus, error) {
 	url := fmt.Sprintf("%s/api/v1/tasks/%s", watcher.baseUrl, id)
-	request, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	response, err := watcher.client.Do(request)
-	if err != nil {
-		return nil, err
-	}
-
-	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
-			panic(err)
-		}
-	}(response.Body)
-
-	if response.StatusCode != http.StatusOK {
-		log.Printf("Received non-200 status code (%d)\n", response.StatusCode)
-		body, _ := io.ReadAll(response.Body)
-		log.Printf("Body: %s\n", string(body))
-		return nil, fmt.Errorf("received non-200 status code: %d", response.StatusCode)
-	}
-
 	var taskStatus models.TaskStatus
-	if err := json.NewDecoder(response.Body).Decode(&taskStatus); err != nil {
+	if err := watcher.getJSON(url, &taskStatus); err != nil {
 		return nil, err
 	}
-
 	return &taskStatus, nil
+}
+
+func (watcher *Watcher) getWatcherConfig() (*config.ServerConfig, error) {
+	url := fmt.Sprintf("%s/api/v1/config", watcher.baseUrl)
+	var serverConfig config.ServerConfig
+	if err := watcher.getJSON(url, &serverConfig); err != nil {
+		return nil, err
+	}
+	return &serverConfig, nil
 }
 
 func (watcher *Watcher) waitForDeployment(id, appName string) error {
@@ -150,40 +179,6 @@ func (watcher *Watcher) waitForDeployment(id, appName string) error {
 	}
 }
 
-func (watcher *Watcher) getWatcherConfig() (*config.ServerConfig, error) {
-	url := fmt.Sprintf("%s/api/v1/config", watcher.baseUrl)
-	request, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	response, err := watcher.client.Do(request)
-	if err != nil {
-		return nil, err
-	}
-
-	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
-			panic(err)
-		}
-	}(response.Body)
-
-	if response.StatusCode != http.StatusOK {
-		log.Printf("Received non-200 status code (%d)\n", response.StatusCode)
-		body, _ := io.ReadAll(response.Body)
-		log.Printf("Body: %s\n", string(body))
-		return nil, fmt.Errorf("received non-200 status code: %d", response.StatusCode)
-	}
-
-	var serverConfig config.ServerConfig
-	if err := json.NewDecoder(response.Body).Decode(&serverConfig); err != nil {
-		return nil, err
-	}
-
-	return &serverConfig, nil
-}
-
 func getImagesList() []models.Image {
 	var images []models.Image
 	for _, image := range strings.Split(os.Getenv("IMAGES"), ",") {
@@ -198,11 +193,11 @@ func getImagesList() []models.Image {
 func Run() {
 	images := getImagesList()
 
-	watcher := Watcher{
-		baseUrl:   strings.TrimSuffix(os.Getenv("ARGO_WATCHER_URL"), "/"),
-		client:    &http.Client{},
-		debugMode: debug,
-	}
+	watcher := NewWatcher(
+		strings.TrimSuffix(os.Getenv("ARGO_WATCHER_URL"), "/"),
+		debug,
+		30*time.Second,
+	)
 
 	task := models.Task{
 		App:     os.Getenv("ARGO_APP"),
