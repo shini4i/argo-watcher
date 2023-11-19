@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/shini4i/argo-watcher/internal/models"
 	"github.com/stretchr/testify/assert"
@@ -85,7 +86,7 @@ func init() {
 	mux.HandleFunc("/api/v1/tasks", addTaskHandler)
 	mux.HandleFunc("/api/v1/tasks/", getTaskStatusHandler)
 	server = httptest.NewServer(mux)
-	client = &Watcher{baseUrl: server.URL, client: server.Client()}
+	client = &Watcher{baseUrl: server.URL, client: server.Client(), timeout: 30 * time.Second}
 }
 
 func TestAddTask(t *testing.T) {
