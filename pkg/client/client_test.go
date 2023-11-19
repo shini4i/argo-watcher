@@ -3,6 +3,7 @@ package client
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -87,6 +88,82 @@ func init() {
 	mux.HandleFunc("/api/v1/tasks/", getTaskStatusHandler)
 	server = httptest.NewServer(mux)
 	client = &Watcher{baseUrl: server.URL, client: server.Client(), timeout: 30 * time.Second}
+}
+
+func TestNewWatcher(t *testing.T) {
+	baseUrl := "http://localhost:8080"
+	debugMode := true
+	timeout := 30 * time.Second
+
+	watcher := NewWatcher(baseUrl, debugMode, timeout)
+
+	assert.Equal(t, baseUrl, watcher.baseUrl)
+	assert.Equal(t, debugMode, watcher.debugMode)
+	assert.Equal(t, timeout, watcher.timeout)
+	assert.NotNil(t, watcher.client)
+}
+
+func TestDoRequest(t *testing.T) {
+	// Add a new handler to the existing server for testing doRequest
+	mux.HandleFunc("/test", func(rw http.ResponseWriter, req *http.Request) {
+		// Test request parameters
+		assert.Equal(t, req.URL.String(), "/test")
+		// Send response to be tested
+		if _, err := rw.Write([]byte(`OK`)); err != nil {
+			t.Error(err)
+		}
+	})
+
+	// Call doRequest method
+	resp, err := client.doRequest(http.MethodGet, server.URL+"/test", nil)
+
+	// Assert there was no error
+	assert.NoError(t, err)
+
+	// Assert the response was as expected
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	// Read the response body
+	body, err := io.ReadAll(resp.Body)
+	assert.NoError(t, err)
+
+	err = resp.Body.Close()
+	assert.NoError(t, err)
+
+	// Assert the response body was as expected
+	assert.Equal(t, "OK", string(body))
+}
+
+func TestGetJSON(t *testing.T) {
+	// Create a test server
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		// Test request parameters
+		assert.Equal(t, req.URL.String(), "/test")
+		// Send response to be tested
+		if _, err := rw.Write([]byte(`{"message": "OK"}`)); err != nil {
+			t.Error(err)
+		}
+	}))
+	// Close the server when test finishes
+	defer server.Close()
+
+	// Create a new Watcher instance
+	watcher := NewWatcher(server.URL, false, 30*time.Second)
+
+	// Define a struct to hold the response
+	type response struct {
+		Message string `json:"message"`
+	}
+	var resp response
+
+	// Call getJSON method
+	err := watcher.getJSON(server.URL+"/test", &resp)
+
+	// Assert there was no error
+	assert.NoError(t, err)
+
+	// Assert the response was as expected
+	assert.Equal(t, "OK", resp.Message)
 }
 
 func TestAddTask(t *testing.T) {
