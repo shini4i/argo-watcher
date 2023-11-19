@@ -75,11 +75,10 @@ func getTaskStatusHandler(w http.ResponseWriter, r *http.Request) {
 		status = models.StatusFailedMessage
 	}
 
-	err := json.NewEncoder(w).Encode(models.TaskStatus{
+	if err := json.NewEncoder(w).Encode(models.TaskStatus{
 		Status: status,
 		Id:     taskId,
-	})
-	if err != nil {
+	}); err != nil {
 		panic(err)
 	}
 }
@@ -268,4 +267,37 @@ func TestGetWatcherConfig(t *testing.T) {
 	expectedUrl, _ := url.Parse("http://localhost:8080")
 	assert.Equal(t, expectedUrl, &serverConfig.ArgoUrl)
 	assert.Equal(t, "https://argo-cd.example.com", serverConfig.ArgoUrlAlias)
+}
+
+func TestWaitForDeployment(t *testing.T) {
+	testCases := []struct {
+		name          string
+		taskId        string
+		expectedError string
+	}{
+		{
+			name:          "Failed deployment",
+			taskId:        failedTaskId,
+			expectedError: "The deployment has failed, please check logs.",
+		},
+		{
+			name:          "Application not found",
+			taskId:        appNotFoundId,
+			expectedError: "Application test does not exist.",
+		},
+		{
+			name:          "ArgoCD unavailable",
+			taskId:        argocdUnavailableId,
+			expectedError: "ArgoCD is unavailable. Please investigate.",
+		},
+	}
+
+	// Run test cases
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := client.waitForDeployment(tc.taskId, "test")
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), tc.expectedError)
+		})
+	}
 }
