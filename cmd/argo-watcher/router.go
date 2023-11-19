@@ -58,6 +58,7 @@ func (env *Env) CreateRouter() *gin.Engine {
 		v1.GET("/tasks/:id", env.getTaskStatus)
 		v1.GET("/apps", env.getApps)
 		v1.GET("/version", env.getVersion)
+		v1.GET("/config", env.getConfig)
 	}
 
 	return router
@@ -230,4 +231,15 @@ func (env *Env) healthz(c *gin.Context) {
 		})
 	}
 
+}
+
+// getConfig godoc
+// @Summary Get the configuration of the server (excluding sensitive data)
+// @Description Get the configuration of the server (excluding sensitive data)
+// @Tags backend
+// @Produce json
+// @Success 200 {object} config.ServerConfig
+// @Router /api/v1/config [get].
+func (env *Env) getConfig(c *gin.Context) {
+	c.JSON(http.StatusOK, env.config)
 }

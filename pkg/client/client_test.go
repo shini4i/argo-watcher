@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/shini4i/argo-watcher/internal/models"
 	"github.com/stretchr/testify/assert"
@@ -72,20 +74,58 @@ func getTaskStatusHandler(w http.ResponseWriter, r *http.Request) {
 		status = models.StatusFailedMessage
 	}
 
-	err := json.NewEncoder(w).Encode(models.TaskStatus{
+	if err := json.NewEncoder(w).Encode(models.TaskStatus{
 		Status: status,
 		Id:     taskId,
-	})
-	if err != nil {
+	}); err != nil {
 		panic(err)
 	}
+}
+
+func TestAddTaskServerError(t *testing.T) {
+	// Create a test server that always returns a 500 status code
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		rw.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	// Create a new Watcher instance
+	watcher := NewWatcher(server.URL, false, 30*time.Second)
+
+	task := models.Task{
+		App:     "test",
+		Author:  "John Doe",
+		Project: "Example",
+		Images: []models.Image{
+			{
+				Tag:   testVersion,
+				Image: "example",
+			},
+		},
+	}
+
+	_, err := watcher.addTask(task, "")
+	assert.Error(t, err)
 }
 
 func init() {
 	mux.HandleFunc("/api/v1/tasks", addTaskHandler)
 	mux.HandleFunc("/api/v1/tasks/", getTaskStatusHandler)
 	server = httptest.NewServer(mux)
-	client = &Watcher{baseUrl: server.URL, client: server.Client()}
+	client = &Watcher{baseUrl: server.URL, client: server.Client(), timeout: 30 * time.Second}
+}
+
+func TestNewWatcher(t *testing.T) {
+	baseUrl := "http://localhost:8080"
+	debugMode := true
+	timeout := 30 * time.Second
+
+	watcher := NewWatcher(baseUrl, debugMode, timeout)
+
+	assert.Equal(t, baseUrl, watcher.baseUrl)
+	assert.Equal(t, debugMode, watcher.debugMode)
+	assert.Equal(t, timeout, watcher.timeout)
+	assert.NotNil(t, watcher.client)
 }
 
 func TestAddTask(t *testing.T) {
@@ -129,23 +169,89 @@ func TestGetTaskStatus(t *testing.T) {
 	assert.Equal(t, models.StatusFailedMessage, task.Status)
 }
 
-func TestGetImagesList(t *testing.T) {
-	tag = testVersion
+func TestGetWatcherConfig(t *testing.T) {
+	// Create a test server
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		// Test request parameters
+		assert.Equal(t, req.URL.String(), "/api/v1/config")
 
-	expectedList := []models.Image{
+		// Create the response data
+		configResponse := struct {
+			ArgoCDURL      url.URL `json:"argo_cd_url"`
+			ArgoCDURLAlias string  `json:"argo_cd_url_alias"`
+		}{
+			ArgoCDURL:      url.URL{Scheme: "http", Host: "localhost:8080"},
+			ArgoCDURLAlias: "https://argo-cd.example.com",
+		}
+
+		// Marshal the response data to JSON
+		jsonData, err := json.Marshal(configResponse)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+
+		// Write the JSON data to the response writer
+		if _, err := rw.Write(jsonData); err != nil {
+			t.Error(err)
+		}
+	}))
+	// Close the server when test finishes
+	defer server.Close()
+
+	// Create a new Watcher instance
+	watcher := NewWatcher(server.URL, false, 30*time.Second)
+
+	// Call getWatcherConfig method
+	serverConfig, err := watcher.getWatcherConfig()
+
+	// Assert there was no error
+	assert.NoError(t, err)
+
+	// Assert the response was as expected
+	expectedUrl, _ := url.Parse("http://localhost:8080")
+	assert.Equal(t, expectedUrl, &serverConfig.ArgoUrl)
+	assert.Equal(t, "https://argo-cd.example.com", serverConfig.ArgoUrlAlias)
+}
+
+func TestWaitForDeployment(t *testing.T) {
+	testCases := []struct {
+		name          string
+		taskId        string
+		expectedError string
+	}{
 		{
-			Image: "example/app",
-			Tag:   testVersion,
+			name:          "Successful deployment",
+			taskId:        taskId,
+			expectedError: "",
 		},
 		{
-			Image: "example/web",
-			Tag:   testVersion,
+			name:          "Failed deployment",
+			taskId:        failedTaskId,
+			expectedError: "The deployment has failed, please check logs.",
+		},
+		{
+			name:          "Application not found",
+			taskId:        appNotFoundId,
+			expectedError: "Application test does not exist.",
+		},
+		{
+			name:          "ArgoCD unavailable",
+			taskId:        argocdUnavailableId,
+			expectedError: "ArgoCD is unavailable. Please investigate.",
 		},
 	}
 
-	t.Setenv("IMAGES", "example/app,example/web")
-
-	images := getImagesList()
-
-	assert.Equal(t, expectedList, images)
+	// Run test cases
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := client.waitForDeployment(tc.taskId, "test", testVersion)
+			if tc.expectedError == "" {
+				assert.NoError(t, err)
+			} else {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tc.expectedError)
+			}
+		})
+	}
 }
