@@ -178,12 +178,12 @@ func (watcher *Watcher) waitForDeployment(id, appName string) error {
 	}
 }
 
-func getImagesList() []models.Image {
+func getImagesList(list []string, tag string) []models.Image {
 	var images []models.Image
-	for _, image := range clientConfig.Images {
+	for _, image := range list {
 		images = append(images, models.Image{
 			Image: image,
-			Tag:   clientConfig.Tag,
+			Tag:   tag,
 		})
 	}
 	return images
@@ -197,7 +197,7 @@ func Run() {
 		os.Exit(1)
 	}
 
-	images := getImagesList()
+	images := getImagesList(clientConfig.Images, clientConfig.Tag)
 
 	watcher := NewWatcher(
 		strings.TrimSuffix(clientConfig.Url, "/"),

@@ -129,23 +129,19 @@ func TestGetTaskStatus(t *testing.T) {
 	assert.Equal(t, models.StatusFailedMessage, task.Status)
 }
 
-//func TestGetImagesList(t *testing.T) {
-//	tag = testVersion
-//
-//	expectedList := []models.Image{
-//		{
-//			Image: "example/app",
-//			Tag:   testVersion,
-//		},
-//		{
-//			Image: "example/web",
-//			Tag:   testVersion,
-//		},
-//	}
-//
-//	t.Setenv("IMAGES", "example/app,example/web")
-//
-//	images := getImagesList()
-//
-//	assert.Equal(t, expectedList, images)
-//}
+func TestGetImagesList(t *testing.T) {
+	expectedList := []models.Image{
+		{
+			Image: "example/app",
+			Tag:   testVersion,
+		},
+		{
+			Image: "example/web",
+			Tag:   testVersion,
+		},
+	}
+
+	images := getImagesList([]string{"example/app", "example/web"}, testVersion)
+
+	assert.Equal(t, expectedList, images)
+}
