@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -222,4 +223,49 @@ func TestGetImagesList(t *testing.T) {
 	images := getImagesList([]string{"example/app", "example/web"}, testVersion)
 
 	assert.Equal(t, expectedList, images)
+}
+
+func TestGetWatcherConfig(t *testing.T) {
+	// Create a test server
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		// Test request parameters
+		assert.Equal(t, req.URL.String(), "/api/v1/config")
+
+		// Create the response data
+		configResponse := struct {
+			ArgoCDURL      url.URL `json:"argo_cd_url"`
+			ArgoCDURLAlias string  `json:"argo_cd_url_alias"`
+		}{
+			ArgoCDURL:      url.URL{Scheme: "http", Host: "localhost:8080"},
+			ArgoCDURLAlias: "https://argo-cd.example.com",
+		}
+
+		// Marshal the response data to JSON
+		jsonData, err := json.Marshal(configResponse)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+
+		// Write the JSON data to the response writer
+		if _, err := rw.Write(jsonData); err != nil {
+			t.Error(err)
+		}
+	}))
+	// Close the server when test finishes
+	defer server.Close()
+
+	// Create a new Watcher instance
+	watcher := NewWatcher(server.URL, false, 30*time.Second)
+
+	// Call getWatcherConfig method
+	serverConfig, err := watcher.getWatcherConfig()
+
+	// Assert there was no error
+	assert.NoError(t, err)
+
+	// Assert the response was as expected
+	expectedUrl, _ := url.Parse("http://localhost:8080")
+	assert.Equal(t, expectedUrl, &serverConfig.ArgoUrl)
+	assert.Equal(t, "https://argo-cd.example.com", serverConfig.ArgoUrlAlias)
 }
