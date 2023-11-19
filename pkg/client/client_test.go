@@ -432,3 +432,63 @@ func TestPrintClientConfiguration(t *testing.T) {
 	// Compare the buffer's content with the expected output
 	assert.Equal(t, expectedOutput, buf.String())
 }
+
+func TestGenerateAppUrl(t *testing.T) {
+	// Create a test server
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		// Test request parameters
+		assert.Equal(t, req.URL.String(), "/api/v1/config")
+
+		// Create the response data
+		configResponse := struct {
+			ArgoCDURL      url.URL `json:"argo_cd_url"`
+			ArgoCDURLAlias string  `json:"argo_cd_url_alias"`
+		}{
+			ArgoCDURL:      url.URL{Scheme: "http", Host: "localhost:8080"},
+			ArgoCDURLAlias: "https://argo-cd.example.com",
+		}
+
+		// Marshal the response data to JSON
+		jsonData, err := json.Marshal(configResponse)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+
+		// Write the JSON data to the response writer
+		if _, err := rw.Write(jsonData); err != nil {
+			t.Error(err)
+		}
+	}))
+	// Close the server when test finishes
+	defer server.Close()
+
+	// Create a new Watcher instance
+	watcher := NewWatcher(server.URL, false, 30*time.Second)
+
+	// Create a Task for testing
+	task := models.Task{
+		App:     "test-app",
+		Author:  "test-author",
+		Project: "test-project",
+		Images: []models.Image{
+			{
+				Image: "image1",
+				Tag:   "test-tag",
+			},
+			{
+				Image: "image2",
+				Tag:   "test-tag",
+			},
+		},
+	}
+
+	// Call the function
+	appUrl := generateAppUrl(watcher, task)
+
+	// Expected output
+	expectedOutput := "https://argo-cd.example.com/applications/test-app"
+
+	// Compare the function's output with the expected output
+	assert.Equal(t, expectedOutput, appUrl)
+}

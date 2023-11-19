@@ -212,6 +212,18 @@ func printClientConfiguration(watcher *Watcher, task models.Task) {
 	}
 }
 
+func generateAppUrl(watcher *Watcher, task models.Task) string {
+	cfg, err := watcher.getWatcherConfig()
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	if cfg.ArgoUrlAlias != "" {
+		return fmt.Sprintf("%s/applications/%s", cfg.ArgoUrlAlias, task.App)
+	}
+	return fmt.Sprintf("%s://%s/applications/%s", cfg.ArgoUrl.Scheme, cfg.ArgoUrl.Host, task.App)
+}
+
 func Run() {
 	var err error
 
@@ -241,20 +253,7 @@ func Run() {
 	// Giving Argo-Watcher some time to process the task
 	time.Sleep(5 * time.Second)
 
-	if err := watcher.waitForDeployment(id, task.App, clientConfig.Tag); err != nil {
-		cfg, err := watcher.getWatcherConfig()
-		if err != nil {
-			log.Fatalln(err)
-		}
-
-		var appUrl string
-
-		if cfg.ArgoUrlAlias != "" {
-			appUrl = fmt.Sprintf("%s/applications/%s", cfg.ArgoUrlAlias, task.App)
-		} else {
-			appUrl = fmt.Sprintf("%s://%s/applications/%s", cfg.ArgoUrl.Scheme, cfg.ArgoUrl.Host, task.App)
-		}
-
-		log.Fatalf("To get more information about the problem, please check ArgoCD UI: %s\n", appUrl)
+	if err = watcher.waitForDeployment(id, task.App, clientConfig.Tag); err != nil {
+		log.Fatalf("To get more information about the problem, please check ArgoCD UI: %s\n", generateAppUrl(watcher, task))
 	}
 }
