@@ -238,7 +238,7 @@ func (env *Env) healthz(c *gin.Context) {
 // @Description Get the configuration of the server (excluding sensitive data)
 // @Tags backend
 // @Produce json
-// @Success 200 {object} config
+// @Success 200 {object} config.ServerConfig
 // @Router /api/v1/config [get].
 func (env *Env) getConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, env.config)
