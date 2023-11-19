@@ -232,8 +232,7 @@ func Run() {
 
 	id, err := watcher.addTask(task, deployToken)
 	if err != nil {
-		log.Printf("Couldn't add task. Got the following error: %s", err)
-		os.Exit(1)
+		log.Fatalf("Couldn't add task. Got the following error: %s", err)
 	}
 
 	// Giving Argo-Watcher some time to process the task
@@ -242,8 +241,7 @@ func Run() {
 	if err := watcher.waitForDeployment(id, task.App, clientConfig.Tag); err != nil {
 		cfg, err := watcher.getWatcherConfig()
 		if err != nil {
-			log.Println(err)
-			os.Exit(1)
+			log.Fatalln(err)
 		}
 
 		var appUrl string
@@ -254,8 +252,6 @@ func Run() {
 			appUrl = fmt.Sprintf("%s://%s/applications/%s", cfg.ArgoUrl.Scheme, cfg.ArgoUrl.Host, task.App)
 		}
 
-		log.Println(err)
-		log.Printf("To get more information about the problem, please check ArgoCD UI: %s\n", appUrl)
-		os.Exit(1)
+		log.Fatalf("To get more information about the problem, please check ArgoCD UI: %s\n", appUrl)
 	}
 }
