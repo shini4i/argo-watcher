@@ -276,6 +276,11 @@ func TestWaitForDeployment(t *testing.T) {
 		expectedError string
 	}{
 		{
+			name:          "Successful deployment",
+			taskId:        taskId,
+			expectedError: "",
+		},
+		{
 			name:          "Failed deployment",
 			taskId:        failedTaskId,
 			expectedError: "The deployment has failed, please check logs.",
@@ -295,9 +300,13 @@ func TestWaitForDeployment(t *testing.T) {
 	// Run test cases
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := client.waitForDeployment(tc.taskId, "test")
-			assert.Error(t, err)
-			assert.Contains(t, err.Error(), tc.expectedError)
+			err := client.waitForDeployment(tc.taskId, "test", testVersion)
+			if tc.expectedError == "" {
+				assert.NoError(t, err)
+			} else {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tc.expectedError)
+			}
 		})
 	}
 }

@@ -154,7 +154,7 @@ func (watcher *Watcher) getWatcherConfig() (*config.ServerConfig, error) {
 	return &serverConfig, nil
 }
 
-func (watcher *Watcher) waitForDeployment(id, appName string) error {
+func (watcher *Watcher) waitForDeployment(id, appName, version string) error {
 	for {
 		taskInfo, err := watcher.getTaskStatus(id)
 		if err != nil {
@@ -172,7 +172,7 @@ func (watcher *Watcher) waitForDeployment(id, appName string) error {
 		case models.StatusArgoCDUnavailableMessage:
 			return fmt.Errorf("ArgoCD is unavailable. Please investigate.\n%s", taskInfo.StatusReason)
 		case models.StatusDeployedMessage:
-			log.Printf("The deployment of %s version is done.\n", clientConfig.Tag)
+			log.Print("The deployment version is done.", version)
 			return nil
 		}
 	}
@@ -239,7 +239,7 @@ func Run() {
 	// Giving Argo-Watcher some time to process the task
 	time.Sleep(5 * time.Second)
 
-	if err := watcher.waitForDeployment(id, task.App); err != nil {
+	if err := watcher.waitForDeployment(id, task.App, clientConfig.Tag); err != nil {
 		cfg, err := watcher.getWatcherConfig()
 		if err != nil {
 			log.Println(err)
