@@ -1,12 +1,14 @@
 package client
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -81,6 +83,32 @@ func getTaskStatusHandler(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		panic(err)
 	}
+}
+
+func TestAddTaskServerError(t *testing.T) {
+	// Create a test server that always returns a 500 status code
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		rw.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	// Create a new Watcher instance
+	watcher := NewWatcher(server.URL, false, 30*time.Second)
+
+	task := models.Task{
+		App:     "test",
+		Author:  "John Doe",
+		Project: "Example",
+		Images: []models.Image{
+			{
+				Tag:   testVersion,
+				Image: "example",
+			},
+		},
+	}
+
+	_, err := watcher.addTask(task, "")
+	assert.Error(t, err)
 }
 
 func init() {
@@ -309,4 +337,98 @@ func TestWaitForDeployment(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCreateTask(t *testing.T) {
+	config := &ClientConfig{
+		App:     "test-app",
+		Author:  "test-author",
+		Project: "test-project",
+		Images:  []string{"image1", "image2"},
+		Tag:     "test-tag",
+	}
+
+	expectedTask := models.Task{
+		App:     "test-app",
+		Author:  "test-author",
+		Project: "test-project",
+		Images: []models.Image{
+			{
+				Image: "image1",
+				Tag:   "test-tag",
+			},
+			{
+				Image: "image2",
+				Tag:   "test-tag",
+			},
+		},
+	}
+
+	task := createTask(config)
+
+	assert.Equal(t, expectedTask, task)
+}
+
+func TestPrintClientConfiguration(t *testing.T) {
+	// Initialize clientConfig
+	clientConfig = &ClientConfig{
+		Url:     "http://localhost:8080",
+		Images:  []string{"image1", "image2"},
+		Tag:     "test-tag",
+		App:     "test-app",
+		Author:  "test-author",
+		Project: "test-project",
+		Token:   "",
+		Timeout: 30 * time.Second,
+		Debug:   true,
+	}
+
+	// Create a Watcher and Task for testing
+	watcher := NewWatcher("http://localhost:8080", true, 30*time.Second)
+	task := models.Task{
+		App:     "test-app",
+		Author:  "test-author",
+		Project: "test-project",
+		Images: []models.Image{
+			{
+				Image: "image1",
+				Tag:   "test-tag",
+			},
+			{
+				Image: "image2",
+				Tag:   "test-tag",
+			},
+		},
+	}
+
+	// Expected output
+	expectedOutput := "Got the following configuration:\n" +
+		"ARGO_WATCHER_URL: http://localhost:8080\n" +
+		"ARGO_APP: test-app\n" +
+		"COMMIT_AUTHOR: test-author\n" +
+		"PROJECT_NAME: test-project\n" +
+		"IMAGE_TAG: test-tag\n" +
+		"IMAGES: [{image1 test-tag} {image2 test-tag}]\n\n" +
+		"ARGO_WATCHER_DEPLOY_TOKEN is not set, git commit will not be performed.\n"
+
+	// Redirect standard output to a buffer
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	// Call the function
+	printClientConfiguration(watcher, task)
+
+	// Restore standard output
+	err := w.Close()
+	assert.NoError(t, err)
+
+	os.Stdout = oldStdout
+
+	// Read the buffer
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+
+	// Compare the buffer's content with the expected output
+	assert.Equal(t, expectedOutput, buf.String())
 }

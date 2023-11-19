@@ -9,7 +9,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -189,15 +188,36 @@ func getImagesList(list []string, tag string) []models.Image {
 	return images
 }
 
+func createTask(config *ClientConfig) models.Task {
+	images := getImagesList(config.Images, config.Tag)
+	return models.Task{
+		App:     config.App,
+		Author:  config.Author,
+		Project: config.Project,
+		Images:  images,
+	}
+}
+
+func printClientConfiguration(watcher *Watcher, task models.Task) {
+	fmt.Printf("Got the following configuration:\n"+
+		"ARGO_WATCHER_URL: %s\n"+
+		"ARGO_APP: %s\n"+
+		"COMMIT_AUTHOR: %s\n"+
+		"PROJECT_NAME: %s\n"+
+		"IMAGE_TAG: %s\n"+
+		"IMAGES: %s\n\n",
+		watcher.baseUrl, task.App, task.Author, task.Project, clientConfig.Tag, task.Images)
+	if clientConfig.Token == "" {
+		fmt.Println("ARGO_WATCHER_DEPLOY_TOKEN is not set, git commit will not be performed.")
+	}
+}
+
 func Run() {
 	var err error
 
 	if clientConfig, err = NewClientConfig(); err != nil {
-		log.Printf("Couldn't get client configuration. Got the following error: %s", err)
-		os.Exit(1)
+		log.Fatalf("Couldn't get client configuration. Got the following error: %s", err)
 	}
-
-	images := getImagesList(clientConfig.Images, clientConfig.Tag)
 
 	watcher := NewWatcher(
 		strings.TrimSuffix(clientConfig.Url, "/"),
@@ -205,32 +225,15 @@ func Run() {
 		clientConfig.Timeout,
 	)
 
-	task := models.Task{
-		App:     clientConfig.App,
-		Author:  clientConfig.Author,
-		Project: clientConfig.Project,
-		Images:  images,
-	}
-
-	deployToken := clientConfig.Token
+	task := createTask(clientConfig)
 
 	if watcher.debugMode {
-		fmt.Printf("Got the following configuration:\n"+
-			"ARGO_WATCHER_URL: %s\n"+
-			"ARGO_APP: %s\n"+
-			"COMMIT_AUTHOR: %s\n"+
-			"PROJECT_NAME: %s\n"+
-			"IMAGE_TAG: %s\n"+
-			"IMAGES: %s\n\n",
-			watcher.baseUrl, task.App, task.Author, task.Project, clientConfig.Tag, task.Images)
-		if deployToken == "" {
-			fmt.Println("ARGO_WATCHER_DEPLOY_TOKEN is not set, git commit will not be performed.")
-		}
+		printClientConfiguration(watcher, task)
 	}
 
 	log.Printf("Waiting for %s app to be running on %s version.\n", task.App, clientConfig.Tag)
 
-	id, err := watcher.addTask(task, deployToken)
+	id, err := watcher.addTask(task, clientConfig.Token)
 	if err != nil {
 		log.Fatalf("Couldn't add task. Got the following error: %s", err)
 	}
