@@ -7,11 +7,11 @@ import (
 )
 
 type ClientConfig struct {
-	Url     string        `env:"ARGO_WATCHER_URL"`
-	Images  []string      `env:"IMAGES"`
-	Tag     string        `env:"IMAGE_TAG"`
-	App     string        `env:"ARGO_APP"`
-	Author  string        `env:"COMMIT_AUTHOR"`
+	Url     string        `env:"ARGO_WATCHER_URL,required"`
+	Images  []string      `env:"IMAGES,required"`
+	Tag     string        `env:"IMAGE_TAG,required"`
+	App     string        `env:"ARGO_APP,required"`
+	Author  string        `env:"COMMIT_AUTHOR,required"`
 	Project string        `env:"PROJECT_NAME"`
 	Token   string        `env:"ARGO_WATCHER_DEPLOY_TOKEN"`
 	Timeout time.Duration `env:"TIMEOUT" envDefault:"60s"`
