@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"os"
 
 	"encoding/json"
 	"errors"
@@ -177,5 +178,6 @@ func Run() {
 		if strings.Contains(err.Error(), "The deployment has failed") {
 			log.Fatalf("To get more information about the problem, please check ArgoCD UI: %s\n", generateAppUrl(watcher, task))
 		}
+		os.Exit(1)
 	}
 }
