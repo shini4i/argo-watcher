@@ -174,7 +174,7 @@ func Run() {
 
 	if err = watcher.waitForDeployment(id, task.App, clientConfig.Tag); err != nil {
 		log.Println(err)
-		if !strings.Contains(err.Error(), "does not exist") {
+		if strings.Contains(err.Error(), "The deployment has failed") {
 			log.Fatalf("To get more information about the problem, please check ArgoCD UI: %s\n", generateAppUrl(watcher, task))
 		}
 	}
