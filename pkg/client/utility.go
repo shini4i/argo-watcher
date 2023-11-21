@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 
 	"github.com/shini4i/argo-watcher/internal/models"
@@ -80,14 +79,14 @@ func printClientConfiguration(watcher *Watcher, task models.Task) {
 	}
 }
 
-func generateAppUrl(watcher *Watcher, task models.Task) string {
+func generateAppUrl(watcher *Watcher, task models.Task) (string, error) {
 	cfg, err := watcher.getWatcherConfig()
 	if err != nil {
-		log.Fatalln(err)
+		return "", err
 	}
 
 	if cfg.ArgoUrlAlias != "" {
-		return fmt.Sprintf("%s/applications/%s", cfg.ArgoUrlAlias, task.App)
+		return fmt.Sprintf("%s/applications/%s", cfg.ArgoUrlAlias, task.App), nil
 	}
-	return fmt.Sprintf("%s://%s/applications/%s", cfg.ArgoUrl.Scheme, cfg.ArgoUrl.Host, task.App)
+	return fmt.Sprintf("%s://%s/applications/%s", cfg.ArgoUrl.Scheme, cfg.ArgoUrl.Host, task.App), nil
 }

@@ -190,61 +190,69 @@ func TestPrintClientConfiguration(t *testing.T) {
 }
 
 func TestGenerateAppUrl(t *testing.T) {
-	// Create a test server
-	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		// Test request parameters
-		assert.Equal(t, req.URL.String(), "/api/v1/config")
+	t.Run("SuccessScenario", func(t *testing.T) {
+		// Create a test server
+		server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+			// Test request parameters
+			assert.Equal(t, req.URL.String(), "/api/v1/config")
 
-		// Create the response data
-		configResponse := struct {
-			ArgoCDURL      url.URL `json:"argo_cd_url"`
-			ArgoCDURLAlias string  `json:"argo_cd_url_alias"`
-		}{
-			ArgoCDURL:      url.URL{Scheme: "http", Host: "localhost:8080"},
-			ArgoCDURLAlias: "https://argo-cd.example.com",
+			// Create and send the response data
+			configResponse := struct {
+				ArgoCDURL      url.URL `json:"argo_cd_url"`
+				ArgoCDURLAlias string  `json:"argo_cd_url_alias"`
+			}{
+				ArgoCDURL:      url.URL{Scheme: "http", Host: "localhost:8080"},
+				ArgoCDURLAlias: "https://argo-cd.example.com",
+			}
+
+			jsonData, _ := json.Marshal(configResponse)
+			_, err := rw.Write(jsonData)
+			if err != nil {
+				t.Error(err)
+			}
+		}))
+		defer server.Close()
+
+		// Create a new Watcher instance
+		watcher := NewWatcher(server.URL, false, 30*time.Second)
+
+		// Create a Task for testing
+		task := models.Task{
+			App: "test-app",
+			// other task fields...
 		}
 
-		// Marshal the response data to JSON
-		jsonData, err := json.Marshal(configResponse)
-		if err != nil {
-			t.Error(err)
-			return
+		// Call the function
+		appUrl, err := generateAppUrl(watcher, task)
+
+		// Assert no error
+		assert.Nil(t, err)
+
+		// Expected output
+		expectedOutput := "https://argo-cd.example.com/applications/test-app"
+
+		// Compare the function's output with the expected output
+		assert.Equal(t, expectedOutput, appUrl)
+	})
+
+	t.Run("ErrorScenario", func(t *testing.T) {
+		// Create a new Watcher instance with an invalid URL
+		invalidURL := "http://invalid-url"
+		watcher := NewWatcher(invalidURL, false, 30*time.Second)
+
+		// Create a Task for testing
+		task := models.Task{
+			App: "test-app",
+			// other task fields...
 		}
 
-		// Write the JSON data to the response writer
-		if _, err := rw.Write(jsonData); err != nil {
-			t.Error(err)
-		}
-	}))
-	// Close the server when test finishes
-	defer server.Close()
+		// Call the function
+		appUrl, err := generateAppUrl(watcher, task)
 
-	// Create a new Watcher instance
-	watcher := NewWatcher(server.URL, false, 30*time.Second)
+		// Assert that an error is returned
+		assert.NotNil(t, err)
 
-	// Create a Task for testing
-	task := models.Task{
-		App:     "test-app",
-		Author:  "test-author",
-		Project: "test-project",
-		Images: []models.Image{
-			{
-				Image: "image1",
-				Tag:   "test-tag",
-			},
-			{
-				Image: "image2",
-				Tag:   "test-tag",
-			},
-		},
-	}
-
-	// Call the function
-	appUrl := generateAppUrl(watcher, task)
-
-	// Expected output
-	expectedOutput := "https://argo-cd.example.com/applications/test-app"
-
-	// Compare the function's output with the expected output
-	assert.Equal(t, expectedOutput, appUrl)
+		// Assert that the returned URL is empty
+		assert.Equal(t, "", appUrl)
+	})
 }
