@@ -137,7 +137,7 @@ func (watcher *Watcher) waitForDeployment(id, appName, version string) error {
 		case models.StatusArgoCDUnavailableMessage:
 			return fmt.Errorf("ArgoCD is unavailable. Please investigate.\n%s", taskInfo.StatusReason)
 		case models.StatusDeployedMessage:
-			log.Print("The deployment version is done.", version)
+			log.Println("The deployment version is done.", version)
 			return nil
 		}
 	}
@@ -173,6 +173,7 @@ func Run() {
 	time.Sleep(5 * time.Second)
 
 	if err = watcher.waitForDeployment(id, task.App, clientConfig.Tag); err != nil {
+		log.Println(err)
 		log.Fatalf("To get more information about the problem, please check ArgoCD UI: %s\n", generateAppUrl(watcher, task))
 	}
 }
