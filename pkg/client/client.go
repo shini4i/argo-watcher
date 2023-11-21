@@ -138,10 +138,26 @@ func (watcher *Watcher) waitForDeployment(id, appName, version string) error {
 		case models.StatusArgoCDUnavailableMessage:
 			return fmt.Errorf("ArgoCD is unavailable. Please investigate.\n%s", taskInfo.StatusReason)
 		case models.StatusDeployedMessage:
-			log.Println("The deployment version is done.", version)
+			log.Printf("The deployment of %s version is done.", version)
 			return nil
 		}
 	}
+}
+
+func handleDeploymentError(watcher *Watcher, task models.Task, err error) {
+	log.Println(err)
+	if strings.Contains(err.Error(), "The deployment has failed") {
+		appUrl, err := generateAppUrl(watcher, task)
+		if err != nil {
+			handleFatalError(err, "Couldn't generate app URL.")
+		}
+		log.Fatalf("To get more information about the problem, please check ArgoCD UI: %s\n", appUrl)
+	}
+	os.Exit(1)
+}
+
+func handleFatalError(err error, message string) {
+	log.Fatalf("%s Got the following error: %s", message, err)
 }
 
 func Run() {
@@ -151,12 +167,7 @@ func Run() {
 		log.Fatalf("Couldn't get client configuration. Got the following error: %s", err)
 	}
 
-	watcher := NewWatcher(
-		strings.TrimSuffix(clientConfig.Url, "/"),
-		clientConfig.Debug,
-		clientConfig.Timeout,
-	)
-
+	watcher := setupWatcher(clientConfig)
 	task := createTask(clientConfig)
 
 	if watcher.debugMode {
@@ -167,21 +178,13 @@ func Run() {
 
 	id, err := watcher.addTask(task, clientConfig.Token)
 	if err != nil {
-		log.Fatalf("Couldn't add task. Got the following error: %s", err)
+		handleFatalError(err, "Couldn't add task.")
 	}
 
 	// Giving Argo-Watcher some time to process the task
 	time.Sleep(5 * time.Second)
 
 	if err = watcher.waitForDeployment(id, task.App, clientConfig.Tag); err != nil {
-		log.Println(err)
-		if strings.Contains(err.Error(), "The deployment has failed") {
-			appUrl, err := generateAppUrl(watcher, task)
-			if err != nil {
-				log.Fatalf("Couldn't generate app URL. Got the following error: %s", err)
-			}
-			log.Fatalf("To get more information about the problem, please check ArgoCD UI: %s\n", appUrl)
-		}
-		os.Exit(1)
+		handleDeploymentError(watcher, task, err)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/shini4i/argo-watcher/internal/models"
 )
@@ -89,4 +90,12 @@ func generateAppUrl(watcher *Watcher, task models.Task) (string, error) {
 		return fmt.Sprintf("%s/applications/%s", cfg.ArgoUrlAlias, task.App), nil
 	}
 	return fmt.Sprintf("%s://%s/applications/%s", cfg.ArgoUrl.Scheme, cfg.ArgoUrl.Host, task.App), nil
+}
+
+func setupWatcher(config *ClientConfig) *Watcher {
+	return NewWatcher(
+		strings.TrimSuffix(config.Url, "/"),
+		config.Debug,
+		config.Timeout,
+	)
 }
