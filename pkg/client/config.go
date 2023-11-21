@@ -12,7 +12,7 @@ type ClientConfig struct {
 	Tag     string        `env:"IMAGE_TAG,required"`
 	App     string        `env:"ARGO_APP,required"`
 	Author  string        `env:"COMMIT_AUTHOR,required"`
-	Project string        `env:"PROJECT_NAME"`
+	Project string        `env:"PROJECT_NAME,required"`
 	Token   string        `env:"ARGO_WATCHER_DEPLOY_TOKEN"`
 	Timeout time.Duration `env:"TIMEOUT" envDefault:"60s"`
 	Debug   bool          `env:"DEBUG"`

@@ -30,7 +30,7 @@ type ServerConfig struct {
 	Host             string `env:"HOST" envDefault:"0.0.0.0" json:"-"`
 	Port             string `env:"PORT" envDefault:"8080" json:"-"`
 	DbHost           string `env:"DB_HOST" json:"db_host,omitempty"`
-	DbPort           string `env:"DB_PORT" json:"db_port,omitempty"`
+	DbPort           string `env:"DB_PORT" envDefault:"5432" json:"db_port,omitempty"`
 	DbName           string `env:"DB_NAME" json:"db_name,omitempty"`
 	DbUser           string `env:"DB_USER" json:"db_user,omitempty"`
 	DbPassword       string `env:"DB_PASSWORD" json:"-"`
