@@ -234,7 +234,7 @@ func (state *PostgresState) doProcessPostgresObsoleteTasks() error {
 }
 
 func getDsn(serverConfig *config.ServerConfig) string {
-	dsnTemplate := "host=%s port=%s user=%s password=%s dbname=%s sslmode=disable TimeZone=UTC"
+	dsnTemplate := "host=%s port=%d user=%s password=%s dbname=%s sslmode=disable TimeZone=UTC"
 	return fmt.Sprintf(dsnTemplate, serverConfig.DbHost, serverConfig.DbPort, serverConfig.DbUser, serverConfig.DbPassword, serverConfig.DbName)
 }
 
