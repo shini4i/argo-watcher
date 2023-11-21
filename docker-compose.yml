@@ -23,6 +23,7 @@ services:
       ARGO_TOKEN: example
       ARGO_TIMEOUT: 120
       DB_HOST: postgres
+      DB_PORT: 5432
       DB_USER: watcher
       DB_NAME: watcher
       DB_PASSWORD: watcher

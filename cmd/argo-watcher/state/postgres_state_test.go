@@ -62,7 +62,7 @@ func TestPostgresState_Add(t *testing.T) {
 	testConfig := &config.ServerConfig{
 		StateType:        "postgres",
 		DbHost:           os.Getenv("DB_HOST"),
-		DbPort:           "5432",
+		DbPort:           5432,
 		DbUser:           os.Getenv("DB_USER"),
 		DbName:           os.Getenv("DB_NAME"),
 		DbPassword:       os.Getenv("DB_PASSWORD"),
@@ -190,7 +190,7 @@ func TestPostgresState_Check(t *testing.T) {
 func TestGetDsn(t *testing.T) {
 	testConfig := &config.ServerConfig{
 		DbHost:     "localhost",
-		DbPort:     "5432",
+		DbPort:     5432,
 		DbUser:     "admin",
 		DbPassword: "password123",
 		DbName:     "testdb",
