@@ -152,21 +152,47 @@ func TestAddTask(t *testing.T) {
 }
 
 func TestGetTaskStatus(t *testing.T) {
-	task, err := client.getTaskStatus(taskId)
-	assert.NoError(t, err)
-	assert.Equal(t, models.StatusDeployedMessage, task.Status)
+	t.Run("received deployed status", func(t *testing.T) {
+		task, err := client.getTaskStatus(taskId)
+		assert.NoError(t, err)
+		assert.Equal(t, models.StatusDeployedMessage, task.Status)
+	})
 
-	task, err = client.getTaskStatus(appNotFoundId)
-	assert.NoError(t, err)
-	assert.Equal(t, models.StatusAppNotFoundMessage, task.Status)
+	t.Run("received app not found status", func(t *testing.T) {
+		task, err := client.getTaskStatus(appNotFoundId)
+		assert.NoError(t, err)
+		assert.Equal(t, models.StatusAppNotFoundMessage, task.Status)
+	})
 
-	task, err = client.getTaskStatus(argocdUnavailableId)
-	assert.NoError(t, err)
-	assert.Equal(t, models.StatusArgoCDUnavailableMessage, task.Status)
+	t.Run("received argocd unavailable status", func(t *testing.T) {
+		task, err := client.getTaskStatus(argocdUnavailableId)
+		assert.NoError(t, err)
+		assert.Equal(t, models.StatusArgoCDUnavailableMessage, task.Status)
+	})
 
-	task, err = client.getTaskStatus(failedTaskId)
-	assert.NoError(t, err)
-	assert.Equal(t, models.StatusFailedMessage, task.Status)
+	t.Run("received failed status", func(t *testing.T) {
+		task, err := client.getTaskStatus(failedTaskId)
+		assert.NoError(t, err)
+		assert.Equal(t, models.StatusFailedMessage, task.Status)
+	})
+
+	// Test case: server returns invalid JSON
+	t.Run("server returns invalid JSON", func(t *testing.T) {
+		// Create a test server that always returns an invalid JSON response
+		server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+			_, _ = rw.Write([]byte(`invalid JSON`))
+		}))
+		defer server.Close()
+
+		// Create a new Watcher instance
+		watcher := NewWatcher(server.URL, false, 30*time.Second)
+
+		// Call the function
+		_, err := watcher.getTaskStatus("test-id")
+
+		// We expect an error
+		assert.Error(t, err)
+	})
 }
 
 func TestGetWatcherConfig(t *testing.T) {

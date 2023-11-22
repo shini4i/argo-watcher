@@ -190,61 +190,129 @@ func TestPrintClientConfiguration(t *testing.T) {
 }
 
 func TestGenerateAppUrl(t *testing.T) {
-	// Create a test server
-	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		// Test request parameters
-		assert.Equal(t, req.URL.String(), "/api/v1/config")
+	t.Run("SuccessScenarioAlias", func(t *testing.T) {
+		// Create a test server
+		server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+			// Test request parameters
+			assert.Equal(t, req.URL.String(), "/api/v1/config")
 
-		// Create the response data
-		configResponse := struct {
-			ArgoCDURL      url.URL `json:"argo_cd_url"`
-			ArgoCDURLAlias string  `json:"argo_cd_url_alias"`
-		}{
-			ArgoCDURL:      url.URL{Scheme: "http", Host: "localhost:8080"},
-			ArgoCDURLAlias: "https://argo-cd.example.com",
+			// Create and send the response data
+			configResponse := struct {
+				ArgoCDURL      url.URL `json:"argo_cd_url"`
+				ArgoCDURLAlias string  `json:"argo_cd_url_alias"`
+			}{
+				ArgoCDURL:      url.URL{Scheme: "http", Host: "localhost:8080"},
+				ArgoCDURLAlias: "https://argo-cd.example.com",
+			}
+
+			jsonData, _ := json.Marshal(configResponse)
+			_, err := rw.Write(jsonData)
+			if err != nil {
+				t.Error(err)
+			}
+		}))
+		defer server.Close()
+
+		// Create a new Watcher instance
+		watcher := NewWatcher(server.URL, false, 30*time.Second)
+
+		// Create a Task for testing
+		task := models.Task{
+			App: "test-app",
+			// other task fields...
 		}
 
-		// Marshal the response data to JSON
-		jsonData, err := json.Marshal(configResponse)
-		if err != nil {
-			t.Error(err)
-			return
+		// Call the function
+		appUrl, err := generateAppUrl(watcher, task)
+
+		// Assert no error
+		assert.Nil(t, err)
+
+		// Expected output
+		expectedOutput := "https://argo-cd.example.com/applications/test-app"
+
+		// Compare the function's output with the expected output
+		assert.Equal(t, expectedOutput, appUrl)
+	})
+
+	t.Run("SuccessScenarioNoAlias", func(t *testing.T) {
+		// Create a test server
+		server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+			// Test request parameters
+			assert.Equal(t, req.URL.String(), "/api/v1/config")
+
+			// Create and send the response data
+			configResponse := struct {
+				ArgoCDURL url.URL `json:"argo_cd_url"`
+			}{
+				ArgoCDURL: url.URL{Scheme: "http", Host: "localhost:8080"},
+			}
+
+			jsonData, _ := json.Marshal(configResponse)
+			_, err := rw.Write(jsonData)
+			if err != nil {
+				t.Error(err)
+			}
+		}))
+		defer server.Close()
+
+		// Create a new Watcher instance
+		watcher := NewWatcher(server.URL, false, 30*time.Second)
+
+		// Create a Task for testing
+		task := models.Task{
+			App: "test-app",
+			// other task fields...
 		}
 
-		// Write the JSON data to the response writer
-		if _, err := rw.Write(jsonData); err != nil {
-			t.Error(err)
+		// Call the function
+		appUrl, err := generateAppUrl(watcher, task)
+
+		// Assert no error
+		assert.Nil(t, err)
+
+		// Expected output
+		expectedOutput := "http://localhost:8080/applications/test-app"
+
+		// Compare the function's output with the expected output
+		assert.Equal(t, expectedOutput, appUrl)
+	})
+
+	t.Run("ErrorScenario", func(t *testing.T) {
+		// Create a new Watcher instance with an invalid URL
+		invalidURL := "http://invalid-url"
+		watcher := NewWatcher(invalidURL, false, 30*time.Second)
+
+		// Create a Task for testing
+		task := models.Task{
+			App: "test-app",
+			// other task fields...
 		}
-	}))
-	// Close the server when test finishes
-	defer server.Close()
 
-	// Create a new Watcher instance
-	watcher := NewWatcher(server.URL, false, 30*time.Second)
+		// Call the function
+		appUrl, err := generateAppUrl(watcher, task)
 
-	// Create a Task for testing
-	task := models.Task{
-		App:     "test-app",
-		Author:  "test-author",
-		Project: "test-project",
-		Images: []models.Image{
-			{
-				Image: "image1",
-				Tag:   "test-tag",
-			},
-			{
-				Image: "image2",
-				Tag:   "test-tag",
-			},
-		},
+		// Assert that an error is returned
+		assert.NotNil(t, err)
+
+		// Assert that the returned URL is empty
+		assert.Equal(t, "", appUrl)
+	})
+}
+
+func TestSetupWatcher(t *testing.T) {
+	// Define the input
+	config := &ClientConfig{
+		Url:     "http://localhost:8080",
+		Debug:   true,
+		Timeout: 30 * time.Second,
 	}
 
 	// Call the function
-	appUrl := generateAppUrl(watcher, task)
+	watcher := setupWatcher(config)
 
-	// Expected output
-	expectedOutput := "https://argo-cd.example.com/applications/test-app"
-
-	// Compare the function's output with the expected output
-	assert.Equal(t, expectedOutput, appUrl)
+	// Assert the watcher's properties
+	assert.Equal(t, config.Url, watcher.baseUrl)
+	assert.Equal(t, config.Debug, watcher.debugMode)
+	assert.Equal(t, config.Timeout, watcher.timeout)
 }
