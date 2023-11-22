@@ -299,3 +299,20 @@ func TestGenerateAppUrl(t *testing.T) {
 		assert.Equal(t, "", appUrl)
 	})
 }
+
+func TestSetupWatcher(t *testing.T) {
+	// Define the input
+	config := &ClientConfig{
+		Url:     "http://localhost:8080",
+		Debug:   true,
+		Timeout: 30 * time.Second,
+	}
+
+	// Call the function
+	watcher := setupWatcher(config)
+
+	// Assert the watcher's properties
+	assert.Equal(t, config.Url, watcher.baseUrl)
+	assert.Equal(t, config.Debug, watcher.debugMode)
+	assert.Equal(t, config.Timeout, watcher.timeout)
+}
