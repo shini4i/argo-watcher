@@ -9,23 +9,34 @@ import (
 )
 
 func TestNewServerConfig(t *testing.T) {
-	// Set up the required environment variables
-	t.Setenv("ARGO_URL", "https://example.com")
-	t.Setenv("ARGO_TOKEN", "secret-token")
-	t.Setenv("STATE_TYPE", "postgres")
+	t.Run("Success", func(t *testing.T) {
+		// Set up the required environment variables
+		t.Setenv("ARGO_URL", "https://example.com")
+		t.Setenv("ARGO_TOKEN", "secret-token")
+		t.Setenv("STATE_TYPE", "postgres")
 
-	// Call the NewServerConfig function
-	cfg, err := NewServerConfig()
+		// Call the NewServerConfig function
+		cfg, err := NewServerConfig()
 
-	// Assert that the configuration was parsed successfully
-	assert.NoError(t, err)
-	assert.NotNil(t, cfg)
+		// Assert that the configuration was parsed successfully
+		assert.NoError(t, err)
+		assert.NotNil(t, cfg)
 
-	// Assert specific field values
-	expectedUrl, _ := url.Parse("https://example.com")
-	assert.Equal(t, *expectedUrl, cfg.ArgoUrl)
-	assert.Equal(t, "secret-token", cfg.ArgoToken)
-	assert.Equal(t, "postgres", cfg.StateType)
+		// Assert specific field values
+		expectedUrl, _ := url.Parse("https://example.com")
+		assert.Equal(t, *expectedUrl, cfg.ArgoUrl)
+		assert.Equal(t, "secret-token", cfg.ArgoToken)
+		assert.Equal(t, "postgres", cfg.StateType)
+	})
+
+	t.Run("Invalid state type", func(t *testing.T) {
+		t.Setenv("ARGO_URL", "https://example.com")
+		t.Setenv("ARGO_TOKEN", "secret-token")
+		t.Setenv("STATE_TYPE", "invalid")
+
+		_, err := NewServerConfig()
+		assert.Error(t, err)
+	})
 }
 
 func TestNewServerConfig_RequiredFieldsMissing(t *testing.T) {

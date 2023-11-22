@@ -13,7 +13,7 @@ static/
 **/.env
 
 # built binary file
-argo-watcher
+/argo-watcher
 
 # swagger files
 **/swagger.*
