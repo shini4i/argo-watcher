@@ -3,6 +3,8 @@ package main
 import (
 	"testing"
 
+	"github.com/rs/zerolog/log"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
@@ -74,4 +76,37 @@ func TestSetArgoUnavailable(t *testing.T) {
 		// Check if the metric was set to 0
 		assert.Equal(t, 0.0, metric)
 	})
+}
+
+func TestRegister(t *testing.T) {
+	metrics := &Metrics{}
+	metrics.Init()
+
+	// Call the method to test
+	metrics.Register()
+
+	// adding a failed deployment to check if the metric was registered
+	metrics.AddFailedDeployment("testApp")
+
+	// Check if the metrics were registered
+	assert.True(t, testMetricRegistered("failed_deployment"))
+	assert.True(t, testMetricRegistered("processed_deployments"))
+	assert.True(t, testMetricRegistered("argocd_unavailable"))
+}
+
+// Helper function to check if a metric is registered.
+func testMetricRegistered(metricName string) bool {
+	metricFamilies, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		log.Error().Msgf("Error gathering metrics: %v", err)
+		return false
+	}
+
+	for _, m := range metricFamilies {
+		if m.GetName() == metricName {
+			return true
+		}
+	}
+
+	return false
 }
