@@ -57,7 +57,7 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 
 	// get application status
 	status := application.GetRolloutStatus(task.ListImages(), updater.registryProxyUrl)
-	if application.IsFinalRolloutStatus(status) {
+	if status == models.ArgoRolloutAppSuccess {
 		log.Info().Str("id", task.Id).Msg("App is running on the expected version.")
 		// deployment success
 		updater.argo.metrics.ResetFailedDeployment(task.App)
@@ -134,6 +134,7 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 	log.Debug().Str("id", task.Id).Msg("Waiting for rollout")
 	_ = retry.Do(func() error {
 		application, err = updater.argo.api.GetApplication(task.App)
+
 		if err != nil {
 			// check if ArgoCD didn't have the app
 			if task.IsAppNotFoundError(err) {
@@ -144,16 +145,28 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 			log.Debug().Str("id", task.Id).Msgf("Failed fetching application status. Error: %s", err.Error())
 			return err
 		}
-		// print application debug here
-		status := application.GetRolloutStatus(task.ListImages(), updater.registryProxyUrl)
-		if !application.IsFinalRolloutStatus(status) {
-			// print status debug here
-			log.Debug().Str("id", task.Id).Msgf("Application status is not final. Status received \"%s\"", status)
-			return errors.New("force retry")
+
+		if task.SavedAppStatus == "" {
+			task.SavedAppStatus = application.Status.Health.Status
 		}
-		// all good
-		log.Debug().Str("id", task.Id).Msgf("Application rollout finished")
-		return nil
+
+		status := application.GetRolloutStatus(task.ListImages(), updater.registryProxyUrl)
+
+		switch status {
+		case models.ArgoRolloutAppDegraded:
+			log.Debug().Str("id", task.Id).Msgf("Application is degraded")
+			if task.SavedAppStatus != models.ArgoRolloutAppDegraded {
+				return retry.Unrecoverable(errors.New("application has degraded"))
+			}
+			task.SavedAppStatus = models.ArgoRolloutAppDegraded
+		case models.ArgoRolloutAppSuccess:
+			log.Debug().Str("id", task.Id).Msgf("Application rollout finished")
+			return nil
+		default:
+			log.Debug().Str("id", task.Id).Msgf("Application status is not final. Status received \"%s\"", status)
+			task.SavedAppStatus = "in progress"
+		}
+		return errors.New("force retry")
 	}, updater.retryOptions...)
 
 	// return application and latest error

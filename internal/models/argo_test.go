@@ -198,14 +198,6 @@ func TestArgoRolloutMessage(t *testing.T) {
 	})
 }
 
-func TestApplication_IsFinalRollout(t *testing.T) {
-	application := Application{}
-	assert.Equal(t, true, application.IsFinalRolloutStatus(ArgoRolloutAppSuccess))
-	assert.Equal(t, false, application.IsFinalRolloutStatus(ArgoRolloutAppNotAvailable))
-	assert.Equal(t, false, application.IsFinalRolloutStatus(ArgoRolloutAppNotHealthy))
-	assert.Equal(t, false, application.IsFinalRolloutStatus(ArgoRolloutAppNotSynced))
-}
-
 func TestIsManagedByWatcher(t *testing.T) {
 	tests := []struct {
 		name        string

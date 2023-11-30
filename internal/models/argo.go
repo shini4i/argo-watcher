@@ -14,6 +14,7 @@ const (
 	ArgoRolloutAppNotSynced    = "not synced"
 	ArgoRolloutAppNotAvailable = "not available"
 	ArgoRolloutAppNotHealthy   = "not healthy"
+	ArgoRolloutAppDegraded     = "degraded"
 )
 
 const (
@@ -85,6 +86,11 @@ func (app *Application) GetRolloutStatus(rolloutImages []string, registryProxyUr
 		}
 	}
 
+	// if an application reached the degraded status, we can stop processing the task
+	if app.Status.Health.Status == "Degraded" {
+		return ArgoRolloutAppDegraded
+	}
+
 	// verify app sync status
 	if app.Status.Sync.Status != "Synced" {
 		return ArgoRolloutAppNotSynced
@@ -145,11 +151,6 @@ func (app *Application) GetRolloutMessage(status string, rolloutImages []string)
 		"received unexpected rollout status \"%s\"",
 		status,
 	)
-}
-
-// IsFinalRolloutStatus checks if rollout status is final.
-func (app *Application) IsFinalRolloutStatus(status string) bool {
-	return status == ArgoRolloutAppSuccess
 }
 
 // ListSyncResultResources returns a list of strings representing the sync result resources of the application.
