@@ -87,7 +87,7 @@ func (app *Application) GetRolloutStatus(rolloutImages []string, registryProxyUr
 	}
 
 	// if an application reached the degraded status, we can stop processing the task
-	if app.Status.Health.Status == "Degraded" {
+	if app.Status.Health.Status == "Degraded" && app.Status.Sync.Status != "OutOfSync" {
 		return ArgoRolloutAppDegraded
 	}
 
@@ -133,7 +133,7 @@ func (app *Application) GetRolloutMessage(status string, rolloutImages []string)
 			strings.Join(app.ListSyncResultResources(), "\n\t"),
 		)
 	// application is not in a healthy status
-	case ArgoRolloutAppNotHealthy:
+	case ArgoRolloutAppNotHealthy, ArgoRolloutAppDegraded:
 		// display current health of pods
 		return fmt.Sprintf(
 			"App sync status \"%s\"\n"+
