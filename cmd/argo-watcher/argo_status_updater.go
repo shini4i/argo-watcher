@@ -146,10 +146,6 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 			return err
 		}
 
-		if task.SavedAppStatus == "" {
-			task.SavedAppStatus = application.Status.Health.Status
-		}
-
 		status := application.GetRolloutStatus(task.ListImages(), updater.registryProxyUrl)
 
 		switch status {
