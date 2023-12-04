@@ -82,6 +82,9 @@ function Sidebar({ open, onClose }) {
                 ) : (
                     <Typography>No data available</Typography>
                 )}
+                <Typography variant="body2" color="text.secondary" align="center" style={{ marginTop: '20px' }}>
+                    © {new Date().getFullYear()} Vadim Gedz. This project is licensed under the MIT License.
+                </Typography>
             </Box>
         </Drawer>
     );

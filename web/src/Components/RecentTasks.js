@@ -90,110 +90,101 @@ function RecentTasks() {
 
     return (
         <Container maxWidth="xl">
-            <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: 'calc(100vh - 40px)' }}>
-                <Box sx={{ flexGrow: 1 }}>
-                    <Stack
-                        direction={{ xs: 'column', md: 'row' }}
-                        spacing={2}
-                        alignItems="center"
-                        sx={{ mb: 2 }}
-                    >
-                        <Typography
-                            variant="h5"
-                            gutterBottom
-                            component="div"
-                            sx={{
-                                flexGrow: 1,
-                                display: 'flex',
-                                gap: '10px',
-                                m: 0,
-                                alignItems: 'center', // Center text vertically
+            <Stack
+                direction={{ xs: 'column', md: 'row' }}
+                spacing={2}
+                alignItems="center"
+                sx={{ mb: 2 }}
+            >
+                <Typography
+                    variant="h5"
+                    gutterBottom
+                    component="div"
+                    sx={{
+                        flexGrow: 1,
+                        display: 'flex',
+                        gap: '10px',
+                        m: 0,
+                        alignItems: 'center', // Center text vertically
+                    }}
+                >
+                    <Box>Recent tasks</Box>
+                    <Box sx={{ fontSize: '10px' }}>UTC</Box>
+                </Typography>
+                <Stack direction="row" spacing={2}>
+                    <Box>
+                        <ApplicationsFilter
+                            value={currentApplication}
+                            onChange={value => {
+                                setCurrentApplication(value);
+                                refreshTasksInTimeframe(currentTimeframe, value);
+                                // Reset page
+                                setCurrentPage(1);
+                                // Update URL
+                                updateSearchParameters(value, currentAutoRefresh, 1);
                             }}
-                        >
-                            <Box>Recent tasks</Box>
-                            <Box sx={{ fontSize: '10px' }}>UTC</Box>
-                        </Typography>
-                        <Stack direction="row" spacing={2}>
-                            <Box>
-                                <ApplicationsFilter
-                                    value={currentApplication}
-                                    onChange={value => {
-                                        setCurrentApplication(value);
-                                        refreshTasksInTimeframe(currentTimeframe, value);
-                                        // Reset page
-                                        setCurrentPage(1);
-                                        // Update URL
-                                        updateSearchParameters(value, currentAutoRefresh, 1);
-                                    }}
-                                    setError={setError}
-                                    setSuccess={setSuccess}
-                                />
-                            </Box>
-                            <Box sx={{ minWidth: 120 }}>
-                                <FormControl fullWidth size={'small'}>
-                                    <InputLabel>Auto-Refresh</InputLabel>
-                                    <Select
-                                        value={currentAutoRefresh}
-                                        label="Auto-Refresh"
-                                        onChange={handleAutoRefreshChange}
-                                    >
-                                        {Object.keys(autoRefreshIntervals).map(autoRefreshInterval => {
-                                            let value = autoRefreshIntervals[autoRefreshInterval];
-                                            return (
-                                                <MenuItem key={autoRefreshInterval} value={value}>
-                                                    {autoRefreshInterval}
-                                                </MenuItem>
-                                            );
-                                        })}
-                                    </Select>
-                                </FormControl>
-                            </Box>
-                            <Box>
-                                <IconButton
-                                    edge="start"
-                                    color={'primary'}
-                                    title={'Force table load'}
-                                    onClick={() => {
-                                        // Update tasks
-                                        refreshTasksInTimeframe(currentTimeframe, currentApplication);
-                                        // Reset page
-                                        setCurrentPage(1);
-                                        updateSearchParameters(
-                                            currentApplication,
-                                            currentAutoRefresh,
-                                            1,
-                                        );
-                                    }}
-                                >
-                                    <RefreshIcon />
-                                </IconButton>
-                            </Box>
-                        </Stack>
-                    </Stack>
-                    {/* Style the table with Material-UI Paper component */}
-                    <Box sx={{ boxShadow: 2, borderRadius: 2, p: 2 }}>
-                        <TasksTable
-                            tasks={tasks}
-                            sortField={sortField}
-                            setSortField={setSortField}
-                            relativeDate={true}
-                            page={currentPage}
-                            onPageChange={page => {
-                                setCurrentPage(page);
+                            setError={setError}
+                            setSuccess={setSuccess}
+                        />
+                    </Box>
+                    <Box sx={{ minWidth: 120 }}>
+                        <FormControl fullWidth size={'small'}>
+                            <InputLabel>Auto-Refresh</InputLabel>
+                            <Select
+                                value={currentAutoRefresh}
+                                label="Auto-Refresh"
+                                onChange={handleAutoRefreshChange}
+                            >
+                                {Object.keys(autoRefreshIntervals).map(autoRefreshInterval => {
+                                    let value = autoRefreshIntervals[autoRefreshInterval];
+                                    return (
+                                        <MenuItem key={autoRefreshInterval} value={value}>
+                                            {autoRefreshInterval}
+                                        </MenuItem>
+                                    );
+                                })}
+                            </Select>
+                        </FormControl>
+                    </Box>
+                    <Box>
+                        <IconButton
+                            edge="start"
+                            color={'primary'}
+                            title={'Force table load'}
+                            onClick={() => {
+                                // Update tasks
+                                refreshTasksInTimeframe(currentTimeframe, currentApplication);
+                                // Reset page
+                                setCurrentPage(1);
                                 updateSearchParameters(
                                     currentApplication,
                                     currentAutoRefresh,
-                                    page,
+                                    1,
                                 );
                             }}
-                        />
+                        >
+                            <RefreshIcon />
+                        </IconButton>
                     </Box>
-                </Box>
-            </Box>
-            <Box sx={{ position: 'fixed', bottom: 0, width: '100%', textAlign: 'center', padding: '10px' }}>
-                <Typography variant="body2" color="text.secondary">
-                    © {new Date().getFullYear()} Vadim Gedz. This project is licensed under the MIT License.
-                </Typography>
+                </Stack>
+            </Stack>
+            {/* Style the table with Material-UI Paper component */}
+            <Box sx={{ boxShadow: 2, borderRadius: 2, p: 2 }}>
+                <TasksTable
+                    tasks={tasks}
+                    sortField={sortField}
+                    setSortField={setSortField}
+                    relativeDate={true}
+                    page={currentPage}
+                    onPageChange={page => {
+                        setCurrentPage(page);
+                        updateSearchParameters(
+                            currentApplication,
+                            currentAutoRefresh,
+                            page,
+                        );
+                    }}
+                />
             </Box>
         </Container>
     );

@@ -14,14 +14,6 @@ import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { useErrorContext } from '../ErrorContext';
 
-const autoRefreshIntervals = {
-    '5s': 5,
-    '10s': 10,
-    '30s': 30,
-    '1m': 60,
-    off: 0,
-};
-
 function HistoryTasks() {
     const [searchParams, setSearchParams] = useSearchParams();
     const { setError, setSuccess } = useErrorContext();
@@ -82,97 +74,88 @@ function HistoryTasks() {
 
     return (
         <Container maxWidth="xl">
-            <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: 'calc(100vh - 40px)' }}>
-                <Box sx={{ flexGrow: 1 }}>
-                    <Stack
-                        direction={{ xs: 'column', md: 'row' }}
-                        spacing={2}
-                        alignItems="center"
-                        sx={{ mb: 2 }}
-                    >
-                        <Typography
-                            variant="h5"
-                            gutterBottom
-                            component="div"
-                            sx={{
-                                flexGrow: 1,
-                                display: 'flex',
-                                gap: '10px',
-                                m: 0,
-                                alignItems: 'center', // Center text vertically
+            <Stack
+                direction={{ xs: 'column', md: 'row' }}
+                spacing={2}
+                alignItems="center"
+                sx={{ mb: 2 }}
+            >
+                <Typography
+                    variant="h5"
+                    gutterBottom
+                    component="div"
+                    sx={{
+                        flexGrow: 1,
+                        display: 'flex',
+                        gap: '10px',
+                        m: 0,
+                        alignItems: 'center',
+                    }}
+                >
+                    <Box>History tasks</Box>
+                    <Box sx={{ fontSize: '10px' }}>UTC</Box>
+                </Typography>
+                <Stack direction="row" spacing={2}>
+                    <Box>
+                        <ApplicationsFilter
+                            value={currentApplication}
+                            onChange={value => {
+                                setCurrentApplication(value);
+                                setCurrentPage(1);
+                                refreshWithFilters(startDate, endDate, value, 1);
                             }}
-                        >
-                            <Box>History tasks</Box>
-                            <Box sx={{ fontSize: '10px' }}>UTC</Box>
-                        </Typography>
-                        <Stack direction="row" spacing={2}>
-                            <Box>
-                                <ApplicationsFilter
-                                    value={currentApplication}
-                                    onChange={value => {
-                                        setCurrentApplication(value);
-                                        setCurrentPage(1);
-                                        refreshWithFilters(startDate, endDate, value, 1);
-                                    }}
-                                    setError={setError}
-                                    setSuccess={setSuccess}
-                                />
-                            </Box>
-                            <Box>
-                                <DatePicker
-                                    selectsRange={true}
-                                    startDate={startDate}
-                                    endDate={endDate}
-                                    onChange={update => {
-                                        setDateRange(update);
-                                        setCurrentPage(1);
-                                        refreshWithFilters(update[0], update[1], currentApplication, 1);
-                                    }}
-                                    maxDate={new Date()}
-                                    isClearable={false}
-                                    customInput={<DateRangePickerCustomInput />}
-                                    required
-                                />
-                            </Box>
-                            <Box>
-                                <IconButton
-                                    edge="start"
-                                    color={'primary'}
-                                    title={'Reload table'}
-                                    onClick={() => {
-                                        setCurrentPage(1);
-                                        refreshWithFilters(startDate, endDate, currentApplication, 1);
-                                    }}
-                                >
-                                    <RefreshIcon />
-                                </IconButton>
-                            </Box>
-                        </Stack>
-                    </Stack>
-                    <Box sx={{ boxShadow: 2, borderRadius: 2, p: 2 }}>
-                        <TasksTable
-                            tasks={tasks}
-                            sortField={sortField}
-                            setSortField={setSortField}
-                            relativeDate={false}
-                            page={currentPage}
-                            onPageChange={page => {
-                                setCurrentPage(page);
-                                updateSearchParameters(
-                                    startDate,
-                                    endDate,
-                                    currentApplication,
-                                    page,
-                                );
-                            }}
+                            setError={setError}
+                            setSuccess={setSuccess}
                         />
                     </Box>
-                </Box>
-            </Box>
-            <Box sx={{ position: 'fixed', bottom: 0, width: '100%', textAlign: 'center', padding: '10px' }}>
-                <Typography variant="body2" color="text.secondary">
-                    © {new Date().getFullYear()} Vadim Gedz. This project is licensed under the MIT License.
-                </Typography>
+                    <Box>
+                        <DatePicker
+                            selectsRange={true}
+                            startDate={startDate}
+                            endDate={endDate}
+                            onChange={update => {
+                                setDateRange(update);
+                                setCurrentPage(1);
+                                refreshWithFilters(update[0], update[1], currentApplication, 1);
+                            }}
+                            maxDate={new Date()}
+                            isClearable={false}
+                            customInput={<DateRangePickerCustomInput />}
+                            required
+                        />
+                    </Box>
+                    <Box>
+                        <IconButton
+                            edge="start"
+                            color={'primary'}
+                            title={'Reload table'}
+                            onClick={() => {
+                                setCurrentPage(1);
+                                refreshWithFilters(startDate, endDate, currentApplication, 1);
+                            }}
+                        >
+                            <RefreshIcon />
+                        </IconButton>
+                    </Box>
+                </Stack>
+            </Stack>
+            <Box sx={{ boxShadow: 2, borderRadius: 2, p: 2 }}>
+                <TasksTable
+                    tasks={tasks}
+                    sortField={sortField}
+                    setSortField={setSortField}
+                    relativeDate={false}
+                    page={currentPage}
+                    onPageChange={page => {
+                        setCurrentPage(page);
+                        updateSearchParameters(
+                            startDate,
+                            endDate,
+                            currentApplication,
+                            page,
+                        );
+                    }}
+                />
             </Box>
         </Container>
     );
