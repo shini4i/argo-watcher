@@ -11,7 +11,8 @@ import {
     TableCell,
     TableBody,
     Paper,
-    CircularProgress
+    CircularProgress,
+    Button
 } from '@mui/material';
 
 function Sidebar({ open, onClose }) {
@@ -37,6 +38,10 @@ function Sidebar({ open, onClose }) {
         }
     }, [open]);
 
+    const handleCopy = () => {
+        navigator.clipboard.writeText(JSON.stringify(configData, null, 2));
+    };
+
     const renderTableCell = (value) => {
         if (value && typeof value === 'object' && value.constructor === Object) {
             return JSON.stringify(value, null, 2);
@@ -57,28 +62,35 @@ function Sidebar({ open, onClose }) {
                 ) : error ? (
                     <Typography color="error">{error}</Typography>
                 ) : configData ? (
-                    <TableContainer component={Paper}>
-                        <Table sx={{ minWidth: 300 }} aria-label="config table">
-                            <TableHead>
-                                <TableRow>
-                                    <TableCell>Config Key</TableCell>
-                                    <TableCell>Config Value</TableCell>
-                                </TableRow>
-                            </TableHead>
-                            <TableBody>
-                                {Object.entries(configData).map(([key, value]) => (
-                                    <TableRow key={key}>
-                                        <TableCell component="th" scope="row">
-                                            {key}
-                                        </TableCell>
-                                        <TableCell>
-                                            {renderTableCell(value)}
-                                        </TableCell>
+                    <>
+                        <TableContainer component={Paper}>
+                            <Table sx={{ minWidth: 300 }} aria-label="config table">
+                                <TableHead>
+                                    <TableRow>
+                                        <TableCell>Config Key</TableCell>
+                                        <TableCell>Config Value</TableCell>
                                     </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
-                    </TableContainer>
+                                </TableHead>
+                                <TableBody>
+                                    {Object.entries(configData).map(([key, value]) => (
+                                        <TableRow key={key}>
+                                            <TableCell component="th" scope="row">
+                                                {key}
+                                            </TableCell>
+                                            <TableCell>
+                                                {renderTableCell(value)}
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        </TableContainer>
+                        <Box sx={{ display: 'flex', justifyContent: 'center', marginTop: '20px' }}>
+                            <Button variant="contained" color="primary" onClick={handleCopy}>
+                                Copy JSON
+                            </Button>
+                        </Box>
+                    </>
                 ) : (
                     <Typography>No data available</Typography>
                 )}
