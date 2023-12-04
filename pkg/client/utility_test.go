@@ -303,9 +303,8 @@ func TestGenerateAppUrl(t *testing.T) {
 func TestSetupWatcher(t *testing.T) {
 	// Define the input
 	config := &ClientConfig{
-		Url:     "http://localhost:8080",
-		Debug:   true,
-		Timeout: 30 * time.Second,
+		Url:   "http://localhost:8080",
+		Debug: true,
 	}
 
 	// Call the function
@@ -314,5 +313,4 @@ func TestSetupWatcher(t *testing.T) {
 	// Assert the watcher's properties
 	assert.Equal(t, config.Url, watcher.baseUrl)
 	assert.Equal(t, config.Debug, watcher.debugMode)
-	assert.Equal(t, config.Timeout, watcher.timeout)
 }

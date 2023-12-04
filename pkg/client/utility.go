@@ -1,7 +1,6 @@
 package client
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,12 +15,6 @@ func (watcher *Watcher) doRequest(method, url string, body io.Reader) (*http.Res
 	if err != nil {
 		return nil, err
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), watcher.timeout)
-	defer cancel()
-
-	req = req.WithContext(ctx)
-
 	return watcher.client.Do(req)
 }
 
