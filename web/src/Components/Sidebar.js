@@ -1,18 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import {
-    Drawer,
-    Box,
-    Typography,
-    TableContainer,
-    Table,
-    TableHead,
-    TableRow,
-    TableCell,
-    TableBody,
-    Paper,
-    CircularProgress,
-    Button
+    Drawer, Box, Typography, TableContainer, Table, TableHead, TableRow, TableCell,
+    TableBody, Paper, CircularProgress, Button
 } from '@mui/material';
 
 function Sidebar({ open, onClose }) {
@@ -50,21 +40,22 @@ function Sidebar({ open, onClose }) {
     };
 
     return (
-        <Drawer anchor="right" open={open} onClose={onClose}>
-            <Box sx={{ width: 350, p: 2 }}>
+        <Drawer anchor="right" open={open} onClose={onClose} sx={{ '& .MuiDrawer-paper': { width: '350px' } }}>
+            <Box p={2}>
                 <Typography variant="h6" gutterBottom>
                     Config Data
                 </Typography>
                 {isLoading ? (
-                    <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', p: 2 }}>
                         <CircularProgress />
+                        <Typography ml={2}>Loading...</Typography>
                     </Box>
                 ) : error ? (
                     <Typography color="error">{error}</Typography>
                 ) : configData ? (
                     <>
                         <TableContainer component={Paper}>
-                            <Table sx={{ minWidth: 300 }} aria-label="config table">
+                            <Table aria-label="config table">
                                 <TableHead>
                                     <TableRow>
                                         <TableCell>Config Key</TableCell>
@@ -73,7 +64,7 @@ function Sidebar({ open, onClose }) {
                                 </TableHead>
                                 <TableBody>
                                     {Object.entries(configData).map(([key, value]) => (
-                                        <TableRow key={key}>
+                                        <TableRow key={key} sx={{ '&:nth-of-type(odd)': { backgroundColor: 'action.hover' } }}>
                                             <TableCell component="th" scope="row">
                                                 {key}
                                             </TableCell>
@@ -94,7 +85,7 @@ function Sidebar({ open, onClose }) {
                 ) : (
                     <Typography>No data available</Typography>
                 )}
-                <Typography variant="body2" color="text.secondary" align="center" style={{ marginTop: '20px' }}>
+                <Typography variant="body2" sx={{ mt: 3, textAlign: 'center', color: 'text.secondary' }}>
                     © {new Date().getFullYear()} Vadim Gedz. This project is licensed under the MIT License.
                 </Typography>
             </Box>
