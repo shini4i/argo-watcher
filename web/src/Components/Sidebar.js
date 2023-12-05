@@ -33,8 +33,10 @@ function Sidebar({ open, onClose }) {
         navigator.clipboard.writeText(JSON.stringify(configData, null, 2));
     };
 
-    const renderTableCell = (value) => {
-        if (value && typeof value === 'object' && value.constructor === Object) {
+    const renderTableCell = (key, value) => {
+        if (key === 'argo_cd_url' && value && typeof value === 'object' && value.constructor === Object) {
+            return `${value.Scheme}://${value.Host}${value.Path}`;
+        } else if (value && typeof value === 'object' && value.constructor === Object) {
             return JSON.stringify(value, null, 2);
         }
         return value.toString();
@@ -68,7 +70,7 @@ function Sidebar({ open, onClose }) {
                                             {key}
                                         </TableCell>
                                         <TableCell>
-                                            {renderTableCell(value)}
+                                            {renderTableCell(key, value)}
                                         </TableCell>
                                     </TableRow>
                                 ))}
