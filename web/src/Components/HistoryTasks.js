@@ -1,5 +1,6 @@
-import React, { forwardRef, useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import React, {forwardRef, useEffect, useState} from 'react';
+import PropTypes from 'prop-types';
+import {useSearchParams} from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
 import Stack from '@mui/material/Stack';
@@ -8,17 +9,33 @@ import TextField from '@mui/material/TextField';
 import IconButton from '@mui/material/IconButton';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ApplicationsFilter from './ApplicationsFilter';
-import TasksTable, { useTasks } from './TasksTable';
-import { endOfDay, startOfDay } from 'date-fns';
+import TasksTable, {useTasks} from './TasksTable';
+import {endOfDay, startOfDay} from 'date-fns';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
-import { useErrorContext } from '../ErrorContext';
+import {useErrorContext} from '../ErrorContext';
+
+const DateRangePickerCustomInput = forwardRef(({value, onClick}, ref) => (
+    <TextField
+        size="small"
+        sx={{minWidth: '220px'}}
+        onClick={onClick}
+        ref={ref}
+        value={value}
+        label="Date range"
+    />
+));
+
+DateRangePickerCustomInput.propTypes = {
+    value: PropTypes.string,
+    onClick: PropTypes.func.isRequired
+};
 
 function HistoryTasks() {
     const [searchParams, setSearchParams] = useSearchParams();
-    const { setError, setSuccess } = useErrorContext();
-    const { tasks, sortField, setSortField, refreshTasksInRange, clearTasks } =
-        useTasks({ setError, setSuccess });
+    const {setError, setSuccess} = useErrorContext();
+    const {tasks, sortField, setSortField, refreshTasksInRange, clearTasks} =
+        useTasks({setError, setSuccess});
     const [currentApplication, setCurrentApplication] = useState(
         searchParams.get('app') ?? null,
     );
@@ -59,26 +76,15 @@ function HistoryTasks() {
 
     useEffect(() => {
         refreshWithFilters(startDate, endDate, currentApplication, currentPage);
-    }, []);
-
-    const DateRangePickerCustomInput = forwardRef(({ value, onClick }, ref) => (
-        <TextField
-            size="small"
-            sx={{ minWidth: '220px' }}
-            onClick={onClick}
-            ref={ref}
-            value={value}
-            label={'Date range'}
-        />
-    ));
+    }, [startDate, endDate, currentApplication, currentPage]); // Ensure all dependencies are listed
 
     return (
         <Container maxWidth="xl">
             <Stack
-                direction={{ xs: 'column', md: 'row' }}
+                direction={{xs: 'column', md: 'row'}}
                 spacing={2}
                 alignItems="center"
-                sx={{ mb: 2 }}
+                sx={{mb: 2}}
             >
                 <Typography
                     variant="h5"
@@ -93,7 +99,7 @@ function HistoryTasks() {
                     }}
                 >
                     <Box>History tasks</Box>
-                    <Box sx={{ fontSize: '10px' }}>UTC</Box>
+                    <Box sx={{fontSize: '10px'}}>UTC</Box>
                 </Typography>
                 <Stack direction="row" spacing={2}>
                     <Box>
@@ -120,26 +126,26 @@ function HistoryTasks() {
                             }}
                             maxDate={new Date()}
                             isClearable={false}
-                            customInput={<DateRangePickerCustomInput />}
+                            customInput={<DateRangePickerCustomInput/>}
                             required
                         />
                     </Box>
                     <Box>
                         <IconButton
                             edge="start"
-                            color={'primary'}
-                            title={'Reload table'}
+                            color="primary"
+                            title="Reload table"
                             onClick={() => {
                                 setCurrentPage(1);
                                 refreshWithFilters(startDate, endDate, currentApplication, 1);
                             }}
                         >
-                            <RefreshIcon />
+                            <RefreshIcon/>
                         </IconButton>
                     </Box>
                 </Stack>
             </Stack>
-            <Box sx={{ boxShadow: 2, borderRadius: 2, p: 2 }}>
+            <Box sx={{boxShadow: 2, borderRadius: 2, p: 2}}>
                 <TasksTable
                     tasks={tasks}
                     sortField={sortField}
