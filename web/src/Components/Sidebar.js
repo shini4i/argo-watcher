@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import PropTypes from 'prop-types';
 import axios from 'axios';
 import {
     Drawer, Box, Typography, TableContainer, Table, TableHead, TableRow, TableCell,
@@ -39,55 +40,68 @@ function Sidebar({ open, onClose }) {
         return value.toString();
     };
 
+    const renderContent = () => {
+        if (isLoading) {
+            return (
+                <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', p: 2 }}>
+                    <CircularProgress />
+                    <Typography ml={2}>Loading...</Typography>
+                </Box>
+            );
+        } else if (error) {
+            return <Typography color="error">{error}</Typography>;
+        } else if (configData) {
+            return (
+                <>
+                    <TableContainer component={Paper}>
+                        <Table aria-label="config table">
+                            <TableHead>
+                                <TableRow>
+                                    <TableCell>Config Key</TableCell>
+                                    <TableCell>Config Value</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {Object.entries(configData).map(([key, value]) => (
+                                    <TableRow key={key} sx={{ '&:nth-of-type(odd)': { backgroundColor: 'action.hover' } }}>
+                                        <TableCell component="th" scope="row">
+                                            {key}
+                                        </TableCell>
+                                        <TableCell>
+                                            {renderTableCell(value)}
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+                    <Box sx={{ display: 'flex', justifyContent: 'center', marginTop: '20px' }}>
+                        <Button variant="contained" color="primary" onClick={handleCopy}>
+                            Copy JSON
+                        </Button>
+                    </Box>
+                </>
+            );
+        } else {
+            return <Typography>No data available</Typography>;
+        }
+    };
+
     return (
         <Drawer anchor="right" open={open} onClose={onClose} sx={{ '& .MuiDrawer-paper': { width: '350px' } }}>
             <Box p={2}>
                 <Typography variant="h6" gutterBottom>
                     Config Data
                 </Typography>
-                {isLoading ? (
-                    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', p: 2 }}>
-                        <CircularProgress />
-                        <Typography ml={2}>Loading...</Typography>
-                    </Box>
-                ) : error ? (
-                    <Typography color="error">{error}</Typography>
-                ) : configData ? (
-                    <>
-                        <TableContainer component={Paper}>
-                            <Table aria-label="config table">
-                                <TableHead>
-                                    <TableRow>
-                                        <TableCell>Config Key</TableCell>
-                                        <TableCell>Config Value</TableCell>
-                                    </TableRow>
-                                </TableHead>
-                                <TableBody>
-                                    {Object.entries(configData).map(([key, value]) => (
-                                        <TableRow key={key} sx={{ '&:nth-of-type(odd)': { backgroundColor: 'action.hover' } }}>
-                                            <TableCell component="th" scope="row">
-                                                {key}
-                                            </TableCell>
-                                            <TableCell>
-                                                {renderTableCell(value)}
-                                            </TableCell>
-                                        </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
-                        </TableContainer>
-                        <Box sx={{ display: 'flex', justifyContent: 'center', marginTop: '20px' }}>
-                            <Button variant="contained" color="primary" onClick={handleCopy}>
-                                Copy JSON
-                            </Button>
-                        </Box>
-                    </>
-                ) : (
-                    <Typography>No data available</Typography>
-                )}
+                {renderContent()}
             </Box>
         </Drawer>
     );
 }
+
+Sidebar.propTypes = {
+    open: PropTypes.bool.isRequired,
+    onClose: PropTypes.func.isRequired
+};
 
 export default Sidebar;
