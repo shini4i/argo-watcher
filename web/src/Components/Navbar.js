@@ -1,4 +1,5 @@
 import React, {useEffect, useState} from 'react';
+import PropTypes from 'prop-types';
 import Box from '@mui/material/Box';
 import AppBar from '@mui/material/AppBar';
 import Toolbar from '@mui/material/Toolbar';
@@ -43,12 +44,19 @@ function NavigationButton({to, children, external = false}) {
     );
 }
 
+NavigationButton.propTypes = {
+    to: PropTypes.oneOfType([PropTypes.string, PropTypes.object]).isRequired,
+    children: PropTypes.node.isRequired,
+    external: PropTypes.bool
+};
+
 function Navbar() {
     const [version, setVersion] = useState('0.0.0');
     const [isSidebarOpen, setSidebarOpen] = useState(false);
     const {setSuccess, setError} = useErrorContext();
     const readTheDocsUrl = 'https://argo-watcher.readthedocs.io';
     const githubProjectUrl = 'https://github.com/shini4i/argo-watcher';
+
     useEffect(() => {
         fetchVersion()
             .then(version => {
