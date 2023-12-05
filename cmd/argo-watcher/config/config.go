@@ -19,7 +19,7 @@ type ServerConfig struct {
 	ArgoUrlAlias      string `env:"ARGO_URL_ALIAS" json:"argo_cd_url_alias,omitempty"`
 	ArgoToken         string `env:"ARGO_TOKEN,required" json:"-"`
 	ArgoApiTimeout    int64  `env:"ARGO_API_TIMEOUT" envDefault:"60" json:"argo_api_timeout"`
-	DeploymentTimeout uint   `env:"DEPLOYMENT_TIMEOUT" envDefault:"300" json:"deployment_timeout"`
+	DeploymentTimeout uint   `env:"DEPLOYMENT_TIMEOUT" envDefault:"900" json:"deployment_timeout"`
 	ArgoRefreshApp    bool   `env:"ARGO_REFRESH_APP" envDefault:"true" json:"argo_refresh_app"`
 	RegistryProxyUrl  string `env:"DOCKER_IMAGES_PROXY" json:"registry_proxy_url,omitempty"`
 	StateType         string `env:"STATE_TYPE,required" json:"state_type"`
