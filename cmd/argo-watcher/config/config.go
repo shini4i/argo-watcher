@@ -19,7 +19,7 @@ type ServerConfig struct {
 	ArgoUrlAlias      string `env:"ARGO_URL_ALIAS" json:"argo_cd_url_alias,omitempty"`
 	ArgoToken         string `env:"ARGO_TOKEN,required" json:"-"`
 	ArgoApiTimeout    int64  `env:"ARGO_API_TIMEOUT" envDefault:"60" json:"argo_api_timeout"`
-	DeploymentTimeout int    `env:"DEPLOYMENT_TIMEOUT" envDefault:"300" json:"deployment_timeout"`
+	DeploymentTimeout uint   `env:"DEPLOYMENT_TIMEOUT" envDefault:"300" json:"deployment_timeout"`
 	ArgoRefreshApp    bool   `env:"ARGO_REFRESH_APP" envDefault:"true" json:"argo_refresh_app"`
 	RegistryProxyUrl  string `env:"DOCKER_IMAGES_PROXY" json:"registry_proxy_url,omitempty"`
 	StateType         string `env:"STATE_TYPE,required" json:"state_type"`
@@ -63,10 +63,10 @@ func NewServerConfig() (*ServerConfig, error) {
 	return &config, err
 }
 
-// GetRetryAttempts calculates the number of retry attempts based on the Argo timeout value in the server configuration.
-// It converts the Argo timeout to an integer value and divides it by 15 to determine the number of 15-second intervals.
+// GetRetryAttempts calculates the number of retry attempts based on the Deployment timeout value in the server configuration.
+// It divides it by 15 to determine the number of 15-second intervals.
 // The calculated value is incremented by 1 to account for the initial attempt.
 // It returns the number of retry attempts as an unsigned integer.
 func (config *ServerConfig) GetRetryAttempts() uint {
-	return uint((config.DeploymentTimeout / 15) + 1)
+	return (config.DeploymentTimeout / 15) + 1
 }
