@@ -64,7 +64,7 @@ function Navbar() {
         <Box>
             <AppBar position="static">
                 <Toolbar>
-                    <Box display="flex" alignItems="center" onClick={() => setSidebarOpen(true)}> {/* Add this line */}
+                    <Box display="flex" alignItems="center" onClick={() => setSidebarOpen(true)}>
                         <img
                             src={process.env.PUBLIC_URL + '/logo.png'}
                             alt="Argo Watcher Logo"
