@@ -59,8 +59,8 @@ function Sidebar({ open, onClose }) {
                         <Table aria-label="config table">
                             <TableHead>
                                 <TableRow>
-                                    <TableCell>Config Key</TableCell>
-                                    <TableCell>Config Value</TableCell>
+                                    <TableCell>Key</TableCell>
+                                    <TableCell>Value</TableCell>
                                 </TableRow>
                             </TableHead>
                             <TableBody>
@@ -90,12 +90,17 @@ function Sidebar({ open, onClose }) {
     };
 
     return (
-        <Drawer anchor="right" open={open} onClose={onClose} sx={{ '& .MuiDrawer-paper': { display: 'flex', flex: '1 1 auto', maxWidth: '500px' } }}>
-            <Box p={2} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                <Typography variant="h4" gutterBottom>
+        <Drawer anchor="right" open={open} onClose={onClose} sx={{ '& .MuiDrawer-paper': { display: 'flex', flex: '1 1 auto', flexDirection: 'column', maxWidth: '500px' } }}>
+            <Box p={2} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: '1 1 auto' }}>
+                <Typography variant="h5" gutterBottom>
                     Config Data
                 </Typography>
                 {renderContent()}
+            </Box>
+            <Box p={2} sx={{ borderTop: '1px solid gray' }}>
+                <Typography variant="body2" color="textSecondary" align="center">
+                    © {new Date().getFullYear()} Vadim Gedz
+                </Typography>
             </Box>
         </Drawer>
     );
