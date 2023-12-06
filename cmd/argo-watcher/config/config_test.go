@@ -51,9 +51,9 @@ func TestNewServerConfig_RequiredFieldsMissing(t *testing.T) {
 }
 
 func TestServerConfig_GetRetryAttempts(t *testing.T) {
-	// Create a ServerConfig instance with a specific ArgoTimeout value
+	// Create a ServerConfig instance with a specific DeploymentTimeout value
 	config := &ServerConfig{
-		ArgoTimeout: 60,
+		DeploymentTimeout: 60,
 	}
 
 	// Call the GetRetryAttempts function
