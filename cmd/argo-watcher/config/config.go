@@ -1,12 +1,10 @@
 package config
 
 import (
-	"errors"
 	"net/url"
 
-	"github.com/shini4i/argo-watcher/internal/helpers"
-
-	envConfig "github.com/caarlos0/env/v9"
+	envConfig "github.com/caarlos0/env/v10"
+	"github.com/go-playground/validator/v10"
 )
 
 const (
@@ -22,7 +20,7 @@ type ServerConfig struct {
 	DeploymentTimeout uint   `env:"DEPLOYMENT_TIMEOUT" envDefault:"900" json:"deployment_timeout"`
 	ArgoRefreshApp    bool   `env:"ARGO_REFRESH_APP" envDefault:"true" json:"argo_refresh_app"`
 	RegistryProxyUrl  string `env:"DOCKER_IMAGES_PROXY" json:"registry_proxy_url,omitempty"`
-	StateType         string `env:"STATE_TYPE,required" json:"state_type"`
+	StateType         string `env:"STATE_TYPE,required" validate:"oneof=postgres in-memory" json:"state_type"`
 	StaticFilePath    string `env:"STATIC_FILES_PATH" envDefault:"static" json:"-"`
 	SkipTlsVerify     bool   `env:"SKIP_TLS_VERIFY" envDefault:"false" json:"skip_tls_verify"`
 	LogLevel          string `env:"LOG_LEVEL" envDefault:"info" json:"log_level"`
@@ -53,10 +51,9 @@ func NewServerConfig() (*ServerConfig, error) {
 		return nil, err
 	}
 
-	// custom checks
-	allowedTypes := []string{"postgres", "in-memory"}
-	if config.StateType == "" || !helpers.Contains(allowedTypes, config.StateType) {
-		return nil, errors.New("variable STATE_TYPE must be one of [\"postgres\", \"in-memory\"]")
+	validate := validator.New()
+	if err := validate.Struct(&config); err != nil {
+		return nil, err
 	}
 
 	// return config

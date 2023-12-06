@@ -3,7 +3,7 @@ package client
 import (
 	"time"
 
-	envConfig "github.com/caarlos0/env/v9"
+	envConfig "github.com/caarlos0/env/v10"
 )
 
 type ClientConfig struct {
