@@ -21,3 +21,4 @@ repos:
       - id: go-fmt
       - id: go-mod-tidy
       - id: go-imports
+      - id: golangci-lint

@@ -53,6 +53,9 @@ func (updater *ArgoStatusUpdater) collectInitialAppStatus(task models.Task) erro
 
 	status := application.GetRolloutStatus(task.ListImages(), updater.registryProxyUrl)
 	hash, err := helpers.GenerateHash(strings.Join(application.Status.Summary.Images, ","))
+	if err != nil {
+		return err
+	}
 
 	task.SavedAppStatus = models.SavedAppStatus{
 		Status:     status,
