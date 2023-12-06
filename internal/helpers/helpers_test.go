@@ -1,6 +1,7 @@
 package helpers
 
 import (
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"sort"
@@ -90,4 +91,22 @@ func TestCurlCommandFromRequest(t *testing.T) {
 
 	// Compare the expected and actual cURL commands
 	assert.Equal(t, sortedExpectedCurl, sortedActualCurl)
+}
+
+func TestGenerateHash(t *testing.T) {
+	testCases := []struct {
+		input    string
+		expected string
+	}{
+		{"hello", "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"},
+		{"world", "486ea46224d1bb4fb680f34f7c9ad96a8f24ec88be73ea8e5a6c65260e9cb8a7"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.input, func(t *testing.T) {
+			hashBytes := GenerateHash(tc.input)
+			hashString := hex.EncodeToString(hashBytes)
+			assert.Equal(t, tc.expected, hashString)
+		})
+	}
 }

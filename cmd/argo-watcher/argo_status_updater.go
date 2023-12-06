@@ -1,11 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/shini4i/argo-watcher/internal/helpers"
 
 	"github.com/avast/retry-go/v4"
 	"github.com/rs/zerolog/log"
@@ -42,6 +46,25 @@ func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, retryDelay
 	}
 }
 
+func (updater *ArgoStatusUpdater) collectInitialAppStatus(task *models.Task) error {
+	application, err := updater.argo.api.GetApplication(task.App)
+	if err != nil {
+		return err
+	}
+
+	status := application.GetRolloutStatus(task.ListImages(), updater.registryProxyUrl)
+
+	// sort images to avoid hash mismatch
+	slices.Sort(application.Status.Summary.Images)
+
+	task.SavedAppStatus = models.SavedAppStatus{
+		Status:     status,
+		ImagesHash: helpers.GenerateHash(strings.Join(application.Status.Summary.Images, ",")),
+	}
+
+	return nil
+}
+
 func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 	// wait for application to get into deployed status or timeout
 	application, err := updater.waitForApplicationDeployment(task)
@@ -57,7 +80,7 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 
 	// get application status
 	status := application.GetRolloutStatus(task.ListImages(), updater.registryProxyUrl)
-	if application.IsFinalRolloutStatus(status) {
+	if status == models.ArgoRolloutAppSuccess {
 		log.Info().Str("id", task.Id).Msg("App is running on the expected version.")
 		// deployment success
 		updater.argo.metrics.ResetFailedDeployment(task.App)
@@ -90,6 +113,11 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 
 	app, err := updater.argo.api.GetApplication(task.App)
 	if err != nil {
+		return nil, err
+	}
+
+	// save the initial application status to compare with the final one
+	if err := updater.collectInitialAppStatus(&task); err != nil {
 		return nil, err
 	}
 
@@ -134,6 +162,7 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 	log.Debug().Str("id", task.Id).Msg("Waiting for rollout")
 	_ = retry.Do(func() error {
 		application, err = updater.argo.api.GetApplication(task.App)
+
 		if err != nil {
 			// check if ArgoCD didn't have the app
 			if task.IsAppNotFoundError(err) {
@@ -144,16 +173,23 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 			log.Debug().Str("id", task.Id).Msgf("Failed fetching application status. Error: %s", err.Error())
 			return err
 		}
-		// print application debug here
+
 		status := application.GetRolloutStatus(task.ListImages(), updater.registryProxyUrl)
-		if !application.IsFinalRolloutStatus(status) {
-			// print status debug here
+
+		switch status {
+		case models.ArgoRolloutAppDegraded:
+			log.Debug().Str("id", task.Id).Msgf("Application is degraded")
+			hash := helpers.GenerateHash(strings.Join(application.Status.Summary.Images, ","))
+			if !bytes.Equal(task.SavedAppStatus.ImagesHash, hash) {
+				return retry.Unrecoverable(errors.New("application has degraded"))
+			}
+		case models.ArgoRolloutAppSuccess:
+			log.Debug().Str("id", task.Id).Msgf("Application rollout finished")
+			return nil
+		default:
 			log.Debug().Str("id", task.Id).Msgf("Application status is not final. Status received \"%s\"", status)
-			return errors.New("force retry")
 		}
-		// all good
-		log.Debug().Str("id", task.Id).Msgf("Application rollout finished")
-		return nil
+		return errors.New("force retry")
 	}, updater.retryOptions...)
 
 	// return application and latest error

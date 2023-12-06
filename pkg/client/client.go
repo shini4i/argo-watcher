@@ -28,7 +28,6 @@ type Watcher struct {
 	baseUrl   string
 	client    *http.Client
 	debugMode bool
-	timeout   time.Duration
 }
 
 func NewWatcher(baseUrl string, debugMode bool, timeout time.Duration) *Watcher {
@@ -36,7 +35,6 @@ func NewWatcher(baseUrl string, debugMode bool, timeout time.Duration) *Watcher 
 		baseUrl:   baseUrl,
 		client:    &http.Client{Timeout: timeout},
 		debugMode: debugMode,
-		timeout:   timeout,
 	}
 }
 

@@ -112,7 +112,7 @@ func init() {
 	mux.HandleFunc("/api/v1/tasks", addTaskHandler)
 	mux.HandleFunc("/api/v1/tasks/", getTaskStatusHandler)
 	server = httptest.NewServer(mux)
-	client = &Watcher{baseUrl: server.URL, client: server.Client(), timeout: 30 * time.Second}
+	client = &Watcher{baseUrl: server.URL, client: server.Client()}
 }
 
 func TestNewWatcher(t *testing.T) {
@@ -124,7 +124,6 @@ func TestNewWatcher(t *testing.T) {
 
 	assert.Equal(t, baseUrl, watcher.baseUrl)
 	assert.Equal(t, debugMode, watcher.debugMode)
-	assert.Equal(t, timeout, watcher.timeout)
 	assert.NotNil(t, watcher.client)
 }
 

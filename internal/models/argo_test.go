@@ -111,6 +111,19 @@ func TestArgoRolloutStatus(t *testing.T) {
 		// test status
 		assert.Equal(t, ArgoRolloutAppSuccess, application.GetRolloutStatus(images, registryProxyUrl))
 	})
+
+	t.Run("Rollout status - ArgoRolloutAppDegraded", func(t *testing.T) {
+		// define application
+		application := Application{}
+		application.Status.Summary.Images = []string{"ghcr.io/shini4i/argo-watcher:version1"}
+		application.Status.Sync.Status = "Synced" // Not "OutOfSync"
+		application.Status.Health.Status = "Degraded"
+		// define expected images
+		images := []string{"ghcr.io/shini4i/argo-watcher:version1"}
+		registryProxyUrl := ""
+		// test status
+		assert.Equal(t, ArgoRolloutAppDegraded, application.GetRolloutStatus(images, registryProxyUrl))
+	})
 }
 
 func TestArgoRolloutMessage(t *testing.T) {
@@ -198,14 +211,6 @@ func TestArgoRolloutMessage(t *testing.T) {
 	})
 }
 
-func TestApplication_IsFinalRollout(t *testing.T) {
-	application := Application{}
-	assert.Equal(t, true, application.IsFinalRolloutStatus(ArgoRolloutAppSuccess))
-	assert.Equal(t, false, application.IsFinalRolloutStatus(ArgoRolloutAppNotAvailable))
-	assert.Equal(t, false, application.IsFinalRolloutStatus(ArgoRolloutAppNotHealthy))
-	assert.Equal(t, false, application.IsFinalRolloutStatus(ArgoRolloutAppNotSynced))
-}
-
 func TestIsManagedByWatcher(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -264,6 +269,7 @@ func TestExtractManagedImages(t *testing.T) {
 		name       string
 		annotation map[string]string
 		expected   map[string]string
+		expectErr  bool
 	}{
 		{
 			name: "Extracts multiple managed images",
@@ -336,13 +342,25 @@ func TestExtractManagedImages(t *testing.T) {
 				"alias1": "image1",
 			},
 		},
+		{
+			name: "Invalid format for managed images annotation",
+			annotation: map[string]string{
+				managedImagesAnnotation: "alias1image1",
+			},
+			expected:  nil,
+			expectErr: true,
+		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			extractedImages, err := extractManagedImages(test.annotation)
-			assert.NoError(t, err)
-			assert.Equal(t, test.expected, extractedImages)
+			if test.expectErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, test.expected, extractedImages)
+			}
 		})
 	}
 }

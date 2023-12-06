@@ -16,34 +16,33 @@ import (
 )
 
 func TestDoRequest(t *testing.T) {
-	// Add a new handler to the existing server for testing doRequest
-	mux.HandleFunc("/test", func(rw http.ResponseWriter, req *http.Request) {
-		// Test request parameters
-		assert.Equal(t, req.URL.String(), "/test")
-		// Send response to be tested
-		if _, err := rw.Write([]byte(`OK`)); err != nil {
-			t.Error(err)
-		}
+	// Test case 1: The server returns a 200 OK status code
+	t.Run("200 status code", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, err := w.Write([]byte(`OK`))
+			assert.NoError(t, err)
+		}))
+		defer server.Close()
+
+		watcher := NewWatcher(server.URL, false, 30*time.Second)
+		resp, err := watcher.doRequest(http.MethodGet, server.URL, nil)
+
+		assert.NoError(t, err)
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+		body, err := io.ReadAll(resp.Body)
+		assert.NoError(t, err)
+		assert.Equal(t, "OK", string(body))
 	})
 
-	// Call doRequest method
-	resp, err := client.doRequest(http.MethodGet, server.URL+"/test", nil)
+	// Test case 2: An error occurs while creating the request
+	t.Run("invalid URL", func(t *testing.T) {
+		watcher := NewWatcher("http://invalid-url", false, 30*time.Second)
+		_, err := watcher.doRequest(http.MethodGet, "http://invalid-url", nil)
 
-	// Assert there was no error
-	assert.NoError(t, err)
-
-	// Assert the response was as expected
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-
-	// Read the response body
-	body, err := io.ReadAll(resp.Body)
-	assert.NoError(t, err)
-
-	err = resp.Body.Close()
-	assert.NoError(t, err)
-
-	// Assert the response body was as expected
-	assert.Equal(t, "OK", string(body))
+		assert.Error(t, err)
+	})
 }
 
 func TestGetJSON(t *testing.T) {
@@ -303,9 +302,8 @@ func TestGenerateAppUrl(t *testing.T) {
 func TestSetupWatcher(t *testing.T) {
 	// Define the input
 	config := &ClientConfig{
-		Url:     "http://localhost:8080",
-		Debug:   true,
-		Timeout: 30 * time.Second,
+		Url:   "http://localhost:8080",
+		Debug: true,
 	}
 
 	// Call the function
@@ -314,5 +312,4 @@ func TestSetupWatcher(t *testing.T) {
 	// Assert the watcher's properties
 	assert.Equal(t, config.Url, watcher.baseUrl)
 	assert.Equal(t, config.Debug, watcher.debugMode)
-	assert.Equal(t, config.Timeout, watcher.timeout)
 }
