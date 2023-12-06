@@ -256,6 +256,7 @@ func TestExtractManagedImages(t *testing.T) {
 		name       string
 		annotation map[string]string
 		expected   map[string]string
+		expectErr  bool
 	}{
 		{
 			name: "Extracts multiple managed images",
@@ -328,13 +329,25 @@ func TestExtractManagedImages(t *testing.T) {
 				"alias1": "image1",
 			},
 		},
+		{
+			name: "Invalid format for managed images annotation",
+			annotation: map[string]string{
+				managedImagesAnnotation: "alias1image1",
+			},
+			expected:  nil,
+			expectErr: true,
+		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			extractedImages, err := extractManagedImages(test.annotation)
-			assert.NoError(t, err)
-			assert.Equal(t, test.expected, extractedImages)
+			if test.expectErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, test.expected, extractedImages)
+			}
 		})
 	}
 }
