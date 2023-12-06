@@ -176,7 +176,11 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 		switch status {
 		case models.ArgoRolloutAppDegraded:
 			log.Debug().Str("id", task.Id).Msgf("Application is degraded")
-			hash, _ := helpers.GenerateHash(strings.Join(application.Status.Summary.Images, ","))
+			hash, err := helpers.GenerateHash(strings.Join(application.Status.Summary.Images, ","))
+			if err != nil {
+				return retry.Unrecoverable(err)
+			}
+
 			if !bytes.Equal(task.SavedAppStatus.ImagesHash, hash) {
 				return retry.Unrecoverable(errors.New("application has degraded"))
 			}
