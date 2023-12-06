@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -52,6 +53,9 @@ func (updater *ArgoStatusUpdater) collectInitialAppStatus(task models.Task) erro
 	}
 
 	status := application.GetRolloutStatus(task.ListImages(), updater.registryProxyUrl)
+
+	// sort images to avoid hash mismatch
+	slices.Sort(application.Status.Summary.Images)
 
 	task.SavedAppStatus = models.SavedAppStatus{
 		Status:     status,
