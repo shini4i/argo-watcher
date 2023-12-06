@@ -5,32 +5,8 @@ on:
       - main
   pull_request:
     types: [opened, synchronize, reopened]
-env:
-  GOLANG_VERSION: '1.21.0'
 
 jobs:
-  golangci:
-    name: GolangCI
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
-    steps:
-      - uses: actions/checkout@v3
-
-      - uses: actions/setup-go@v4
-        with:
-          go-version: ${{ env.GOLANG_VERSION }}
-          cache: false
-
-      - name: Install project dependencies
-        run: make install-deps mocks docs
-
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v3
-        with:
-          version: v1.53
-
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -59,7 +35,7 @@ jobs:
 
       - uses: actions/setup-go@v4
         with:
-          go-version: ${{ env.GOLANG_VERSION }}
+          go-version-file: go.mod
 
       - name: Install project dependencies
         run: make install-deps mocks docs
