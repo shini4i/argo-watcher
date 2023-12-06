@@ -46,7 +46,7 @@ func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, retryDelay
 	}
 }
 
-func (updater *ArgoStatusUpdater) collectInitialAppStatus(task models.Task) error {
+func (updater *ArgoStatusUpdater) collectInitialAppStatus(task *models.Task) error {
 	application, err := updater.argo.api.GetApplication(task.App)
 	if err != nil {
 		return err
@@ -116,6 +116,11 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 		return nil, err
 	}
 
+	// save the initial application status to compare with the final one
+	if err := updater.collectInitialAppStatus(&task); err != nil {
+		return nil, err
+	}
+
 	// This mutex is used only to avoid concurrent updates of the same application.
 	mutex := updater.mutex.Get(task.App)
 
@@ -151,11 +156,6 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 	} else {
 		mutex.Unlock()
 		log.Debug().Str("id", task.Id).Msg("Skipping git repo update: Application not managed by watcher or token is absent/invalid.")
-	}
-
-	// save the initial application status to compare with the final one
-	if err := updater.collectInitialAppStatus(task); err != nil {
-		return nil, err
 	}
 
 	// wait for application to get into deployed status or timeout
