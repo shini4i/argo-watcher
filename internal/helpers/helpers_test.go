@@ -104,9 +104,7 @@ func TestGenerateHash(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.input, func(t *testing.T) {
-			hashBytes, err := GenerateHash(tc.input)
-			assert.NoError(t, err)
-
+			hashBytes := GenerateHash(tc.input)
 			hashString := hex.EncodeToString(hashBytes)
 			assert.Equal(t, tc.expected, hashString)
 		})

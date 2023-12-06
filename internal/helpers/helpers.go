@@ -71,10 +71,10 @@ func CurlCommandFromRequest(request *http.Request) (string, error) {
 
 // GenerateHash generates a SHA256 hash from a given string.
 // It handles any errors during the process and returns the hash as []byte or an error if encountered.
-func GenerateHash(s string) ([]byte, error) {
+func GenerateHash(s string) []byte {
 	hash := sha256.New()
 	// we intentionally ignore the error here because it will never return one
 	// if you know a way to make this return an error, please open an issue
 	hash.Write([]byte(s))
-	return hash.Sum(nil), nil
+	return hash.Sum(nil)
 }

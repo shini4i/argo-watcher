@@ -52,14 +52,10 @@ func (updater *ArgoStatusUpdater) collectInitialAppStatus(task models.Task) erro
 	}
 
 	status := application.GetRolloutStatus(task.ListImages(), updater.registryProxyUrl)
-	hash, err := helpers.GenerateHash(strings.Join(application.Status.Summary.Images, ","))
-	if err != nil {
-		return err
-	}
 
 	task.SavedAppStatus = models.SavedAppStatus{
 		Status:     status,
-		ImagesHash: hash,
+		ImagesHash: helpers.GenerateHash(strings.Join(application.Status.Summary.Images, ",")),
 	}
 
 	return nil
@@ -179,11 +175,7 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 		switch status {
 		case models.ArgoRolloutAppDegraded:
 			log.Debug().Str("id", task.Id).Msgf("Application is degraded")
-			hash, err := helpers.GenerateHash(strings.Join(application.Status.Summary.Images, ","))
-			if err != nil {
-				return retry.Unrecoverable(err)
-			}
-
+			hash := helpers.GenerateHash(strings.Join(application.Status.Summary.Images, ","))
 			if !bytes.Equal(task.SavedAppStatus.ImagesHash, hash) {
 				return retry.Unrecoverable(errors.New("application has degraded"))
 			}
