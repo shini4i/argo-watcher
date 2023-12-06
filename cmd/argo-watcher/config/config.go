@@ -12,28 +12,27 @@ const (
 )
 
 type ServerConfig struct {
-	ArgoUrl url.URL `env:"ARGO_URL,required" json:"argo_cd_url"`
-	// ArgoUrlAlias is used to replace the ArgoUrl in the UI. This is useful when the ArgoUrl is an internal URL
-	ArgoUrlAlias      string `env:"ARGO_URL_ALIAS" json:"argo_cd_url_alias,omitempty"`
-	ArgoToken         string `env:"ARGO_TOKEN,required" json:"-"`
-	ArgoApiTimeout    int64  `env:"ARGO_API_TIMEOUT" envDefault:"60" json:"argo_api_timeout"`
-	DeploymentTimeout uint   `env:"DEPLOYMENT_TIMEOUT" envDefault:"900" json:"deployment_timeout"`
-	ArgoRefreshApp    bool   `env:"ARGO_REFRESH_APP" envDefault:"true" json:"argo_refresh_app"`
-	RegistryProxyUrl  string `env:"DOCKER_IMAGES_PROXY" json:"registry_proxy_url,omitempty"`
-	StateType         string `env:"STATE_TYPE,required" validate:"oneof=postgres in-memory" json:"state_type"`
-	StaticFilePath    string `env:"STATIC_FILES_PATH" envDefault:"static" json:"-"`
-	SkipTlsVerify     bool   `env:"SKIP_TLS_VERIFY" envDefault:"false" json:"skip_tls_verify"`
-	LogLevel          string `env:"LOG_LEVEL" envDefault:"info" json:"log_level"`
-	LogFormat         string `env:"LOG_FORMAT" envDefault:"json" json:"-"`
-	Host              string `env:"HOST" envDefault:"0.0.0.0" json:"-"`
-	Port              string `env:"PORT" envDefault:"8080" json:"-"`
-	DbHost            string `env:"DB_HOST" json:"db_host,omitempty"`
-	DbPort            int    `env:"DB_PORT" json:"db_port,omitempty"`
-	DbName            string `env:"DB_NAME" json:"db_name,omitempty"`
-	DbUser            string `env:"DB_USER" json:"db_user,omitempty"`
-	DbPassword        string `env:"DB_PASSWORD" json:"-"`
-	DbMigrationsPath  string `env:"DB_MIGRATIONS_PATH" envDefault:"db/migrations" json:"-"`
-	DeployToken       string `env:"ARGO_WATCHER_DEPLOY_TOKEN" json:"-"`
+	ArgoUrl           url.URL `env:"ARGO_URL,required" json:"argo_cd_url"`
+	ArgoUrlAlias      string  `env:"ARGO_URL_ALIAS" json:"argo_cd_url_alias,omitempty"` // Used to generate App URL. Can be omitted if ArgoUrl is reachable from outside.
+	ArgoToken         string  `env:"ARGO_TOKEN,required" json:"-"`
+	ArgoApiTimeout    int64   `env:"ARGO_API_TIMEOUT" envDefault:"60" json:"argo_api_timeout"`
+	DeploymentTimeout uint    `env:"DEPLOYMENT_TIMEOUT" envDefault:"900" json:"deployment_timeout"`
+	ArgoRefreshApp    bool    `env:"ARGO_REFRESH_APP" envDefault:"true" json:"argo_refresh_app"`
+	RegistryProxyUrl  string  `env:"DOCKER_IMAGES_PROXY" json:"registry_proxy_url,omitempty"`
+	StateType         string  `env:"STATE_TYPE,required" validate:"oneof=postgres in-memory" json:"state_type"`
+	StaticFilePath    string  `env:"STATIC_FILES_PATH" envDefault:"static" json:"-"`
+	SkipTlsVerify     bool    `env:"SKIP_TLS_VERIFY" envDefault:"false" json:"skip_tls_verify"`
+	LogLevel          string  `env:"LOG_LEVEL" envDefault:"info" json:"log_level"`
+	LogFormat         string  `env:"LOG_FORMAT" envDefault:"json" json:"-"`
+	Host              string  `env:"HOST" envDefault:"0.0.0.0" json:"-"`
+	Port              string  `env:"PORT" envDefault:"8080" json:"-"`
+	DbHost            string  `env:"DB_HOST" json:"db_host,omitempty"`
+	DbPort            int     `env:"DB_PORT" json:"db_port,omitempty"`
+	DbName            string  `env:"DB_NAME" json:"db_name,omitempty"`
+	DbUser            string  `env:"DB_USER" json:"db_user,omitempty"`
+	DbPassword        string  `env:"DB_PASSWORD" json:"-"`
+	DbMigrationsPath  string  `env:"DB_MIGRATIONS_PATH" envDefault:"db/migrations" json:"-"`
+	DeployToken       string  `env:"ARGO_WATCHER_DEPLOY_TOKEN" json:"-"`
 }
 
 // NewServerConfig parses the server configuration from environment variables using the envconfig package.
@@ -65,5 +64,5 @@ func NewServerConfig() (*ServerConfig, error) {
 // The calculated value is incremented by 1 to account for the initial attempt.
 // It returns the number of retry attempts as an unsigned integer.
 func (config *ServerConfig) GetRetryAttempts() uint {
-	return (config.DeploymentTimeout / 15) + 1
+	return config.DeploymentTimeout/15 + 1
 }

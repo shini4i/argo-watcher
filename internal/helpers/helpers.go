@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"strings"
+
+	"crypto/sha256"
 )
 
 // Contains is a simple utility function that checks if a given string (s) exists in a slice of strings (slice).
@@ -65,4 +67,13 @@ func CurlCommandFromRequest(request *http.Request) (string, error) {
 	cmd += " '" + request.URL.String() + "'"
 
 	return cmd, nil
+}
+
+func GenerateHash(s string) ([]byte, error) {
+	hash := sha256.New()
+	_, err := hash.Write([]byte(s))
+	if err != nil {
+		return nil, err
+	}
+	return hash.Sum(nil), nil
 }

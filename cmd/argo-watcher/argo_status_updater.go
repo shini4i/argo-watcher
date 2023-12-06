@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/shini4i/argo-watcher/internal/helpers"
 
 	"github.com/avast/retry-go/v4"
 	"github.com/rs/zerolog/log"
@@ -40,6 +43,23 @@ func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, retryDelay
 		retry.Delay(retryDelay),
 		retry.LastErrorOnly(true),
 	}
+}
+
+func (updater *ArgoStatusUpdater) collectInitialAppStatus(task models.Task) error {
+	application, err := updater.argo.api.GetApplication(task.App)
+	if err != nil {
+		return err
+	}
+
+	status := application.GetRolloutStatus(task.ListImages(), updater.registryProxyUrl)
+	hash, err := helpers.GenerateHash(strings.Join(application.Status.Summary.Images, ","))
+
+	task.SavedAppStatus = models.SavedAppStatus{
+		Status:     status,
+		ImagesHash: hash,
+	}
+
+	return nil
 }
 
 func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
@@ -130,6 +150,11 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 		log.Debug().Str("id", task.Id).Msg("Skipping git repo update: Application not managed by watcher or token is absent/invalid.")
 	}
 
+	// save the initial application status to compare with the final one
+	if err := updater.collectInitialAppStatus(task); err != nil {
+		return nil, err
+	}
+
 	// wait for application to get into deployed status or timeout
 	log.Debug().Str("id", task.Id).Msg("Waiting for rollout")
 	_ = retry.Do(func() error {
@@ -151,16 +176,15 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 		switch status {
 		case models.ArgoRolloutAppDegraded:
 			log.Debug().Str("id", task.Id).Msgf("Application is degraded")
-			if task.SavedAppStatus != models.ArgoRolloutAppDegraded {
+			hash, _ := helpers.GenerateHash(strings.Join(application.Status.Summary.Images, ","))
+			if !bytes.Equal(task.SavedAppStatus.ImagesHash, hash) {
 				return retry.Unrecoverable(errors.New("application has degraded"))
 			}
-			task.SavedAppStatus = models.ArgoRolloutAppDegraded
 		case models.ArgoRolloutAppSuccess:
 			log.Debug().Str("id", task.Id).Msgf("Application rollout finished")
 			return nil
 		default:
 			log.Debug().Str("id", task.Id).Msgf("Application status is not final. Status received \"%s\"", status)
-			task.SavedAppStatus = "in progress"
 		}
 		return errors.New("force retry")
 	}, updater.retryOptions...)
