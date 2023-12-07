@@ -37,9 +37,17 @@ function Sidebar({ open, onClose }) {
         if (key === 'argo_cd_url' && value && typeof value === 'object' && value.constructor === Object) {
             return `${value.Scheme}://${value.Host}${value.Path}`;
         } else if (value && typeof value === 'object' && value.constructor === Object) {
-            return JSON.stringify(value, null, 2);
+            return (
+                <Box sx={{ maxHeight: '100px', overflow: 'auto', whiteSpace: 'nowrap' }}>
+                    {JSON.stringify(value, null, 2)}
+                </Box>
+            );
         }
-        return value.toString();
+        return (
+            <Box sx={{ maxHeight: '100px', overflow: 'auto', whiteSpace: 'nowrap' }}>
+                {value.toString()}
+            </Box>
+        );
     };
 
     const renderContent = () => {
