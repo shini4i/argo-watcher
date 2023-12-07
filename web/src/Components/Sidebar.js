@@ -37,9 +37,17 @@ function Sidebar({ open, onClose }) {
         if (key === 'argo_cd_url' && value && typeof value === 'object' && value.constructor === Object) {
             return `${value.Scheme}://${value.Host}${value.Path}`;
         } else if (value && typeof value === 'object' && value.constructor === Object) {
-            return JSON.stringify(value, null, 2);
+            return (
+                <Box sx={{ maxHeight: '100px', overflow: 'auto', whiteSpace: 'nowrap' }}>
+                    {JSON.stringify(value, null, 2)}
+                </Box>
+            );
         }
-        return value.toString();
+        return (
+            <Box sx={{ maxHeight: '100px', overflow: 'auto', whiteSpace: 'nowrap' }}>
+                {value.toString()}
+            </Box>
+        );
     };
 
     const renderContent = () => {
@@ -59,8 +67,8 @@ function Sidebar({ open, onClose }) {
                         <Table aria-label="config table">
                             <TableHead>
                                 <TableRow>
-                                    <TableCell>Config Key</TableCell>
-                                    <TableCell>Config Value</TableCell>
+                                    <TableCell>Key</TableCell>
+                                    <TableCell>Value</TableCell>
                                 </TableRow>
                             </TableHead>
                             <TableBody>
@@ -91,11 +99,16 @@ function Sidebar({ open, onClose }) {
 
     return (
         <Drawer anchor="right" open={open} onClose={onClose} sx={{ '& .MuiDrawer-paper': { width: '350px' } }}>
-            <Box p={2}>
-                <Typography variant="h6" gutterBottom>
+            <Box p={2} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: '1 1 auto' }}>
+                <Typography variant="h5" gutterBottom>
                     Config Data
                 </Typography>
                 {renderContent()}
+            </Box>
+            <Box p={2} sx={{ borderTop: '1px solid gray' }}>
+                <Typography variant="body2" color="textSecondary" align="center">
+                    © {new Date().getFullYear()} Vadim Gedz
+                </Typography>
             </Box>
         </Drawer>
     );

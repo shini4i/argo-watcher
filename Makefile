@@ -31,6 +31,8 @@ build: docs ## Build the binaries
 kind-upload:
 	@echo "===> Building [$(CYAN)dev$(RESET)] version of [$(CYAN)argo-watcher$(RESET)] binary"
 	@CGO_ENABLED=0 GOARCH=arm64 GOOS=linux go build -ldflags="-s -w -X main.version=dev" -o argo-watcher ./cmd/argo-watcher
+	@echo "===> Building web UI"
+	@cd web && npm run build
 	@echo "===> Building [$(CYAN)argo-watcher$(RESET)] docker image"
 	@docker build -t ghcr.io/shini4i/argo-watcher:dev .
 	@echo "===> Loading [$(CYAN)argo-watcher$(RESET)] docker image into [$(CYAN)kind$(RESET)] cluster"
