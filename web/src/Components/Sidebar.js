@@ -90,7 +90,7 @@ function Sidebar({ open, onClose }) {
     };
 
     return (
-        <Drawer anchor="right" open={open} onClose={onClose} sx={{ '& .MuiDrawer-paper': { display: 'flex', flex: '1 1 auto', flexDirection: 'column', maxWidth: '500px' } }}>
+        <Drawer anchor="right" open={open} onClose={onClose} sx={{ '& .MuiDrawer-paper': { width: '350px' } }}>
             <Box p={2} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: '1 1 auto' }}>
                 <Typography variant="h5" gutterBottom>
                     Config Data
