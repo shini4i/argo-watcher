@@ -1,9 +1,23 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Keycloak from 'keycloak-js';
 import { fetchConfig } from './config';
 
 export function useAuth() {
     const [authenticated, setAuthenticated] = useState(null);
+    const [profile, setProfile] = useState(null);
+
+    const getUserInfo = useCallback((keycloak) => {
+        if (keycloak.authenticated) {
+            keycloak.loadUserProfile()
+                .then(profile => {
+                    console.log('Loaded user profile', profile);
+                    setProfile(profile);
+                })
+                .catch(err => {
+                    console.log('Failed to load user profile', err);
+                });
+        }
+    }, []);
 
     useEffect(() => {
         fetchConfig().then(config => {
@@ -17,6 +31,7 @@ export function useAuth() {
                 keycloak.init({ onLoad: 'login-required' })
                     .then(authenticated => {
                         setAuthenticated(authenticated);
+                        getUserInfo(keycloak);
                     })
                     .catch(() => {
                         setAuthenticated(false);
@@ -26,7 +41,7 @@ export function useAuth() {
                 setAuthenticated(true);
             }
         });
-    }, []);
+    }, [getUserInfo]);
 
-    return authenticated;
+    return { authenticated, profile, getUserInfo };
 }

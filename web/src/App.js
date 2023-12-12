@@ -33,7 +33,7 @@ const theme = createTheme({
 });
 
 function App() {
-    const authenticated = useAuth()
+    const { authenticated } = useAuth();
     if (authenticated === null) return (
         <Box display="flex" justifyContent="center" alignItems="center" height="100vh">
             <CircularProgress />
