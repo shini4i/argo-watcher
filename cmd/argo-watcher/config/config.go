@@ -33,6 +33,9 @@ type ServerConfig struct {
 	DbPassword        string  `env:"DB_PASSWORD" json:"-"`
 	DbMigrationsPath  string  `env:"DB_MIGRATIONS_PATH" envDefault:"db/migrations" json:"-"`
 	DeployToken       string  `env:"ARGO_WATCHER_DEPLOY_TOKEN" json:"-"`
+	KeycloakUrl       string  `env:"KEYCLOAK_URL" json:"keycloak_url,omitempty"`
+	KeycloakRealm     string  `env:"KEYCLOAK_REALM" json:"keycloak_realm,omitempty"`
+	KeycloakClientId  string  `env:"KEYCLOAK_CLIENT_ID" json:"keycloak_client_id,omitempty"`
 }
 
 // NewServerConfig parses the server configuration from environment variables using the envconfig package.

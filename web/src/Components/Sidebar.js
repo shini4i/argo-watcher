@@ -1,33 +1,24 @@
 import React, { useEffect, useState } from 'react';
 import PropTypes from 'prop-types';
-import axios from 'axios';
-import {
-    Drawer, Box, Typography, TableContainer, Table, TableHead, TableRow, TableCell,
-    TableBody, Paper, CircularProgress, Button
-} from '@mui/material';
+import { Drawer, Box, Typography, TableContainer, Table, TableHead, TableRow, TableCell, TableBody, Paper, CircularProgress, Button } from '@mui/material';
+import { fetchConfig } from '../config';
 
 function Sidebar({ open, onClose }) {
     const [configData, setConfigData] = useState(null);
-    const [isLoading, setIsLoading] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(null);
 
     useEffect(() => {
-        if (open) {
-            setIsLoading(true);
-            axios.get('/api/v1/config')
-                .then(response => {
-                    setConfigData(response.data);
-                    setError(null);
-                })
-                .catch(error => {
-                    console.error('Error fetching config data: ', error);
-                    setError('Failed to fetch config data');
-                })
-                .finally(() => {
-                    setIsLoading(false);
-                });
-        }
-    }, [open]);
+        fetchConfig()
+            .then(data => {
+                setConfigData(data);
+                setIsLoading(false);
+            })
+            .catch(error => {
+                setError(error.message);
+                setIsLoading(false);
+            });
+    }, []);
 
     const handleCopy = () => {
         navigator.clipboard.writeText(JSON.stringify(configData, null, 2));
