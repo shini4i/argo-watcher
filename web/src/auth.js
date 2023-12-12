@@ -4,6 +4,7 @@ import { fetchConfig } from './config';
 
 export function useAuth() {
     const [authenticated, setAuthenticated] = useState(null);
+    const [isLoading, setIsLoading] = useState(true); // Add isLoading state
 
     useEffect(() => {
         fetchConfig().then(config => {
@@ -17,16 +18,19 @@ export function useAuth() {
                 keycloak.init({ onLoad: 'check-sso' })
                     .then(authenticated => {
                         setAuthenticated(authenticated);
+                        setIsLoading(false); // Set isLoading to false when authentication is complete
                     })
                     .catch(() => {
                         setAuthenticated(false);
+                        setIsLoading(false); // Set isLoading to false when an error occurs
                     });
             } else {
                 // keycloak_url is empty, so we just set authenticated to true
                 setAuthenticated(true);
+                setIsLoading(false); // Set isLoading to false when keycloak_url is empty
             }
         });
     }, []);
 
-    return authenticated;
+    return { authenticated, isLoading }; // Return isLoading along with authenticated
 }

@@ -4,7 +4,7 @@ import RecentTasks from './Components/RecentTasks';
 import HistoryTasks from './Components/HistoryTasks';
 import Layout from './Layout';
 import Page404 from './Page404';
-import {createTheme, lighten, ThemeProvider} from '@mui/material';
+import {createTheme, lighten, ThemeProvider, CircularProgress, Box} from '@mui/material';
 import {ErrorProvider} from './ErrorContext';
 import TaskView from './Components/TaskView';
 import {useAuth} from './auth';
@@ -33,8 +33,12 @@ const theme = createTheme({
 });
 
 function App() {
-    const authenticated = useAuth()
-    if (authenticated === null) return <div>Loading...</div>;
+    const { authenticated, isLoading } = useAuth()
+    if (isLoading) return (
+        <Box display="flex" justifyContent="center" alignItems="center" height="100vh">
+            <CircularProgress />
+        </Box>
+    );
     else if (authenticated) return (
         <ThemeProvider theme={theme}>
             <ErrorProvider>
