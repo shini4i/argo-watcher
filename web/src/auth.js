@@ -4,20 +4,8 @@ import { fetchConfig } from './config';
 
 export function useAuth() {
     const [authenticated, setAuthenticated] = useState(null);
-    const [profile, setProfile] = useState(null);
-
-    const getUserInfo = useCallback((keycloak) => {
-        if (keycloak.authenticated) {
-            keycloak.loadUserProfile()
-                .then(profile => {
-                    console.log('Loaded user profile', profile);
-                    setProfile(profile);
-                })
-                .catch(err => {
-                    console.log('Failed to load user profile', err);
-                });
-        }
-    }, []);
+    const [email, setEmail] = useState(null);
+    const [groups, setGroups] = useState([]);
 
     useEffect(() => {
         fetchConfig().then(config => {
@@ -31,7 +19,10 @@ export function useAuth() {
                 keycloak.init({ onLoad: 'login-required' })
                     .then(authenticated => {
                         setAuthenticated(authenticated);
-                        getUserInfo(keycloak);
+                        if (authenticated) {
+                            setEmail(keycloak.tokenParsed.email);
+                            setGroups(keycloak.tokenParsed.groups);
+                        }
                     })
                     .catch(() => {
                         setAuthenticated(false);
@@ -41,7 +32,7 @@ export function useAuth() {
                 setAuthenticated(true);
             }
         });
-    }, [getUserInfo]);
+    }, []);
 
-    return { authenticated, profile, getUserInfo };
+    return { authenticated, email, groups };
 }
