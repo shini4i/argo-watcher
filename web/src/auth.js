@@ -19,24 +19,36 @@ export function useAuth() {
                     clientId: config.keycloak_client_id,
                 });
 
-                keycloak.init({onLoad: 'login-required'})
+                keycloak.init({ onLoad: 'login-required' })
                     .then(authenticated => {
                         setAuthenticated(authenticated);
                         if (authenticated) {
                             setEmail(keycloak.tokenParsed.email);
                             setGroups(keycloak.tokenParsed.groups);
-                            setPrivilegedGroups(config.keycloak_privileged_groups)
+                            setPrivilegedGroups(config.keycloak_privileged_groups);
+
+                            setInterval(() => {
+                                keycloak.updateToken(20)
+                                    .then(refreshed => {
+                                        if (refreshed) {
+                                            console.log('Token refreshed, valid for ' + Math.round(keycloak.tokenParsed.exp + keycloak.timeSkew - new Date().getTime() / 1000) + ' seconds');
+                                        }
+                                    }).catch(() => {
+                                    console.error('Failed to refresh token');
+                                });
+                            }, config.keycloak_token_validation_interval);
                         }
                     })
                     .catch(() => {
                         setAuthenticated(false);
                     });
             } else {
-                // keycloak_url is empty, so we just set authenticated to true
+                // if keycloak_url is not set, we are not using any authentication
+                // hence we set authenticated to true by default
                 setAuthenticated(true);
             }
         });
     }, []);
 
-    return {authenticated, email, groups, privilegedGroups};
+    return { authenticated, email, groups, privilegedGroups };
 }
