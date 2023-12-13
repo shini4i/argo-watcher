@@ -1,11 +1,14 @@
-import { useEffect, useState, useCallback } from 'react';
+import {createContext, useEffect, useState} from 'react';
 import Keycloak from 'keycloak-js';
-import { fetchConfig } from './config';
+import {fetchConfig} from './config';
+
+export const AuthContext = createContext(undefined);
 
 export function useAuth() {
     const [authenticated, setAuthenticated] = useState(null);
     const [email, setEmail] = useState(null);
     const [groups, setGroups] = useState([]);
+    const [privilegedGroups, setPrivilegedGroups] = useState([]);
 
     useEffect(() => {
         fetchConfig().then(config => {
@@ -16,12 +19,13 @@ export function useAuth() {
                     clientId: config.keycloak_client_id,
                 });
 
-                keycloak.init({ onLoad: 'login-required' })
+                keycloak.init({onLoad: 'login-required'})
                     .then(authenticated => {
                         setAuthenticated(authenticated);
                         if (authenticated) {
                             setEmail(keycloak.tokenParsed.email);
                             setGroups(keycloak.tokenParsed.groups);
+                            setPrivilegedGroups(config.keycloak_privileged_groups)
                         }
                     })
                     .catch(() => {
@@ -34,5 +38,5 @@ export function useAuth() {
         });
     }, []);
 
-    return { authenticated, email, groups };
+    return {authenticated, email, groups, privilegedGroups};
 }
