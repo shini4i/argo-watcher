@@ -12,11 +12,11 @@ export function useAuth() {
 
     useEffect(() => {
         fetchConfig().then(config => {
-            if (config.keycloak_url) {
+            if (config.keycloak.url) {
                 const keycloak = new Keycloak({
-                    url: config.keycloak_url,
-                    realm: config.keycloak_realm,
-                    clientId: config.keycloak_client_id,
+                    url: config.keycloak.url,
+                    realm: config.keycloak.realm,
+                    clientId: config.keycloak.client_id,
                 });
 
                 keycloak.init({ onLoad: 'login-required' })
@@ -25,7 +25,7 @@ export function useAuth() {
                         if (authenticated) {
                             setEmail(keycloak.tokenParsed.email);
                             setGroups(keycloak.tokenParsed.groups);
-                            setPrivilegedGroups(config.keycloak_privileged_groups);
+                            setPrivilegedGroups(config.keycloak.privileged_groups);
 
                             setInterval(() => {
                                 keycloak.updateToken(20)
@@ -36,7 +36,7 @@ export function useAuth() {
                                     }).catch(() => {
                                     console.error('Failed to refresh token');
                                 });
-                            }, config.keycloak_token_validation_interval);
+                            }, config.keycloak.token_validation_interval);
                         }
                     })
                     .catch(() => {
