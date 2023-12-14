@@ -9,12 +9,29 @@ import {useErrorContext} from '../ErrorContext';
 import {Chip, Divider, Grid, Paper} from '@mui/material';
 import {chipColorByStatus, formatDateTime, ProjectDisplay, StatusReasonDisplay,} from './TasksTable';
 import {AuthContext} from '../auth';
+import { fetchConfig } from '../config';
 
 export default function TaskView() {
     const {id} = useParams();
     const [task, setTask] = useState(null);
     const {setError, setSuccess} = useErrorContext();
     const {authenticated, groups, privilegedGroups} = useContext(AuthContext);
+    const [configData, setConfigData] = useState(null);
+
+    useEffect(() => {
+        fetchConfig().then(config => {
+            setConfigData(config);
+        });
+    }, []);
+
+    const getArgoCDUrl = () => {
+        if (configData && configData.argo_cd_url_alias) {
+            return configData.argo_cd_url_alias + "/applications/" + task.app;
+        } else if (configData && configData.argo_cd_url) {
+            return `${configData.argo_cd_url.Scheme}://${configData.argo_cd_url.Host}${configData.argo_cd_url.Path}` + "/applications/" + task.app;
+        }
+        return '';
+    };
 
     useEffect(() => {
         fetchTask(id)
@@ -101,14 +118,16 @@ export default function TaskView() {
                                 color={chipColorByStatus(task.status)}
                             />
                         </Grid>
-                        <Grid item xs={12} sm={12}>
-                            <Typography variant="body2" color="textSecondary">
-                                Status Details
-                            </Typography>
-                            <Typography variant="body1">
-                                <StatusReasonDisplay reason={task.status_reason}/>
-                            </Typography>
-                        </Grid>
+                        {task.status_reason && (
+                            <Grid item xs={12} sm={12}>
+                                <Typography variant="body2" color="textSecondary">
+                                    Status Details
+                                </Typography>
+                                <Typography variant="body1">
+                                    <StatusReasonDisplay reason={task.status_reason}/>
+                                </Typography>
+                            </Grid>
+                        )}
                         <Grid item xs={12}>
                             <Typography variant="h6">Images</Typography>
                             <Divider/>
@@ -123,13 +142,18 @@ export default function TaskView() {
                                 </Typography>
                             </Grid>
                         ))}
-                        {authenticated && userIsPrivileged && (
-                            <Grid item xs={12}>
+                        <Grid item xs={12}>
+                            <a href={getArgoCDUrl()} target="_blank" rel="noopener noreferrer">
+                                <Button variant="contained" color="primary" style={{marginRight: '10px'}}>
+                                    Open in ArgoCD UI
+                                </Button>
+                            </a>
+                            {authenticated && userIsPrivileged && (
                                 <Button variant="contained" color="primary">
                                     Rollback to this version
                                 </Button>
-                            </Grid>
-                        )}
+                            )}
+                        </Grid>
                     </Grid>
                 )}
             </Paper>
