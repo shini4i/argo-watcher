@@ -3,14 +3,24 @@ import Button from '@mui/material/Button';
 import Container from '@mui/material/Container';
 import Typography from '@mui/material/Typography';
 import {useContext, useEffect, useState} from 'react';
-import {useParams, useNavigate} from 'react-router-dom';
+import {useNavigate, useParams} from 'react-router-dom';
 import {fetchTask} from '../Services/Data';
 import {useErrorContext} from '../ErrorContext';
-import {Chip, Divider, Grid, Paper} from '@mui/material';
+import {
+    Chip,
+    Dialog,
+    DialogActions,
+    DialogContent,
+    DialogContentText,
+    DialogTitle,
+    Divider,
+    Grid,
+    Paper,
+    TextField
+} from '@mui/material';
 import {chipColorByStatus, formatDateTime, ProjectDisplay, StatusReasonDisplay,} from './TasksTable';
 import {AuthContext} from '../auth';
-import { fetchConfig } from '../config';
-
+import {fetchConfig} from '../config';
 
 export default function TaskView() {
     const {id} = useParams();
@@ -19,6 +29,8 @@ export default function TaskView() {
     const {authenticated, email, groups, privilegedGroups} = useContext(AuthContext);
     const [configData, setConfigData] = useState(null);
     const navigate = useNavigate();
+    const [deployToken, setDeployToken] = useState('');
+    const [openDeployTokenDialog, setOpenDeployTokenDialog] = useState(false);
 
     useEffect(() => {
         fetchConfig().then(config => {
@@ -59,6 +71,7 @@ export default function TaskView() {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'ARGO_WATCHER_DEPLOY_TOKEN': deployToken,
                 },
                 body: JSON.stringify(updatedTask),
             });
@@ -71,6 +84,23 @@ export default function TaskView() {
         } catch (error) {
             // Handle error...
         }
+    };
+
+    const onDeployTokenChange = (event) => {
+        setDeployToken(event.target.value);
+    };
+
+    const handleDeployTokenOpen = () => {
+        setOpenDeployTokenDialog(true);
+    };
+
+    const handleDeployTokenClose = () => {
+        setOpenDeployTokenDialog(false);
+    };
+
+    const confirmDeployment = async () => {
+        handleDeployTokenClose();
+        await rollbackToVersion();
     };
 
     return (
@@ -176,10 +206,32 @@ export default function TaskView() {
                                 </Button>
                             </a>
                             {authenticated && userIsPrivileged && (
-                                <Button variant="contained" color="primary" onClick={() => rollbackToVersion()}>
+                                // Open token input dialog on click
+                                <Button variant="contained" color="primary" onClick={handleDeployTokenOpen}>
                                     Rollback to this version
                                 </Button>
                             )}
+                            <Dialog open={openDeployTokenDialog} onClose={handleDeployTokenClose}>
+                                <DialogTitle>Enter Deploy Token</DialogTitle>
+                                <DialogContent>
+                                    <DialogContentText>
+                                        Please enter your deploy token.
+                                    </DialogContentText>
+                                    <TextField
+                                        autoFocus
+                                        margin="dense"
+                                        label="Deploy Token"
+                                        type="text"
+                                        fullWidth
+                                        value={deployToken}
+                                        onChange={onDeployTokenChange}
+                                    />
+                                </DialogContent>
+                                <DialogActions>
+                                    <Button onClick={handleDeployTokenClose}>Cancel</Button>
+                                    <Button onClick={confirmDeployment}>Deploy</Button>
+                                </DialogActions>
+                            </Dialog>
                         </Grid>
                     </Grid>
                 )}
