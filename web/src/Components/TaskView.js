@@ -7,6 +7,7 @@ import {useNavigate, useParams} from 'react-router-dom';
 import {fetchTask} from '../Services/Data';
 import {useErrorContext} from '../ErrorContext';
 import {
+    Checkbox,
     Chip,
     Dialog,
     DialogActions,
@@ -14,9 +15,10 @@ import {
     DialogContentText,
     DialogTitle,
     Divider,
+    FormControlLabel,
     Grid,
     Paper,
-    TextField
+    TextField,
 } from '@mui/material';
 import {chipColorByStatus, formatDateTime, ProjectDisplay, StatusReasonDisplay,} from './TasksTable';
 import {AuthContext} from '../auth';
@@ -31,6 +33,7 @@ export default function TaskView() {
     const navigate = useNavigate();
     const [deployToken, setDeployToken] = useState('');
     const [openDeployTokenDialog, setOpenDeployTokenDialog] = useState(false);
+    const [showDeployToken, setShowDeployToken] = useState(false);
 
     useEffect(() => {
         fetchConfig().then(config => {
@@ -76,13 +79,15 @@ export default function TaskView() {
                 body: JSON.stringify(updatedTask),
             });
 
-            if (response.status !== 202) { // HTTP 202 Accepted
-                throw new Error(`HTTP error! status: ${response.status}`);
+            if (response.status === 401) { // HTTP 401 Unauthorized
+                throw new Error("Invalid deploy token!");
+            } else if (response.status !== 202) { // HTTP 202 Accepted
+                throw new Error(`HTTP error! Status code: ${response.status}`);
             }
 
             navigate('/');
         } catch (error) {
-            // Handle error...
+            setError('fetchTasks', error.message);
         }
     };
 
@@ -99,8 +104,16 @@ export default function TaskView() {
     };
 
     const confirmDeployment = async () => {
+        if (deployToken.trim() === '') {
+            setError('Deploy Token is required!');
+            return;
+        }
         handleDeployTokenClose();
         await rollbackToVersion();
+    };
+
+    const toggleShowDeployToken = () => {
+        setShowDeployToken(!showDeployToken);
     };
 
     return (
@@ -221,10 +234,14 @@ export default function TaskView() {
                                         autoFocus
                                         margin="dense"
                                         label="Deploy Token"
-                                        type="text"
+                                        type={showDeployToken ? "text" : "password"}
                                         fullWidth
                                         value={deployToken}
                                         onChange={onDeployTokenChange}
+                                    />
+                                    <FormControlLabel
+                                        control={<Checkbox checked={showDeployToken} onChange={toggleShowDeployToken}/>}
+                                        label="Show Deploy Token"
                                     />
                                 </DialogContent>
                                 <DialogActions>
