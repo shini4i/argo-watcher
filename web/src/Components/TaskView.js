@@ -3,7 +3,7 @@ import Button from '@mui/material/Button';
 import Container from '@mui/material/Container';
 import Typography from '@mui/material/Typography';
 import {useContext, useEffect, useState} from 'react';
-import {useParams} from 'react-router-dom';
+import {useParams, useNavigate} from 'react-router-dom';
 import {fetchTask} from '../Services/Data';
 import {useErrorContext} from '../ErrorContext';
 import {Chip, Divider, Grid, Paper} from '@mui/material';
@@ -11,12 +11,14 @@ import {chipColorByStatus, formatDateTime, ProjectDisplay, StatusReasonDisplay,}
 import {AuthContext} from '../auth';
 import { fetchConfig } from '../config';
 
+
 export default function TaskView() {
     const {id} = useParams();
     const [task, setTask] = useState(null);
     const {setError, setSuccess} = useErrorContext();
-    const {authenticated, groups, privilegedGroups} = useContext(AuthContext);
+    const {authenticated, email, groups, privilegedGroups} = useContext(AuthContext);
     const [configData, setConfigData] = useState(null);
+    const navigate = useNavigate();
 
     useEffect(() => {
         fetchConfig().then(config => {
@@ -45,6 +47,31 @@ export default function TaskView() {
     }, [id]);
 
     const userIsPrivileged = groups && privilegedGroups && groups.some(group => privilegedGroups.includes(group));
+
+    const rollbackToVersion = async () => {
+        const updatedTask = {
+            ...task,
+            author: email,
+        };
+
+        try {
+            const response = await fetch(`${window.location.origin}/api/v1/tasks`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(updatedTask),
+            });
+
+            if (response.status !== 202) { // HTTP 202 Accepted
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            navigate('/');
+        } catch (error) {
+            // Handle error...
+        }
+    };
 
     return (
         <Container maxWidth="lg">
@@ -149,7 +176,7 @@ export default function TaskView() {
                                 </Button>
                             </a>
                             {authenticated && userIsPrivileged && (
-                                <Button variant="contained" color="primary">
+                                <Button variant="contained" color="primary" onClick={() => rollbackToVersion()}>
                                     Rollback to this version
                                 </Button>
                             )}
