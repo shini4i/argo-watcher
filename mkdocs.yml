@@ -11,3 +11,4 @@ nav:
   - Installation: 'installation.md'
   - Git Integration: 'git-integration.md'
   - Development: "development.md"
+  - Keycloak: "keycloak.md"
