@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
+
 	"github.com/gin-gonic/contrib/static"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -28,7 +30,7 @@ type Env struct {
 	// argo updater
 	updater *ArgoStatusUpdater
 	// metrics
-	metrics *Metrics
+	metrics *prometheus.Metrics
 }
 
 // CreateRouter initialize router.

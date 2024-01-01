@@ -4,6 +4,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
+
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
@@ -39,7 +41,7 @@ func runServer() {
 	initLogs(serverConfig.LogLevel, serverConfig.LogFormat)
 
 	// initialize metrics
-	metrics := &Metrics{}
+	metrics := &prometheus.Metrics{}
 	metrics.Init()
 	metrics.Register()
 

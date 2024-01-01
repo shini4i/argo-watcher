@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
+
 	"github.com/rs/zerolog/log"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/state"
@@ -21,12 +23,12 @@ const (
 )
 
 type Argo struct {
-	metrics MetricsInterface
+	metrics prometheus.MetricsInterface
 	api     ArgoApiInterface
 	state   state.State
 }
 
-func (argo *Argo) Init(state state.State, api ArgoApiInterface, metrics MetricsInterface) {
+func (argo *Argo) Init(state state.State, api ArgoApiInterface, metrics prometheus.MetricsInterface) {
 	// setup dependencies
 	argo.api = api
 	argo.state = state
