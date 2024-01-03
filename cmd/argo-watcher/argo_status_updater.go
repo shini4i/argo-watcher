@@ -155,7 +155,7 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 		}
 	} else {
 		mutex.Unlock()
-		log.Debug().Str("id", task.Id).Msg("Skipping git repo update: Application not managed by watcher or token is absent/invalid.")
+		log.Debug().Str("id", task.Id).Msg("Skipping git repo update: Application does not have the necessary annotations or token is missing.")
 	}
 
 	// wait for application to get into deployed status or timeout
