@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"os"
@@ -30,7 +30,7 @@ func initLogs(logLevel string, logFormat string) {
 	}
 }
 
-func runServer() {
+func RunServer() {
 	// initialize serverConfig
 	serverConfig, err := config.NewServerConfig()
 	if err != nil {
