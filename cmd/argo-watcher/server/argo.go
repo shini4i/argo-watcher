@@ -14,7 +14,7 @@ import (
 )
 
 var (
-	argoSyncRetryDelay = 15 * time.Second
+	ArgoSyncRetryDelay = 15 * time.Second
 )
 
 const (
@@ -25,18 +25,18 @@ const (
 type Argo struct {
 	metrics prometheus.MetricsInterface
 	api     ArgoApiInterface
-	state   state.State
+	State   state.State
 }
 
 func (argo *Argo) Init(state state.State, api ArgoApiInterface, metrics prometheus.MetricsInterface) {
 	// setup dependencies
 	argo.api = api
-	argo.state = state
+	argo.State = state
 	argo.metrics = metrics
 }
 
 func (argo *Argo) Check() (string, error) {
-	connectionActive := argo.state.Check()
+	connectionActive := argo.State.Check()
 	userLoggedIn, loginError := argo.api.GetUserInfo()
 
 	if !connectionActive {
@@ -72,7 +72,7 @@ func (argo *Argo) AddTask(task models.Task) (*models.Task, error) {
 		return nil, fmt.Errorf("trying to create task without app name")
 	}
 
-	newTask, err := argo.state.Add(task)
+	newTask, err := argo.State.Add(task)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +92,7 @@ func (argo *Argo) AddTask(task models.Task) (*models.Task, error) {
 
 func (argo *Argo) GetTasks(startTime float64, endTime float64, app string) models.TasksResponse {
 	_, err := argo.Check()
-	tasks := argo.state.GetTasks(startTime, endTime, app)
+	tasks := argo.State.GetTasks(startTime, endTime, app)
 
 	if err != nil {
 		return models.TasksResponse{
@@ -107,9 +107,9 @@ func (argo *Argo) GetTasks(startTime float64, endTime float64, app string) model
 }
 
 func (argo *Argo) GetAppList() []string {
-	return argo.state.GetAppList()
+	return argo.State.GetAppList()
 }
 
 func (argo *Argo) SimpleHealthCheck() bool {
-	return argo.state.Check()
+	return argo.State.Check()
 }

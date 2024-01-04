@@ -1,10 +1,12 @@
-package server
+package web
 
 import (
 	"fmt"
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/server"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
 
@@ -26,9 +28,9 @@ type Env struct {
 	// environment configurations
 	config *config.ServerConfig
 	// argo argo
-	argo *Argo
+	argo *server.Argo
 	// argo updater
-	updater *ArgoStatusUpdater
+	updater *server.ArgoStatusUpdater
 	// metrics
 	metrics *prometheus.Metrics
 }
@@ -182,7 +184,7 @@ func (env *Env) getState(c *gin.Context) {
 // @Router /api/v1/tasks/{id} [get].
 func (env *Env) getTaskStatus(c *gin.Context) {
 	id := c.Param("id")
-	task, err := env.argo.state.GetTask(id)
+	task, err := env.argo.State.GetTask(id)
 
 	if err != nil {
 		c.JSON(http.StatusOK, models.TaskStatus{
