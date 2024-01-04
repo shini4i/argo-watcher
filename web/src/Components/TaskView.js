@@ -43,9 +43,9 @@ export default function TaskView() {
 
     const getArgoCDUrl = () => {
         if (configData && configData.argo_cd_url_alias) {
-            return configData.argo_cd_url_alias + "/applications/" + task.app;
+            return `${configData.argo_cd_url_alias}/applications/${task.app}`;
         } else if (configData && configData.argo_cd_url) {
-            return `${configData.argo_cd_url.Scheme}://${configData.argo_cd_url.Host}${configData.argo_cd_url.Path}` + "/applications/" + task.app;
+            return `${configData.argo_cd_url.Scheme}://${configData.argo_cd_url.Host}${configData.argo_cd_url.Path}/applications/${task.app}`;
         }
         return '';
     };
