@@ -16,7 +16,7 @@ Before moving to the actual configuration, you need to:
 
 1. Generate a token that would be used to validate requests from GitLab/Github. It can be any string. (it should be added to the secret used by argo-watcher under the `ARGO_WATCHER_DEPLOY_TOKEN` key)
 2. Create a secret with ssh key that will be used by `argo-watcher` to make commits to the GitOps repository. (by default, we expect it to be available under the `sshPrivateKey`, but can be configured via helm chart values)
-3. Bump chart version to > 0.4.3 to support the necessary configuration
+3. Bump chart version to > `0.4.3` to support the necessary configuration
 
 The following configuration should be added to the `argo-watcher` helm chart values (adjust according to your needs):
 
@@ -61,10 +61,14 @@ argo-watcher/app.helm.image-tag: "app.image.tag"
 
 ## CI/CD side configuration
 
-In general, the example from the [installation](installation.md) page should be sufficient to get you started. However, there are a few additional things to consider.
+In general, the example from the [installation](installation.md) page should be sufficient to get you started. However, there is one more things to consider.
 
 You need to add the following environment variables to your CI/CD pipeline:
 
 ```
 ARGO_WATCHER_DEPLOY_TOKEN=previously_generated_token
 ```
+
+That's it! Starting from this point, Argo-Watcher will be able to commit changes to your GitOps repository.
+
+> Keep in mind, that `argo-watcher` will use the provided tag value as is, without any validation. So, it is up to user to make sure that the tag is valid and can be used for deployment.

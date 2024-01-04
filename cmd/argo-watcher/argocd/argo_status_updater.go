@@ -1,4 +1,4 @@
-package main
+package argocd
 
 import (
 	"bytes"
@@ -85,7 +85,7 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 		// deployment success
 		updater.argo.metrics.ResetFailedDeployment(task.App)
 		// update task status
-		errStatusChange := updater.argo.state.SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
+		errStatusChange := updater.argo.State.SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
 		if errStatusChange != nil {
 			log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, errStatusChange)
 		}
@@ -100,7 +100,7 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 			application.GetRolloutMessage(status, task.ListImages()),
 		)
 		// update task status
-		errStatusChange := updater.argo.state.SetTaskStatus(task.Id, models.StatusFailedMessage, reason)
+		errStatusChange := updater.argo.State.SetTaskStatus(task.Id, models.StatusFailedMessage, reason)
 		if errStatusChange != nil {
 			log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, errStatusChange)
 		}
@@ -155,7 +155,7 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 		}
 	} else {
 		mutex.Unlock()
-		log.Debug().Str("id", task.Id).Msg("Skipping git repo update: Application not managed by watcher or token is absent/invalid.")
+		log.Debug().Str("id", task.Id).Msg("Skipping git repo update: Application does not have the necessary annotations or token is missing.")
 	}
 
 	// wait for application to get into deployed status or timeout
@@ -212,7 +212,7 @@ func (updater *ArgoStatusUpdater) handleArgoAPIFailure(task models.Task, err err
 	reason := fmt.Sprintf(ArgoAPIErrorTemplate, err.Error())
 	log.Warn().Str("id", task.Id).Msgf("Deployment failed with status \"%s\". Aborting with error: %s", apiFailureStatus, reason)
 
-	if err := updater.argo.state.SetTaskStatus(task.Id, apiFailureStatus, reason); err != nil {
+	if err := updater.argo.State.SetTaskStatus(task.Id, apiFailureStatus, reason); err != nil {
 		log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, err)
 	}
 }

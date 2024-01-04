@@ -1,8 +1,12 @@
-package main
+package server
 
 import (
 	"os"
 	"time"
+
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/argocd"
+
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -28,7 +32,7 @@ func initLogs(logLevel string, logFormat string) {
 	}
 }
 
-func runServer() {
+func RunServer() {
 	// initialize serverConfig
 	serverConfig, err := config.NewServerConfig()
 	if err != nil {
@@ -39,12 +43,12 @@ func runServer() {
 	initLogs(serverConfig.LogLevel, serverConfig.LogFormat)
 
 	// initialize metrics
-	metrics := &Metrics{}
+	metrics := &prometheus.Metrics{}
 	metrics.Init()
 	metrics.Register()
 
 	// create API client
-	api := &ArgoApi{}
+	api := &argocd.ArgoApi{}
 	if err := api.Init(serverConfig); err != nil {
 		log.Fatal().Msgf("Couldn't initialize the Argo API. Got the following error: %s", err)
 	}
@@ -58,12 +62,12 @@ func runServer() {
 	go state.ProcessObsoleteTasks(0)
 
 	// initialize argo client
-	argo := &Argo{}
+	argo := &argocd.Argo{}
 	argo.Init(state, api, metrics)
 
 	// initialize argo updater
-	updater := &ArgoStatusUpdater{}
-	updater.Init(*argo, serverConfig.GetRetryAttempts(), argoSyncRetryDelay, serverConfig.RegistryProxyUrl)
+	updater := &argocd.ArgoStatusUpdater{}
+	updater.Init(*argo, serverConfig.GetRetryAttempts(), argocd.ArgoSyncRetryDelay, serverConfig.RegistryProxyUrl)
 
 	// create environment
 	env := &Env{config: serverConfig, argo: argo, metrics: metrics, updater: updater}

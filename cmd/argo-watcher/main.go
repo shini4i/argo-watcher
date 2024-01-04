@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/server"
+
 	"github.com/shini4i/argo-watcher/pkg/client"
 )
 
@@ -14,7 +16,7 @@ var errorInvalidMode = errors.New("invalid mode")
 func runWatcher(serverFlag, clientFlag bool) error {
 	// start server if requested
 	if serverFlag && !clientFlag {
-		runServer()
+		server.RunServer()
 		return nil
 	}
 

@@ -60,9 +60,9 @@ docs: ## Generate swagger docs
 .PHONY: mocks
 mocks:
 	@echo "===> Generating mocks"
-	@mockgen --source=cmd/argo-watcher/argo_api.go --destination=cmd/argo-watcher/mock/argo_api.go --package=mock
+	@mockgen --source=cmd/argo-watcher/argocd/argo_api.go --destination=cmd/argo-watcher/mock/argo_api.go --package=mock
 	@mockgen --source=cmd/argo-watcher/state/state.go --destination=cmd/argo-watcher/mock/state.go --package=mock
-	@mockgen --source=cmd/argo-watcher/metrics.go --destination=cmd/argo-watcher/mock/metrics.go --package=mock
+	@mockgen --source=cmd/argo-watcher/prometheus/metrics.go --destination=cmd/argo-watcher/mock/metrics.go --package=mock
 	@mockgen --source=pkg/updater/interfaces.go --destination=pkg/updater/mock/interfaces.go --package=mock
 
 .PHONY: bootstrap

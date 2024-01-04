@@ -1,4 +1,4 @@
-package main
+package argocd
 
 import (
 	"fmt"
@@ -44,7 +44,7 @@ func TestArgoCheck(t *testing.T) {
 		assert.Equal(t, "up", status)
 	})
 
-	t.Run("Argo Watcher - Down - Cannot connect to state manager", func(t *testing.T) {
+	t.Run("Argo Watcher - Down - Cannot connect to State manager", func(t *testing.T) {
 		// mocks
 		api := mock.NewMockArgoApiInterface(ctrl)
 		metrics := mock.NewMockMetricsInterface(ctrl)
