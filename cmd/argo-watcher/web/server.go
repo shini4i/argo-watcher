@@ -4,7 +4,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/server"
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/argocd"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
 
@@ -48,7 +48,7 @@ func RunServer() {
 	metrics.Register()
 
 	// create API client
-	api := &server.ArgoApi{}
+	api := &argocd.ArgoApi{}
 	if err := api.Init(serverConfig); err != nil {
 		log.Fatal().Msgf("Couldn't initialize the Argo API. Got the following error: %s", err)
 	}
@@ -62,12 +62,12 @@ func RunServer() {
 	go state.ProcessObsoleteTasks(0)
 
 	// initialize argo client
-	argo := &server.Argo{}
+	argo := &argocd.Argo{}
 	argo.Init(state, api, metrics)
 
 	// initialize argo updater
-	updater := &server.ArgoStatusUpdater{}
-	updater.Init(*argo, serverConfig.GetRetryAttempts(), server.ArgoSyncRetryDelay, serverConfig.RegistryProxyUrl)
+	updater := &argocd.ArgoStatusUpdater{}
+	updater.Init(*argo, serverConfig.GetRetryAttempts(), argocd.ArgoSyncRetryDelay, serverConfig.RegistryProxyUrl)
 
 	// create environment
 	env := &Env{config: serverConfig, argo: argo, metrics: metrics, updater: updater}

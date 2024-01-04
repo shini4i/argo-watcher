@@ -1,4 +1,4 @@
-package server
+package argocd
 
 import (
 	"encoding/json"

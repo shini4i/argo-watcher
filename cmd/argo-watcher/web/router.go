@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/server"
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/argocd"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
 
@@ -28,9 +28,9 @@ type Env struct {
 	// environment configurations
 	config *config.ServerConfig
 	// argo argo
-	argo *server.Argo
+	argo *argocd.Argo
 	// argo updater
-	updater *server.ArgoStatusUpdater
+	updater *argocd.ArgoStatusUpdater
 	// metrics
 	metrics *prometheus.Metrics
 }
