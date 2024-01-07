@@ -105,7 +105,7 @@ func RunMigrations(migrationDryRunFlag bool) {
 	log.Info().Msgf("Starting migrations (dry run: %t)", migrationDryRunFlag)
 
 	// run migrations
-	err = connection.Migrate(migrationDryRunFlag)
+	err = connection.Migrate()
 	if err != nil {
 		log.Fatal().Msgf("Failed running migration. Received: %s", err)
 	}

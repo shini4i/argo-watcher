@@ -25,8 +25,8 @@ func (state *InMemoryState) Connect(serverConfig *config.ServerConfig, dryRun bo
 	return nil
 }
 
-// Migration palceholder
-func (state *InMemoryState) Migrate(dryRun bool) error {
+// Migration placeholder
+func (state *InMemoryState) Migrate() error {
 	log.Debug().Msg("InMemoryState does not migrate anything. Skipping.")
 	return nil
 }

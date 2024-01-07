@@ -71,6 +71,10 @@ func TestPostgresState_Add(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
+	err = postgresState.Migrate()
+	if err != nil {
+		panic(err)
+	}
 	db, err := postgresState.orm.DB()
 	if err != nil {
 		panic(err)

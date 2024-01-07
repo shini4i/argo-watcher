@@ -43,7 +43,7 @@ func (state *PostgresState) Connect(serverConfig *config.ServerConfig, dryRun bo
 }
 
 // Migrate ORM entities into the database
-func (state *PostgresState) Migrate(dryRun bool) error {
+func (state *PostgresState) Migrate() error {
 	return state.orm.Migrator().AutoMigrate(&state_models.TaskModel{})
 }
 
