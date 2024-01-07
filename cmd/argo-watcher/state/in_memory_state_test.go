@@ -43,6 +43,10 @@ var (
 	}
 )
 
+func TestInMemoryState_Migrate(t *testing.T) {
+	assert.Empty(t, state.Migrate())
+}
+
 func TestInMemoryState_Add(t *testing.T) {
 	firstTask, err := state.Add(tasks[0])
 	if err != nil {
