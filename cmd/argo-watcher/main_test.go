@@ -36,7 +36,7 @@ func TestUsage(t *testing.T) {
 	// Convert the output to string and check for expected values
 	expected := []string{
 		"Usage: argo-watcher [options]",
-		"Invalid mode specified. Please specify either -server or -client.",
+		"Invalid mode specified. Please specify either -server, -client or -migration. \nMigration also supports -dry-run\n",
 	}
 
 	for _, exp := range expected {

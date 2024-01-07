@@ -28,27 +28,23 @@ type PostgresState struct {
 
 // Connect establishes a connection to the PostgreSQL database using the provided server configuration.
 func (state *PostgresState) Connect(serverConfig *config.ServerConfig, dryRun bool) error {
-	var dialector gorm.Dialector
-	var config *gorm.Config
-
-	dialector = postgres.Open(getDsn(serverConfig))
-	config = getOrmLogger(serverConfig)
+	// create connection parameters
+	dialector := postgres.Open(getDsn(serverConfig))
+	config := getOrmLogger(serverConfig)
 	config.DryRun = dryRun
 
+	// create orm instance
 	orm, err := gorm.Open(dialector, config)
-
 	if err != nil {
 		return err
 	}
-
 	state.orm = orm
 	return nil
 }
 
 // Migrate ORM entities into the database
 func (state *PostgresState) Migrate(dryRun bool) error {
-	state.orm.Migrator().AutoMigrate(&state_models.TaskModel{})
-	return nil
+	return state.orm.Migrator().AutoMigrate(&state_models.TaskModel{})
 }
 
 // Add inserts a new task into the PostgreSQL database with the provided details.
