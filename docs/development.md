@@ -100,7 +100,6 @@ DB_PORT=5432
 DB_USER=watcher
 DB_PASSWORD=watcher
 DB_NAME=watcher
-DB_MIGRATIONS_PATH=../../db/migrations
 ```
 
 ### Run argo-watcher server migrations (postgres)

@@ -1,4 +1,4 @@
-version: '3'
+version: "3"
 services:
   postgres:
     image: postgres:15.3
@@ -27,7 +27,6 @@ services:
       DB_USER: watcher
       DB_NAME: watcher
       DB_PASSWORD: watcher
-      DB_MIGRATIONS_PATH: /app/db/migrations
     depends_on:
       - postgres
       - mock
