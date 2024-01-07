@@ -12,7 +12,8 @@ import (
 var errDesiredRetry = errors.New("desired retry error")
 
 type State interface {
-	Connect(serverConfig *config.ServerConfig) error
+	Connect(serverConfig *config.ServerConfig, dryRun bool) error
+	Migrate(dryRun bool) error
 	Add(task models.Task) (*models.Task, error)
 	GetTasks(startTime float64, endTime float64, app string) []models.Task
 	GetTask(id string) (*models.Task, error)
@@ -27,7 +28,7 @@ type State interface {
 // Currently, it supports "postgres" and "in-memory" state types.
 // It returns the created state instance and an error if the state type is not recognized or if there was an error connecting to the state.
 // The created state instance is already connected to the state storage based on the provided server configuration.
-func NewState(serverConfig *config.ServerConfig) (State, error) {
+func NewState(serverConfig *config.ServerConfig, dryRun bool) (State, error) {
 	log.Debug().Msg("Initializing argo-watcher state...")
 	var state State
 	switch name := serverConfig.StateType; name {
@@ -41,7 +42,7 @@ func NewState(serverConfig *config.ServerConfig) (State, error) {
 		return nil, fmt.Errorf("unexpected state type received: %s", name)
 	}
 
-	err := state.Connect(serverConfig)
+	err := state.Connect(serverConfig, dryRun)
 	if err != nil {
 		return nil, err
 	}

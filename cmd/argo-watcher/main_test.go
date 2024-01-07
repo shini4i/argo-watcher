@@ -10,8 +10,8 @@ import (
 )
 
 func TestRunWatcher_InvalidConfig(t *testing.T) {
-	assert.Error(t, runWatcher(true, true))
-	assert.Error(t, runWatcher(false, false))
+	assert.Error(t, runWatcher(true, true, false, false))
+	assert.Error(t, runWatcher(false, false, false, false))
 }
 
 func TestUsage(t *testing.T) {

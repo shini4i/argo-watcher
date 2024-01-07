@@ -4,6 +4,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/joho/godotenv"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/argocd"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
@@ -33,6 +34,9 @@ func initLogs(logLevel string, logFormat string) {
 }
 
 func RunServer() {
+	// detect and load .env config
+	LazyLoadEnvironmentFile()
+
 	// initialize serverConfig
 	serverConfig, err := config.NewServerConfig()
 	if err != nil {
@@ -54,7 +58,7 @@ func RunServer() {
 	}
 
 	// create state management
-	state, err := state.NewState(serverConfig)
+	state, err := state.NewState(serverConfig, false)
 	if err != nil {
 		log.Fatal().Msgf("Couldn't create state manager (in-memory / database). Got the following error: %s", err)
 	}
@@ -76,4 +80,44 @@ func RunServer() {
 	log.Info().Msg("Starting web server")
 	router := env.CreateRouter()
 	env.StartRouter(router)
+}
+
+func RunMigrations(migrationDryRunFlag bool) {
+	// detect and load .env config
+	LazyLoadEnvironmentFile()
+
+	// initialize serverConfig
+	serverConfig, err := config.NewServerConfig()
+	if err != nil {
+		log.Fatal().Msgf("Couldn't initialize config. Error: %s", err)
+	}
+
+	// initialize logs
+	initLogs(serverConfig.LogLevel, serverConfig.LogFormat)
+
+	// create state management
+	connection, err := state.NewState(serverConfig, migrationDryRunFlag)
+	if err != nil {
+		log.Fatal().Msgf("Couldn't create state manager (in-memory / database). Got the following error: %s", err)
+	}
+
+	// do migrations
+	log.Info().Msgf("Starting migrations (dry run: %t)", migrationDryRunFlag)
+
+	// run migrations
+	err = connection.Migrate(migrationDryRunFlag)
+	if err != nil {
+		log.Fatal().Msgf("Failed running migration. Received: %s", err)
+	}
+}
+
+func LazyLoadEnvironmentFile() {
+	err := godotenv.Load()
+	if err != nil {
+		if err.Error() == "open .env: no such file or directory" {
+			log.Info().Msg("No .env file detected. Skip loading env variables from file.")
+		} else {
+			log.Fatal().Msgf("Error loading .env file. Error: %s", err)
+		}
+	}
 }

@@ -39,7 +39,6 @@ type ServerConfig struct {
 	DbName            string         `env:"DB_NAME" json:"db_name,omitempty"`
 	DbUser            string         `env:"DB_USER" json:"db_user,omitempty"`
 	DbPassword        string         `env:"DB_PASSWORD" json:"-"`
-	DbMigrationsPath  string         `env:"DB_MIGRATIONS_PATH" envDefault:"db/migrations" json:"-"`
 	DeployToken       string         `env:"ARGO_WATCHER_DEPLOY_TOKEN" json:"-"`
 	Keycloak          KeycloakConfig `json:"keycloak,omitempty"`
 }

@@ -14,7 +14,7 @@ func TestNewState_success(t *testing.T) {
 	}
 
 	// Call the NewState function
-	state, err := NewState(cfg)
+	state, err := NewState(cfg, false)
 
 	// Assert that the state is not nil
 	assert.NotNil(t, state)
@@ -30,7 +30,7 @@ func TestNewState_fail(t *testing.T) {
 	}
 
 	// Call the NewState function
-	state, err := NewState(cfg)
+	state, err := NewState(cfg, false)
 
 	// Assert that the state is nil
 	assert.Nil(t, state)

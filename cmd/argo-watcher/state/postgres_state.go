@@ -2,7 +2,6 @@ package state
 
 import (
 	"database/sql"
-	"errors"
 	"fmt"
 	"time"
 
@@ -16,8 +15,6 @@ import (
 	"github.com/avast/retry-go/v4"
 	_ "github.com/lib/pq"
 
-	"github.com/golang-migrate/migrate/v4"
-	migratePostgres "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
@@ -30,48 +27,27 @@ type PostgresState struct {
 }
 
 // Connect establishes a connection to the PostgreSQL database using the provided server configuration.
-func (state *PostgresState) Connect(serverConfig *config.ServerConfig) error {
-	// create ORM driver
-	if orm, err := gorm.Open(postgres.Open(getDsn(serverConfig)), getOrmLogger(serverConfig)); err != nil {
+func (state *PostgresState) Connect(serverConfig *config.ServerConfig, dryRun bool) error {
+	var dialector gorm.Dialector
+	var config *gorm.Config
+
+	dialector = postgres.Open(getDsn(serverConfig))
+	config = getOrmLogger(serverConfig)
+	config.DryRun = dryRun
+
+	orm, err := gorm.Open(dialector, config)
+
+	if err != nil {
 		return err
-	} else {
-		state.orm = orm
 	}
 
-	// run migrations
-	if err := state.runMigrations(serverConfig.DbMigrationsPath); err != nil {
-		return fmt.Errorf("failed running migrations: %s", err.Error())
-	}
-
+	state.orm = orm
 	return nil
 }
 
-// Runs migrations
-// TODO: migrate to gorm supported migrations library - https://gorm.io/docs/migration.html#Atlas-Integration
-func (state *PostgresState) runMigrations(dbMigrationPath string) error {
-	migrationsPath := fmt.Sprintf("file://%s", dbMigrationPath)
-
-	connection, err := state.orm.DB()
-	if err != nil {
-		return err
-	}
-
-	driver, err := migratePostgres.WithInstance(connection, &migratePostgres.Config{})
-	if err != nil {
-		return err
-	}
-
-	migrations, err := migrate.NewWithDatabaseInstance(migrationsPath, "postgres", driver)
-	if err != nil {
-		return err
-	}
-
-	log.Debug().Msg("Running database migrations...")
-	if err := migrations.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		return err
-	}
-
-	log.Debug().Msg("Database schema is up to date.")
+// Migrate ORM entities into the database
+func (state *PostgresState) Migrate(dryRun bool) error {
+	state.orm.Migrator().AutoMigrate(&state_models.TaskModel{})
 	return nil
 }
 

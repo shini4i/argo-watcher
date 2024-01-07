@@ -83,8 +83,42 @@ cd cmd/argo-watcher
 # install dependencies
 go mod tidy
 # OR start argo-watcher (postgres)
-LOG_LEVEL=debug LOG_FORMAT=text ARGO_URL=http://localhost:8081 ARGO_TOKEN=example STATE_TYPE=postgres DB_USER=watcher DB_PASSWORD=watcher DB_NAME=watcher DB_MIGRATIONS_PATH=../../db/migrations go run . -server
+LOG_LEVEL=debug LOG_FORMAT=text ARGO_URL=http://localhost:8081 ARGO_TOKEN=example STATE_TYPE=postgres DB_HOST=localhost DB_PORT=5432 DB_USER=watcher DB_PASSWORD=watcher DB_NAME=watcher go run . -server
 ```
+
+Alternatively you can create a .env file at `cmd/argo-watcher/.env` with dev configurations contents
+
+```env
+# cmd/argo-watcher/.env
+LOG_LEVEL=debug
+LOG_FORMAT=text
+ARGO_URL=http://localhost:8081
+ARGO_TOKEN=example
+STATE_TYPE=postgres
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=watcher
+DB_PASSWORD=watcher
+DB_NAME=watcher
+DB_MIGRATIONS_PATH=../../db/migrations
+```
+
+### Run argo-watcher server migrations (postgres)
+
+This requires the same configurations as the server
+
+Run dry run on the database
+
+```shell
+# go to backend directory
+cd cmd/argo-watcher
+# run the migration dry run (postgres)
+go run . -migration -dry-run
+# tun the migration
+go run . -migration
+```
+
+> Dry run migration SQLs are displayed in the logs, please make sure to add `LOG_FORMAT=text` option to see SQL output
 
 #### Logs in simple text
 
@@ -101,10 +135,12 @@ Use the following snippets to run argo-watcher unit tests
 # go to backend directory
 cd cmd/argo-watcher
 # run all tests
-go test -v
+DB_HOST=localhost DB_PORT=5432 DB_USER=watcher DB_PASSWORD=watcher DB_NAME=watcher go test ./...
 # run single test suite
 go test -v -run TestArgoStatusUpdaterCheck
 ```
+
+> Note that tests are currently dependant on ENV variables for state management, e.g. database stuff
 
 ## Front-End Development
 
