@@ -9,6 +9,7 @@ export function useAuth() {
     const [email, setEmail] = useState(null);
     const [groups, setGroups] = useState([]);
     const [privilegedGroups, setPrivilegedGroups] = useState([]);
+    const [keycloakToken, setKeycloakToken] = useState(null);
 
     useEffect(() => {
         fetchConfig().then(config => {
@@ -26,6 +27,7 @@ export function useAuth() {
                             setEmail(keycloak.tokenParsed.email);
                             setGroups(keycloak.tokenParsed.groups);
                             setPrivilegedGroups(config.keycloak.privileged_groups);
+                            setKeycloakToken(keycloak.token);
 
                             setInterval(() => {
                                 keycloak.updateToken(20)
@@ -50,5 +52,5 @@ export function useAuth() {
         });
     }, []);
 
-    return { authenticated, email, groups, privilegedGroups };
+    return { authenticated, email, groups, privilegedGroups, keycloakToken };
 }
