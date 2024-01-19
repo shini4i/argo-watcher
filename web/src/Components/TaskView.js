@@ -88,9 +88,9 @@ export default function TaskView() {
             });
 
             if (response.status === 401) { // HTTP 401 Unauthorized
-                throw new Error("Invalid deploy token!");
+                throw new Error("You are not authorized to perform this action!");
             } else if (response.status !== 202) { // HTTP 202 Accepted
-                throw new Error(`HTTP error! Status code: ${response.status}`);
+                throw new Error(`Received unexpected status code: ${response.status}`);
             }
 
             navigate('/');
