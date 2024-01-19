@@ -69,7 +69,7 @@ func (k *KeycloakAuthService) Validate(token string) (bool, error) {
 
 	if resp.StatusCode == http.StatusOK && userPrivileged {
 		return true, nil
-	} else if !userPrivileged {
+	} else if resp.StatusCode == http.StatusOK && !userPrivileged {
 		return false, fmt.Errorf("user is not a member of any of the privileged groups")
 	}
 
