@@ -1,25 +1,34 @@
 package auth
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 
+	"github.com/shini4i/argo-watcher/internal/helpers"
+
 	"github.com/rs/zerolog/log"
 )
 
+type KeycloakResponse struct {
+	Groups []string `json:"groups"`
+}
+
 type KeycloakAuthService struct {
-	Url      string
-	Realm    string
-	ClientId string
-	client   *http.Client
+	Url              string
+	Realm            string
+	ClientId         string
+	PrivilegedGroups []string
+	client           *http.Client
 }
 
 // Init is used to initialize KeycloakAuthService with Keycloak URL, realm and client ID
-func (k *KeycloakAuthService) Init(url, realm, clientId string) {
+func (k *KeycloakAuthService) Init(url, realm, clientId string, privilegedGroups []string) {
 	k.Url = url
 	k.Realm = realm
 	k.ClientId = clientId
+	k.PrivilegedGroups = privilegedGroups
 	k.client = &http.Client{}
 }
 
@@ -27,6 +36,8 @@ func (k *KeycloakAuthService) Init(url, realm, clientId string) {
 // We just call Keycloak userinfo endpoint and check if it returns 200
 // effectively delegating token validation to Keycloak
 func (k *KeycloakAuthService) Validate(token string) (bool, error) {
+	var keycloakResponse KeycloakResponse
+
 	req, err := http.NewRequest("GET", fmt.Sprintf("%s/realms/%s/protocol/openid-connect/userinfo", k.Url, k.Realm), nil)
 	if err != nil {
 		return false, fmt.Errorf("error creating request: %v", err)
@@ -44,10 +55,37 @@ func (k *KeycloakAuthService) Validate(token string) (bool, error) {
 		}
 	}(resp.Body)
 
-	log.Debug().Msgf("Token validation response: %v", resp.Status)
-	if resp.StatusCode == http.StatusOK {
+	// Read and print the response body
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Error().Msgf("error reading response body: %v", err)
+	} else {
+		if err := json.Unmarshal(bodyBytes, &keycloakResponse); err != nil {
+			log.Error().Msgf("error unmarshalling response body: %v", err)
+		}
+	}
+
+	userPrivileged := k.allowedToRollback(keycloakResponse.Groups)
+
+	if resp.StatusCode == http.StatusOK && userPrivileged {
 		return true, nil
+	} else if !userPrivileged {
+		return false, fmt.Errorf("user is not a member of any of the privileged groups")
 	}
 
 	return false, fmt.Errorf("token validation failed with status: %v", resp.Status)
+}
+
+// allowedToRollback checks if the user is a member of any of the privileged groups
+// It duplicates the logic from fronted just to be sure that the user did not generate the request manually
+func (k *KeycloakAuthService) allowedToRollback(groups []string) bool {
+	for _, group := range groups {
+		if helpers.Contains(k.PrivilegedGroups, group) {
+			log.Debug().Msgf("User is a member of the privileged group: %v", group)
+			return true
+		}
+	}
+
+	log.Debug().Msgf("User is not a member of any of the privileged groups: %v", k.PrivilegedGroups)
+	return false
 }

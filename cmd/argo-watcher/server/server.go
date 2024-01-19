@@ -77,7 +77,12 @@ func RunServer() {
 	// initialize auth service
 	if serverConfig.Keycloak.Url != "" {
 		env.auth = auth.NewExternalAuthService()
-		env.auth.Init(serverConfig.Keycloak.Url, serverConfig.Keycloak.Realm, serverConfig.Keycloak.ClientId)
+		env.auth.Init(
+			serverConfig.Keycloak.Url,
+			serverConfig.Keycloak.Realm,
+			serverConfig.Keycloak.ClientId,
+			serverConfig.Keycloak.PrivilegedGroups,
+		)
 	}
 
 	// start the server

@@ -15,7 +15,7 @@ func TestKeycloakAuthService_Init(t *testing.T) {
 	realm := "test"
 	clientId := "test"
 
-	service.Init(url, realm, clientId)
+	service.Init(url, realm, clientId, []string{})
 
 	assert.Equal(t, url, service.Url)
 	assert.Equal(t, realm, service.Realm)
@@ -24,11 +24,11 @@ func TestKeycloakAuthService_Init(t *testing.T) {
 }
 
 func TestKeycloakAuthService_Validate(t *testing.T) {
-	t.Run("should return 200 if token is valid", func(t *testing.T) {
+	t.Run("should return true if token is valid and user is in privileged group", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 			assert.Equal(t, req.URL.String(), "/realms/test/protocol/openid-connect/userinfo")
-			// we don't care about the response body, just the status code
-			_, err := rw.Write([]byte(`OK`))
+			rw.WriteHeader(http.StatusOK)
+			_, err := rw.Write([]byte(`{"groups": ["group1"]}`))
 			if err != nil {
 				t.Error(err)
 			}
@@ -36,10 +36,11 @@ func TestKeycloakAuthService_Validate(t *testing.T) {
 		defer server.Close()
 
 		service := &KeycloakAuthService{
-			Url:      server.URL,
-			Realm:    "test",
-			ClientId: "test",
-			client:   server.Client(),
+			Url:              server.URL,
+			Realm:            "test",
+			ClientId:         "test",
+			PrivilegedGroups: []string{"group1"},
+			client:           server.Client(),
 		}
 
 		ok, err := service.Validate("test")
@@ -48,11 +49,35 @@ func TestKeycloakAuthService_Validate(t *testing.T) {
 		assert.True(t, ok)
 	})
 
-	t.Run("should return 401 if token is invalid", func(t *testing.T) {
+	t.Run("should return false if token is valid but user is not in privileged group", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+			assert.Equal(t, req.URL.String(), "/realms/test/protocol/openid-connect/userinfo")
+			rw.WriteHeader(http.StatusOK)
+			_, err := rw.Write([]byte(`{"groups": ["group2"]}`))
+			if err != nil {
+				t.Error(err)
+			}
+		}))
+		defer server.Close()
+
+		service := &KeycloakAuthService{
+			Url:              server.URL,
+			Realm:            "test",
+			ClientId:         "test",
+			PrivilegedGroups: []string{"group1"},
+			client:           server.Client(),
+		}
+
+		ok, err := service.Validate("test")
+
+		assert.Error(t, err)
+		assert.False(t, ok)
+	})
+
+	t.Run("should return false if token is invalid", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 			assert.Equal(t, req.URL.String(), "/realms/test/protocol/openid-connect/userinfo")
 			rw.WriteHeader(http.StatusUnauthorized)
-			// we don't care about the response body, just the status code
 			_, err := rw.Write([]byte(`Unauthorized`))
 			if err != nil {
 				t.Error(err)
