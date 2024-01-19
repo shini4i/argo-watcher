@@ -34,10 +34,10 @@ export function useAuth() {
                                     .then(refreshed => {
                                         if (refreshed) {
                                             console.log('Token refreshed, valid for ' + Math.round(keycloak.tokenParsed.exp + keycloak.timeSkew - new Date().getTime() / 1000) + ' seconds');
+                                            // we need to set the token again here to handle cases
+                                            // when the UI was open for a long time
+                                            setKeycloakToken(keycloak.token);
                                         }
-                                        // we need to set the token again here to handle cases
-                                        // when the UI was open for a long time
-                                        setKeycloakToken(keycloak.token);
                                     }).catch(() => {
                                     console.error('Failed to refresh token');
                                 });
