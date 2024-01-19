@@ -126,10 +126,14 @@ func (env *Env) addTask(c *gin.Context) {
 
 	keycloakToken := c.GetHeader("Authorization")
 
+	// need to rewrite this block
 	if keycloakToken != "" {
 		valid, err := env.auth.Validate(keycloakToken)
 		if err != nil {
-			log.Error().Msgf("Couldn't validate keycloak token. Got the following error: %s", err)
+			log.Error().Msgf("couldn't validate keycloak token, got the following error: %s", err)
+			c.JSON(http.StatusUnauthorized, models.TaskStatus{
+				Status: "You are not authorized to perform this action",
+			})
 			return
 		}
 		log.Debug().Msgf("keycloak token is validated for app %s", task.App)
