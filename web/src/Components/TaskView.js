@@ -7,7 +7,6 @@ import {useNavigate, useParams} from 'react-router-dom';
 import {fetchTask} from '../Services/Data';
 import {useErrorContext} from '../ErrorContext';
 import {
-    Checkbox,
     Chip,
     Dialog,
     DialogActions,
@@ -15,10 +14,8 @@ import {
     DialogContentText,
     DialogTitle,
     Divider,
-    FormControlLabel,
     Grid,
     Paper,
-    TextField,
 } from '@mui/material';
 import {chipColorByStatus, formatDateTime, ProjectDisplay, StatusReasonDisplay,} from './TasksTable';
 import {AuthContext} from '../auth';
@@ -28,12 +25,23 @@ export default function TaskView() {
     const {id} = useParams();
     const [task, setTask] = useState(null);
     const {setError, setSuccess} = useErrorContext();
-    const {authenticated, email, groups, privilegedGroups} = useContext(AuthContext);
+    const {authenticated, email, groups, privilegedGroups, keycloakToken} = useContext(AuthContext);
     const [configData, setConfigData] = useState(null);
     const navigate = useNavigate();
-    const [deployToken, setDeployToken] = useState('');
-    const [openDeployTokenDialog, setOpenDeployTokenDialog] = useState(false);
-    const [showDeployToken, setShowDeployToken] = useState(false);
+    const [open, setOpen] = useState(false);
+
+    const handleClickOpen = () => {
+        setOpen(true);
+    };
+
+    const handleClose = () => {
+        setOpen(false);
+    };
+
+    const handleConfirm = async () => {
+        setOpen(false);
+        await rollbackToVersion();
+    };
 
     useEffect(() => {
         fetchConfig().then(config => {
@@ -74,46 +82,21 @@ export default function TaskView() {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'ARGO_WATCHER_DEPLOY_TOKEN': deployToken,
+                    'Authorization': keycloakToken,
                 },
                 body: JSON.stringify(updatedTask),
             });
 
             if (response.status === 401) { // HTTP 401 Unauthorized
-                throw new Error("Invalid deploy token!");
+                throw new Error("You are not authorized to perform this action!");
             } else if (response.status !== 202) { // HTTP 202 Accepted
-                throw new Error(`HTTP error! Status code: ${response.status}`);
+                throw new Error(`Received unexpected status code: ${response.status}`);
             }
 
             navigate('/');
         } catch (error) {
             setError('fetchTasks', error.message);
         }
-    };
-
-    const onDeployTokenChange = (event) => {
-        setDeployToken(event.target.value);
-    };
-
-    const handleDeployTokenOpen = () => {
-        setOpenDeployTokenDialog(true);
-    };
-
-    const handleDeployTokenClose = () => {
-        setOpenDeployTokenDialog(false);
-    };
-
-    const confirmDeployment = async () => {
-        if (deployToken.trim() === '') {
-            setError('Deploy Token is required!');
-            return;
-        }
-        handleDeployTokenClose();
-        await rollbackToVersion();
-    };
-
-    const toggleShowDeployToken = () => {
-        setShowDeployToken(!showDeployToken);
     };
 
     return (
@@ -219,34 +202,34 @@ export default function TaskView() {
                                 </Button>
                             </a>
                             {authenticated && userIsPrivileged && (
-                                // Open token input dialog on click
-                                <Button variant="contained" color="primary" onClick={handleDeployTokenOpen}>
+                                <Button
+                                    variant="contained"
+                                    color="primary"
+                                    onClick={handleClickOpen}
+                                    disabled={task.status === 'in progress'}
+                                >
                                     Rollback to this version
                                 </Button>
                             )}
-                            <Dialog open={openDeployTokenDialog} onClose={handleDeployTokenClose}>
-                                <DialogTitle>Enter Deploy Token</DialogTitle>
+                            <Dialog
+                                open={open}
+                                onClose={handleClose}
+                                aria-labelledby="alert-dialog-title"
+                                aria-describedby="alert-dialog-description"
+                            >
+                                <DialogTitle id="alert-dialog-title">{"Rollback Confirmation"}</DialogTitle>
                                 <DialogContent>
-                                    <DialogContentText>
-                                        Please enter your deploy token.
+                                    <DialogContentText id="alert-dialog-description">
+                                        Are you sure you want to rollback to this version?
                                     </DialogContentText>
-                                    <TextField
-                                        autoFocus
-                                        margin="dense"
-                                        label="Deploy Token"
-                                        type={showDeployToken ? "text" : "password"}
-                                        fullWidth
-                                        value={deployToken}
-                                        onChange={onDeployTokenChange}
-                                    />
-                                    <FormControlLabel
-                                        control={<Checkbox checked={showDeployToken} onChange={toggleShowDeployToken}/>}
-                                        label="Show Deploy Token"
-                                    />
                                 </DialogContent>
                                 <DialogActions>
-                                    <Button onClick={handleDeployTokenClose}>Cancel</Button>
-                                    <Button onClick={confirmDeployment}>Deploy</Button>
+                                    <Button onClick={handleClose} color="primary">
+                                        Cancel
+                                    </Button>
+                                    <Button onClick={handleConfirm} color="primary" autoFocus>
+                                        Yes
+                                    </Button>
                                 </DialogActions>
                             </Dialog>
                         </Grid>

@@ -9,6 +9,7 @@ export function useAuth() {
     const [email, setEmail] = useState(null);
     const [groups, setGroups] = useState([]);
     const [privilegedGroups, setPrivilegedGroups] = useState([]);
+    const [keycloakToken, setKeycloakToken] = useState(null);
 
     useEffect(() => {
         fetchConfig().then(config => {
@@ -26,12 +27,16 @@ export function useAuth() {
                             setEmail(keycloak.tokenParsed.email);
                             setGroups(keycloak.tokenParsed.groups);
                             setPrivilegedGroups(config.keycloak.privileged_groups);
+                            setKeycloakToken(keycloak.token);
 
                             setInterval(() => {
                                 keycloak.updateToken(20)
                                     .then(refreshed => {
                                         if (refreshed) {
                                             console.log('Token refreshed, valid for ' + Math.round(keycloak.tokenParsed.exp + keycloak.timeSkew - new Date().getTime() / 1000) + ' seconds');
+                                            // we need to set the token again here to handle cases
+                                            // when the UI was open for a long time
+                                            setKeycloakToken(keycloak.token);
                                         }
                                     }).catch(() => {
                                     console.error('Failed to refresh token');
@@ -50,5 +55,5 @@ export function useAuth() {
         });
     }, []);
 
-    return { authenticated, email, groups, privilegedGroups };
+    return { authenticated, email, groups, privilegedGroups, keycloakToken };
 }

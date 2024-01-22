@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/auth"
+
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/argocd"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
@@ -33,6 +35,8 @@ type Env struct {
 	updater *argocd.ArgoStatusUpdater
 	// metrics
 	metrics *prometheus.Metrics
+	// auth service
+	auth auth.ExternalAuthService
 }
 
 // CreateRouter initialize router.
@@ -120,7 +124,21 @@ func (env *Env) addTask(c *gin.Context) {
 	// need to find a better way to pass the token later
 	deployToken := c.GetHeader("ARGO_WATCHER_DEPLOY_TOKEN")
 
-	if deployToken != "" && deployToken == env.config.DeployToken {
+	keycloakToken := c.GetHeader("Authorization")
+
+	// need to rewrite this block
+	if keycloakToken != "" {
+		valid, err := env.auth.Validate(keycloakToken)
+		if err != nil {
+			log.Error().Msgf("couldn't validate keycloak token, got the following error: %s", err)
+			c.JSON(http.StatusUnauthorized, models.TaskStatus{
+				Status: "You are not authorized to perform this action",
+			})
+			return
+		}
+		log.Debug().Msgf("keycloak token is validated for app %s", task.App)
+		task.Validated = valid
+	} else if deployToken != "" && deployToken == env.config.DeployToken {
 		log.Debug().Msgf("deploy token is validated for app %s", task.App)
 		task.Validated = true
 	} else if deployToken != "" && deployToken != env.config.DeployToken {
