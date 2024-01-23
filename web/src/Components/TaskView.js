@@ -69,6 +69,30 @@ export default function TaskView() {
             });
     }, [id]);
 
+    useEffect(() => {
+        let intervalId;
+
+        const fetchTaskStatus = async () => {
+            console.log('Fetching task status...')
+            try {
+                const updatedTask = await fetchTask(id);
+                setTask(updatedTask);
+            } catch (error) {
+                setError('fetchTaskStatus', error.message);
+            }
+        };
+
+        if (task && task.status === 'in progress') {
+            intervalId = setInterval(fetchTaskStatus, 10000);
+        }
+
+        return () => {
+            if (intervalId) {
+                clearInterval(intervalId);
+            }
+        };
+    }, [task]);
+
     const userIsPrivileged = groups && privilegedGroups && groups.some(group => privilegedGroups.includes(group));
 
     const rollbackToVersion = async () => {
