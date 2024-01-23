@@ -9,7 +9,7 @@ builds:
     env:
       - CGO_ENABLED=0
     ldflags:
-      - -s -w -X server/router.version={{.Version}}
+      - -s -w -X github.com/shini4i/argo-watcher/cmd/argo-watcher/server.version={{.Version}}
     goos:
       - linux
     goarch:
