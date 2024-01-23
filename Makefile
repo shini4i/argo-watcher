@@ -24,7 +24,7 @@ test: mocks ## Run tests
 .PHONY: build
 build: docs ## Build the binaries
 	@echo "===> Building [$(CYAN)${VERSION}$(RESET)] version of [$(CYAN)argo-watcher$(RESET)] binary"
-	@CGO_ENABLED=0 go build -ldflags="-s -w -X server/router.version=${VERSION}" -o argo-watcher ./cmd/argo-watcher
+	@CGO_ENABLED=0 go build -ldflags="-s -w -X github.com/shini4i/argo-watcher/cmd/argo-watcher/server.version=${VERSION}" -o argo-watcher ./cmd/argo-watcher
 	@echo "===> Done"
 
 .PHONY: kind-upload
