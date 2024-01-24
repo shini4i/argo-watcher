@@ -1,4 +1,4 @@
-FROM alpine:3.18
+FROM alpine:3
 
 COPY argo-watcher /argo-watcher
 COPY web/build /static
