@@ -15,6 +15,7 @@ install-deps: ## Install dependencies
 	@echo "===> Installing dependencies"
 	@go install github.com/swaggo/swag/cmd/swag@latest
 	@go install go.uber.org/mock/mockgen@latest
+	@go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
 	@echo "===> Done"
 
 .PHONY: test
@@ -76,3 +77,8 @@ bootstrap-minimal: ## Bootstrap docker compose setup with mock and postgres only
 .PHONY: teardown
 teardown: ## Teardown docker compose setup
 	@docker compose down
+
+.PHONY: ci-migrate
+ci-migrate: ## Run migrations in CI
+	@echo "===> Running migrations"
+	@migrate -path db/migrations -database "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable" up

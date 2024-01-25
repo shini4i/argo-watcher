@@ -59,14 +59,16 @@ var (
 )
 
 func TestPostgresState_Add(t *testing.T) {
+	databaseConfig := config.DatabaseConfig{
+		Host:     os.Getenv("DB_HOST"),
+		Port:     5432,
+		Name:     os.Getenv("DB_NAME"),
+		User:     os.Getenv("DB_USER"),
+		Password: os.Getenv("DB_PASSWORD"),
+	}
 	testConfig := &config.ServerConfig{
-		StateType:        "postgres",
-		DbHost:           os.Getenv("DB_HOST"),
-		DbPort:           5432,
-		DbUser:           os.Getenv("DB_USER"),
-		DbName:           os.Getenv("DB_NAME"),
-		DbPassword:       os.Getenv("DB_PASSWORD"),
-		DbMigrationsPath: "../../../db/migrations",
+		StateType: "postgres",
+		Db:        databaseConfig,
 	}
 	err := postgresState.Connect(testConfig)
 	if err != nil {
@@ -188,12 +190,15 @@ func TestPostgresState_Check(t *testing.T) {
 }
 
 func TestGetDsn(t *testing.T) {
+	databaseConfig := config.DatabaseConfig{
+		Host:     "localhost",
+		Port:     5432,
+		Name:     "testdb",
+		User:     "admin",
+		Password: "password123",
+	}
 	testConfig := &config.ServerConfig{
-		DbHost:     "localhost",
-		DbPort:     5432,
-		DbUser:     "admin",
-		DbPassword: "password123",
-		DbName:     "testdb",
+		Db: databaseConfig,
 	}
 
 	expectedDsn := "host=localhost port=5432 user=admin password=password123 dbname=testdb sslmode=disable TimeZone=UTC"
