@@ -7,10 +7,23 @@ services:
       POSTGRES_USER: watcher
       POSTGRES_PASSWORD: watcher
       POSTGRES_DB: watcher
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U watcher" ]
+      interval: 30s
+      timeout: 30s
+      retries: 3
     volumes:
       - ./db/data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
+  migrations:
+    image: migrate/migrate:v4.17.0
+    command: -path=/migrations/ -database postgres://watcher:watcher@postgres:5432/watcher?sslmode=disable up
+    volumes:
+      - ./db/migrations:/migrations
+    depends_on:
+      postgres:
+        condition: service_healthy
   backend:
     image: golang:1.21-alpine3.18
     volumes:
@@ -29,8 +42,8 @@ services:
       DB_PASSWORD: watcher
       DB_MIGRATIONS_PATH: /app/db/migrations
     depends_on:
-      - postgres
-      - mock
+      migrations:
+        condition: service_completed_successfully
     ports:
       - "8080:8080"
   frontend:

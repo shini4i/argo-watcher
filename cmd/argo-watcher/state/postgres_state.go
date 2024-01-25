@@ -2,7 +2,6 @@ package state
 
 import (
 	"database/sql"
-	"errors"
 	"fmt"
 	"time"
 
@@ -15,10 +14,6 @@ import (
 
 	"github.com/avast/retry-go/v4"
 	_ "github.com/lib/pq"
-
-	"github.com/golang-migrate/migrate/v4"
-	migratePostgres "github.com/golang-migrate/migrate/v4/database/postgres"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/state/state_models"
@@ -37,41 +32,6 @@ func (state *PostgresState) Connect(serverConfig *config.ServerConfig) error {
 	} else {
 		state.orm = orm
 	}
-
-	// run migrations
-	if err := state.runMigrations(serverConfig.DbMigrationsPath); err != nil {
-		return fmt.Errorf("failed running migrations: %s", err.Error())
-	}
-
-	return nil
-}
-
-// Runs migrations
-// TODO: migrate to gorm supported migrations library - https://gorm.io/docs/migration.html#Atlas-Integration
-func (state *PostgresState) runMigrations(dbMigrationPath string) error {
-	migrationsPath := fmt.Sprintf("file://%s", dbMigrationPath)
-
-	connection, err := state.orm.DB()
-	if err != nil {
-		return err
-	}
-
-	driver, err := migratePostgres.WithInstance(connection, &migratePostgres.Config{})
-	if err != nil {
-		return err
-	}
-
-	migrations, err := migrate.NewWithDatabaseInstance(migrationsPath, "postgres", driver)
-	if err != nil {
-		return err
-	}
-
-	log.Debug().Msg("Running database migrations...")
-	if err := migrations.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		return err
-	}
-
-	log.Debug().Msg("Database schema is up to date.")
 	return nil
 }
 
@@ -235,7 +195,7 @@ func (state *PostgresState) doProcessPostgresObsoleteTasks() error {
 
 func getDsn(serverConfig *config.ServerConfig) string {
 	dsnTemplate := "host=%s port=%d user=%s password=%s dbname=%s sslmode=disable TimeZone=UTC"
-	return fmt.Sprintf(dsnTemplate, serverConfig.DbHost, serverConfig.DbPort, serverConfig.DbUser, serverConfig.DbPassword, serverConfig.DbName)
+	return fmt.Sprintf(dsnTemplate, serverConfig.Db.Host, serverConfig.Db.Port, serverConfig.Db.User, serverConfig.Db.Password, serverConfig.Db.Name)
 }
 
 func getOrmLogger(serverConfig *config.ServerConfig) *gorm.Config {

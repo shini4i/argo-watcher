@@ -44,6 +44,8 @@ make docs
 
 ## Back-End Development
 
+> The information below is needed only if you don't want to use docker-compose for some reason.
+
 To start developing argo-watcher you will need golang `1.21+`
 
 Start mock of the argo-cd server
@@ -75,6 +77,12 @@ Start database
 docker compose up postgres
 ```
 
+Run migrations
+
+```shell
+migrate -path file://db/migrations -database "postgresql://watcher:watcher@localhost:5432/watcher?sslmode=disable" up
+```
+
 Start server
 
 ```shell
@@ -83,7 +91,7 @@ cd cmd/argo-watcher
 # install dependencies
 go mod tidy
 # OR start argo-watcher (postgres)
-LOG_LEVEL=debug LOG_FORMAT=text ARGO_URL=http://localhost:8081 ARGO_TOKEN=example STATE_TYPE=postgres DB_USER=watcher DB_PASSWORD=watcher DB_NAME=watcher DB_MIGRATIONS_PATH=../../db/migrations go run . -server
+LOG_LEVEL=debug LOG_FORMAT=text ARGO_URL=http://localhost:8081 ARGO_TOKEN=example STATE_TYPE=postgres DB_USER=watcher DB_PASSWORD=watcher DB_NAME=watcher go run . -server
 ```
 
 #### Logs in simple text

@@ -19,6 +19,14 @@ type KeycloakConfig struct {
 	PrivilegedGroups        []string `env:"KEYCLOAK_PRIVILEGED_GROUPS" json:"privileged_groups,omitempty"`
 }
 
+type DatabaseConfig struct {
+	Host     string `env:"DB_HOST" json:"db_host,omitempty"`
+	Port     int    `env:"DB_PORT" json:"db_port,omitempty"`
+	Name     string `env:"DB_NAME" json:"db_name,omitempty"`
+	User     string `env:"DB_USER" json:"db_user,omitempty"`
+	Password string `env:"DB_PASSWORD" json:"-"`
+}
+
 type ServerConfig struct {
 	ArgoUrl           url.URL        `env:"ARGO_URL,required" json:"argo_cd_url"`
 	ArgoUrlAlias      string         `env:"ARGO_URL_ALIAS" json:"argo_cd_url_alias,omitempty"` // Used to generate App URL. Can be omitted if ArgoUrl is reachable from outside.
@@ -34,13 +42,8 @@ type ServerConfig struct {
 	LogFormat         string         `env:"LOG_FORMAT" envDefault:"json" json:"-"`
 	Host              string         `env:"HOST" envDefault:"0.0.0.0" json:"-"`
 	Port              string         `env:"PORT" envDefault:"8080" json:"-"`
-	DbHost            string         `env:"DB_HOST" json:"db_host,omitempty"`
-	DbPort            int            `env:"DB_PORT" json:"db_port,omitempty"`
-	DbName            string         `env:"DB_NAME" json:"db_name,omitempty"`
-	DbUser            string         `env:"DB_USER" json:"db_user,omitempty"`
-	DbPassword        string         `env:"DB_PASSWORD" json:"-"`
-	DbMigrationsPath  string         `env:"DB_MIGRATIONS_PATH" envDefault:"db/migrations" json:"-"`
 	DeployToken       string         `env:"ARGO_WATCHER_DEPLOY_TOKEN" json:"-"`
+	Db                DatabaseConfig `json:"db,omitempty"`
 	Keycloak          KeycloakConfig `json:"keycloak,omitempty"`
 }
 
