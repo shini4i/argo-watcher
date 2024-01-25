@@ -40,6 +40,9 @@ jobs:
       - name: Install project dependencies
         run: make install-deps mocks docs
 
+      - name: Run database migrations
+        run: make ci-migrate
+
       - name: Run tests
         env:
           DB_HOST: localhost
