@@ -64,11 +64,14 @@ func TestServerConfig_GetRetryAttempts(t *testing.T) {
 }
 
 func TestServerConfig_JSONExcludesSensitiveFields(t *testing.T) {
+	databaseConfig := DatabaseConfig{
+		Password: "db-password",
+	}
 	// Create a ServerConfig instance with some dummy data
 	config := &ServerConfig{
 		ArgoToken:   "secret-token",
-		DbPassword:  "db-password",
 		DeployToken: "deploy-token",
+		Db:          databaseConfig,
 	}
 
 	// Marshal the ServerConfig instance to JSON
