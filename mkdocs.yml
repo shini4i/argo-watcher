@@ -5,6 +5,11 @@ site_author: Vadim Gedz
 
 theme:
   name: 'material'
+  logo: 'assets/logo.png'
+  favicon: 'assets/favicon.ico'
+  features:
+    - navigation.instant
+    - navigation.instant.progress
 
 nav:
   - Home: 'index.md'
