@@ -1,6 +1,10 @@
+---
+hide:
+- navigation
+---
 # Keycloak integration
 
-## Keycloak
+## General information
 
 As a prerequisites, we need to have a fully configured realm. Keycloak configuration itself is out of scope of this documentation.
 

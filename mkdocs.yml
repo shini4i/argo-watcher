@@ -5,6 +5,12 @@ site_author: Vadim Gedz
 
 theme:
   name: 'material'
+  logo: 'assets/logo.png'
+  favicon: 'assets/favicon.ico'
+  features:
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.tabs
 
 nav:
   - Home: 'index.md'
@@ -16,3 +22,10 @@ nav:
 markdown_extensions:
   - pymdownx.tasklist:
       custom_checkbox: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - attr_list
+  - md_in_html
