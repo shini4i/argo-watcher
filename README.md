@@ -14,7 +14,6 @@ Enhancing Deployment Visibility with Argo CD Image Updater & Direct GitOps Repos
 <img src="https://raw.githubusercontent.com/shini4i/assets/main/src/argo-watcher/demo.png" alt="Showcase" height="441" width="620">
 
 **Figure 1:** Argo Watcher Web UI
-
 </div>
 
 ## Why use Argo Watcher
