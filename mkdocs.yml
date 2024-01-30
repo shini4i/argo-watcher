@@ -4,7 +4,7 @@ site_description: Documentation for Argo-Watcher project
 site_author: Vadim Gedz
 
 theme:
-  name: 'readthedocs'
+  name: 'material'
 
 nav:
   - Home: 'index.md'
@@ -12,3 +12,7 @@ nav:
   - Git Integration: 'git-integration.md'
   - Development: "development.md"
   - Keycloak: "keycloak.md"
+
+markdown_extensions:
+  - pymdownx.tasklist:
+      custom_checkbox: true
