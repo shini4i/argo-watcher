@@ -10,6 +10,7 @@ theme:
   features:
     - navigation.instant
     - navigation.instant.progress
+    - navigation.tabs
 
 nav:
   - Home: 'index.md'
@@ -21,3 +22,4 @@ nav:
 markdown_extensions:
   - pymdownx.tasklist:
       custom_checkbox: true
+  - pymdownx.superfences

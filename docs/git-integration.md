@@ -1,3 +1,7 @@
+---
+hide:
+- navigation
+---
 # git-integration
 
 ## General information

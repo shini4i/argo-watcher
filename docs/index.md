@@ -1,3 +1,7 @@
+---
+hide:
+- navigation
+---
 # argo-watcher
 
 <img src="https://raw.githubusercontent.com/shini4i/assets/main/src/argo-watcher/demo.png" alt="Showcase" height="441" width="620">
