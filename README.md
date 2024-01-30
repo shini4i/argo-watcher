@@ -12,6 +12,9 @@ Enhancing Deployment Visibility with Argo CD Image Updater & Direct GitOps Repos
 ![GitHub](https://img.shields.io/github/license/shini4i/argo-watcher)
 
 <img src="https://raw.githubusercontent.com/shini4i/assets/main/src/argo-watcher/demo.png" alt="Showcase" height="441" width="620">
+
+**Figure 1:** Argo Watcher Web UI
+
 </div>
 
 ## Why use Argo Watcher
@@ -40,7 +43,7 @@ This is just one the possible workflows that can be implemented with Argo Watche
 <div align="center">
 <img src="https://raw.githubusercontent.com/shini4i/assets/main/src/argo-watcher/simplified_diagram.png" alt="Showcase" height="540" width="540">
 
-**Figure 1:** This is a simplified diagram of the workflow described above.
+**Figure 2:** This is a simplified diagram of the workflow described above.
 </div>
 
 > :warning: In addition to pipeline logs, the whole process can be observed through the web UI.
