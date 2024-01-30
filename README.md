@@ -37,16 +37,13 @@ This is just one the possible workflows that can be implemented with Argo Watche
 4) **Deployment Monitoring**: Throughout the deployment process, Argo Watcher diligently monitors and reports the current status of the application, ensuring transparency and real-time tracking.
 5) **Pipeline Status Reporting**: The client concludes the process by returning an exit code that reflects the status of the deployment task. This code is instrumental in determining the success or failure of the pipeline, thus marking the completion of the deployment workflow.
 
-In addition to pipeline logs, the whole process can be observed through the web UI.
-
-A diagram below illustrates the workflow described above.
-
-<details>
-<summary>A simplified diagram</summary>
 <div align="center">
 <img src="https://raw.githubusercontent.com/shini4i/assets/main/src/argo-watcher/simplified_diagram.png" alt="Showcase" height="540" width="540">
+
+**Figure 1:** This is a simplified diagram of the workflow described above.
 </div>
-</details>
+
+> :warning: In addition to pipeline logs, the whole process can be observed through the web UI.
 
 ## Documentation
 
