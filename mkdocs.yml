@@ -17,6 +17,7 @@ theme:
     - navigation.instant.progress
     - navigation.tabs
     - search.suggest
+    - content.code.copy
 
 nav:
   - Home: 'index.md'
