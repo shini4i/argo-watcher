@@ -3,14 +3,21 @@ site_url: https://github.com/shini4i/argo-watcher
 site_description: Documentation for Argo-Watcher project
 site_author: Vadim Gedz
 
+repo_url: https://github.com/shini4i/argo-watcher
+repo_name: shini4i/argo-watcher
+
 theme:
   name: 'material'
   logo: 'assets/logo.png'
   favicon: 'assets/favicon.ico'
+  icon:
+    repo: fontawesome/brands/github
   features:
     - navigation.instant
     - navigation.instant.progress
     - navigation.tabs
+    - search.suggest
+    - content.code.copy
 
 nav:
   - Home: 'index.md'
@@ -29,3 +36,9 @@ markdown_extensions:
           format: !!python/name:pymdownx.superfences.fence_code_format
   - attr_list
   - md_in_html
+
+plugins:
+  - search
+  - git-committers:
+      repository: shini4i/argo-watcher
+      branch: main
