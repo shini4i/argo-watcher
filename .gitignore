@@ -31,3 +31,6 @@ dist/
 
 # generated docs
 site/
+
+# mkdocs cache
+.cache/
