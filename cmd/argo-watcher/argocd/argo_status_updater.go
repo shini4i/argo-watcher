@@ -131,36 +131,56 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 	mutex.Lock()
 
 	if app.IsManagedByWatcher() && task.Validated {
-		log.Debug().Str("id", task.Id).Msg("Application managed by watcher. Initiating git repo update.")
-
-		// simplest way to deal with potential git conflicts
-		// need to be replaced with a more sophisticated solution after PoC
-		err := retry.Do(
-			func() error {
-				if err := app.UpdateGitImageTag(&task); err != nil {
-					return err
-				}
-				return nil
-			},
-			retry.DelayType(retry.BackOffDelay),
-			retry.Attempts(5),
-			retry.OnRetry(func(n uint, err error) {
-				log.Warn().Str("id", task.Id).Msgf("Failed to update git repo. Error: %s, retrying...", err.Error())
-			}),
-			retry.LastErrorOnly(true),
-		)
-
-		mutex.Unlock()
-		if err != nil {
-			log.Error().Str("id", task.Id).Msgf("Failed to update git repo. Error: %s", err.Error())
-			return nil, err
-		}
+		err = updater.updateGitRepo(app, task, mutex)
 	} else {
 		mutex.Unlock()
 		log.Debug().Str("id", task.Id).Msg("Skipping git repo update: Application does not have the necessary annotations or token is missing.")
 	}
 
+	if err != nil {
+		return nil, err
+	}
+
 	// wait for application to get into deployed status or timeout
+	application, err = updater.waitRollout(task)
+
+	// return application and latest error
+	return application, err
+}
+
+func (updater *ArgoStatusUpdater) updateGitRepo(app *models.Application, task models.Task, mutex *sync.Mutex) error {
+	log.Debug().Str("id", task.Id).Msg("Application managed by watcher. Initiating git repo update.")
+
+	// simplest way to deal with potential git conflicts
+	// need to be replaced with a more sophisticated solution after PoC
+	err := retry.Do(
+		func() error {
+			if err := app.UpdateGitImageTag(&task); err != nil {
+				return err
+			}
+			return nil
+		},
+		retry.DelayType(retry.BackOffDelay),
+		retry.Attempts(5),
+		retry.OnRetry(func(n uint, err error) {
+			log.Warn().Str("id", task.Id).Msgf("Failed to update git repo. Error: %s, retrying...", err.Error())
+		}),
+		retry.LastErrorOnly(true),
+	)
+
+	mutex.Unlock()
+	if err != nil {
+		log.Error().Str("id", task.Id).Msgf("Failed to update git repo. Error: %s", err.Error())
+		return err
+	}
+
+	return nil
+}
+
+func (updater *ArgoStatusUpdater) waitRollout(task models.Task) (*models.Application, error) {
+	var application *models.Application
+	var err error
+
 	log.Debug().Str("id", task.Id).Msg("Waiting for rollout")
 	_ = retry.Do(func() error {
 		application, err = updater.argo.api.GetApplication(task.App)
