@@ -96,15 +96,15 @@ func (app *Application) GetRolloutStatus(rolloutImages []string, registryProxyUr
 		return ArgoRolloutAppNotSynced
 	}
 
-	// verify app health status
-	if app.Status.Health.Status != "Healthy" {
-		return ArgoRolloutAppNotHealthy
-	}
-
 	// an optional check that helps when we are dealing with Rollout object that can be in a suspended state
 	// during the rollout process
 	if app.Status.Health.Status == "Suspended" && app.Status.Sync.Status == "Synced" && acceptSuspended {
 		return ArgoRolloutAppSuccess
+	}
+
+	// verify app health status
+	if app.Status.Health.Status != "Healthy" {
+		return ArgoRolloutAppNotHealthy
 	}
 
 	// all good
