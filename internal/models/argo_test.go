@@ -71,7 +71,7 @@ func TestArgoRolloutStatus(t *testing.T) {
 		images := []string{"ghcr.io/shini4i/argo-watcher:version2"}
 		registryProxyUrl := ""
 		// test status
-		assert.Equal(t, ArgoRolloutAppNotAvailable, application.GetRolloutStatus(images, registryProxyUrl))
+		assert.Equal(t, ArgoRolloutAppNotAvailable, application.GetRolloutStatus(images, registryProxyUrl, false))
 	})
 
 	t.Run("Rollout status - ArgoRolloutAppNotSynced", func(t *testing.T) {
@@ -83,7 +83,7 @@ func TestArgoRolloutStatus(t *testing.T) {
 		images := []string{"ghcr.io/shini4i/argo-watcher:version1"}
 		registryProxyUrl := ""
 		// test status
-		assert.Equal(t, ArgoRolloutAppNotSynced, application.GetRolloutStatus(images, registryProxyUrl))
+		assert.Equal(t, ArgoRolloutAppNotSynced, application.GetRolloutStatus(images, registryProxyUrl, false))
 	})
 
 	t.Run("Rollout status - ArgoRolloutAppNotHealthy", func(t *testing.T) {
@@ -96,7 +96,7 @@ func TestArgoRolloutStatus(t *testing.T) {
 		images := []string{"ghcr.io/shini4i/argo-watcher:version1"}
 		registryProxyUrl := ""
 		// test status
-		assert.Equal(t, ArgoRolloutAppNotHealthy, application.GetRolloutStatus(images, registryProxyUrl))
+		assert.Equal(t, ArgoRolloutAppNotHealthy, application.GetRolloutStatus(images, registryProxyUrl, false))
 	})
 
 	t.Run("Rollout status - ArgoRolloutAppSuccess", func(t *testing.T) {
@@ -109,7 +109,7 @@ func TestArgoRolloutStatus(t *testing.T) {
 		images := []string{"ghcr.io/shini4i/argo-watcher:version1"}
 		registryProxyUrl := ""
 		// test status
-		assert.Equal(t, ArgoRolloutAppSuccess, application.GetRolloutStatus(images, registryProxyUrl))
+		assert.Equal(t, ArgoRolloutAppSuccess, application.GetRolloutStatus(images, registryProxyUrl, false))
 	})
 
 	t.Run("Rollout status - ArgoRolloutAppDegraded", func(t *testing.T) {
@@ -122,7 +122,29 @@ func TestArgoRolloutStatus(t *testing.T) {
 		images := []string{"ghcr.io/shini4i/argo-watcher:version1"}
 		registryProxyUrl := ""
 		// test status
-		assert.Equal(t, ArgoRolloutAppDegraded, application.GetRolloutStatus(images, registryProxyUrl))
+		assert.Equal(t, ArgoRolloutAppDegraded, application.GetRolloutStatus(images, registryProxyUrl, false))
+	})
+
+	t.Run("acceptSuspended is true", func(t *testing.T) {
+		application := Application{}
+		application.Status.Health.Status = "Suspended"
+		application.Status.Sync.Status = "Synced"
+
+		status := application.GetRolloutStatus([]string{}, "", true)
+		if status != ArgoRolloutAppSuccess {
+			t.Errorf("Expected status to be %s, but got %s", ArgoRolloutAppSuccess, status)
+		}
+	})
+
+	t.Run("acceptSuspended is false", func(t *testing.T) {
+		application := Application{}
+		application.Status.Health.Status = "Suspended"
+		application.Status.Sync.Status = "Synced"
+
+		status := application.GetRolloutStatus([]string{}, "", false)
+		if status == ArgoRolloutAppSuccess {
+			t.Errorf("Expected status to not be %s", ArgoRolloutAppSuccess)
+		}
 	})
 }
 

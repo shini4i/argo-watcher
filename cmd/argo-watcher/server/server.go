@@ -69,7 +69,12 @@ func RunServer() {
 
 	// initialize argo updater
 	updater := &argocd.ArgoStatusUpdater{}
-	updater.Init(*argo, serverConfig.GetRetryAttempts(), argocd.ArgoSyncRetryDelay, serverConfig.RegistryProxyUrl)
+	updater.Init(*argo,
+		serverConfig.GetRetryAttempts(),
+		argocd.ArgoSyncRetryDelay,
+		serverConfig.RegistryProxyUrl,
+		serverConfig.AcceptSuspendedApp,
+	)
 
 	// create environment
 	env := &Env{config: serverConfig, argo: argo, metrics: metrics, updater: updater}

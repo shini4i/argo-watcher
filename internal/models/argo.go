@@ -78,7 +78,7 @@ type Application struct {
 }
 
 // GetRolloutStatus calculates application rollout status depending on the expected images and proxy configuration.
-func (app *Application) GetRolloutStatus(rolloutImages []string, registryProxyUrl string) string {
+func (app *Application) GetRolloutStatus(rolloutImages []string, registryProxyUrl string, acceptSuspended bool) string {
 	// check if all the images rolled out
 	for _, image := range rolloutImages {
 		if !helpers.ImagesContains(app.Status.Summary.Images, image, registryProxyUrl) {
@@ -94,6 +94,12 @@ func (app *Application) GetRolloutStatus(rolloutImages []string, registryProxyUr
 	// verify app sync status
 	if app.Status.Sync.Status != "Synced" {
 		return ArgoRolloutAppNotSynced
+	}
+
+	// an optional check that helps when we are dealing with Rollout object that can be in a suspended state
+	// during the rollout process
+	if app.Status.Health.Status == "Suspended" && app.Status.Sync.Status == "Synced" && acceptSuspended {
+		return ArgoRolloutAppSuccess
 	}
 
 	// verify app health status
