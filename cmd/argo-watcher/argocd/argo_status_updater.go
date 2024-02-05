@@ -33,9 +33,10 @@ type ArgoStatusUpdater struct {
 	registryProxyUrl string
 	retryOptions     []retry.Option
 	mutex            MutexMap
+	acceptSuspended  bool
 }
 
-func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, retryDelay time.Duration, registryProxyUrl string) {
+func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, retryDelay time.Duration, registryProxyUrl string, acceptSuspended bool) {
 	updater.argo = argo
 	updater.registryProxyUrl = registryProxyUrl
 	updater.retryOptions = []retry.Option{
@@ -44,6 +45,7 @@ func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, retryDelay
 		retry.Delay(retryDelay),
 		retry.LastErrorOnly(true),
 	}
+	updater.acceptSuspended = acceptSuspended
 }
 
 func (updater *ArgoStatusUpdater) collectInitialAppStatus(task *models.Task) error {
@@ -52,7 +54,7 @@ func (updater *ArgoStatusUpdater) collectInitialAppStatus(task *models.Task) err
 		return err
 	}
 
-	status := application.GetRolloutStatus(task.ListImages(), updater.registryProxyUrl)
+	status := application.GetRolloutStatus(task.ListImages(), updater.registryProxyUrl, updater.acceptSuspended)
 
 	// sort images to avoid hash mismatch
 	slices.Sort(application.Status.Summary.Images)
@@ -79,7 +81,7 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 	}
 
 	// get application status
-	status := application.GetRolloutStatus(task.ListImages(), updater.registryProxyUrl)
+	status := application.GetRolloutStatus(task.ListImages(), updater.registryProxyUrl, updater.acceptSuspended)
 	if status == models.ArgoRolloutAppSuccess {
 		log.Info().Str("id", task.Id).Msg("App is running on the expected version.")
 		// deployment success
@@ -174,7 +176,7 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 			return err
 		}
 
-		status := application.GetRolloutStatus(task.ListImages(), updater.registryProxyUrl)
+		status := application.GetRolloutStatus(task.ListImages(), updater.registryProxyUrl, updater.acceptSuspended)
 
 		switch status {
 		case models.ArgoRolloutAppDegraded:
