@@ -29,7 +29,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		updater.Init(*argo, 1, 0*time.Second, "test-registry")
+		updater.Init(*argo, 1, 0*time.Second, "test-registry", false)
 
 		// prepare test data
 		task := models.Task{
@@ -70,7 +70,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		updater.Init(*argo, 3, 0*time.Second, "test-registry")
+		updater.Init(*argo, 3, 0*time.Second, "test-registry", false)
 
 		// prepare test data
 		task := models.Task{
@@ -118,7 +118,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		updater.Init(*argo, 1, 0*time.Second, "test-registry")
+		updater.Init(*argo, 1, 0*time.Second, "test-registry", false)
 
 		// prepare test data
 		task := models.Task{
@@ -159,7 +159,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		updater.Init(*argo, 1, 0*time.Second, "")
+		updater.Init(*argo, 1, 0*time.Second, "", false)
 
 		// prepare test data
 		task := models.Task{
@@ -201,7 +201,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		updater.Init(*argo, 1, 0*time.Second, "test-registry")
+		updater.Init(*argo, 1, 0*time.Second, "test-registry", false)
 
 		// prepare test data
 		task := models.Task{
@@ -230,7 +230,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		updater.Init(*argo, 1, 0*time.Second, "test-registry")
+		updater.Init(*argo, 1, 0*time.Second, "test-registry", false)
 
 		// prepare test data
 		task := models.Task{
@@ -259,7 +259,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		updater.Init(*argo, 1, 0*time.Second, "test-registry")
+		updater.Init(*argo, 1, 0*time.Second, "test-registry", false)
 
 		// prepare test data
 		task := models.Task{
@@ -288,7 +288,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		updater.Init(*argo, 1, 0*time.Second, "test-registry")
+		updater.Init(*argo, 1, 0*time.Second, "test-registry", false)
 
 		// prepare test data
 		task := models.Task{
@@ -328,7 +328,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		updater.Init(*argo, 1, 0*time.Second, "test-registry")
+		updater.Init(*argo, 1, 0*time.Second, "test-registry", false)
 
 		// prepare test data
 		task := models.Task{
@@ -372,7 +372,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		updater.Init(*argo, 1, 0*time.Second, "test-registry")
+		updater.Init(*argo, 1, 0*time.Second, "test-registry", false)
 
 		// prepare test data
 		task := models.Task{
