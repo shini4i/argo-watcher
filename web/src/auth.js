@@ -10,6 +10,9 @@ export function useAuth() {
     const [groups, setGroups] = useState([]);
     const [privilegedGroups, setPrivilegedGroups] = useState([]);
     const [keycloakToken, setKeycloakToken] = useState(null);
+    const [restrictedMode, setRestrictedMode] = useState(false);
+    const [readOnlyGroups, setReadOnlyGroups] = useState([]);
+    const [isAuthorized, setIsAuthorized] = useState(null);
 
     useEffect(() => {
         fetchConfig().then(config => {
@@ -27,7 +30,13 @@ export function useAuth() {
                             setEmail(keycloak.tokenParsed.email);
                             setGroups(keycloak.tokenParsed.groups);
                             setPrivilegedGroups(config.keycloak.privileged_groups);
+                            setRestrictedMode(config.keycloak.restricted_mode);
+                            setReadOnlyGroups(config.keycloak.read_only_groups);
+
+                            setIsAuthorized(groups.some(group => readOnlyGroups.includes(group) || privilegedGroups.includes(group)));
                             setKeycloakToken(keycloak.token);
+
+                            console.log(isAuthorized);
 
                             setInterval(() => {
                                 keycloak.updateToken(20)
@@ -55,5 +64,5 @@ export function useAuth() {
         });
     }, []);
 
-    return { authenticated, email, groups, privilegedGroups, keycloakToken };
+    return { authenticated, email, groups, privilegedGroups, keycloakToken, restrictedMode, isAuthorized };
 }

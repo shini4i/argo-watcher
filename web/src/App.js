@@ -3,10 +3,11 @@ import RecentTasks from './Components/RecentTasks';
 import HistoryTasks from './Components/HistoryTasks';
 import Layout from './Layout';
 import Page404 from './Page404';
-import {createTheme, lighten, ThemeProvider, CircularProgress, Box} from '@mui/material';
+import {Box, CircularProgress, createTheme, lighten, ThemeProvider} from '@mui/material';
 import {ErrorProvider} from './ErrorContext';
 import TaskView from './Components/TaskView';
-import {useAuth, AuthContext} from './auth';
+import {AuthContext, useAuth} from './auth';
+import Page401 from "./Page401";
 
 const theme = createTheme({
     palette: {
@@ -35,27 +36,33 @@ function App() {
     const auth = useAuth();
     if (auth.authenticated === null) return (
         <Box display="flex" justifyContent="center" alignItems="center" height="100vh">
-            <CircularProgress />
+            <CircularProgress/>
         </Box>
     );
-    else if (auth.authenticated) return (
-        <AuthContext.Provider value={auth}>
-            <ThemeProvider theme={theme}>
-                <ErrorProvider>
-                    <BrowserRouter>
-                        <Routes>
-                            <Route path="/" element={<Layout/>}>
-                                <Route index element={<RecentTasks/>}/>
-                                <Route path="/history" element={<HistoryTasks/>}/>
-                                <Route path="/task/:id" element={<TaskView/>}/>
-                            </Route>
-                            <Route path="*" element={<Page404/>}/>
-                        </Routes>
-                    </BrowserRouter>
-                </ErrorProvider>
-            </ThemeProvider>
-        </AuthContext.Provider>
-    );
+    else if (auth.authenticated) {
+        if (auth.restrictedMode && !auth.isAuthorized) {
+            // If restricted mode is enabled and the user is not authorized, return Page401
+            return <Page401/>;
+        }
+        return (
+            <AuthContext.Provider value={auth}>
+                <ThemeProvider theme={theme}>
+                    <ErrorProvider>
+                        <BrowserRouter>
+                            <Routes>
+                                <Route path="/" element={<Layout/>}>
+                                    <Route index element={<RecentTasks/>}/>
+                                    <Route path="/history" element={<HistoryTasks/>}/>
+                                    <Route path="/task/:id" element={<TaskView/>}/>
+                                </Route>
+                                <Route path="*" element={<Page404/>}/>
+                            </Routes>
+                        </BrowserRouter>
+                    </ErrorProvider>
+                </ThemeProvider>
+            </AuthContext.Provider>
+        );
+    }
 }
 
 export default App;

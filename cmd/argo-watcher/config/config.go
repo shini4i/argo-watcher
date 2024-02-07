@@ -16,7 +16,9 @@ type KeycloakConfig struct {
 	Realm                   string   `env:"KEYCLOAK_REALM" json:"realm,omitempty"`
 	ClientId                string   `env:"KEYCLOAK_CLIENT_ID" json:"client_id,omitempty"`
 	TokenValidationInterval int      `env:"KEYCLOAK_TOKEN_VALIDATION_INTERVAL" envDefault:"10000" json:"token_validation_interval"`
+	RestrictedMode          bool     `env:"KEYCLOAK_RESTRICTED_MODE" envDefault:"false" json:"restricted_mode"` // If true, we will restrict access to the frontend to users in the ReadOnly groups
 	PrivilegedGroups        []string `env:"KEYCLOAK_PRIVILEGED_GROUPS" json:"privileged_groups,omitempty"`
+	ReadOnlyGroups          []string `env:"KEYCLOAK_READ_ONLY_GROUPS" json:"read_only_groups,omitempty"`
 }
 
 type DatabaseConfig struct {
