@@ -37,6 +37,8 @@ type Env struct {
 	metrics *prometheus.Metrics
 	// auth service
 	auth auth.ExternalAuthService
+	// deploy lock
+	deployLockSet bool
 }
 
 // CreateRouter initialize router.
@@ -67,6 +69,9 @@ func (env *Env) CreateRouter() *gin.Engine {
 		v1.GET("/apps", env.getApps)
 		v1.GET("/version", env.getVersion)
 		v1.GET("/config", env.getConfig)
+		v1.POST("/deploy-lock", env.SetDeployLock)
+		v1.DELETE("/deploy-lock", env.ReleaseDeployLock)
+		v1.GET("/deploy-lock", env.isDeployLockSet)
 	}
 
 	return router
@@ -106,16 +111,27 @@ func (env *Env) getVersion(c *gin.Context) {
 // @Produce json
 // @Param task body models.Task true "Task"
 // @Success 202 {object} models.TaskStatus
+// @Failure 406 {object} models.TaskStatus
 // @Router /api/v1/tasks [post].
 func (env *Env) addTask(c *gin.Context) {
 	var task models.Task
 
 	err := c.ShouldBindJSON(&task)
 	if err != nil {
-		log.Error().Msgf("Couldn't process new task. Got the following error: %s", err)
+		log.Error().Msgf("couldn't process new task, got the following error: %s", err)
 		c.JSON(http.StatusNotAcceptable, models.TaskStatus{
 			Status: "invalid payload",
 			Error:  err.Error(),
+		})
+		return
+	}
+
+	// we need to handle cases when deploy lock is set either manually or by cron
+	if env.deployLockSet {
+		log.Warn().Msgf("deploy lock is set, rejecting the task")
+		c.JSON(http.StatusNotAcceptable, models.TaskStatus{
+			Status: "rejected",
+			Error:  "deployment is not allowed at the moment",
 		})
 		return
 	}
@@ -264,4 +280,36 @@ func (env *Env) healthz(c *gin.Context) {
 // @Router /api/v1/config [get].
 func (env *Env) getConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, env.config)
+}
+
+// SetDeployLock godoc
+// @Summary Set deploy lock
+// @Description Set deploy lock
+// @Tags frontend
+// @Success 200 {string} string
+// @Router /api/v1/deploy-lock [post].
+func (env *Env) SetDeployLock(c *gin.Context) {
+	env.deployLockSet = true
+	c.JSON(http.StatusOK, "deploy lock is set")
+}
+
+// ReleaseDeployLock godoc
+// @Summary Release deploy lock
+// @Description Release deploy lock
+// @Tags frontend
+// @Success 200 {string} string
+// @Router /api/v1/deploy-lock [delete].
+func (env *Env) ReleaseDeployLock(c *gin.Context) {
+	env.deployLockSet = false
+	c.JSON(http.StatusOK, "deploy lock is released")
+}
+
+// isDeployLockSet godoc
+// @Summary Check if deploy lock is set
+// @Description Check if deploy lock is set
+// @Tags frontend
+// @Success 200 {boolean} boolean
+// @Router /api/v1/deploy-lock [get].
+func (env *Env) isDeployLockSet(c *gin.Context) {
+	c.JSON(http.StatusOK, env.deployLockSet)
 }

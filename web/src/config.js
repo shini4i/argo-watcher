@@ -7,3 +7,8 @@ export async function fetchConfig() {
     }
     return config;
 }
+
+export async function fetchDeployLock() {
+    const response = await fetch('/api/v1/deploy-lock');
+    return await response.json();
+}
