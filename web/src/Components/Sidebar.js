@@ -14,6 +14,7 @@ import {
     TableRow,
     Typography
 } from '@mui/material';
+import Switch from '@mui/material/Switch';
 import {fetchConfig, releaseDeployLock, setDeployLock} from '../config';
 
 function Sidebar({open, onClose}) {
@@ -21,15 +22,17 @@ function Sidebar({open, onClose}) {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(null);
 
-    const handleReleaseLock = async () => {
-        await releaseDeployLock();
-        onClose();
-    };
+    const [isDeployLockSet, setIsDeployLockSet] = useState(false);
 
-    const handleSetLock = async () => {
-        await setDeployLock();
-        onClose();
-    }
+    const toggleDeployLock = async () => {
+        if (isDeployLockSet) {
+            await releaseDeployLock();
+            setIsDeployLockSet(false);
+        } else {
+            await setDeployLock();
+            setIsDeployLockSet(true);
+        }
+    };
 
     useEffect(() => {
         fetchConfig()
@@ -112,29 +115,26 @@ function Sidebar({open, onClose}) {
     };
 
     return (
-        <Drawer anchor="right" open={open} onClose={onClose} sx={{ '& .MuiDrawer-paper': { width: '350px' } }}>
-            <Box p={2} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: '1 1 auto' }}>
+        <Drawer anchor="right" open={open} onClose={onClose} sx={{'& .MuiDrawer-paper': {width: '350px'}}}>
+            <Box p={2} sx={{display: 'flex', flexDirection: 'column', alignItems: 'center', flex: '1 1 auto'}}>
                 <Typography variant="h5" gutterBottom>
                     Config Data
                 </Typography>
                 {renderContent()}
             </Box>
-            <Box sx={{ borderTop: '1px solid gray', paddingTop: '20px', marginBottom: '20px' }}>
-                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-around', gap: 2 }}>
-                    <Typography variant="h6" gutterBottom>
-                        Deployment Lock
+            <Paper elevation={3} sx={{margin: 2, padding: 2}}>
+                <Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
+                    <Typography variant="body1">
+                        Lockdown Mode
                     </Typography>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-around', gap: 2 }}>
-                        <Button onClick={handleSetLock} variant="contained" color="primary" size="medium" sx={{ width: '100px', height: '40px' }}>
-                            Lock
-                        </Button>
-                        <Button onClick={handleReleaseLock} variant="contained" color="primary" size="medium" sx={{ width: '100px', height: '40px' }}>
-                            Unlock
-                        </Button>
-                    </Box>
+                    <Switch
+                        checked={isDeployLockSet}
+                        onChange={toggleDeployLock}
+                        color="primary"
+                    />
                 </Box>
-            </Box>
-            <Box p={2} sx={{ borderTop: '1px solid gray' }}>
+            </Paper>
+            <Box p={2} sx={{borderTop: '1px solid gray'}}>
                 <Typography variant="body2" color="textSecondary" align="center">
                     © {new Date().getFullYear()} Vadim Gedz
                 </Typography>
