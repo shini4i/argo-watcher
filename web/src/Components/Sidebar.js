@@ -1,12 +1,35 @@
-import React, { useEffect, useState } from 'react';
+import React, {useEffect, useState} from 'react';
 import PropTypes from 'prop-types';
-import { Drawer, Box, Typography, TableContainer, Table, TableHead, TableRow, TableCell, TableBody, Paper, CircularProgress, Button } from '@mui/material';
-import { fetchConfig } from '../config';
+import {
+    Box,
+    Button,
+    CircularProgress,
+    Drawer,
+    Paper,
+    Table,
+    TableBody,
+    TableCell,
+    TableContainer,
+    TableHead,
+    TableRow,
+    Typography
+} from '@mui/material';
+import {fetchConfig, releaseDeployLock, setDeployLock} from '../config';
 
-function Sidebar({ open, onClose }) {
+function Sidebar({open, onClose}) {
     const [configData, setConfigData] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(null);
+
+    const handleReleaseLock = async () => {
+        await releaseDeployLock();
+        onClose();
+    };
+
+    const handleSetLock = async () => {
+        await setDeployLock();
+        onClose();
+    }
 
     useEffect(() => {
         fetchConfig()
@@ -29,13 +52,13 @@ function Sidebar({ open, onClose }) {
             return `${value.Scheme}://${value.Host}${value.Path}`;
         } else if (value && typeof value === 'object' && value.constructor === Object) {
             return (
-                <Box sx={{ maxHeight: '100px', overflow: 'auto', whiteSpace: 'nowrap' }}>
+                <Box sx={{maxHeight: '100px', overflow: 'auto', whiteSpace: 'nowrap'}}>
                     {JSON.stringify(value, null, 2)}
                 </Box>
             );
         }
         return (
-            <Box sx={{ maxHeight: '100px', overflow: 'auto', whiteSpace: 'nowrap' }}>
+            <Box sx={{maxHeight: '100px', overflow: 'auto', whiteSpace: 'nowrap'}}>
                 {value.toString()}
             </Box>
         );
@@ -44,8 +67,8 @@ function Sidebar({ open, onClose }) {
     const renderContent = () => {
         if (isLoading) {
             return (
-                <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', p: 2 }}>
-                    <CircularProgress />
+                <Box sx={{display: 'flex', justifyContent: 'center', alignItems: 'center', p: 2}}>
+                    <CircularProgress/>
                     <Typography ml={2}>Loading...</Typography>
                 </Box>
             );
@@ -64,7 +87,7 @@ function Sidebar({ open, onClose }) {
                             </TableHead>
                             <TableBody>
                                 {Object.entries(configData).map(([key, value]) => (
-                                    <TableRow key={key} sx={{ '&:nth-of-type(odd)': { backgroundColor: 'action.hover' } }}>
+                                    <TableRow key={key} sx={{'&:nth-of-type(odd)': {backgroundColor: 'action.hover'}}}>
                                         <TableCell component="th" scope="row">
                                             {key}
                                         </TableCell>
@@ -76,7 +99,7 @@ function Sidebar({ open, onClose }) {
                             </TableBody>
                         </Table>
                     </TableContainer>
-                    <Box sx={{ display: 'flex', justifyContent: 'center', marginTop: '20px' }}>
+                    <Box sx={{display: 'flex', justifyContent: 'center', marginTop: '20px'}}>
                         <Button variant="contained" color="primary" onClick={handleCopy}>
                             Copy JSON
                         </Button>
@@ -95,6 +118,21 @@ function Sidebar({ open, onClose }) {
                     Config Data
                 </Typography>
                 {renderContent()}
+            </Box>
+            <Box sx={{ borderTop: '1px solid gray', paddingTop: '20px', marginBottom: '20px' }}>
+                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-around', gap: 2 }}>
+                    <Typography variant="h6" gutterBottom>
+                        Deployment Lock
+                    </Typography>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-around', gap: 2 }}>
+                        <Button onClick={handleSetLock} variant="contained" color="primary" size="medium" sx={{ width: '100px', height: '40px' }}>
+                            Lock
+                        </Button>
+                        <Button onClick={handleReleaseLock} variant="contained" color="primary" size="medium" sx={{ width: '100px', height: '40px' }}>
+                            Unlock
+                        </Button>
+                    </Box>
+                </Box>
             </Box>
             <Box p={2} sx={{ borderTop: '1px solid gray' }}>
                 <Typography variant="body2" color="textSecondary" align="center">

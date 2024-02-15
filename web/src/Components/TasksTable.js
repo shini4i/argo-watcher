@@ -218,7 +218,7 @@ function TasksTable({
 
     useEffect(() => {
         checkDeployLock();
-        const intervalId = setInterval(checkDeployLock, 15000); // check every 15 seconds
+        const intervalId = setInterval(checkDeployLock, 5000); // check every 5 seconds
 
         return () => clearInterval(intervalId);
     }, []);
