@@ -309,6 +309,14 @@ func (env *Env) SetDeployLock(c *gin.Context) {
 		}
 	}
 
+	if env.config.Keycloak.Url != "" && keycloakToken == "" {
+		log.Error().Msgf("keycloak integration is enabled, but no token is provided")
+		c.JSON(http.StatusUnauthorized, models.TaskStatus{
+			Status: "You are not authorized to perform this action",
+		})
+		return
+	}
+
 	env.deployLockSet = true
 
 	log.Debug().Msg("deploy lock is set")
@@ -340,6 +348,14 @@ func (env *Env) ReleaseDeployLock(c *gin.Context) {
 			})
 			return
 		}
+	}
+
+	if env.config.Keycloak.Url != "" && keycloakToken == "" {
+		log.Error().Msgf("keycloak integration is enabled, but no token is provided")
+		c.JSON(http.StatusUnauthorized, models.TaskStatus{
+			Status: "You are not authorized to perform this action",
+		})
+		return
 	}
 
 	env.deployLockSet = false
