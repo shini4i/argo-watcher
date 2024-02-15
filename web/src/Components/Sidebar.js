@@ -15,7 +15,7 @@ import {
     Typography
 } from '@mui/material';
 import Switch from '@mui/material/Switch';
-import {fetchConfig, releaseDeployLock, setDeployLock} from '../config';
+import {fetchConfig, fetchDeployLock, releaseDeployLock, setDeployLock} from '../config';
 
 function Sidebar({open, onClose}) {
     const [configData, setConfigData] = useState(null);
@@ -44,6 +44,14 @@ function Sidebar({open, onClose}) {
                 setError(error.message);
                 setIsLoading(false);
             });
+
+        fetchDeployLock()
+            .then((data) => {
+                setIsDeployLockSet(data);
+            })
+            .catch((error) => {
+                setError(error.message);
+            })
     }, []);
 
     const handleCopy = () => {
