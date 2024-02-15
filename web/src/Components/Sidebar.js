@@ -1,4 +1,4 @@
-import React, {useEffect, useState} from 'react';
+import React, {useContext, useEffect, useState} from 'react';
 import PropTypes from 'prop-types';
 import {
     Box,
@@ -16,20 +16,23 @@ import {
 } from '@mui/material';
 import Switch from '@mui/material/Switch';
 import {fetchConfig, fetchDeployLock, releaseDeployLock, setDeployLock} from '../config';
+import { AuthContext } from '../auth';
 
 function Sidebar({open, onClose}) {
     const [configData, setConfigData] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(null);
 
+    const { authenticated, keycloakToken } = useContext(AuthContext);
     const [isDeployLockSet, setIsDeployLockSet] = useState(false);
+
 
     const toggleDeployLock = async () => {
         if (isDeployLockSet) {
-            await releaseDeployLock();
+            await releaseDeployLock(authenticated ? keycloakToken : null);
             setIsDeployLockSet(false);
         } else {
-            await setDeployLock();
+            await setDeployLock(authenticated ? keycloakToken : null);
             setIsDeployLockSet(true);
         }
     };

@@ -289,7 +289,29 @@ func (env *Env) getConfig(c *gin.Context) {
 // @Success 200 {string} string
 // @Router /api/v1/deploy-lock [post].
 func (env *Env) SetDeployLock(c *gin.Context) {
+	keycloakToken := c.GetHeader("Authorization")
+
+	if keycloakToken != "" {
+		valid, err := env.auth.Validate(keycloakToken)
+		if err != nil {
+			log.Error().Msgf("couldn't validate keycloak token, got the following error: %s", err)
+			c.JSON(http.StatusUnauthorized, models.TaskStatus{
+				Status: "You are not authorized to perform this action",
+			})
+			return
+		}
+		if !valid {
+			log.Error().Msgf("couldn't validate keycloak token, got the following error: %s", err)
+			c.JSON(http.StatusUnauthorized, models.TaskStatus{
+				Status: "You are not authorized to perform this action",
+			})
+			return
+		}
+	}
+
 	env.deployLockSet = true
+
+	log.Debug().Msg("deploy lock is set")
 	c.JSON(http.StatusOK, "deploy lock is set")
 }
 
@@ -300,7 +322,29 @@ func (env *Env) SetDeployLock(c *gin.Context) {
 // @Success 200 {string} string
 // @Router /api/v1/deploy-lock [delete].
 func (env *Env) ReleaseDeployLock(c *gin.Context) {
+	keycloakToken := c.GetHeader("Authorization")
+
+	if keycloakToken != "" {
+		valid, err := env.auth.Validate(keycloakToken)
+		if err != nil {
+			log.Error().Msgf("couldn't validate keycloak token, got the following error: %s", err)
+			c.JSON(http.StatusUnauthorized, models.TaskStatus{
+				Status: "You are not authorized to perform this action",
+			})
+			return
+		}
+		if !valid {
+			log.Error().Msgf("couldn't validate keycloak token, got the following error: %s", err)
+			c.JSON(http.StatusUnauthorized, models.TaskStatus{
+				Status: "You are not authorized to perform this action",
+			})
+			return
+		}
+	}
+
 	env.deployLockSet = false
+
+	log.Debug().Msg("deploy lock is released")
 	c.JSON(http.StatusOK, "deploy lock is released")
 }
 
