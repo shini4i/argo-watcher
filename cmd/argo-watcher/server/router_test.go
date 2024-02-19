@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
+
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 )
@@ -32,8 +34,10 @@ func TestGetVersion(t *testing.T) {
 func TestDeployLock(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
+	dummyConfig := &config.ServerConfig{}
+
 	router := gin.Default()
-	env := &Env{}
+	env := &Env{config: dummyConfig}
 
 	t.Run("SetDeployLock", func(t *testing.T) {
 		router.POST("/api/v1/deploy-lock", env.SetDeployLock)
