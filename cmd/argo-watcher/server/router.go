@@ -26,6 +26,11 @@ import (
 
 var version = "local"
 
+const (
+	deployLockEndpoint = "/deploy-lock"
+	unathorizedMessage = "You are not authorized to perform this action"
+)
+
 // Env reference: https://www.alexedwards.net/blog/organising-database-access
 type Env struct {
 	// environment configurations
@@ -70,9 +75,9 @@ func (env *Env) CreateRouter() *gin.Engine {
 		v1.GET("/apps", env.getApps)
 		v1.GET("/version", env.getVersion)
 		v1.GET("/config", env.getConfig)
-		v1.POST("/deploy-lock", env.SetDeployLock)
-		v1.DELETE("/deploy-lock", env.ReleaseDeployLock)
-		v1.GET("/deploy-lock", env.isDeployLockSet)
+		v1.POST(deployLockEndpoint, env.SetDeployLock)
+		v1.DELETE(deployLockEndpoint, env.ReleaseDeployLock)
+		v1.GET(deployLockEndpoint, env.isDeployLockSet)
 	}
 
 	return router
@@ -149,7 +154,7 @@ func (env *Env) addTask(c *gin.Context) {
 		if err != nil {
 			log.Error().Msgf("couldn't validate keycloak token, got the following error: %s", err)
 			c.JSON(http.StatusUnauthorized, models.TaskStatus{
-				Status: "You are not authorized to perform this action",
+				Status: unathorizedMessage,
 			})
 			return
 		}
@@ -293,7 +298,7 @@ func (env *Env) SetDeployLock(c *gin.Context) {
 	if err := env.validateKeycloakToken(c); err != nil {
 		log.Error().Msgf("couldn't release deploy lock, got the following error: %s", err)
 		c.JSON(http.StatusUnauthorized, models.TaskStatus{
-			Status: "You are not authorized to perform this action",
+			Status: unathorizedMessage,
 		})
 		return
 	}
@@ -314,7 +319,7 @@ func (env *Env) ReleaseDeployLock(c *gin.Context) {
 	if err := env.validateKeycloakToken(c); err != nil {
 		log.Error().Msgf("couldn't release deploy lock, got the following error: %s", err)
 		c.JSON(http.StatusUnauthorized, models.TaskStatus{
-			Status: "You are not authorized to perform this action",
+			Status: unathorizedMessage,
 		})
 		return
 	}
