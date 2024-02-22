@@ -90,6 +90,11 @@ func RunServer() {
 		)
 	}
 
+	// set up cron jobs
+	if env.config.ScheduledLockdownEnabled {
+		env.SetCron()
+	}
+
 	// start the server
 	log.Info().Msg("Starting web server")
 	router := env.CreateRouter()

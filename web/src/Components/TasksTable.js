@@ -449,7 +449,7 @@ function TasksTable({
                     justifyContent: 'center',
                     py: 2
                 }}>
-                    <Typography variant="h6">Deployments are currently locked.</Typography>
+                    <Typography variant="h6">Deployments are not accepted.</Typography>
                 </Box>
             )}
         </>
