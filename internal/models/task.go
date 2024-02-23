@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -72,4 +73,20 @@ type ArgoApiErrorResponse struct {
 	Error   string `json:"error"`
 	Code    int32  `json:"code"`
 	Message string `json:"message"`
+}
+
+type LockdownSchedule struct {
+	Cron     string `json:"cron" example:"*/2 * * * *"`
+	Duration string `json:"duration" example:"2m"`
+}
+
+type LockdownSchedules []LockdownSchedule
+
+func (ls *LockdownSchedules) UnmarshalText(text []byte) error {
+	temp := &[]LockdownSchedule{}
+	if err := json.Unmarshal(text, temp); err != nil {
+		return err
+	}
+	*ls = *temp
+	return nil
 }
