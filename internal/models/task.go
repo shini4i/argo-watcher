@@ -76,5 +76,5 @@ type ArgoApiErrorResponse struct {
 
 type LockdownSchedule struct {
 	Cron     string `json:"cron" example:"*/2 * * * *"`
-	Duration string `json:"duration" example:"2m"`
+	Duration string `json:"duration" example:"2h"`
 }
