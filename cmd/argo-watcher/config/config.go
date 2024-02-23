@@ -1,13 +1,10 @@
 package config
 
 import (
-	"fmt"
 	"net/url"
-	"os"
 
 	envConfig "github.com/caarlos0/env/v10"
 	"github.com/go-playground/validator/v10"
-	"github.com/shini4i/argo-watcher/internal/models"
 )
 
 const (
@@ -31,26 +28,26 @@ type DatabaseConfig struct {
 }
 
 type ServerConfig struct {
-	ArgoUrl                  url.URL                  `env:"ARGO_URL,required" json:"argo_cd_url"`
-	ArgoUrlAlias             string                   `env:"ARGO_URL_ALIAS" json:"argo_cd_url_alias,omitempty"` // Used to generate App URL. Can be omitted if ArgoUrl is reachable from outside.
-	ArgoToken                string                   `env:"ARGO_TOKEN,required" json:"-"`
-	ArgoApiTimeout           int64                    `env:"ARGO_API_TIMEOUT" envDefault:"60" json:"argo_api_timeout"`
-	AcceptSuspendedApp       bool                     `env:"ACCEPT_SUSPENDED_APP" envDefault:"false" json:"accept_suspended_app"` // If true, we will accept "Suspended" health status as valid
-	DeploymentTimeout        uint                     `env:"DEPLOYMENT_TIMEOUT" envDefault:"900" json:"deployment_timeout"`
-	ArgoRefreshApp           bool                     `env:"ARGO_REFRESH_APP" envDefault:"true" json:"argo_refresh_app"`
-	RegistryProxyUrl         string                   `env:"DOCKER_IMAGES_PROXY" json:"registry_proxy_url,omitempty"`
-	StateType                string                   `env:"STATE_TYPE,required" validate:"oneof=postgres in-memory" json:"state_type"`
-	StaticFilePath           string                   `env:"STATIC_FILES_PATH" envDefault:"static" json:"-"`
-	SkipTlsVerify            bool                     `env:"SKIP_TLS_VERIFY" envDefault:"false" json:"skip_tls_verify"`
-	LogLevel                 string                   `env:"LOG_LEVEL" envDefault:"info" json:"log_level"`
-	LogFormat                string                   `env:"LOG_FORMAT" envDefault:"json" json:"-"`
-	Host                     string                   `env:"HOST" envDefault:"0.0.0.0" json:"-"`
-	Port                     string                   `env:"PORT" envDefault:"8080" json:"-"`
-	DeployToken              string                   `env:"ARGO_WATCHER_DEPLOY_TOKEN" json:"-"`
-	Db                       DatabaseConfig           `json:"-"`
-	Keycloak                 KeycloakConfig           `json:"-"`
-	ScheduledLockdownEnabled bool                     `env:"SCHEDULED_LOCKDOWN_ENABLED" envDefault:"false" json:"scheduled_lockdown_enabled"`
-	LockdownSchedule         models.LockdownSchedules `env:"LOCKDOWN_SCHEDULE" json:"lockdown_schedule,omitempty"`
+	ArgoUrl                  url.URL           `env:"ARGO_URL,required" json:"argo_cd_url"`
+	ArgoUrlAlias             string            `env:"ARGO_URL_ALIAS" json:"argo_cd_url_alias,omitempty"` // Used to generate App URL. Can be omitted if ArgoUrl is reachable from outside.
+	ArgoToken                string            `env:"ARGO_TOKEN,required" json:"-"`
+	ArgoApiTimeout           int64             `env:"ARGO_API_TIMEOUT" envDefault:"60" json:"argo_api_timeout"`
+	AcceptSuspendedApp       bool              `env:"ACCEPT_SUSPENDED_APP" envDefault:"false" json:"accept_suspended_app"` // If true, we will accept "Suspended" health status as valid
+	DeploymentTimeout        uint              `env:"DEPLOYMENT_TIMEOUT" envDefault:"900" json:"deployment_timeout"`
+	ArgoRefreshApp           bool              `env:"ARGO_REFRESH_APP" envDefault:"true" json:"argo_refresh_app"`
+	RegistryProxyUrl         string            `env:"DOCKER_IMAGES_PROXY" json:"registry_proxy_url,omitempty"`
+	StateType                string            `env:"STATE_TYPE,required" validate:"oneof=postgres in-memory" json:"state_type"`
+	StaticFilePath           string            `env:"STATIC_FILES_PATH" envDefault:"static" json:"-"`
+	SkipTlsVerify            bool              `env:"SKIP_TLS_VERIFY" envDefault:"false" json:"skip_tls_verify"`
+	LogLevel                 string            `env:"LOG_LEVEL" envDefault:"info" json:"log_level"`
+	LogFormat                string            `env:"LOG_FORMAT" envDefault:"json" json:"-"`
+	Host                     string            `env:"HOST" envDefault:"0.0.0.0" json:"-"`
+	Port                     string            `env:"PORT" envDefault:"8080" json:"-"`
+	DeployToken              string            `env:"ARGO_WATCHER_DEPLOY_TOKEN" json:"-"`
+	Db                       DatabaseConfig    `json:"-"`
+	Keycloak                 KeycloakConfig    `json:"-"`
+	ScheduledLockdownEnabled bool              `env:"SCHEDULED_LOCKDOWN_ENABLED" envDefault:"false" json:"scheduled_lockdown_enabled"`
+	LockdownSchedule         LockdownSchedules `env:"LOCKDOWN_SCHEDULE" json:"lockdown_schedule,omitempty"`
 }
 
 // NewServerConfig parses the server configuration from environment variables using the envconfig package.
@@ -64,7 +61,6 @@ func NewServerConfig() (*ServerConfig, error) {
 		config ServerConfig
 	)
 
-	fmt.Println(os.Getenv("LOCKDOWN_SCHEDULE"))
 	if err := envConfig.Parse(&config); err != nil {
 		return nil, err
 	}
@@ -73,8 +69,6 @@ func NewServerConfig() (*ServerConfig, error) {
 	if err := validate.Struct(&config); err != nil {
 		return nil, err
 	}
-
-	fmt.Println(config.LockdownSchedule)
 
 	// return config
 	return &config, err
