@@ -92,7 +92,7 @@ func RunServer() {
 
 	// set up cron jobs
 	if env.config.ScheduledLockdownEnabled {
-		env.SetCron()
+		env.SetCron(env.config.LockdownSchedule)
 	}
 
 	// start the server
