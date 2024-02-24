@@ -99,13 +99,13 @@ extraEnvs:
 
 #### CLI
 
-In order to set deployment lock manually, you need to either make POST request:
+In order to set deployment lock manually, you need to make POST request:
 
 ```bash
 curl -X POST https://argo-watcher.example.com/api/v1/deploy-lock
 ```
 
-and to remove it:
+and to remove it make DELETE request:
 
 ```bash
 curl -X DELETE https://argo-watcher.example.com/api/v1/deploy-lock
