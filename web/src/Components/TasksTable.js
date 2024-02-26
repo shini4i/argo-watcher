@@ -18,7 +18,7 @@ import {addMinutes, format} from 'date-fns';
 import React, {useEffect, useState} from 'react';
 import {Link as ReactLink} from 'react-router-dom';
 import {fetchTasks} from '../Services/Data';
-import {fetchDeployLock} from '../config.js';
+import {fetchDeployLock} from "../config";
 import {relativeHumanDuration, relativeTime, relativeTimestamp,} from '../Utils';
 
 export function ProjectDisplay({project}) {
@@ -217,10 +217,33 @@ function TasksTable({
     };
 
     useEffect(() => {
+        // set the initial deploy lock state
         checkDeployLock();
-        const intervalId = setInterval(checkDeployLock, 5000); // check every 5 seconds
 
-        return () => clearInterval(intervalId);
+        // Get the current URL
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const host = window.location.host;
+        const wsUrl = `${protocol}//${host}/ws`;
+
+        // Connect to the WebSocket endpoint
+        const socket = new WebSocket(wsUrl);
+
+        // Listen for messages
+        socket.onmessage = (event) => {
+            const message = event.data.replace(/"/g, '').trim();
+            if (message === 'locked') {
+                setDeployLock(true);
+            } else if (message === 'unlocked') {
+                setDeployLock(false);
+            } else {
+                console.log(`Received message is: ${message}, Type of message is: ${typeof message}`);
+            }
+        };
+
+        // Return cleanup function
+        return () => {
+            socket.close();
+        };
     }, []);
 
     const toggleReason = task => {

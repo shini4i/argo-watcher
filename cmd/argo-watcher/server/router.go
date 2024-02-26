@@ -1,11 +1,15 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
+
+	"nhooyr.io/websocket/wsjson"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/auth"
 
@@ -22,9 +26,15 @@ import (
 	"github.com/shini4i/argo-watcher/internal/models"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
+	"nhooyr.io/websocket"
 )
 
 var version = "local"
+
+var (
+	connectionsMutex sync.Mutex
+	connections      []*websocket.Conn
+)
 
 const (
 	deployLockEndpoint = "/deploy-lock"
@@ -66,6 +76,7 @@ func (env *Env) CreateRouter() *gin.Engine {
 	router.GET("/healthz", env.healthz)
 	router.GET("/metrics", prometheusHandler())
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	router.GET("/ws", env.handleWebSocketConnection)
 
 	v1 := router.Group("/api/v1")
 	{
@@ -306,6 +317,9 @@ func (env *Env) SetDeployLock(c *gin.Context) {
 	env.deployLockSet = true
 
 	log.Debug().Msg("deploy lock is set")
+
+	notifyWebSocketClients("locked")
+
 	c.JSON(http.StatusOK, "deploy lock is set")
 }
 
@@ -327,6 +341,9 @@ func (env *Env) ReleaseDeployLock(c *gin.Context) {
 	env.deployLockSet = false
 
 	log.Debug().Msg("deploy lock is released")
+
+	notifyWebSocketClients("unlocked")
+
 	c.JSON(http.StatusOK, "deploy lock is released")
 }
 
@@ -358,4 +375,55 @@ func (env *Env) validateKeycloakToken(c *gin.Context) error {
 	}
 
 	return nil
+}
+
+func (env *Env) handleWebSocketConnection(c *gin.Context) {
+	conn, err := websocket.Accept(c.Writer, c.Request, nil)
+	if err != nil {
+		log.Error().Msgf("couldn't accept websocket connection, got the following error: %s", err)
+	}
+
+	go func(c *websocket.Conn) {
+		ticker := time.NewTicker(time.Second * 30) // not sure what would be
+		defer ticker.Stop()
+
+		for range ticker.C {
+			err := c.Ping(context.Background())
+			if err != nil {
+				// we are not trying to close the connection here as it is dead already
+				// we just remove it from the slice of ws clients
+				removeWebSocketConnection(c)
+				return
+			}
+		}
+	}(conn)
+
+	connections = append(connections, conn)
+}
+
+func notifyWebSocketClients(message string) {
+	for _, conn := range connections {
+		err := wsjson.Write(context.Background(), conn, message)
+		if err != nil {
+			// we are using debug here as it's not an error that is critical for the application
+			// we just need it for debugging purposes
+			log.Debug().Msgf("couldn't notify client, got the following error: %s", err)
+			// we remove the connection here without waiting for the ticker to do it
+			// as it's already dead
+			removeWebSocketConnection(conn)
+		}
+	}
+}
+
+func removeWebSocketConnection(conn *websocket.Conn) {
+	connectionsMutex.Lock()
+	defer connectionsMutex.Unlock()
+
+	for i := range connections {
+		if connections[i] == conn {
+			log.Debug().Msg("removing disappeared websocket connection")
+			connections = append(connections[:i], connections[i+1:]...)
+			break
+		}
+	}
 }
