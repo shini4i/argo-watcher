@@ -15,7 +15,8 @@ import {
     Typography
 } from '@mui/material';
 import Switch from '@mui/material/Switch';
-import {fetchConfig, fetchDeployLock, releaseDeployLock, setDeployLock} from '../config';
+import {fetchConfig} from '../config';
+import {fetchDeployLock, releaseDeployLock, setDeployLock} from '../deployLockHandler';
 import { AuthContext } from '../auth';
 
 function Sidebar({open, onClose}) {

@@ -407,7 +407,7 @@ func notifyWebSocketClients(message string) {
 		if err != nil {
 			// we are using debug here as it's not an error that is critical for the application
 			// we just need it for debugging purposes
-			log.Debug().Msgf("couldn't notify client, got the following error: %s", err)
+			log.Debug().Msgf("couldn't notify ws client, got the following error: %s", err)
 			// we remove the connection here without waiting for the ticker to do it
 			// as it's already dead
 			removeWebSocketConnection(conn)

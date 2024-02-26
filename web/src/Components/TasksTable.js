@@ -18,7 +18,7 @@ import {addMinutes, format} from 'date-fns';
 import React, {useEffect, useState} from 'react';
 import {Link as ReactLink} from 'react-router-dom';
 import {fetchTasks} from '../Services/Data';
-import {fetchDeployLock} from "../config";
+import {fetchDeployLock} from "../deployLockHandler";
 import {relativeHumanDuration, relativeTime, relativeTimestamp,} from '../Utils';
 
 export function ProjectDisplay({project}) {
