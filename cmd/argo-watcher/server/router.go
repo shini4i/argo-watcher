@@ -37,8 +37,8 @@ var (
 )
 
 const (
-	deployLockEndpoint = "/deploy-lock"
-	unathorizedMessage = "You are not authorized to perform this action"
+	deployLockEndpoint  = "/deploy-lock"
+	unauthorizedMessage = "You are not authorized to perform this action"
 )
 
 // Env reference: https://www.alexedwards.net/blog/organising-database-access
@@ -165,7 +165,7 @@ func (env *Env) addTask(c *gin.Context) {
 		if err != nil {
 			log.Error().Msgf("couldn't validate keycloak token, got the following error: %s", err)
 			c.JSON(http.StatusUnauthorized, models.TaskStatus{
-				Status: unathorizedMessage,
+				Status: unauthorizedMessage,
 			})
 			return
 		}
@@ -309,7 +309,7 @@ func (env *Env) SetDeployLock(c *gin.Context) {
 	if err := env.validateKeycloakToken(c); err != nil {
 		log.Error().Msgf("couldn't release deploy lock, got the following error: %s", err)
 		c.JSON(http.StatusUnauthorized, models.TaskStatus{
-			Status: unathorizedMessage,
+			Status: unauthorizedMessage,
 		})
 		return
 	}
@@ -333,7 +333,7 @@ func (env *Env) ReleaseDeployLock(c *gin.Context) {
 	if err := env.validateKeycloakToken(c); err != nil {
 		log.Error().Msgf("couldn't release deploy lock, got the following error: %s", err)
 		c.JSON(http.StatusUnauthorized, models.TaskStatus{
-			Status: unathorizedMessage,
+			Status: unauthorizedMessage,
 		})
 		return
 	}
@@ -377,33 +377,37 @@ func (env *Env) validateKeycloakToken(c *gin.Context) error {
 	return nil
 }
 
-// handleWebSocketConnection is a function that accepts a new WebSocket connection and adds it to the global connections slice.
-// It first accepts the WebSocket connection from the incoming HTTP request.
-// If there's an error while accepting the connection, it logs the error and returns.
-// If the connection is successfully accepted, it starts a new goroutine that sends a Ping message to the client every 30 seconds.
-// If the Ping fails (for example, if the client has closed the connection), it removes the connection from the connections slice and returns.
+// handleWebSocketConnection accepts a WebSocket connection, adds it to a slice,
+// and initiates a goroutine to ping the connection regularly. If WebSocket
+// acceptance fails, an error is logged. The goroutine serves to monitor
+// the connection's activity and removes it from the slice if it's inactive.
 func (env *Env) handleWebSocketConnection(c *gin.Context) {
 	conn, err := websocket.Accept(c.Writer, c.Request, nil)
 	if err != nil {
 		log.Error().Msgf("couldn't accept websocket connection, got the following error: %s", err)
 	}
 
-	go func(c *websocket.Conn) {
-		ticker := time.NewTicker(time.Second * 30) // not sure what would be reasonable value here
-		defer ticker.Stop()
-
-		for range ticker.C {
-			err := c.Ping(context.Background())
-			if err != nil {
-				// we are not trying to close the connection here as it is dead already
-				// we just remove it from the slice of ws clients
-				removeWebSocketConnection(c)
-				return
-			}
-		}
-	}(conn)
-
+	// Append the connection before starting the goroutine
 	connections = append(connections, conn)
+
+	go env.checkConnection(conn)
+}
+
+// checkConnection is a method for the Env struct that continuously checks the
+// health of a WebSocket connection by sending periodic "heartbeat" messages.
+func (env *Env) checkConnection(c *websocket.Conn) {
+	ticker := time.NewTicker(time.Second * 30)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		// we are not using c.Ping here, because it's not working as expected
+		// for some reason it's failing even if the connection is still alive
+		// if you know how to fix it, please open an issue or PR
+		if err := c.Write(context.Background(), websocket.MessageText, []byte("heartbeat")); err != nil {
+			removeWebSocketConnection(c)
+			return
+		}
+	}
 }
 
 // notifyWebSocketClients is a function that sends a message to all active WebSocket clients.
@@ -412,17 +416,22 @@ func (env *Env) handleWebSocketConnection(c *gin.Context) {
 // If an error occurs while sending the message to a connection (for example, if the connection has been closed),
 // it removes the connection from the connections slice to prevent further attempts to send messages to it.
 func notifyWebSocketClients(message string) {
+	var wg sync.WaitGroup
+
 	for _, conn := range connections {
-		err := wsjson.Write(context.Background(), conn, message)
-		if err != nil {
-			// we are using debug here as it's not an error that is critical for the application
-			// we just need it for debugging purposes
-			log.Debug().Msgf("couldn't notify ws client, got the following error: %s", err)
-			// we remove the connection here without waiting for the ticker to do it
-			// as it's already dead
-			removeWebSocketConnection(conn)
-		}
+		wg.Add(1)
+
+		go func(c *websocket.Conn) {
+			defer wg.Done()
+
+			err := wsjson.Write(context.Background(), c, message)
+			if err != nil {
+				removeWebSocketConnection(c)
+			}
+		}(conn)
 	}
+
+	wg.Wait()
 }
 
 // removeWebSocketConnection is a helper function that removes a WebSocket connection
@@ -435,7 +444,6 @@ func removeWebSocketConnection(conn *websocket.Conn) {
 
 	for i := range connections {
 		if connections[i] == conn {
-			log.Debug().Msg("removing disappeared websocket connection")
 			connections = append(connections[:i], connections[i+1:]...)
 			break
 		}
