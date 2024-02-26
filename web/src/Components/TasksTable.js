@@ -230,7 +230,7 @@ function TasksTable({
 
         // Listen for messages
         socket.onmessage = (event) => {
-            const message = event.data.replace(/"/g, '').trim();
+            const message = event.data;
             if (message === 'locked') {
                 setDeployLock(true);
             } else if (message === 'unlocked') {

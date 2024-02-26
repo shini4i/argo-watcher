@@ -9,8 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"nhooyr.io/websocket/wsjson"
-
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/auth"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/argocd"
@@ -421,12 +419,12 @@ func notifyWebSocketClients(message string) {
 	for _, conn := range connections {
 		wg.Add(1)
 
-		go func(c *websocket.Conn) {
+		go func(c *websocket.Conn, message string) {
 			defer wg.Done()
-			if err := wsjson.Write(context.Background(), c, message); err != nil {
+			if err := c.Write(context.Background(), websocket.MessageText, []byte(message)); err != nil {
 				removeWebSocketConnection(c)
 			}
-		}(conn)
+		}(conn, message)
 	}
 
 	wg.Wait()
