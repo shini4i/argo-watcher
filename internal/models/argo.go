@@ -21,6 +21,9 @@ const (
 	managedAnnotation       = "argo-watcher/managed"
 	managedImagesAnnotation = "argo-watcher/managed-images"
 	managedImageTagPattern  = "argo-watcher/%s.helm.image-tag"
+	managedGitRepo          = "argo-watcher/git-repo"
+	managedGitBranch        = "argo-watcher/git-branch"
+	managedGitPath          = "argo-watcher/git-path"
 )
 
 type ApplicationOperationResource struct {
@@ -45,36 +48,47 @@ type ApplicationResource struct {
 }
 
 type Application struct {
-	Metadata struct {
-		Name        string            `json:"name"`
-		Annotations map[string]string `json:"annotations"`
+	Metadata ApplicationMetadata `json:"metadata"`
+	Spec     ApplicationSpec     `json:"spec"`
+	Status   ApplicationStatus   `json:"status"`
+}
+
+type ApplicationStatus struct {
+	Health struct {
+		Status string `json:"status"`
 	}
-	Spec struct {
-		Source struct {
-			RepoURL        string `json:"repoURL"`
-			TargetRevision string `json:"targetRevision"`
-			Path           string `json:"path"`
-		}
+	OperationState ApplicationStatusOperationState `json:"operationState"`
+	Resources      []ApplicationResource           `json:"resources"`
+	Summary        struct {
+		Images []string `json:"images"`
 	}
-	Status struct {
-		Health struct {
-			Status string `json:"status"`
-		}
-		OperationState struct {
-			Phase      string `json:"phase"`
-			Message    string `json:"message"`
-			SyncResult struct {
-				Resources []ApplicationOperationResource `json:"resources"`
-			} `json:"syncResult"`
-		} `json:"operationState"`
-		Resources []ApplicationResource `json:"resources"`
-		Summary   struct {
-			Images []string `json:"images"`
-		}
-		Sync struct {
-			Status string `json:"status"`
-		}
-	} `json:"status"`
+	Sync struct {
+		Status string `json:"status"`
+	}
+}
+
+type ApplicationStatusOperationState struct {
+	Phase      string `json:"phase"`
+	Message    string `json:"message"`
+	SyncResult struct {
+		Resources []ApplicationOperationResource `json:"resources"`
+	} `json:"syncResult"`
+}
+
+type ApplicationMetadata struct {
+	Name        string            `json:"name"`
+	Annotations map[string]string `json:"annotations"`
+}
+
+type ApplicationSpec struct {
+	Source  ApplicationSource   `json:"source"`
+	Sources []ApplicationSource `json:"sources"`
+}
+
+type ApplicationSource struct {
+	RepoURL        string `json:"repoURL"`
+	TargetRevision string `json:"targetRevision"`
+	Path           string `json:"path"`
 }
 
 // GetRolloutStatus calculates application rollout status depending on the expected images and proxy configuration.
@@ -203,7 +217,7 @@ func (app *Application) IsManagedByWatcher() bool {
 	return app.Metadata.Annotations[managedAnnotation] == "true"
 }
 
-func (app *Application) processAppAnnotations(annotations map[string]string, task *Task) (*updater.ArgoOverrideFile, error) {
+func (app *Application) generateOverrideFileContent(annotations map[string]string, task *Task) (*updater.ArgoOverrideFile, error) {
 	overrideFileContent := updater.ArgoOverrideFile{}
 	managedImages, err := extractManagedImages(annotations)
 	if err != nil {
@@ -235,13 +249,18 @@ func (app *Application) processAppAnnotations(annotations map[string]string, tas
 }
 
 func (app *Application) UpdateGitImageTag(task *Task) error {
-	if app.Spec.Source.Path == "" {
+	gitopsRepo, err := NewGitopsRepo(app)
+	if err != nil {
+		return err
+	}
+
+	if gitopsRepo.Path == "" {
 		log.Warn().Str("id", task.Id).Msgf("No path found for app %s, unsupported Application configuration", app.Metadata.Name)
 		// technically, unsupported Application configuration is not an error (or is it?)
 		return nil
 	}
 
-	releaseOverrides, err := app.processAppAnnotations(app.Metadata.Annotations, task)
+	releaseOverrides, err := app.generateOverrideFileContent(app.Metadata.Annotations, task)
 	if err != nil {
 		return err
 	}
@@ -252,9 +271,9 @@ func (app *Application) UpdateGitImageTag(task *Task) error {
 	}
 
 	git := updater.GitRepo{
-		RepoURL:    app.Spec.Source.RepoURL,
-		BranchName: app.Spec.Source.TargetRevision,
-		Path:       app.Spec.Source.Path,
+		RepoURL:    gitopsRepo.RepoUrl,
+		BranchName: gitopsRepo.BranchName,
+		Path:       gitopsRepo.Path,
 
 		GitHandler: updater.GitClient{},
 	}
