@@ -72,15 +72,15 @@ function Navbar() {
         <Box>
             <AppBar position="static">
                 <Toolbar>
-                    <Box display="flex" alignItems="center" onClick={() => setSidebarOpen(true)}>
-                        <img
-                            src={process.env.PUBLIC_URL + '/logo.png'}
-                            alt="Argo Watcher Logo"
-                            style={{width: 35, height: 'auto'}}
-                        />
+                    <Box display="flex" alignItems="center">
+                        <Box onClick={() => setSidebarOpen(true)}>
+                            <img
+                                src={process.env.PUBLIC_URL + '/logo.png'}
+                                alt="Argo Watcher Logo"
+                                style={{width: 35, height: 'auto'}}
+                            />
+                        </Box>
                         <Box ml={1}>
-                            {' '}
-                            {/* ml = margin-left: To add some space between logo and text */}
                             <Typography fontSize={'15px'}>Argo Watcher</Typography>
                         </Box>
                     </Box>

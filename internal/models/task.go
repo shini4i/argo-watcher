@@ -73,3 +73,8 @@ type ArgoApiErrorResponse struct {
 	Code    int32  `json:"code"`
 	Message string `json:"message"`
 }
+
+type LockdownSchedule struct {
+	Cron     string `json:"cron" example:"0 2 * * *"`
+	Duration string `json:"duration" example:"2h"`
+}

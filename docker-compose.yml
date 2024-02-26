@@ -41,6 +41,7 @@ services:
       DB_NAME: watcher
       DB_PASSWORD: watcher
       DB_MIGRATIONS_PATH: /app/db/migrations
+      LOG_LEVEL: debug
     depends_on:
       migrations:
         condition: service_completed_successfully

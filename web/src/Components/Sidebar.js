@@ -1,12 +1,42 @@
-import React, { useEffect, useState } from 'react';
+import React, {useContext, useEffect, useState} from 'react';
 import PropTypes from 'prop-types';
-import { Drawer, Box, Typography, TableContainer, Table, TableHead, TableRow, TableCell, TableBody, Paper, CircularProgress, Button } from '@mui/material';
-import { fetchConfig } from '../config';
+import {
+    Box,
+    Button,
+    CircularProgress,
+    Drawer,
+    Paper,
+    Table,
+    TableBody,
+    TableCell,
+    TableContainer,
+    TableHead,
+    TableRow,
+    Typography
+} from '@mui/material';
+import Switch from '@mui/material/Switch';
+import {fetchConfig} from '../config';
+import {fetchDeployLock, releaseDeployLock, setDeployLock} from '../deployLockHandler';
+import { AuthContext } from '../auth';
 
-function Sidebar({ open, onClose }) {
+function Sidebar({open, onClose}) {
     const [configData, setConfigData] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(null);
+
+    const { authenticated, keycloakToken } = useContext(AuthContext);
+    const [isDeployLockSet, setIsDeployLockSet] = useState(false);
+
+
+    const toggleDeployLock = async () => {
+        if (isDeployLockSet) {
+            await releaseDeployLock(authenticated ? keycloakToken : null);
+            setIsDeployLockSet(false);
+        } else {
+            await setDeployLock(authenticated ? keycloakToken : null);
+            setIsDeployLockSet(true);
+        }
+    };
 
     useEffect(() => {
         fetchConfig()
@@ -18,6 +48,14 @@ function Sidebar({ open, onClose }) {
                 setError(error.message);
                 setIsLoading(false);
             });
+
+        fetchDeployLock()
+            .then((data) => {
+                setIsDeployLockSet(data);
+            })
+            .catch((error) => {
+                setError(error.message);
+            })
     }, []);
 
     const handleCopy = () => {
@@ -29,13 +67,13 @@ function Sidebar({ open, onClose }) {
             return `${value.Scheme}://${value.Host}${value.Path}`;
         } else if (value && typeof value === 'object' && value.constructor === Object) {
             return (
-                <Box sx={{ maxHeight: '100px', overflow: 'auto', whiteSpace: 'nowrap' }}>
+                <Box sx={{maxHeight: '100px', overflow: 'auto', whiteSpace: 'nowrap'}}>
                     {JSON.stringify(value, null, 2)}
                 </Box>
             );
         }
         return (
-            <Box sx={{ maxHeight: '100px', overflow: 'auto', whiteSpace: 'nowrap' }}>
+            <Box sx={{maxHeight: '100px', overflow: 'auto', whiteSpace: 'nowrap'}}>
                 {value.toString()}
             </Box>
         );
@@ -44,8 +82,8 @@ function Sidebar({ open, onClose }) {
     const renderContent = () => {
         if (isLoading) {
             return (
-                <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', p: 2 }}>
-                    <CircularProgress />
+                <Box sx={{display: 'flex', justifyContent: 'center', alignItems: 'center', p: 2}}>
+                    <CircularProgress/>
                     <Typography ml={2}>Loading...</Typography>
                 </Box>
             );
@@ -64,7 +102,7 @@ function Sidebar({ open, onClose }) {
                             </TableHead>
                             <TableBody>
                                 {Object.entries(configData).map(([key, value]) => (
-                                    <TableRow key={key} sx={{ '&:nth-of-type(odd)': { backgroundColor: 'action.hover' } }}>
+                                    <TableRow key={key} sx={{'&:nth-of-type(odd)': {backgroundColor: 'action.hover'}}}>
                                         <TableCell component="th" scope="row">
                                             {key}
                                         </TableCell>
@@ -76,7 +114,7 @@ function Sidebar({ open, onClose }) {
                             </TableBody>
                         </Table>
                     </TableContainer>
-                    <Box sx={{ display: 'flex', justifyContent: 'center', marginTop: '20px' }}>
+                    <Box sx={{display: 'flex', justifyContent: 'center', marginTop: '20px'}}>
                         <Button variant="contained" color="primary" onClick={handleCopy}>
                             Copy JSON
                         </Button>
@@ -89,14 +127,26 @@ function Sidebar({ open, onClose }) {
     };
 
     return (
-        <Drawer anchor="right" open={open} onClose={onClose} sx={{ '& .MuiDrawer-paper': { width: '350px' } }}>
-            <Box p={2} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: '1 1 auto' }}>
+        <Drawer anchor="right" open={open} onClose={onClose} sx={{'& .MuiDrawer-paper': {width: '350px'}}}>
+            <Box p={2} sx={{display: 'flex', flexDirection: 'column', alignItems: 'center', flex: '1 1 auto'}}>
                 <Typography variant="h5" gutterBottom>
                     Config Data
                 </Typography>
                 {renderContent()}
             </Box>
-            <Box p={2} sx={{ borderTop: '1px solid gray' }}>
+            <Paper elevation={3} sx={{margin: 2, padding: 2}}>
+                <Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
+                    <Typography variant="body1">
+                        Lockdown Mode
+                    </Typography>
+                    <Switch
+                        checked={isDeployLockSet}
+                        onChange={toggleDeployLock}
+                        color="primary"
+                    />
+                </Box>
+            </Paper>
+            <Box p={2} sx={{borderTop: '1px solid gray'}}>
                 <Typography variant="body2" color="textSecondary" align="center">
                     © {new Date().getFullYear()} Vadim Gedz
                 </Typography>

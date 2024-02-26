@@ -76,3 +76,49 @@ ARGO_WATCHER_DEPLOY_TOKEN=previously_generated_token
 That's it! Starting from this point, Argo-Watcher will be able to commit changes to your GitOps repository.
 
 > Keep in mind, that `argo-watcher` will use the provided tag value as is, without any validation. So, it is up to user to make sure that the tag is valid and can be used for deployment.
+
+## Lockdown mode
+
+Argo-Watcher supports a deployment lock mechanism. It can be useful when you want to prevent Argo-Watcher from making changes during the maintenance window.
+
+There are two ways to enable the deployment lock:
+
+### Scheduled Lockdown mode
+
+In order to create a scheduled Lockdown mode, you need to set the following environment variables:
+
+```yaml
+extraEnvs:
+  - name: SCHEDULED_LOCKDOWN_ENABLED
+    value: true
+  - name: LOCKDOWN_SCHEDULE
+    value: '[{"cron": "0 2 * * *", "duration": "5h30s"}]'
+```
+
+In this example, the deployments won't be allowed between 2:00 and 7:30 AM every day.
+
+### Manual Lockdown mode
+
+#### CLI
+
+In order to set Lockdown mode manually, you need to make POST request:
+
+```bash
+curl -X POST https://argo-watcher.example.com/api/v1/deploy-lock
+```
+
+and to remove it make DELETE request:
+
+```bash
+curl -X DELETE https://argo-watcher.example.com/api/v1/deploy-lock
+```
+
+> Keep in mind that it will work only if keycloak integration is not enabled.
+
+#### Frontend
+
+You can set Lockdown mode manually via the frontend. To do so, click on `Argo-Watcher` logo and press on `Lockdown Mode` switch.
+
+![Image title](https://raw.githubusercontent.com/shini4i/assets/main/src/argo-watcher/deployment-lock.png)
+
+> If you have keycloak integration enabled, you need to be a member of one of pre-defined privileged groups to be able to set deployment lock.
