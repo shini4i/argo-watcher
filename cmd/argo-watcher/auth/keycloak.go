@@ -12,7 +12,8 @@ import (
 )
 
 type KeycloakResponse struct {
-	Groups []string `json:"groups"`
+	Username string   `json:"preferred_username"`
+	Groups   []string `json:"groups"`
 }
 
 type KeycloakAuthService struct {
@@ -65,12 +66,12 @@ func (k *KeycloakAuthService) Validate(token string) (bool, error) {
 		}
 	}
 
-	userPrivileged := k.allowedToRollback(keycloakResponse.Groups)
+	userPrivileged := k.allowedToRollback(keycloakResponse.Username, keycloakResponse.Groups)
 
 	if resp.StatusCode == http.StatusOK && userPrivileged {
 		return true, nil
 	} else if resp.StatusCode == http.StatusOK && !userPrivileged {
-		return false, fmt.Errorf("user is not a member of any of the privileged groups")
+		return false, fmt.Errorf("%s is not a member of any of the privileged groups", keycloakResponse.Username)
 	}
 
 	return false, fmt.Errorf("token validation failed with status: %v", resp.Status)
@@ -78,14 +79,14 @@ func (k *KeycloakAuthService) Validate(token string) (bool, error) {
 
 // allowedToRollback checks if the user is a member of any of the privileged groups
 // It duplicates the logic from fronted just to be sure that the user did not generate the request manually
-func (k *KeycloakAuthService) allowedToRollback(groups []string) bool {
+func (k *KeycloakAuthService) allowedToRollback(username string, groups []string) bool {
 	for _, group := range groups {
 		if helpers.Contains(k.PrivilegedGroups, group) {
-			log.Debug().Msgf("User is a member of the privileged group: %v", group)
+			log.Debug().Msgf("%s is a member of the privileged group: %v", username, group)
 			return true
 		}
 	}
 
-	log.Debug().Msgf("User is not a member of any of the privileged groups: %v", k.PrivilegedGroups)
+	log.Debug().Msgf("%s is not a member of any of the privileged groups: %v", username, k.PrivilegedGroups)
 	return false
 }

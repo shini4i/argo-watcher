@@ -423,9 +423,7 @@ func notifyWebSocketClients(message string) {
 
 		go func(c *websocket.Conn) {
 			defer wg.Done()
-
-			err := wsjson.Write(context.Background(), c, message)
-			if err != nil {
+			if err := wsjson.Write(context.Background(), c, message); err != nil {
 				removeWebSocketConnection(c)
 			}
 		}(conn)
