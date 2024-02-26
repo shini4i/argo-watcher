@@ -377,6 +377,11 @@ func (env *Env) validateKeycloakToken(c *gin.Context) error {
 	return nil
 }
 
+// handleWebSocketConnection is a function that accepts a new WebSocket connection and adds it to the global connections slice.
+// It first accepts the WebSocket connection from the incoming HTTP request.
+// If there's an error while accepting the connection, it logs the error and returns.
+// If the connection is successfully accepted, it starts a new goroutine that sends a Ping message to the client every 30 seconds.
+// If the Ping fails (for example, if the client has closed the connection), it removes the connection from the connections slice and returns.
 func (env *Env) handleWebSocketConnection(c *gin.Context) {
 	conn, err := websocket.Accept(c.Writer, c.Request, nil)
 	if err != nil {
@@ -384,7 +389,7 @@ func (env *Env) handleWebSocketConnection(c *gin.Context) {
 	}
 
 	go func(c *websocket.Conn) {
-		ticker := time.NewTicker(time.Second * 30) // not sure what would be
+		ticker := time.NewTicker(time.Second * 30) // not sure what would be reasonable value here
 		defer ticker.Stop()
 
 		for range ticker.C {
@@ -401,6 +406,11 @@ func (env *Env) handleWebSocketConnection(c *gin.Context) {
 	connections = append(connections, conn)
 }
 
+// notifyWebSocketClients is a function that sends a message to all active WebSocket clients.
+// It iterates over the global connections slice, which contains all active WebSocket connections,
+// and sends the provided message to each connection using the wsjson.Write function.
+// If an error occurs while sending the message to a connection (for example, if the connection has been closed),
+// it removes the connection from the connections slice to prevent further attempts to send messages to it.
 func notifyWebSocketClients(message string) {
 	for _, conn := range connections {
 		err := wsjson.Write(context.Background(), conn, message)

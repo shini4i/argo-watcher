@@ -77,15 +77,15 @@ That's it! Starting from this point, Argo-Watcher will be able to commit changes
 
 > Keep in mind, that `argo-watcher` will use the provided tag value as is, without any validation. So, it is up to user to make sure that the tag is valid and can be used for deployment.
 
-## Deployment Lock
+## Lockdown mode
 
 Argo-Watcher supports a deployment lock mechanism. It can be useful when you want to prevent Argo-Watcher from making changes during the maintenance window.
 
 There are two ways to enable the deployment lock:
 
-### Scheduled deployment lock
+### Scheduled Lockdown mode
 
-In order to create a scheduled deployment lock, you need to set the following environment variables:
+In order to create a scheduled Lockdown mode, you need to set the following environment variables:
 
 ```yaml
 extraEnvs:
@@ -97,11 +97,11 @@ extraEnvs:
 
 In this example, the deployments won't be allowed between 2:00 and 7:30 AM every day.
 
-### Manual deployment lock
+### Manual Lockdown mode
 
 #### CLI
 
-In order to set deployment lock manually, you need to make POST request:
+In order to set Lockdown mode manually, you need to make POST request:
 
 ```bash
 curl -X POST https://argo-watcher.example.com/api/v1/deploy-lock
@@ -117,7 +117,7 @@ curl -X DELETE https://argo-watcher.example.com/api/v1/deploy-lock
 
 #### Frontend
 
-You can set deployment lock manually via the frontend. To do so, click on `Argo-Watcher` logo and press on `Lockdown Mode` switch.
+You can set Lockdown mode manually via the frontend. To do so, click on `Argo-Watcher` logo and press on `Lockdown Mode` switch.
 
 ![Image title](https://raw.githubusercontent.com/shini4i/assets/main/src/argo-watcher/deployment-lock.png)
 
