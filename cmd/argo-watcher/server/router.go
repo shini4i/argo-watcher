@@ -415,6 +415,10 @@ func notifyWebSocketClients(message string) {
 	}
 }
 
+// removeWebSocketConnection is a helper function that removes a WebSocket connection
+// from the global connections slice. It is used to clean up connections that are no longer active.
+// The function takes a WebSocket connection as an argument and removes it from the connections slice.
+// It uses a mutex to prevent concurrent access to the connections slice, ensuring thread safety.
 func removeWebSocketConnection(conn *websocket.Conn) {
 	connectionsMutex.Lock()
 	defer connectionsMutex.Unlock()

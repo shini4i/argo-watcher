@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"nhooyr.io/websocket"
+
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 
 	"github.com/gin-gonic/gin"
@@ -85,4 +87,11 @@ func TestDeployLock(t *testing.T) {
 		assert.Equal(t, http.StatusOK, w.Code)
 		assert.Equal(t, "false", w.Body.String())
 	})
+}
+
+func TestRemoveWebSocketConnection(t *testing.T) {
+	conn := &websocket.Conn{}
+	connections = append(connections, conn)
+	removeWebSocketConnection(conn)
+	assert.NotContains(t, connections, conn)
 }
