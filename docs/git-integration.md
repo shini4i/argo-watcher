@@ -92,8 +92,10 @@ extraEnvs:
   - name: SCHEDULED_LOCKDOWN_ENABLED
     value: true
   - name: LOCKDOWN_SCHEDULE
-    value: '[{"cron": "*/5 * * * *", "duration": "2m30s"}]'
+    value: '[{"cron": "0 2 * * *", "duration": "5h30s"}]'
 ```
+
+In this example, the deployments won't be allowed between 2:00 and 7:30 AM every day.
 
 ### Manual deployment lock
 
