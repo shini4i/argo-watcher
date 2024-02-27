@@ -25,14 +25,15 @@ func NewGitopsRepo(app *Application) (GitopsRepo, error) {
 
 func extractGitOverrides(annotations map[string]string) (GitopsRepo, error) {
 	var gr GitopsRepo
+	fields := map[string]*string{
+		managedGitRepo:   &gr.RepoUrl,
+		managedGitBranch: &gr.BranchName,
+		managedGitPath:   &gr.Path,
+	}
+
 	for key, value := range annotations {
-		switch key {
-		case managedGitRepo:
-			gr.RepoUrl = value
-		case managedGitBranch:
-			gr.BranchName = value
-		case managedGitPath:
-			gr.Path = value
+		if field, ok := fields[key]; ok {
+			*field = value
 		}
 	}
 
