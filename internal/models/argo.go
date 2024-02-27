@@ -21,9 +21,9 @@ const (
 	managedAnnotation       = "argo-watcher/managed"
 	managedImagesAnnotation = "argo-watcher/managed-images"
 	managedImageTagPattern  = "argo-watcher/%s.helm.image-tag"
-	managedGitRepo          = "argo-watcher/git-repo"
-	managedGitBranch        = "argo-watcher/git-branch"
-	managedGitPath          = "argo-watcher/git-path"
+	managedGitRepo          = "argo-watcher/write-back-repo"
+	managedGitBranch        = "argo-watcher/write-back-branch"
+	managedGitPath          = "argo-watcher/write-back-path"
 )
 
 type ApplicationOperationResource struct {
