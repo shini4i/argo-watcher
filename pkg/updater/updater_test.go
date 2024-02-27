@@ -32,7 +32,7 @@ func TestGitRepoClone(t *testing.T) {
 		{
 			name: "successful clone",
 			mockSSH: func() {
-				mockGitHandler.EXPECT().NewPublicKeysFromFile("git", sshKeyPath, sshKeyPass).Return(&ssh.PublicKeys{}, nil)
+				mockGitHandler.EXPECT().AddSSHKey("git", sshKeyPath, sshKeyPass).Return(&ssh.PublicKeys{}, nil)
 				mockGitHandler.EXPECT().Clone(memory.NewStorage(), memfs.New(), &git.CloneOptions{
 					URL:           "mockRepoURL",
 					ReferenceName: "refs/heads/mockBranch",
@@ -46,7 +46,7 @@ func TestGitRepoClone(t *testing.T) {
 		{
 			name: "failed AddSSHKey",
 			mockSSH: func() {
-				mockGitHandler.EXPECT().NewPublicKeysFromFile("git", sshKeyPath, sshKeyPass).Return(nil, errors.New("failed to fetch keys"))
+				mockGitHandler.EXPECT().AddSSHKey("git", sshKeyPath, sshKeyPass).Return(nil, errors.New("failed to fetch keys"))
 			},
 			expected: errors.New("failed to fetch keys"),
 		},
