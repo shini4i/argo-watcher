@@ -58,6 +58,23 @@ argo-watcher/managed-images: "app=registry.example.com/group-name/project-name"
 argo-watcher/app.helm.image-tag: "app.image.tag"
 ```
 
+### Multi source Applications
+
+As ArgoCD now supports an array of sources, Argo-Watcher can also work with them. But in less dynamic way. You need to add more annotations to the application:
+
+```yaml
+argo-watcher/write-back-repo: "git@github.com:example/gitops.git"
+argo-watcher/write-back-branch: "main"
+argo-watcher/write-back-path: "sandbox/charts/demo"
+```
+
+Assuming that our application name is `Demo`, argo-watcher will create/update the following override file:
+```bash
+sandbox/charts/demo/.argocd-source-demo.yaml
+```
+
+> This is not an ideal solution, but so far it is the only way to reliably determine the correct override file to update.
+
 ### Additional information
 
 - The `app` alias is intended to correspond with an alias specified in the `argo-watcher/ALIAS.helm.image-tag` annotation.
