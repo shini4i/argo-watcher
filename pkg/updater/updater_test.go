@@ -44,7 +44,7 @@ func TestGitRepoClone(t *testing.T) {
 			expected: nil,
 		},
 		{
-			name: "failed NewPublicKeysFromFile",
+			name: "failed AddSSHKey",
 			mockSSH: func() {
 				mockGitHandler.EXPECT().NewPublicKeysFromFile("git", sshKeyPath, sshKeyPass).Return(nil, errors.New("failed to fetch keys"))
 			},

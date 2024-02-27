@@ -52,7 +52,7 @@ func (repo *GitRepo) Clone() error {
 
 	repo.fs = memfs.New()
 
-	if repo.sshAuth, err = repo.GitHandler.NewPublicKeysFromFile("git", sshKeyPath, sshKeyPass); err != nil {
+	if repo.sshAuth, err = repo.GitHandler.AddSSHKey("git", sshKeyPath, sshKeyPass); err != nil {
 		return err
 	}
 

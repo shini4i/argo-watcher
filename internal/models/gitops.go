@@ -38,7 +38,7 @@ func extractGitOverrides(annotations map[string]string) (GitopsRepo, error) {
 
 	validate := validator.New()
 	if err := validate.Struct(gr); err != nil {
-		return gr, fmt.Errorf("invalid gitops repo: %s", err)
+		return gr, fmt.Errorf("invalid gitops repo: %w", err)
 	}
 
 	return gr, nil

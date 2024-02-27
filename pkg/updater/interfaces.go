@@ -9,7 +9,7 @@ import (
 
 type GitHandler interface {
 	Clone(s storage.Storer, worktree billy.Filesystem, o *git.CloneOptions) (*git.Repository, error)
-	NewPublicKeysFromFile(user, path, passphrase string) (*ssh.PublicKeys, error)
+	AddSSHKey(user, path, passphrase string) (*ssh.PublicKeys, error)
 }
 
 type GitClient struct{}
@@ -18,6 +18,6 @@ func (GitClient) Clone(s storage.Storer, worktree billy.Filesystem, o *git.Clone
 	return git.Clone(s, worktree, o)
 }
 
-func (GitClient) NewPublicKeysFromFile(user, path, passphrase string) (*ssh.PublicKeys, error) {
+func (GitClient) AddSSHKey(user, path, passphrase string) (*ssh.PublicKeys, error) {
 	return ssh.NewPublicKeysFromFile(user, path, passphrase)
 }
