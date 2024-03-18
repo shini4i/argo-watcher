@@ -68,13 +68,15 @@ func (repo *GitRepo) Clone() error {
 	return err
 }
 
-func (repo *GitRepo) UpdateApp(appName string, overrideContent *ArgoOverrideFile) error {
-	var overrideFileName string
+func (repo *GitRepo) generateOverrideFileName(appName string) string {
 	if repo.FileName == "" {
-		overrideFileName = fmt.Sprintf("%s/.argocd-source-%s.yaml", repo.Path, appName)
-	} else {
-		overrideFileName = fmt.Sprintf("%s/%s", repo.Path, repo.FileName)
+		return fmt.Sprintf("%s/.argocd-source-%s.yaml", repo.Path, appName)
 	}
+	return fmt.Sprintf("%s/%s", repo.Path, repo.FileName)
+}
+
+func (repo *GitRepo) UpdateApp(appName string, overrideContent *ArgoOverrideFile) error {
+	overrideFileName := repo.generateOverrideFileName(appName)
 
 	commitMsg := fmt.Sprintf("argo-watcher(%s): update image tag", appName)
 
