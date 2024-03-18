@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	envConfig "github.com/caarlos0/env/v10"
+
 	"github.com/stretchr/testify/assert"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
@@ -66,11 +68,15 @@ func TestPostgresState_Add(t *testing.T) {
 		User:     os.Getenv("DB_USER"),
 		Password: os.Getenv("DB_PASSWORD"),
 	}
+
+	err := envConfig.Parse(&databaseConfig)
+	assert.NoError(t, err)
+
 	testConfig := &config.ServerConfig{
 		StateType: "postgres",
 		Db:        databaseConfig,
 	}
-	err := postgresState.Connect(testConfig)
+	err = postgresState.Connect(testConfig)
 	assert.NoError(t, err)
 
 	db, err := postgresState.orm.DB()
