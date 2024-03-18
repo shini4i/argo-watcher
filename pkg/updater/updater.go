@@ -80,6 +80,8 @@ func (repo *GitRepo) UpdateApp(appName string, overrideContent *ArgoOverrideFile
 
 	commitMsg := fmt.Sprintf("argo-watcher(%s): update image tag", appName)
 
+	log.Debug().Msgf("Updating override file: %s", overrideFileName)
+
 	overrideContent, err := repo.mergeOverrideFileContent(overrideFileName, overrideContent)
 	if err != nil {
 		return err

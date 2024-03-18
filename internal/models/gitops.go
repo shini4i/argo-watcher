@@ -14,23 +14,29 @@ type GitopsRepo struct {
 }
 
 func NewGitopsRepo(app *Application) (GitopsRepo, error) {
-	if app.Spec.Sources != nil {
-		return extractGitOverrides(app.Metadata.Annotations)
-	}
-	return GitopsRepo{
+	return extractGitOverrides(app.Metadata.Annotations, app, app.Spec.Sources == nil)
+}
+
+func extractGitOverrides(annotations map[string]string, app *Application, isSourceNil bool) (GitopsRepo, error) {
+	gr := GitopsRepo{
 		RepoUrl:    app.Spec.Source.RepoURL,
 		BranchName: app.Spec.Source.TargetRevision,
 		Path:       app.Spec.Source.Path,
-	}, nil
-}
+	}
 
-func extractGitOverrides(annotations map[string]string) (GitopsRepo, error) {
-	var gr GitopsRepo
-	fields := map[string]*string{
-		managedGitRepo:   &gr.RepoUrl,
-		managedGitBranch: &gr.BranchName,
-		managedGitPath:   &gr.Path,
-		managedGitFile:   &gr.Filename,
+	fields := make(map[string]*string)
+
+	if isSourceNil {
+		// when app.Spec.Sources is nil, just include the managedGitFile
+		fields[managedGitFile] = &gr.Filename
+	} else {
+		// when app.Spec.Sources is not nil, include all fields
+		fields = map[string]*string{
+			managedGitRepo:   &gr.RepoUrl,
+			managedGitBranch: &gr.BranchName,
+			managedGitPath:   &gr.Path,
+			managedGitFile:   &gr.Filename,
+		}
 	}
 
 	for key, value := range annotations {
@@ -39,6 +45,7 @@ func extractGitOverrides(annotations map[string]string) (GitopsRepo, error) {
 		}
 	}
 
+	// Perform struct validation
 	validate := validator.New()
 	if err := validate.Struct(gr); err != nil {
 		return gr, fmt.Errorf("invalid gitops repo: %w", err)
