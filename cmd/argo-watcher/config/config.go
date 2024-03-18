@@ -21,7 +21,7 @@ type KeycloakConfig struct {
 
 type DatabaseConfig struct {
 	Host     string `env:"DB_HOST"`
-	Port     string `env:"DB_PORT"`
+	Port     string `env:"DB_PORT" envDefault:"5432"`
 	Name     string `env:"DB_NAME"`
 	User     string `env:"DB_USER"`
 	Password string `env:"DB_PASSWORD"`
