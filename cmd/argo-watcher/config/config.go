@@ -20,11 +20,14 @@ type KeycloakConfig struct {
 }
 
 type DatabaseConfig struct {
-	Host     string `env:"DB_HOST" json:"db_host,omitempty"`
-	Port     int    `env:"DB_PORT" json:"db_port,omitempty"`
-	Name     string `env:"DB_NAME" json:"db_name,omitempty"`
-	User     string `env:"DB_USER" json:"db_user,omitempty"`
-	Password string `env:"DB_PASSWORD" json:"-"`
+	Host     string `env:"DB_HOST"`
+	Port     string `env:"DB_PORT" envDefault:"5432"`
+	Name     string `env:"DB_NAME"`
+	User     string `env:"DB_USER"`
+	Password string `env:"DB_PASSWORD"`
+	SSLMode  string `env:"DB_SSL_MODE" envDefault:"disable"`
+	TimeZone string `env:"DB_TIMEZONE" envDefault:"UTC"`
+	DSN      string `env:"DB_DSN,expand" envDefault:"host=${DB_HOST} port=${DB_PORT} user=${DB_USER} password=${DB_PASSWORD} dbname=${DB_NAME} sslmode=${DB_SSL_MODE} TimeZone=${DB_TIMEZONE}"`
 }
 
 type ServerConfig struct {

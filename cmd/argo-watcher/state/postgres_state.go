@@ -27,7 +27,7 @@ type PostgresState struct {
 // Connect establishes a connection to the PostgreSQL database using the provided server configuration.
 func (state *PostgresState) Connect(serverConfig *config.ServerConfig) error {
 	// create ORM driver
-	if orm, err := gorm.Open(postgres.Open(getDsn(serverConfig)), getOrmLogger(serverConfig)); err != nil {
+	if orm, err := gorm.Open(postgres.Open(serverConfig.Db.DSN), getOrmLogger(serverConfig)); err != nil {
 		return err
 	} else {
 		state.orm = orm
@@ -191,11 +191,6 @@ func (state *PostgresState) doProcessPostgresObsoleteTasks() error {
 	}
 
 	return nil
-}
-
-func getDsn(serverConfig *config.ServerConfig) string {
-	dsnTemplate := "host=%s port=%d user=%s password=%s dbname=%s sslmode=disable TimeZone=UTC"
-	return fmt.Sprintf(dsnTemplate, serverConfig.Db.Host, serverConfig.Db.Port, serverConfig.Db.User, serverConfig.Db.Password, serverConfig.Db.Name)
 }
 
 func getOrmLogger(serverConfig *config.ServerConfig) *gorm.Config {

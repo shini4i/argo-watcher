@@ -1,9 +1,10 @@
 package state
 
 import (
-	"os"
 	"testing"
 	"time"
+
+	envConfig "github.com/caarlos0/env/v10"
 
 	"github.com/stretchr/testify/assert"
 
@@ -59,45 +60,37 @@ var (
 )
 
 func TestPostgresState_Add(t *testing.T) {
-	databaseConfig := config.DatabaseConfig{
-		Host:     os.Getenv("DB_HOST"),
-		Port:     5432,
-		Name:     os.Getenv("DB_NAME"),
-		User:     os.Getenv("DB_USER"),
-		Password: os.Getenv("DB_PASSWORD"),
-	}
+	databaseConfig := config.DatabaseConfig{}
+
+	err := envConfig.Parse(&databaseConfig)
+	assert.NoError(t, err)
+
 	testConfig := &config.ServerConfig{
 		StateType: "postgres",
 		Db:        databaseConfig,
 	}
-	err := postgresState.Connect(testConfig)
-	if err != nil {
-		panic(err)
-	}
+	err = postgresState.Connect(testConfig)
+	assert.NoError(t, err)
+
 	db, err := postgresState.orm.DB()
-	if err != nil {
-		panic(err)
-	}
+	assert.NoError(t, err)
+
 	_, err = db.Exec("TRUNCATE TABLE tasks")
-	if err != nil {
-		panic(err)
-	}
+	assert.NoError(t, err)
+
 	deployedTaskResult, err := postgresState.Add(deployedTask)
-	if err != nil {
-		t.Errorf("got error %s, expected nil", err.Error())
-	}
+	assert.NoError(t, err)
+
 	deployedTaskId = deployedTaskResult.Id
 
 	appNotFoundTaskResult, err := postgresState.Add(appNotFoundTask)
-	if err != nil {
-		t.Errorf("got error %s, expected nil", err.Error())
-	}
+	assert.NoError(t, err)
+
 	appNotFoundTaskId = appNotFoundTaskResult.Id
 
 	abortedTaskResult, err := postgresState.Add(abortedTask)
-	if err != nil {
-		t.Errorf("got error %s, expected nil", err.Error())
-	}
+	assert.NoError(t, err)
+
 	abortedTaskId = abortedTaskResult.Id
 }
 
@@ -187,21 +180,4 @@ func TestPostgresState_ProcessObsoleteTasks(t *testing.T) {
 func TestPostgresState_Check(t *testing.T) {
 	// Check that we return true if connection is ok
 	assert.True(t, postgresState.Check())
-}
-
-func TestGetDsn(t *testing.T) {
-	databaseConfig := config.DatabaseConfig{
-		Host:     "localhost",
-		Port:     5432,
-		Name:     "testdb",
-		User:     "admin",
-		Password: "password123",
-	}
-	testConfig := &config.ServerConfig{
-		Db: databaseConfig,
-	}
-
-	expectedDsn := "host=localhost port=5432 user=admin password=password123 dbname=testdb sslmode=disable TimeZone=UTC"
-
-	assert.Equal(t, expectedDsn, getDsn(testConfig))
 }
