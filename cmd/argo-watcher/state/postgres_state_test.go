@@ -71,33 +71,27 @@ func TestPostgresState_Add(t *testing.T) {
 		Db:        databaseConfig,
 	}
 	err := postgresState.Connect(testConfig)
-	if err != nil {
-		panic(err)
-	}
+	assert.NoError(t, err)
+
 	db, err := postgresState.orm.DB()
-	if err != nil {
-		panic(err)
-	}
+	assert.NoError(t, err)
+
 	_, err = db.Exec("TRUNCATE TABLE tasks")
-	if err != nil {
-		panic(err)
-	}
+	assert.NoError(t, err)
+
 	deployedTaskResult, err := postgresState.Add(deployedTask)
-	if err != nil {
-		t.Errorf("got error %s, expected nil", err.Error())
-	}
+	assert.NoError(t, err)
+
 	deployedTaskId = deployedTaskResult.Id
 
 	appNotFoundTaskResult, err := postgresState.Add(appNotFoundTask)
-	if err != nil {
-		t.Errorf("got error %s, expected nil", err.Error())
-	}
+	assert.NoError(t, err)
+
 	appNotFoundTaskId = appNotFoundTaskResult.Id
 
 	abortedTaskResult, err := postgresState.Add(abortedTask)
-	if err != nil {
-		t.Errorf("got error %s, expected nil", err.Error())
-	}
+	assert.NoError(t, err)
+
 	abortedTaskId = abortedTaskResult.Id
 }
 
