@@ -1,7 +1,6 @@
 package state
 
 import (
-	"os"
 	"testing"
 	"time"
 
@@ -61,13 +60,7 @@ var (
 )
 
 func TestPostgresState_Add(t *testing.T) {
-	databaseConfig := config.DatabaseConfig{
-		Host:     os.Getenv("DB_HOST"),
-		Port:     "5432",
-		Name:     os.Getenv("DB_NAME"),
-		User:     os.Getenv("DB_USER"),
-		Password: os.Getenv("DB_PASSWORD"),
-	}
+	databaseConfig := config.DatabaseConfig{}
 
 	err := envConfig.Parse(&databaseConfig)
 	assert.NoError(t, err)
