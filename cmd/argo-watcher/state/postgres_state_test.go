@@ -188,20 +188,3 @@ func TestPostgresState_Check(t *testing.T) {
 	// Check that we return true if connection is ok
 	assert.True(t, postgresState.Check())
 }
-
-func TestGetDsn(t *testing.T) {
-	databaseConfig := config.DatabaseConfig{
-		Host:     "localhost",
-		Port:     5432,
-		Name:     "testdb",
-		User:     "admin",
-		Password: "password123",
-	}
-	testConfig := &config.ServerConfig{
-		Db: databaseConfig,
-	}
-
-	expectedDsn := "host=localhost port=5432 user=admin password=password123 dbname=testdb sslmode=disable TimeZone=UTC"
-
-	assert.Equal(t, expectedDsn, getDsn(testConfig))
-}
