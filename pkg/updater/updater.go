@@ -40,6 +40,7 @@ type GitRepo struct {
 	RepoURL    string
 	BranchName string
 	Path       string
+	FileName   string
 	fs         billy.Filesystem
 	localRepo  *git.Repository
 	sshAuth    *ssh.PublicKeys
@@ -67,9 +68,19 @@ func (repo *GitRepo) Clone() error {
 	return err
 }
 
+func (repo *GitRepo) generateOverrideFileName(appName string) string {
+	if repo.FileName == "" {
+		return fmt.Sprintf("%s/.argocd-source-%s.yaml", repo.Path, appName)
+	}
+	return fmt.Sprintf("%s/%s", repo.Path, repo.FileName)
+}
+
 func (repo *GitRepo) UpdateApp(appName string, overrideContent *ArgoOverrideFile) error {
-	overrideFileName := fmt.Sprintf("%s/.argocd-source-%s.yaml", repo.Path, appName)
+	overrideFileName := repo.generateOverrideFileName(appName)
+
 	commitMsg := fmt.Sprintf("argo-watcher(%s): update image tag", appName)
+
+	log.Debug().Msgf("Updating override file: %s", overrideFileName)
 
 	overrideContent, err := repo.mergeOverrideFileContent(overrideFileName, overrideContent)
 	if err != nil {

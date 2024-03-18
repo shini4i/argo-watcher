@@ -481,3 +481,39 @@ func TestVersionChanged(t *testing.T) {
 		assert.True(t, changed, "Expected changes after modifying the file")
 	})
 }
+
+func TestGenerateOverrideFileName(t *testing.T) {
+	tests := []struct {
+		name     string
+		appName  string
+		fileName string
+		path     string
+		expected string
+	}{
+		{
+			name:     "Test with empty filename",
+			appName:  "myApp",
+			fileName: "",
+			path:     "/path/to",
+			expected: "/path/to/.argocd-source-myApp.yaml",
+		},
+		{
+			name:     "Test with non-empty filename",
+			appName:  "myApp",
+			fileName: "override.yaml",
+			path:     "/path/to",
+			expected: "/path/to/override.yaml",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			repo := &GitRepo{
+				Path:     test.path,
+				FileName: test.fileName,
+			}
+
+			assert.Equal(t, test.expected, repo.generateOverrideFileName(test.appName))
+		})
+	}
+}
