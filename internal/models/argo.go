@@ -24,6 +24,7 @@ const (
 	managedGitRepo          = "argo-watcher/write-back-repo"
 	managedGitBranch        = "argo-watcher/write-back-branch"
 	managedGitPath          = "argo-watcher/write-back-path"
+	managedGitFile          = "argo-watcher/write-back-filename"
 )
 
 type ApplicationOperationResource struct {
@@ -274,6 +275,7 @@ func (app *Application) UpdateGitImageTag(task *Task) error {
 		RepoURL:    gitopsRepo.RepoUrl,
 		BranchName: gitopsRepo.BranchName,
 		Path:       gitopsRepo.Path,
+		FileName:   gitopsRepo.Filename,
 
 		GitHandler: updater.GitClient{},
 	}

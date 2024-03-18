@@ -10,6 +10,7 @@ type GitopsRepo struct {
 	RepoUrl    string `validate:"required"`
 	BranchName string `validate:"required"`
 	Path       string `validate:"required"`
+	Filename   string
 }
 
 func NewGitopsRepo(app *Application) (GitopsRepo, error) {
@@ -29,6 +30,7 @@ func extractGitOverrides(annotations map[string]string) (GitopsRepo, error) {
 		managedGitRepo:   &gr.RepoUrl,
 		managedGitBranch: &gr.BranchName,
 		managedGitPath:   &gr.Path,
+		managedGitFile:   &gr.Filename,
 	}
 
 	for key, value := range annotations {
