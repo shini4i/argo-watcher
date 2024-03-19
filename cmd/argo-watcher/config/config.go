@@ -27,6 +27,13 @@ type DatabaseConfig struct {
 	Password string `env:"DB_PASSWORD" json:"-"`
 }
 
+type RabbitMqConfig struct {
+	Host     string `env:"RBQ_HOST" json:"rbq_host,omitempty"`
+	Port     int    `env:"RBQ_PORT" json:"rbq_port,omitempty"`
+	User     string `env:"RBQ_USER" json:"rbq_user,omitempty"`
+	Password string `env:"RBQ_PASSWORD" json:"-"`
+}
+
 type ServerConfig struct {
 	ArgoUrl                  url.URL           `env:"ARGO_URL,required" json:"argo_cd_url"`
 	ArgoUrlAlias             string            `env:"ARGO_URL_ALIAS" json:"argo_cd_url_alias,omitempty"` // Used to generate App URL. Can be omitted if ArgoUrl is reachable from outside.
@@ -48,6 +55,7 @@ type ServerConfig struct {
 	Keycloak                 KeycloakConfig    `json:"keycloak,omitempty"`
 	ScheduledLockdownEnabled bool              `env:"SCHEDULED_LOCKDOWN_ENABLED" envDefault:"false" json:"scheduled_lockdown_enabled"`
 	LockdownSchedule         LockdownSchedules `env:"LOCKDOWN_SCHEDULE" json:"-"`
+	RabbitMq                 RabbitMqConfig    `json:"-"`
 }
 
 // NewServerConfig parses the server configuration from environment variables using the envconfig package.

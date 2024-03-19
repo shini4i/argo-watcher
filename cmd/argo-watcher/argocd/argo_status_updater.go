@@ -68,6 +68,14 @@ func (updater *ArgoStatusUpdater) collectInitialAppStatus(task *models.Task) err
 }
 
 func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
+	// set tasks status into progress
+	errStatusChange := updater.argo.State.SetTaskStatus(task.Id, models.StatusInProgressMessage, "")
+	if errStatusChange != nil {
+		// deployment failed
+		log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, errStatusChange)
+		return
+	}
+
 	// wait for application to get into deployed status or timeout
 	application, err := updater.waitForApplicationDeployment(task)
 

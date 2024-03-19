@@ -1,7 +1,8 @@
 ---
 hide:
-- navigation
+  - navigation
 ---
+
 # Development
 
 ## Prerequisites
@@ -81,10 +82,16 @@ Start database
 docker compose up postgres
 ```
 
+Install migrations tool
+
+```shell
+go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+```
+
 Run migrations
 
 ```shell
-migrate -path file://db/migrations -database "postgresql://watcher:watcher@localhost:5432/watcher?sslmode=disable" up
+migrate -path ./db/migrations -database "postgresql://watcher:watcher@localhost:5432/watcher?sslmode=disable" up
 ```
 
 Start server

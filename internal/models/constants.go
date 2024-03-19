@@ -2,6 +2,7 @@ package models
 
 const (
 	StatusAppNotFoundMessage       = "app not found"
+	StatusQueued                   = "queued"
 	StatusInProgressMessage        = "in progress"
 	StatusFailedMessage            = "failed"
 	StatusAborted                  = "aborted"

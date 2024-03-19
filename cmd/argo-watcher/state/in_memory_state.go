@@ -33,7 +33,7 @@ func (state *InMemoryState) Add(task models.Task) (*models.Task, error) {
 	task.Id = uuid.New().String()
 	task.Created = float64(time.Now().Unix())
 	task.Updated = float64(time.Now().Unix())
-	task.Status = models.StatusInProgressMessage
+	task.Status = models.StatusQueued
 	state.tasks = append(state.tasks, task)
 	return &task, nil
 }

@@ -7,6 +7,7 @@ import (
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/auth"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/argocd"
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/queue"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
 
@@ -55,17 +56,17 @@ func RunServer() {
 		log.Fatal().Msgf("Couldn't initialize the Argo API. Got the following error: %s", err)
 	}
 
-	// create state management
-	state, err := state.NewState(serverConfig)
+	// create argoState management
+	argoState, err := state.NewState(serverConfig)
 	if err != nil {
 		log.Fatal().Msgf("Couldn't create state manager (in-memory / database). Got the following error: %s", err)
 	}
 	// start cleanup go routine (retryTimes set to 0 to retry indefinitely)
-	go state.ProcessObsoleteTasks(0)
+	go argoState.ProcessObsoleteTasks(0)
 
 	// initialize argo client
 	argo := &argocd.Argo{}
-	argo.Init(state, api, metrics)
+	argo.Init(argoState, api, metrics)
 
 	// initialize argo updater
 	updater := &argocd.ArgoStatusUpdater{}
@@ -76,8 +77,14 @@ func RunServer() {
 		serverConfig.AcceptSuspendedApp,
 	)
 
+	// initialize queue manager
+	queueManager := &queue.QueueManager{Updater: updater}
+	queueManager.Connect(serverConfig)
+	// TODO: process any tasks that are in status "Queued" but aren't in the queue, e.g. before we start listening
+	queueManager.StartListen()
+
 	// create environment
-	env := &Env{config: serverConfig, argo: argo, metrics: metrics, updater: updater}
+	env := &Env{config: serverConfig, argo: argo, metrics: metrics, queueManager: queueManager}
 
 	// initialize auth service
 	if serverConfig.Keycloak.Url != "" {
