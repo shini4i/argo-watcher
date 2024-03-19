@@ -15,7 +15,7 @@ const (
 )
 
 const (
-	MAX_CONCURRENT_DEPLOYMENTS_PER_INSTANCE = 2
+	MAX_CONCURRENT_DEPLOYMENTS_PER_INSTANCE = 10
 )
 
 type QueueManager struct {
