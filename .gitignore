@@ -34,3 +34,6 @@ site/
 
 # mkdocs cache
 .cache/
+
+# temporary test directory
+sandbox/

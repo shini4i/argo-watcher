@@ -11,6 +11,7 @@ type GitopsRepo struct {
 	BranchName string `validate:"required"`
 	Path       string `validate:"required"`
 	Filename   string
+	Type       string
 }
 
 func NewGitopsRepo(app *Application) (GitopsRepo, error) {
@@ -27,15 +28,17 @@ func extractGitOverrides(annotations map[string]string, app *Application, isSour
 	fields := make(map[string]*string)
 
 	if isSourceNil {
-		// when app.Spec.Sources is nil, just include the managedGitFile
+		// when app.Spec.Sources is nil, just include the managedGitFile and managedGitFileType fields
 		fields[managedGitFile] = &gr.Filename
+		fields[managedGitFileType] = &gr.Type
 	} else {
 		// when app.Spec.Sources is not nil, include all fields
 		fields = map[string]*string{
-			managedGitRepo:   &gr.RepoUrl,
-			managedGitBranch: &gr.BranchName,
-			managedGitPath:   &gr.Path,
-			managedGitFile:   &gr.Filename,
+			managedGitRepo:     &gr.RepoUrl,
+			managedGitBranch:   &gr.BranchName,
+			managedGitPath:     &gr.Path,
+			managedGitFile:     &gr.Filename,
+			managedGitFileType: &gr.Type,
 		}
 	}
 

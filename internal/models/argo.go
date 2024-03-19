@@ -25,6 +25,7 @@ const (
 	managedGitBranch        = "argo-watcher/write-back-branch"
 	managedGitPath          = "argo-watcher/write-back-path"
 	managedGitFile          = "argo-watcher/write-back-filename"
+	managedGitFileType      = "argo-watcher/write-back-type" // default is override file, can be set to "helmvalues" to update provided yaml file
 )
 
 type ApplicationOperationResource struct {

@@ -78,3 +78,25 @@ func GenerateHash(s string) []byte {
 	hash.Write([]byte(s))
 	return hash.Sum(nil)
 }
+
+// generateStructure is a utility function that takes a dot-separated path and a value.
+// It creates a nested map where each part of the path is a key in the map.
+// The last part of the path is assigned the provided value.
+// The function returns the resulting map, which represents a dynamic structure based on the input path.
+func generateStructure(path string, value interface{}) map[string]interface{} {
+	parts := strings.Split(path, ".")
+	result := make(map[string]interface{})
+	currentMap := result
+
+	for i, part := range parts {
+		if i == len(parts)-1 {
+			currentMap[part] = value
+		} else {
+			newMap := make(map[string]interface{})
+			currentMap[part] = newMap
+			currentMap = newMap
+		}
+	}
+
+	return result
+}

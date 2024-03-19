@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -107,6 +108,33 @@ func TestGenerateHash(t *testing.T) {
 			hashBytes := GenerateHash(tc.input)
 			hashString := hex.EncodeToString(hashBytes)
 			assert.Equal(t, tc.expected, hashString)
+		})
+	}
+}
+
+func TestGenerateStructure(t *testing.T) {
+	testCases := []struct {
+		path     string
+		value    interface{}
+		expected map[string]interface{}
+	}{
+		{
+			path:  "app3.image.tag",
+			value: "test123",
+			expected: map[string]interface{}{
+				"app3": map[string]interface{}{
+					"image": map[string]interface{}{
+						"tag": "test123",
+					},
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.path, func(t *testing.T) {
+			result := generateStructure(tc.path, tc.value)
+			assert.True(t, reflect.DeepEqual(result, tc.expected))
 		})
 	}
 }
