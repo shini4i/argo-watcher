@@ -79,9 +79,16 @@ func RunServer() {
 
 	// initialize queue manager
 	queueManager := &queue.QueueManager{Updater: updater}
-	queueManager.Connect(serverConfig)
+	err = queueManager.Connect(serverConfig)
+	if err != nil {
+		log.Fatal().Msgf("Couldn't start a queue manager. Got the following error: %s", err)
+	}
+
 	// TODO: process any tasks that are in status "Queued" but aren't in the queue, e.g. before we start listening
-	queueManager.StartListen()
+	err = queueManager.StartListen()
+	if err != nil {
+		log.Fatal().Msgf("Couldn't start a listening to task queue. Got the following error: %s", err)
+	}
 
 	// create environment
 	env := &Env{config: serverConfig, argo: argo, metrics: metrics, queueManager: queueManager}

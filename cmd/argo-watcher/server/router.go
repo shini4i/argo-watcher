@@ -194,7 +194,15 @@ func (env *Env) addTask(c *gin.Context) {
 	}
 
 	// queue rollout monitor
-	env.queueManager.QueueTask(*newTask)
+	err = env.queueManager.QueueTask(*newTask)
+	if err != nil {
+		log.Error().Msgf("Couldn't process new task. Got the following error: %s", err)
+		c.JSON(http.StatusInternalServerError, models.TaskStatus{
+			Status: "queue failure",
+			Error:  err.Error(),
+		})
+		return
+	}
 
 	// return information about created task
 	c.JSON(http.StatusAccepted, models.TaskStatus{
