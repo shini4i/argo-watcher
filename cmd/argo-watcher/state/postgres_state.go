@@ -41,7 +41,7 @@ func (state *PostgresState) Connect(serverConfig *config.ServerConfig) error {
 func (state *PostgresState) Add(task models.Task) (*models.Task, error) {
 	ormTask := state_models.TaskModel{
 		Images:          datatypes.NewJSONSlice(task.Images),
-		Status:          models.StatusInProgressMessage,
+		Status:          models.StatusQueued,
 		ApplicationName: sql.NullString{String: task.App, Valid: true},
 		Author:          sql.NullString{String: task.Author, Valid: true},
 		Project:         sql.NullString{String: task.Project, Valid: true},

@@ -1,4 +1,4 @@
-version: '3'
+version: "3"
 services:
   postgres:
     image: postgres:15.3
@@ -8,7 +8,7 @@ services:
       POSTGRES_PASSWORD: watcher
       POSTGRES_DB: watcher
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U watcher" ]
+      test: ["CMD-SHELL", "pg_isready -U watcher"]
       interval: 30s
       timeout: 30s
       retries: 3
@@ -16,6 +16,13 @@ services:
       - ./db/data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
+  rabbitmq:
+    image: rabbitmq:3.13.0
+    environment:
+      RABBITMQ_DEFAULT_USER: watcher
+      RABBITMQ_DEFAULT_PASS: watcher
+    ports:
+      - "5672:5672"
   migrations:
     image: migrate/migrate:v4.17.0
     command: -path=/migrations/ -database postgres://watcher:watcher@postgres:5432/watcher?sslmode=disable up

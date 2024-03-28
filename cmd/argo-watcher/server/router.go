@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/auth"
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/queue"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/argocd"
 
@@ -45,8 +46,8 @@ type Env struct {
 	config *config.ServerConfig
 	// argo argo
 	argo *argocd.Argo
-	// argo updater
-	updater *argocd.ArgoStatusUpdater
+	// argo argo
+	queueManager *queue.QueueManager
 	// metrics
 	metrics *prometheus.Metrics
 	// auth service
@@ -154,7 +155,6 @@ func (env *Env) addTask(c *gin.Context) {
 	// not an optimal solution, but for PoC it's fine
 	// need to find a better way to pass the token later
 	deployToken := c.GetHeader("ARGO_WATCHER_DEPLOY_TOKEN")
-
 	keycloakToken := c.GetHeader("Authorization")
 
 	// need to rewrite this block
@@ -193,8 +193,16 @@ func (env *Env) addTask(c *gin.Context) {
 		return
 	}
 
-	// start rollout monitor
-	go env.updater.WaitForRollout(*newTask)
+	// queue rollout monitor
+	err = env.queueManager.QueueTask(*newTask)
+	if err != nil {
+		log.Error().Msgf("Couldn't process new task. Got the following error: %s", err)
+		c.JSON(http.StatusInternalServerError, models.TaskStatus{
+			Status: "queue failure",
+			Error:  err.Error(),
+		})
+		return
+	}
 
 	// return information about created task
 	c.JSON(http.StatusAccepted, models.TaskStatus{
