@@ -9,13 +9,13 @@ function ApplicationsFilter({ value, onChange, setError, setSuccess }) {
 
   useEffect(() => {
     fetchApplications()
-        .then(items => {
-          setSuccess('fetchApplications', 'Application filter dropdown fetched');
-          setApplications(items);
-        })
-        .catch(error => {
-          setError('fetchApplications', error.message);
-        });
+      .then(items => {
+        setSuccess('fetchApplications', 'Application filter dropdown fetched');
+        setApplications(items);
+      })
+      .catch(error => {
+        setError('fetchApplications', error.message);
+      });
   }, []);
 
   const handleApplicationsChange = (_event, newValue) => {
@@ -23,15 +23,15 @@ function ApplicationsFilter({ value, onChange, setError, setSuccess }) {
   };
 
   return (
-      <Autocomplete
-          size={'small'}
-          disablePortal
-          options={applications}
-          sx={{ width: 220 }}
-          renderInput={params => <TextField {...params} label="Application" />}
-          value={value || null}
-          onChange={handleApplicationsChange}
-      />
+    <Autocomplete
+      size={'small'}
+      disablePortal
+      options={applications}
+      sx={{ width: 220 }}
+      renderInput={params => <TextField {...params} label="Application" />}
+      value={value || null}
+      onChange={handleApplicationsChange}
+    />
   );
 }
 
@@ -39,7 +39,7 @@ ApplicationsFilter.propTypes = {
   value: PropTypes.any,
   onChange: PropTypes.func,
   setError: PropTypes.func.isRequired,
-  setSuccess: PropTypes.func.isRequired
+  setSuccess: PropTypes.func.isRequired,
 };
 
 export default ApplicationsFilter;
