@@ -146,12 +146,10 @@ func (repo *GitRepo) commit(fileName, commitMsg string, overrideContent *ArgoOve
 		return err
 	}
 
-	content, err := yaml.Marshal(overrideContent)
-	if err != nil {
-		return err
-	}
+	encoder := yaml.NewEncoder(file)
+	encoder.SetIndent(2)
 
-	if _, err = file.Write(content); err != nil {
+	if err := encoder.Encode(overrideContent); err != nil {
 		return err
 	}
 
