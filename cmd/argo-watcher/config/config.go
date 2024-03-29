@@ -30,6 +30,11 @@ type DatabaseConfig struct {
 	DSN      string `env:"DB_DSN,expand" envDefault:"host=${DB_HOST} port=${DB_PORT} user=${DB_USER} password=${DB_PASSWORD} dbname=${DB_NAME} sslmode=${DB_SSL_MODE} TimeZone=${DB_TIMEZONE}"`
 }
 
+type WebhookConfig struct {
+	URL    string `env:"WEBHOOK_URL" json:"url,omitempty"`
+	Format string `env:"WEBHOOK_FORMAT" json:"format,omitempty"`
+}
+
 type ServerConfig struct {
 	ArgoUrl                  url.URL           `env:"ARGO_URL,required" json:"argo_cd_url"`
 	ArgoUrlAlias             string            `env:"ARGO_URL_ALIAS" json:"argo_cd_url_alias,omitempty"` // Used to generate App URL. Can be omitted if ArgoUrl is reachable from outside.
@@ -51,6 +56,7 @@ type ServerConfig struct {
 	Keycloak                 KeycloakConfig    `json:"keycloak,omitempty"`
 	ScheduledLockdownEnabled bool              `env:"SCHEDULED_LOCKDOWN_ENABLED" envDefault:"false" json:"scheduled_lockdown_enabled"`
 	LockdownSchedule         LockdownSchedules `env:"LOCKDOWN_SCHEDULE" json:"-"`
+	Webhook                  WebhookConfig     `json:"webhook,omitempty"`
 }
 
 // NewServerConfig parses the server configuration from environment variables using the envconfig package.
