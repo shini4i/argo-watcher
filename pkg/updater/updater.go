@@ -14,7 +14,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/rs/zerolog/log"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 var (
@@ -146,12 +146,10 @@ func (repo *GitRepo) commit(fileName, commitMsg string, overrideContent *ArgoOve
 		return err
 	}
 
-	content, err := yaml.Marshal(overrideContent)
-	if err != nil {
-		return err
-	}
+	encoder := yaml.NewEncoder(file)
+	encoder.SetIndent(2)
 
-	if _, err = file.Write(content); err != nil {
+	if err := encoder.Encode(overrideContent); err != nil {
 		return err
 	}
 

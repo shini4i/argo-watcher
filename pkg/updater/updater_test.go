@@ -15,7 +15,7 @@ import (
 	"github.com/shini4i/argo-watcher/pkg/updater/mock"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 func TestGitRepoClone(t *testing.T) {
