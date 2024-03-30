@@ -20,7 +20,7 @@ type WebhookService struct {
 
 func NewWebhookService(webhookConfig *config.WebhookConfig) *WebhookService {
 	return &WebhookService{
-		Enabled: true,
+		Enabled: webhookConfig.Enabled,
 		config:  webhookConfig,
 	}
 }
