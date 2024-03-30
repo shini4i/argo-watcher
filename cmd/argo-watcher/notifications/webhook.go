@@ -2,6 +2,7 @@ package notifications
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net/http"
 	"text/template"
@@ -33,16 +34,23 @@ func (service *WebhookService) SendWebhook(task models.Task) error {
 		return err
 	}
 
+	log.Debug().Str("id", task.Id).Msgf("Sending webhook payload: %s", payload.String())
+
 	resp, err := http.Post(service.serverConfig.Webhook.Url, "application/json", &payload)
 	if err != nil {
 		return err
 	}
+
 	defer func(Body io.ReadCloser) {
 		err := Body.Close()
 		if err != nil {
 			log.Error().Err(err).Msg("Failed to close response body")
 		}
 	}(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("received non-OK status code: %v", resp.StatusCode)
+	}
 
 	return nil
 }

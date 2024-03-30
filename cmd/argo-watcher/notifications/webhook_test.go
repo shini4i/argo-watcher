@@ -24,40 +24,65 @@ var mockTask = models.Task{
 	Status: "test-status",
 }
 
-func TestSendWebhook(t *testing.T) {
-	// Create a test server that checks the received payload
-	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func setupTestServer(t *testing.T) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		defer func(Body io.ReadCloser) {
 			err := Body.Close()
 			if err != nil {
-				t.Errorf("Failed to close response body: %v", err)
+				t.Error(err)
 			}
 		}(r.Body)
 
 		var payload TestWebhookPayload
 		err := json.Unmarshal(body, &payload)
 		assert.NoError(t, err)
-		assert.Equal(t, mockTask.Id, payload.Id)
-		assert.Equal(t, mockTask.App, payload.App)
-		assert.Equal(t, mockTask.Status, payload.Status)
+		checkPayload(t, payload)
 	}))
-	defer testServer.Close()
+}
 
-	// Create a mock ServerConfig with the test server's URL
-	serverConfig := &config.ServerConfig{
-		Webhook: config.WebhookConfig{
-			Url:    testServer.URL,
-			Format: `{"id": "{{.Id}}","app": "{{.App}}","status": "{{.Status}}"}`,
-		},
-	}
+func setupErrorTestServer() *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+}
 
-	// Create a new WebhookService with the mock ServerConfig
-	service := NewWebhookService(serverConfig)
+func checkPayload(t *testing.T, payload TestWebhookPayload) {
+	assert.Equal(t, mockTask.Id, payload.Id)
+	assert.Equal(t, mockTask.App, payload.App)
+	assert.Equal(t, mockTask.Status, payload.Status)
+}
 
-	// Call the SendWebhook method with the mock Task
-	err := service.SendWebhook(mockTask)
+func TestSendWebhook(t *testing.T) {
+	t.Run("Test webhook payload", func(t *testing.T) {
+		testServer := setupTestServer(t)
+		defer testServer.Close()
 
-	// Check the returned error
-	assert.NoError(t, err)
+		serverConfig := &config.ServerConfig{
+			Webhook: config.WebhookConfig{
+				Url:    testServer.URL,
+				Format: `{"id": "{{.Id}}","app": "{{.App}}","status": "{{.Status}}"}`,
+			},
+		}
+
+		service := NewWebhookService(serverConfig)
+		err := service.SendWebhook(mockTask)
+		assert.NoError(t, err)
+	})
+
+	t.Run("Test error response", func(t *testing.T) {
+		testServer := setupErrorTestServer()
+		defer testServer.Close()
+
+		serverConfig := &config.ServerConfig{
+			Webhook: config.WebhookConfig{
+				Url:    testServer.URL,
+				Format: `{"id": "{{.Id}}","app": "{{.App}}","status": "{{.Status}}"}`,
+			},
+		}
+
+		service := NewWebhookService(serverConfig)
+		err := service.SendWebhook(mockTask)
+		assert.Error(t, err)
+	})
 }
