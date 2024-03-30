@@ -95,10 +95,11 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 		// deployment success
 		updater.argo.metrics.ResetFailedDeployment(task.App)
 		// update task status
-		errStatusChange := updater.argo.State.SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
-		if errStatusChange != nil {
-			log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, errStatusChange)
+		if err := updater.argo.State.SetTaskStatus(task.Id, models.StatusDeployedMessage, ""); err != nil {
+			log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, err)
 		}
+		// setting task status to handle further notifications
+		task.Status = models.StatusDeployedMessage
 	} else {
 		log.Info().Str("id", task.Id).Msg("App deployment failed.")
 		// deployment failed
@@ -110,10 +111,11 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 			application.GetRolloutMessage(status, task.ListImages()),
 		)
 		// update task status
-		errStatusChange := updater.argo.State.SetTaskStatus(task.Id, models.StatusFailedMessage, reason)
-		if errStatusChange != nil {
-			log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, errStatusChange)
+		if err := updater.argo.State.SetTaskStatus(task.Id, models.StatusFailedMessage, reason); err != nil {
+			log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, err)
 		}
+		// setting task status to handle further notifications
+		task.Status = models.StatusFailedMessage
 	}
 
 	// send webhook event about the deployment result
