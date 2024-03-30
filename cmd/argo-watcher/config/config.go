@@ -31,8 +31,9 @@ type DatabaseConfig struct {
 }
 
 type WebhookConfig struct {
-	Url    string `env:"WEBHOOK_URL" json:"url,omitempty"`
-	Format string `env:"WEBHOOK_FORMAT" json:"format,omitempty"`
+	Enabled bool   `env:"WEBHOOK_ENABLED" envDefault:"false" json:"enabled"`
+	Url     string `env:"WEBHOOK_URL" json:"url,omitempty"`
+	Format  string `env:"WEBHOOK_FORMAT" json:"format,omitempty"`
 }
 
 type ServerConfig struct {

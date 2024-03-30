@@ -14,17 +14,19 @@ import (
 )
 
 type WebhookService struct {
-	serverConfig *config.ServerConfig
+	Enabled bool
+	config  *config.WebhookConfig
 }
 
-func NewWebhookService(serverConfig *config.ServerConfig) *WebhookService {
+func NewWebhookService(webhookConfig *config.WebhookConfig) *WebhookService {
 	return &WebhookService{
-		serverConfig: serverConfig,
+		Enabled: webhookConfig.Enabled,
+		config:  webhookConfig,
 	}
 }
 
 func (service *WebhookService) SendWebhook(task models.Task) error {
-	tmpl, err := template.New("webhook").Parse(service.serverConfig.Webhook.Format)
+	tmpl, err := template.New("webhook").Parse(service.config.Format)
 	if err != nil {
 		return err
 	}
@@ -36,7 +38,7 @@ func (service *WebhookService) SendWebhook(task models.Task) error {
 
 	log.Debug().Str("id", task.Id).Msgf("Sending webhook payload: %s", payload.String())
 
-	resp, err := http.Post(service.serverConfig.Webhook.Url, "application/json", &payload)
+	resp, err := http.Post(service.config.Url, "application/json", &payload)
 	if err != nil {
 		return err
 	}

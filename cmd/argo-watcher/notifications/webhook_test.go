@@ -58,14 +58,12 @@ func TestSendWebhook(t *testing.T) {
 		testServer := setupTestServer(t)
 		defer testServer.Close()
 
-		serverConfig := &config.ServerConfig{
-			Webhook: config.WebhookConfig{
-				Url:    testServer.URL,
-				Format: `{"id": "{{.Id}}","app": "{{.App}}","status": "{{.Status}}"}`,
-			},
+		webhookConfig := config.WebhookConfig{
+			Url:    testServer.URL,
+			Format: `{"id": "{{.Id}}","app": "{{.App}}","status": "{{.Status}}"}`,
 		}
 
-		service := NewWebhookService(serverConfig)
+		service := NewWebhookService(&webhookConfig)
 		err := service.SendWebhook(mockTask)
 		assert.NoError(t, err)
 	})
@@ -74,14 +72,12 @@ func TestSendWebhook(t *testing.T) {
 		testServer := setupErrorTestServer()
 		defer testServer.Close()
 
-		serverConfig := &config.ServerConfig{
-			Webhook: config.WebhookConfig{
-				Url:    testServer.URL,
-				Format: `{"id": "{{.Id}}","app": "{{.App}}","status": "{{.Status}}"}`,
-			},
+		webhookConfig := config.WebhookConfig{
+			Url:    testServer.URL,
+			Format: `{"id": "{{.Id}}","app": "{{.App}}","status": "{{.Status}}"}`,
 		}
 
-		service := NewWebhookService(serverConfig)
+		service := NewWebhookService(&webhookConfig)
 		err := service.SendWebhook(mockTask)
 		assert.Error(t, err)
 	})
