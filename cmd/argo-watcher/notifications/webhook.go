@@ -19,11 +19,6 @@ type WebhookService struct {
 }
 
 func NewWebhookService(webhookConfig *config.WebhookConfig) *WebhookService {
-	if webhookConfig == nil {
-		return &WebhookService{
-			Enabled: false,
-		}
-	}
 	return &WebhookService{
 		Enabled: true,
 		config:  webhookConfig,
