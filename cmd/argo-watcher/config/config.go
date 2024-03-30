@@ -31,13 +31,13 @@ type DatabaseConfig struct {
 }
 
 type WebhookConfig struct {
-	URL    string `env:"WEBHOOK_URL" json:"url,omitempty"`
+	Url    string `env:"WEBHOOK_URL" json:"url,omitempty"`
 	Format string `env:"WEBHOOK_FORMAT" json:"format,omitempty"`
 }
 
 type ServerConfig struct {
 	ArgoUrl                  url.URL           `env:"ARGO_URL,required" json:"argo_cd_url"`
-	ArgoUrlAlias             string            `env:"ARGO_URL_ALIAS" json:"argo_cd_url_alias,omitempty"` // Used to generate App URL. Can be omitted if ArgoUrl is reachable from outside.
+	ArgoUrlAlias             string            `env:"ARGO_URL_ALIAS" json:"argo_cd_url_alias,omitempty"` // Used to generate App Url. Can be omitted if ArgoUrl is reachable from outside.
 	ArgoToken                string            `env:"ARGO_TOKEN,required" json:"-"`
 	ArgoApiTimeout           int64             `env:"ARGO_API_TIMEOUT" envDefault:"60" json:"argo_api_timeout"`
 	AcceptSuspendedApp       bool              `env:"ACCEPT_SUSPENDED_APP" envDefault:"false" json:"accept_suspended_app"` // If true, we will accept "Suspended" health status as valid

@@ -33,7 +33,7 @@ func (service *WebhookService) SendWebhook(task models.Task) error {
 		return err
 	}
 
-	resp, err := http.Post(service.serverConfig.Webhook.URL, "application/json", &payload)
+	resp, err := http.Post(service.serverConfig.Webhook.Url, "application/json", &payload)
 	if err != nil {
 		return err
 	}
