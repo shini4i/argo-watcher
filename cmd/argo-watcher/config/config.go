@@ -31,9 +31,11 @@ type DatabaseConfig struct {
 }
 
 type WebhookConfig struct {
-	Enabled bool   `env:"WEBHOOK_ENABLED" envDefault:"false" json:"enabled"`
-	Url     string `env:"WEBHOOK_URL" json:"url,omitempty"`
-	Format  string `env:"WEBHOOK_FORMAT" json:"format,omitempty"`
+	Enabled             bool   `env:"WEBHOOK_ENABLED" envDefault:"false" json:"enabled"`
+	Url                 string `env:"WEBHOOK_URL" json:"url,omitempty"`
+	Format              string `env:"WEBHOOK_FORMAT" json:"format,omitempty"`
+	AuthorizationHeader string `env:"WEBHOOK_AUTHORIZATION_HEADER_NAME" envDefault:"Authorization" json:"authorization_header,omitempty"`
+	Token               string `env:"WEBHOOK_AUTHORIZATION_HEADER_VALUE" envDefault:"" json:"-"`
 }
 
 type ServerConfig struct {

@@ -16,12 +16,14 @@ import (
 type WebhookService struct {
 	Enabled bool
 	config  *config.WebhookConfig
+	client  *http.Client
 }
 
 func NewWebhookService(webhookConfig *config.WebhookConfig) *WebhookService {
 	return &WebhookService{
 		Enabled: webhookConfig.Enabled,
 		config:  webhookConfig,
+		client:  &http.Client{},
 	}
 }
 
@@ -38,10 +40,17 @@ func (service *WebhookService) SendWebhook(task models.Task) error {
 
 	log.Debug().Str("id", task.Id).Msgf("Sending webhook payload: %s", payload.String())
 
-	resp, err := http.Post(service.config.Url, "application/json", &payload)
+	req, err := http.NewRequest("POST", service.config.Url, &payload)
 	if err != nil {
 		return err
 	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if service.config.Token != "" {
+		req.Header.Set(service.config.AuthorizationHeader, service.config.Token)
+	}
+
+	resp, err := service.client.Do(req)
 
 	defer func(Body io.ReadCloser) {
 		err := Body.Close()
