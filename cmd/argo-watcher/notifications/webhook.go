@@ -51,6 +51,9 @@ func (service *WebhookService) SendWebhook(task models.Task) error {
 	}
 
 	resp, err := service.client.Do(req)
+	if err != nil {
+		return err
+	}
 
 	defer func(Body io.ReadCloser) {
 		err := Body.Close()

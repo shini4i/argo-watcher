@@ -24,8 +24,13 @@ var mockTask = models.Task{
 	Status: "test-status",
 }
 
+const expectedAuthToken = "Bearer the-test-token"
+
 func setupTestServer(t *testing.T) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := r.Header.Get("Authorization")
+		assert.Equal(t, expectedAuthToken, token)
+
 		body, _ := io.ReadAll(r.Body)
 		defer func(Body io.ReadCloser) {
 			err := Body.Close()
@@ -59,8 +64,10 @@ func TestSendWebhook(t *testing.T) {
 		defer testServer.Close()
 
 		webhookConfig := config.WebhookConfig{
-			Url:    testServer.URL,
-			Format: `{"id": "{{.Id}}","app": "{{.App}}","status": "{{.Status}}"}`,
+			Url:                 testServer.URL,
+			Format:              `{"id": "{{.Id}}","app": "{{.App}}","status": "{{.Status}}"}`,
+			AuthorizationHeader: "Authorization",
+			Token:               expectedAuthToken,
 		}
 
 		service := NewWebhookService(&webhookConfig)
