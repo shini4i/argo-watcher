@@ -30,9 +30,17 @@ type DatabaseConfig struct {
 	DSN      string `env:"DB_DSN,expand" envDefault:"host=${DB_HOST} port=${DB_PORT} user=${DB_USER} password=${DB_PASSWORD} dbname=${DB_NAME} sslmode=${DB_SSL_MODE} TimeZone=${DB_TIMEZONE}"`
 }
 
+type WebhookConfig struct {
+	Enabled             bool   `env:"WEBHOOK_ENABLED" envDefault:"false" json:"enabled"`
+	Url                 string `env:"WEBHOOK_URL" json:"url,omitempty"`
+	Format              string `env:"WEBHOOK_FORMAT" json:"format,omitempty"`
+	AuthorizationHeader string `env:"WEBHOOK_AUTHORIZATION_HEADER_NAME" envDefault:"Authorization" json:"authorization_header,omitempty"`
+	Token               string `env:"WEBHOOK_AUTHORIZATION_HEADER_VALUE" envDefault:"" json:"-"`
+}
+
 type ServerConfig struct {
 	ArgoUrl                  url.URL           `env:"ARGO_URL,required" json:"argo_cd_url"`
-	ArgoUrlAlias             string            `env:"ARGO_URL_ALIAS" json:"argo_cd_url_alias,omitempty"` // Used to generate App URL. Can be omitted if ArgoUrl is reachable from outside.
+	ArgoUrlAlias             string            `env:"ARGO_URL_ALIAS" json:"argo_cd_url_alias,omitempty"` // Used to generate App Url. Can be omitted if ArgoUrl is reachable from outside.
 	ArgoToken                string            `env:"ARGO_TOKEN,required" json:"-"`
 	ArgoApiTimeout           int64             `env:"ARGO_API_TIMEOUT" envDefault:"60" json:"argo_api_timeout"`
 	AcceptSuspendedApp       bool              `env:"ACCEPT_SUSPENDED_APP" envDefault:"false" json:"accept_suspended_app"` // If true, we will accept "Suspended" health status as valid
@@ -51,6 +59,7 @@ type ServerConfig struct {
 	Keycloak                 KeycloakConfig    `json:"keycloak,omitempty"`
 	ScheduledLockdownEnabled bool              `env:"SCHEDULED_LOCKDOWN_ENABLED" envDefault:"false" json:"scheduled_lockdown_enabled"`
 	LockdownSchedule         LockdownSchedules `env:"LOCKDOWN_SCHEDULE" json:"-"`
+	Webhook                  WebhookConfig     `json:"webhook,omitempty"`
 }
 
 // NewServerConfig parses the server configuration from environment variables using the envconfig package.

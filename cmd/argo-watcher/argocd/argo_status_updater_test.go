@@ -6,11 +6,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
+
 	"github.com/stretchr/testify/assert"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/mock"
 	"github.com/shini4i/argo-watcher/internal/models"
 	"go.uber.org/mock/gomock"
+)
+
+var (
+	mockWebhookConfig = &config.WebhookConfig{
+		Enabled: false,
+	}
 )
 
 func TestArgoStatusUpdaterCheck(t *testing.T) {
@@ -29,7 +37,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		updater.Init(*argo, 1, 0*time.Second, "test-registry", false)
+		updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig)
 
 		// prepare test data
 		task := models.Task{
@@ -70,7 +78,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		updater.Init(*argo, 3, 0*time.Second, "test-registry", false)
+		updater.Init(*argo, 3, 0*time.Second, "test-registry", false, mockWebhookConfig)
 
 		// prepare test data
 		task := models.Task{
@@ -118,7 +126,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		updater.Init(*argo, 1, 0*time.Second, "test-registry", false)
+		updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig)
 
 		// prepare test data
 		task := models.Task{
@@ -159,7 +167,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		updater.Init(*argo, 1, 0*time.Second, "", false)
+		updater.Init(*argo, 1, 0*time.Second, "", false, mockWebhookConfig)
 
 		// prepare test data
 		task := models.Task{
@@ -201,7 +209,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		updater.Init(*argo, 1, 0*time.Second, "test-registry", false)
+		updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig)
 
 		// prepare test data
 		task := models.Task{
@@ -230,7 +238,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		updater.Init(*argo, 1, 0*time.Second, "test-registry", false)
+		updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig)
 
 		// prepare test data
 		task := models.Task{
@@ -259,7 +267,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		updater.Init(*argo, 1, 0*time.Second, "test-registry", false)
+		updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig)
 
 		// prepare test data
 		task := models.Task{
@@ -288,7 +296,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		updater.Init(*argo, 1, 0*time.Second, "test-registry", false)
+		updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig)
 
 		// prepare test data
 		task := models.Task{
@@ -328,7 +336,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		updater.Init(*argo, 1, 0*time.Second, "test-registry", false)
+		updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig)
 
 		// prepare test data
 		task := models.Task{
@@ -372,7 +380,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		updater.Init(*argo, 1, 0*time.Second, "test-registry", false)
+		updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig)
 
 		// prepare test data
 		task := models.Task{

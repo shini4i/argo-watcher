@@ -74,6 +74,7 @@ func RunServer() {
 		argocd.ArgoSyncRetryDelay,
 		serverConfig.RegistryProxyUrl,
 		serverConfig.AcceptSuspendedApp,
+		&serverConfig.Webhook,
 	)
 
 	// create environment

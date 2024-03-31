@@ -9,6 +9,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/notifications"
+
 	"github.com/shini4i/argo-watcher/internal/helpers"
 
 	"github.com/avast/retry-go/v4"
@@ -34,9 +37,10 @@ type ArgoStatusUpdater struct {
 	retryOptions     []retry.Option
 	mutex            MutexMap
 	acceptSuspended  bool
+	webhookService   *notifications.WebhookService
 }
 
-func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, retryDelay time.Duration, registryProxyUrl string, acceptSuspended bool) {
+func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, retryDelay time.Duration, registryProxyUrl string, acceptSuspended bool, webhookConfig *config.WebhookConfig) {
 	updater.argo = argo
 	updater.registryProxyUrl = registryProxyUrl
 	updater.retryOptions = []retry.Option{
@@ -46,6 +50,7 @@ func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, retryDelay
 		retry.LastErrorOnly(true),
 	}
 	updater.acceptSuspended = acceptSuspended
+	updater.webhookService = notifications.NewWebhookService(webhookConfig)
 }
 
 func (updater *ArgoStatusUpdater) collectInitialAppStatus(task *models.Task) error {
@@ -68,6 +73,9 @@ func (updater *ArgoStatusUpdater) collectInitialAppStatus(task *models.Task) err
 }
 
 func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
+	// notify about the deployment start
+	sendWebhookEvent(task, updater.webhookService)
+
 	// wait for application to get into deployed status or timeout
 	application, err := updater.waitForApplicationDeployment(task)
 
@@ -87,10 +95,11 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 		// deployment success
 		updater.argo.metrics.ResetFailedDeployment(task.App)
 		// update task status
-		errStatusChange := updater.argo.State.SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
-		if errStatusChange != nil {
-			log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, errStatusChange)
+		if err := updater.argo.State.SetTaskStatus(task.Id, models.StatusDeployedMessage, ""); err != nil {
+			log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, err)
 		}
+		// setting task status to handle further notifications
+		task.Status = models.StatusDeployedMessage
 	} else {
 		log.Info().Str("id", task.Id).Msg("App deployment failed.")
 		// deployment failed
@@ -102,11 +111,15 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 			application.GetRolloutMessage(status, task.ListImages()),
 		)
 		// update task status
-		errStatusChange := updater.argo.State.SetTaskStatus(task.Id, models.StatusFailedMessage, reason)
-		if errStatusChange != nil {
-			log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, errStatusChange)
+		if err := updater.argo.State.SetTaskStatus(task.Id, models.StatusFailedMessage, reason); err != nil {
+			log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, err)
 		}
+		// setting task status to handle further notifications
+		task.Status = models.StatusFailedMessage
 	}
+
+	// send webhook event about the deployment result
+	sendWebhookEvent(task, updater.webhookService)
 }
 
 func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task) (*models.Application, error) {
@@ -236,5 +249,13 @@ func (updater *ArgoStatusUpdater) handleArgoAPIFailure(task models.Task, err err
 
 	if err := updater.argo.State.SetTaskStatus(task.Id, apiFailureStatus, reason); err != nil {
 		log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, err)
+	}
+}
+
+func sendWebhookEvent(task models.Task, webhookService *notifications.WebhookService) {
+	if webhookService.Enabled {
+		if err := webhookService.SendWebhook(task); err != nil {
+			log.Error().Str("id", task.Id).Msgf("Failed to send webhook. Error: %s", err.Error())
+		}
 	}
 }
