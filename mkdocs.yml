@@ -25,6 +25,7 @@ nav:
   - Git Integration: 'git-integration.md'
   - Development: "development.md"
   - Keycloak: "keycloak.md"
+  - Notifications: "notifications.md"
 
 markdown_extensions:
   - pymdownx.tasklist:
