@@ -33,7 +33,7 @@ jobs:
         run: make build-ui
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@v3.1.1
+        uses: sigstore/cosign-installer@v3.4.0
 
       - name: Install Syft for SBOM Generation
         uses: anchore/sbom-action@v0
@@ -59,10 +59,10 @@ jobs:
           echo "GORELEASER_PREVIOUS_TAG=$previous_stable_tag" >> $GITHUB_OUTPUT
 
       - name: Run GoReleaser for stable release
-        uses: goreleaser/goreleaser-action@v4
+        uses: goreleaser/goreleaser-action@v5
         if: (!contains(github.ref, 'pre'))
         with:
-          version: v1.19.2
+          version: v1.25.1
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -70,10 +70,10 @@ jobs:
           GORELEASER_PREVIOUS_TAG: ${{ steps.previous-stable-release-tag.outputs.GORELEASER_PREVIOUS_TAG }}
 
       - name: Run GoReleaser for pre-release
-        uses: goreleaser/goreleaser-action@v4
+        uses: goreleaser/goreleaser-action@v5
         if: contains(github.ref, 'pre')
         with:
-          version: v1.19.2
+          version: v1.25.1
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
