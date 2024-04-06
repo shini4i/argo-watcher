@@ -88,6 +88,8 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 		updater.argo.metrics.AddFailedDeployment(task.App)
 		// update task status regarding failure
 		updater.handleArgoAPIFailure(task, err)
+		// decrement in progress task counter
+		updater.argo.metrics.RemoveInProgressTask()
 		return
 	}
 
