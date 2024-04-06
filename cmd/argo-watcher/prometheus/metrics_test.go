@@ -110,3 +110,30 @@ func testMetricRegistered(metricName string) bool {
 
 	return false
 }
+
+func TestInProgressTasks(t *testing.T) {
+	metrics := &Metrics{}
+	metrics.Init()
+
+	t.Run("AddInProgressTask", func(t *testing.T) {
+		// Call the method to test
+		metrics.AddInProgressTask()
+
+		// Get the current value of the metric
+		metric := testutil.ToFloat64(metrics.inProgressTasks)
+
+		// Check if the metric was incremented
+		assert.Equal(t, 1.0, metric)
+	})
+
+	t.Run("RemoveInProgressTask", func(t *testing.T) {
+		// Call the method to test
+		metrics.RemoveInProgressTask()
+
+		// Get the current value of the metric
+		metric := testutil.ToFloat64(metrics.inProgressTasks)
+
+		// Check if the metric was decremented
+		assert.Equal(t, 0.0, metric)
+	})
+}

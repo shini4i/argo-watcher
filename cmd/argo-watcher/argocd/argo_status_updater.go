@@ -73,6 +73,9 @@ func (updater *ArgoStatusUpdater) collectInitialAppStatus(task *models.Task) err
 }
 
 func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
+	// increment in progress task counter
+	updater.argo.metrics.AddInProgressTask()
+
 	// notify about the deployment start
 	sendWebhookEvent(task, updater.webhookService)
 
@@ -117,6 +120,9 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 		// setting task status to handle further notifications
 		task.Status = models.StatusFailedMessage
 	}
+
+	// decrement in progress task counter
+	updater.argo.metrics.RemoveInProgressTask()
 
 	// send webhook event about the deployment result
 	sendWebhookEvent(task, updater.webhookService)
