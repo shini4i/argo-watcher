@@ -59,7 +59,9 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// mock calls
 		apiMock.EXPECT().GetApplication(task.App).Return(&application, nil).Times(3)
+		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().ResetFailedDeployment(task.App)
+		metricsMock.EXPECT().RemoveInProgressTask()
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
 
 		// run the rollout
@@ -107,7 +109,9 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		// mock calls
 		apiMock.EXPECT().GetApplication(task.App).Return(&unhealthyApp, nil).Times(2)
 		apiMock.EXPECT().GetApplication(task.App).Return(&healthyApp, nil).Times(1)
+		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().ResetFailedDeployment(task.App)
+		metricsMock.EXPECT().RemoveInProgressTask()
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
 
 		// run the rollout
@@ -148,7 +152,9 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// mock calls
 		apiMock.EXPECT().GetApplication(task.App).Return(&application, nil).Times(3)
+		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().ResetFailedDeployment(task.App)
+		metricsMock.EXPECT().RemoveInProgressTask()
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
 
 		// run the rollout
@@ -189,7 +195,9 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// mock calls
 		apiMock.EXPECT().GetApplication(task.App).Return(&application, nil).Times(3)
+		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
+		metricsMock.EXPECT().RemoveInProgressTask()
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage,
 			"Application deployment failed. Rollout status \"not available\"\n\nList of current images (last app check):\n\ttest-registry/ghcr.io/shini4i/argo-watcher:dev\n\nList of expected images:\n\tghcr.io/shini4i/argo-watcher:dev")
 
@@ -219,7 +227,9 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// mock calls
 		apiMock.EXPECT().GetApplication(task.App).Return(nil, fmt.Errorf("applications.argoproj.io \"test-app\" not found"))
+		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
+		metricsMock.EXPECT().RemoveInProgressTask()
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusAppNotFoundMessage, "ArgoCD API Error: applications.argoproj.io \"test-app\" not found")
 
 		// run the rollout
@@ -248,7 +258,9 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// mock calls
 		apiMock.EXPECT().GetApplication(task.App).Return(nil, fmt.Errorf(argoUnavailableErrorMessage))
+		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
+		metricsMock.EXPECT().RemoveInProgressTask()
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusAborted, "ArgoCD API Error: connect: connection refused")
 
 		// run the rollout
@@ -277,7 +289,9 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// mock calls
 		apiMock.EXPECT().GetApplication(task.App).Return(nil, fmt.Errorf("unexpected failure"))
+		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
+		metricsMock.EXPECT().RemoveInProgressTask()
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage, "ArgoCD API Error: unexpected failure")
 
 		// run the rollout
@@ -316,7 +330,9 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// mock calls
 		apiMock.EXPECT().GetApplication(task.App).Return(&application, nil).Times(3)
+		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
+		metricsMock.EXPECT().RemoveInProgressTask()
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage,
 			"Application deployment failed. Rollout status \"not available\"\n\nList of current images (last app check):\n\ttest-image:v0.0.1\n\nList of expected images:\n\tghcr.io/shini4i/argo-watcher:dev")
 
@@ -360,7 +376,9 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// mock calls
 		apiMock.EXPECT().GetApplication(task.App).Return(&application, nil).Times(3)
+		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
+		metricsMock.EXPECT().RemoveInProgressTask()
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage,
 			"Application deployment failed. Rollout status \"not synced\"\n\nApp status \"NotWorking\"\nApp message \"Not working test app\"\nResources:\n\t")
 
@@ -402,7 +420,9 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// mock calls
 		apiMock.EXPECT().GetApplication(task.App).Return(&application, nil).Times(3)
+		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
+		metricsMock.EXPECT().RemoveInProgressTask()
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage,
 			"Application deployment failed. Rollout status \"not healthy\"\n\nApp sync status \"Synced\"\nApp health status \"NotHealthy\"\nResources:\n\t")
 

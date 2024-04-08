@@ -10,12 +10,15 @@ type MetricsInterface interface {
 	ResetFailedDeployment(app string)
 	AddProcessedDeployment()
 	SetArgoUnavailable(unavailable bool)
+	AddInProgressTask()
+	RemoveInProgressTask()
 }
 
 type Metrics struct {
 	failedDeployment     *prometheus.GaugeVec
 	processedDeployments prometheus.Counter
 	argocdUnavailable    prometheus.Gauge
+	inProgressTasks      prometheus.Gauge
 }
 
 func (metrics *Metrics) Init() {
@@ -33,6 +36,11 @@ func (metrics *Metrics) Init() {
 		Name: "argocd_unavailable",
 		Help: "Whether ArgoCD is available for argo-watcher.",
 	})
+
+	metrics.inProgressTasks = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "in_progress_tasks",
+		Help: "The number of tasks currently in progress.",
+	})
 }
 
 func (metrics *Metrics) Register() {
@@ -40,6 +48,7 @@ func (metrics *Metrics) Register() {
 	prometheus.MustRegister(metrics.failedDeployment)
 	prometheus.MustRegister(metrics.processedDeployments)
 	prometheus.MustRegister(metrics.argocdUnavailable)
+	prometheus.MustRegister(metrics.inProgressTasks)
 }
 
 func (metrics *Metrics) AddFailedDeployment(app string) {
@@ -52,6 +61,14 @@ func (metrics *Metrics) ResetFailedDeployment(app string) {
 
 func (metrics *Metrics) AddProcessedDeployment() {
 	metrics.processedDeployments.Inc()
+}
+
+func (metrics *Metrics) AddInProgressTask() {
+	metrics.inProgressTasks.Inc()
+}
+
+func (metrics *Metrics) RemoveInProgressTask() {
+	metrics.inProgressTasks.Dec()
 }
 
 func (metrics *Metrics) SetArgoUnavailable(unavailable bool) {
