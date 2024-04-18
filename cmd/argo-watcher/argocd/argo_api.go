@@ -47,7 +47,7 @@ func (api *ArgoApi) Init(serverConfig *config.ServerConfig) error {
 	// set cookies
 	jar.SetCookies(&api.baseUrl, []*http.Cookie{cookie})
 	transport := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: serverConfig.SkipTlsVerify},
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: serverConfig.SkipTlsVerify}, // #nosec G402
 	}
 	// create http client
 	api.client = &http.Client{
