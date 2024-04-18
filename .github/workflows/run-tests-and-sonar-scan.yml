@@ -7,6 +7,17 @@ on:
     types: [opened, synchronize, reopened]
 
 jobs:
+  security_scan:
+    name: Security scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: Run Gosec Security Scanner
+        uses: securego/gosec@master
+        with:
+          args: ./...
+
   test:
     name: Test
     runs-on: ubuntu-latest
