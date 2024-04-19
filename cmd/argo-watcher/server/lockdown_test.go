@@ -150,6 +150,39 @@ func TestTimeWithinSchedule(t *testing.T) {
 			endMin:    0,
 			expected:  true,
 		},
+		{
+			name:      "Friday 8:00, outside lockdown hours",
+			now:       time.Date(2022, time.November, 4, 8, 0, 0, 0, time.UTC), // Friday
+			startDay:  time.Friday,
+			endDay:    time.Monday,
+			startHour: 9,
+			startMin:  0,
+			endHour:   17,
+			endMin:    0,
+			expected:  false,
+		},
+		{
+			name:      "Sunday 8:00, outside lockdown hours",
+			now:       time.Date(2022, time.October, 23, 8, 0, 0, 0, time.UTC), // Sunday
+			startDay:  time.Monday,
+			endDay:    time.Friday,
+			startHour: 9,
+			startMin:  0,
+			endHour:   17,
+			endMin:    0,
+			expected:  false,
+		},
+		{
+			name:      "Tuesday 10:00, outside lockdown hours",
+			now:       time.Date(2022, time.October, 25, 10, 0, 0, 0, time.UTC), // Tuesday
+			startDay:  time.Wednesday,
+			endDay:    time.Friday,
+			startHour: 9,
+			startMin:  0,
+			endHour:   17,
+			endMin:    0,
+			expected:  false,
+		},
 	}
 	for _, tc := range tt {
 		t.Run(tc.name, func(t *testing.T) {
