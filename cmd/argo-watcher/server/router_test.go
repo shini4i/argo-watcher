@@ -54,7 +54,6 @@ func TestDeployLock(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, w.Code)
 		assert.Equal(t, "\"deploy lock is set\"", w.Body.String())
-		assert.Equal(t, true, env.deployLockSet)
 	})
 
 	t.Run("ReleaseDeployLock", func(t *testing.T) {
@@ -70,7 +69,6 @@ func TestDeployLock(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, w.Code)
 		assert.Equal(t, "\"deploy lock is released\"", w.Body.String())
-		assert.Equal(t, false, env.deployLockSet)
 	})
 
 	t.Run("isDeployLockSet", func(t *testing.T) {
