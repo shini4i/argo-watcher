@@ -152,8 +152,10 @@ func (l *Lockdown) ReleaseLock() {
 
 func NewLockdown(schedules string) (*Lockdown, error) {
 	lockdown := &Lockdown{}
-	if err := lockdown.Parse(schedules); err != nil {
-		return nil, err
+	if schedules != "" {
+		if err := lockdown.Parse(schedules); err != nil {
+			return nil, err
+		}
 	}
 	return lockdown, nil
 }

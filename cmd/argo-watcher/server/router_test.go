@@ -34,12 +34,17 @@ func TestGetVersion(t *testing.T) {
 }
 
 func TestDeployLock(t *testing.T) {
+	var err error
+
 	gin.SetMode(gin.TestMode)
 
 	dummyConfig := &config.ServerConfig{}
 
 	router := gin.Default()
 	env := &Env{config: dummyConfig}
+
+	env.lockdown, err = NewLockdown(dummyConfig.LockdownSchedule)
+	assert.NoError(t, err)
 
 	t.Run("SetDeployLock", func(t *testing.T) {
 		router.POST("/api/v1/deploy-lock", env.SetDeployLock)
