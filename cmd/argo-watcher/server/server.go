@@ -80,6 +80,10 @@ func RunServer() {
 	// create environment
 	env := &Env{config: serverConfig, argo: argo, metrics: metrics, updater: updater}
 
+	if env.lockdown, err = NewLockdown(serverConfig.LockdownSchedule); err != nil {
+		log.Fatal().Msgf("Couldn't create lockdown. Got the following error: %s", err)
+	}
+
 	// initialize auth service
 	if serverConfig.Keycloak.Url != "" {
 		env.auth = auth.NewExternalAuthService()
@@ -89,11 +93,6 @@ func RunServer() {
 			serverConfig.Keycloak.ClientId,
 			serverConfig.Keycloak.PrivilegedGroups,
 		)
-	}
-
-	// set up cron jobs
-	if env.config.ScheduledLockdownEnabled {
-		env.SetCron(env.config.LockdownSchedule)
 	}
 
 	// start the server

@@ -52,7 +52,7 @@ type Env struct {
 	// auth service
 	auth auth.ExternalAuthService
 	// deploy lock
-	deployLockSet bool
+	lockdown *Lockdown
 }
 
 // CreateRouter initialize router.
@@ -142,7 +142,7 @@ func (env *Env) addTask(c *gin.Context) {
 	}
 
 	// we need to handle cases when deploy lock is set either manually or by cron
-	if env.deployLockSet {
+	if env.lockdown.IsLocked() {
 		log.Warn().Msgf("deploy lock is set, rejecting the task")
 		c.JSON(http.StatusNotAcceptable, models.TaskStatus{
 			Status: "rejected",
@@ -312,7 +312,7 @@ func (env *Env) SetDeployLock(c *gin.Context) {
 		return
 	}
 
-	env.deployLockSet = true
+	env.lockdown.SetLock()
 
 	log.Debug().Msg("deploy lock is set")
 
@@ -336,7 +336,7 @@ func (env *Env) ReleaseDeployLock(c *gin.Context) {
 		return
 	}
 
-	env.deployLockSet = false
+	env.lockdown.ReleaseLock()
 
 	log.Debug().Msg("deploy lock is released")
 
@@ -352,7 +352,7 @@ func (env *Env) ReleaseDeployLock(c *gin.Context) {
 // @Success 200 {boolean} boolean
 // @Router /api/v1/deploy-lock [get].
 func (env *Env) isDeployLockSet(c *gin.Context) {
-	c.JSON(http.StatusOK, env.deployLockSet)
+	c.JSON(http.StatusOK, env.lockdown.IsLocked())
 }
 
 func (env *Env) validateKeycloakToken(c *gin.Context) error {
