@@ -71,3 +71,44 @@ func TestLockdown_SetLock_ReleaseLock(t *testing.T) {
 		})
 	}
 }
+
+func TestTimeWithinSchedule(t *testing.T) {
+	tt := []struct {
+		now       time.Time
+		startDay  time.Weekday
+		endDay    time.Weekday
+		startHour int
+		startMin  int
+		endHour   int
+		endMin    int
+		expected  bool
+	}{
+		{
+			now:       time.Date(2022, time.October, 20, 14, 0, 0, 0, time.UTC),
+			startDay:  time.Monday,
+			endDay:    time.Friday,
+			startHour: 9,
+			startMin:  0,
+			endHour:   17,
+			endMin:    0,
+			expected:  true,
+		},
+		{
+			now:       time.Date(2022, time.October, 20, 20, 0, 0, 0, time.UTC),
+			startDay:  time.Monday,
+			endDay:    time.Friday,
+			startHour: 9,
+			startMin:  0,
+			endHour:   17,
+			endMin:    0,
+			expected:  false,
+		},
+	}
+
+	for _, tc := range tt {
+		t.Run("", func(t *testing.T) {
+			res := timeWithinSchedule(tc.now, tc.startDay, tc.endDay, tc.startHour, tc.startMin, tc.endHour, tc.endMin)
+			assert.Equal(t, res, tc.expected)
+		})
+	}
+}

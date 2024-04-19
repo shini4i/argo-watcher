@@ -96,35 +96,10 @@ func (l *Lockdown) IsLocked() bool {
 	}
 
 	now := time.Now()
+
 	for _, s := range l.Schedules {
-		if s.StartDay <= now.Weekday() && now.Weekday() <= s.EndDay {
-			currentMinutes := now.Hour()*60 + now.Minute()
-			startMinutes := s.StartHour*60 + s.StartMin
-			endMinutes := s.EndHour*60 + s.EndMin
-
-			if startMinutes <= currentMinutes && currentMinutes <= endMinutes {
-				return true
-			}
-		} else if s.StartDay > s.EndDay {
-			// Adjust check for schedules that wrap into the next week
-			if s.StartDay <= now.Weekday() && now.Weekday() <= time.Saturday {
-				currentMinutes := now.Hour()*60 + now.Minute()
-				startMinutes := s.StartHour*60 + s.StartMin
-				endMinutes := 23*60 + 59 // Adjust to end of Saturday
-
-				if startMinutes <= currentMinutes && currentMinutes <= endMinutes {
-					return true
-				}
-			}
-			if time.Sunday <= now.Weekday() && now.Weekday() <= s.EndDay {
-				currentMinutes := now.Hour()*60 + now.Minute()
-				startMinutes := 0 // Adjust to start of Sunday
-				endMinutes := s.EndHour*60 + s.EndMin
-
-				if startMinutes <= currentMinutes && currentMinutes <= endMinutes {
-					return true
-				}
-			}
+		if timeWithinSchedule(now, s.StartDay, s.EndDay, s.StartHour, s.StartMin, s.EndHour, s.EndMin) {
+			return true
 		}
 	}
 
@@ -158,6 +133,18 @@ func NewLockdown(schedules string) (*Lockdown, error) {
 		}
 	}
 	return lockdown, nil
+}
+
+func timeWithinSchedule(now time.Time, startDay, endDay time.Weekday, startHour, startMin, endHour, endMin int) bool {
+	currentMinutes := now.Hour()*60 + now.Minute()
+	startMinutes := startHour*60 + startMin
+	endMinutes := endHour*60 + endMin
+
+	if startDay <= endDay {
+		return startDay <= now.Weekday() && now.Weekday() <= endDay && startMinutes <= currentMinutes && currentMinutes <= endMinutes
+	}
+	return (startDay <= now.Weekday() && now.Weekday() <= time.Saturday && startMinutes <= currentMinutes) ||
+		(time.Sunday <= now.Weekday() && now.Weekday() <= endDay && currentMinutes <= endMinutes)
 }
 
 func dayToWeekday(day string) (time.Weekday, error) {
