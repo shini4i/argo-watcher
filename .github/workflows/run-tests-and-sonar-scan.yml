@@ -7,6 +7,22 @@ on:
     types: [opened, synchronize, reopened]
 
 jobs:
+  security_scan:
+    name: Security scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v4
+        with:
+          go-version-file: go.mod
+      - name: Install project dependencies
+        run: make install-deps docs
+      - name: Run Gosec Security Scanner
+        uses: securego/gosec@master
+        with:
+          args: ./...
+
   test:
     name: Test
     runs-on: ubuntu-latest
