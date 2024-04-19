@@ -136,15 +136,27 @@ func NewLockdown(schedules string) (*Lockdown, error) {
 }
 
 func timeWithinSchedule(now time.Time, startDay, endDay time.Weekday, startHour, startMin, endHour, endMin int) bool {
-	currentMinutes := now.Hour()*60 + now.Minute()
-	startMinutes := startHour*60 + startMin
-	endMinutes := endHour*60 + endMin
+	// if endDay < startDay, it means the period extends to the next week
+	weekdaysInOrder := endDay >= startDay
 
-	if startDay <= endDay {
-		return startDay <= now.Weekday() && now.Weekday() <= endDay && startMinutes <= currentMinutes && currentMinutes <= endMinutes
+	if weekdaysInOrder && now.Weekday() >= startDay && now.Weekday() <= endDay ||
+		!weekdaysInOrder && (now.Weekday() >= startDay || now.Weekday() <= endDay) {
+		switch now.Weekday() {
+		case startDay:
+			// for starting day, time needs to be after start time
+			if now.Hour() < startHour || (now.Hour() == startHour && now.Minute() < startMin) {
+				return false
+			}
+		case endDay:
+			// for ending day, time needs to be before end time
+			if now.Hour() > endHour || (now.Hour() == endHour && now.Minute() >= endMin) {
+				return false
+			}
+		}
+		return true
 	}
-	return (startDay <= now.Weekday() && now.Weekday() <= time.Saturday && startMinutes <= currentMinutes) ||
-		(time.Sunday <= now.Weekday() && now.Weekday() <= endDay && currentMinutes <= endMinutes)
+
+	return false
 }
 
 func dayToWeekday(day string) (time.Weekday, error) {

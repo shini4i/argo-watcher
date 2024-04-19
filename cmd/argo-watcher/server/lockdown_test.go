@@ -74,6 +74,7 @@ func TestLockdown_SetLock_ReleaseLock(t *testing.T) {
 
 func TestTimeWithinSchedule(t *testing.T) {
 	tt := []struct {
+		name      string
 		now       time.Time
 		startDay  time.Weekday
 		endDay    time.Weekday
@@ -84,7 +85,8 @@ func TestTimeWithinSchedule(t *testing.T) {
 		expected  bool
 	}{
 		{
-			now:       time.Date(2022, time.October, 20, 14, 0, 0, 0, time.UTC),
+			name:      "Thursday 14:00, within lockdown hours",
+			now:       time.Date(2022, time.October, 20, 14, 0, 0, 0, time.UTC), // Thursday
 			startDay:  time.Monday,
 			endDay:    time.Friday,
 			startHour: 9,
@@ -94,7 +96,41 @@ func TestTimeWithinSchedule(t *testing.T) {
 			expected:  true,
 		},
 		{
-			now:       time.Date(2022, time.October, 20, 20, 0, 0, 0, time.UTC),
+			name:      "Thursday 20:00, within lockdown hours",
+			now:       time.Date(2022, time.October, 20, 20, 0, 0, 0, time.UTC), // Thursday
+			startDay:  time.Monday,
+			endDay:    time.Friday,
+			startHour: 9,
+			startMin:  0,
+			endHour:   17,
+			endMin:    0,
+			expected:  true,
+		},
+		{
+			name:      "Sunday 20:00, within lockdown hours",
+			now:       time.Date(2022, time.October, 23, 20, 0, 0, 0, time.UTC), // Sunday
+			startDay:  time.Friday,
+			endDay:    time.Monday,
+			startHour: 9,
+			startMin:  0,
+			endHour:   17,
+			endMin:    0,
+			expected:  true,
+		},
+		{
+			name:      "Saturday 8:00, within lockdown hours",
+			now:       time.Date(2022, time.October, 22, 8, 0, 0, 0, time.UTC), // Saturday
+			startDay:  time.Friday,
+			endDay:    time.Monday,
+			startHour: 9,
+			startMin:  0,
+			endHour:   17,
+			endMin:    0,
+			expected:  true,
+		},
+		{
+			name:      "Saturday 18:00, outside lockdown hours",
+			now:       time.Date(2022, time.October, 22, 18, 0, 0, 0, time.UTC), // Saturday at 18:00
 			startDay:  time.Monday,
 			endDay:    time.Friday,
 			startHour: 9,
@@ -103,10 +139,20 @@ func TestTimeWithinSchedule(t *testing.T) {
 			endMin:    0,
 			expected:  false,
 		},
+		{
+			name:      "Thursday 8:00, inside lockdown hours",
+			now:       time.Date(2022, time.October, 20, 8, 0, 0, 0, time.UTC), // Thursday at 08:00
+			startDay:  time.Monday,
+			endDay:    time.Friday,
+			startHour: 9,
+			startMin:  0,
+			endHour:   17,
+			endMin:    0,
+			expected:  true,
+		},
 	}
-
 	for _, tc := range tt {
-		t.Run("", func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			res := timeWithinSchedule(tc.now, tc.startDay, tc.endDay, tc.startHour, tc.startMin, tc.endHour, tc.endMin)
 			assert.Equal(t, res, tc.expected)
 		})
