@@ -221,3 +221,25 @@ func TestDayToWeekday(t *testing.T) {
 		})
 	}
 }
+
+func TestNewLockdown(t *testing.T) {
+	testCases := []struct {
+		name      string
+		schedules string
+		hasError  bool
+	}{
+		{"Configured Schedule", "Mon 08:00 - Tue 08:00, Wed 08:00 - Thu 08:00", false},
+		{"Blank Schedule", "", false},
+	}
+
+	for _, tt := range testCases {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := NewLockdown(tt.schedules)
+			if tt.hasError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
