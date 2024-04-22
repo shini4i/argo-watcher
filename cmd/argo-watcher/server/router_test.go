@@ -34,12 +34,17 @@ func TestGetVersion(t *testing.T) {
 }
 
 func TestDeployLock(t *testing.T) {
+	var err error
+
 	gin.SetMode(gin.TestMode)
 
 	dummyConfig := &config.ServerConfig{}
 
 	router := gin.Default()
 	env := &Env{config: dummyConfig}
+
+	env.lockdown, err = NewLockdown(dummyConfig.LockdownSchedule)
+	assert.NoError(t, err)
 
 	t.Run("SetDeployLock", func(t *testing.T) {
 		router.POST("/api/v1/deploy-lock", env.SetDeployLock)
@@ -54,7 +59,6 @@ func TestDeployLock(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, w.Code)
 		assert.Equal(t, "\"deploy lock is set\"", w.Body.String())
-		assert.Equal(t, true, env.deployLockSet)
 	})
 
 	t.Run("ReleaseDeployLock", func(t *testing.T) {
@@ -70,7 +74,6 @@ func TestDeployLock(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, w.Code)
 		assert.Equal(t, "\"deploy lock is released\"", w.Body.String())
-		assert.Equal(t, false, env.deployLockSet)
 	})
 
 	t.Run("isDeployLockSet", func(t *testing.T) {

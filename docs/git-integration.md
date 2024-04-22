@@ -106,13 +106,11 @@ In order to create a scheduled Lockdown mode, you need to set the following envi
 
 ```yaml
 extraEnvs:
-  - name: SCHEDULED_LOCKDOWN_ENABLED
-    value: true
   - name: LOCKDOWN_SCHEDULE
-    value: '[{"cron": "0 2 * * *", "duration": "5h30s"}]'
+    value: 'Wed 20:00 - Thu 08:00, Fri 20:00 - Mon 08:00'
 ```
 
-In this example, the deployments won't be allowed between 2:00 and 7:30 AM every day.
+In this example, the deployments won't be allowed between Wednesday 20:00 and Thursday 08:00, and between Friday 20:00 and Monday 08:00.
 
 ### Manual Lockdown mode
 
