@@ -191,3 +191,33 @@ func TestTimeWithinSchedule(t *testing.T) {
 		})
 	}
 }
+
+func TestDayToWeekday(t *testing.T) {
+	testCases := []struct {
+		name     string
+		input    string
+		expected time.Weekday
+		hasError bool
+	}{
+		{"Sunday", "Sun", time.Sunday, false},
+		{"Monday", "Mon", time.Monday, false},
+		{"Tuesday", "Tue", time.Tuesday, false},
+		{"Wednesday", "Wed", time.Wednesday, false},
+		{"Thursday", "Thu", time.Thursday, false},
+		{"Friday", "Fri", time.Friday, false},
+		{"Saturday", "Sat", time.Saturday, false},
+		{"Invalid", "Invalid", 0, true},
+	}
+
+	for _, tt := range testCases {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := dayToWeekday(tt.input)
+			if tt.hasError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expected, result)
+			}
+		})
+	}
+}
