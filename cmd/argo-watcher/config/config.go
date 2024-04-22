@@ -57,7 +57,7 @@ type ServerConfig struct {
 	DeployToken        string         `env:"ARGO_WATCHER_DEPLOY_TOKEN" json:"-"`
 	Db                 DatabaseConfig `json:"-"`
 	Keycloak           KeycloakConfig `json:"keycloak,omitempty"`
-	LockdownSchedule   string         `env:"LOCKDOWN_SCHEDULE" json:"-"`
+	LockdownSchedule   string         `env:"LOCKDOWN_SCHEDULE" json:"lockdown_schedule,omitempty"`
 	Webhook            WebhookConfig  `json:"webhook,omitempty"`
 }
 
