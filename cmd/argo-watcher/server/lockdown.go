@@ -86,6 +86,9 @@ func (l *Lockdown) Parse(schedules string) error {
 	return nil
 }
 
+// IsLocked checks if the system is under lockdown. It returns true if either
+// a manual lock is active or if the current time falls within a scheduled lockdown
+// and no override mode is active. Otherwise, it returns false.
 func (l *Lockdown) IsLocked() bool {
 	if l.ManualLock {
 		return true
@@ -106,10 +109,16 @@ func (l *Lockdown) IsLocked() bool {
 	return false
 }
 
+// SetLock immediately places the system into manual lockdown mode.
+// No matter what the scheduled lockdown settings are, once this method is invoked,
+// the system is considered to be under lockdown until manually released.
 func (l *Lockdown) SetLock() {
 	l.ManualLock = true
 }
 
+// ReleaseLock cancels the manual lockdown. If a scheduled lockdown is active,
+// it temporarily overrides it for the next 15 minutes. After that period,
+// if the scheduled lockdown is still in progress, the system re-locks.
 func (l *Lockdown) ReleaseLock() {
 	l.ManualLock = false
 
@@ -125,6 +134,9 @@ func (l *Lockdown) ReleaseLock() {
 	}
 }
 
+// NewLockdown initializes a new Lockdown structure and parses the lockdown schedules
+// if provided. If the schedule parsing is successful, it returns the new Lockdown.
+// Otherwise, it returns an error.
 func NewLockdown(schedules string) (*Lockdown, error) {
 	lockdown := &Lockdown{}
 	if schedules != "" {
@@ -135,6 +147,9 @@ func NewLockdown(schedules string) (*Lockdown, error) {
 	return lockdown, nil
 }
 
+// timeWithinSchedule determines if a given time is within the specified schedule interval.
+// The schedule wraps around to the next week if the end day is before the start day.
+// Returns true if the given time falls within the schedule, otherwise returns false.
 func timeWithinSchedule(now time.Time, startDay, endDay time.Weekday, startHour, startMin, endHour, endMin int) bool {
 	// if endDay < startDay, it means the period extends to the next week
 	weekdaysInOrder := endDay >= startDay
@@ -159,6 +174,8 @@ func timeWithinSchedule(now time.Time, startDay, endDay time.Weekday, startHour,
 	return false
 }
 
+// dayToWeekday converts a three-letter abbreviation of a weekday (e.g., "Mon") to its corresponding time.Weekday enum value.
+// If the input doesn't match a valid weekday abbreviation, it returns an error.
 func dayToWeekday(day string) (time.Weekday, error) {
 	switch day {
 	case "Sun":
