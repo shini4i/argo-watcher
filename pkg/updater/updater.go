@@ -1,9 +1,11 @@
 package updater
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
+	"text/template"
 	"time"
 
 	"github.com/go-git/go-billy/v5"
@@ -18,10 +20,11 @@ import (
 )
 
 var (
-	sshKeyPath    = os.Getenv("SSH_KEY_PATH")
-	sshKeyPass    = os.Getenv("SSH_KEY_PASS")
-	sshCommitUser = os.Getenv("SSH_COMMIT_USER")
-	sshCommitMail = os.Getenv("SSH_COMMIT_MAIL")
+	sshKeyPath          = os.Getenv("SSH_KEY_PATH")
+	sshKeyPass          = os.Getenv("SSH_KEY_PASS")
+	sshCommitUser       = os.Getenv("SSH_COMMIT_USER")
+	sshCommitMail       = os.Getenv("SSH_COMMIT_MAIL")
+	commitMessageFormat = os.Getenv("COMMIT_MESSAGE_FORMAT")
 )
 
 type ArgoOverrideFile struct {
@@ -75,14 +78,40 @@ func (repo *GitRepo) generateOverrideFileName(appName string) string {
 	return fmt.Sprintf("%s/%s", repo.Path, repo.FileName)
 }
 
-func (repo *GitRepo) UpdateApp(appName string, overrideContent *ArgoOverrideFile) error {
+func (repo *GitRepo) generateCommitMessage(appName string, tplData any) (string, error) {
+	commitMsg := fmt.Sprintf("argo-watcher(%s): update image tag", appName)
+
+	if commitMessageFormat == "" {
+		return commitMsg, nil
+	}
+
+	tmpl, err := template.New("commitMsg").Parse(commitMessageFormat)
+	if err != nil {
+		return commitMsg, err
+	}
+
+	var message bytes.Buffer
+	if err = tmpl.Execute(&message, tplData); err != nil {
+		return commitMsg, err
+	}
+
+	commitMsg = message.String()
+
+	log.Debug().Msgf("Commit message: %s", commitMsg)
+	return commitMsg, nil
+}
+
+func (repo *GitRepo) UpdateApp(appName string, overrideContent *ArgoOverrideFile, tplData any) error {
 	overrideFileName := repo.generateOverrideFileName(appName)
 
-	commitMsg := fmt.Sprintf("argo-watcher(%s): update image tag", appName)
+	commitMsg, err := repo.generateCommitMessage(appName, tplData)
+	if err != nil {
+		return err
+	}
 
 	log.Debug().Msgf("Updating override file: %s", overrideFileName)
 
-	overrideContent, err := repo.mergeOverrideFileContent(overrideFileName, overrideContent)
+	overrideContent, err = repo.mergeOverrideFileContent(overrideFileName, overrideContent)
 	if err != nil {
 		return err
 	}

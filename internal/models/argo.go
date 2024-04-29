@@ -285,7 +285,7 @@ func (app *Application) UpdateGitImageTag(task *Task) error {
 		return err
 	}
 
-	if err := git.UpdateApp(app.Metadata.Name, releaseOverrides); err != nil {
+	if err := git.UpdateApp(app.Metadata.Name, releaseOverrides, app); err != nil {
 		log.Error().Str("id", task.Id).Msgf("Failed to update git repository %s", app.Spec.Source.RepoURL)
 		return err
 	}
