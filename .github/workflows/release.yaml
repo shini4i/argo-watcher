@@ -19,15 +19,15 @@ jobs:
         uses: docker/setup-qemu-action@v2
 
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0 # required for changelog to work properly - https://github.com/goreleaser/goreleaser-action#usage
           submodules: true
 
       - name: Install NodeJS
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: '17'
+          node-version: '22'
 
       - name: Build argo-watcher UI
         run: make build-ui

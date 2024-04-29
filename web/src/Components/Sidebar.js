@@ -1,22 +1,22 @@
 import React, { useContext, useEffect, useState } from 'react';
 import PropTypes from 'prop-types';
 import {
-    Box,
-    Button,
-    CircularProgress,
-    Drawer,
-    Paper,
-    Table,
-    TableBody,
-    TableCell,
-    TableContainer,
-    TableHead,
-    TableRow,
-    Typography,
+  Box,
+  Button,
+  CircularProgress,
+  Drawer,
+  Paper,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Typography,
 } from '@mui/material';
 import Switch from '@mui/material/Switch';
 import { fetchConfig } from '../config';
-import { fetchDeployLock, releaseDeployLock, setDeployLock } from '../deployLockHandler';
+import { releaseDeployLock, setDeployLock, useDeployLock } from '../deployLockHandler';
 import { AuthContext } from '../auth';
 
 function Sidebar({ open, onClose }) {
@@ -25,16 +25,13 @@ function Sidebar({ open, onClose }) {
   const [error, setError] = useState(null);
 
   const { authenticated, keycloakToken } = useContext(AuthContext);
-  const [isDeployLockSet, setIsDeployLockSet] = useState(false);
-
+  const deployLock = useDeployLock();
 
   const toggleDeployLock = async () => {
-    if (isDeployLockSet) {
+    if (deployLock) {
       await releaseDeployLock(authenticated ? keycloakToken : null);
-      setIsDeployLockSet(false);
     } else {
       await setDeployLock(authenticated ? keycloakToken : null);
-      setIsDeployLockSet(true);
     }
   };
 
@@ -48,23 +45,21 @@ function Sidebar({ open, onClose }) {
         setError(error.message);
         setIsLoading(false);
       });
-
-    fetchDeployLock()
-      .then((data) => {
-        setIsDeployLockSet(data);
-      })
-      .catch((error) => {
-        setError(error.message);
-      });
   }, []);
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(JSON.stringify(configData, null, 2));
+    navigator.clipboard.writeText(JSON.stringify(configData, null, 2)).catch(err => {
+        console.error('Failed to copy config data to clipboard: ', err);
+      });
   };
 
   const renderTableCell = (key, value) => {
     if (key === 'argo_cd_url' && value && typeof value === 'object' && value.constructor === Object) {
-      return `${value.Scheme}://${value.Host}${value.Path}`;
+      if ('Scheme' in value && 'Host' in value && 'Path' in value) {
+        return `${value.Scheme}://${value.Host}${value.Path}`;
+      } else {
+        return 'Invalid value';
+      }
     } else if (value && typeof value === 'object' && value.constructor === Object) {
       return (
         <Box sx={{ maxHeight: '100px', overflow: 'auto', whiteSpace: 'nowrap' }}>
@@ -140,7 +135,7 @@ function Sidebar({ open, onClose }) {
             Lockdown Mode
           </Typography>
           <Switch
-            checked={isDeployLockSet}
+            checked={deployLock}
             onChange={toggleDeployLock}
             color="primary"
           />
@@ -148,7 +143,7 @@ function Sidebar({ open, onClose }) {
       </Paper>
       <Box p={2} sx={{ borderTop: '1px solid gray' }}>
         <Typography variant="body2" color="textSecondary" align="center">
-          © {new Date().getFullYear()} Vadim Gedz
+          © 2022 - {new Date().getFullYear()} Vadim Gedz
         </Typography>
       </Box>
     </Drawer>

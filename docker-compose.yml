@@ -48,7 +48,7 @@ services:
     ports:
       - "8080:8080"
   frontend:
-    image: node:17.7-alpine3.15
+    image: node:22-alpine3.19
     volumes:
       - ./web:/app
     working_dir: /app
