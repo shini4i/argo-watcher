@@ -45,7 +45,8 @@ This is just one the possible workflows that can be implemented with Argo Watche
 **Figure 2:** This is a simplified diagram of the workflow described above.
 </div>
 
-> :warning: In addition to pipeline logs, the whole process can be observed through the web UI.
+> [!TIP]
+> In addition to pipeline logs, the whole process can be observed through the web UI.
 
 ## Documentation
 
