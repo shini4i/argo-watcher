@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import PropTypes from 'prop-types';
 
 export async function fetchDeployLock() {
   const response = await fetch('/api/v1/deploy-lock');
@@ -84,6 +85,10 @@ export function DeployLockProvider({ children }) {
     </DeployLockContext.Provider>
   );
 }
+
+DeployLockProvider.propTypes = {
+  children: PropTypes.node.isRequired,
+};
 
 export function useDeployLock() {
   return useContext(DeployLockContext);
