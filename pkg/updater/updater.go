@@ -49,7 +49,7 @@ func (repo *GitRepo) Clone() error {
 
 	repo.fs = memfs.New()
 
-	if repo.sshAuth, err = repo.GitHandler.AddSSHKey("git", repo.gitConfig.sshKeyPath, repo.gitConfig.sshKeyPass); err != nil {
+	if repo.sshAuth, err = repo.GitHandler.AddSSHKey("git", repo.gitConfig.SshKeyPath, repo.gitConfig.SshKeyPass); err != nil {
 		return err
 	}
 
@@ -74,11 +74,11 @@ func (repo *GitRepo) generateOverrideFileName(appName string) string {
 func (repo *GitRepo) generateCommitMessage(appName string, tmplData any) (string, error) {
 	commitMsg := fmt.Sprintf("argo-watcher(%s): update image tag", appName)
 
-	if repo.gitConfig.commitMessageFormat == "" {
+	if repo.gitConfig.CommitMessageFormat == "" {
 		return commitMsg, nil
 	}
 
-	tmpl, err := template.New("commitMsg").Parse(repo.gitConfig.commitMessageFormat)
+	tmpl, err := template.New("commitMsg").Parse(repo.gitConfig.CommitMessageFormat)
 	if err != nil {
 		return commitMsg, err
 	}
@@ -193,8 +193,8 @@ func (repo *GitRepo) commit(fileName, commitMsg string, overrideContent *ArgoOve
 
 	commitOpts := &git.CommitOptions{
 		Author: &object.Signature{
-			Name:  repo.gitConfig.sshCommitUser,
-			Email: repo.gitConfig.sshCommitMail,
+			Name:  repo.gitConfig.SshCommitUser,
+			Email: repo.gitConfig.SshCommitMail,
 			When:  time.Now(),
 		},
 	}

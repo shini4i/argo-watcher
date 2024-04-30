@@ -35,7 +35,7 @@ func TestGitRepoClone(t *testing.T) {
 		{
 			name: "successful clone",
 			mockSSH: func() {
-				mockGitHandler.EXPECT().AddSSHKey("git", gitConfig.sshKeyPath, gitConfig.sshKeyPass).Return(&ssh.PublicKeys{}, nil)
+				mockGitHandler.EXPECT().AddSSHKey("git", gitConfig.SshKeyPath, gitConfig.SshKeyPass).Return(&ssh.PublicKeys{}, nil)
 				mockGitHandler.EXPECT().Clone(memory.NewStorage(), memfs.New(), &git.CloneOptions{
 					URL:           "mockRepoURL",
 					ReferenceName: "refs/heads/mockBranch",
@@ -49,7 +49,7 @@ func TestGitRepoClone(t *testing.T) {
 		{
 			name: "failed AddSSHKey",
 			mockSSH: func() {
-				mockGitHandler.EXPECT().AddSSHKey("git", gitConfig.sshKeyPath, gitConfig.sshKeyPass).Return(nil, errors.New("failed to fetch keys"))
+				mockGitHandler.EXPECT().AddSSHKey("git", gitConfig.SshKeyPath, gitConfig.SshKeyPass).Return(nil, errors.New("failed to fetch keys"))
 			},
 			expected: errors.New("failed to fetch keys"),
 		},
@@ -530,21 +530,21 @@ func TestGenerateCommitMessage(t *testing.T) {
 	repo.gitConfig = gitConfig
 
 	t.Run("COMMIT_MESSAGE_FORMAT is not set", func(t *testing.T) {
-		repo.gitConfig.commitMessageFormat = ""
+		repo.gitConfig.CommitMessageFormat = ""
 		msg, err := repo.generateCommitMessage("myApp", nil)
 		assert.NoError(t, err)
 		assert.Equal(t, "argo-watcher(myApp): update image tag", msg)
 	})
 
 	t.Run("COMMIT_MESSAGE_FORMAT is set to a valid template string", func(t *testing.T) {
-		repo.gitConfig.commitMessageFormat = "argo-watcher({{.App}}): custom message"
+		repo.gitConfig.CommitMessageFormat = "argo-watcher({{.App}}): custom message"
 		msg, err := repo.generateCommitMessage("myApp", map[string]string{"App": "myApp"})
 		assert.NoError(t, err)
 		assert.Equal(t, "argo-watcher(myApp): custom message", msg)
 	})
 
 	t.Run("COMMIT_MESSAGE_FORMAT is set to an invalid template string", func(t *testing.T) {
-		repo.gitConfig.commitMessageFormat = "argo-watcher({{.App): custom message"
+		repo.gitConfig.CommitMessageFormat = "argo-watcher({{.App): custom message"
 		msg, err := repo.generateCommitMessage("myApp", map[string]string{"App": "myApp"})
 		assert.Error(t, err)
 		assert.Equal(t, "argo-watcher(myApp): update image tag", msg)

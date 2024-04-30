@@ -5,11 +5,11 @@ import (
 )
 
 type GitConfig struct {
-	sshKeyPath          string `env:"SSH_KEY_PATH"`
-	sshKeyPass          string `env:"SSH_KEY_PASS"`
-	sshCommitUser       string `env:"SSH_COMMIT_USER"`
-	sshCommitMail       string `env:"SSH_COMMIT_MAIL"`
-	commitMessageFormat string `env:"COMMIT_MESSAGE_FORMAT"`
+	SshKeyPath          string `env:"SSH_KEY_PATH"`
+	SshKeyPass          string `env:"SSH_KEY_PASS"`
+	SshCommitUser       string `env:"SSH_COMMIT_USER"`
+	SshCommitMail       string `env:"SSH_COMMIT_MAIL"`
+	CommitMessageFormat string `env:"COMMIT_MESSAGE_FORMAT"`
 }
 
 func NewGitConfig() (*GitConfig, error) {
