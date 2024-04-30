@@ -7,10 +7,6 @@ import (
 	"github.com/go-playground/validator/v10"
 )
 
-const (
-	LogFormatText = "text"
-)
-
 type KeycloakConfig struct {
 	Url                     string   `env:"KEYCLOAK_URL" json:"url,omitempty"` // setting this enables Keycloak integration
 	Realm                   string   `env:"KEYCLOAK_REALM" json:"realm,omitempty"`
@@ -51,7 +47,6 @@ type ServerConfig struct {
 	StaticFilePath     string         `env:"STATIC_FILES_PATH" envDefault:"static" json:"-"`
 	SkipTlsVerify      bool           `env:"SKIP_TLS_VERIFY" envDefault:"false" json:"skip_tls_verify"`
 	LogLevel           string         `env:"LOG_LEVEL" envDefault:"info" json:"log_level"`
-	LogFormat          string         `env:"LOG_FORMAT" envDefault:"json" json:"-"`
 	Host               string         `env:"HOST" envDefault:"0.0.0.0" json:"-"`
 	Port               string         `env:"PORT" envDefault:"8080" json:"-"`
 	DeployToken        string         `env:"ARGO_WATCHER_DEPLOY_TOKEN" json:"-"`

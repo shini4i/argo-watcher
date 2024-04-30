@@ -1,9 +1,6 @@
 package server
 
 import (
-	"os"
-	"time"
-
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/auth"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/argocd"
@@ -19,13 +16,7 @@ import (
 // initLogs initializes the logging configuration based on the provided log level.
 // It parses the log level string and sets the global log level accordingly using the zerolog library.
 // If the log level string is invalid, it falls back to the default InfoLevel.
-func initLogs(logLevel string, logFormat string) {
-	// set log format
-	if logFormat == config.LogFormatText {
-		output := zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}
-		log.Logger = zerolog.New(output).With().Timestamp().Logger()
-	}
-	// set log level
+func initLogs(logLevel string) {
 	if logLevel, err := zerolog.ParseLevel(logLevel); err != nil {
 		log.Warn().Msgf("Couldn't parse log level. Got the following error: %s", err)
 	} else {
@@ -42,7 +33,7 @@ func RunServer() {
 	}
 
 	// initialize logs
-	initLogs(serverConfig.LogLevel, serverConfig.LogFormat)
+	initLogs(serverConfig.LogLevel)
 
 	// initialize metrics
 	metrics := &prometheus.Metrics{}
