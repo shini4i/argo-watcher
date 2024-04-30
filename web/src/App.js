@@ -7,6 +7,7 @@ import { Box, CircularProgress, createTheme, lighten, ThemeProvider } from '@mui
 import { ErrorProvider } from './ErrorContext';
 import TaskView from './Components/TaskView';
 import { AuthContext, useAuth } from './auth';
+import { DeployLockProvider } from './deployLockHandler';
 
 const theme = createTheme({
   palette: {
@@ -33,6 +34,7 @@ const theme = createTheme({
 
 function App() {
   const auth = useAuth();
+
   if (auth.authenticated === null) return (
     <Box display="flex" justifyContent="center" alignItems="center" height="100vh">
       <CircularProgress />
@@ -42,16 +44,18 @@ function App() {
     <AuthContext.Provider value={auth}>
       <ThemeProvider theme={theme}>
         <ErrorProvider>
-          <BrowserRouter>
-            <Routes>
-              <Route path="/" element={<Layout />}>
-                <Route index element={<RecentTasks />} />
-                <Route path="/history" element={<HistoryTasks />} />
-                <Route path="/task/:id" element={<TaskView />} />
-              </Route>
-              <Route path="*" element={<Page404 />} />
-            </Routes>
-          </BrowserRouter>
+          <DeployLockProvider>
+            <BrowserRouter>
+              <Routes>
+                <Route path="/" element={<Layout />}>
+                  <Route index element={<RecentTasks />} />
+                  <Route path="/history" element={<HistoryTasks />} />
+                  <Route path="/task/:id" element={<TaskView />} />
+                </Route>
+                <Route path="*" element={<Page404 />} />
+              </Routes>
+            </BrowserRouter>
+          </DeployLockProvider>
         </ErrorProvider>
       </ThemeProvider>
     </AuthContext.Provider>

@@ -76,7 +76,7 @@ function HistoryTasks() {
 
   useEffect(() => {
     refreshWithFilters(startDate, endDate, currentApplication, currentPage);
-  }, [startDate, endDate, currentApplication, currentPage]); // Ensure all dependencies are listed
+  }, [startDate, endDate, currentApplication, currentPage]);
 
   return (
     <Container maxWidth="xl">

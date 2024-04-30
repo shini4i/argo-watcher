@@ -18,7 +18,7 @@ import { addMinutes, format } from 'date-fns';
 import React, { useEffect, useState } from 'react';
 import { Link as ReactLink } from 'react-router-dom';
 import { fetchTasks } from '../Services/Data';
-import { fetchDeployLock } from '../deployLockHandler';
+import { useDeployLock } from '../deployLockHandler';
 import { relativeHumanDuration, relativeTime, relativeTimestamp } from '../Utils';
 
 export function ProjectDisplay({ project }) {
@@ -209,42 +209,7 @@ function TasksTable({
                     }) {
   const [itemsPerPage, setItemsPerPage] = useState(getCachedItemsPerPage());
   const [visibleReasons, setVisibleReasons] = useState([]);
-  const [deployLock, setDeployLock] = useState(false);
-
-  const checkDeployLock = async () => {
-    const lock = await fetchDeployLock();
-    setDeployLock(lock);
-  };
-
-  useEffect(() => {
-    // set the initial deploy lock state
-    checkDeployLock();
-
-    // Get the current URL
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host;
-    const wsUrl = `${protocol}//${host}/ws`;
-
-    // Connect to the WebSocket endpoint
-    const socket = new WebSocket(wsUrl);
-
-    // Listen for messages
-    socket.onmessage = (event) => {
-      const message = event.data;
-      if (message === 'locked') {
-        setDeployLock(true);
-      } else if (message === 'unlocked') {
-        setDeployLock(false);
-      } else {
-        console.log(`Received message is: ${message}, Type of message is: ${typeof message}`);
-      }
-    };
-
-    // Return cleanup function
-    return () => {
-      socket.close();
-    };
-  }, []);
+  const deployLock = useDeployLock();
 
   const toggleReason = task => {
     setVisibleReasons(visibleReasons => {
@@ -472,7 +437,7 @@ function TasksTable({
           justifyContent: 'center',
           py: 2,
         }}>
-          <Typography variant="h6">Deployments are not accepted.</Typography>
+          <Typography variant="h6">Lockdown is active</Typography>
         </Box>
       )}
     </>
