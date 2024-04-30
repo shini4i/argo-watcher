@@ -63,6 +63,8 @@ func TestGitRepoClone(t *testing.T) {
 				RepoURL:    "mockRepoURL",
 				BranchName: "mockBranch",
 				GitHandler: mockGitHandler,
+
+				gitConfig: gitConfig,
 			}
 
 			err := gitRepo.Clone()
