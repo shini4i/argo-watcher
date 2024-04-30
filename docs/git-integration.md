@@ -80,6 +80,21 @@ sandbox/charts/demo/.argocd-source-demo.yaml
 - The `app` alias is intended to correspond with an alias specified in the `argo-watcher/ALIAS.helm.image-tag` annotation.
 - When processing annotations, Argo-Watcher will associate an image (e.g., `registry.example.com/group-name/project-name`) with all aliases that share this particular image. Consequently, you won't be able to implement different release strategies for aliases that utilize the same image name.
 
+### Customize commit message
+
+The default commit message is in the following format:
+
+`argo-watcher(appName): update image tag`
+
+Commit message can be customized by setting the following environment variable:
+
+```yaml
+extraEnvs:
+  - name: COMMIT_MESSAGE_FORMAT
+    value: 'argo-watcher({{.App}}): update image tag\nID: {{.Id}}\nAuthor: {{.Author}}\nImages:\n{{range .Images}}{{.Image}}:{{.Tag}}\n{{end}}'
+```
+Commit message supports templated variables. For available template variables see [notifications](notifications.md#available-template-variables) page.
+
 ## CI/CD side configuration
 
 In general, the example from the [installation](installation.md) page should be sufficient to get you started. However, there is one more things to consider.

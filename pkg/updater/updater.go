@@ -1,9 +1,10 @@
 package updater
 
 import (
+	"bytes"
 	"fmt"
 	"io"
-	"os"
+	"text/template"
 	"time"
 
 	"github.com/go-git/go-billy/v5"
@@ -15,13 +16,6 @@ import (
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v3"
-)
-
-var (
-	sshKeyPath    = os.Getenv("SSH_KEY_PATH")
-	sshKeyPass    = os.Getenv("SSH_KEY_PASS")
-	sshCommitUser = os.Getenv("SSH_COMMIT_USER")
-	sshCommitMail = os.Getenv("SSH_COMMIT_MAIL")
 )
 
 type ArgoOverrideFile struct {
@@ -45,6 +39,8 @@ type GitRepo struct {
 	localRepo  *git.Repository
 	sshAuth    *ssh.PublicKeys
 
+	gitConfig *GitConfig
+
 	GitHandler GitHandler
 }
 
@@ -53,7 +49,7 @@ func (repo *GitRepo) Clone() error {
 
 	repo.fs = memfs.New()
 
-	if repo.sshAuth, err = repo.GitHandler.AddSSHKey("git", sshKeyPath, sshKeyPass); err != nil {
+	if repo.sshAuth, err = repo.GitHandler.AddSSHKey("git", repo.gitConfig.SshKeyPath, repo.gitConfig.SshKeyPass); err != nil {
 		return err
 	}
 
@@ -75,14 +71,37 @@ func (repo *GitRepo) generateOverrideFileName(appName string) string {
 	return fmt.Sprintf("%s/%s", repo.Path, repo.FileName)
 }
 
-func (repo *GitRepo) UpdateApp(appName string, overrideContent *ArgoOverrideFile) error {
+func (repo *GitRepo) generateCommitMessage(appName string, tmplData any) (string, error) {
+	commitMsg := fmt.Sprintf("argo-watcher(%s): update image tag", appName)
+
+	if repo.gitConfig.CommitMessageFormat == "" {
+		return commitMsg, nil
+	}
+
+	tmpl, err := template.New("commitMsg").Parse(repo.gitConfig.CommitMessageFormat)
+	if err != nil {
+		return commitMsg, err
+	}
+
+	var message bytes.Buffer
+	if err = tmpl.Execute(&message, tmplData); err != nil {
+		return commitMsg, err
+	}
+
+	return message.String(), nil
+}
+
+func (repo *GitRepo) UpdateApp(appName string, overrideContent *ArgoOverrideFile, tmplData any) error {
 	overrideFileName := repo.generateOverrideFileName(appName)
 
-	commitMsg := fmt.Sprintf("argo-watcher(%s): update image tag", appName)
+	commitMsg, err := repo.generateCommitMessage(appName, tmplData)
+	if err != nil {
+		return err
+	}
 
 	log.Debug().Msgf("Updating override file: %s", overrideFileName)
 
-	overrideContent, err := repo.mergeOverrideFileContent(overrideFileName, overrideContent)
+	overrideContent, err = repo.mergeOverrideFileContent(overrideFileName, overrideContent)
 	if err != nil {
 		return err
 	}
@@ -174,8 +193,8 @@ func (repo *GitRepo) commit(fileName, commitMsg string, overrideContent *ArgoOve
 
 	commitOpts := &git.CommitOptions{
 		Author: &object.Signature{
-			Name:  sshCommitUser,
-			Email: sshCommitMail,
+			Name:  repo.gitConfig.SshCommitUser,
+			Email: repo.gitConfig.SshCommitMail,
 			When:  time.Now(),
 		},
 	}
@@ -233,5 +252,22 @@ func mergeParameters(existing *ArgoOverrideFile, newContent *ArgoOverrideFile) {
 		if !found {
 			existing.Helm.Parameters = append(existing.Helm.Parameters, newParam)
 		}
+	}
+}
+
+func NewGitRepo(repoURL, branchName, path, fileName string, gitHandler GitHandler) *GitRepo {
+	gitConfig, err := NewGitConfig()
+	if err != nil {
+		// This is a fatal error because the GitConfig is required for Updater to work
+		log.Fatal().Err(err).Msg("Failed to load git config")
+	}
+
+	return &GitRepo{
+		RepoURL:    repoURL,
+		BranchName: branchName,
+		Path:       path,
+		FileName:   fileName,
+		gitConfig:  gitConfig,
+		GitHandler: gitHandler,
 	}
 }

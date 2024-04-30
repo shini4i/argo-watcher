@@ -271,21 +271,14 @@ func (app *Application) UpdateGitImageTag(task *Task) error {
 		return nil
 	}
 
-	git := updater.GitRepo{
-		RepoURL:    gitopsRepo.RepoUrl,
-		BranchName: gitopsRepo.BranchName,
-		Path:       gitopsRepo.Path,
-		FileName:   gitopsRepo.Filename,
-
-		GitHandler: updater.GitClient{},
-	}
+	git := updater.NewGitRepo(gitopsRepo.RepoUrl, gitopsRepo.BranchName, gitopsRepo.Path, gitopsRepo.Filename, updater.GitClient{})
 
 	if err := git.Clone(); err != nil {
 		log.Error().Str("id", task.Id).Msgf("Failed to clone git repository %s", app.Spec.Source.RepoURL)
 		return err
 	}
 
-	if err := git.UpdateApp(app.Metadata.Name, releaseOverrides); err != nil {
+	if err := git.UpdateApp(app.Metadata.Name, releaseOverrides, task); err != nil {
 		log.Error().Str("id", task.Id).Msgf("Failed to update git repository %s", app.Spec.Source.RepoURL)
 		return err
 	}
