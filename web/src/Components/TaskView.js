@@ -20,6 +20,7 @@ import {
 import { chipColorByStatus, formatDateTime, ProjectDisplay, StatusReasonDisplay } from './TasksTable';
 import { AuthContext } from '../auth';
 import { fetchConfig } from '../config';
+import { useDeployLock } from '../deployLockHandler';
 
 export default function TaskView() {
   const { id } = useParams();
@@ -42,6 +43,8 @@ export default function TaskView() {
     setOpen(false);
     await rollbackToVersion();
   };
+
+  const deployLock = useDeployLock();
 
   useEffect(() => {
     fetchConfig().then(config => {
@@ -113,6 +116,8 @@ export default function TaskView() {
 
       if (response.status === 401) { // HTTP 401 Unauthorized
         throw new Error('You are not authorized to perform this action!');
+      } else if (response.status === 406) { // HTTP 406 Not Acceptable
+        throw new Error('Lockdown is active. Deployments are forbidden!');
       } else if (response.status !== 202) { // HTTP 202 Accepted
         throw new Error(`Received unexpected status code: ${response.status}`);
       }
@@ -260,6 +265,22 @@ export default function TaskView() {
           </Grid>
         )}
       </Paper>
+      {deployLock && (
+        <Box sx={{
+          position: 'fixed',
+          bottom: 0,
+          left: 0,
+          width: '100%',
+          backgroundColor: 'error.main',
+          color: 'white',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          py: 2,
+        }}>
+          <Typography variant="h6">Lockdown is active</Typography>
+        </Box>
+      )}
     </Container>
   );
 }
