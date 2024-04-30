@@ -78,7 +78,7 @@ func (repo *GitRepo) generateOverrideFileName(appName string) string {
 	return fmt.Sprintf("%s/%s", repo.Path, repo.FileName)
 }
 
-func (repo *GitRepo) generateCommitMessage(appName string, tplData any) (string, error) {
+func (repo *GitRepo) generateCommitMessage(appName string, tmplData any) (string, error) {
 	commitMsg := fmt.Sprintf("argo-watcher(%s): update image tag", appName)
 
 	if commitMessageFormat == "" {
@@ -91,20 +91,17 @@ func (repo *GitRepo) generateCommitMessage(appName string, tplData any) (string,
 	}
 
 	var message bytes.Buffer
-	if err = tmpl.Execute(&message, tplData); err != nil {
+	if err = tmpl.Execute(&message, tmplData); err != nil {
 		return commitMsg, err
 	}
 
-	commitMsg = message.String()
-
-	log.Debug().Msgf("Commit message: %s", commitMsg)
-	return commitMsg, nil
+	return message.String(), nil
 }
 
-func (repo *GitRepo) UpdateApp(appName string, overrideContent *ArgoOverrideFile, tplData any) error {
+func (repo *GitRepo) UpdateApp(appName string, overrideContent *ArgoOverrideFile, tmplData any) error {
 	overrideFileName := repo.generateOverrideFileName(appName)
 
-	commitMsg, err := repo.generateCommitMessage(appName, tplData)
+	commitMsg, err := repo.generateCommitMessage(appName, tmplData)
 	if err != nil {
 		return err
 	}
