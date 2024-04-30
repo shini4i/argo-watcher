@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"os"
 	"text/template"
 	"time"
 
@@ -17,14 +16,6 @@ import (
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v3"
-)
-
-var (
-	sshKeyPath          = os.Getenv("SSH_KEY_PATH")
-	sshKeyPass          = os.Getenv("SSH_KEY_PASS")
-	sshCommitUser       = os.Getenv("SSH_COMMIT_USER")
-	sshCommitMail       = os.Getenv("SSH_COMMIT_MAIL")
-	commitMessageFormat = os.Getenv("COMMIT_MESSAGE_FORMAT")
 )
 
 type ArgoOverrideFile struct {
@@ -48,6 +39,8 @@ type GitRepo struct {
 	localRepo  *git.Repository
 	sshAuth    *ssh.PublicKeys
 
+	gitConfig *GitConfig
+
 	GitHandler GitHandler
 }
 
@@ -56,7 +49,7 @@ func (repo *GitRepo) Clone() error {
 
 	repo.fs = memfs.New()
 
-	if repo.sshAuth, err = repo.GitHandler.AddSSHKey("git", sshKeyPath, sshKeyPass); err != nil {
+	if repo.sshAuth, err = repo.GitHandler.AddSSHKey("git", repo.gitConfig.sshKeyPath, repo.gitConfig.sshKeyPass); err != nil {
 		return err
 	}
 
@@ -81,11 +74,11 @@ func (repo *GitRepo) generateOverrideFileName(appName string) string {
 func (repo *GitRepo) generateCommitMessage(appName string, tmplData any) (string, error) {
 	commitMsg := fmt.Sprintf("argo-watcher(%s): update image tag", appName)
 
-	if commitMessageFormat == "" {
+	if repo.gitConfig.commitMessageFormat == "" {
 		return commitMsg, nil
 	}
 
-	tmpl, err := template.New("commitMsg").Parse(commitMessageFormat)
+	tmpl, err := template.New("commitMsg").Parse(repo.gitConfig.commitMessageFormat)
 	if err != nil {
 		return commitMsg, err
 	}
@@ -200,8 +193,8 @@ func (repo *GitRepo) commit(fileName, commitMsg string, overrideContent *ArgoOve
 
 	commitOpts := &git.CommitOptions{
 		Author: &object.Signature{
-			Name:  sshCommitUser,
-			Email: sshCommitMail,
+			Name:  repo.gitConfig.sshCommitUser,
+			Email: repo.gitConfig.sshCommitMail,
 			When:  time.Now(),
 		},
 	}
@@ -259,5 +252,22 @@ func mergeParameters(existing *ArgoOverrideFile, newContent *ArgoOverrideFile) {
 		if !found {
 			existing.Helm.Parameters = append(existing.Helm.Parameters, newParam)
 		}
+	}
+}
+
+func NewGitRepo(repoURL, branchName, path, fileName string, gitHandler GitHandler) *GitRepo {
+	gitConfig, err := NewGitConfig()
+	if err != nil {
+		// This is a fatal error because the GitConfig is required for Updater to work
+		log.Fatal().Err(err).Msg("Failed to load git config")
+	}
+
+	return &GitRepo{
+		RepoURL:    repoURL,
+		BranchName: branchName,
+		Path:       path,
+		FileName:   fileName,
+		gitConfig:  gitConfig,
+		GitHandler: gitHandler,
 	}
 }

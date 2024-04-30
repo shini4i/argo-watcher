@@ -24,6 +24,9 @@ func TestGitRepoClone(t *testing.T) {
 
 	mockGitHandler := mock.NewMockGitHandler(ctrl)
 
+	gitConfig, err := NewGitConfig()
+	assert.NoError(t, err)
+
 	tests := []struct {
 		name     string
 		mockSSH  func()
@@ -32,7 +35,7 @@ func TestGitRepoClone(t *testing.T) {
 		{
 			name: "successful clone",
 			mockSSH: func() {
-				mockGitHandler.EXPECT().AddSSHKey("git", sshKeyPath, sshKeyPass).Return(&ssh.PublicKeys{}, nil)
+				mockGitHandler.EXPECT().AddSSHKey("git", gitConfig.sshKeyPath, gitConfig.sshKeyPass).Return(&ssh.PublicKeys{}, nil)
 				mockGitHandler.EXPECT().Clone(memory.NewStorage(), memfs.New(), &git.CloneOptions{
 					URL:           "mockRepoURL",
 					ReferenceName: "refs/heads/mockBranch",
@@ -46,7 +49,7 @@ func TestGitRepoClone(t *testing.T) {
 		{
 			name: "failed AddSSHKey",
 			mockSSH: func() {
-				mockGitHandler.EXPECT().AddSSHKey("git", sshKeyPath, sshKeyPass).Return(nil, errors.New("failed to fetch keys"))
+				mockGitHandler.EXPECT().AddSSHKey("git", gitConfig.sshKeyPath, gitConfig.sshKeyPass).Return(nil, errors.New("failed to fetch keys"))
 			},
 			expected: errors.New("failed to fetch keys"),
 		},
@@ -520,22 +523,26 @@ func TestGenerateOverrideFileName(t *testing.T) {
 
 func TestGenerateCommitMessage(t *testing.T) {
 	repo := GitRepo{}
+	gitConfig, err := NewGitConfig()
+	assert.NoError(t, err)
+	repo.gitConfig = gitConfig
 
 	t.Run("COMMIT_MESSAGE_FORMAT is not set", func(t *testing.T) {
+		repo.gitConfig.commitMessageFormat = ""
 		msg, err := repo.generateCommitMessage("myApp", nil)
 		assert.NoError(t, err)
 		assert.Equal(t, "argo-watcher(myApp): update image tag", msg)
 	})
 
 	t.Run("COMMIT_MESSAGE_FORMAT is set to a valid template string", func(t *testing.T) {
-		t.Setenv("COMMIT_MESSAGE_FORMAT", "argo-watcher({{.App}}): custom message")
+		repo.gitConfig.commitMessageFormat = "argo-watcher({{.App}}): custom message"
 		msg, err := repo.generateCommitMessage("myApp", map[string]string{"App": "myApp"})
 		assert.NoError(t, err)
 		assert.Equal(t, "argo-watcher(myApp): custom message", msg)
 	})
 
 	t.Run("COMMIT_MESSAGE_FORMAT is set to an invalid template string", func(t *testing.T) {
-		t.Setenv("COMMIT_MESSAGE_FORMAT", "argo-watcher({{.App): custom message")
+		repo.gitConfig.commitMessageFormat = "argo-watcher({{.App): custom message"
 		msg, err := repo.generateCommitMessage("myApp", map[string]string{"App": "myApp"})
 		assert.Error(t, err)
 		assert.Equal(t, "argo-watcher(myApp): update image tag", msg)
