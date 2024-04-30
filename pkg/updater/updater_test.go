@@ -517,3 +517,27 @@ func TestGenerateOverrideFileName(t *testing.T) {
 		})
 	}
 }
+
+func TestGenerateCommitMessage(t *testing.T) {
+	repo := GitRepo{}
+
+	t.Run("COMMIT_MESSAGE_FORMAT is not set", func(t *testing.T) {
+		msg, err := repo.generateCommitMessage("myApp", nil)
+		assert.NoError(t, err)
+		assert.Equal(t, "argo-watcher(myApp): update image tag", msg)
+	})
+
+	t.Run("COMMIT_MESSAGE_FORMAT is set to a valid template string", func(t *testing.T) {
+		t.Setenv("COMMIT_MESSAGE_FORMAT", "argo-watcher({{.App}}): custom message")
+		msg, err := repo.generateCommitMessage("myApp", map[string]string{"App": "myApp"})
+		assert.NoError(t, err)
+		assert.Equal(t, "argo-watcher(myApp): custom message", msg)
+	})
+
+	t.Run("COMMIT_MESSAGE_FORMAT is set to an invalid template string", func(t *testing.T) {
+		t.Setenv("COMMIT_MESSAGE_FORMAT", "argo-watcher({{.App): custom message")
+		msg, err := repo.generateCommitMessage("myApp", map[string]string{"App": "myApp"})
+		assert.Error(t, err)
+		assert.Equal(t, "argo-watcher(myApp): update image tag", msg)
+	})
+}
