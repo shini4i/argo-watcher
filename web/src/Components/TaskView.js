@@ -7,7 +7,6 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { fetchTask } from '../Services/Data';
 import { useErrorContext } from '../ErrorContext';
 import {
-  Chip,
   Dialog,
   DialogActions,
   DialogContent,
@@ -17,10 +16,13 @@ import {
   Grid,
   Paper,
 } from '@mui/material';
-import { chipColorByStatus, formatDateTime, ProjectDisplay, StatusReasonDisplay } from './TasksTable';
+import { formatDateTime, ProjectDisplay, StatusReasonDisplay } from './TasksTable';
 import { AuthContext } from '../auth';
 import { fetchConfig } from '../config';
 import { useDeployLock } from '../deployLockHandler';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
+import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
+import CircularProgress from '@mui/material/CircularProgress';
 
 export default function TaskView() {
   const { id } = useParams();
@@ -195,10 +197,15 @@ export default function TaskView() {
               <Typography variant="body2" color="textSecondary">
                 Status
               </Typography>
-              <Chip
-                label={task.status}
-                color={chipColorByStatus(task.status)}
-              />
+              {task.status === 'deployed' && (
+                <CheckCircleOutlineIcon style={{ color: 'green' }} />
+              )}
+              {task.status === 'failed' && (
+                <CancelOutlinedIcon style={{ color: 'red' }} />
+              )}
+              {task.status === 'in progress' && (
+                <CircularProgress />
+              )}
             </Grid>
             {task.status_reason && (
               <Grid item xs={12} sm={12}>

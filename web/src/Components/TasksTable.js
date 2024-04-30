@@ -1,10 +1,8 @@
-import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import LaunchIcon from '@mui/icons-material/Launch';
-import { Chip, Link, MenuItem, TextField } from '@mui/material';
+import { Link, MenuItem, TextField } from '@mui/material';
 import Box from '@mui/material/Box';
-import IconButton from '@mui/material/IconButton';
 import Pagination from '@mui/material/Pagination';
 import Table from '@mui/material/Table';
 import TableBody from '@mui/material/TableBody';
@@ -20,6 +18,9 @@ import { Link as ReactLink } from 'react-router-dom';
 import { fetchTasks } from '../Services/Data';
 import { useDeployLock } from '../deployLockHandler';
 import { relativeHumanDuration, relativeTime, relativeTimestamp } from '../Utils';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
+import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
+import CircularProgress from '@mui/material/CircularProgress';
 
 export function ProjectDisplay({ project }) {
   if (project.indexOf('http') === 0) {
@@ -324,20 +325,14 @@ function TasksTable({
                   </TableCell>
                   <TableCell>{task.author}</TableCell>
                   <TableCell>
-                    <Chip
-                      label={task.status}
-                      color={chipColorByStatus(task.status)}
-                    />
-                    {task?.status_reason && (
-                      <IconButton
-                        size={'small'}
-                        sx={{ marginLeft: '5px' }}
-                        onClick={() => {
-                          toggleReason(task);
-                        }}
-                      >
-                        <HelpOutlineIcon fontSize={'small'} />
-                      </IconButton>
+                    {task.status === 'deployed' && (
+                      <CheckCircleOutlineIcon style={{ color: 'green' }} />
+                    )}
+                    {task.status === 'failed' && (
+                      <CancelOutlinedIcon style={{ color: 'red' }} />
+                    )}
+                    {task.status === 'in progress' && (
+                      <CircularProgress size={24} />
                     )}
                   </TableCell>
                   <TableCell>
