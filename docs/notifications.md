@@ -23,6 +23,7 @@ The following configuration options are available:
 | `WEBHOOK_FORMAT`                     | A format string to send the WebHook   |               | `{"app": "{{.App}}","status": "{{.Status}}"}` |
 | `WEBHOOK_AUTHORIZATION_HEADER_NAME`  | The name of the authorization header  | Authorization |                                               |
 | `WEBHOOK_AUTHORIZATION_HEADER_VALUE` | The value of the authorization header |               | Bearer token                                  |
+| `WEBHOOK_ALLOWED_RESPONSE_CODES`     | A list of allowed response codes      | 200           | 200,201,202                                   |
 
 #### Available template variables
 

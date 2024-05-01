@@ -9,12 +9,11 @@ import (
 	"crypto/sha256"
 )
 
-// Contains is a simple utility function that checks if a given string (s) exists in a slice of strings (slice).
-// It iterates through the elements in the slice and returns true if it finds a match,
-// indicating that the string exists in the slice; otherwise, it returns false, indicating that the string is not present.
-func Contains(slice []string, s string) bool {
-	for _, item := range slice {
-		if item == s {
+// Contains is a utility function that checks if a given item exists in a slice.
+// It uses Go's generics to handle different types (string, int, etc.).
+func Contains[T comparable](slice []T, item T) bool {
+	for _, v := range slice {
+		if v == item {
 			return true
 		}
 	}
