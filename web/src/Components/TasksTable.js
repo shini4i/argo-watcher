@@ -321,22 +321,16 @@ function TasksTable({
                       </Tooltip>
                     )}
                     {task.status === 'failed' && (
-                      <>
-                        <Tooltip title="Failed">
-                          <CancelOutlinedIcon style={{ color: 'red' }} />
-                        </Tooltip>
-                        {task.status_reason && (
-                          <IconButton
-                            size={'small'}
-                            sx={{ marginLeft: '5px' }}
-                            onClick={() => {
+                      <Tooltip title="Failed">
+                        <CancelOutlinedIcon
+                          style={{ color: 'red', cursor: 'pointer' }}
+                          onClick={() => {
+                            if (task.status_reason) {
                               toggleReason(task);
-                            }}
-                          >
-                            <HelpOutlineIcon fontSize={'small'} />
-                          </IconButton>
-                        )}
-                      </>
+                            }
+                          }}
+                        />
+                      </Tooltip>
                     )}
                     {task.status === 'in progress' && (
                       <Tooltip title="In Progress">
