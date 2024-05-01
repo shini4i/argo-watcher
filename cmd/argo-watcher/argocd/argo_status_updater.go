@@ -202,6 +202,13 @@ func (updater *ArgoStatusUpdater) waitRollout(task models.Task) (*models.Applica
 	var application *models.Application
 	var err error
 
+	retryOptions := updater.retryOptions
+
+	if task.Timeout > 0 {
+		log.Debug().Str("id", task.Id).Msgf("Overriding task timeout to %ds", task.Timeout)
+		retryOptions = append(retryOptions, retry.Attempts(uint((task.Timeout/15)+1)))
+	}
+
 	log.Debug().Str("id", task.Id).Msg("Waiting for rollout")
 	_ = retry.Do(func() error {
 		application, err = updater.argo.api.GetApplication(task.App)
@@ -233,7 +240,7 @@ func (updater *ArgoStatusUpdater) waitRollout(task models.Task) (*models.Applica
 			log.Debug().Str("id", task.Id).Msgf("Application status is not final. Status received \"%s\"", status)
 		}
 		return errors.New("force retry")
-	}, updater.retryOptions...)
+	}, retryOptions...)
 
 	// return application and latest error
 	return application, err
