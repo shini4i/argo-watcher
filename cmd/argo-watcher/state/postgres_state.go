@@ -5,15 +5,13 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/avast/retry-go/v4"
 	"github.com/google/uuid"
+	_ "github.com/lib/pq"
 	"github.com/rs/zerolog/log"
 	"gorm.io/datatypes"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
-
-	"github.com/avast/retry-go/v4"
-	_ "github.com/lib/pq"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/state/state_models"
@@ -27,7 +25,7 @@ type PostgresState struct {
 // Connect establishes a connection to the PostgreSQL database using the provided server configuration.
 func (state *PostgresState) Connect(serverConfig *config.ServerConfig) error {
 	// create ORM driver
-	if orm, err := gorm.Open(postgres.Open(serverConfig.Db.DSN), getOrmLogger(serverConfig)); err != nil {
+	if orm, err := gorm.Open(postgres.Open(serverConfig.Db.DSN)); err != nil {
 		return err
 	} else {
 		state.orm = orm
@@ -191,14 +189,4 @@ func (state *PostgresState) doProcessPostgresObsoleteTasks() error {
 	}
 
 	return nil
-}
-
-func getOrmLogger(serverConfig *config.ServerConfig) *gorm.Config {
-	ormConfig := &gorm.Config{}
-	if serverConfig.LogFormat != config.LogFormatText {
-		ormConfig.Logger = logger.Default.LogMode(logger.Silent)
-	} else {
-		ormConfig.Logger = logger.Default.LogMode(logger.Info)
-	}
-	return ormConfig
 }

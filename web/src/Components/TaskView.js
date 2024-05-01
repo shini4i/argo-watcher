@@ -2,12 +2,11 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Container from '@mui/material/Container';
 import Typography from '@mui/material/Typography';
-import { useContext, useEffect, useState } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { fetchTask } from '../Services/Data';
 import { useErrorContext } from '../ErrorContext';
 import {
-  Chip,
   Dialog,
   DialogActions,
   DialogContent,
@@ -17,9 +16,15 @@ import {
   Grid,
   Paper,
 } from '@mui/material';
-import { chipColorByStatus, formatDateTime, ProjectDisplay, StatusReasonDisplay } from './TasksTable';
+import { formatDateTime, ProjectDisplay, StatusReasonDisplay } from './TasksTable';
 import { AuthContext } from '../auth';
 import { fetchConfig } from '../config';
+import { useDeployLock } from '../deployLockHandler';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
+import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
+import CircularProgress from '@mui/material/CircularProgress';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+import Tooltip from '@mui/material/Tooltip';
 
 export default function TaskView() {
   const { id } = useParams();
@@ -42,6 +47,8 @@ export default function TaskView() {
     setOpen(false);
     await rollbackToVersion();
   };
+
+  const deployLock = useDeployLock();
 
   useEffect(() => {
     fetchConfig().then(config => {
@@ -113,6 +120,8 @@ export default function TaskView() {
 
       if (response.status === 401) { // HTTP 401 Unauthorized
         throw new Error('You are not authorized to perform this action!');
+      } else if (response.status === 406) { // HTTP 406 Not Acceptable
+        throw new Error('Lockdown is active. Deployments are forbidden!');
       } else if (response.status !== 202) { // HTTP 202 Accepted
         throw new Error(`Received unexpected status code: ${response.status}`);
       }
@@ -190,10 +199,26 @@ export default function TaskView() {
               <Typography variant="body2" color="textSecondary">
                 Status
               </Typography>
-              <Chip
-                label={task.status}
-                color={chipColorByStatus(task.status)}
-              />
+              {task.status === 'deployed' && (
+                <Tooltip title="Deployed">
+                  <CheckCircleOutlineIcon style={{ color: 'green' }} />
+                </Tooltip>
+              )}
+              {task.status === 'failed' && (
+                <Tooltip title="Failed">
+                  <CancelOutlinedIcon style={{ color: 'red' }} />
+                </Tooltip>
+              )}
+              {task.status === 'in progress' && (
+                <Tooltip title="In Progress">
+                  <CircularProgress />
+                </Tooltip>
+              )}
+              {task.status === 'app not found' && (
+                <Tooltip title="App Not Found">
+                  <ErrorOutlineIcon style={{ color: 'gray' }} />
+                </Tooltip>
+              )}
             </Grid>
             {task.status_reason && (
               <Grid item xs={12} sm={12}>
@@ -260,6 +285,22 @@ export default function TaskView() {
           </Grid>
         )}
       </Paper>
+      {deployLock && (
+        <Box sx={{
+          position: 'fixed',
+          bottom: 0,
+          left: 0,
+          width: '100%',
+          backgroundColor: 'error.main',
+          color: 'white',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          py: 2,
+        }}>
+          <Typography variant="h6">Lockdown is active</Typography>
+        </Box>
+      )}
     </Container>
   );
 }

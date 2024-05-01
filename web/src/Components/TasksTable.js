@@ -1,10 +1,8 @@
-import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import LaunchIcon from '@mui/icons-material/Launch';
-import { Chip, Link, MenuItem, TextField } from '@mui/material';
+import { Link, MenuItem, TextField } from '@mui/material';
 import Box from '@mui/material/Box';
-import IconButton from '@mui/material/IconButton';
 import Pagination from '@mui/material/Pagination';
 import Table from '@mui/material/Table';
 import TableBody from '@mui/material/TableBody';
@@ -20,6 +18,10 @@ import { Link as ReactLink } from 'react-router-dom';
 import { fetchTasks } from '../Services/Data';
 import { useDeployLock } from '../deployLockHandler';
 import { relativeHumanDuration, relativeTime, relativeTimestamp } from '../Utils';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
+import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
+import CircularProgress from '@mui/material/CircularProgress';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 
 export function ProjectDisplay({ project }) {
   if (project.indexOf('http') === 0) {
@@ -31,19 +33,6 @@ export function ProjectDisplay({ project }) {
   }
   return <Typography variant={'body2'}>{project}</Typography>;
 }
-
-export const chipColorByStatus = status => {
-  if (status === 'in progress') {
-    return 'primary';
-  }
-  if (status === 'failed') {
-    return 'error';
-  }
-  if (status === 'deployed') {
-    return 'success';
-  }
-  return undefined;
-};
 
 export function StatusReasonDisplay({ reason }) {
   return (
@@ -324,20 +313,32 @@ function TasksTable({
                   </TableCell>
                   <TableCell>{task.author}</TableCell>
                   <TableCell>
-                    <Chip
-                      label={task.status}
-                      color={chipColorByStatus(task.status)}
-                    />
-                    {task?.status_reason && (
-                      <IconButton
-                        size={'small'}
-                        sx={{ marginLeft: '5px' }}
-                        onClick={() => {
-                          toggleReason(task);
-                        }}
-                      >
-                        <HelpOutlineIcon fontSize={'small'} />
-                      </IconButton>
+                    {task.status === 'deployed' && (
+                      <Tooltip title="Deployed">
+                        <CheckCircleOutlineIcon style={{ color: 'green' }} />
+                      </Tooltip>
+                    )}
+                    {task.status === 'failed' && (
+                      <Tooltip title="Failed">
+                        <CancelOutlinedIcon
+                          style={{ color: 'red', cursor: 'pointer' }}
+                          onClick={() => {
+                            if (task.status_reason) {
+                              toggleReason(task);
+                            }
+                          }}
+                        />
+                      </Tooltip>
+                    )}
+                    {task.status === 'in progress' && (
+                      <Tooltip title="In Progress">
+                        <CircularProgress size={24} />
+                      </Tooltip>
+                    )}
+                    {task.status === 'app not found' && (
+                      <Tooltip title="App Not Found">
+                        <ErrorOutlineIcon style={{ color: 'gray' }} />
+                      </Tooltip>
                     )}
                   </TableCell>
                   <TableCell>
