@@ -21,6 +21,7 @@ import { relativeHumanDuration, relativeTime, relativeTimestamp } from '../Utils
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
 import CircularProgress from '@mui/material/CircularProgress';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 
 export function ProjectDisplay({ project }) {
   if (project.indexOf('http') === 0) {
@@ -32,19 +33,6 @@ export function ProjectDisplay({ project }) {
   }
   return <Typography variant={'body2'}>{project}</Typography>;
 }
-
-export const chipColorByStatus = status => {
-  if (status === 'in progress') {
-    return 'primary';
-  }
-  if (status === 'failed') {
-    return 'error';
-  }
-  if (status === 'deployed') {
-    return 'success';
-  }
-  return undefined;
-};
 
 export function StatusReasonDisplay({ reason }) {
   return (
@@ -326,13 +314,24 @@ function TasksTable({
                   <TableCell>{task.author}</TableCell>
                   <TableCell>
                     {task.status === 'deployed' && (
-                      <CheckCircleOutlineIcon style={{ color: 'green' }} />
+                      <Tooltip title="Deployed">
+                        <CheckCircleOutlineIcon style={{ color: 'green' }} />
+                      </Tooltip>
                     )}
                     {task.status === 'failed' && (
-                      <CancelOutlinedIcon style={{ color: 'red' }} />
+                      <Tooltip title="Failed">
+                        <CancelOutlinedIcon style={{ color: 'red' }} />
+                      </Tooltip>
                     )}
                     {task.status === 'in progress' && (
-                      <CircularProgress size={24} />
+                      <Tooltip title="In Progress">
+                        <CircularProgress size={24} />
+                      </Tooltip>
+                    )}
+                    {task.status === 'app not found' && (
+                      <Tooltip title="App Not Found">
+                        <ErrorOutlineIcon style={{ color: 'gray' }} />
+                      </Tooltip>
                     )}
                   </TableCell>
                   <TableCell>

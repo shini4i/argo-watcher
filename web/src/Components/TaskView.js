@@ -2,7 +2,7 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Container from '@mui/material/Container';
 import Typography from '@mui/material/Typography';
-import { useContext, useEffect, useState } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { fetchTask } from '../Services/Data';
 import { useErrorContext } from '../ErrorContext';
@@ -23,6 +23,8 @@ import { useDeployLock } from '../deployLockHandler';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
 import CircularProgress from '@mui/material/CircularProgress';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+import Tooltip from '@mui/material/Tooltip';
 
 export default function TaskView() {
   const { id } = useParams();
@@ -198,13 +200,24 @@ export default function TaskView() {
                 Status
               </Typography>
               {task.status === 'deployed' && (
-                <CheckCircleOutlineIcon style={{ color: 'green' }} />
+                <Tooltip title="Deployed">
+                  <CheckCircleOutlineIcon style={{ color: 'green' }} />
+                </Tooltip>
               )}
               {task.status === 'failed' && (
-                <CancelOutlinedIcon style={{ color: 'red' }} />
+                <Tooltip title="Failed">
+                  <CancelOutlinedIcon style={{ color: 'red' }} />
+                </Tooltip>
               )}
               {task.status === 'in progress' && (
-                <CircularProgress />
+                <Tooltip title="In Progress">
+                  <CircularProgress />
+                </Tooltip>
+              )}
+              {task.status === 'app not found' && (
+                <Tooltip title="App Not Found">
+                  <ErrorOutlineIcon style={{ color: 'gray' }} />
+                </Tooltip>
               )}
             </Grid>
             {task.status_reason && (
