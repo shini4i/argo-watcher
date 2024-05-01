@@ -22,6 +22,8 @@ import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
 import CircularProgress from '@mui/material/CircularProgress';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+import IconButton from '@mui/material/IconButton';
+import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 
 export function ProjectDisplay({ project }) {
   if (project.indexOf('http') === 0) {
@@ -319,9 +321,22 @@ function TasksTable({
                       </Tooltip>
                     )}
                     {task.status === 'failed' && (
-                      <Tooltip title="Failed">
-                        <CancelOutlinedIcon style={{ color: 'red' }} />
-                      </Tooltip>
+                      <>
+                        <Tooltip title="Failed">
+                          <CancelOutlinedIcon style={{ color: 'red' }} />
+                        </Tooltip>
+                        {task.status_reason && (
+                          <IconButton
+                            size={'small'}
+                            sx={{ marginLeft: '5px' }}
+                            onClick={() => {
+                              toggleReason(task);
+                            }}
+                          >
+                            <HelpOutlineIcon fontSize={'small'} />
+                          </IconButton>
+                        )}
+                      </>
                     )}
                     {task.status === 'in progress' && (
                       <Tooltip title="In Progress">
