@@ -64,10 +64,11 @@ func TestSendWebhook(t *testing.T) {
 		defer testServer.Close()
 
 		webhookConfig := config.WebhookConfig{
-			Url:                 testServer.URL,
-			Format:              `{"id": "{{.Id}}","app": "{{.App}}","status": "{{.Status}}"}`,
-			AuthorizationHeader: "Authorization",
-			Token:               expectedAuthToken,
+			Url:                  testServer.URL,
+			Format:               `{"id": "{{.Id}}","app": "{{.App}}","status": "{{.Status}}"}`,
+			AuthorizationHeader:  "Authorization",
+			Token:                expectedAuthToken,
+			AllowedResponseCodes: []int{200},
 		}
 
 		service := NewWebhookService(&webhookConfig)
@@ -75,13 +76,31 @@ func TestSendWebhook(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
+	t.Run("Test webhook payload with wrong response code", func(t *testing.T) {
+		testServer := setupTestServer(t)
+		defer testServer.Close()
+
+		webhookConfig := config.WebhookConfig{
+			Url:                  testServer.URL,
+			Format:               `{"id": "{{.Id}}","app": "{{.App}}","status": "{{.Status}}"}`,
+			AuthorizationHeader:  "Authorization",
+			Token:                expectedAuthToken,
+			AllowedResponseCodes: []int{202, 204},
+		}
+
+		service := NewWebhookService(&webhookConfig)
+		err := service.SendWebhook(mockTask)
+		assert.Error(t, err)
+	})
+
 	t.Run("Test error response", func(t *testing.T) {
 		testServer := setupErrorTestServer()
 		defer testServer.Close()
 
 		webhookConfig := config.WebhookConfig{
-			Url:    testServer.URL,
-			Format: `{"id": "{{.Id}}","app": "{{.App}}","status": "{{.Status}}"}`,
+			Url:                  testServer.URL,
+			Format:               `{"id": "{{.Id}}","app": "{{.App}}","status": "{{.Status}}"}`,
+			AllowedResponseCodes: []int{200},
 		}
 
 		service := NewWebhookService(&webhookConfig)

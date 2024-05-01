@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"text/template"
 
+	"github.com/shini4i/argo-watcher/internal/helpers"
+
 	"github.com/rs/zerolog/log"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
@@ -62,7 +64,7 @@ func (service *WebhookService) SendWebhook(task models.Task) error {
 		}
 	}(resp.Body)
 
-	if resp.StatusCode != http.StatusOK {
+	if !helpers.Contains(service.config.AllowedResponseCodes, resp.StatusCode) {
 		return fmt.Errorf("received non-OK status code: %v", resp.StatusCode)
 	}
 

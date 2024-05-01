@@ -27,11 +27,12 @@ type DatabaseConfig struct {
 }
 
 type WebhookConfig struct {
-	Enabled             bool   `env:"WEBHOOK_ENABLED" envDefault:"false" json:"enabled"`
-	Url                 string `env:"WEBHOOK_URL" json:"url,omitempty"`
-	Format              string `env:"WEBHOOK_FORMAT" json:"format,omitempty"`
-	AuthorizationHeader string `env:"WEBHOOK_AUTHORIZATION_HEADER_NAME" envDefault:"Authorization" json:"authorization_header,omitempty"`
-	Token               string `env:"WEBHOOK_AUTHORIZATION_HEADER_VALUE" envDefault:"" json:"-"`
+	Enabled              bool   `env:"WEBHOOK_ENABLED" envDefault:"false" json:"enabled"`
+	Url                  string `env:"WEBHOOK_URL" json:"url,omitempty"`
+	Format               string `env:"WEBHOOK_FORMAT" json:"format,omitempty"`
+	AuthorizationHeader  string `env:"WEBHOOK_AUTHORIZATION_HEADER_NAME" envDefault:"Authorization" json:"authorization_header,omitempty"`
+	Token                string `env:"WEBHOOK_AUTHORIZATION_HEADER_VALUE" envDefault:"" json:"-"`
+	AllowedResponseCodes []int  `env:"WEBHOOK_ALLOWED_RESPONSE_CODES" envDefault:"200" json:"allowed_response_codes,omitempty"`
 }
 
 type ServerConfig struct {
