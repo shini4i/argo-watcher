@@ -56,6 +56,7 @@ func createTask(config *ClientConfig) models.Task {
 		Author:  config.Author,
 		Project: config.Project,
 		Images:  images,
+		Timeout: config.TaskTimeout,
 	}
 }
 

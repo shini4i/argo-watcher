@@ -7,15 +7,16 @@ import (
 )
 
 type ClientConfig struct {
-	Url     string        `env:"ARGO_WATCHER_URL,required"`
-	Images  []string      `env:"IMAGES,required"`
-	Tag     string        `env:"IMAGE_TAG,required"`
-	App     string        `env:"ARGO_APP,required"`
-	Author  string        `env:"COMMIT_AUTHOR,required"`
-	Project string        `env:"PROJECT_NAME,required"`
-	Token   string        `env:"ARGO_WATCHER_DEPLOY_TOKEN"`
-	Timeout time.Duration `env:"TIMEOUT" envDefault:"60s"`
-	Debug   bool          `env:"DEBUG"`
+	Url         string        `env:"ARGO_WATCHER_URL,required"`
+	Images      []string      `env:"IMAGES,required"`
+	Tag         string        `env:"IMAGE_TAG,required"`
+	App         string        `env:"ARGO_APP,required"`
+	Author      string        `env:"COMMIT_AUTHOR,required"`
+	Project     string        `env:"PROJECT_NAME,required"`
+	Token       string        `env:"ARGO_WATCHER_DEPLOY_TOKEN"`
+	Timeout     time.Duration `env:"TIMEOUT" envDefault:"60s"`
+	TaskTimeout int           `env:"TASK_TIMEOUT"`
+	Debug       bool          `env:"DEBUG"`
 }
 
 func NewClientConfig() (*ClientConfig, error) {

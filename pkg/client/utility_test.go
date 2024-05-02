@@ -95,33 +95,68 @@ func TestGetImagesList(t *testing.T) {
 }
 
 func TestCreateTask(t *testing.T) {
-	config := &ClientConfig{
-		App:     "test-app",
-		Author:  "test-author",
-		Project: "test-project",
-		Images:  []string{"image1", "image2"},
-		Tag:     "test-tag",
-	}
+	t.Run("TimeoutProvided", func(t *testing.T) {
+		config := &ClientConfig{
+			App:         "test-app",
+			Author:      "test-author",
+			Project:     "test-project",
+			Images:      []string{"image1", "image2"},
+			Tag:         "test-tag",
+			TaskTimeout: 30,
+		}
 
-	expectedTask := models.Task{
-		App:     "test-app",
-		Author:  "test-author",
-		Project: "test-project",
-		Images: []models.Image{
-			{
-				Image: "image1",
-				Tag:   "test-tag",
+		expectedTask := models.Task{
+			App:     "test-app",
+			Author:  "test-author",
+			Project: "test-project",
+			Images: []models.Image{
+				{
+					Image: "image1",
+					Tag:   "test-tag",
+				},
+				{
+					Image: "image2",
+					Tag:   "test-tag",
+				},
 			},
-			{
-				Image: "image2",
-				Tag:   "test-tag",
+			Timeout: 30,
+		}
+
+		task := createTask(config)
+
+		assert.Equal(t, expectedTask, task)
+	})
+
+	t.Run("TimeoutNotProvided", func(t *testing.T) {
+		config := &ClientConfig{
+			App:     "test-app",
+			Author:  "test-author",
+			Project: "test-project",
+			Images:  []string{"image1", "image2"},
+			Tag:     "test-tag",
+		}
+
+		expectedTask := models.Task{
+			App:     "test-app",
+			Author:  "test-author",
+			Project: "test-project",
+			Images: []models.Image{
+				{
+					Image: "image1",
+					Tag:   "test-tag",
+				},
+				{
+					Image: "image2",
+					Tag:   "test-tag",
+				},
 			},
-		},
-	}
+		}
 
-	task := createTask(config)
+		task := createTask(config)
 
-	assert.Equal(t, expectedTask, task)
+		assert.Equal(t, expectedTask, task)
+		assert.Zero(t, task.Timeout)
+	})
 }
 
 func TestPrintClientConfiguration(t *testing.T) {
@@ -218,7 +253,6 @@ func TestGenerateAppUrl(t *testing.T) {
 		// Create a Task for testing
 		task := models.Task{
 			App: "test-app",
-			// other task fields...
 		}
 
 		// Call the function
@@ -285,7 +319,6 @@ func TestGenerateAppUrl(t *testing.T) {
 		// Create a Task for testing
 		task := models.Task{
 			App: "test-app",
-			// other task fields...
 		}
 
 		// Call the function

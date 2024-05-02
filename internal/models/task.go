@@ -26,6 +26,7 @@ type Task struct {
 	Status         string         `json:"status,omitempty"`
 	StatusReason   string         `json:"status_reason,omitempty"`
 	Validated      bool           `json:"validated,omitempty"`
+	Timeout        int            `json:"timeout,omitempty"`
 	SavedAppStatus SavedAppStatus `json:"-"`
 }
 
