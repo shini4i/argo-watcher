@@ -55,6 +55,7 @@ func (state *PostgresState) Add(task models.Task) (*models.Task, error) {
 	// pass new values to the task object
 	task.Id = ormTask.Id.String()
 	task.Created = float64(ormTask.Created.UnixMilli())
+	task.Status = models.StatusInProgressMessage
 
 	return &task, nil
 }
