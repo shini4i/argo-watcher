@@ -269,7 +269,6 @@ func (updater *ArgoStatusUpdater) handleArgoAPIFailure(task models.Task, err err
 
 func sendWebhookEvent(task models.Task, webhookService *notifications.WebhookService) {
 	if webhookService.Enabled {
-		log.Debug().Str("id", task.Id).Msgf("Task status: %s", task.Status)
 		if err := webhookService.SendWebhook(task); err != nil {
 			log.Error().Str("id", task.Id).Msgf("Failed to send webhook. Error: %s", err.Error())
 		}
