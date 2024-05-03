@@ -91,7 +91,7 @@ Commit message can be customized by setting the following environment variable:
 ```yaml
 extraEnvs:
   - name: COMMIT_MESSAGE_FORMAT
-    value: 'argo-watcher({{.App}}): update image tag\nID: {{.Id}}\nAuthor: {{.Author}}\nImages:\n{{range .Images}}{{.Image}}:{{.Tag}}\n{{end}}'
+    value: "argo-watcher({{.App}}): update image tag\nID: {{.Id}}\nAuthor: {{.Author}}\nImages:\n{{range .Images}}{{.Image}}:{{.Tag}}\n{{end}}"
 ```
 Commit message supports templated variables. For available template variables see [notifications](notifications.md#available-template-variables) page.
 
