@@ -22,6 +22,7 @@ import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
 import CircularProgress from '@mui/material/CircularProgress';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+import PropTypes from 'prop-types';
 
 export function ProjectDisplay({ project }) {
   if (project.indexOf('http') === 0) {
@@ -33,6 +34,10 @@ export function ProjectDisplay({ project }) {
   }
   return <Typography variant={'body2'}>{project}</Typography>;
 }
+
+ProjectDisplay.propTypes = {
+  project: PropTypes.string.isRequired,
+};
 
 export function StatusReasonDisplay({ reason }) {
   return (

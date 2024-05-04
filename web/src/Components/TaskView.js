@@ -57,9 +57,9 @@ export default function TaskView() {
   }, []);
 
   const getArgoCDUrl = () => {
-    if (configData && configData.argo_cd_url_alias) {
+    if (configData?.argo_cd_url_alias) {
       return `${configData.argo_cd_url_alias}/applications/${task.app}`;
-    } else if (configData && configData.argo_cd_url) {
+    } else if (configData?.argo_cd_url) {
       return `${configData.argo_cd_url.Scheme}://${configData.argo_cd_url.Host}${configData.argo_cd_url.Path}/applications/${task.app}`;
     }
     return '';
@@ -235,7 +235,7 @@ export default function TaskView() {
               <Divider />
             </Grid>
             {task.images.map((item, index) => (
-              <Grid item xs={12} sm={6} key={index}>
+              <Grid item xs={12} sm={6} key={`${item.image}:${item.tag}`}>
                 <Typography variant="body2" color="textSecondary">
                   Image {index + 1}
                 </Typography>
