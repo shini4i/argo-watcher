@@ -15,6 +15,7 @@ import {
   Typography,
 } from '@mui/material';
 import Switch from '@mui/material/Switch';
+
 import { fetchConfig } from '../config';
 import { releaseDeployLock, setDeployLock, useDeployLock } from '../deployLockHandler';
 import { AuthContext } from '../auth';

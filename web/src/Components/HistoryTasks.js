@@ -8,11 +8,12 @@ import Typography from '@mui/material/Typography';
 import TextField from '@mui/material/TextField';
 import IconButton from '@mui/material/IconButton';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import ApplicationsFilter from './ApplicationsFilter';
-import TasksTable, { useTasks } from './TasksTable';
-import { endOfDay, startOfDay } from 'date-fns';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
+import { endOfDay, startOfDay } from 'date-fns';
+
+import ApplicationsFilter from './ApplicationsFilter';
+import TasksTable, { useTasks } from './TasksTable';
 import { useErrorContext } from '../ErrorContext';
 
 const DateRangePickerCustomInput = forwardRef(({ value, onClick }, ref) => (

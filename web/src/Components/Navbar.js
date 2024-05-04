@@ -1,18 +1,21 @@
 import React, { useEffect, useState } from 'react';
 import PropTypes from 'prop-types';
-import Box from '@mui/material/Box';
-import AppBar from '@mui/material/AppBar';
-import Toolbar from '@mui/material/Toolbar';
-import Typography from '@mui/material/Typography';
-import GitHubIcon from '@mui/icons-material/GitHub';
-import Link from '@mui/material/Link';
 import { Link as RouterLink } from 'react-router-dom';
-import Stack from '@mui/material/Stack';
-import Tooltip from '@mui/material/Tooltip';
+import {
+  AppBar,
+  Box,
+  Toolbar,
+  Typography,
+  Link,
+  Stack,
+  Tooltip
+} from '@mui/material';
+import GitHubIcon from '@mui/icons-material/GitHub';
 import RestoreIcon from '@mui/icons-material/Restore';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import QuizRoundedIcon from '@mui/icons-material/QuizRounded';
 import LocalOfferIcon from '@mui/icons-material/LocalOffer';
+
 import { fetchVersion } from '../Services/Data';
 import { useErrorContext } from '../ErrorContext';
 import Sidebar from './Sidebar';

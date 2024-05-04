@@ -1,12 +1,9 @@
-import Box from '@mui/material/Box';
-import Button from '@mui/material/Button';
-import Container from '@mui/material/Container';
-import Typography from '@mui/material/Typography';
 import React, { useContext, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { fetchTask } from '../Services/Data';
-import { useErrorContext } from '../ErrorContext';
 import {
+  Box,
+  Button,
+  Container,
   Dialog,
   DialogActions,
   DialogContent,
@@ -15,16 +12,20 @@ import {
   Divider,
   Grid,
   Paper,
+  Typography,
+  CircularProgress,
+  Tooltip
 } from '@mui/material';
-import { formatDateTime, ProjectDisplay, StatusReasonDisplay } from './TasksTable';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
+import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+
+import { fetchTask } from '../Services/Data';
+import { useErrorContext } from '../ErrorContext';
+import { ProjectDisplay, StatusReasonDisplay } from './TasksTable';
 import { AuthContext } from '../auth';
 import { fetchConfig } from '../config';
 import { useDeployLock } from '../deployLockHandler';
-import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
-import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
-import CircularProgress from '@mui/material/CircularProgress';
-import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
-import Tooltip from '@mui/material/Tooltip';
 
 export default function TaskView() {
   const { id } = useParams();

@@ -1,5 +1,6 @@
 import { createContext, useEffect, useState } from 'react';
 import Keycloak from 'keycloak-js';
+
 import { fetchConfig } from './config';
 
 export const AuthContext = createContext(undefined);
