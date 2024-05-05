@@ -50,6 +50,8 @@ export function useAuth() {
             setAuthenticated(false);
           });
       } else {
+        // if keycloak_url is not set, we are not using any authentication
+        // hence we set authenticated to true by default
         setAuthenticated(true);
       }
     });
