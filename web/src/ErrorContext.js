@@ -1,4 +1,5 @@
-import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import PropTypes from 'prop-types';
 
 const context = createContext(null);
 
@@ -10,71 +11,57 @@ export const ErrorProvider = ({ children }) => {
     return () => timeouts.current.forEach(timeout => clearTimeout(timeout));
   }, []);
 
+  const removeStackItem = (id) => {
+    setStack(stack => {
+      delete stack[id];
+      return { ...stack };
+    });
+  };
+
+  const value = useMemo(() => ({
+    stack,
+    messages: Object.keys(stack).reduce((result, key) => {
+      let item = stack[key];
+      let found = false;
+      for (let searchItem of result) {
+        if (
+          searchItem.message === item.message &&
+          searchItem.status === item.status
+        ) {
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        result.push(item);
+      }
+      return result;
+    }, []),
+    setError: (id, message) => {
+      if (!message) {
+        message = 'Unknown error';
+      }
+      setStack(stack => {
+        stack[id] = { status: 'error', message };
+        return { ...stack };
+      });
+    },
+    setSuccess: (id, message) => {
+      setStack(stack => {
+        if (!stack[id]) {
+          return stack;
+        }
+        stack[id] = { status: 'success', message };
+        timeouts.current.push(
+          setTimeout(() => removeStackItem(id), 5000)
+        );
+        return { ...stack };
+      });
+    },
+  }), [stack]);
+
   return (
-    <context.Provider
-      value={{
-        stack,
-        messages: Object.keys(stack).reduce((result, key) => {
-          let item = stack[key];
-          let found = false;
-          for (let searchItem of result) {
-            if (
-              searchItem.message === item.message &&
-              searchItem.status === item.status
-            ) {
-              found = true;
-              break;
-            }
-          }
-          if (!found) {
-            result.push(item);
-          }
-          return result;
-        }, []),
-        setError: (id, message) => {
-          if (!message) {
-            message = 'Unknown error';
-          }
-          setStack(stack => {
-            stack[id] = { status: 'error', message };
-            return { ...stack };
-          });
-        },
-        setSuccess: (id, message) => {
-          setStack(stack => {
-            if (!stack[id]) {
-              // don't show success message when there wasn't any error
-              return stack;
-            }
-            // add success message
-            stack[id] = { status: 'success', message };
-            // set timer to remove
-            timeouts.current.push(
-              setTimeout(() => {
-                setStack(stack => {
-                  delete stack[id];
-                  return { ...stack };
-                });
-              }, 5000),
-            );
-            // return new stack
-            return { ...stack };
-          });
-        },
-        clearMessage: (status, message) => {
-          setStack(stack => {
-            return Object.keys(stack).reduce((result, key) => {
-              let item = stack[key];
-              if (item.status === status && item.message === message) {
-                return result;
-              }
-              result[key] = item;
-              return result;
-            }, {});
-          });
-        },
-      }}
-    >
+    <context.Provider value={value}>
       {children}
     </context.Provider>
   );
@@ -82,4 +69,8 @@ export const ErrorProvider = ({ children }) => {
 
 export const useErrorContext = () => {
   return useContext(context);
+};
+
+ErrorProvider.propTypes = {
+  children: PropTypes.node.isRequired,
 };

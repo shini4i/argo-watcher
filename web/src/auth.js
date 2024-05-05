@@ -12,6 +12,20 @@ export function useAuth() {
   const [privilegedGroups, setPrivilegedGroups] = useState([]);
   const [keycloakToken, setKeycloakToken] = useState(null);
 
+  const refreshToken = (keycloak, config) => {
+    setInterval(() => {
+      keycloak.updateToken(20)
+        .then(refreshed => {
+          if (refreshed) {
+            console.log('Token refreshed, valid for ' + Math.round(keycloak.tokenParsed.exp + keycloak.timeSkew - new Date().getTime() / 1000) + ' seconds');
+            setKeycloakToken(keycloak.token);
+          }
+        }).catch(() => {
+        console.error('Failed to refresh token');
+      });
+    }, config.keycloak.token_validation_interval);
+  };
+
   useEffect(() => {
     fetchConfig().then(config => {
       if (config.keycloak.url) {
@@ -29,28 +43,13 @@ export function useAuth() {
               setGroups(keycloak.tokenParsed.groups);
               setPrivilegedGroups(config.keycloak.privileged_groups);
               setKeycloakToken(keycloak.token);
-
-              setInterval(() => {
-                keycloak.updateToken(20)
-                  .then(refreshed => {
-                    if (refreshed) {
-                      console.log('Token refreshed, valid for ' + Math.round(keycloak.tokenParsed.exp + keycloak.timeSkew - new Date().getTime() / 1000) + ' seconds');
-                      // we need to set the token again here to handle cases
-                      // when the UI was open for a long time
-                      setKeycloakToken(keycloak.token);
-                    }
-                  }).catch(() => {
-                  console.error('Failed to refresh token');
-                });
-              }, config.keycloak.token_validation_interval);
+              refreshToken(keycloak, config);
             }
           })
           .catch(() => {
             setAuthenticated(false);
           });
       } else {
-        // if keycloak_url is not set, we are not using any authentication
-        // hence we set authenticated to true by default
         setAuthenticated(true);
       }
     });
