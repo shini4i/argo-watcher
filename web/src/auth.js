@@ -1,5 +1,6 @@
 import { createContext, useEffect, useState } from 'react';
 import Keycloak from 'keycloak-js';
+
 import { fetchConfig } from './config';
 
 export const AuthContext = createContext(undefined);
@@ -10,6 +11,20 @@ export function useAuth() {
   const [groups, setGroups] = useState([]);
   const [privilegedGroups, setPrivilegedGroups] = useState([]);
   const [keycloakToken, setKeycloakToken] = useState(null);
+
+  const refreshToken = (keycloak, config) => {
+    setInterval(() => {
+      keycloak.updateToken(20)
+        .then(refreshed => {
+          if (refreshed) {
+            console.log('Token refreshed, valid for ' + Math.round(keycloak.tokenParsed.exp + keycloak.timeSkew - new Date().getTime() / 1000) + ' seconds');
+            setKeycloakToken(keycloak.token);
+          }
+        }).catch(() => {
+        console.error('Failed to refresh token');
+      });
+    }, config.keycloak.token_validation_interval);
+  };
 
   useEffect(() => {
     fetchConfig().then(config => {
@@ -28,20 +43,7 @@ export function useAuth() {
               setGroups(keycloak.tokenParsed.groups);
               setPrivilegedGroups(config.keycloak.privileged_groups);
               setKeycloakToken(keycloak.token);
-
-              setInterval(() => {
-                keycloak.updateToken(20)
-                  .then(refreshed => {
-                    if (refreshed) {
-                      console.log('Token refreshed, valid for ' + Math.round(keycloak.tokenParsed.exp + keycloak.timeSkew - new Date().getTime() / 1000) + ' seconds');
-                      // we need to set the token again here to handle cases
-                      // when the UI was open for a long time
-                      setKeycloakToken(keycloak.token);
-                    }
-                  }).catch(() => {
-                  console.error('Failed to refresh token');
-                });
-              }, config.keycloak.token_validation_interval);
+              refreshToken(keycloak, config);
             }
           })
           .catch(() => {

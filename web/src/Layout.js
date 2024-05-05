@@ -1,9 +1,10 @@
-import Navbar from './Components/Navbar';
-import { Outlet } from 'react-router-dom';
 import React from 'react';
-import { useErrorContext } from './ErrorContext';
+import { Outlet } from 'react-router-dom';
 import MuiAlert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
+
+import Navbar from './Components/Navbar';
+import { useErrorContext } from './ErrorContext';
 
 const Alert = React.forwardRef(function Alert(props, ref) {
   return <MuiAlert elevation={6} ref={ref} variant="filled" {...props} />;

@@ -1,15 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import Box from '@mui/material/Box';
-import Container from '@mui/material/Container';
-import Stack from '@mui/material/Stack';
-import Typography from '@mui/material/Typography';
-import IconButton from '@mui/material/IconButton';
+import {
+  Box,
+  Container,
+  FormControl,
+  IconButton,
+  InputLabel,
+  MenuItem,
+  Select,
+  Stack,
+  Typography
+} from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import FormControl from '@mui/material/FormControl';
-import InputLabel from '@mui/material/InputLabel';
-import Select from '@mui/material/Select';
-import MenuItem from '@mui/material/MenuItem';
+
 import ApplicationsFilter from './ApplicationsFilter';
 import TasksTable, { useTasks } from './TasksTable';
 import { useErrorContext } from '../ErrorContext';

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import PropTypes from 'prop-types';
 import Autocomplete from '@mui/material/Autocomplete';
 import TextField from '@mui/material/TextField';
+
 import { fetchApplications } from '../Services/Data';
 
 function ApplicationsFilter({ value, onChange, setError, setSuccess }) {

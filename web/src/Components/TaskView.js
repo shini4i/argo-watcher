@@ -1,12 +1,9 @@
-import Box from '@mui/material/Box';
-import Button from '@mui/material/Button';
-import Container from '@mui/material/Container';
-import Typography from '@mui/material/Typography';
 import React, { useContext, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { fetchTask } from '../Services/Data';
-import { useErrorContext } from '../ErrorContext';
 import {
+  Box,
+  Button,
+  Container,
   Dialog,
   DialogActions,
   DialogContent,
@@ -15,16 +12,20 @@ import {
   Divider,
   Grid,
   Paper,
+  Typography,
+  CircularProgress,
+  Tooltip
 } from '@mui/material';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
+import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+
+import { fetchTask } from '../Services/Data';
+import { useErrorContext } from '../ErrorContext';
 import { formatDateTime, ProjectDisplay, StatusReasonDisplay } from './TasksTable';
 import { AuthContext } from '../auth';
 import { fetchConfig } from '../config';
 import { useDeployLock } from '../deployLockHandler';
-import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
-import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
-import CircularProgress from '@mui/material/CircularProgress';
-import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
-import Tooltip from '@mui/material/Tooltip';
 
 export default function TaskView() {
   const { id } = useParams();
@@ -57,9 +58,9 @@ export default function TaskView() {
   }, []);
 
   const getArgoCDUrl = () => {
-    if (configData && configData.argo_cd_url_alias) {
+    if (configData?.argo_cd_url_alias) {
       return `${configData.argo_cd_url_alias}/applications/${task.app}`;
-    } else if (configData && configData.argo_cd_url) {
+    } else if (configData?.argo_cd_url) {
       return `${configData.argo_cd_url.Scheme}://${configData.argo_cd_url.Host}${configData.argo_cd_url.Path}/applications/${task.app}`;
     }
     return '';
@@ -235,7 +236,7 @@ export default function TaskView() {
               <Divider />
             </Grid>
             {task.images.map((item, index) => (
-              <Grid item xs={12} sm={6} key={index}>
+              <Grid item xs={12} sm={6} key={`${item.image}:${item.tag}`}>
                 <Typography variant="body2" color="textSecondary">
                   Image {index + 1}
                 </Typography>

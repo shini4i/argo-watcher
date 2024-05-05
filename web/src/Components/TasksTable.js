@@ -1,6 +1,7 @@
-import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
-import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
-import LaunchIcon from '@mui/icons-material/Launch';
+import React, { useEffect, useState } from 'react';
+import { Link as ReactLink } from 'react-router-dom';
+import { addMinutes, format } from 'date-fns';
+import PropTypes from 'prop-types';
 import { Link, MenuItem, TextField } from '@mui/material';
 import Box from '@mui/material/Box';
 import Pagination from '@mui/material/Pagination';
@@ -12,16 +13,17 @@ import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
-import { addMinutes, format } from 'date-fns';
-import React, { useEffect, useState } from 'react';
-import { Link as ReactLink } from 'react-router-dom';
-import { fetchTasks } from '../Services/Data';
-import { useDeployLock } from '../deployLockHandler';
-import { relativeHumanDuration, relativeTime, relativeTimestamp } from '../Utils';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
 import CircularProgress from '@mui/material/CircularProgress';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
+import LaunchIcon from '@mui/icons-material/Launch';
+
+import { fetchTasks } from '../Services/Data';
+import { useDeployLock } from '../deployLockHandler';
+import { relativeHumanDuration, relativeTime, relativeTimestamp } from '../Utils';
 
 export function ProjectDisplay({ project }) {
   if (project.indexOf('http') === 0) {
@@ -33,6 +35,10 @@ export function ProjectDisplay({ project }) {
   }
   return <Typography variant={'body2'}>{project}</Typography>;
 }
+
+ProjectDisplay.propTypes = {
+  project: PropTypes.string.isRequired,
+};
 
 export function StatusReasonDisplay({ reason }) {
   return (

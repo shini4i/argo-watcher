@@ -1,9 +1,10 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { Box, CircularProgress, createTheme, lighten, ThemeProvider } from '@mui/material';
+
 import RecentTasks from './Components/RecentTasks';
 import HistoryTasks from './Components/HistoryTasks';
 import Layout from './Layout';
 import Page404 from './Page404';
-import { Box, CircularProgress, createTheme, lighten, ThemeProvider } from '@mui/material';
 import { ErrorProvider } from './ErrorContext';
 import TaskView from './Components/TaskView';
 import { AuthContext, useAuth } from './auth';
