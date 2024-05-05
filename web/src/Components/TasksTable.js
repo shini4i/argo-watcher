@@ -55,6 +55,10 @@ export function StatusReasonDisplay({ reason }) {
   );
 }
 
+StatusReasonDisplay.propTypes = {
+  reason: PropTypes.string.isRequired,
+};
+
 const taskDuration = (created, updated) => {
   if (!updated) {
     updated = Math.round(Date.now() / 1000);
@@ -366,9 +370,9 @@ function TasksTable({
                     )}
                   </TableCell>
                   <TableCell>
-                    {task.images.map((item, index) => {
+                    {task.images.map((item) => {
                       return (
-                        <div key={index}>
+                        <div key={item.id}>
                           {item.image}:{item.tag}
                         </div>
                       );
@@ -411,7 +415,7 @@ function TasksTable({
           shape="rounded"
           page={page}
           onChange={(_event, value) => {
-            onPageChange && onPageChange(value);
+            onPageChange?.(value);
           }}
         />
         <TextField
@@ -450,5 +454,21 @@ function TasksTable({
     </>
   );
 }
+
+TableCellSorted.propTypes = {
+  field: PropTypes.string.isRequired,
+  sortField: PropTypes.object.isRequired,
+  setSortField: PropTypes.func.isRequired,
+  children: PropTypes.node.isRequired,
+};
+
+TasksTable.propTypes = {
+  tasks: PropTypes.array.isRequired,
+  sortField: PropTypes.object.isRequired,
+  setSortField: PropTypes.func.isRequired,
+  relativeDate: PropTypes.bool.isRequired,
+  onPageChange: PropTypes.func.isRequired,
+  page: PropTypes.number,
+};
 
 export default TasksTable;
