@@ -24,6 +24,17 @@ export const ErrorProvider = ({ children }) => {
     );
   };
 
+  const clearMessage = (status, message) => {
+    setStack(stack => {
+      for (let id in stack) {
+        if (stack[id].status === status && stack[id].message === message) {
+          delete stack[id];
+        }
+      }
+      return { ...stack };
+    });
+  };
+
   const value = useMemo(() => ({
     stack,
     messages: Object.keys(stack).reduce((result, key) => {
@@ -62,6 +73,7 @@ export const ErrorProvider = ({ children }) => {
         return { ...stack };
       });
     },
+    clearMessage,
   }), [stack]);
 
   return (
