@@ -24,61 +24,74 @@ type LockdownSchedule struct {
 	EndMin    int
 }
 
+// parseSchedule parses a single schedule from a string and returns a LockdownSchedule struct.
+func parseSchedule(schedule string) (LockdownSchedule, error) {
+	times := strings.Split(strings.TrimSpace(schedule), "-")
+	if len(times) != 2 {
+		return LockdownSchedule{}, fmt.Errorf("invalid timeframe format")
+	}
+
+	startParts := strings.Split(strings.TrimSpace(times[0]), " ")
+	endParts := strings.Split(strings.TrimSpace(times[1]), " ")
+
+	if len(startParts) != 2 || len(endParts) != 2 {
+		return LockdownSchedule{}, fmt.Errorf("invalid timeframe format")
+	}
+
+	startDay, err := dayToWeekday(startParts[0])
+	if err != nil {
+		return LockdownSchedule{}, err
+	}
+
+	startHour, startMin, err := parseTime(startParts[1])
+	if err != nil {
+		return LockdownSchedule{}, err
+	}
+
+	endDay, err := dayToWeekday(endParts[0])
+	if err != nil {
+		return LockdownSchedule{}, err
+	}
+
+	endHour, endMin, err := parseTime(endParts[1])
+	if err != nil {
+		return LockdownSchedule{}, err
+	}
+
+	return LockdownSchedule{
+		StartDay:  startDay,
+		StartHour: startHour,
+		StartMin:  startMin,
+		EndDay:    endDay,
+		EndHour:   endHour,
+		EndMin:    endMin,
+	}, nil
+}
+
+// parseTime parses a time from a string and returns the hour and minute as integers.
+func parseTime(timeStr string) (int, int, error) {
+	timeParts := strings.Split(timeStr, ":")
+	hour, err := strconv.Atoi(timeParts[0])
+	if err != nil {
+		return 0, 0, err
+	}
+	minutes, err := strconv.Atoi(timeParts[1])
+	if err != nil {
+		return 0, 0, err
+	}
+	return hour, minutes, nil
+}
+
 // Parse parses the lockdown schedules from a string and stores them in the Lockdown struct.
-// Expected format: "Mon 08:00 - Tue 08:00, Wed 08:00 - Thu 08:00"
 func (l *Lockdown) Parse(schedules string) error {
 	timeFramesSplit := strings.Split(schedules, ",")
 
 	for _, tf := range timeFramesSplit {
-		times := strings.Split(strings.TrimSpace(tf), "-")
-		if len(times) != 2 {
-			return fmt.Errorf("invalid timeframe format")
-		}
-
-		startParts := strings.Split(strings.TrimSpace(times[0]), " ")
-		endParts := strings.Split(strings.TrimSpace(times[1]), " ")
-
-		if len(startParts) != 2 || len(endParts) != 2 {
-			return fmt.Errorf("invalid timeframe format")
-		}
-
-		startDay, err := dayToWeekday(startParts[0])
+		schedule, err := parseSchedule(tf)
 		if err != nil {
 			return err
 		}
-
-		startTimeParts := strings.Split(startParts[1], ":")
-		startHour, err := strconv.Atoi(startTimeParts[0])
-		if err != nil {
-			return err
-		}
-		startMin, err := strconv.Atoi(startTimeParts[1])
-		if err != nil {
-			return err
-		}
-
-		endDay, err := dayToWeekday(endParts[0])
-		if err != nil {
-			return err
-		}
-		endTimeParts := strings.Split(endParts[1], ":")
-		endHour, err := strconv.Atoi(endTimeParts[0])
-		if err != nil {
-			return err
-		}
-		endMin, err := strconv.Atoi(endTimeParts[1])
-		if err != nil {
-			return err
-		}
-
-		l.Schedules = append(l.Schedules, LockdownSchedule{
-			StartDay:  startDay,
-			StartHour: startHour,
-			StartMin:  startMin,
-			EndDay:    endDay,
-			EndHour:   endHour,
-			EndMin:    endMin,
-		})
+		l.Schedules = append(l.Schedules, schedule)
 	}
 
 	log.Debug().Msgf("Parsed lockdown schedules: %v", l.Schedules)
