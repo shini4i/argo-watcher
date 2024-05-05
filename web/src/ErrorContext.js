@@ -18,6 +18,12 @@ export const ErrorProvider = ({ children }) => {
     });
   };
 
+  const setSuccessTimeout = (id) => {
+    timeouts.current.push(
+      setTimeout(() => removeStackItem(id), 5000)
+    );
+  };
+
   const value = useMemo(() => ({
     stack,
     messages: Object.keys(stack).reduce((result, key) => {
@@ -52,9 +58,7 @@ export const ErrorProvider = ({ children }) => {
           return stack;
         }
         stack[id] = { status: 'success', message };
-        timeouts.current.push(
-          setTimeout(() => removeStackItem(id), 5000)
-        );
+        setSuccessTimeout(id);
         return { ...stack };
       });
     },
