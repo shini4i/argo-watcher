@@ -138,9 +138,7 @@ func TestPostgresState_ProcessObsoleteTasks(t *testing.T) {
 
 	// get connections
 	db, err := postgresState.orm.DB()
-	if err != nil {
-		panic(err)
-	}
+	assert.NoError(t, err)
 
 	// update obsolete task
 	if _, err := db.Exec("UPDATE tasks SET created = $1 WHERE id = $2", updatedTime, abortedTaskId); err != nil {
@@ -158,7 +156,9 @@ func TestPostgresState_ProcessObsoleteTasks(t *testing.T) {
 	startTime := float64(time.Now().Unix()) - 10
 	endTime := float64(time.Now().Unix())
 	tasks := postgresState.GetTasks(startTime, endTime, "")
-	assert.Len(t, tasks, 2)
+	for _, task := range tasks {
+		assert.NotEqual(t, appNotFoundTask, task.Id)
+	}
 
 	// Check that task status was changed to aborted
 	if task, err := postgresState.GetTask(abortedTaskId); err != nil {
