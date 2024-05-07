@@ -106,8 +106,8 @@ func (argo *Argo) GetTasks(startTime float64, endTime float64, app string) model
 	}
 }
 
-func (argo *Argo) GetAppList() []string {
-	return argo.State.GetAppList()
+func (argo *Argo) GetAppList(startTime float64, endTime float64) []string {
+	return argo.State.GetAppList(startTime, endTime)
 }
 
 func (argo *Argo) SimpleHealthCheck() bool {

@@ -116,20 +116,6 @@ func (state *PostgresState) SetTaskStatus(id string, status string, reason strin
 	return nil
 }
 
-// GetAppList retrieves a list of distinct application names from the tasks table in the PostgreSQL database.
-// It executes a SELECT query to fetch the distinct app values and returns them as a slice of strings.
-// If an error occurs during the database query or result processing, it logs the error and returns an empty slice.
-func (state *PostgresState) GetAppList() []string {
-	var apps []string
-
-	if err := state.orm.Model(&state_models.TaskModel{}).Distinct().Pluck("ApplicationName", &apps).Error; err != nil {
-		log.Error().Msgf("Failed to retrieve distinct app names: %s", err.Error())
-		return []string{}
-	}
-
-	return apps
-}
-
 // Check verifies the connection to the PostgreSQL database by executing a simple test query.
 // It returns true if the database connection is successful and the test query is executed without errors.
 // It returns false if there is an error in the database connection or the test query execution.

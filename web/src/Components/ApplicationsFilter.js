@@ -3,21 +3,12 @@ import PropTypes from 'prop-types';
 import Autocomplete from '@mui/material/Autocomplete';
 import TextField from '@mui/material/TextField';
 
-import { fetchApplications } from '../Services/Data';
-
-function ApplicationsFilter({ value, onChange, setError, setSuccess }) {
+function ApplicationsFilter({ value, onChange, appNames }) {
   const [applications, setApplications] = useState([]);
 
   useEffect(() => {
-    fetchApplications()
-      .then(items => {
-        setSuccess('fetchApplications', 'Application filter dropdown fetched');
-        setApplications(items);
-      })
-      .catch(error => {
-        setError('fetchApplications', error.message);
-      });
-  }, []);
+    setApplications(appNames);
+  }, [appNames]);
 
   const handleApplicationsChange = (_event, newValue) => {
     onChange?.(newValue);
@@ -39,8 +30,7 @@ function ApplicationsFilter({ value, onChange, setError, setSuccess }) {
 ApplicationsFilter.propTypes = {
   value: PropTypes.any,
   onChange: PropTypes.func,
-  setError: PropTypes.func.isRequired,
-  setSuccess: PropTypes.func.isRequired,
+  appNames: PropTypes.array.isRequired
 };
 
 export default ApplicationsFilter;
