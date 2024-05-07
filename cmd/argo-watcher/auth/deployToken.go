@@ -1,9 +1,15 @@
 package auth
 
+import "fmt"
+
 type DeployTokenAuthService struct {
 	Token string
 }
 
 func (s *DeployTokenAuthService) Validate(token string) (bool, error) {
-	return s.Token == token, nil
+	tokenIsValid := s.Token == token
+	if !tokenIsValid {
+		return false, fmt.Errorf("deploy token is either missing or invalid")
+	}
+	return tokenIsValid, nil
 }

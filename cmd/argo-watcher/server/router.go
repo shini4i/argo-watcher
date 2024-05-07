@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -153,29 +152,14 @@ func (env *Env) addTask(c *gin.Context) {
 		"ARGO_WATCHER_DEPLOY_TOKEN": auth.NewDeployTokenAuthService(env.config.DeployToken),
 	}
 
-	for header, strategy := range strategies {
-		token := c.GetHeader(header)
-
-		// Skip if there is no token for the strategy
-		if token == "" {
-			continue
-		}
-
-		// Validating the token
-		valid, err := strategy.Validate(token)
-
-		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
-			return
-		}
-
-		// If the token is valid, we set task.Validated value to true and break
-		if valid {
-			log.Debug().Msgf("Using authorization header: %s", header)
-			task.Validated = true
-			break
-		}
+	tokenValid, err := env.validateToken(c, strategies)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.TaskStatus{})
+		log.Error().Msgf("Couldn't validate token. Got the following error: %s", err)
+		return
 	}
+
+	task.Validated = tokenValid
 
 	newTask, err := env.argo.AddTask(task)
 	if err != nil {
@@ -288,7 +272,11 @@ func (env *Env) getConfig(c *gin.Context) {
 // @Success 200 {string} string
 // @Router /api/v1/deploy-lock [post].
 func (env *Env) SetDeployLock(c *gin.Context) {
-	if err := env.validateKeycloakToken(c); err != nil {
+	strategies := map[string]auth.AuthService{
+		"Keycloak-Authorization": auth.NewKeycloakAuthService(),
+	}
+
+	if _, err := env.validateToken(c, strategies); err != nil {
 		log.Error().Msgf("couldn't release deploy lock, got the following error: %s", err)
 		c.JSON(http.StatusUnauthorized, models.TaskStatus{
 			Status: unauthorizedMessage,
@@ -312,7 +300,11 @@ func (env *Env) SetDeployLock(c *gin.Context) {
 // @Success 200 {string} string
 // @Router /api/v1/deploy-lock [delete].
 func (env *Env) ReleaseDeployLock(c *gin.Context) {
-	if err := env.validateKeycloakToken(c); err != nil {
+	strategies := map[string]auth.AuthService{
+		"Keycloak-Authorization": auth.NewKeycloakAuthService(),
+	}
+
+	if _, err := env.validateToken(c, strategies); err != nil {
 		log.Error().Msgf("couldn't release deploy lock, got the following error: %s", err)
 		c.JSON(http.StatusUnauthorized, models.TaskStatus{
 			Status: unauthorizedMessage,
@@ -339,24 +331,24 @@ func (env *Env) isDeployLockSet(c *gin.Context) {
 	c.JSON(http.StatusOK, env.lockdown.IsLocked())
 }
 
-func (env *Env) validateKeycloakToken(c *gin.Context) error {
-	keycloakToken := c.GetHeader("Authorization")
+func (env *Env) validateToken(c *gin.Context, strategies map[string]auth.AuthService) (bool, error) {
+	for header, strategy := range strategies {
+		token := c.GetHeader(header)
+		if token == "" {
+			continue
+		}
 
-	if keycloakToken != "" {
-		valid, err := env.auth.Validate(keycloakToken)
+		valid, err := strategy.Validate(token)
+		if valid {
+			return true, nil
+		}
 		if err != nil {
-			return err
-		}
-		if !valid {
-			return errors.New("invalid Keycloak token")
+			return false, err
 		}
 	}
 
-	if env.config.Keycloak.Url != "" && keycloakToken == "" {
-		return errors.New("keycloak integration is enabled, but no token is provided")
-	}
-
-	return nil
+	// No valid token found, but it's not an error in this context.
+	return false, nil
 }
 
 // handleWebSocketConnection accepts a WebSocket connection, adds it to a slice,
