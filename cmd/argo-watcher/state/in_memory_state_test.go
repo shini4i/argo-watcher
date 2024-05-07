@@ -83,16 +83,6 @@ func TestInMemoryState_SetTaskStatus(t *testing.T) {
 	assert.Equal(t, models.StatusDeployedMessage, taskInfo.Status)
 }
 
-func TestInMemoryState_GetAppList(t *testing.T) {
-	assert.Equal(t, []string{"Test", "Test2"}, state.GetAppList())
-}
-
-func TestInMemoryState_GetAppListEmpty(t *testing.T) {
-	state := InMemoryState{}
-	// We must make sure that we are returning an empty slice and not nil
-	assert.Equal(t, []string{}, state.GetAppList())
-}
-
 func TestInMemoryState_ProcessObsoleteTasks(t *testing.T) {
 	// update task update time
 	state.tasks[1].Updated = state.tasks[1].Updated - 3601

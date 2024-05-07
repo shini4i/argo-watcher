@@ -91,11 +91,16 @@ export function useTasks({ setError, setSuccess }) {
     direction: 'ASC',
   });
 
+  const [appNames, setAppNames] = useState([]);
+
   const refreshTasksInTimeframe = (timeframe, application) => {
-    // get tasks by timestamp
     fetchTasks(relativeTimestamp(timeframe), null, application)
       .then(items => {
         setSuccess('fetchTasks', 'Fetched tasks successfully');
+
+        const appNames = [...new Set(items.map(item => item.app))];
+        setAppNames(appNames);
+
         setTasksSorted(items, sortField);
       })
       .catch(error => {
@@ -104,10 +109,13 @@ export function useTasks({ setError, setSuccess }) {
   };
 
   const refreshTasksInRange = (fromTimestamp, toTimestamp, application) => {
-    // get tasks by timestamp
     fetchTasks(fromTimestamp, toTimestamp, application)
       .then(items => {
         setSuccess('fetchTasks', 'Fetched tasks successfully');
+
+        const appNames = [...new Set(items.map(item => item.app))];
+        setAppNames(appNames);
+
         setTasksSorted(items, sortField);
       })
       .catch(error => {
@@ -150,6 +158,7 @@ export function useTasks({ setError, setSuccess }) {
     refreshTasksInTimeframe,
     refreshTasksInRange,
     clearTasks,
+    appNames
   };
 }
 

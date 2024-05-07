@@ -35,7 +35,7 @@ DateRangePickerCustomInput.propTypes = {
 function HistoryTasks() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { setError, setSuccess } = useErrorContext();
-  const { tasks, sortField, setSortField, refreshTasksInRange, clearTasks } =
+  const { tasks, sortField, setSortField, appNames, refreshTasksInRange, clearTasks } =
     useTasks({ setError, setSuccess });
   const [currentApplication, setCurrentApplication] = useState(
     searchParams.get('app') ?? null,
@@ -113,6 +113,7 @@ function HistoryTasks() {
               }}
               setError={setError}
               setSuccess={setSuccess}
+              appNames={appNames}
             />
           </Box>
           <Box>

@@ -9,8 +9,6 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
-	"github.com/shini4i/argo-watcher/internal/helpers"
-
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
@@ -134,25 +132,13 @@ func TestPostgresState_SetTaskStatus(t *testing.T) {
 	assert.Equal(t, models.StatusAppNotFoundMessage, taskInfo.Status)
 }
 
-func TestPostgresState_GetAppList(t *testing.T) {
-	apps := postgresState.GetAppList()
-
-	for _, app := range postgresState.GetAppList() {
-		assert.Equal(t, true, helpers.Contains([]string{"Test", "Test2", "ObsoleteApp"}, app))
-	}
-
-	assert.Len(t, apps, 3)
-}
-
 func TestPostgresState_ProcessObsoleteTasks(t *testing.T) {
 	// set updated time to 2 hour ago for obsolete task
 	updatedTime := time.Now().UTC().Add(-2 * time.Hour)
 
 	// get connections
 	db, err := postgresState.orm.DB()
-	if err != nil {
-		panic(err)
-	}
+	assert.NoError(t, err)
 
 	// update obsolete task
 	if _, err := db.Exec("UPDATE tasks SET created = $1 WHERE id = $2", updatedTime, abortedTaskId); err != nil {
@@ -167,7 +153,12 @@ func TestPostgresState_ProcessObsoleteTasks(t *testing.T) {
 	postgresState.ProcessObsoleteTasks(1)
 
 	// Check that obsolete task was deleted
-	assert.Len(t, postgresState.GetAppList(), 2)
+	startTime := float64(time.Now().Unix()) - 10
+	endTime := float64(time.Now().Unix())
+	tasks := postgresState.GetTasks(startTime, endTime, "")
+	for _, task := range tasks {
+		assert.NotEqual(t, appNotFoundTask, task.Id)
+	}
 
 	// Check that task status was changed to aborted
 	if task, err := postgresState.GetTask(abortedTaskId); err != nil {
