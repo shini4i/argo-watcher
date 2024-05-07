@@ -53,14 +53,10 @@ function RecentTasks() {
     });
   };
 
-  const [fetchAppsFlag, setFetchAppsFlag] = useState(false);
-
   // Initial load
   useEffect(() => {
     // If the application has been changed or the timeframe has been changed, a new tasks fetching action is executed
     refreshTasksInTimeframe(currentTimeframe, currentApplication);
-    // Set the flag to inform the ApplicationsFilter about change and trigger application list refetch
-    setFetchAppsFlag(fetchAppsFlag => !fetchAppsFlag);  // Flip the flag once tasks are loaded
     // Current page is reset to the first one
     setCurrentPage(1);
     // Save search parameters - application name and auto-refresh interval - to Local Storage for preservation across sessions
@@ -83,8 +79,6 @@ function RecentTasks() {
     autoRefreshIntervalRef.current = setInterval(() => {
       // Again fetch the tasks in current timeframe
       refreshTasksInTimeframe(currentTimeframe, currentApplication);
-      // Set the flag here to inform the ApplicationsFilter about change and trigger application list refetch
-      setFetchAppsFlag(fetchAppsFlag => !fetchAppsFlag);
     }, currentAutoRefresh * 1000);
 
     // Clear interval on exit
