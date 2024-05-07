@@ -61,7 +61,7 @@ function RecentTasks() {
     setCurrentPage(1);
     // Save search parameters - application name and auto-refresh interval - to Local Storage for preservation across sessions
     updateSearchParameters(currentApplication, currentAutoRefresh, currentPage);
-  }, [currentApplication, currentTimeframe]);
+  }, []);
 
   // Reset the interval on any state change (because we use the state variables for data retrieval)
   useEffect(() => {
