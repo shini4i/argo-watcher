@@ -28,7 +28,7 @@ const autoRefreshIntervals = {
 function RecentTasks() {
   const { setError, setSuccess } = useErrorContext();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { tasks, sortField, setSortField, refreshTasksInTimeframe } = useTasks({
+  const { tasks, sortField, setSortField, appNames, refreshTasksInTimeframe } = useTasks({
     setError,
     setSuccess,
   });
@@ -55,7 +55,11 @@ function RecentTasks() {
 
   // Initial load
   useEffect(() => {
+    // If the application has been changed or the timeframe has been changed, a new tasks fetching action is executed
     refreshTasksInTimeframe(currentTimeframe, currentApplication);
+    // Current page is reset to the first one
+    setCurrentPage(1);
+    // Save search parameters - application name and auto-refresh interval - to Local Storage for preservation across sessions
     updateSearchParameters(currentApplication, currentAutoRefresh, currentPage);
   }, []);
 
@@ -73,6 +77,7 @@ function RecentTasks() {
 
     // Set interval
     autoRefreshIntervalRef.current = setInterval(() => {
+      // Again fetch the tasks in current timeframe
       refreshTasksInTimeframe(currentTimeframe, currentApplication);
     }, currentAutoRefresh * 1000);
 
@@ -82,7 +87,7 @@ function RecentTasks() {
         clearInterval(autoRefreshIntervalRef.current);
       }
     };
-  });
+  }, [currentAutoRefresh, currentApplication, currentTimeframe]);
 
   const handleAutoRefreshChange = event => {
     // Change the value
@@ -128,6 +133,7 @@ function RecentTasks() {
               }}
               setError={setError}
               setSuccess={setSuccess}
+              appNames={appNames}
             />
           </Box>
           <Box sx={{ minWidth: 120 }}>

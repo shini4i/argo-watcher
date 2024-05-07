@@ -81,7 +81,6 @@ func (env *Env) CreateRouter() *gin.Engine {
 		v1.POST("/tasks", env.addTask)
 		v1.GET("/tasks", env.getState)
 		v1.GET("/tasks/:id", env.getTaskStatus)
-		v1.GET("/apps", env.getApps)
 		v1.GET("/version", env.getVersion)
 		v1.GET("/config", env.getConfig)
 		v1.POST(deployLockEndpoint, env.SetDeployLock)
@@ -253,16 +252,6 @@ func (env *Env) getTaskStatus(c *gin.Context) {
 			StatusReason: task.StatusReason,
 		})
 	}
-}
-
-// getApps godoc
-// @Summary Get the list of apps
-// @Description Get the list of apps
-// @Tags frontend
-// @Success 200 {array} string
-// @Router /api/v1/apps [get].
-func (env *Env) getApps(c *gin.Context) {
-	c.JSON(http.StatusOK, env.argo.GetAppList())
 }
 
 // healthz godoc

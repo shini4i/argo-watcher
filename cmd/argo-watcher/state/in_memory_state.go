@@ -9,7 +9,6 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
-	"github.com/shini4i/argo-watcher/internal/helpers"
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
@@ -93,27 +92,6 @@ func (state *InMemoryState) SetTaskStatus(id string, status string, reason strin
 		}
 	}
 	return nil
-}
-
-// GetAppList retrieves a list of unique app names from the tasks in the in-memory state.
-// It returns a slice of strings containing the app names.
-// The method iterates over the tasks in the in-memory state and adds unique app names to the list.
-// The list of app names is returned as a slice.
-// If there are no tasks in the in-memory state, an empty slice is returned.
-func (state *InMemoryState) GetAppList() []string {
-	var apps []string
-
-	for _, app := range state.tasks {
-		if !helpers.Contains(apps, app.App) {
-			apps = append(apps, app.App)
-		}
-	}
-
-	if apps == nil {
-		return []string{}
-	}
-
-	return apps
 }
 
 // Check is a placeholder method that implements the Check() bool interface.
