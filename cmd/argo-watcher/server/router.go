@@ -49,8 +49,6 @@ type Env struct {
 	updater *argocd.ArgoStatusUpdater
 	// metrics
 	metrics *prometheus.Metrics
-	// auth service
-	auth auth.ExternalAuthService
 	// deploy lock
 	lockdown *Lockdown
 }
@@ -145,41 +143,38 @@ func (env *Env) addTask(c *gin.Context) {
 		log.Warn().Msgf("deploy lock is set, rejecting the task")
 		c.JSON(http.StatusNotAcceptable, models.TaskStatus{
 			Status: "rejected",
-			Error:  "deployment is not allowed at the moment",
+			Error:  "lockdown is active, deployments are not accepted",
 		})
 		return
 	}
 
-	// not an optimal solution, but for PoC it's fine
-	// need to find a better way to pass the token later
-	deployToken := c.GetHeader("ARGO_WATCHER_DEPLOY_TOKEN")
+	strategies := map[string]auth.AuthService{
+		"Keycloak-Authorization":    auth.NewKeycloakAuthService(),
+		"ARGO_WATCHER_DEPLOY_TOKEN": auth.NewDeployTokenAuthService(env.config.DeployToken),
+	}
 
-	keycloakToken := c.GetHeader("Authorization")
+	for header, strategy := range strategies {
+		token := c.GetHeader(header)
 
-	// need to rewrite this block
-	if keycloakToken != "" {
-		valid, err := env.auth.Validate(keycloakToken)
+		// Skip if there is no token for the strategy
+		if token == "" {
+			continue
+		}
+
+		// Validating the token
+		valid, err := strategy.Validate(token)
+
 		if err != nil {
-			log.Error().Msgf("couldn't validate keycloak token, got the following error: %s", err)
-			c.JSON(http.StatusUnauthorized, models.TaskStatus{
-				Status: unauthorizedMessage,
-			})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 			return
 		}
-		log.Debug().Msgf("keycloak token is validated for app %s", task.App)
-		task.Validated = valid
-	} else if deployToken != "" && deployToken == env.config.DeployToken {
-		log.Debug().Msgf("deploy token is validated for app %s", task.App)
-		task.Validated = true
-	} else if deployToken != "" && deployToken != env.config.DeployToken {
-		// if token is provided, but it's not valid we should not process the task
-		log.Warn().Msgf("deploy token is invalid for app %s, aborting", task.App)
-		c.JSON(http.StatusUnauthorized, models.TaskStatus{
-			Status: "invalid token",
-		})
-		return
-	} else {
-		log.Debug().Msgf("deploy token is not provided for app %s", task.App)
+
+		// If the token is valid, we set task.Validated value to true and break
+		if valid {
+			log.Debug().Msgf("Using authorization header: %s", header)
+			task.Validated = true
+			break
+		}
 	}
 
 	newTask, err := env.argo.AddTask(task)

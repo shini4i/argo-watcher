@@ -1,11 +1,15 @@
 package auth
 
-type ExternalAuthService interface {
-	Init(url, realm, clientId string, privilegedGroups []string)
+type AuthService interface {
 	Validate(token string) (bool, error)
-	allowedToRollback(username string, groups []string) bool
 }
 
-func NewExternalAuthService() ExternalAuthService {
+func NewKeycloakAuthService() *KeycloakAuthService {
 	return &KeycloakAuthService{}
+}
+
+func NewDeployTokenAuthService(token string) *DeployTokenAuthService {
+	return &DeployTokenAuthService{
+		Token: token,
+	}
 }
