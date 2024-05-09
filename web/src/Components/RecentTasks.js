@@ -47,15 +47,14 @@ function RecentTasks() {
   );
 
   const updateSearchParameters = (application, page) => {
-    application ?
-      setSearchParams({
-        app: application,
-        page,
-      })
-      :
-      setSearchParams({
-        page,
-      });
+    const params = {};
+    if (application) {
+      params.app = application;
+    }
+    if (page !== 1) {
+      params.page = page;
+    }
+    setSearchParams(params);
   };
 
   // Initial load
@@ -63,9 +62,9 @@ function RecentTasks() {
     // If the application has been changed or the timeframe has been changed, a new tasks fetching action is executed
     refreshTasksInTimeframe(currentTimeframe, currentApplication);
     // Current page is reset to the first one
-    setCurrentPage(1);
+    const initialPage = searchParams.get('page') ? Number(searchParams.get('page')) : 1;
     // Save search parameters - application name and auto-refresh interval - to Local Storage for preservation across sessions
-    updateSearchParameters(currentApplication, currentPage);
+    updateSearchParameters(currentApplication, initialPage);
   }, []);
 
   useEffect(() => {
