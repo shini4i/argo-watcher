@@ -54,19 +54,20 @@ function HistoryTasks() {
   );
 
   const updateSearchParameters = (start, end, application, page) => {
-    application ?
-      setSearchParams({
-        app: application ?? '',
-        start: Math.floor(start.getTime() / 1000),
-        end: Math.floor(end.getTime() / 1000),
-        page,
-      })
-      :
-      setSearchParams({
-        start: Math.floor(start.getTime() / 1000),
-        end: Math.floor(end.getTime() / 1000),
-        page,
-      });
+    const params = {
+      start: Math.floor(start.getTime() / 1000),
+      end: Math.floor(end.getTime() / 1000),
+    };
+
+    if (application) {
+      params.app = application;
+    }
+
+    if (page !== 1) {
+      params.page = page;
+    }
+
+    setSearchParams(params);
   };
 
   const refreshWithFilters = (start, end, application, page) => {
