@@ -9,7 +9,7 @@ import {
   MenuItem,
   Select,
   Stack,
-  Typography
+  Typography,
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 
@@ -34,8 +34,9 @@ function RecentTasks() {
   });
 
   const [currentAutoRefresh, setCurrentAutoRefresh] = useState(
-    searchParams.get('refresh') ?? autoRefreshIntervals['30s'],
+    () => localStorage.getItem('refresh') || autoRefreshIntervals['30s'],
   );
+
   const autoRefreshIntervalRef = useRef(null);
   const [currentApplication, setCurrentApplication] = useState(
     searchParams.get('app') ?? null,
@@ -45,12 +46,16 @@ function RecentTasks() {
     searchParams.get('page') ? Number(searchParams.get('page')) : 1,
   );
 
-  const updateSearchParameters = (application, refresh, page) => {
-    setSearchParams({
-      app: application ?? '',
-      refresh,
-      page,
-    });
+  const updateSearchParameters = (application, page) => {
+    application ?
+      setSearchParams({
+        app: application,
+        page,
+      })
+      :
+      setSearchParams({
+        page,
+      });
   };
 
   // Initial load
@@ -60,8 +65,12 @@ function RecentTasks() {
     // Current page is reset to the first one
     setCurrentPage(1);
     // Save search parameters - application name and auto-refresh interval - to Local Storage for preservation across sessions
-    updateSearchParameters(currentApplication, currentAutoRefresh, currentPage);
+    updateSearchParameters(currentApplication, currentPage);
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem('refresh', currentAutoRefresh.toString());
+  }, [currentAutoRefresh]);
 
   // Reset the interval on any state change (because we use the state variables for data retrieval)
   useEffect(() => {
@@ -93,7 +102,7 @@ function RecentTasks() {
     // Change the value
     setCurrentAutoRefresh(event.target.value);
     // Save to URL
-    updateSearchParameters(currentApplication, event.target.value, 1);
+    updateSearchParameters(currentApplication, 1);
   };
 
   return (
@@ -129,7 +138,7 @@ function RecentTasks() {
                 // Reset page
                 setCurrentPage(1);
                 // Update URL
-                updateSearchParameters(value, currentAutoRefresh, 1);
+                updateSearchParameters(value, 1);
               }}
               setError={setError}
               setSuccess={setSuccess}
@@ -167,7 +176,6 @@ function RecentTasks() {
                 setCurrentPage(1);
                 updateSearchParameters(
                   currentApplication,
-                  currentAutoRefresh,
                   1,
                 );
               }}
@@ -189,7 +197,6 @@ function RecentTasks() {
             setCurrentPage(page);
             updateSearchParameters(
               currentApplication,
-              currentAutoRefresh,
               page,
             );
           }}
