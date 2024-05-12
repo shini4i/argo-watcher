@@ -8,7 +8,8 @@ import (
 )
 
 type KeycloakConfig struct {
-	Url                     string   `env:"KEYCLOAK_URL" json:"url,omitempty"` // setting this enables Keycloak integration
+	Enabled                 bool     `env:"KEYCLOAK_ENABLED" json:"enabled"`
+	Url                     string   `env:"KEYCLOAK_URL" json:"url,omitempty"`
 	Realm                   string   `env:"KEYCLOAK_REALM" json:"realm,omitempty"`
 	ClientId                string   `env:"KEYCLOAK_CLIENT_ID" json:"client_id,omitempty"`
 	TokenValidationInterval int      `env:"KEYCLOAK_TOKEN_VALIDATION_INTERVAL" envDefault:"10000" json:"token_validation_interval"`

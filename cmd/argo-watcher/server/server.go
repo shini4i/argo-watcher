@@ -1,8 +1,6 @@
 package server
 
 import (
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/auth"
-
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/argocd"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
@@ -69,21 +67,10 @@ func RunServer() {
 	)
 
 	// create environment
-	env := &Env{config: serverConfig, argo: argo, metrics: metrics, updater: updater}
+	env := NewEnv(serverConfig, argo, metrics, updater)
 
 	if env.lockdown, err = NewLockdown(serverConfig.LockdownSchedule); err != nil {
 		log.Fatal().Msgf("Couldn't create lockdown. Got the following error: %s", err)
-	}
-
-	// initialize auth service
-	if serverConfig.Keycloak.Url != "" {
-		env.auth = auth.NewExternalAuthService()
-		env.auth.Init(
-			serverConfig.Keycloak.Url,
-			serverConfig.Keycloak.Realm,
-			serverConfig.Keycloak.ClientId,
-			serverConfig.Keycloak.PrivilegedGroups,
-		)
 	}
 
 	// start the server

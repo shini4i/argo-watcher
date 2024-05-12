@@ -148,8 +148,11 @@ func (env *Env) addTask(c *gin.Context) {
 	}
 
 	strategies := map[string]auth.AuthService{
-		"Keycloak-Authorization":    auth.NewKeycloakAuthService(),
 		"ARGO_WATCHER_DEPLOY_TOKEN": auth.NewDeployTokenAuthService(env.config.DeployToken),
+	}
+
+	if env.config.Keycloak.Enabled {
+		strategies["Keycloak-Authorization"] = auth.NewKeycloakAuthService(env.config)
 	}
 
 	tokenValid, err := env.validateToken(c, strategies)
@@ -272,16 +275,18 @@ func (env *Env) getConfig(c *gin.Context) {
 // @Success 200 {string} string
 // @Router /api/v1/deploy-lock [post].
 func (env *Env) SetDeployLock(c *gin.Context) {
-	strategies := map[string]auth.AuthService{
-		"Keycloak-Authorization": auth.NewKeycloakAuthService(),
-	}
+	if env.config.Keycloak.Enabled {
+		strategies := map[string]auth.AuthService{
+			"Keycloak-Authorization": auth.NewKeycloakAuthService(env.config),
+		}
 
-	if _, err := env.validateToken(c, strategies); err != nil {
-		log.Error().Msgf("couldn't release deploy lock, got the following error: %s", err)
-		c.JSON(http.StatusUnauthorized, models.TaskStatus{
-			Status: unauthorizedMessage,
-		})
-		return
+		if _, err := env.validateToken(c, strategies); err != nil {
+			log.Error().Msgf("couldn't release deploy lock, got the following error: %s", err)
+			c.JSON(http.StatusUnauthorized, models.TaskStatus{
+				Status: unauthorizedMessage,
+			})
+			return
+		}
 	}
 
 	env.lockdown.SetLock()
@@ -300,16 +305,18 @@ func (env *Env) SetDeployLock(c *gin.Context) {
 // @Success 200 {string} string
 // @Router /api/v1/deploy-lock [delete].
 func (env *Env) ReleaseDeployLock(c *gin.Context) {
-	strategies := map[string]auth.AuthService{
-		"Keycloak-Authorization": auth.NewKeycloakAuthService(),
-	}
+	if env.config.Keycloak.Enabled {
+		strategies := map[string]auth.AuthService{
+			"Keycloak-Authorization": auth.NewKeycloakAuthService(env.config),
+		}
 
-	if _, err := env.validateToken(c, strategies); err != nil {
-		log.Error().Msgf("couldn't release deploy lock, got the following error: %s", err)
-		c.JSON(http.StatusUnauthorized, models.TaskStatus{
-			Status: unauthorizedMessage,
-		})
-		return
+		if _, err := env.validateToken(c, strategies); err != nil {
+			log.Error().Msgf("couldn't release deploy lock, got the following error: %s", err)
+			c.JSON(http.StatusUnauthorized, models.TaskStatus{
+				Status: unauthorizedMessage,
+			})
+			return
+		}
 	}
 
 	env.lockdown.ReleaseLock()
@@ -419,5 +426,14 @@ func removeWebSocketConnection(conn *websocket.Conn) {
 			connections = append(connections[:i], connections[i+1:]...)
 			break
 		}
+	}
+}
+
+func NewEnv(serverConfig *config.ServerConfig, argo *argocd.Argo, metrics *prometheus.Metrics, updater *argocd.ArgoStatusUpdater) *Env {
+	return &Env{
+		config:  serverConfig,
+		argo:    argo,
+		metrics: metrics,
+		updater: updater,
 	}
 }
