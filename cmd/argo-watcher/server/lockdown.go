@@ -164,27 +164,36 @@ func NewLockdown(schedules string) (*Lockdown, error) {
 // The schedule wraps around to the next week if the end day is before the start day.
 // Returns true if the given time falls within the schedule, otherwise returns false.
 func timeWithinSchedule(now time.Time, startDay, endDay time.Weekday, startHour, startMin, endHour, endMin int) bool {
-	// if endDay < startDay, it means the period extends to the next week
-	weekdaysInOrder := endDay >= startDay
+	currDay := now.Weekday()
+	currHour := now.Hour()
+	currMin := now.Minute()
 
-	if weekdaysInOrder && now.Weekday() >= startDay && now.Weekday() <= endDay ||
-		!weekdaysInOrder && (now.Weekday() >= startDay || now.Weekday() <= endDay) {
-		switch now.Weekday() {
-		case startDay:
-			// for starting day, time needs to be after start time
-			if now.Hour() < startHour || (now.Hour() == startHour && now.Minute() < startMin) {
-				return false
-			}
-		case endDay:
-			// for ending day, time needs to be before end time
-			if now.Hour() > endHour || (now.Hour() == endHour && now.Minute() >= endMin) {
-				return false
-			}
-		}
-		return true
+	// If it's the same day
+	if startDay == endDay {
+		isAfterStart := (currHour > startHour) || (currHour == startHour && currMin >= startMin)
+		isBeforeEnd := (currHour < endHour) || (currHour == endHour && currMin < endMin)
+
+		return (currDay == startDay) && isAfterStart && isBeforeEnd
 	}
 
-	return false
+	// For different days
+	weekdaysInOrder := endDay >= startDay
+	isInDayRange := (weekdaysInOrder && currDay >= startDay && currDay <= endDay) ||
+		(!weekdaysInOrder && (currDay >= startDay || currDay <= endDay))
+
+	if !isInDayRange {
+		return false
+	}
+
+	// Check times for start and end day
+	switch currDay {
+	case startDay:
+		return currHour > startHour || (currHour == startHour && currMin >= startMin)
+	case endDay:
+		return currHour < endHour || (currHour == endHour && currMin < endMin)
+	default:
+		return true
+	}
 }
 
 // dayToWeekday converts a three-letter abbreviation of a weekday (e.g., "Mon") to its corresponding time.Weekday enum value.

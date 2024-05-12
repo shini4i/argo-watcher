@@ -183,6 +183,39 @@ func TestTimeWithinSchedule(t *testing.T) {
 			endMin:    0,
 			expected:  false,
 		},
+		{
+			name:      "same day start and end, before end time",
+			now:       time.Date(2024, 11, 24, 10, 4, 0, 0, time.UTC), // Sun 10:04
+			startDay:  time.Sunday,
+			endDay:    time.Sunday,
+			startHour: 10,
+			startMin:  0,
+			endHour:   10,
+			endMin:    5,
+			expected:  true,
+		},
+		{
+			name:      "same day start and end, outside lockdown hours",
+			now:       time.Date(2024, 11, 24, 10, 6, 0, 0, time.UTC),
+			startDay:  time.Sunday,
+			endDay:    time.Sunday,
+			startHour: 10,
+			startMin:  0,
+			endHour:   10,
+			endMin:    5,
+			expected:  false,
+		},
+		{
+			name:      "across two days lockdown, current time is in next day and after end time",
+			now:       time.Date(2024, 11, 25, 11, 0, 0, 0, time.UTC), // next day Mon 11:00
+			startDay:  time.Sunday,
+			endDay:    time.Monday,
+			startHour: 10,
+			startMin:  0,
+			endHour:   10, // end time is earlier than current time in hours
+			endMin:    30,
+			expected:  false, // because 11:00 on Monday is after the end time on Monday
+		},
 	}
 	for _, tc := range tt {
 		t.Run(tc.name, func(t *testing.T) {
