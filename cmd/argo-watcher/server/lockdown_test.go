@@ -183,6 +183,17 @@ func TestTimeWithinSchedule(t *testing.T) {
 			endMin:    0,
 			expected:  false,
 		},
+		{
+			name:      "same day start and end, outside lockdown hours",
+			now:       time.Date(2024, 11, 24, 10, 6, 0, 0, time.UTC),
+			startDay:  time.Sunday,
+			endDay:    time.Sunday,
+			startHour: 10,
+			startMin:  0,
+			endHour:   10,
+			endMin:    5,
+			expected:  false,
+		},
 	}
 	for _, tc := range tt {
 		t.Run(tc.name, func(t *testing.T) {
