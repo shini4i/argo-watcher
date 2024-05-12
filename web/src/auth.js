@@ -28,7 +28,7 @@ export function useAuth() {
 
   useEffect(() => {
     fetchConfig().then(config => {
-      if (config.keycloak.url) {
+      if (config.keycloak.enabled) {
         const keycloak = new Keycloak({
           url: config.keycloak.url,
           realm: config.keycloak.realm,
