@@ -112,8 +112,9 @@ func TestNewEnv(t *testing.T) {
 	metrics := &prometheus.Metrics{}
 	updater := &argocd.ArgoStatusUpdater{}
 
-	env := NewEnv(serverConfig, argo, metrics, updater)
+	env, err := NewEnv(serverConfig, argo, metrics, updater)
 
+	assert.NoError(t, err)
 	assert.Equal(t, env.config, serverConfig)
 	assert.Equal(t, env.argo, argo)
 	assert.Equal(t, env.metrics, metrics)

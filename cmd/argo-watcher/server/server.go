@@ -67,10 +67,9 @@ func RunServer() {
 	)
 
 	// create environment
-	env := NewEnv(serverConfig, argo, metrics, updater)
-
-	if env.lockdown, err = NewLockdown(serverConfig.LockdownSchedule); err != nil {
-		log.Fatal().Msgf("Couldn't create lockdown. Got the following error: %s", err)
+	env, err := NewEnv(serverConfig, argo, metrics, updater)
+	if err != nil {
+		log.Fatal().Msgf("Couldn't initialize the setup. Error: %s", err)
 	}
 
 	// start the server

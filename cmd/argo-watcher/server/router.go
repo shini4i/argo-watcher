@@ -444,11 +444,20 @@ func removeWebSocketConnection(conn *websocket.Conn) {
 
 // NewEnv initializes a new Env instance.
 // This function is used to set up the environment for the application's main operation, including setting configurations, initializing Argo service, and metrics.
-func NewEnv(serverConfig *config.ServerConfig, argo *argocd.Argo, metrics *prometheus.Metrics, updater *argocd.ArgoStatusUpdater) *Env {
-	return &Env{
+func NewEnv(serverConfig *config.ServerConfig, argo *argocd.Argo, metrics *prometheus.Metrics, updater *argocd.ArgoStatusUpdater) (*Env, error) {
+	var env *Env
+	var err error
+
+	env = &Env{
 		config:  serverConfig,
 		argo:    argo,
 		metrics: metrics,
 		updater: updater,
 	}
+
+	if env.lockdown, err = NewLockdown(serverConfig.LockdownSchedule); err != nil {
+		return nil, err
+	}
+
+	return env, nil
 }
