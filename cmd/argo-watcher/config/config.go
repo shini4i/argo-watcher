@@ -56,6 +56,7 @@ type ServerConfig struct {
 	Keycloak           KeycloakConfig `json:"keycloak,omitempty"`
 	LockdownSchedule   string         `env:"LOCKDOWN_SCHEDULE" json:"lockdown_schedule,omitempty"`
 	Webhook            WebhookConfig  `json:"webhook,omitempty"`
+	JWTSecret          string         `env:"JWT_SECRET" json:"-"`
 }
 
 // NewServerConfig parses the server configuration from environment variables using the envconfig package.

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -153,6 +154,10 @@ func (env *Env) addTask(c *gin.Context) {
 
 	if env.config.Keycloak.Enabled {
 		strategies["Keycloak-Authorization"] = auth.NewKeycloakAuthService(env.config)
+	}
+
+	if env.config.JWTSecret != "" {
+		strategies["Authorization"] = auth.NewJWTAuthService(env.config.JWTSecret)
 	}
 
 	tokenValid, err := env.validateToken(c, strategies)
@@ -343,6 +348,13 @@ func (env *Env) validateToken(c *gin.Context, strategies map[string]auth.AuthSer
 		token := c.GetHeader(header)
 		if token == "" {
 			continue
+		}
+
+		log.Debug().Msgf("Using %s strategy", header)
+
+		// strip Bearer prefix for JWT validation, is there a more reasonable approach?
+		if strings.HasPrefix(token, "Bearer ") {
+			token = strings.TrimPrefix(token, "Bearer ")
 		}
 
 		valid, err := strategy.Validate(token)

@@ -19,6 +19,12 @@ func NewKeycloakAuthService(config *config.ServerConfig) *KeycloakAuthService {
 
 func NewDeployTokenAuthService(token string) *DeployTokenAuthService {
 	return &DeployTokenAuthService{
-		Token: token,
+		token: token,
+	}
+}
+
+func NewJWTAuthService(secret string) *JWTAuthService {
+	return &JWTAuthService{
+		secretKey: secret,
 	}
 }
