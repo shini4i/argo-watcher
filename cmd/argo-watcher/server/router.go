@@ -37,6 +37,7 @@ var (
 const (
 	deployLockEndpoint  = "/deploy-lock"
 	unauthorizedMessage = "You are not authorized to perform this action"
+	keycloakHeader      = "Keycloak-Authorization"
 )
 
 // Env reference: https://www.alexedwards.net/blog/organising-database-access
@@ -153,7 +154,7 @@ func (env *Env) addTask(c *gin.Context) {
 	}
 
 	if env.config.Keycloak.Enabled {
-		strategies["Keycloak-Authorization"] = auth.NewKeycloakAuthService(env.config)
+		strategies[keycloakHeader] = auth.NewKeycloakAuthService(env.config)
 	}
 
 	if env.config.JWTSecret != "" {
@@ -282,7 +283,7 @@ func (env *Env) getConfig(c *gin.Context) {
 func (env *Env) SetDeployLock(c *gin.Context) {
 	if env.config.Keycloak.Enabled {
 		strategies := map[string]auth.AuthService{
-			"Keycloak-Authorization": auth.NewKeycloakAuthService(env.config),
+			keycloakHeader: auth.NewKeycloakAuthService(env.config),
 		}
 
 		if _, err := env.validateToken(c, strategies); err != nil {
@@ -312,7 +313,7 @@ func (env *Env) SetDeployLock(c *gin.Context) {
 func (env *Env) ReleaseDeployLock(c *gin.Context) {
 	if env.config.Keycloak.Enabled {
 		strategies := map[string]auth.AuthService{
-			"Keycloak-Authorization": auth.NewKeycloakAuthService(env.config),
+			keycloakHeader: auth.NewKeycloakAuthService(env.config),
 		}
 
 		if _, err := env.validateToken(c, strategies); err != nil {
