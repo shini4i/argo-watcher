@@ -90,6 +90,25 @@ changelog:
   use:
     github-native
 
+  groups:
+    - title: "Features"
+      regexp: "^feat\\(.*\\)?:.*$"
+      order: 0
+    - title: "Bug fixes"
+      regexp: "^fix\\(.*\\)?:.*$"
+      order: 1
+    - title: "Enhancements"
+      regexp: "^chore\\(.*\\)?:.*$"
+      order: 2
+    - title: "Documentation updates"
+      regexp: "^docs\\(.*\\)?:.*$"
+      order: 3
+    - title: "Automation adjustments"
+      regexp: "^ci\\(.*\\)?:.*$"
+      order: 4
+    - title: Others
+      order: 999
+
 release:
   prerelease: auto
   draft: false
