@@ -38,7 +38,7 @@ func NewWatcher(baseUrl string, debugMode bool, timeout time.Duration) *Watcher 
 	}
 }
 
-func (watcher *Watcher) addTask(task models.Task, token string) (string, error) {
+func (watcher *Watcher) addTask(task models.Task, authMethod, token string) (string, error) {
 	// Marshal the task into JSON
 	requestBody, err := json.Marshal(task)
 	if err != nil {
@@ -56,8 +56,13 @@ func (watcher *Watcher) addTask(task models.Task, token string) (string, error) 
 	request.Header.Set("Content-Type", "application/json; charset=UTF-8")
 
 	// Set the deploy token header if provided
-	if token != "" {
-		request.Header.Set("ARGO_WATCHER_DEPLOY_TOKEN", token)
+	if authMethod != "" && token != "" {
+		switch authMethod {
+		case "JWT":
+			request.Header.Set("Authorization", "Bearer "+token)
+		case "DeployToken":
+			request.Header.Set("ARGO_WATCHER_DEPLOY_TOKEN", token)
+		}
 	}
 
 	// Print the equivalent cURL command for troubleshooting
@@ -174,7 +179,16 @@ func Run() {
 
 	log.Printf("Waiting for %s app to be running on %s version.\n", task.App, clientConfig.Tag)
 
-	id, err := watcher.addTask(task, clientConfig.Token)
+	var authMethod, token string
+	if clientConfig.JsonWebToken != "" {
+		authMethod = "JWT"
+		token = clientConfig.JsonWebToken
+	} else if clientConfig.Token != "" {
+		authMethod = "DeployToken"
+		token = clientConfig.Token
+	}
+
+	id, err := watcher.addTask(task, authMethod, token)
 	if err != nil {
 		handleFatalError(err, "Couldn't add task.")
 	}
