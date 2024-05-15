@@ -69,7 +69,7 @@ func printClientConfiguration(watcher *Watcher, task models.Task) {
 		"IMAGE_TAG: %s\n"+
 		"IMAGES: %s\n\n",
 		watcher.baseUrl, task.App, task.Author, task.Project, clientConfig.Tag, task.Images)
-	if clientConfig.Token == "" || clientConfig.JsonWebToken == "" {
+	if clientConfig.Token == "" && clientConfig.JsonWebToken == "" {
 		fmt.Println("Neither deploy token nor JSON Web token found, git commit will not be performed")
 	}
 }
