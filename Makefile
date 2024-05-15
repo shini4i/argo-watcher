@@ -20,7 +20,7 @@ install-deps: ## Install dependencies
 
 .PHONY: test
 test: mocks ## Run tests
-	@ARGO_TIMEOUT=1 go test -v ./... -count=1 -coverprofile coverage.out `go list ./... | egrep -v '(test|mock)'`
+	@ARGO_TIMEOUT=1 go test -v ./... -count=1 -coverprofile coverage.out
 
 .PHONY: build
 build: docs ## Build the binaries

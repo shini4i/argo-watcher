@@ -199,7 +199,7 @@ func TestPrintClientConfiguration(t *testing.T) {
 		"PROJECT_NAME: test-project\n" +
 		"IMAGE_TAG: test-tag\n" +
 		"IMAGES: [{image1 test-tag} {image2 test-tag}]\n\n" +
-		"ARGO_WATCHER_DEPLOY_TOKEN is not set, git commit will not be performed.\n"
+		"Neither deploy token nor JSON Web token found, git commit will not be performed\n"
 
 	// Redirect standard output to a buffer
 	oldStdout := os.Stdout
