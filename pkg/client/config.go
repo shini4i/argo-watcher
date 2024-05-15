@@ -14,7 +14,7 @@ type ClientConfig struct {
 	Author       string        `env:"COMMIT_AUTHOR,required"`
 	Project      string        `env:"PROJECT_NAME,required"`
 	Token        string        `env:"ARGO_WATCHER_DEPLOY_TOKEN"`
-	JsonWebToken string        `env:"JSON_WEB_TOKEN"`
+	JsonWebToken string        `env:"BEARER_TOKEN"`
 	Timeout      time.Duration `env:"TIMEOUT" envDefault:"60s"`
 	TaskTimeout  int           `env:"TASK_TIMEOUT"`
 	Debug        bool          `env:"DEBUG"`
