@@ -2,10 +2,10 @@ package server
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -37,6 +37,7 @@ var (
 const (
 	deployLockEndpoint  = "/deploy-lock"
 	unauthorizedMessage = "You are not authorized to perform this action"
+	keycloakHeader      = "Keycloak-Authorization"
 )
 
 // Env reference: https://www.alexedwards.net/blog/organising-database-access
@@ -49,10 +50,10 @@ type Env struct {
 	updater *argocd.ArgoStatusUpdater
 	// metrics
 	metrics *prometheus.Metrics
-	// auth service
-	auth auth.ExternalAuthService
 	// deploy lock
 	lockdown *Lockdown
+	// enabled auth strategies
+	strategies map[string]auth.AuthService
 }
 
 // CreateRouter initialize router.
@@ -145,42 +146,19 @@ func (env *Env) addTask(c *gin.Context) {
 		log.Warn().Msgf("deploy lock is set, rejecting the task")
 		c.JSON(http.StatusNotAcceptable, models.TaskStatus{
 			Status: "rejected",
-			Error:  "deployment is not allowed at the moment",
+			Error:  "lockdown is active, deployments are not accepted",
 		})
 		return
 	}
 
-	// not an optimal solution, but for PoC it's fine
-	// need to find a better way to pass the token later
-	deployToken := c.GetHeader("ARGO_WATCHER_DEPLOY_TOKEN")
-
-	keycloakToken := c.GetHeader("Authorization")
-
-	// need to rewrite this block
-	if keycloakToken != "" {
-		valid, err := env.auth.Validate(keycloakToken)
-		if err != nil {
-			log.Error().Msgf("couldn't validate keycloak token, got the following error: %s", err)
-			c.JSON(http.StatusUnauthorized, models.TaskStatus{
-				Status: unauthorizedMessage,
-			})
-			return
-		}
-		log.Debug().Msgf("keycloak token is validated for app %s", task.App)
-		task.Validated = valid
-	} else if deployToken != "" && deployToken == env.config.DeployToken {
-		log.Debug().Msgf("deploy token is validated for app %s", task.App)
-		task.Validated = true
-	} else if deployToken != "" && deployToken != env.config.DeployToken {
-		// if token is provided, but it's not valid we should not process the task
-		log.Warn().Msgf("deploy token is invalid for app %s, aborting", task.App)
-		c.JSON(http.StatusUnauthorized, models.TaskStatus{
-			Status: "invalid token",
-		})
+	tokenValid, err := env.validateToken(c, "")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.TaskStatus{})
+		log.Error().Msgf("Couldn't validate token. Got the following error: %s", err)
 		return
-	} else {
-		log.Debug().Msgf("deploy token is not provided for app %s", task.App)
 	}
+
+	task.Validated = tokenValid
 
 	newTask, err := env.argo.AddTask(task)
 	if err != nil {
@@ -293,12 +271,22 @@ func (env *Env) getConfig(c *gin.Context) {
 // @Success 200 {string} string
 // @Router /api/v1/deploy-lock [post].
 func (env *Env) SetDeployLock(c *gin.Context) {
-	if err := env.validateKeycloakToken(c); err != nil {
-		log.Error().Msgf("couldn't release deploy lock, got the following error: %s", err)
-		c.JSON(http.StatusUnauthorized, models.TaskStatus{
-			Status: unauthorizedMessage,
-		})
-		return
+	if env.config.Keycloak.Enabled {
+		valid, err := env.validateToken(c, keycloakHeader)
+		if err != nil {
+			log.Error().Msgf("Error during validation: %s", err)
+			c.JSON(http.StatusInternalServerError, models.TaskStatus{
+				Status: "Validation process failed",
+			})
+			return
+		}
+		if !valid {
+			log.Warn().Msg("User tried to set the lock with either invalid token or auth method")
+			c.JSON(http.StatusUnauthorized, models.TaskStatus{
+				Status: unauthorizedMessage,
+			})
+			return
+		}
 	}
 
 	env.lockdown.SetLock()
@@ -317,12 +305,22 @@ func (env *Env) SetDeployLock(c *gin.Context) {
 // @Success 200 {string} string
 // @Router /api/v1/deploy-lock [delete].
 func (env *Env) ReleaseDeployLock(c *gin.Context) {
-	if err := env.validateKeycloakToken(c); err != nil {
-		log.Error().Msgf("couldn't release deploy lock, got the following error: %s", err)
-		c.JSON(http.StatusUnauthorized, models.TaskStatus{
-			Status: unauthorizedMessage,
-		})
-		return
+	if env.config.Keycloak.Enabled {
+		valid, err := env.validateToken(c, keycloakHeader)
+		if err != nil {
+			log.Error().Msgf("Error during validation: %s", err)
+			c.JSON(http.StatusInternalServerError, models.TaskStatus{
+				Status: "Validation process failed",
+			})
+			return
+		}
+		if !valid {
+			log.Warn().Msg("User tried to release the lock with either invalid token or auth method")
+			c.JSON(http.StatusUnauthorized, models.TaskStatus{
+				Status: unauthorizedMessage,
+			})
+			return
+		}
 	}
 
 	env.lockdown.ReleaseLock()
@@ -344,24 +342,41 @@ func (env *Env) isDeployLockSet(c *gin.Context) {
 	c.JSON(http.StatusOK, env.lockdown.IsLocked())
 }
 
-func (env *Env) validateKeycloakToken(c *gin.Context) error {
-	keycloakToken := c.GetHeader("Authorization")
+func (env *Env) validateToken(c *gin.Context, allowedAuthStrategy string) (bool, error) {
+	for header, strategy := range env.strategies {
+		token := c.GetHeader(header)
+		if token == "" {
+			continue
+		}
 
-	if keycloakToken != "" {
-		valid, err := env.auth.Validate(keycloakToken)
+		// this is a restriction to be able to specify allowed auth service on per endpoint basis
+		if allowedAuthStrategy != "" && allowedAuthStrategy != header {
+			log.Debug().Msgf("Authorization strategy %s is not allowed for [%s] %s endpoint",
+				header,
+				c.Request.Method,
+				c.Request.URL,
+			)
+			continue
+		}
+
+		log.Debug().Msgf("Using %s strategy for [%s] %s", header, c.Request.Method, c.Request.URL)
+
+		// strip Bearer prefix for JWT validation, is there a more reasonable approach?
+		if strings.HasPrefix(token, "Bearer ") {
+			token = strings.TrimPrefix(token, "Bearer ")
+		}
+
+		valid, err := strategy.Validate(token)
+		if valid {
+			return true, nil
+		}
 		if err != nil {
-			return err
-		}
-		if !valid {
-			return errors.New("invalid Keycloak token")
+			return false, err
 		}
 	}
 
-	if env.config.Keycloak.Url != "" && keycloakToken == "" {
-		return errors.New("keycloak integration is enabled, but no token is provided")
-	}
-
-	return nil
+	// No valid token found, but it's not an error in this context.
+	return false, nil
 }
 
 // handleWebSocketConnection accepts a WebSocket connection, adds it to a slice,
@@ -433,4 +448,36 @@ func removeWebSocketConnection(conn *websocket.Conn) {
 			break
 		}
 	}
+}
+
+// NewEnv initializes a new Env instance.
+// This function is used to set up the environment for the application's main operation, including setting configurations, initializing Argo service, and metrics.
+func NewEnv(serverConfig *config.ServerConfig, argo *argocd.Argo, metrics *prometheus.Metrics, updater *argocd.ArgoStatusUpdater) (*Env, error) {
+	var env *Env
+	var err error
+
+	env = &Env{
+		config:  serverConfig,
+		argo:    argo,
+		metrics: metrics,
+		updater: updater,
+	}
+
+	if env.lockdown, err = NewLockdown(serverConfig.LockdownSchedule); err != nil {
+		return nil, err
+	}
+
+	env.strategies = map[string]auth.AuthService{
+		"ARGO_WATCHER_DEPLOY_TOKEN": auth.NewDeployTokenAuthService(env.config.DeployToken),
+	}
+
+	if env.config.Keycloak.Enabled {
+		env.strategies[keycloakHeader] = auth.NewKeycloakAuthService(env.config)
+	}
+
+	if env.config.JWTSecret != "" {
+		env.strategies["Authorization"] = auth.NewJWTAuthService(env.config.JWTSecret)
+	}
+
+	return env, nil
 }

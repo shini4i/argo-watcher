@@ -8,7 +8,8 @@ import (
 )
 
 type KeycloakConfig struct {
-	Url                     string   `env:"KEYCLOAK_URL" json:"url,omitempty"` // setting this enables Keycloak integration
+	Enabled                 bool     `env:"KEYCLOAK_ENABLED" json:"enabled"`
+	Url                     string   `env:"KEYCLOAK_URL" json:"url,omitempty"`
 	Realm                   string   `env:"KEYCLOAK_REALM" json:"realm,omitempty"`
 	ClientId                string   `env:"KEYCLOAK_CLIENT_ID" json:"client_id,omitempty"`
 	TokenValidationInterval int      `env:"KEYCLOAK_TOKEN_VALIDATION_INTERVAL" envDefault:"10000" json:"token_validation_interval"`
@@ -51,6 +52,7 @@ type ServerConfig struct {
 	Host               string         `env:"HOST" envDefault:"0.0.0.0" json:"-"`
 	Port               string         `env:"PORT" envDefault:"8080" json:"-"`
 	DeployToken        string         `env:"ARGO_WATCHER_DEPLOY_TOKEN" json:"-"`
+	JWTSecret          string         `env:"JWT_SECRET" json:"-"`
 	Db                 DatabaseConfig `json:"-"`
 	Keycloak           KeycloakConfig `json:"keycloak,omitempty"`
 	LockdownSchedule   string         `env:"LOCKDOWN_SCHEDULE" json:"lockdown_schedule,omitempty"`

@@ -104,7 +104,7 @@ func TestAddTaskServerError(t *testing.T) {
 		},
 	}
 
-	_, err := watcher.addTask(task, "")
+	_, err := watcher.addTask(task, "", "")
 	assert.Error(t, err)
 }
 
@@ -145,7 +145,7 @@ func TestAddTask(t *testing.T) {
 		},
 	}
 
-	taskId, err := client.addTask(task, "")
+	taskId, err := client.addTask(task, "", "")
 	assert.NoError(t, err)
 	assert.Equal(t, expected.Id, taskId)
 }

@@ -18,7 +18,10 @@ We assume you already have a working instance of Argo-Watcher and want to extend
 
 Before moving to the actual configuration, you need to:
 
-1. Generate a token that would be used to validate requests from GitLab/Github. It can be any string. (it should be added to the secret used by argo-watcher under the `ARGO_WATCHER_DEPLOY_TOKEN` key)
+1. Generate secret that would be used to validate new tasks (pick one of the options below)
+   1. Generate a token that would be used to validate requests from GitLab/Github. It can be any string. (it should be added to the secret used by argo-watcher under the `ARGO_WATCHER_DEPLOY_TOKEN` key)
+   2. Generate a secret that will be used for generating and validating JWT tokens. (it should be added to the secret used by argo-watcher under the `JWT_SECRET` key) - the recommended approach
+   3. If you picked JWT approach, use https://jwt.io/ to generate a token using the secret from `JWT_SECRET`. (you can use any other approach for generating this token)
 2. Create a secret with ssh key that will be used by `argo-watcher` to make commits to the GitOps repository. (by default, we expect it to be available under the `sshPrivateKey`, but can be configured via helm chart values)
 3. Bump chart version to > `0.4.3` to support the necessary configuration
 
@@ -97,12 +100,17 @@ Commit message supports templated variables. For available template variables se
 
 ## CI/CD side configuration
 
-In general, the example from the [installation](installation.md) page should be sufficient to get you started. However, there is one more things to consider.
+In general, the example from the [installation](installation.md) page should be sufficient to get you started. However, one more variable is required.
 
-You need to add the following environment variables to your CI/CD pipeline:
+To use a simple deploy token approach set the following variable (this approach is planned to be deprecated on 1.0.0 release):
 
 ```
 ARGO_WATCHER_DEPLOY_TOKEN=previously_generated_token
+```
+
+To use the recommended approach provide JSON Web Token:
+```
+BEARER_TOKEN=Bearer previously_generated_jwt
 ```
 
 That's it! Starting from this point, Argo-Watcher will be able to commit changes to your GitOps repository.
@@ -123,6 +131,13 @@ In order to create a scheduled Lockdown mode, you need to set the following envi
 extraEnvs:
   - name: LOCKDOWN_SCHEDULE
     value: 'Wed 20:00 - Thu 08:00, Fri 20:00 - Mon 08:00'
+```
+
+or set the following helm values:
+```yaml
+scheduledLockdown:
+  - "Wed 20:00 - Thu 08:00"
+  - "Fri 20:00 - Mon 08:00"
 ```
 
 In this example, the deployments won't be allowed between Wednesday 20:00 and Thursday 08:00, and between Friday 20:00 and Monday 08:00.

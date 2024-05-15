@@ -12,7 +12,9 @@ export async function releaseDeployLock(keycloakToken) {
   };
 
   if (keycloakToken !== null) {
-    headers['Authorization'] = keycloakToken;
+    // We replaced Authorization with Keycloak-Authorization here
+    // to simplify JWT implementation and avoid header name overlap
+    headers['Keycloak-Authorization'] = keycloakToken;
   }
 
   const response = await fetch('/api/v1/deploy-lock', {
@@ -31,7 +33,9 @@ export async function setDeployLock(keycloakToken = null) {
   };
 
   if (keycloakToken !== null) {
-    headers['Authorization'] = keycloakToken;
+    // We replaced Authorization with Keycloak-Authorization here
+    // to simplify JWT implementation and avoid header name overlap
+    headers['Keycloak-Authorization'] = keycloakToken;
   }
 
   const response = await fetch('/api/v1/deploy-lock', {

@@ -114,7 +114,9 @@ export default function TaskView() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': keycloakToken,
+          // We replaced Authorization with Keycloak-Authorization here
+          // to simplify JWT implementation and avoid header name overlap
+          'Keycloak-Authorization': keycloakToken,
         },
         body: JSON.stringify(updatedTask),
       });

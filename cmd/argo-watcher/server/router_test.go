@@ -6,6 +6,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/auth"
+
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/argocd"
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
+
 	"nhooyr.io/websocket"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
@@ -97,4 +102,36 @@ func TestRemoveWebSocketConnection(t *testing.T) {
 	connections = append(connections, conn)
 	removeWebSocketConnection(conn)
 	assert.NotContains(t, connections, conn)
+}
+
+func TestNewEnv(t *testing.T) {
+	serverConfig := &config.ServerConfig{
+		Host:        "localhost",
+		Port:        "8080",
+		DeployToken: "deployToken",
+		Keycloak: config.KeycloakConfig{
+			Enabled: true,
+		},
+		JWTSecret: "jwtSecret",
+	}
+
+	argo := &argocd.Argo{}
+	metrics := &prometheus.Metrics{}
+	updater := &argocd.ArgoStatusUpdater{}
+
+	env, err := NewEnv(serverConfig, argo, metrics, updater)
+
+	assert.NoError(t, err)
+	assert.Equal(t, env.config, serverConfig)
+	assert.Equal(t, env.argo, argo)
+	assert.Equal(t, env.metrics, metrics)
+	assert.Equal(t, env.updater, updater)
+
+	expectedStrategies := map[string]auth.AuthService{
+		"ARGO_WATCHER_DEPLOY_TOKEN": auth.NewDeployTokenAuthService(serverConfig.DeployToken),
+		"Authorization":             auth.NewJWTAuthService(serverConfig.JWTSecret),
+		keycloakHeader:              auth.NewKeycloakAuthService(serverConfig),
+	}
+
+	assert.Equal(t, expectedStrategies, env.strategies)
 }
