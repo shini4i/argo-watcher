@@ -59,7 +59,7 @@ func (watcher *Watcher) addTask(task models.Task, authMethod, token string) (str
 	if authMethod != "" && token != "" {
 		switch authMethod {
 		case "JWT":
-			request.Header.Set("Authorization", "Bearer "+token)
+			request.Header.Set("Authorization", token)
 		case "DeployToken":
 			request.Header.Set("ARGO_WATCHER_DEPLOY_TOKEN", token)
 		}
