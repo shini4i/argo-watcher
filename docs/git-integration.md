@@ -108,7 +108,7 @@ To use a simple deploy token approach set the following variable (this approach 
 ARGO_WATCHER_DEPLOY_TOKEN=previously_generated_token
 ```
 
-Provide JWT token:
+To use the recommended approach provide JSON Web Token:
 ```
 BEARER_TOKEN=Bearer previously_generated_jwt
 ```
