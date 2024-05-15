@@ -52,6 +52,8 @@ type Env struct {
 	metrics *prometheus.Metrics
 	// deploy lock
 	lockdown *Lockdown
+	// enabled auth strategies
+	strategies map[string]auth.AuthService
 }
 
 // CreateRouter initialize router.
@@ -149,19 +151,7 @@ func (env *Env) addTask(c *gin.Context) {
 		return
 	}
 
-	strategies := map[string]auth.AuthService{
-		"ARGO_WATCHER_DEPLOY_TOKEN": auth.NewDeployTokenAuthService(env.config.DeployToken),
-	}
-
-	if env.config.Keycloak.Enabled {
-		strategies[keycloakHeader] = auth.NewKeycloakAuthService(env.config)
-	}
-
-	if env.config.JWTSecret != "" {
-		strategies["Authorization"] = auth.NewJWTAuthService(env.config.JWTSecret)
-	}
-
-	tokenValid, err := env.validateToken(c, strategies)
+	tokenValid, err := env.validateToken(c, "")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.TaskStatus{})
 		log.Error().Msgf("Couldn't validate token. Got the following error: %s", err)
@@ -282,12 +272,16 @@ func (env *Env) getConfig(c *gin.Context) {
 // @Router /api/v1/deploy-lock [post].
 func (env *Env) SetDeployLock(c *gin.Context) {
 	if env.config.Keycloak.Enabled {
-		strategies := map[string]auth.AuthService{
-			keycloakHeader: auth.NewKeycloakAuthService(env.config),
+		valid, err := env.validateToken(c, keycloakHeader)
+		if err != nil {
+			log.Error().Msgf("Error during validation: %s", err)
+			c.JSON(http.StatusInternalServerError, models.TaskStatus{
+				Status: "Validation process failed",
+			})
+			return
 		}
-
-		if _, err := env.validateToken(c, strategies); err != nil {
-			log.Error().Msgf("couldn't release deploy lock, got the following error: %s", err)
+		if !valid {
+			log.Warn().Msg("User tried to set the lock with either invalid token or auth method")
 			c.JSON(http.StatusUnauthorized, models.TaskStatus{
 				Status: unauthorizedMessage,
 			})
@@ -312,12 +306,16 @@ func (env *Env) SetDeployLock(c *gin.Context) {
 // @Router /api/v1/deploy-lock [delete].
 func (env *Env) ReleaseDeployLock(c *gin.Context) {
 	if env.config.Keycloak.Enabled {
-		strategies := map[string]auth.AuthService{
-			keycloakHeader: auth.NewKeycloakAuthService(env.config),
+		valid, err := env.validateToken(c, keycloakHeader)
+		if err != nil {
+			log.Error().Msgf("Error during validation: %s", err)
+			c.JSON(http.StatusInternalServerError, models.TaskStatus{
+				Status: "Validation process failed",
+			})
+			return
 		}
-
-		if _, err := env.validateToken(c, strategies); err != nil {
-			log.Error().Msgf("couldn't release deploy lock, got the following error: %s", err)
+		if !valid {
+			log.Warn().Msg("User tried to release the lock with either invalid token or auth method")
 			c.JSON(http.StatusUnauthorized, models.TaskStatus{
 				Status: unauthorizedMessage,
 			})
@@ -344,14 +342,24 @@ func (env *Env) isDeployLockSet(c *gin.Context) {
 	c.JSON(http.StatusOK, env.lockdown.IsLocked())
 }
 
-func (env *Env) validateToken(c *gin.Context, strategies map[string]auth.AuthService) (bool, error) {
-	for header, strategy := range strategies {
+func (env *Env) validateToken(c *gin.Context, allowedAuthStrategy string) (bool, error) {
+	for header, strategy := range env.strategies {
 		token := c.GetHeader(header)
 		if token == "" {
 			continue
 		}
 
-		log.Debug().Msgf("Using %s strategy", header)
+		// this is a restriction to be able to specify allowed auth service on per endpoint basis
+		if allowedAuthStrategy != "" && allowedAuthStrategy != header {
+			log.Debug().Msgf("Authorization strategy %s is not allowed for [%s] %s endpoint",
+				header,
+				c.Request.Method,
+				c.Request.URL,
+			)
+			continue
+		}
+
+		log.Debug().Msgf("Using %s strategy for [%s] %s", header, c.Request.Method, c.Request.URL)
 
 		// strip Bearer prefix for JWT validation, is there a more reasonable approach?
 		if strings.HasPrefix(token, "Bearer ") {
@@ -457,6 +465,18 @@ func NewEnv(serverConfig *config.ServerConfig, argo *argocd.Argo, metrics *prome
 
 	if env.lockdown, err = NewLockdown(serverConfig.LockdownSchedule); err != nil {
 		return nil, err
+	}
+
+	env.strategies = map[string]auth.AuthService{
+		"ARGO_WATCHER_DEPLOY_TOKEN": auth.NewDeployTokenAuthService(env.config.DeployToken),
+	}
+
+	if env.config.Keycloak.Enabled {
+		env.strategies[keycloakHeader] = auth.NewKeycloakAuthService(env.config)
+	}
+
+	if env.config.JWTSecret != "" {
+		env.strategies["Authorization"] = auth.NewJWTAuthService(env.config.JWTSecret)
 	}
 
 	return env, nil

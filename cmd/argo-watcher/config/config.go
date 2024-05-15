@@ -52,11 +52,11 @@ type ServerConfig struct {
 	Host               string         `env:"HOST" envDefault:"0.0.0.0" json:"-"`
 	Port               string         `env:"PORT" envDefault:"8080" json:"-"`
 	DeployToken        string         `env:"ARGO_WATCHER_DEPLOY_TOKEN" json:"-"`
+	JWTSecret          string         `env:"JWT_SECRET" json:"-"`
 	Db                 DatabaseConfig `json:"-"`
 	Keycloak           KeycloakConfig `json:"keycloak,omitempty"`
 	LockdownSchedule   string         `env:"LOCKDOWN_SCHEDULE" json:"lockdown_schedule,omitempty"`
 	Webhook            WebhookConfig  `json:"webhook,omitempty"`
-	JWTSecret          string         `env:"JWT_SECRET" json:"-"`
 }
 
 // NewServerConfig parses the server configuration from environment variables using the envconfig package.
