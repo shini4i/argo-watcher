@@ -280,3 +280,27 @@ func TestWaitForDeployment(t *testing.T) {
 		})
 	}
 }
+
+func TestIsDeploymentOverTime(t *testing.T) {
+	var tests = []struct {
+		retryCount       int
+		retryInterval    time.Duration
+		expectedDuration time.Duration
+		expected         bool
+	}{
+		{10, 5 * time.Second, 1 * time.Minute, false},
+		{13, 5 * time.Second, 1 * time.Minute, true},
+		{7, 10 * time.Second, 1 * time.Minute, true},
+		{7, 15 * time.Second, 1 * time.Minute, true},
+		{0, 2 * time.Second, 1 * time.Minute, false},
+	}
+
+	for _, tt := range tests {
+		t.Run("", func(t *testing.T) {
+			result := isDeploymentOverTime(tt.retryCount, tt.retryInterval, tt.expectedDuration)
+			if result != tt.expected {
+				t.Errorf("for %d retries with %s interval, expected %t but got %t", tt.retryCount, tt.retryInterval, tt.expected, result)
+			}
+		})
+	}
+}

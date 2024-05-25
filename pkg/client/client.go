@@ -21,7 +21,7 @@ import (
 )
 
 var (
-	clientConfig *ClientConfig
+	clientConfig *Config
 )
 
 type Watcher struct {
@@ -124,6 +124,8 @@ func (watcher *Watcher) getWatcherConfig() (*config.ServerConfig, error) {
 }
 
 func (watcher *Watcher) waitForDeployment(id, appName, version string) error {
+	retryCount := 0
+
 	for {
 		taskInfo, err := watcher.getTaskStatus(id)
 		if err != nil {
@@ -134,8 +136,13 @@ func (watcher *Watcher) waitForDeployment(id, appName, version string) error {
 		case models.StatusFailedMessage:
 			return fmt.Errorf("The deployment has failed, please check logs.\n%s", taskInfo.StatusReason)
 		case models.StatusInProgressMessage:
-			log.Println("Application deployment is in progress...")
-			time.Sleep(15 * time.Second)
+			if !isDeploymentOverTime(retryCount, clientConfig.RetryInterval, clientConfig.ExpectedDeploymentTime) {
+				log.Println("Application deployment is in progress...")
+			} else {
+				log.Println("Application deployment is taking longer than expected, it might be worth checking ArgoCD UI...")
+			}
+			retryCount++
+			time.Sleep(clientConfig.RetryInterval)
 		case models.StatusAppNotFoundMessage:
 			return fmt.Errorf("Application %s does not exist.\n%s", appName, taskInfo.StatusReason)
 		case models.StatusArgoCDUnavailableMessage:
@@ -161,6 +168,10 @@ func handleDeploymentError(watcher *Watcher, task models.Task, err error) {
 
 func handleFatalError(err error, message string) {
 	log.Fatalf("%s Got the following error: %s", message, err)
+}
+
+func isDeploymentOverTime(retryCount int, retryInterval time.Duration, expectedDeploymentTime time.Duration) bool {
+	return time.Duration(retryCount)*retryInterval > expectedDeploymentTime
 }
 
 func Run() {

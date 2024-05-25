@@ -96,7 +96,7 @@ func TestGetImagesList(t *testing.T) {
 
 func TestCreateTask(t *testing.T) {
 	t.Run("TimeoutProvided", func(t *testing.T) {
-		config := &ClientConfig{
+		config := &Config{
 			App:         "test-app",
 			Author:      "test-author",
 			Project:     "test-project",
@@ -128,7 +128,7 @@ func TestCreateTask(t *testing.T) {
 	})
 
 	t.Run("TimeoutNotProvided", func(t *testing.T) {
-		config := &ClientConfig{
+		config := &Config{
 			App:     "test-app",
 			Author:  "test-author",
 			Project: "test-project",
@@ -161,7 +161,7 @@ func TestCreateTask(t *testing.T) {
 
 func TestPrintClientConfiguration(t *testing.T) {
 	// Initialize clientConfig
-	clientConfig = &ClientConfig{
+	clientConfig = &Config{
 		Url:     "http://localhost:8080",
 		Images:  []string{"image1", "image2"},
 		Tag:     "test-tag",
@@ -334,7 +334,7 @@ func TestGenerateAppUrl(t *testing.T) {
 
 func TestSetupWatcher(t *testing.T) {
 	// Define the input
-	config := &ClientConfig{
+	config := &Config{
 		Url:   "http://localhost:8080",
 		Debug: true,
 	}

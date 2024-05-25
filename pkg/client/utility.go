@@ -49,7 +49,7 @@ func getImagesList(list []string, tag string) []models.Image {
 	return images
 }
 
-func createTask(config *ClientConfig) models.Task {
+func createTask(config *Config) models.Task {
 	images := getImagesList(config.Images, config.Tag)
 	return models.Task{
 		App:     config.App,
@@ -86,7 +86,7 @@ func generateAppUrl(watcher *Watcher, task models.Task) (string, error) {
 	return fmt.Sprintf("%s://%s/applications/%s", cfg.ArgoUrl.Scheme, cfg.ArgoUrl.Host, task.App), nil
 }
 
-func setupWatcher(config *ClientConfig) *Watcher {
+func setupWatcher(config *Config) *Watcher {
 	return NewWatcher(
 		strings.TrimSuffix(config.Url, "/"),
 		config.Debug,
