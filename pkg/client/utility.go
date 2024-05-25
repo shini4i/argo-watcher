@@ -10,6 +10,8 @@ import (
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
+// doRequest creates a new HTTP request and sends it using the watcher's client,
+// returning the response or an error.
 func (watcher *Watcher) doRequest(method, url string, body io.Reader) (*http.Response, error) {
 	req, err := http.NewRequest(method, url, body)
 	if err != nil {
@@ -18,6 +20,8 @@ func (watcher *Watcher) doRequest(method, url string, body io.Reader) (*http.Res
 	return watcher.client.Do(req)
 }
 
+// getJSON sends a GET request to a provided URL,
+// parses the JSON response and stores it in the value pointed by v.
 func (watcher *Watcher) getJSON(url string, v interface{}) error {
 	resp, err := watcher.doRequest(http.MethodGet, url, nil)
 	if err != nil {
@@ -38,6 +42,8 @@ func (watcher *Watcher) getJSON(url string, v interface{}) error {
 	return json.NewDecoder(resp.Body).Decode(v)
 }
 
+// getImagesList takes a list of image names and a tag,
+// then returns a list of Image structs with these properties.
 func getImagesList(list []string, tag string) []models.Image {
 	var images []models.Image
 	for _, image := range list {
@@ -49,7 +55,9 @@ func getImagesList(list []string, tag string) []models.Image {
 	return images
 }
 
-func createTask(config *ClientConfig) models.Task {
+// createTask takes a config struct, generates the images list and returns a Task object
+// filled with the respective properties from the config.
+func createTask(config *Config) models.Task {
 	images := getImagesList(config.Images, config.Tag)
 	return models.Task{
 		App:     config.App,
@@ -60,6 +68,8 @@ func createTask(config *ClientConfig) models.Task {
 	}
 }
 
+// printClientConfiguration logs the current configuration of the client including the assigned images and tokens.
+// It also warns if auth tokens are missing.
 func printClientConfiguration(watcher *Watcher, task models.Task) {
 	fmt.Printf("Got the following configuration:\n"+
 		"ARGO_WATCHER_URL: %s\n"+
@@ -74,6 +84,8 @@ func printClientConfiguration(watcher *Watcher, task models.Task) {
 	}
 }
 
+// generateAppUrl fetches the watcher config and uses it to construct
+// and return the URL for the Argo application.
 func generateAppUrl(watcher *Watcher, task models.Task) (string, error) {
 	cfg, err := watcher.getWatcherConfig()
 	if err != nil {
@@ -86,7 +98,9 @@ func generateAppUrl(watcher *Watcher, task models.Task) (string, error) {
 	return fmt.Sprintf("%s://%s/applications/%s", cfg.ArgoUrl.Scheme, cfg.ArgoUrl.Host, task.App), nil
 }
 
-func setupWatcher(config *ClientConfig) *Watcher {
+// setupWatcher takes application configuration and initializes a new Watcher instance
+// with the specified parameters.
+func setupWatcher(config *Config) *Watcher {
 	return NewWatcher(
 		strings.TrimSuffix(config.Url, "/"),
 		config.Debug,

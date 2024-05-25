@@ -21,7 +21,7 @@ import (
 )
 
 var (
-	clientConfig *ClientConfig
+	clientConfig *Config
 )
 
 type Watcher struct {
@@ -30,6 +30,7 @@ type Watcher struct {
 	debugMode bool
 }
 
+// NewWatcher creates a new Watcher instance with the given base URL, timeout, and debug mode.
 func NewWatcher(baseUrl string, debugMode bool, timeout time.Duration) *Watcher {
 	return &Watcher{
 		baseUrl:   baseUrl,
@@ -38,6 +39,8 @@ func NewWatcher(baseUrl string, debugMode bool, timeout time.Duration) *Watcher 
 	}
 }
 
+// addTask adds a given task to the watcher, using either JWT or a DeployToken for authorization.
+// It returns the task ID or an error.
 func (watcher *Watcher) addTask(task models.Task, authMethod, token string) (string, error) {
 	// Marshal the task into JSON
 	requestBody, err := json.Marshal(task)
@@ -105,6 +108,8 @@ func (watcher *Watcher) addTask(task models.Task, authMethod, token string) (str
 	return accepted.Id, nil
 }
 
+// getTaskStatus retrieves the status of the task identified by the given ID,
+// returning a TaskStatus or an error.
 func (watcher *Watcher) getTaskStatus(id string) (*models.TaskStatus, error) {
 	url := fmt.Sprintf("%s/api/v1/tasks/%s", watcher.baseUrl, id)
 	var taskStatus models.TaskStatus
@@ -114,6 +119,8 @@ func (watcher *Watcher) getTaskStatus(id string) (*models.TaskStatus, error) {
 	return &taskStatus, nil
 }
 
+// getWatcherConfig retrieves the watcher's server configuration,
+// returning a ServerConfig or an error.
 func (watcher *Watcher) getWatcherConfig() (*config.ServerConfig, error) {
 	url := fmt.Sprintf("%s/api/v1/config", watcher.baseUrl)
 	var serverConfig config.ServerConfig
@@ -123,7 +130,11 @@ func (watcher *Watcher) getWatcherConfig() (*config.ServerConfig, error) {
 	return &serverConfig, nil
 }
 
+// waitForDeployment waits for the deployment identified by the given ID,
+// performing retries if necessary, and returns an error if deployment fails.
 func (watcher *Watcher) waitForDeployment(id, appName, version string) error {
+	retryCount := 0
+
 	for {
 		taskInfo, err := watcher.getTaskStatus(id)
 		if err != nil {
@@ -134,8 +145,13 @@ func (watcher *Watcher) waitForDeployment(id, appName, version string) error {
 		case models.StatusFailedMessage:
 			return fmt.Errorf("The deployment has failed, please check logs.\n%s", taskInfo.StatusReason)
 		case models.StatusInProgressMessage:
-			log.Println("Application deployment is in progress...")
-			time.Sleep(15 * time.Second)
+			if !isDeploymentOverTime(retryCount, clientConfig.RetryInterval, clientConfig.ExpectedDeploymentTime) {
+				log.Println("Application deployment is in progress...")
+			} else {
+				log.Println("Application deployment is taking longer than expected, it might be worth checking ArgoCD UI...")
+			}
+			retryCount++
+			time.Sleep(clientConfig.RetryInterval)
 		case models.StatusAppNotFoundMessage:
 			return fmt.Errorf("Application %s does not exist.\n%s", appName, taskInfo.StatusReason)
 		case models.StatusArgoCDUnavailableMessage:
@@ -147,6 +163,9 @@ func (watcher *Watcher) waitForDeployment(id, appName, version string) error {
 	}
 }
 
+// handleDeploymentError logs the given error,
+// generates an application URL in case of deployment failure
+// and exits the program with code 1.
 func handleDeploymentError(watcher *Watcher, task models.Task, err error) {
 	log.Println(err)
 	if strings.Contains(err.Error(), "The deployment has failed") {
@@ -159,10 +178,20 @@ func handleDeploymentError(watcher *Watcher, task models.Task, err error) {
 	os.Exit(1)
 }
 
+// handleFatalError logs a provided error message and terminates the program with status 1.
 func handleFatalError(err error, message string) {
 	log.Fatalf("%s Got the following error: %s", message, err)
 }
 
+// isDeploymentOverTime checks if the deployment has exceeded the expected deployment time,
+// returning a boolean value.
+func isDeploymentOverTime(retryCount int, retryInterval time.Duration, expectedDeploymentTime time.Duration) bool {
+	return time.Duration(retryCount)*retryInterval > expectedDeploymentTime
+}
+
+// Run initializes the client configuration, sets up the watcher,
+// creates the task, adds the task to the watcher,
+// waits for deployment and handles any errors in the process.
 func Run() {
 	var err error
 
