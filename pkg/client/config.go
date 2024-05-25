@@ -22,6 +22,8 @@ type Config struct {
 	Debug                  bool          `env:"DEBUG"`
 }
 
+// NewClientConfig parses the environment variables to fill a Config struct
+// and returns the new instance or an error.
 func NewClientConfig() (*Config, error) {
 	var config Config
 
