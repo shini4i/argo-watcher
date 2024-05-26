@@ -1,10 +1,10 @@
-import React from 'react';
+import React, { FunctionComponent } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 
 import './Page404.css';
 
-function Page404() {
+const Page404: FunctionComponent = () => {
   return (
     <Box
       sx={{

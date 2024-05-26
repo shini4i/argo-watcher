@@ -1,19 +1,16 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import PropTypes from 'prop-types';
+import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 
-export async function fetchDeployLock() {
+export async function fetchDeployLock(): Promise<boolean> {
   const response = await fetch('/api/v1/deploy-lock');
   return await response.json();
 }
 
-export async function releaseDeployLock(keycloakToken) {
-  let headers = {
+export async function releaseDeployLock(keycloakToken: string | null): Promise<void> {
+  let headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
 
   if (keycloakToken !== null) {
-    // We replaced Authorization with Keycloak-Authorization here
-    // to simplify JWT implementation and avoid header name overlap
     headers['Keycloak-Authorization'] = keycloakToken;
   }
 
@@ -27,14 +24,12 @@ export async function releaseDeployLock(keycloakToken) {
   }
 }
 
-export async function setDeployLock(keycloakToken = null) {
-  let headers = {
+export async function setDeployLock(keycloakToken: string | null = null): Promise<void> {
+  let headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
 
   if (keycloakToken !== null) {
-    // We replaced Authorization with Keycloak-Authorization here
-    // to simplify JWT implementation and avoid header name overlap
     headers['Keycloak-Authorization'] = keycloakToken;
   }
 
@@ -48,11 +43,15 @@ export async function setDeployLock(keycloakToken = null) {
   }
 }
 
-export const DeployLockContext = createContext(false);
+export const DeployLockContext = createContext<boolean>(false);
 
-export function DeployLockProvider({ children }) {
-  const [deployLock, setDeployLock] = useState(false);
-  const [socket, setSocket] = useState(null);
+interface DeployLockProviderProps {
+  children: ReactNode;
+}
+
+export function DeployLockProvider({ children }: DeployLockProviderProps): JSX.Element {
+  const [deployLock, setDeployLockState] = useState<boolean>(false);
+  const [socket, setSocket] = useState<WebSocket | null>(null);
 
   useEffect(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -70,14 +69,14 @@ export function DeployLockProvider({ children }) {
     if (socket) {
       socket.onopen = async () => {
         const lock = await fetchDeployLock();
-        setDeployLock(lock);
+        setDeployLockState(lock);
       };
       socket.onmessage = (event) => {
         const message = event.data;
         if (message === 'locked') {
-          setDeployLock(true);
+          setDeployLockState(true);
         } else if (message === 'unlocked') {
-          setDeployLock(false);
+          setDeployLockState(false);
         }
       };
     }
@@ -90,10 +89,10 @@ export function DeployLockProvider({ children }) {
   );
 }
 
-DeployLockProvider.propTypes = {
-  children: PropTypes.node.isRequired,
-};
-
-export function useDeployLock() {
-  return useContext(DeployLockContext);
+export function useDeployLock(): boolean {
+  const context = useContext(DeployLockContext);
+  if (context === undefined) {
+    throw new Error('useDeployLock must be used within a DeployLockProvider');
+  }
+  return context;
 }
