@@ -8,8 +8,8 @@ import Layout from './Layout';
 import Page404 from './Page404';
 import { ErrorProvider } from './ErrorContext';
 import TaskView from './Components/TaskView';
-import { AuthContext, useAuth } from './auth';
-import { DeployLockProvider } from './deployLockHandler';
+import { AuthContext, useAuth } from './Services/Auth';
+import { DeployLockProvider } from './Services/DeployLockHandler';
 
 const theme = createTheme({
   palette: {

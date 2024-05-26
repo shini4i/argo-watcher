@@ -1,6 +1,6 @@
 import { createContext, useEffect, useState } from 'react';
 import Keycloak from 'keycloak-js';
-import { fetchConfig } from './config';
+import { fetchConfig } from './Data';
 
 type AuthContextType = {
   authenticated: null | boolean;

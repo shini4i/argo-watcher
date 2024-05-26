@@ -23,9 +23,9 @@ import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import { fetchTask } from '../Services/Data';
 import { useErrorContext } from '../ErrorContext';
 import { formatDateTime, ProjectDisplay, StatusReasonDisplay } from './TasksTable';
-import { AuthContext } from '../auth';
-import { fetchConfig } from '../config';
-import { useDeployLock } from '../deployLockHandler';
+import { AuthContext } from '../Services/Auth';
+import { fetchConfig } from '../Services/Data';
+import { useDeployLock } from '../Services/DeployLockHandler';
 
 export default function TaskView() {
   const { id } = useParams();

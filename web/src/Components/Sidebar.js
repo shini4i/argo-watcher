@@ -16,9 +16,9 @@ import {
 } from '@mui/material';
 import Switch from '@mui/material/Switch';
 
-import { fetchConfig } from '../config';
-import { releaseDeployLock, setDeployLock, useDeployLock } from '../deployLockHandler';
-import { AuthContext } from '../auth';
+import { fetchConfig } from '../Services/Data';
+import { releaseDeployLock, setDeployLock, useDeployLock } from '../Services/DeployLockHandler';
+import { AuthContext } from '../Services/Auth';
 
 function Sidebar({ open, onClose }) {
   const [configData, setConfigData] = useState(null);

@@ -22,7 +22,7 @@ import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import LaunchIcon from '@mui/icons-material/Launch';
 
 import { fetchTasks } from '../Services/Data';
-import { useDeployLock } from '../deployLockHandler';
+import { useDeployLock } from '../Services/DeployLockHandler';
 import { relativeHumanDuration, relativeTime, relativeTimestamp } from '../Utils';
 
 export function ProjectDisplay({ project }) {
