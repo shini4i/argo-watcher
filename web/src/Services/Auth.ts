@@ -12,6 +12,14 @@ type AuthContextType = {
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+/**
+ * Custom React Hook for managing Keycloak authentication state.
+ *
+ * This hook fetches the Keycloak configuration and initializes the Keycloak instance.
+ * It then sets the authentication state based on the result of the initialization.
+ *
+ * @returns An object containing the authentication state and related information.
+ */
 export function useAuth(): AuthContextType {
   const [authenticated, setAuthenticated] = useState<null | boolean>(null);
   const [email, setEmail] = useState<null | string>(null);
@@ -19,6 +27,12 @@ export function useAuth(): AuthContextType {
   const [privilegedGroups, setPrivilegedGroups] = useState<string[]>([]);
   const [keycloakToken, setKeycloakToken] = useState<null | string>(null);
 
+  /**
+   * Refreshes the Keycloak token periodically.
+   *
+   * @param keycloak - The Keycloak instance.
+   * @param config - The Keycloak configuration.
+   */
   const refreshToken = (
     keycloak: any,
     config: { keycloak: { token_validation_interval: number } },
@@ -40,6 +54,11 @@ export function useAuth(): AuthContextType {
     }, config.keycloak.token_validation_interval);
   };
 
+  /**
+   * Initializes the Keycloak instance and sets the authentication state.
+   *
+   * @param config - The Keycloak configuration.
+   */
   useEffect(() => {
     fetchConfig().then(config => {
       if (config.keycloak.enabled) {
