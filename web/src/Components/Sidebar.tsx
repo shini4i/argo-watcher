@@ -1,11 +1,11 @@
-import React, { useContext, useEffect, useState } from 'react';
-import PropTypes from 'prop-types';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Box,
   Button,
   CircularProgress,
   Drawer,
   Paper,
+  Switch,
   Table,
   TableBody,
   TableCell,
@@ -14,66 +14,82 @@ import {
   TableRow,
   Typography,
 } from '@mui/material';
-import Switch from '@mui/material/Switch';
-
 import { fetchConfig } from '../Services/Data';
 import { releaseDeployLock, setDeployLock, useDeployLock } from '../Services/DeployLockHandler';
-import { AuthContext } from '../Services/Auth';
+import { useAuth } from '../Services/Auth';
 
-function Sidebar({ open, onClose }) {
-  const [configData, setConfigData] = useState(null);
+interface ConfigData {
+  [key: string]: any;
+}
+
+interface SidebarProps {
+  open: boolean;
+  onClose: () => void;
+}
+
+const Sidebar: React.FC<SidebarProps> = ({ open, onClose }) => {
+  const [configData, setConfigData] = useState<ConfigData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const { authenticated, keycloakToken } = useContext(AuthContext);
+  const { authenticated, keycloakToken } = useAuth();
   const deployLock = useDeployLock();
 
-  const toggleDeployLock = async () => {
-    if (deployLock) {
-      await releaseDeployLock(authenticated ? keycloakToken : null);
-    } else {
-      await setDeployLock(authenticated ? keycloakToken : null);
+  const toggleDeployLock = useCallback(async () => {
+    try {
+      if (deployLock) {
+        await releaseDeployLock(authenticated ? keycloakToken : null);
+      } else {
+        await setDeployLock(authenticated ? keycloakToken : null);
+      }
+    } catch (error) {
+      console.error('Failed to toggle deploy lock:', error);
     }
-  };
+  }, [deployLock, authenticated, keycloakToken]);
 
   useEffect(() => {
-    fetchConfig()
-      .then(data => {
+    const loadConfig = async () => {
+      try {
+        const data = await fetchConfig();
         setConfigData(data);
+      } catch (error) {
+        if (error instanceof Error) {
+          setError(error.message);
+        } else {
+          setError('An unknown error occurred');
+        }
+      } finally {
         setIsLoading(false);
-      })
-      .catch(error => {
-        setError(error.message);
-        setIsLoading(false);
-      });
+      }
+    };
+
+    // Handle promise directly within useEffect
+    loadConfig();
   }, []);
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(JSON.stringify(configData, null, 2)).catch(err => {
+  const handleCopy = useCallback(() => {
+    if (configData) {
+      navigator.clipboard.writeText(JSON.stringify(configData, null, 2)).catch(err => {
         console.error('Failed to copy config data to clipboard: ', err);
       });
-  };
+    }
+  }, [configData]);
 
-  const renderTableCell = (key, value) => {
+  const renderTableCell = useCallback((key: string, value: any) => {
     if (key === 'argo_cd_url' && value && typeof value === 'object' && value.constructor === Object) {
       if ('Scheme' in value && 'Host' in value && 'Path' in value) {
         return `${value.Scheme}://${value.Host}${value.Path}`;
       } else {
         return 'Invalid value';
       }
-    } else if (value && typeof value === 'object' && value.constructor === Object) {
-      return (
-        <Box sx={{ maxHeight: '100px', overflow: 'auto', whiteSpace: 'nowrap' }}>
-          {JSON.stringify(value, null, 2)}
-        </Box>
-      );
     }
+
     return (
       <Box sx={{ maxHeight: '100px', overflow: 'auto', whiteSpace: 'nowrap' }}>
-        {value.toString()}
+        {typeof value === 'object' ? JSON.stringify(value, null, 2) : value.toString()}
       </Box>
     );
-  };
+  }, []);
 
   const renderContent = () => {
     if (isLoading) {
@@ -83,9 +99,13 @@ function Sidebar({ open, onClose }) {
           <Typography ml={2}>Loading...</Typography>
         </Box>
       );
-    } else if (error) {
+    }
+
+    if (error) {
       return <Typography color="error">{error}</Typography>;
-    } else if (configData) {
+    }
+
+    if (configData) {
       return (
         <>
           <TableContainer component={Paper}>
@@ -102,9 +122,7 @@ function Sidebar({ open, onClose }) {
                     <TableCell component="th" scope="row">
                       {key}
                     </TableCell>
-                    <TableCell>
-                      {renderTableCell(key, value)}
-                    </TableCell>
+                    <TableCell>{renderTableCell(key, value)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -117,9 +135,9 @@ function Sidebar({ open, onClose }) {
           </Box>
         </>
       );
-    } else {
-      return <Typography>No data available</Typography>;
     }
+
+    return <Typography>No data available</Typography>;
   };
 
   return (
@@ -132,14 +150,10 @@ function Sidebar({ open, onClose }) {
       </Box>
       <Paper elevation={3} sx={{ margin: 2, padding: 2 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Typography variant="body1">
+          <Typography variant="body1" gutterBottom>
             Lockdown Mode
           </Typography>
-          <Switch
-            checked={deployLock}
-            onChange={toggleDeployLock}
-            color="primary"
-          />
+          <Switch checked={deployLock} onChange={toggleDeployLock} color="primary" />
         </Box>
       </Paper>
       <Box p={2} sx={{ borderTop: '1px solid gray' }}>
@@ -149,11 +163,6 @@ function Sidebar({ open, onClose }) {
       </Box>
     </Drawer>
   );
-}
-
-Sidebar.propTypes = {
-  open: PropTypes.bool.isRequired,
-  onClose: PropTypes.func.isRequired,
 };
 
-export default Sidebar;
+export default React.memo(Sidebar);
