@@ -1,5 +1,4 @@
 import React, { forwardRef, useEffect, useState } from 'react';
-import PropTypes from 'prop-types';
 import { useSearchParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -16,45 +15,48 @@ import ApplicationsFilter from './ApplicationsFilter';
 import TasksTable, { useTasks } from './TasksTable';
 import { useErrorContext } from '../ErrorContext';
 
-const DateRangePickerCustomInput = forwardRef(({ value, onClick }, ref) => (
-  <TextField
-    size="small"
-    sx={{ minWidth: '220px' }}
-    onClick={onClick}
-    ref={ref}
-    value={value}
-    label="Date range"
-  />
-));
+interface DateRangePickerCustomInputProps {
+  value: string;
+  onClick: () => void;
+}
 
-DateRangePickerCustomInput.propTypes = {
-  value: PropTypes.string,
-  onClick: PropTypes.func.isRequired,
-};
+const DateRangePickerCustomInput = forwardRef<HTMLInputElement, DateRangePickerCustomInputProps>(
+  ({ value, onClick }, ref) => (
+    <TextField
+      size="small"
+      sx={{ minWidth: '220px' }}
+      onClick={onClick}
+      ref={ref}
+      value={value}
+      label="Date range"
+      InputProps={{ readOnly: true }}
+    />
+  )
+);
 
-function HistoryTasks() {
+DateRangePickerCustomInput.displayName = 'DateRangePickerCustomInput';
+
+interface HistoryTasksProps {}
+
+const HistoryTasks: React.FC<HistoryTasksProps> = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const { setError, setSuccess } = useErrorContext();
   const { tasks, sortField, setSortField, appNames, refreshTasksInRange, clearTasks } =
     useTasks({ setError, setSuccess });
-  const [currentApplication, setCurrentApplication] = useState(
-    searchParams.get('app') ?? null,
+  const [currentApplication, setCurrentApplication] = useState<string | null>(
+    searchParams.get('app')
   );
-  const [dateRange, setDateRange] = useState([
-    Number(searchParams.get('start'))
-      ? new Date(Number(searchParams.get('start')) * 1000)
-      : startOfDay(new Date()),
-    Number(searchParams.get('end'))
-      ? new Date(Number(searchParams.get('end')) * 1000)
-      : startOfDay(new Date()),
+  const [dateRange, setDateRange] = useState<[Date | null, Date | null]>([
+    searchParams.get('start') ? new Date(Number(searchParams.get('start')) * 1000) : startOfDay(new Date()),
+    searchParams.get('end') ? new Date(Number(searchParams.get('end')) * 1000) : startOfDay(new Date()),
   ]);
   const [startDate, endDate] = dateRange;
-  const [currentPage, setCurrentPage] = useState(
-    searchParams.get('page') ? Number(searchParams.get('page')) : 1,
+  const [currentPage, setCurrentPage] = useState<number>(
+    searchParams.get('page') ? Number(searchParams.get('page')) : 1
   );
 
-  const updateSearchParameters = (start, end, application, page) => {
-    const params = {
+  const updateSearchParameters = (start: Date, end: Date, application: string | null, page: number) => {
+    const params: Record<string, any> = {
       start: Math.floor(start.getTime() / 1000),
       end: Math.floor(end.getTime() / 1000),
     };
@@ -70,12 +72,12 @@ function HistoryTasks() {
     setSearchParams(params);
   };
 
-  const refreshWithFilters = (start, end, application, page) => {
+  const refreshWithFilters = (start: Date | null, end: Date | null, application: string | null, page: number) => {
     if (start && end) {
       refreshTasksInRange(
         Math.floor(startOfDay(start).getTime() / 1000),
         Math.floor(endOfDay(end).getTime() / 1000),
-        application,
+        application
       );
       updateSearchParameters(start, end, application, page);
     } else {
@@ -84,7 +86,7 @@ function HistoryTasks() {
   };
 
   useEffect(() => {
-    refreshWithFilters(startDate, endDate, currentApplication, currentPage);
+    refreshWithFilters(startDate!, endDate!, currentApplication, currentPage);
   }, [startDate, endDate, currentApplication, currentPage]);
 
   return (
@@ -117,26 +119,29 @@ function HistoryTasks() {
               onChange={value => {
                 setCurrentApplication(value);
                 setCurrentPage(1);
-                refreshWithFilters(startDate, endDate, value, 1);
+                refreshWithFilters(startDate!, endDate!, value, 1);
               }}
-              setError={setError}
-              setSuccess={setSuccess}
               appNames={appNames}
             />
           </Box>
           <Box>
             <DatePicker
-              selectsRange={true}
+              selectsRange
               startDate={startDate}
               endDate={endDate}
-              onChange={update => {
+              onChange={(update: [Date | null, Date | null]) => {
                 setDateRange(update);
                 setCurrentPage(1);
                 refreshWithFilters(update[0], update[1], currentApplication, 1);
               }}
               maxDate={new Date()}
               isClearable={false}
-              customInput={<DateRangePickerCustomInput />}
+              customInput={
+                <DateRangePickerCustomInput
+                  value={`${startDate ? startDate.toLocaleDateString() : ''} - ${endDate ? endDate.toLocaleDateString() : ''}`}
+                  onClick={() => {}}
+                />
+              }
               required
             />
           </Box>
@@ -147,7 +152,7 @@ function HistoryTasks() {
               title="Reload table"
               onClick={() => {
                 setCurrentPage(1);
-                refreshWithFilters(startDate, endDate, currentApplication, 1);
+                refreshWithFilters(startDate!, endDate!, currentApplication, 1);
               }}
             >
               <RefreshIcon />
@@ -165,16 +170,16 @@ function HistoryTasks() {
           onPageChange={page => {
             setCurrentPage(page);
             updateSearchParameters(
-              startDate,
-              endDate,
+              startDate!,
+              endDate!,
               currentApplication,
-              page,
+              page
             );
           }}
         />
       </Box>
     </Container>
   );
-}
+};
 
 export default HistoryTasks;

@@ -1,22 +1,29 @@
 import React, { useEffect, useState } from 'react';
-import PropTypes from 'prop-types';
 import Autocomplete from '@mui/material/Autocomplete';
 import TextField from '@mui/material/TextField';
 
-function ApplicationsFilter({ value, onChange, appNames }) {
-  const [applications, setApplications] = useState([]);
+interface ApplicationsFilterProps {
+  value: string | null;
+  onChange: (newValue: string | null) => void;
+  appNames: string[];
+}
+
+const ApplicationsFilter: React.FC<ApplicationsFilterProps> = ({ value, onChange, appNames }) => {
+  const [applications, setApplications] = useState<string[]>([]);
 
   useEffect(() => {
     setApplications(appNames);
   }, [appNames]);
 
-  const handleApplicationsChange = (_event, newValue) => {
-    onChange?.(newValue);
+  const handleApplicationsChange = (_event: React.ChangeEvent<{}>, newValue: string | null) => {
+    if (onChange) {
+      onChange(newValue);
+    }
   };
 
   return (
     <Autocomplete
-      size={'small'}
+      size="small"
       disablePortal
       options={applications}
       sx={{ width: 220 }}
@@ -25,12 +32,6 @@ function ApplicationsFilter({ value, onChange, appNames }) {
       onChange={handleApplicationsChange}
     />
   );
-}
-
-ApplicationsFilter.propTypes = {
-  value: PropTypes.any,
-  onChange: PropTypes.func,
-  appNames: PropTypes.array.isRequired
 };
 
 export default ApplicationsFilter;
