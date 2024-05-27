@@ -27,6 +27,15 @@ interface SidebarProps {
   onClose: () => void;
 }
 
+/**
+ * Sidebar component that displays configuration data and provides functionality to toggle deploy lock.
+ *
+ * @component
+ * @param {Object} props - The props for the Sidebar component.
+ * @param {boolean} props.open - Indicates whether the sidebar is open or closed.
+ * @param {Function} props.onClose - The callback function to handle closing the sidebar.
+ * @returns {JSX.Element} The rendered Sidebar component.
+ */
 const Sidebar: React.FC<SidebarProps> = ({ open, onClose }) => {
   const [configData, setConfigData] = useState<ConfigData | null>(null);
   const [isLoading, setIsLoading] = useState(true);

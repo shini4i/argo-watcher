@@ -25,6 +25,15 @@ interface NavigationButtonProps {
   external?: boolean;
 }
 
+/**
+ * A navigation button component that is used for internal and external links.
+ * @component
+ * @param {Object} props - The props object for the NavigationButton component.
+ * @param {string} props.to - The URL link for the button.
+ * @param {boolean} [props.external=false] - Whether the link is an external link.
+ * @param {string|ReactNode} props.children - The content of the button.
+ * @returns {ReactNode} The rendered NavigationButton component.
+ */
 const NavigationButton: React.FC<NavigationButtonProps> = ({ to, children, external = false }) => {
   if (external) {
     return (
@@ -52,7 +61,13 @@ const NavigationButton: React.FC<NavigationButtonProps> = ({ to, children, exter
   );
 };
 
-const Navbar: React.FC = () => {
+/**
+ * Navbar component for the application.
+ *
+ * @component
+ * @returns {JSX.Element} The rendered Navbar component.
+ */
+const Navbar: React.FC = (): JSX.Element => {
   const [version, setVersion] = useState('0.0.0');
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const { setSuccess, setError } = useErrorContext();
