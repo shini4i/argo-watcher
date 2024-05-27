@@ -204,7 +204,7 @@ export default function TaskView() {
                 Created
               </Typography>
               <Typography variant="body1">
-                {formatDateTime(task.created)}
+                {formatDateTime(Number(task.created))}
               </Typography>
             </Grid>
             <Grid item xs={12} sm={6}>
@@ -212,7 +212,7 @@ export default function TaskView() {
                 Updated
               </Typography>
               <Typography variant="body1">
-                {formatDateTime(task.updated)}
+                {formatDateTime(Number(task.updated))}
               </Typography>
             </Grid>
             <Grid item xs={12} sm={6}>

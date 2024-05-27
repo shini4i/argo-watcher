@@ -1,18 +1,21 @@
 import React, { useEffect, useState } from 'react';
 import { Link as ReactLink } from 'react-router-dom';
 import { addMinutes, format } from 'date-fns';
-import PropTypes from 'prop-types';
-import { Link, MenuItem, TextField } from '@mui/material';
-import Box from '@mui/material/Box';
-import Pagination from '@mui/material/Pagination';
-import Table from '@mui/material/Table';
-import TableBody from '@mui/material/TableBody';
-import TableCell from '@mui/material/TableCell';
-import TableContainer from '@mui/material/TableContainer';
-import TableHead from '@mui/material/TableHead';
-import TableRow from '@mui/material/TableRow';
-import Tooltip from '@mui/material/Tooltip';
-import Typography from '@mui/material/Typography';
+import {
+  Box,
+  MenuItem,
+  Pagination,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  TextField,
+  Tooltip,
+  Typography,
+  Link,
+} from '@mui/material';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
 import CircularProgress from '@mui/material/CircularProgress';
@@ -25,8 +28,12 @@ import { fetchTasks } from '../Services/Data';
 import { useDeployLock } from '../Services/DeployLockHandler';
 import { relativeHumanDuration, relativeTime, relativeTimestamp } from '../Utils';
 
-export function ProjectDisplay({ project }) {
-  if (project.indexOf('http') === 0) {
+interface ProjectDisplayProps {
+  project: string;
+}
+
+export function ProjectDisplay({ project }: ProjectDisplayProps) {
+  if (project.startsWith('http')) {
     return (
       <Link href={project}>
         {project.replace(/^http(s)?:\/\//, '').replace(/\/+$/, '')}
@@ -36,11 +43,11 @@ export function ProjectDisplay({ project }) {
   return <Typography variant={'body2'}>{project}</Typography>;
 }
 
-ProjectDisplay.propTypes = {
-  project: PropTypes.string.isRequired,
-};
+interface StatusReasonDisplayProps {
+  reason: string;
+}
 
-export function StatusReasonDisplay({ reason }) {
+export function StatusReasonDisplay({ reason }: StatusReasonDisplayProps) {
   return (
     <Typography
       sx={{
@@ -55,11 +62,7 @@ export function StatusReasonDisplay({ reason }) {
   );
 }
 
-StatusReasonDisplay.propTypes = {
-  reason: PropTypes.string.isRequired,
-};
-
-const taskDuration = (created, updated) => {
+const taskDuration = (created: number, updated: number | null): string => {
   if (!updated) {
     updated = Math.round(Date.now() / 1000);
   }
@@ -68,7 +71,7 @@ const taskDuration = (created, updated) => {
 };
 
 const defaultFormatTime = '---';
-export const formatDateTime = timestamp => {
+export const formatDateTime = (timestamp: number | null): string => {
   if (!timestamp) {
     return defaultFormatTime;
   }
@@ -76,7 +79,7 @@ export const formatDateTime = timestamp => {
     let dateTime = new Date(timestamp * 1000);
     return format(
       addMinutes(dateTime, dateTime.getTimezoneOffset()),
-      'yyyy/MM/dd HH:mm:ss',
+      'yyyy/MM/dd HH:mm:ss'
     );
   } catch (error) {
     console.error(error);
@@ -84,21 +87,43 @@ export const formatDateTime = timestamp => {
   }
 };
 
-export function useTasks({ setError, setSuccess }) {
-  const [tasks, setTasks] = useState([]);
-  const [sortField, setSortField] = useState({
+interface Task {
+  id: string;
+  app: string;
+  project: string;
+  author: string;
+  status: string;
+  created: number;
+  updated: number;
+  images: { id: string; image: string; tag: string }[];
+  status_reason?: string;
+}
+
+interface SortField {
+  field: keyof Task;
+  direction: 'ASC' | 'DESC';
+}
+
+interface UseTasksParams {
+  setError: (context: string, message: string) => void;
+  setSuccess: (context: string, message: string) => void;
+}
+
+export function useTasks({ setError, setSuccess }: UseTasksParams) {
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [sortField, setSortField] = useState<SortField>({
     field: 'created',
     direction: 'ASC',
   });
 
-  const [appNames, setAppNames] = useState([]);
+  const [appNames, setAppNames] = useState<string[]>([]);
 
-  const refreshTasksInTimeframe = (timeframe, application) => {
+  const refreshTasksInTimeframe = (timeframe: number, application: string | null) => {
     fetchTasks(relativeTimestamp(timeframe), null, application)
       .then(items => {
         setSuccess('fetchTasks', 'Fetched tasks successfully');
 
-        const appNames = [...new Set(items.map(item => item.app))];
+        const appNames = Array.from(new Set(items.map((item: Task) => item.app)));
         setAppNames(appNames);
 
         setTasksSorted(items, sortField);
@@ -108,12 +133,12 @@ export function useTasks({ setError, setSuccess }) {
       });
   };
 
-  const refreshTasksInRange = (fromTimestamp, toTimestamp, application) => {
+  const refreshTasksInRange = (fromTimestamp: number, toTimestamp: number, application: string | null) => {
     fetchTasks(fromTimestamp, toTimestamp, application)
       .then(items => {
         setSuccess('fetchTasks', 'Fetched tasks successfully');
 
-        const appNames = [...new Set(items.map(item => item.app))];
+        const appNames = Array.from(new Set(items.map((item: Task) => item.app)));
         setAppNames(appNames);
 
         setTasksSorted(items, sortField);
@@ -127,12 +152,14 @@ export function useTasks({ setError, setSuccess }) {
     setTasks([]);
   };
 
-  const setTasksSorted = (unsortedTasks, sort) => {
-    // sort tasks
+  const setTasksSorted = (unsortedTasks: Task[], sort: SortField) => {
     unsortedTasks.sort((a, b) => {
-      let aField = a[sort.field];
-      let bField = b[sort.field];
+      const aField = a[sort.field];
+      const bField = b[sort.field];
       if (aField === bField) {
+        return 0;
+      }
+      if (aField === undefined || bField === undefined) {
         return 0;
       }
       if (aField > bField) {
@@ -142,11 +169,9 @@ export function useTasks({ setError, setSuccess }) {
       }
     });
 
-    // save sorted tasks
-    setTasks([].concat(unsortedTasks));
+    setTasks([...unsortedTasks]);
   };
 
-  // sort field change hook
   useEffect(() => {
     setTasksSorted(tasks, sortField);
   }, [sortField]);
@@ -158,13 +183,19 @@ export function useTasks({ setError, setSuccess }) {
     refreshTasksInTimeframe,
     refreshTasksInRange,
     clearTasks,
-    appNames
+    appNames,
   };
 }
 
-function TableCellSorted({ field, sortField, setSortField, children }) {
-  const triggerSortChange = triggerField => {
-    // change sort parameters
+interface TableCellSortedProps {
+  field: keyof Task;
+  sortField: SortField;
+  setSortField: (sortField: SortField) => void;
+  children: React.ReactNode;
+}
+
+function TableCellSorted({ field, sortField, setSortField, children }: TableCellSortedProps) {
+  const triggerSortChange = (triggerField: keyof Task) => {
     let sortFieldChange = { ...sortField };
     if (sortFieldChange.field === triggerField) {
       sortFieldChange.direction =
@@ -199,13 +230,23 @@ function TableCellSorted({ field, sortField, setSortField, children }) {
 const cacheKeyItemsPerPage = 'items_per_page';
 const itemsPerPageList = [10, 25, 50];
 const defaultItemsPerPage = itemsPerPageList[0];
-const getCachedItemsPerPage = () => {
+
+const getCachedItemsPerPage = (): number => {
   const itemsPerPage = Number(localStorage.getItem(cacheKeyItemsPerPage));
   if (itemsPerPageList.includes(itemsPerPage)) {
     return itemsPerPage;
   }
   return defaultItemsPerPage;
 };
+
+interface TasksTableProps {
+  tasks: Task[];
+  sortField: SortField;
+  setSortField: (sortField: SortField) => void;
+  relativeDate: boolean;
+  onPageChange: (page: number) => void;
+  page?: number;
+}
 
 function TasksTable({
                       tasks,
@@ -214,17 +255,17 @@ function TasksTable({
                       relativeDate,
                       onPageChange,
                       page = 1,
-                    }) {
-  const [itemsPerPage, setItemsPerPage] = useState(getCachedItemsPerPage());
-  const [visibleReasons, setVisibleReasons] = useState([]);
+                    }: TasksTableProps) {
+  const [itemsPerPage, setItemsPerPage] = useState<number>(getCachedItemsPerPage());
+  const [visibleReasons, setVisibleReasons] = useState<string[]>([]);
   const deployLock = useDeployLock();
 
-  const toggleReason = task => {
-    setVisibleReasons(visibleReasons => {
-      if (visibleReasons.includes(task?.id)) {
-        return [...visibleReasons.filter(id => id !== task?.id)];
+  const toggleReason = (task: Task) => {
+    setVisibleReasons((visibleReasons) => {
+      if (visibleReasons.includes(task.id)) {
+        return visibleReasons.filter((id) => id !== task.id);
       } else {
-        return [...visibleReasons, task?.id];
+        return [...visibleReasons, task.id];
       }
     });
   };
@@ -232,12 +273,13 @@ function TasksTable({
   const pages = Math.ceil(tasks.length / itemsPerPage);
   const tasksPaginated = tasks.slice(
     (page - 1) * itemsPerPage,
-    page * itemsPerPage,
+    page * itemsPerPage
   );
 
-  const handleItemsPerPageChange = event => {
-    setItemsPerPage(event.target.value);
-    localStorage.setItem(cacheKeyItemsPerPage, event.target.value);
+  const handleItemsPerPageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const value = Number(event.target.value);
+    setItemsPerPage(value);
+    localStorage.setItem(cacheKeyItemsPerPage, value.toString());
   };
 
   return (
@@ -246,66 +288,34 @@ function TasksTable({
         <Table sx={{ minWidth: 650 }}>
           <TableHead>
             <TableRow>
-              <TableCellSorted
-                sortField={sortField}
-                setSortField={setSortField}
-                field={'id'}
-              >
+              <TableCellSorted sortField={sortField} setSortField={setSortField} field={'id'}>
                 Id
               </TableCellSorted>
-              <TableCellSorted
-                sortField={sortField}
-                setSortField={setSortField}
-                field={'app'}
-              >
+              <TableCellSorted sortField={sortField} setSortField={setSortField} field={'app'}>
                 Application
               </TableCellSorted>
-              <TableCellSorted
-                sortField={sortField}
-                setSortField={setSortField}
-                field={'project'}
-              >
+              <TableCellSorted sortField={sortField} setSortField={setSortField} field={'project'}>
                 Project
               </TableCellSorted>
-              <TableCellSorted
-                sortField={sortField}
-                setSortField={setSortField}
-                field={'author'}
-              >
+              <TableCellSorted sortField={sortField} setSortField={setSortField} field={'author'}>
                 Author
               </TableCellSorted>
-              <TableCellSorted
-                sortField={sortField}
-                setSortField={setSortField}
-                field={'status'}
-              >
+              <TableCellSorted sortField={sortField} setSortField={setSortField} field={'status'}>
                 Status
               </TableCellSorted>
-              <TableCellSorted
-                sortField={sortField}
-                setSortField={setSortField}
-                field={'created'}
-              >
+              <TableCellSorted sortField={sortField} setSortField={setSortField} field={'created'}>
                 Started
               </TableCellSorted>
-              <TableCellSorted
-                sortField={sortField}
-                setSortField={setSortField}
-                field={'updated'}
-              >
+              <TableCellSorted sortField={sortField} setSortField={setSortField} field={'updated'}>
                 Duration
               </TableCellSorted>
-              <TableCellSorted
-                sortField={sortField}
-                setSortField={setSortField}
-                field={'images'}
-              >
+              <TableCellSorted sortField={sortField} setSortField={setSortField} field={'images'}>
                 Images
               </TableCellSorted>
             </TableRow>
           </TableHead>
           <TableBody>
-            {tasksPaginated.map(task => (
+            {tasksPaginated.map((task) => (
               <React.Fragment key={task.id}>
                 <TableRow>
                   <TableCell>
@@ -361,34 +371,30 @@ function TasksTable({
                     )}
                   </TableCell>
                   <TableCell>
-                    {relativeDate && (
+                    {relativeDate ? (
                       <Tooltip title={formatDateTime(task.created)}>
                         <span>{relativeTime(task.created * 1000)}</span>
                       </Tooltip>
-                    )}
-                    {!relativeDate && (
+                    ) : (
                       <span>{formatDateTime(task.created)}</span>
                     )}
                   </TableCell>
                   <TableCell>
-                    {task.status === 'in progress' && (
+                    {task.status === 'in progress' ? (
                       <span>{taskDuration(task.created, null)}</span>
-                    )}
-                    {task.status !== 'in progress' && (
-                      <span>{taskDuration(task.created, task?.updated)}</span>
+                    ) : (
+                      <span>{taskDuration(task.created, task.updated)}</span>
                     )}
                   </TableCell>
                   <TableCell>
-                    {task.images.map((item) => {
-                      return (
-                        <div key={item.id}>
-                          {item.image}:{item.tag}
-                        </div>
-                      );
-                    })}
+                    {task.images.map((item) => (
+                      <div key={item.id}>
+                        {item.image}:{item.tag}
+                      </div>
+                    ))}
                   </TableCell>
                 </TableRow>
-                {task?.status_reason && visibleReasons.includes(task?.id) && (
+                {task.status_reason && visibleReasons.includes(task.id) && (
                   <TableRow
                     sx={{
                       backgroundColor: 'reason_color.main',
@@ -424,7 +430,7 @@ function TasksTable({
           shape="rounded"
           page={page}
           onChange={(_event, value) => {
-            onPageChange?.(value);
+            onPageChange(value);
           }}
         />
         <TextField
@@ -435,49 +441,33 @@ function TasksTable({
           onChange={handleItemsPerPageChange}
           size="small"
         >
-          {itemsPerPageList.map(value => {
-            return (
-              <MenuItem key={value} value={value}>
-                {value}
-              </MenuItem>
-            );
-          })}
+          {itemsPerPageList.map((value) => (
+            <MenuItem key={value} value={value}>
+              {value}
+            </MenuItem>
+          ))}
         </TextField>
       </Box>
       {deployLock && (
-        <Box sx={{
-          position: 'fixed',
-          bottom: 0,
-          left: 0,
-          width: '100%',
-          backgroundColor: 'error.main',
-          color: 'white',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          py: 2,
-        }}>
+        <Box
+          sx={{
+            position: 'fixed',
+            bottom: 0,
+            left: 0,
+            width: '100%',
+            backgroundColor: 'error.main',
+            color: 'white',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            py: 2,
+          }}
+        >
           <Typography variant="h6">Lockdown is active</Typography>
         </Box>
       )}
     </>
   );
 }
-
-TableCellSorted.propTypes = {
-  field: PropTypes.string.isRequired,
-  sortField: PropTypes.object.isRequired,
-  setSortField: PropTypes.func.isRequired,
-  children: PropTypes.node.isRequired,
-};
-
-TasksTable.propTypes = {
-  tasks: PropTypes.array.isRequired,
-  sortField: PropTypes.object.isRequired,
-  setSortField: PropTypes.func.isRequired,
-  relativeDate: PropTypes.bool.isRequired,
-  onPageChange: PropTypes.func.isRequired,
-  page: PropTypes.number,
-};
 
 export default TasksTable;
