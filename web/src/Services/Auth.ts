@@ -1,92 +1,88 @@
 import { createContext, useEffect, useState } from 'react';
-import Keycloak from 'keycloak-js';
+import Keycloak, { KeycloakInstance } from 'keycloak-js';
+
 import { fetchConfig } from './Data';
 
-type AuthContextType = {
-  authenticated: null | boolean;
-  email: null | string;
+interface AuthContextType {
+  authenticated: boolean | null;
+  email: string | null;
   groups: string[];
   privilegedGroups: string[];
-  keycloakToken: null | string;
-};
+  keycloakToken: string | null;
+}
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-/**
- * Custom React Hook for managing Keycloak authentication state.
- *
- * This hook fetches the Keycloak configuration and initializes the Keycloak instance.
- * It then sets the authentication state based on the result of the initialization.
- *
- * @returns An object containing the authentication state and related information.
- */
-export function useAuth(): AuthContextType {
-  const [authenticated, setAuthenticated] = useState<null | boolean>(null);
-  const [email, setEmail] = useState<null | string>(null);
+let keycloak: KeycloakInstance | null = null;
+
+export function useAuth() {
+  const [authenticated, setAuthenticated] = useState<boolean | null>(null);
+  const [email, setEmail] = useState<string | null>(null);
   const [groups, setGroups] = useState<string[]>([]);
   const [privilegedGroups, setPrivilegedGroups] = useState<string[]>([]);
-  const [keycloakToken, setKeycloakToken] = useState<null | string>(null);
+  const [keycloakToken, setKeycloakToken] = useState<string | null>(null);
 
-  /**
-   * Refreshes the Keycloak token periodically.
-   *
-   * @param keycloak - The Keycloak instance.
-   * @param config - The Keycloak configuration.
-   */
-  const refreshToken = (
-    keycloak: any,
-    config: { keycloak: { token_validation_interval: number } },
-  ) => {
-    setInterval(() => {
-      keycloak.updateToken(20)
-        .then((refreshed: boolean) => {
-          if (refreshed) {
-            console.log('Token refreshed, valid for ' +
-              (keycloak.tokenParsed?.exp && keycloak.timeSkew
-                ? Math.round(keycloak.tokenParsed.exp + keycloak.timeSkew - new Date().getTime() / 1000)
-                : 'Unknown')
-              + ' seconds');
-            setKeycloakToken(keycloak.token || null);
-          }
-        }).catch(() => {
-        console.error('Failed to refresh token');
-      });
-    }, config.keycloak.token_validation_interval);
-  };
+  const initializeAuth = async () => {
+    console.log('initializeAuth triggered');
+    try {
+      const config = await fetchConfig();
+      console.log('Fetched config:', config);
 
-  /**
-   * Initializes the Keycloak instance and sets the authentication state.
-   *
-   * @param config - The Keycloak configuration.
-   */
-  useEffect(() => {
-    fetchConfig().then(config => {
-      if (config.keycloak.enabled) {
-        const keycloak = new Keycloak({
+      if (config.keycloak.enabled && !keycloak) {
+        keycloak = new Keycloak({
           url: config.keycloak.url,
           realm: config.keycloak.realm,
           clientId: config.keycloak.client_id,
         });
 
-        keycloak.init({ onLoad: 'login-required' })
-          .then(authenticated => {
-            setAuthenticated(authenticated);
-            if (authenticated) {
-              setEmail(keycloak.tokenParsed?.email || null);
-              setGroups(keycloak.tokenParsed?.groups || []);
-              setPrivilegedGroups(config.keycloak.privileged_groups || []);
-              setKeycloakToken(keycloak.token || null);
-              refreshToken(keycloak, config);
-            }
-          })
-          .catch(() => {
-            setAuthenticated(false);
-          });
-      } else {
+        const authenticated = await keycloak.init({ onLoad: 'login-required' });
+        console.log('Keycloak initialized, authenticated:', authenticated);
+        setAuthenticated(authenticated);
+
+        if (authenticated) {
+          setEmail(keycloak.tokenParsed?.email || null);
+          setGroups(keycloak.tokenParsed?.groups || []);
+          setPrivilegedGroups(config.keycloak.privileged_groups);
+          setKeycloakToken(keycloak.token || null);
+        }
+      } else if (!config.keycloak.enabled) {
         setAuthenticated(true);
       }
-    });
+    } catch (err) {
+      console.error('Initialization failed', err);
+      setAuthenticated(false);
+    }
+  };
+
+  useEffect(() => {
+    initializeAuth();
   }, []);
+
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout | null = null;
+
+    if (authenticated) {
+      intervalId = setInterval(() => {
+        if (keycloak && keycloak.isTokenExpired(20)) {
+          keycloak.updateToken(20)
+            .then(refreshed => {
+              if (refreshed) {
+                console.log('Token refreshed, valid for ' + Math.round((keycloak!.tokenParsed?.exp ?? 0) + (keycloak!.timeSkew ?? 0) - new Date().getTime() / 1000) + ' seconds');
+                setKeycloakToken(keycloak!.token || null);
+              }
+            }).catch((err) => {
+            console.error('Failed to refresh token', err);
+          });
+        }
+      }, 60000); // Check token expiration every 60 seconds
+    }
+
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [authenticated]);
 
   return { authenticated, email, groups, privilegedGroups, keycloakToken };
 }
