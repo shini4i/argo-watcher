@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   Box,
   Button,
+  CircularProgress,
   Container,
   Dialog,
   DialogActions,
@@ -12,27 +13,61 @@ import {
   Divider,
   Grid,
   Paper,
+  Tooltip,
   Typography,
-  CircularProgress,
-  Tooltip
 } from '@mui/material';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 
-import { fetchTask } from '../Services/Data';
+import { fetchConfig, fetchTask } from '../Services/Data';
 import { useErrorContext } from '../ErrorContext';
 import { formatDateTime, ProjectDisplay, StatusReasonDisplay } from './TasksTable';
-import { AuthContext } from '../auth';
-import { fetchConfig } from '../config';
-import { useDeployLock } from '../deployLockHandler';
+import { AuthContext } from '../Services/Auth';
+import { useDeployLock } from '../Services/DeployLockHandler';
+
+interface Task {
+  id: string;
+  created: string;
+  updated: string;
+  app: string;
+  author: string;
+  project: string;
+  status: string;
+  status_reason?: string;
+  images: Array<{ image: string; tag: string }>;
+}
+
+interface ConfigData {
+  argo_cd_url_alias?: string;
+  argo_cd_url?: { Scheme: string; Host: string; Path: string };
+}
+
+interface ConfigType {
+  keycloak: {
+    enabled: boolean;
+    url: string;
+    realm: string;
+    client_id: string;
+    privileged_groups: string[];
+    token_validation_interval: number;
+  };
+  argo_cd_url_alias?: string;
+  argo_cd_url?: { Scheme: string; Host: string; Path: string };
+}
 
 export default function TaskView() {
-  const { id } = useParams();
-  const [task, setTask] = useState(null);
+  const { id } = useParams<{ id: string }>();
+  const [task, setTask] = useState<Task | null>(null);
   const { setError, setSuccess } = useErrorContext();
-  const { authenticated, email, groups, privilegedGroups, keycloakToken } = useContext(AuthContext);
-  const [configData, setConfigData] = useState(null);
+  const authContext = useContext(AuthContext);
+
+  if (!authContext) {
+    throw new Error('AuthContext must be used within an AuthProvider');
+  }
+
+  const { authenticated, email, groups, privilegedGroups, keycloakToken } = authContext;
+  const [configData, setConfigData] = useState<ConfigData | null>(null);
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
 
@@ -52,40 +87,42 @@ export default function TaskView() {
   const deployLock = useDeployLock();
 
   useEffect(() => {
-    fetchConfig().then(config => {
+    fetchConfig().then((config: ConfigType) => {
       setConfigData(config);
+    }).catch(error => {
+      setError('fetchConfig', error.message);
     });
-  }, []);
+  }, [setError]);
 
   const getArgoCDUrl = () => {
     if (configData?.argo_cd_url_alias) {
-      return `${configData.argo_cd_url_alias}/applications/${task.app}`;
+      return `${configData.argo_cd_url_alias}/applications/${task?.app}`;
     } else if (configData?.argo_cd_url) {
-      return `${configData.argo_cd_url.Scheme}://${configData.argo_cd_url.Host}${configData.argo_cd_url.Path}/applications/${task.app}`;
+      return `${configData.argo_cd_url.Scheme}://${configData.argo_cd_url.Host}${configData.argo_cd_url.Path}/applications/${task?.app}`;
     }
     return '';
   };
 
   useEffect(() => {
-    fetchTask(id)
+    fetchTask(id!)
       .then(item => {
         setSuccess('fetchTask', 'Fetched task successfully');
-        setTask(item);
+        setTask(item as Task);
       })
-      .catch(error => {
+      .catch((error: Error) => {
         setError('fetchTasks', error.message);
       });
-  }, [id]);
+  }, [id, setError, setSuccess]);
 
   useEffect(() => {
-    let intervalId;
+    let intervalId: NodeJS.Timeout;
 
     const fetchTaskStatus = async () => {
       console.log('Fetching task status...');
       try {
-        const updatedTask = await fetchTask(id);
-        setTask(updatedTask);
-      } catch (error) {
+        const updatedTask = await fetchTask(id!);
+        setTask(updatedTask as Task);
+      } catch (error: any) {
         setError('fetchTaskStatus', error.message);
       }
     };
@@ -99,14 +136,16 @@ export default function TaskView() {
         clearInterval(intervalId);
       }
     };
-  }, [task]);
+  }, [task, id, setError]);
 
-  const userIsPrivileged = groups && privilegedGroups && groups.some(group => privilegedGroups.includes(group));
+  const userIsPrivileged = groups && privilegedGroups && groups.some((group: string) => privilegedGroups.includes(group));
 
   const rollbackToVersion = async () => {
+    if (!task) return;
+
     const updatedTask = {
       ...task,
-      author: email,
+      author: email!,
     };
 
     try {
@@ -114,23 +153,21 @@ export default function TaskView() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          // We replaced Authorization with Keycloak-Authorization here
-          // to simplify JWT implementation and avoid header name overlap
-          'Keycloak-Authorization': keycloakToken,
+          'Keycloak-Authorization': keycloakToken || '',
         },
         body: JSON.stringify(updatedTask),
       });
 
-      if (response.status === 401) { // HTTP 401 Unauthorized
+      if (response.status === 401) {
         throw new Error('You are not authorized to perform this action!');
-      } else if (response.status === 406) { // HTTP 406 Not Acceptable
+      } else if (response.status === 406) {
         throw new Error('Lockdown is active. Deployments are forbidden!');
-      } else if (response.status !== 202) { // HTTP 202 Accepted
+      } else if (response.status !== 202) {
         throw new Error(`Received unexpected status code: ${response.status}`);
       }
 
       navigate('/');
-    } catch (error) {
+    } catch (error: any) {
       setError('fetchTasks', error.message);
     }
   };
@@ -167,7 +204,7 @@ export default function TaskView() {
                 Created
               </Typography>
               <Typography variant="body1">
-                {formatDateTime(task.created)}
+                {formatDateTime(Number(task.created))}
               </Typography>
             </Grid>
             <Grid item xs={12} sm={6}>
@@ -175,7 +212,7 @@ export default function TaskView() {
                 Updated
               </Typography>
               <Typography variant="body1">
-                {formatDateTime(task.updated)}
+                {formatDateTime(Number(task.updated))}
               </Typography>
             </Grid>
             <Grid item xs={12} sm={6}>

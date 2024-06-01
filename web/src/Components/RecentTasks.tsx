@@ -8,6 +8,7 @@ import {
   InputLabel,
   MenuItem,
   Select,
+  SelectChangeEvent,
   Stack,
   Typography,
 } from '@mui/material';
@@ -17,7 +18,7 @@ import ApplicationsFilter from './ApplicationsFilter';
 import TasksTable, { useTasks } from './TasksTable';
 import { useErrorContext } from '../ErrorContext';
 
-const autoRefreshIntervals = {
+const autoRefreshIntervals: { [key: string]: number } = {
   '5s': 5,
   '10s': 10,
   '30s': 30,
@@ -25,7 +26,7 @@ const autoRefreshIntervals = {
   off: 0,
 };
 
-function RecentTasks() {
+const RecentTasks: React.FC = () => {
   const { setError, setSuccess } = useErrorContext();
   const [searchParams, setSearchParams] = useSearchParams();
   const { tasks, sortField, setSortField, appNames, refreshTasksInTimeframe } = useTasks({
@@ -33,37 +34,33 @@ function RecentTasks() {
     setSuccess,
   });
 
-  const [currentAutoRefresh, setCurrentAutoRefresh] = useState(
-    () => localStorage.getItem('refresh') || autoRefreshIntervals['30s'],
+  const [currentAutoRefresh, setCurrentAutoRefresh] = useState<number>(() =>
+    Number(localStorage.getItem('refresh')) || autoRefreshIntervals['30s']
   );
 
-  const autoRefreshIntervalRef = useRef(null);
-  const [currentApplication, setCurrentApplication] = useState(
-    searchParams.get('app') ?? null,
+  const autoRefreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [currentApplication, setCurrentApplication] = useState<string | null>(
+    searchParams.get('app')
   );
   const currentTimeframe = 9 * 60 * 60;
-  const [currentPage, setCurrentPage] = useState(
-    searchParams.get('page') ? Number(searchParams.get('page')) : 1,
+  const [currentPage, setCurrentPage] = useState<number>(
+    searchParams.get('page') ? Number(searchParams.get('page')) : 1
   );
 
-  const updateSearchParameters = (application, page) => {
-    const params = {};
+  const updateSearchParameters = (application: string | null, page: number) => {
+    const params = new URLSearchParams();
     if (application) {
-      params.app = application;
+      params.set('app', application);
     }
     if (page !== 1) {
-      params.page = page;
+      params.set('page', page.toString());
     }
     setSearchParams(params);
   };
 
-  // Initial load
   useEffect(() => {
-    // If the application has been changed or the timeframe has been changed, a new tasks fetching action is executed
     refreshTasksInTimeframe(currentTimeframe, currentApplication);
-    // Current page is reset to the first one
     const initialPage = searchParams.get('page') ? Number(searchParams.get('page')) : 1;
-    // Save search parameters - application name and auto-refresh interval - to Local Storage for preservation across sessions
     updateSearchParameters(currentApplication, initialPage);
   }, []);
 
@@ -71,25 +68,19 @@ function RecentTasks() {
     localStorage.setItem('refresh', currentAutoRefresh.toString());
   }, [currentAutoRefresh]);
 
-  // Reset the interval on any state change (because we use the state variables for data retrieval)
   useEffect(() => {
-    // Reset the current interval
     if (autoRefreshIntervalRef.current !== null) {
       clearInterval(autoRefreshIntervalRef.current);
     }
 
     if (!currentAutoRefresh) {
-      // Value is 0 for "off"
       return;
     }
 
-    // Set interval
     autoRefreshIntervalRef.current = setInterval(() => {
-      // Again fetch the tasks in current timeframe
       refreshTasksInTimeframe(currentTimeframe, currentApplication);
     }, currentAutoRefresh * 1000);
 
-    // Clear interval on exit
     return () => {
       if (autoRefreshIntervalRef.current !== null) {
         clearInterval(autoRefreshIntervalRef.current);
@@ -97,10 +88,9 @@ function RecentTasks() {
     };
   }, [currentAutoRefresh, currentApplication, currentTimeframe]);
 
-  const handleAutoRefreshChange = event => {
-    // Change the value
-    setCurrentAutoRefresh(event.target.value);
-    // Save to URL
+  const handleAutoRefreshChange = (event: SelectChangeEvent<number>) => {
+    const value = Number(event.target.value);
+    setCurrentAutoRefresh(value);
     updateSearchParameters(currentApplication, 1);
   };
 
@@ -121,7 +111,7 @@ function RecentTasks() {
             display: 'flex',
             gap: '10px',
             m: 0,
-            alignItems: 'center', // Center text vertically
+            alignItems: 'center',
           }}
         >
           <Box>Recent tasks</Box>
@@ -134,18 +124,14 @@ function RecentTasks() {
               onChange={value => {
                 setCurrentApplication(value);
                 refreshTasksInTimeframe(currentTimeframe, value);
-                // Reset page
                 setCurrentPage(1);
-                // Update URL
                 updateSearchParameters(value, 1);
               }}
-              setError={setError}
-              setSuccess={setSuccess}
               appNames={appNames}
             />
           </Box>
           <Box sx={{ minWidth: 120 }}>
-            <FormControl fullWidth size={'small'}>
+            <FormControl fullWidth size="small">
               <InputLabel>Auto-Refresh</InputLabel>
               <Select
                 value={currentAutoRefresh}
@@ -153,7 +139,7 @@ function RecentTasks() {
                 onChange={handleAutoRefreshChange}
               >
                 {Object.keys(autoRefreshIntervals).map(autoRefreshInterval => {
-                  let value = autoRefreshIntervals[autoRefreshInterval];
+                  const value = autoRefreshIntervals[autoRefreshInterval];
                   return (
                     <MenuItem key={autoRefreshInterval} value={value}>
                       {autoRefreshInterval}
@@ -166,17 +152,12 @@ function RecentTasks() {
           <Box>
             <IconButton
               edge="start"
-              color={'primary'}
-              title={'Force table load'}
+              color="primary"
+              title="Force table load"
               onClick={() => {
-                // Update tasks
                 refreshTasksInTimeframe(currentTimeframe, currentApplication);
-                // Reset page
                 setCurrentPage(1);
-                updateSearchParameters(
-                  currentApplication,
-                  1,
-                );
+                updateSearchParameters(currentApplication, 1);
               }}
             >
               <RefreshIcon />
@@ -184,7 +165,6 @@ function RecentTasks() {
           </Box>
         </Stack>
       </Stack>
-      {/* Style the table with Material-UI Paper component */}
       <Box sx={{ boxShadow: 2, borderRadius: 2, p: 2 }}>
         <TasksTable
           tasks={tasks}
@@ -194,15 +174,12 @@ function RecentTasks() {
           page={currentPage}
           onPageChange={page => {
             setCurrentPage(page);
-            updateSearchParameters(
-              currentApplication,
-              page,
-            );
+            updateSearchParameters(currentApplication, page);
           }}
         />
       </Box>
     </Container>
   );
-}
+};
 
 export default RecentTasks;

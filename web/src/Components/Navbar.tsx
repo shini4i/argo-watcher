@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import PropTypes from 'prop-types';
 import { Link as RouterLink } from 'react-router-dom';
 import {
   AppBar,
@@ -20,7 +19,22 @@ import { fetchVersion } from '../Services/Data';
 import { useErrorContext } from '../ErrorContext';
 import Sidebar from './Sidebar';
 
-function NavigationButton({ to, children, external = false }) {
+interface NavigationButtonProps {
+  to: string;
+  children: React.ReactNode;
+  external?: boolean;
+}
+
+/**
+ * A navigation button component that is used for internal and external links.
+ * @component
+ * @param {Object} props - The props object for the NavigationButton component.
+ * @param {string} props.to - The URL link for the button.
+ * @param {boolean} [props.external=false] - Whether the link is an external link.
+ * @param {string|ReactNode} props.children - The content of the button.
+ * @returns {ReactNode} The rendered NavigationButton component.
+ */
+const NavigationButton: React.FC<NavigationButtonProps> = ({ to, children, external = false }) => {
   if (external) {
     return (
       <Link
@@ -45,15 +59,15 @@ function NavigationButton({ to, children, external = false }) {
       {children}
     </Link>
   );
-}
-
-NavigationButton.propTypes = {
-  to: PropTypes.oneOfType([PropTypes.string, PropTypes.object]).isRequired,
-  children: PropTypes.node.isRequired,
-  external: PropTypes.bool,
 };
 
-function Navbar() {
+/**
+ * Navbar component for the application.
+ *
+ * @component
+ * @returns {JSX.Element} The rendered Navbar component.
+ */
+const Navbar: React.FC = (): JSX.Element => {
   const [version, setVersion] = useState('0.0.0');
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const { setSuccess, setError } = useErrorContext();
@@ -67,9 +81,13 @@ function Navbar() {
         setVersion(version);
       })
       .catch(error => {
-        setError('fetchVersion', error.message);
+        if (error instanceof Error) {
+          setError('fetchVersion', error.message);
+        } else {
+          setError('fetchVersion', 'An unknown error occurred');
+        }
       });
-  }, []);
+  }, [setSuccess, setError]);
 
   return (
     <Box>
@@ -132,11 +150,11 @@ function Navbar() {
               external
             >
               <Stack spacing={1} direction={'row'} alignItems={'center'}>
-                <GitHubIcon sx={{ fontSize: '1.7em' }} />
+                <GitHubIcon style={{ fontSize: '1.7em' }} />
                 <Stack>
-                  <Typography fontSize={'14px'}>GitHub</Typography>
-                  <Typography fontSize={'11px'}>
-                    <LocalOfferIcon fontSize={'6px'} /> {version}
+                  <Typography style={{ fontSize: '14px' }}>GitHub</Typography>
+                  <Typography style={{ fontSize: '11px' }}>
+                    <LocalOfferIcon style={{ fontSize: '10px' }} /> {version}
                   </Typography>
                 </Stack>
               </Stack>
@@ -147,6 +165,6 @@ function Navbar() {
       <Sidebar open={isSidebarOpen} onClose={() => setSidebarOpen(false)} />
     </Box>
   );
-}
+};
 
 export default Navbar;

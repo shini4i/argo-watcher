@@ -1,4 +1,4 @@
-export const relativeTime = oldTimestamp => {
+export const relativeTime = (oldTimestamp: number): string => {
   const timestamp = Date.now();
   const difference = Math.round(timestamp / 1000 - oldTimestamp / 1000);
   if (oldTimestamp === 0) {
@@ -7,8 +7,8 @@ export const relativeTime = oldTimestamp => {
   return relativeHumanDuration(difference) + ' ago';
 };
 
-export const relativeHumanDuration = seconds => {
-  function numberEnding(number) {
+export const relativeHumanDuration = (seconds: number): string => {
+  function numberEnding(number: number): string {
     return number > 1 ? 's' : '';
   }
 
@@ -37,6 +37,6 @@ export const relativeHumanDuration = seconds => {
   return `${Math.floor(seconds / 31449600)} years`;
 };
 
-export const relativeTimestamp = timeframe => {
+export const relativeTimestamp = (timeframe: number): number => {
   return Math.floor(Date.now() / 1000) - timeframe;
 };
