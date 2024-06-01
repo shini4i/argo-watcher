@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useState } from 'react';
 import {
   Box,
   Button,
@@ -16,7 +16,7 @@ import {
 } from '@mui/material';
 import { fetchConfig } from '../Services/Data';
 import { releaseDeployLock, setDeployLock, useDeployLock } from '../Services/DeployLockHandler';
-import { useAuth } from '../Services/Auth';
+import { AuthContext } from '../Services/Auth';
 
 interface ConfigData {
   [key: string]: any;
@@ -27,21 +27,17 @@ interface SidebarProps {
   onClose: () => void;
 }
 
-/**
- * Sidebar component that displays configuration data and provides functionality to toggle deploy lock.
- *
- * @component
- * @param {Object} props - The props for the Sidebar component.
- * @param {boolean} props.open - Indicates whether the sidebar is open or closed.
- * @param {Function} props.onClose - The callback function to handle closing the sidebar.
- * @returns {JSX.Element} The rendered Sidebar component.
- */
 const Sidebar: React.FC<SidebarProps> = ({ open, onClose }) => {
   const [configData, setConfigData] = useState<ConfigData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const { authenticated, keycloakToken } = useAuth();
+  const authContext = useContext(AuthContext);
+  if (!authContext) {
+    throw new Error('AuthContext must be used within an AuthProvider');
+  }
+
+  const { authenticated, keycloakToken } = authContext;
   const deployLock = useDeployLock();
 
   const toggleDeployLock = useCallback(async () => {
