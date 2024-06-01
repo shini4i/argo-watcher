@@ -1,5 +1,5 @@
 import { createContext, useEffect, useState } from 'react';
-import Keycloak, { KeycloakInstance } from 'keycloak-js';
+import Keycloak from 'keycloak-js';
 
 import { fetchConfig } from './Data';
 
@@ -13,7 +13,7 @@ interface AuthContextType {
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-let keycloak: KeycloakInstance | null = null;
+let keycloak: Keycloak | null = null;
 
 export function useAuth() {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
@@ -26,7 +26,6 @@ export function useAuth() {
     console.log('initializeAuth triggered');
     try {
       const config = await fetchConfig();
-      console.log('Fetched config:', config);
 
       if (config.keycloak.enabled && !keycloak) {
         keycloak = new Keycloak({
@@ -36,7 +35,6 @@ export function useAuth() {
         });
 
         const authenticated = await keycloak.init({ onLoad: 'login-required' });
-        console.log('Keycloak initialized, authenticated:', authenticated);
         setAuthenticated(authenticated);
 
         if (authenticated) {
