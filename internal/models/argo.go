@@ -25,6 +25,7 @@ const (
 	managedGitBranch        = "argo-watcher/write-back-branch"
 	managedGitPath          = "argo-watcher/write-back-path"
 	managedGitFile          = "argo-watcher/write-back-filename"
+	fireAndForgetAnnotation = "argo-watcher/fire-and-forget"
 )
 
 type ApplicationOperationResource struct {
@@ -284,6 +285,14 @@ func (app *Application) UpdateGitImageTag(task *Task) error {
 	}
 
 	return nil
+}
+
+// IsFireAndForgetModeActive checks if 'fire-and-forget' mode is enabled in Application's annotations.
+func (app *Application) IsFireAndForgetModeActive() bool {
+	if app.Metadata.Annotations == nil {
+		return false
+	}
+	return app.Metadata.Annotations[fireAndForgetAnnotation] == "true"
 }
 
 // extractManagedImages extracts the managed images from the application's annotations.

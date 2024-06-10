@@ -78,6 +78,16 @@ sandbox/charts/demo/.argocd-source-demo.yaml
 
 > This is not an ideal solution, but so far it is the only way to reliably determine the correct override file to update.
 
+### Fire and forget mode
+
+In rare cases, we need to force update an application without waiting for image to be detected by ArgoCD as a running. For example for Applications with `CronJob` only.
+
+The following annotation will force argo-watcher to just update the image, and consider application `deployed`:
+
+```bash
+argo-watcher/fire-and-forget: "true"
+```
+
 ### Additional information
 
 - The `app` alias is intended to correspond with an alias specified in the `argo-watcher/ALIAS.helm.image-tag` annotation.
