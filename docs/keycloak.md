@@ -15,7 +15,8 @@ Argo-Watcher will compare it with the pre-configured priveleged groups to unders
 
 The following environment variables are required to enable Keycloak integration:
 
-- `KEYCLOAK_URL` - the url of Keycloak instance, it will enable Keycloak integration
+- `KEYCLOAK_ENABLED` - if Keycloak integration should be enabled
+- `KEYCLOAK_URL` - the url of Keycloak instance
 - `KEYCLOAK_REALM` - the name of the realm
 - `KEYCLOAK_CLIENT_ID` - the name of the client
 - `KEYCLOAK_TOKEN_VALIDATION_INTERVAL` - the interval in nanoseconds to validate the token (default: 10000)
