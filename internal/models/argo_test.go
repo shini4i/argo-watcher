@@ -386,3 +386,49 @@ func TestExtractManagedImages(t *testing.T) {
 		})
 	}
 }
+
+func TestIsFireAndForgetModeActive(t *testing.T) {
+	tt := []struct {
+		name string
+		app  Application
+		want bool
+	}{
+		{
+			name: "FireAndForget mode active",
+			app: Application{
+				Metadata: ApplicationMetadata{
+					Annotations: map[string]string{
+						fireAndForgetAnnotation: "true",
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "FireAndForget mode inactive",
+			app: Application{
+				Metadata: ApplicationMetadata{
+					Annotations: map[string]string{
+						fireAndForgetAnnotation: "false",
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "Annotations are nil",
+			app: Application{
+				Metadata: ApplicationMetadata{
+					Annotations: nil,
+				},
+			},
+			want: false,
+		},
+	}
+
+	for _, tc := range tt {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, tc.app.IsFireAndForgetModeActive())
+		})
+	}
+}

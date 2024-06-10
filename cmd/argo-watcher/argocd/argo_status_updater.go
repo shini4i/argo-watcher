@@ -95,6 +95,9 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 
 	// get application status
 	status := application.GetRolloutStatus(task.ListImages(), updater.registryProxyUrl, updater.acceptSuspended)
+	if application.IsFireAndForgetModeActive() {
+		status = models.ArgoRolloutAppSuccess
+	}
 	if status == models.ArgoRolloutAppSuccess {
 		log.Info().Str("id", task.Id).Msg("App is running on the expected version.")
 		// deployment success
@@ -212,6 +215,11 @@ func (updater *ArgoStatusUpdater) waitRollout(task models.Task) (*models.Applica
 	log.Debug().Str("id", task.Id).Msg("Waiting for rollout")
 	_ = retry.Do(func() error {
 		application, err = updater.argo.api.GetApplication(task.App)
+
+		if application.IsFireAndForgetModeActive() {
+			log.Debug().Str("id", task.Id).Msg("Fire and forge mode is active, skipping checks...")
+			return nil
+		}
 
 		if err != nil {
 			// check if ArgoCD didn't have the app
