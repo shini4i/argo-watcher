@@ -15,7 +15,7 @@
     "axios": "^1.7.4",
     "date-fns": "^3.6.0",
     "http-proxy-middleware": "^2.0.7",
-    "keycloak-js": "^24.0.4",
+    "keycloak-js": "^26.0.5",
     "prettier": "^3.2.5",
     "prop-types": "^15.8.1",
     "react": "^18.3.1",
