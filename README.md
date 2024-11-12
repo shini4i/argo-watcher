@@ -1,7 +1,7 @@
 <div align="center">
 
 # Argo Watcher
-Enhancing Deployment Visibility with Argo CD Image Updater & Direct GitOps Repository Commit Support
+The project bridges traditional pipelines and GitOps, improving deployment visibility with Argo CD Image Updater and a built-in GitOps repo updater
 
 ![GitHub Actions](https://img.shields.io/github/actions/workflow/status/shini4i/argo-watcher/run-tests-and-sonar-scan.yml?branch=main)
 ![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/shini4i/argo-watcher)
@@ -13,36 +13,32 @@ Enhancing Deployment Visibility with Argo CD Image Updater & Direct GitOps Repos
 
 <img src="https://raw.githubusercontent.com/shini4i/assets/main/src/argo-watcher/demo.png" alt="Showcase" height="441" width="680">
 
-**Figure 1:** Argo Watcher Web UI
 </div>
 
-## Why use Argo Watcher
+## Why Use Argo Watcher
 
-Argo Watcher not only addresses the critical challenge of visibility during deployments with Argo CD Image Updater but also introduces experimental support for direct commits to the GitOps repository.
+Argo Watcher not only addresses the critical challenge of visibility during deployments with Argo CD Image Updater but also introduces optional built-in image updater.
 
 It actively monitors the ArgoCD API for application changes and synchronizes the status of your image-related modifications, streamlining and potentially accelerating your deployment processes.
 
 ## Prerequisites
 
-Argo Watcher is a standalone application, for it is designed to work with:
-
-1. ArgoCD (obviously)
-2. Argo CD Image Updater (can be omitted if you're using direct commits feature)
+1. ArgoCD
+2. Argo CD Image Updater (we encourage you to try out built-in GitOps repo updater instead)
 3. CI/CD solution of your choice
 
 ## Possible workflow
 
-This is just one the possible workflows that can be implemented with Argo Watcher.
-1) **Build and Deploy**: Initiate by building a new Docker image of your application and pushing it to the designated image repository.
-2) **Monitoring Setup**: Once the new image is pushed, execute a job that runs Argo Watcher Client. This step is crucial for triggering and overseeing the deployment process.
-3) **Image Update and GitOps Integration**: Upon detection of the new image, Argo CD Image Updater either automatically commits the updated image tag to the GitOps repository, or this update is performed by argo-watcher itself. This action initiates the deployment.
-4) **Deployment Monitoring**: Throughout the deployment process, Argo Watcher diligently monitors and reports the current status of the application, ensuring transparency and real-time tracking.
-5) **Pipeline Status Reporting**: The client concludes the process by returning an exit code that reflects the status of the deployment task. This code is instrumental in determining the success or failure of the pipeline, thus marking the completion of the deployment workflow.
+A possible workflow with Argo Watcher:
+
+1. **Build and Deploy**: Build a new Docker image of your application and push it to your image repository.
+2. **Monitoring Setup**: Run an Argo Watcher Client job after the new image is pushed. This job oversees the deployment process.
+3. **Image Update in GitOps repo**: Argo CD Image Updater or Argo Watcher commits the updated image tag to the GitOps repository, triggering deployment.
+4. **Deployment Monitoring**: Argo Watcher monitors and reports the deployment status in real-time.
+5. **Pipeline Status Reporting**: The client returns an exit code reflecting the deployment task status, marking the workflow's completion.
 
 <div align="center">
 <img src="https://raw.githubusercontent.com/shini4i/assets/main/src/argo-watcher/simplified_diagram.png" alt="Showcase" height="540" width="540">
-
-**Figure 2:** This is a simplified diagram of the workflow described above.
 </div>
 
 > [!TIP]

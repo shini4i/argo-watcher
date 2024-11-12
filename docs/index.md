@@ -11,7 +11,7 @@ hide:
 
 ## General information
 
-Argo Watcher not only addresses the critical challenge of visibility during deployments with Argo CD Image Updater but also introduces experimental support for direct commits to the GitOps repository.
+Argo Watcher not only addresses the critical challenge of visibility during deployments with Argo CD Image Updater but also introduces optional built-in image updater.
 
 It actively monitors the ArgoCD API for application changes and synchronizes the status of your image-related modifications, streamlining and potentially accelerating your deployment processes.
 
