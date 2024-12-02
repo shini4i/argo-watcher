@@ -209,7 +209,13 @@ func (updater *ArgoStatusUpdater) waitRollout(task models.Task) (*models.Applica
 
 	if task.Timeout > 0 {
 		log.Debug().Str("id", task.Id).Msgf("Overriding task timeout to %ds", task.Timeout)
-		retryOptions = append(retryOptions, retry.Attempts(uint((task.Timeout/15)+1)))
+		calculatedAttempts := task.Timeout/15 + 1
+
+		if calculatedAttempts < 0 {
+			log.Error().Msg("Calculated attempts resulted in a negative number, defaulting to 15 attempts.")
+			calculatedAttempts = 15
+		}
+		retryOptions = append(retryOptions, retry.Attempts(uint(calculatedAttempts)))
 	}
 
 	log.Debug().Str("id", task.Id).Msg("Waiting for rollout")
