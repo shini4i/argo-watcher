@@ -384,7 +384,11 @@ func (env *Env) validateToken(c *gin.Context, allowedAuthStrategy string) (bool,
 // acceptance fails, an error is logged. The goroutine serves to monitor
 // the connection's activity and removes it from the slice if it's inactive.
 func (env *Env) handleWebSocketConnection(c *gin.Context) {
-	conn, err := websocket.Accept(c.Writer, c.Request, nil)
+	options := &websocket.AcceptOptions{
+		InsecureSkipVerify: env.config.DevEnvironment, // It will disable websocket host validation if set to true
+	}
+
+	conn, err := websocket.Accept(c.Writer, c.Request, options)
 	if err != nil {
 		log.Error().Msgf("couldn't accept websocket connection, got the following error: %s", err)
 	}

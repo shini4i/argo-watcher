@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import React, {createContext, useContext, useEffect, useState, ReactNode} from 'react';
 
 /**
  * Fetches the deploy lock status from the server.
@@ -6,8 +6,8 @@ import React, { createContext, useContext, useEffect, useState, ReactNode } from
  * @returns A promise that resolves to a boolean value representing the deploy lock status.
  */
 export async function fetchDeployLock(): Promise<boolean> {
-  const response = await fetch('/api/v1/deploy-lock');
-  return await response.json();
+    const response = await fetch('/api/v1/deploy-lock');
+    return await response.json();
 }
 
 /**
@@ -18,22 +18,22 @@ export async function fetchDeployLock(): Promise<boolean> {
  * @throws {Error} - If the server returns a status code other than 200.
  */
 export async function releaseDeployLock(keycloakToken: string | null): Promise<void> {
-  let headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
+    let headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+    };
 
-  if (keycloakToken !== null) {
-    headers['Keycloak-Authorization'] = keycloakToken;
-  }
+    if (keycloakToken !== null) {
+        headers['Keycloak-Authorization'] = keycloakToken;
+    }
 
-  const response = await fetch('/api/v1/deploy-lock', {
-    method: 'DELETE',
-    headers: headers,
-  });
+    const response = await fetch('/api/v1/deploy-lock', {
+        method: 'DELETE',
+        headers: headers,
+    });
 
-  if (response.status !== 200) {
-    throw new Error(`Error: ${response.status}`);
-  }
+    if (response.status !== 200) {
+        throw new Error(`Error: ${response.status}`);
+    }
 }
 
 /**
@@ -44,28 +44,28 @@ export async function releaseDeployLock(keycloakToken: string | null): Promise<v
  * @throws {Error} - If the server returns a status code other than 200.
  */
 export async function setDeployLock(keycloakToken: string | null = null): Promise<void> {
-  let headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
+    let headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+    };
 
-  if (keycloakToken !== null) {
-    headers['Keycloak-Authorization'] = keycloakToken;
-  }
+    if (keycloakToken !== null) {
+        headers['Keycloak-Authorization'] = keycloakToken;
+    }
 
-  const response = await fetch('/api/v1/deploy-lock', {
-    method: 'POST',
-    headers: headers,
-  });
+    const response = await fetch('/api/v1/deploy-lock', {
+        method: 'POST',
+        headers: headers,
+    });
 
-  if (response.status !== 200) {
-    throw new Error(`Error: ${response.status}`);
-  }
+    if (response.status !== 200) {
+        throw new Error(`Error: ${response.status}`);
+    }
 }
 
 export const DeployLockContext = createContext<boolean>(false);
 
 interface DeployLockProviderProps {
-  children: ReactNode;
+    children: ReactNode;
 }
 
 /**
@@ -75,57 +75,53 @@ interface DeployLockProviderProps {
  * @param {ReactNode} children - The children components that will receive the deploy lock state.
  * @returns {JSX.Element} - The DeployLockProvider component.
  */
-export function DeployLockProvider({ children }: DeployLockProviderProps): JSX.Element {
-  const [deployLock, setDeployLockState] = useState<boolean>(false);
-  const [socket, setSocket] = useState<WebSocket | null>(null);
+export function DeployLockProvider({children}: DeployLockProviderProps): JSX.Element {
+    const [deployLock, setDeployLockState] = useState<boolean>(false);
+    const [socket, setSocket] = useState<WebSocket | null>(null);
+    /**
+     * Establishes a WebSocket connection to the server.
+     */
+    useEffect(() => {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const host = window.location.host;
+        const isDevelopment = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost')
+            && window.location.port === '3000'; // Checking if we are running in development mode
+        const wsUrl = isDevelopment
+            ? `${protocol}//127.0.0.1:8080/ws`  // Development WebSocket URL
+            : `${protocol}//${host}/ws`;        // Production WebSocket URL
+        const newSocket = new WebSocket(wsUrl);
+        setSocket(newSocket);
 
-  /**
-   * Establishes a WebSocket connection to the server.
-   *
-   * @param {string} wsUrl - The URL of the WebSocket server.
-   * @param {WebSocket} newSocket - The newly created WebSocket instance.
-   * @returns {void} - No return value.
-   */
-  useEffect(() => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host;
-    const wsUrl = `${protocol}//${host}/ws`;
-    const newSocket = new WebSocket(wsUrl);
-    setSocket(newSocket);
+        return () => {
+            newSocket.close();
+        };
+    }, []);
 
-    return () => {
-      newSocket.close();
-    };
-  }, []);
-
-  /**
-   * Listens for deploy lock status changes from the server.
-   *
-   * @param {WebSocket} socket - The WebSocket instance that listens for messages.
-   * @returns {void} - No return value.
-   */
-  useEffect(() => {
-    if (socket) {
-      socket.onopen = async () => {
-        const lock = await fetchDeployLock();
-        setDeployLockState(lock);
-      };
-      socket.onmessage = (event) => {
-        const message = event.data;
-        if (message === 'locked') {
-          setDeployLockState(true);
-        } else if (message === 'unlocked') {
-          setDeployLockState(false);
+    /**
+     * Listens for deploy lock status changes from the server.
+     */
+    useEffect(() => {
+        if (socket) {
+            socket.onopen = async () => {
+                const lock = await fetchDeployLock();
+                setDeployLockState(lock);
+            };
+            socket.onmessage = (event) => {
+                const message = event.data;
+                if (message === 'locked') {
+                    setDeployLockState(true);
+                } else if (message === 'unlocked') {
+                    setDeployLockState(false);
+                }
+            };
         }
-      };
-    }
-  }, [socket]);
+    }, [socket]);
 
-  return (
-    <DeployLockContext.Provider value={deployLock}>
-      {children}
-    </DeployLockContext.Provider>
-  );
+    return (
+        <DeployLockContext.Provider value={deployLock}>
+            {children}
+        </DeployLockContext.Provider>
+    );
 }
 
 /**
@@ -134,9 +130,9 @@ export function DeployLockProvider({ children }: DeployLockProviderProps): JSX.E
  * @returns The deploy lock status as a boolean value.
  */
 export function useDeployLock(): boolean {
-  const context = useContext(DeployLockContext);
-  if (context === undefined) {
-    throw new Error('useDeployLock must be used within a DeployLockProvider');
-  }
-  return context;
+    const context = useContext(DeployLockContext);
+    if (context === undefined) {
+        throw new Error('useDeployLock must be used within a DeployLockProvider');
+    }
+    return context;
 }
