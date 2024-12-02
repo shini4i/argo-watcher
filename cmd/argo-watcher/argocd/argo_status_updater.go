@@ -215,7 +215,7 @@ func (updater *ArgoStatusUpdater) waitRollout(task models.Task) (*models.Applica
 			log.Error().Msg("Calculated attempts resulted in a negative number, defaulting to 15 attempts.")
 			calculatedAttempts = 15
 		}
-		retryOptions = append(retryOptions, retry.Attempts(uint(calculatedAttempts)))
+		retryOptions = append(retryOptions, retry.Attempts(uint(calculatedAttempts))) // #nosec G115
 	}
 
 	log.Debug().Str("id", task.Id).Msg("Waiting for rollout")
