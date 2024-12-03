@@ -6,7 +6,7 @@ toolchain go1.23.3
 
 require (
 	github.com/avast/retry-go/v4 v4.6.0
-	github.com/caarlos0/env/v10 v10.0.0
+	github.com/caarlos0/env/v11 v11.2.2
 	github.com/gin-gonic/contrib v0.0.0-20240508051311-c1c6bf0061b0
 	github.com/gin-gonic/gin v1.10.0
 	github.com/go-git/go-billy/v5 v5.6.0

@@ -3,7 +3,7 @@ package config
 import (
 	"net/url"
 
-	envConfig "github.com/caarlos0/env/v10"
+	envConfig "github.com/caarlos0/env/v11"
 	"github.com/go-playground/validator/v10"
 )
 
@@ -65,13 +65,10 @@ type ServerConfig struct {
 // If the StateType is empty or not one of the allowed types ("postgres" or "in-memory"), it returns an error.
 // Otherwise, it returns the parsed server configuration and any error encountered during the parsing process.
 func NewServerConfig() (*ServerConfig, error) {
-	// parse config
-	var (
-		err    error
-		config ServerConfig
-	)
+	var err error
+	var config ServerConfig
 
-	if err := envConfig.Parse(&config); err != nil {
+	if config, err = envConfig.ParseAs[ServerConfig](); err != nil {
 		return nil, err
 	}
 

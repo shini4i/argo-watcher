@@ -1,7 +1,7 @@
 package updater
 
 import (
-	envConfig "github.com/caarlos0/env/v10"
+	envConfig "github.com/caarlos0/env/v11"
 )
 
 type GitConfig struct {
@@ -13,9 +13,10 @@ type GitConfig struct {
 }
 
 func NewGitConfig() (*GitConfig, error) {
+	var err error
 	var config GitConfig
 
-	if err := envConfig.Parse(&config); err != nil {
+	if config, err = envConfig.ParseAs[GitConfig](); err != nil {
 		return nil, err
 	}
 

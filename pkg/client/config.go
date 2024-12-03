@@ -3,7 +3,7 @@ package client
 import (
 	"time"
 
-	envConfig "github.com/caarlos0/env/v10"
+	envConfig "github.com/caarlos0/env/v11"
 )
 
 type Config struct {
@@ -25,9 +25,10 @@ type Config struct {
 // NewClientConfig parses the environment variables to fill a Config struct
 // and returns the new instance or an error.
 func NewClientConfig() (*Config, error) {
+	var err error
 	var config Config
 
-	if err := envConfig.Parse(&config); err != nil {
+	if config, err = envConfig.ParseAs[Config](); err != nil {
 		return nil, err
 	}
 
