@@ -15,6 +15,7 @@ import (
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
 
+	"github.com/coder/websocket"
 	"github.com/gin-gonic/contrib/static"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -24,7 +25,6 @@ import (
 	"github.com/shini4i/argo-watcher/internal/models"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
-	"nhooyr.io/websocket"
 )
 
 var version = "local"

@@ -11,7 +11,7 @@ import (
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/argocd"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
 
-	"nhooyr.io/websocket"
+	"github.com/coder/websocket"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 
