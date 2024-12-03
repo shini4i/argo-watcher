@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	envConfig "github.com/caarlos0/env/v10"
+	envConfig "github.com/caarlos0/env/v11"
 
 	"github.com/stretchr/testify/assert"
 
@@ -58,9 +58,10 @@ var (
 )
 
 func TestPostgresState_Add(t *testing.T) {
-	databaseConfig := config.DatabaseConfig{}
+	var err error
+	var databaseConfig config.DatabaseConfig
 
-	err := envConfig.Parse(&databaseConfig)
+	databaseConfig, err = envConfig.ParseAs[config.DatabaseConfig]()
 	assert.NoError(t, err)
 
 	testConfig := &config.ServerConfig{
