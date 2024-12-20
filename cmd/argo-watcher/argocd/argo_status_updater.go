@@ -147,17 +147,9 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 		return nil, err
 	}
 
-	// This mutex is used only to avoid concurrent updates of the same application.
-	mutex := updater.mutex.Get(task.App)
-
-	// Locking the mutex here to unlock within the next if block without duplicating the code,
-	// avoiding defer to unlock before the function's end. This approach may be revised later
-	mutex.Lock()
-
 	if app.IsManagedByWatcher() && task.Validated {
-		err = updater.updateGitRepo(app, task, mutex)
+		err = updater.updateGitRepo(app, task)
 	} else {
-		mutex.Unlock()
 		log.Debug().Str("id", task.Id).Msg("Skipping git repo update: Application does not have the necessary annotations or token is missing.")
 	}
 
@@ -172,8 +164,14 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 	return application, err
 }
 
-func (updater *ArgoStatusUpdater) updateGitRepo(app *models.Application, task models.Task, mutex *sync.Mutex) error {
+func (updater *ArgoStatusUpdater) updateGitRepo(app *models.Application, task models.Task) error {
 	log.Debug().Str("id", task.Id).Msg("Application managed by watcher. Initiating git repo update.")
+
+	// This mutex is used only to avoid concurrent updates of the same application.
+	mutex := updater.mutex.Get(task.App)
+	mutex.Lock()
+
+	defer mutex.Unlock()
 
 	// simplest way to deal with potential git conflicts
 	// need to be replaced with a more sophisticated solution after PoC
@@ -192,7 +190,6 @@ func (updater *ArgoStatusUpdater) updateGitRepo(app *models.Application, task mo
 		retry.LastErrorOnly(true),
 	)
 
-	mutex.Unlock()
 	if err != nil {
 		log.Error().Str("id", task.Id).Msgf("Failed to update git repo. Error: %s", err.Error())
 		return err
