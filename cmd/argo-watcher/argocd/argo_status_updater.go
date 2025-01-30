@@ -19,8 +19,11 @@ import (
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
-const failedToUpdateTaskStatusTemplate string = "Failed to change task status: %s"
+const (
+	failedToUpdateTaskStatusTemplate string = "Failed to change task status: %s"
+)
 
+// MutexMap provides thread-safe access to application-specific mutexes
 type MutexMap struct {
 	m sync.Map
 }
@@ -37,20 +40,26 @@ type ArgoStatusUpdater struct {
 	retryOptions     []retry.Option
 	mutex            MutexMap
 	acceptSuspended  bool
+	rolloutMonitor   RolloutMonitor
+	gitOps           GitOperations
+	notifier         StatusNotifier
 	webhookService   *notifications.WebhookService
 }
 
 func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, retryDelay time.Duration, registryProxyUrl string, acceptSuspended bool, webhookConfig *config.WebhookConfig) {
 	updater.argo = argo
 	updater.registryProxyUrl = registryProxyUrl
+	updater.acceptSuspended = acceptSuspended
+	updater.webhookService = notifications.NewWebhookService(webhookConfig)
 	updater.retryOptions = []retry.Option{
 		retry.DelayType(retry.FixedDelay),
 		retry.Attempts(retryAttempts),
 		retry.Delay(retryDelay),
 		retry.LastErrorOnly(true),
 	}
-	updater.acceptSuspended = acceptSuspended
-	updater.webhookService = notifications.NewWebhookService(webhookConfig)
+	updater.rolloutMonitor = NewDefaultRolloutMonitor(registryProxyUrl, acceptSuspended)
+	updater.gitOps = NewDefaultGitOperations()
+	updater.notifier = NewDefaultStatusNotifier(webhookConfig)
 }
 
 func (updater *ArgoStatusUpdater) collectInitialAppStatus(task *models.Task) error {
@@ -82,55 +91,7 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 	// wait for application to get into deployed status or timeout
 	application, err := updater.waitForApplicationDeployment(task)
 
-	// handle application failure
-	if err != nil {
-		// deployment failed
-		updater.argo.metrics.AddFailedDeployment(task.App)
-		// update task status regarding failure
-		updater.handleArgoAPIFailure(task, err)
-		// decrement in progress task counter
-		updater.argo.metrics.RemoveInProgressTask()
-		return
-	}
-
-	// get application status
-	status := application.GetRolloutStatus(task.ListImages(), updater.registryProxyUrl, updater.acceptSuspended)
-	if application.IsFireAndForgetModeActive() {
-		status = models.ArgoRolloutAppSuccess
-	}
-	if status == models.ArgoRolloutAppSuccess {
-		log.Info().Str("id", task.Id).Msg("App is running on the expected version.")
-		// deployment success
-		updater.argo.metrics.ResetFailedDeployment(task.App)
-		// update task status
-		if err := updater.argo.State.SetTaskStatus(task.Id, models.StatusDeployedMessage, ""); err != nil {
-			log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, err)
-		}
-		// setting task status to handle further notifications
-		task.Status = models.StatusDeployedMessage
-	} else {
-		log.Info().Str("id", task.Id).Msg("App deployment failed.")
-		// deployment failed
-		updater.argo.metrics.AddFailedDeployment(task.App)
-		// generate failure reason
-		reason := fmt.Sprintf(
-			"Application deployment failed. Rollout status \"%s\"\n\n%s",
-			status,
-			application.GetRolloutMessage(status, task.ListImages()),
-		)
-		// update task status
-		if err := updater.argo.State.SetTaskStatus(task.Id, models.StatusFailedMessage, reason); err != nil {
-			log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, err)
-		}
-		// setting task status to handle further notifications
-		task.Status = models.StatusFailedMessage
-	}
-
-	// decrement in progress task counter
-	updater.argo.metrics.RemoveInProgressTask()
-
-	// send webhook event about the deployment result
-	sendWebhookEvent(task, updater.webhookService)
+	updater.handleDeploymentResult(application, err, task)
 }
 
 func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task) (*models.Application, error) {
@@ -148,9 +109,9 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 	}
 
 	if app.IsManagedByWatcher() && task.Validated {
-		err = updater.updateGitRepo(app, task)
+		err = updater.gitOps.UpdateImageTags(app, &task)
 	} else {
-		log.Debug().Str("id", task.Id).Msg("Skipping git repo update: Application does not have the necessary annotations or token is missing.")
+		log.Debug().Str("id", task.Id).Msg("Skipping git repository update: Application does not have the necessary annotations or token is missing.")
 	}
 
 	if err != nil {
@@ -164,45 +125,13 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 	return application, err
 }
 
-func (updater *ArgoStatusUpdater) updateGitRepo(app *models.Application, task models.Task) error {
-	log.Debug().Str("id", task.Id).Msg("Application managed by watcher. Initiating git repo update.")
-
-	// This mutex is used only to avoid concurrent updates of the same application.
-	mutex := updater.mutex.Get(task.App)
-	mutex.Lock()
-
-	defer mutex.Unlock()
-
-	// simplest way to deal with potential git conflicts
-	// need to be replaced with a more sophisticated solution after PoC
-	err := retry.Do(
-		func() error {
-			if err := app.UpdateGitImageTag(&task); err != nil {
-				return err
-			}
-			return nil
-		},
-		retry.DelayType(retry.BackOffDelay),
-		retry.Attempts(5),
-		retry.OnRetry(func(n uint, err error) {
-			log.Warn().Str("id", task.Id).Msgf("Failed to update git repo. Error: %s, retrying...", err.Error())
-		}),
-		retry.LastErrorOnly(true),
-	)
-
-	if err != nil {
-		log.Error().Str("id", task.Id).Msgf("Failed to update git repo. Error: %s", err.Error())
-		return err
-	}
-
-	return nil
-}
-
 func (updater *ArgoStatusUpdater) waitRollout(task models.Task) (*models.Application, error) {
 	var application *models.Application
 	var err error
+	var retryOpts []retry.Option
 
-	retryOptions := updater.retryOptions
+	// Copy base retry options
+	retryOpts = append(retryOpts, updater.retryOptions...)
 
 	if task.Timeout > 0 {
 		log.Debug().Str("id", task.Id).Msgf("Overriding task timeout to %ds", task.Timeout)
@@ -212,46 +141,23 @@ func (updater *ArgoStatusUpdater) waitRollout(task models.Task) (*models.Applica
 			log.Error().Msg("Calculated attempts resulted in a negative number, defaulting to 15 attempts.")
 			calculatedAttempts = 15
 		}
-		retryOptions = append(retryOptions, retry.Attempts(uint(calculatedAttempts))) // #nosec G115
+		retryOpts = append(retryOpts, retry.Attempts(uint(calculatedAttempts)))
 	}
 
 	log.Debug().Str("id", task.Id).Msg("Waiting for rollout")
-	_ = retry.Do(func() error {
+	err = retry.Do(func() error {
 		application, err = updater.argo.api.GetApplication(task.App)
+		if err != nil {
+			return handleApplicationError(err, task)
+		}
 
 		if application.IsFireAndForgetModeActive() {
 			log.Debug().Str("id", task.Id).Msg("Fire and forge mode is active, skipping checks...")
 			return nil
 		}
 
-		if err != nil {
-			// check if ArgoCD didn't have the app
-			if task.IsAppNotFoundError(err) {
-				// no need to retry in such cases
-				return retry.Unrecoverable(err)
-			}
-			// print application api failure here
-			log.Debug().Str("id", task.Id).Msgf("Failed fetching application status. Error: %s", err.Error())
-			return err
-		}
-
-		status := application.GetRolloutStatus(task.ListImages(), updater.registryProxyUrl, updater.acceptSuspended)
-
-		switch status {
-		case models.ArgoRolloutAppDegraded:
-			log.Debug().Str("id", task.Id).Msgf("Application is degraded")
-			hash := helpers.GenerateHash(strings.Join(application.Status.Summary.Images, ","))
-			if !bytes.Equal(task.SavedAppStatus.ImagesHash, hash) {
-				return retry.Unrecoverable(errors.New("application has degraded"))
-			}
-		case models.ArgoRolloutAppSuccess:
-			log.Debug().Str("id", task.Id).Msgf("Application rollout finished")
-			return nil
-		default:
-			log.Debug().Str("id", task.Id).Msgf("Application status is not final. Status received \"%s\"", status)
-		}
-		return errors.New("force retry")
-	}, retryOptions...)
+		return checkApplicationStatus(application, task, updater.registryProxyUrl, updater.acceptSuspended)
+	}, retryOpts...)
 
 	// return application and latest error
 	return application, err
@@ -284,4 +190,77 @@ func sendWebhookEvent(task models.Task, webhookService *notifications.WebhookSer
 			log.Error().Str("id", task.Id).Msgf("Failed to send webhook. Error: %s", err.Error())
 		}
 	}
+}
+
+func handleApplicationError(err error, task models.Task) error {
+	if task.IsAppNotFoundError(err) {
+		return retry.Unrecoverable(err)
+	}
+	log.Debug().Str("id", task.Id).Msgf("Failed fetching application status. Error: %s", err.Error())
+	return err
+}
+
+func checkApplicationStatus(app *models.Application, task models.Task, registryProxyUrl string, acceptSuspended bool) error {
+	status := app.GetRolloutStatus(task.ListImages(), registryProxyUrl, acceptSuspended)
+	
+	switch status {
+	case models.ArgoRolloutAppDegraded:
+		log.Debug().Str("id", task.Id).Msg("Application is degraded")
+		hash := helpers.GenerateHash(strings.Join(app.Status.Summary.Images, ","))
+		if !bytes.Equal(task.SavedAppStatus.ImagesHash, hash) {
+			return retry.Unrecoverable(errors.New("application has degraded"))
+		}
+	case models.ArgoRolloutAppSuccess:
+		log.Debug().Str("id", task.Id).Msg("Application rollout finished")
+		return nil
+	default:
+		log.Debug().Str("id", task.Id).Msgf("Application status is not final. Status received \"%s\"", status)
+	}
+	return errors.New("force retry")
+}
+
+func (updater *ArgoStatusUpdater) handleDeploymentResult(application *models.Application, err error, task models.Task) {
+	if err != nil {
+		updater.argo.metrics.AddFailedDeployment(task.App)
+		updater.handleArgoAPIFailure(task, err)
+		updater.argo.metrics.RemoveInProgressTask()
+		return
+	}
+
+	status := application.GetRolloutStatus(task.ListImages(), updater.registryProxyUrl, updater.acceptSuspended)
+	if application.IsFireAndForgetModeActive() {
+		status = models.ArgoRolloutAppSuccess
+	}
+
+	if status == models.ArgoRolloutAppSuccess {
+		updater.handleSuccessfulDeployment(task)
+	} else {
+		updater.handleFailedDeployment(application, task, status)
+	}
+
+	updater.argo.metrics.RemoveInProgressTask()
+	sendWebhookEvent(task, updater.webhookService)
+}
+
+func (updater *ArgoStatusUpdater) handleSuccessfulDeployment(task models.Task) {
+	log.Info().Str("id", task.Id).Msg("App is running on the expected version.")
+	updater.argo.metrics.ResetFailedDeployment(task.App)
+	
+	if err := updater.argo.State.SetTaskStatus(task.Id, models.StatusDeployedMessage, ""); err != nil {
+		log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, err)
+	}
+	task.Status = models.StatusDeployedMessage
+}
+
+func (updater *ArgoStatusUpdater) handleFailedDeployment(application *models.Application, task models.Task, status string) {
+	log.Info().Str("id", task.Id).Msg("App deployment failed.")
+	updater.argo.metrics.AddFailedDeployment(task.App)
+	
+	reason := fmt.Sprintf("Application deployment failed. Rollout status \"%s\"\n\n%s",
+		status, application.GetRolloutMessage(status, task.ListImages()))
+	
+	if err := updater.argo.State.SetTaskStatus(task.Id, models.StatusFailedMessage, reason); err != nil {
+		log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, err)
+	}
+	task.Status = models.StatusFailedMessage
 }

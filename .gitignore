@@ -2,6 +2,9 @@
 .idea
 .run
 
+# AI assistants
+**/.codebuddy
+
 # database for development
 db/data
 
