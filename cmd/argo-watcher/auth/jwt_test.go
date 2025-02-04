@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -12,46 +13,50 @@ func TestJWTAuthService(t *testing.T) {
 	secretKey := "test_secret_key"
 	service := &JWTAuthService{secretKey: []byte(secretKey)}
 
+	// Valid JWT
 	t.Run("valid JWT", func(t *testing.T) {
-		claims := &jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-		}
-
+		claims := jwt.MapClaims{"exp": float64(time.Now().Add(time.Hour).Unix())}
 		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-
-		tokenStr, err := token.SignedString([]byte(secretKey))
-		assert.NoError(t, err)
+		tokenStr, _ := token.SignedString([]byte(secretKey))
 
 		isValid, err := service.Validate(tokenStr)
 		assert.NoError(t, err)
 		assert.True(t, isValid)
 	})
 
+	// Empty token
+	t.Run("empty token", func(t *testing.T) {
+		isValid, err := service.Validate("")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "empty token")
+		assert.False(t, isValid)
+	})
+
+	// Malformed token
+	t.Run("malformed token", func(t *testing.T) {
+		isValid, err := service.Validate("invalid.token.format")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "token is malformed")
+		assert.False(t, isValid)
+	})
+
+	// Missing exp claim
 	t.Run("missing exp claim", func(t *testing.T) {
-		claims := &jwt.RegisteredClaims{
-			Issuer: "test_issuer",
-		}
+		claims := jwt.MapClaims{}
 		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-
-		tokenStr, err := token.SignedString([]byte(secretKey))
-		assert.NoError(t, err)
+		tokenStr, _ := token.SignedString([]byte(secretKey))
 
 		isValid, err := service.Validate(tokenStr)
 		assert.Error(t, err)
-		assert.False(t, isValid)
 		assert.Contains(t, err.Error(), "missing exp claim")
+		assert.False(t, isValid)
 	})
 
+	// Expired JWT
 	t.Run("expired JWT", func(t *testing.T) {
-		claims := &jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(-time.Hour)),
-			Issuer:    "test_issuer",
-		}
+		claims := jwt.MapClaims{"exp": float64(time.Now().Add(-time.Hour).Unix())}
 		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-
-		tokenStr, err := token.SignedString([]byte(secretKey))
-		assert.NoError(t, err)
+		tokenStr, _ := token.SignedString([]byte(secretKey))
 
 		isValid, err := service.Validate(tokenStr)
 		assert.Error(t, err)
@@ -59,41 +64,43 @@ func TestJWTAuthService(t *testing.T) {
 		assert.False(t, isValid)
 	})
 
-	t.Run("Invalid JWT", func(t *testing.T) {
-		tokenStr := "invalid_token"
-
-		isValid, err := service.Validate(tokenStr)
-		assert.Error(t, err)
-		assert.False(t, isValid)
-	})
-
-	t.Run("just expired JWT", func(t *testing.T) {
-		claims := &jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(-time.Second)),
-			Issuer:    "test_issuer",
-		}
-		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-
-		tokenStr, err := token.SignedString([]byte(secretKey))
-		assert.NoError(t, err)
-
-		isValid, err := service.Validate(tokenStr)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "token is expired")
-		assert.False(t, isValid)
-	})
-
+	// Invalid signing method
 	t.Run("invalid signing method", func(t *testing.T) {
-		claims := &jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
-		}
+		claims := jwt.MapClaims{"exp": float64(time.Now().Add(time.Hour).Unix())}
 		token := jwt.NewWithClaims(jwt.SigningMethodNone, claims)
-		tokenStr, err := token.SignedString(jwt.UnsafeAllowNoneSignatureType)
-		assert.NoError(t, err)
+		tokenStr, _ := token.SignedString(jwt.UnsafeAllowNoneSignatureType)
 
 		isValid, err := service.Validate(tokenStr)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "unexpected signing method")
+		assert.False(t, isValid)
+	})
+
+	// Token with invalid signature
+	t.Run("token with invalid signature", func(t *testing.T) {
+		claims := jwt.MapClaims{"exp": float64(time.Now().Add(time.Hour).Unix())}
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		tokenStr, _ := token.SignedString([]byte("wrong_secret"))
+
+		isValid, err := service.Validate(tokenStr)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "signature is invalid")
+		assert.False(t, isValid)
+	})
+
+	// Token with tampered claims
+	t.Run("token with tampered claims", func(t *testing.T) {
+		claims := jwt.MapClaims{"exp": float64(time.Now().Add(time.Hour).Unix())}
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		tokenStr, _ := token.SignedString([]byte(secretKey))
+
+		parts := strings.Split(tokenStr, ".")
+		parts[1] = parts[1][:len(parts[1])-1] + "X"
+		tamperedToken := strings.Join(parts, ".")
+
+		isValid, err := service.Validate(tamperedToken)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "token is malformed")
 		assert.False(t, isValid)
 	})
 }
