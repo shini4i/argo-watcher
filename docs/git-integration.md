@@ -19,9 +19,8 @@ We assume you already have a working instance of Argo-Watcher and want to extend
 Before moving to the actual configuration, you need to:
 
 1. Generate secret that would be used to validate new tasks (pick one of the options below)
-   1. Generate a token that would be used to validate requests from GitLab/Github. It can be any string. (it should be added to the secret used by argo-watcher under the `ARGO_WATCHER_DEPLOY_TOKEN` key)
-   2. Generate a secret that will be used for generating and validating JWT tokens. (it should be added to the secret used by argo-watcher under the `JWT_SECRET` key) - the recommended approach
-   3. If you picked JWT approach, use https://jwt.io/ to generate a token using the secret from `JWT_SECRET`. (you can use any other approach for generating this token)
+      - Generate a token that would be used to validate requests from GitLab/Github. It can be any string. (it should be added to the secret used by argo-watcher under the `ARGO_WATCHER_DEPLOY_TOKEN` key)
+      - Generate a secret that will be used for generating and validating JWT tokens. (it should be added to the secret used by argo-watcher under the `JWT_SECRET` key) - the recommended approach
 2. Create a secret with ssh key that will be used by `argo-watcher` to make commits to the GitOps repository. (by default, we expect it to be available under the `sshPrivateKey`, but can be configured via helm chart values)
 3. Bump chart version to > `0.4.3` to support the necessary configuration
 
@@ -34,6 +33,35 @@ argo:
     commitAuthor: "Argo Watcher"
     commitEmail: "argo-watcher@example.com"
 ```
+
+### JWT Settings
+
+If you chose the JWT approach, you can use [jwt-cli](https://github.com/mike-engel/jwt-cli) to generate tokens, using the secret stored in `JWT_SECRET`.
+
+#### Example JWT Payload
+```json
+{
+  "sub": "argo-watcher-client",
+  "cluster": "prod",
+  "allowed_apps": ["app1"],
+  "iat": 1738692070,
+  "exp": 1770228106
+}
+```
+
+- sub: `"argo-watcher-client"` → Can be **any value**.
+- cluster: `"prod"` → Can be **any value**.
+- allowed_apps: `["app1"]` → Replace with `"*"` to allow deployment to **any Application**.
+- iat: `date +%s` → Should be the **current Unix timestamp**.
+- exp: `date -v+1y +%s` → Set to a **reasonable expiration time** (e.g., **1 year**).
+
+#### Generating JWT Token
+```bash
+jwt encode --secret="PREVIOUSLY_GENERATED_SECRET" '{"sub":"argo-watcher-client","cluster":"prod","allowed_apps":["app1"],"iat":1738692070,"exp":1770228106}'
+```
+
+!!! note
+    Application filtration is not implemented yet, but is expected in version **v1.0.0**.
 
 ## Application side configuration
 
@@ -76,7 +104,8 @@ Assuming that our application name is `Demo`, argo-watcher will create/update th
 sandbox/charts/demo/.argocd-source-demo.yaml
 ```
 
-> This is not an ideal solution, but so far it is the only way to reliably determine the correct override file to update.
+!!! note
+    This is not an ideal solution, but so far it is the only way to reliably determine the correct override file to update.
 
 ### Fire and forget mode
 
@@ -125,7 +154,8 @@ BEARER_TOKEN=Bearer previously_generated_jwt
 
 That's it! Starting from this point, Argo-Watcher will be able to commit changes to your GitOps repository.
 
-> Keep in mind, that `argo-watcher` will use the provided tag value as is, without any validation. So, it is up to user to make sure that the tag is valid and can be used for deployment.
+!!! note
+    Keep in mind, that `argo-watcher` will use the provided tag value as is, without any validation. So, it is up to user to make sure that the tag is valid and can be used for deployment.
 
 ## Lockdown mode
 
@@ -168,7 +198,8 @@ and to remove it make DELETE request:
 curl -X DELETE https://argo-watcher.example.com/api/v1/deploy-lock
 ```
 
-> Keep in mind that it will work only if keycloak integration is not enabled.
+!!! note
+    Keep in mind that it will work only if keycloak integration is not enabled.
 
 #### Frontend
 
@@ -176,4 +207,5 @@ You can set Lockdown mode manually via the frontend. To do so, click on `Argo-Wa
 
 ![Image title](https://raw.githubusercontent.com/shini4i/assets/main/src/argo-watcher/deployment-lock.png)
 
-> If you have keycloak integration enabled, you need to be a member of one of pre-defined privileged groups to be able to set deployment lock.
+!!! note
+    If you have keycloak integration enabled, you need to be a member of one of pre-defined privileged groups to be able to set deployment lock.

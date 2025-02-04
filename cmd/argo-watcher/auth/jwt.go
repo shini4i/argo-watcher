@@ -1,39 +1,46 @@
 package auth
 
 import (
+	"errors"
 	"fmt"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// JWTAuthService is a struct that manages JWT authentication using a secret key.
+// JWTAuthService manages JSON Web Token authentication.
 type JWTAuthService struct {
-	// secretKey is the signing key for JWT.
-	secretKey string
+	secretKey []byte
 }
 
-// Init initializes the JWT authentication service with a provided secret key.
-func (j *JWTAuthService) Init(secretKey string) {
-	j.secretKey = secretKey
-}
-
-// Validate verifies the validity of a JWT token string.
-// It uses the stored secretKey for verification.
-// The function returns a boolean indicating the validity of the token, and any errors encountered during the process.
+// Validate verifies a JSON Web Token, checking signature and claims.
 func (j *JWTAuthService) Validate(tokenStr string) (bool, error) {
+	if tokenStr == "" {
+		return false, fmt.Errorf("empty token")
+	}
+
 	token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
-		return []byte(j.secretKey), nil
+		return j.secretKey, nil
 	})
 
 	if err != nil {
 		return false, err
 	}
 
-	if _, ok := token.Claims.(jwt.Claims); !ok && !token.Valid {
-		return false, fmt.Errorf("token is not valid")
+	// we are not checking validity of token error as it is already validated above
+	claims, _ := token.Claims.(jwt.MapClaims)
+	if _, exists := claims["exp"]; !exists {
+		return false, errors.New("missing exp claim")
+	}
+
+	// Validate "iat" (issued at) claim
+	if iatVal, ok := claims["iat"].(float64); ok {
+		if time.Now().Unix() < int64(iatVal) {
+			return false, errors.New("token used before issued")
+		}
 	}
 
 	return true, nil
