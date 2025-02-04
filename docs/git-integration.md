@@ -36,24 +36,32 @@ argo:
 
 ### JWT Settings
 
-If you picked JWT approach, you can use [jwt-cli](https://github.com/mike-engel/jwt-cli), providing the secret from `JWT_SECRET`.
+If you chose the JWT approach, you can use [jwt-cli](https://github.com/mike-engel/jwt-cli) to generate tokens, using the secret stored in `JWT_SECRET`.
 
-```JSON
+#### Example JWT Payload
+```json
 {
-  "sub": "argo-watcher-client", # can be any value
-  "cluster": "prod", # can be any value
-  "allowed_projects": ["app1"], # can be replaced with "*" to allow deployment to any project
-  "iat": 1738692070, # To keep it simple, it should be the output of `date +%s`
-  "exp": 1770228106 # Set the reasonable expiration, the output of `date -v+1y +%s`
+  "sub": "argo-watcher-client",
+  "cluster": "prod",
+  "allowed_apps": ["app1"],
+  "iat": 1738692070,
+  "exp": 1770228106
 }
 ```
 
-```bash
-jwt encode --secret="PREVIOUSLY_GENERATED_SECRET" '{"sub":"argo-watcher-client","cluster":"prod","allowed_project":["app1"],"iat":1738692070,"exp":1770228106}'
-````
+- sub: `"argo-watcher-client"` → Can be **any value**.
+- cluster: `"prod"` → Can be **any value**.
+- allowed_apps: `["app1"]` → Replace with `"*"` to allow deployment to **any Application**.
+- iat: `date +%s` → Should be the **current Unix timestamp**.
+- exp: `date -v+1y +%s` → Set to a **reasonable expiration time** (e.g., **1 year**).
 
-> [!NOTE]
-> allowed_projects filtration is not implemented yet, but expected by version v1.0.0
+#### Generating JWT Token
+```bash
+jwt encode --secret="PREVIOUSLY_GENERATED_SECRET" '{"sub":"argo-watcher-client","cluster":"prod","allowed_apps":["app1"],"iat":1738692070,"exp":1770228106}'
+```
+
+!!! note
+    Application filtration is not implemented yet, but is expected in version **v1.0.0**.
 
 ## Application side configuration
 
@@ -96,7 +104,8 @@ Assuming that our application name is `Demo`, argo-watcher will create/update th
 sandbox/charts/demo/.argocd-source-demo.yaml
 ```
 
-> This is not an ideal solution, but so far it is the only way to reliably determine the correct override file to update.
+!!! note
+    This is not an ideal solution, but so far it is the only way to reliably determine the correct override file to update.
 
 ### Fire and forget mode
 
@@ -145,7 +154,8 @@ BEARER_TOKEN=Bearer previously_generated_jwt
 
 That's it! Starting from this point, Argo-Watcher will be able to commit changes to your GitOps repository.
 
-> Keep in mind, that `argo-watcher` will use the provided tag value as is, without any validation. So, it is up to user to make sure that the tag is valid and can be used for deployment.
+!!! note
+    Keep in mind, that `argo-watcher` will use the provided tag value as is, without any validation. So, it is up to user to make sure that the tag is valid and can be used for deployment.
 
 ## Lockdown mode
 
@@ -188,7 +198,8 @@ and to remove it make DELETE request:
 curl -X DELETE https://argo-watcher.example.com/api/v1/deploy-lock
 ```
 
-> Keep in mind that it will work only if keycloak integration is not enabled.
+!!! note
+    Keep in mind that it will work only if keycloak integration is not enabled.
 
 #### Frontend
 
@@ -196,4 +207,5 @@ You can set Lockdown mode manually via the frontend. To do so, click on `Argo-Wa
 
 ![Image title](https://raw.githubusercontent.com/shini4i/assets/main/src/argo-watcher/deployment-lock.png)
 
-> If you have keycloak integration enabled, you need to be a member of one of pre-defined privileged groups to be able to set deployment lock.
+!!! note
+    If you have keycloak integration enabled, you need to be a member of one of pre-defined privileged groups to be able to set deployment lock.
