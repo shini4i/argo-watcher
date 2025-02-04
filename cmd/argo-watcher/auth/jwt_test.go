@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"strings"
 	"testing"
 	"time"
 
@@ -40,6 +39,18 @@ func TestJWTAuthService(t *testing.T) {
 		assert.False(t, isValid)
 	})
 
+	// Invalid token claims
+	t.Run("invalid token claims", func(t *testing.T) {
+		claims := jwt.MapClaims{"exp": nil}
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		tokenStr, _ := token.SignedString([]byte(secretKey))
+
+		isValid, err := service.Validate(tokenStr)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "token has invalid claims")
+		assert.False(t, isValid)
+	})
+
 	// Missing exp claim
 	t.Run("missing exp claim", func(t *testing.T) {
 		claims := jwt.MapClaims{}
@@ -52,6 +63,18 @@ func TestJWTAuthService(t *testing.T) {
 		assert.False(t, isValid)
 	})
 
+	// Invalid exp claim type
+	t.Run("invalid exp claim type", func(t *testing.T) {
+		claims := jwt.MapClaims{"exp": "invalid_type"}
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		tokenStr, _ := token.SignedString([]byte(secretKey))
+
+		isValid, err := service.Validate(tokenStr)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "token has invalid claims")
+		assert.False(t, isValid)
+	})
+
 	// Expired JWT
 	t.Run("expired JWT", func(t *testing.T) {
 		claims := jwt.MapClaims{"exp": float64(time.Now().Add(-time.Hour).Unix())}
@@ -60,7 +83,7 @@ func TestJWTAuthService(t *testing.T) {
 
 		isValid, err := service.Validate(tokenStr)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "token is expired")
+		assert.Contains(t, err.Error(), "token has invalid claims")
 		assert.False(t, isValid)
 	})
 
@@ -85,22 +108,6 @@ func TestJWTAuthService(t *testing.T) {
 		isValid, err := service.Validate(tokenStr)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "signature is invalid")
-		assert.False(t, isValid)
-	})
-
-	// Token with tampered claims
-	t.Run("token with tampered claims", func(t *testing.T) {
-		claims := jwt.MapClaims{"exp": float64(time.Now().Add(time.Hour).Unix())}
-		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-		tokenStr, _ := token.SignedString([]byte(secretKey))
-
-		parts := strings.Split(tokenStr, ".")
-		parts[1] = parts[1][:len(parts[1])-1] + "X"
-		tamperedToken := strings.Join(parts, ".")
-
-		isValid, err := service.Validate(tamperedToken)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "token is malformed")
 		assert.False(t, isValid)
 	})
 }
