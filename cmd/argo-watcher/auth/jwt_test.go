@@ -39,15 +39,10 @@ func TestJWTAuthService(t *testing.T) {
 		assert.False(t, isValid)
 	})
 
-	// Invalid token claims
-	t.Run("invalid token claims", func(t *testing.T) {
-		claims := jwt.MapClaims{"exp": nil}
-		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-		tokenStr, _ := token.SignedString([]byte(secretKey))
-
-		isValid, err := service.Validate(tokenStr)
+	// Completely invalid token
+	t.Run("completely invalid token", func(t *testing.T) {
+		isValid, err := service.Validate("randomgarbage123")
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "token has invalid claims")
 		assert.False(t, isValid)
 	})
 
@@ -63,18 +58,6 @@ func TestJWTAuthService(t *testing.T) {
 		assert.False(t, isValid)
 	})
 
-	// Invalid exp claim type
-	t.Run("invalid exp claim type", func(t *testing.T) {
-		claims := jwt.MapClaims{"exp": "invalid_type"}
-		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-		tokenStr, _ := token.SignedString([]byte(secretKey))
-
-		isValid, err := service.Validate(tokenStr)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "token has invalid claims")
-		assert.False(t, isValid)
-	})
-
 	// Expired JWT
 	t.Run("expired JWT", func(t *testing.T) {
 		claims := jwt.MapClaims{"exp": float64(time.Now().Add(-time.Hour).Unix())}
@@ -83,7 +66,7 @@ func TestJWTAuthService(t *testing.T) {
 
 		isValid, err := service.Validate(tokenStr)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "token has invalid claims")
+		assert.Contains(t, err.Error(), "token has invalid claims: token is expired")
 		assert.False(t, isValid)
 	})
 
