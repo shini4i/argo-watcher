@@ -19,8 +19,8 @@ We assume you already have a working instance of Argo-Watcher and want to extend
 Before moving to the actual configuration, you need to:
 
 1. Generate secret that would be used to validate new tasks (pick one of the options below)
-   1. Generate a token that would be used to validate requests from GitLab/Github. It can be any string. (it should be added to the secret used by argo-watcher under the `ARGO_WATCHER_DEPLOY_TOKEN` key)
-   2. Generate a secret that will be used for generating and validating JWT tokens. (it should be added to the secret used by argo-watcher under the `JWT_SECRET` key) - the recommended approach
+      - Generate a token that would be used to validate requests from GitLab/Github. It can be any string. (it should be added to the secret used by argo-watcher under the `ARGO_WATCHER_DEPLOY_TOKEN` key)
+      - Generate a secret that will be used for generating and validating JWT tokens. (it should be added to the secret used by argo-watcher under the `JWT_SECRET` key) - the recommended approach
 2. Create a secret with ssh key that will be used by `argo-watcher` to make commits to the GitOps repository. (by default, we expect it to be available under the `sshPrivateKey`, but can be configured via helm chart values)
 3. Bump chart version to > `0.4.3` to support the necessary configuration
 
@@ -42,7 +42,7 @@ If you picked JWT approach, you can use [jwt-cli](https://github.com/mike-engel/
 {
   "sub": "argo-watcher-client", # can be any value
   "cluster": "prod", # can be any value
-  "allowed_project": ["app1"], # can be replaced with "*" to allow deployment to any project
+  "allowed_projects": ["app1"], # can be replaced with "*" to allow deployment to any project
   "iat": 1738692070, # To keep it simple, it should be the output of `date +%s`
   "exp": 1770228106 # Set the reasonable expiration, the output of `date -v+1y +%s`
 }
@@ -51,6 +51,9 @@ If you picked JWT approach, you can use [jwt-cli](https://github.com/mike-engel/
 ```bash
 jwt encode --secret="PREVIOUSLY_GENERATED_SECRET" '{"sub":"argo-watcher-client","cluster":"prod","allowed_project":["app1"],"iat":1738692070,"exp":1770228106}'
 ````
+
+> [!NOTE]
+> allowed_projects filtration is not implemented yet, but expected by version v1.0.0
 
 ## Application side configuration
 
