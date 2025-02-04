@@ -30,11 +30,8 @@ func (j *JWTAuthService) Validate(tokenStr string) (bool, error) {
 		return false, err
 	}
 
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
-		return false, errors.New("invalid token claims")
-	}
-
+	// we are not checking validity of token error as it is already validated above
+	claims, _ := token.Claims.(jwt.MapClaims)
 	if _, exists := claims["exp"]; !exists {
 		return false, errors.New("missing exp claim")
 	}
