@@ -28,5 +28,5 @@ func TestNewKeycloakAuthService(t *testing.T) {
 func TestNewJWTAuthService(t *testing.T) {
 	secret := "testSecret"
 	jwtAuthService := NewJWTAuthService(secret)
-	assert.Equal(t, jwtAuthService.secretKey, secret)
+	assert.Equal(t, jwtAuthService.secretKey, []byte(secret))
 }
