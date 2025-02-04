@@ -10,8 +10,7 @@ import (
 
 func TestJWTAuthService(t *testing.T) {
 	secretKey := "test_secret_key"
-	service := &JWTAuthService{}
-	service.Init(secretKey)
+	service := &JWTAuthService{secretKey: []byte(secretKey)}
 
 	t.Run("valid JWT", func(t *testing.T) {
 		claims := &jwt.RegisteredClaims{
