@@ -93,4 +93,35 @@ func TestJWTAuthService(t *testing.T) {
 		assert.Contains(t, err.Error(), "signature is invalid")
 		assert.False(t, isValid)
 	})
+
+	// Token used before issued (iat in future)
+	t.Run("token used before issued", func(t *testing.T) {
+		claims := jwt.MapClaims{
+			"exp": float64(time.Now().Add(time.Hour).Unix()),
+			"iat": float64(time.Now().Add(time.Hour).Unix()),
+		}
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		tokenStr, _ := token.SignedString([]byte(secretKey))
+
+		isValid, err := service.Validate(tokenStr)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "token used before issued")
+		assert.False(t, isValid)
+	})
+
+	// Token used before allowed time (nbf in future)
+	t.Run("token used before allowed time", func(t *testing.T) {
+		claims := jwt.MapClaims{
+			"exp": float64(time.Now().Add(time.Hour).Unix()),
+			"iat": float64(time.Now().Unix()),
+			"nbf": float64(time.Now().Add(time.Hour).Unix()),
+		}
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		tokenStr, _ := token.SignedString([]byte(secretKey))
+
+		isValid, err := service.Validate(tokenStr)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "token is not valid yet")
+		assert.False(t, isValid)
+	})
 }

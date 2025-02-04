@@ -1,7 +1,10 @@
 package auth
 
 import (
+	"errors"
 	"fmt"
+	"time"
+
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -27,9 +30,20 @@ func (j *JWTAuthService) Validate(tokenStr string) (bool, error) {
 		return false, err
 	}
 
-	claims, _ := token.Claims.(jwt.MapClaims)
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return false, errors.New("invalid token claims")
+	}
+
 	if _, exists := claims["exp"]; !exists {
-		return false, fmt.Errorf("missing exp claim")
+		return false, errors.New("missing exp claim")
+	}
+
+	// Validate "iat" (issued at) claim
+	if iatVal, ok := claims["iat"].(float64); ok {
+		if time.Now().Unix() < int64(iatVal) {
+			return false, errors.New("token used before issued")
+		}
 	}
 
 	return true, nil
