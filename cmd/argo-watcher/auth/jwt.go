@@ -13,11 +13,6 @@ type JWTAuthService struct {
 	secretKey []byte
 }
 
-// Init initializes the JWTAuthService with a provided secret key.
-func (j *JWTAuthService) Init(secretKey string) {
-	j.secretKey = []byte(secretKey) // Convert to byte slice for security
-}
-
 // Validate verifies a JWT token, checking signature and claims.
 func (j *JWTAuthService) Validate(tokenStr string) (bool, error) {
 	token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {

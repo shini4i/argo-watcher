@@ -32,6 +32,6 @@ func NewDeployTokenAuthService(token string) *DeployTokenAuthService {
 // It takes a secret key string and returns a pointer to a JWTAuthService.
 func NewJWTAuthService(secret string) *JWTAuthService {
 	return &JWTAuthService{
-		secretKey: secret,
+		secretKey: []byte(secret),
 	}
 }
