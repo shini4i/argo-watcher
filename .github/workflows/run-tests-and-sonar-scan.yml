@@ -69,6 +69,7 @@ jobs:
           DB_USER: postgres
           DB_NAME: postgres
           DB_PASSWORD: postgres
+          DB_PORT: 5432
           STATE_TYPE: in-memory
           ARGO_URL: http://localhost:8081
         run: make test
