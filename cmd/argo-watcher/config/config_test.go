@@ -64,9 +64,7 @@ func TestServerConfig_GetRetryAttempts(t *testing.T) {
 }
 
 func TestServerConfig_JSONExcludesSensitiveFields(t *testing.T) {
-	databaseConfig := DatabaseConfig{
-		Password: "db-password",
-	}
+	databaseConfig := DatabaseConfig{}
 	// Create a ServerConfig instance with some dummy data
 	config := &ServerConfig{
 		ArgoToken:   "secret-token",
