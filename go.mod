@@ -1,7 +1,7 @@
 module github.com/shini4i/argo-watcher
 
 go 1.23
-toolchain go1.23.3
+toolchain go1.24.1
 
 require (
 	github.com/avast/retry-go/v4 v4.6.0
@@ -12,7 +12,7 @@ require (
 	github.com/go-git/go-billy/v5 v5.6.0
 	github.com/go-git/go-git/v5 v5.13.0
 	github.com/go-playground/validator/v10 v10.23.0
-	github.com/golang-jwt/jwt/v5 v5.2.1
+	github.com/golang-jwt/jwt/v5 v5.2.2
 	github.com/google/uuid v1.6.0
 	github.com/lib/pq v1.10.9
 	github.com/prometheus/client_golang v1.20.5
