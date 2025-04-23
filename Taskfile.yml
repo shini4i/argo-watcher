@@ -48,17 +48,32 @@ tasks:
 
   test:
     desc: Run tests
-    deps: [mocks]
-    vars:
-      ARGO_TIMEOUT: 1
+    deps: [start-test-services]
+    env:
+      DB_HOST: localhost
+      DB_USER: watcher
+      DB_NAME: watcher
+      DB_PASSWORD: watcher
+      DB_PORT: 5432
+      STATE_TYPE: in-memory
     cmds:
       - echo "===> Running tests"
       - go test -v ./... -count=1 -coverprofile coverage.out
 
+  start-test-services:
+    desc: Start test services
+    internal: true
+    cmds:
+      - echo "===> Starting test services"
+      - docker compose up -d postgres migrations
+      - echo "===> Done"
+    status:
+      - docker ps | grep argo-watcher-postgres-1
+
   build:
     desc: Build the project
     deps: [docs]
-    vars:
+    env:
       CGO_ENABLED: 0
     cmds:
       - echo "===> Building the project"
@@ -107,3 +122,9 @@ tasks:
       - echo "===> Bringing docker compose setup down"
       - docker compose down
       - echo "===> Done"
+
+  ci-migrate:
+    desc: Run migrations in CI
+    cmds:
+      - echo "===> Running migrations"
+      - migrate -path db/migrations -database "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable" up
