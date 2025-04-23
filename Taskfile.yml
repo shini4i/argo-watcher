@@ -49,29 +49,50 @@ tasks:
   test:
     desc: Run tests
     deps: [mocks]
+    vars:
+      ARGO_TIMEOUT: 1
     cmds:
       - echo "===> Running tests"
-      - ARGO_TIMEOUT=1 go test -v ./... -count=1 -coverprofile coverage.out
+      - go test -v ./... -count=1 -coverprofile coverage.out
 
   build:
     desc: Build the project
     deps: [docs]
+    vars:
+      CGO_ENABLED: 0
     cmds:
       - echo "===> Building the project"
-      - CGO_ENABLED=0 go build -ldflags="-s -w -X github.com/shini4i/argo-watcher/cmd/argo-watcher/server.version=local" -o argo-watcher ./cmd/argo-watcher
+      - go build -ldflags="-s -w -X github.com/shini4i/argo-watcher/cmd/argo-watcher/server.version=local" -o argo-watcher ./cmd/argo-watcher
       - echo "===> Done"
     sources:
       - cmd/argo-watcher/**/*.go
     generates:
       - argo-watcher
 
+  install-web-dependencies:
+    desc: Install web dependencies
+    internal: true
+    dir: web
+    cmds:
+      - echo "===> Installing web dependencies"
+      - npm ci && npm install react-scripts --silent
+      - echo "===> Done"
+    sources:
+      - package.json
+      - package-lock.json
+
   build-ui:
     desc: Build the UI
+    deps: [install-web-dependencies]
     dir: web
     cmds:
       - echo "===> Building the UI"
-      - npm ci --silent && npm install react-scripts --silent && npm run build
+      - npm run build
       - echo "===> Done"
+    sources:
+      - src/**/*.ts
+      - src/**/*.tsx
+      - src/**/*.css
 
   bootstrap:
     desc: Bring docker compose setup up
