@@ -21,6 +21,9 @@ static/
 # code coverage files
 **/coverage.*
 
+# Taskfile cashe
+.task/
+
 # dynamicly generated files
 cmd/argo-watcher/docs
 cmd/argo-watcher/mock
