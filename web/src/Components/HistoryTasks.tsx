@@ -1,4 +1,4 @@
-import React, { forwardRef, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -14,6 +14,8 @@ import Checkbox from '@mui/material/Checkbox';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
+import FormGroup from '@mui/material/FormGroup';
+import Tooltip from '@mui/material/Tooltip';
 import { endOfDay, startOfDay } from 'date-fns';
 import * as XLSX from 'xlsx';
 
@@ -241,20 +243,10 @@ const HistoryTasks: React.FC = () => {
                         whiteSpace: 'nowrap',
                     }}
                 >
-                    <Typography id="export-modal-title" variant="h6" component="h2">
+                    <Typography id="export-modal-title" variant="h6" component="h2" sx={{ mb: 2 }}>
                         Select Export Type
                     </Typography>
-                    <FormControlLabel
-                        control={
-                            <Checkbox
-                                checked={anonymize}
-                                onChange={(e) => setAnonymize(e.target.checked)}
-                            />
-                        }
-                        label="Anonymize (remove author)"
-                        sx={{ mt: 2 }}
-                    />
-                    <Stack direction="row" spacing={2} sx={{ mt: 2, justifyContent: 'center' }}>
+                    <Stack direction="row" spacing={2} sx={{ justifyContent: 'center', mb: 2 }}>
                         <Button variant="contained" onClick={() => exportData('json')}>
                             JSON
                         </Button>
@@ -265,6 +257,19 @@ const HistoryTasks: React.FC = () => {
                             Excel
                         </Button>
                     </Stack>
+                    <FormGroup sx={{ alignItems: 'center' }}>
+                        <Tooltip title="Remove author from exported data">
+                            <FormControlLabel
+                                control={
+                                    <Checkbox
+                                        checked={anonymize}
+                                        onChange={(e) => setAnonymize(e.target.checked)}
+                                    />
+                                }
+                                label="Anonymize"
+                            />
+                        </Tooltip>
+                    </FormGroup>
                 </Box>
             </Modal>
         </Container>
