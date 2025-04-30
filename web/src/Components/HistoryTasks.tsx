@@ -224,11 +224,11 @@ const HistoryTasks: React.FC = () => {
                 aria-labelledby="export-modal-title"
                 aria-describedby="export-modal-description"
             >
-                <Box sx={modalStyle}>
+                <Box sx={{ ...modalStyle, textAlign: 'center' }}>
                     <Typography id="export-modal-title" variant="h6" component="h2">
                         Select Export Type
                     </Typography>
-                    <Stack direction="row" spacing={2} sx={{mt: 2}}>
+                    <Stack direction="row" spacing={2} sx={{ mt: 2, justifyContent: 'center' }}>
                         <Button variant="contained" onClick={() => exportData('json')}>
                             JSON
                         </Button>
