@@ -1,5 +1,5 @@
-import React, {forwardRef, useEffect, useState} from 'react';
-import {useSearchParams} from 'react-router-dom';
+import React, { forwardRef, useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
 import Stack from '@mui/material/Stack';
@@ -10,14 +10,16 @@ import Button from '@mui/material/Button';
 import Modal from '@mui/material/Modal';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
+import Checkbox from '@mui/material/Checkbox';
+import FormControlLabel from '@mui/material/FormControlLabel';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
-import {endOfDay, startOfDay} from 'date-fns';
+import { endOfDay, startOfDay } from 'date-fns';
 import * as XLSX from 'xlsx';
 
 import ApplicationsFilter from './ApplicationsFilter';
-import TasksTable, {useTasks} from './TasksTable';
-import {useErrorContext} from '../ErrorContext';
+import TasksTable, { useTasks } from './TasksTable';
+import { useErrorContext } from '../ErrorContext';
 
 const modalStyle = {
     position: 'absolute' as 'absolute',
@@ -33,9 +35,9 @@ const modalStyle = {
 
 const HistoryTasks: React.FC = () => {
     const [searchParams, setSearchParams] = useSearchParams();
-    const {setError, setSuccess} = useErrorContext();
-    const {tasks, sortField, setSortField, appNames, refreshTasksInRange, clearTasks} =
-        useTasks({setError, setSuccess});
+    const { setError, setSuccess } = useErrorContext();
+    const { tasks, sortField, setSortField, appNames, refreshTasksInRange, clearTasks } =
+        useTasks({ setError, setSuccess });
     const [currentApplication, setCurrentApplication] = useState<string | null>(
         searchParams.get('app')
     );
@@ -48,6 +50,7 @@ const HistoryTasks: React.FC = () => {
         searchParams.get('page') ? Number(searchParams.get('page')) : 1
     );
     const [isExportModalOpen, setExportModalOpen] = useState(false);
+    const [anonymize, setAnonymize] = useState(false);
 
     const updateSearchParameters = (start: Date, end: Date, application: string | null, page: number) => {
         const params: Record<string, any> = {
@@ -85,25 +88,30 @@ const HistoryTasks: React.FC = () => {
             return;
         }
 
+        let exportTasks = tasks;
+        if (anonymize) {
+            exportTasks = tasks.map(({ author, ...rest }) => rest);
+        }
+
         const filename = `tasks_export_${Date.now()}.${type}`;
         if (type === 'json') {
-            const blob = new Blob([JSON.stringify(tasks, null, 2)], {type: 'application/json'});
+            const blob = new Blob([JSON.stringify(exportTasks, null, 2)], { type: 'application/json' });
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
             link.download = filename;
             link.click();
         } else if (type === 'csv') {
             const csvContent = [
-                Object.keys(tasks[0]).join(','), // Header row
-                ...tasks.map(task => Object.values(task).join(',')), // Data rows
+                Object.keys(exportTasks[0]).join(','), // Header row
+                ...exportTasks.map(task => Object.values(task).join(',')), // Data rows
             ].join('\n');
-            const blob = new Blob([csvContent], {type: 'text/csv'});
+            const blob = new Blob([csvContent], { type: 'text/csv' });
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
             link.download = filename;
             link.click();
         } else if (type === 'xlsx') {
-            const worksheet = XLSX.utils.json_to_sheet(tasks);
+            const worksheet = XLSX.utils.json_to_sheet(exportTasks);
             const workbook = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(workbook, worksheet, 'Tasks');
             XLSX.writeFile(workbook, filename);
@@ -120,10 +128,10 @@ const HistoryTasks: React.FC = () => {
     return (
         <Container maxWidth="xl">
             <Stack
-                direction={{xs: 'column', md: 'row'}}
+                direction={{ xs: 'column', md: 'row' }}
                 spacing={2}
                 alignItems="center"
-                sx={{mb: 2}}
+                sx={{ mb: 2 }}
             >
                 <Typography
                     variant="h5"
@@ -138,9 +146,18 @@ const HistoryTasks: React.FC = () => {
                     }}
                 >
                     <Box>History tasks</Box>
-                    <Box sx={{fontSize: '10px'}}>UTC</Box>
+                    <Box sx={{ fontSize: '10px' }}>UTC</Box>
                 </Typography>
                 <Stack direction="row" spacing={2}>
+                    <Box>
+                        <Button
+                            variant="contained"
+                            startIcon={<FileDownloadIcon />}
+                            onClick={() => setExportModalOpen(true)}
+                        >
+                            Export
+                        </Button>
+                    </Box>
                     <Box>
                         <ApplicationsFilter
                             value={currentApplication}
@@ -167,10 +184,10 @@ const HistoryTasks: React.FC = () => {
                             customInput={
                                 <TextField
                                     size="small"
-                                    sx={{minWidth: '220px'}}
+                                    sx={{ minWidth: '220px' }}
                                     value={`${startDate ? startDate.toLocaleDateString() : ''} - ${endDate ? endDate.toLocaleDateString() : ''}`}
                                     label="Date range"
-                                    InputProps={{readOnly: true}}
+                                    InputProps={{ readOnly: true }}
                                 />
                             }
                             required
@@ -186,21 +203,12 @@ const HistoryTasks: React.FC = () => {
                                 refreshWithFilters(startDate!, endDate!, currentApplication, 1);
                             }}
                         >
-                            <RefreshIcon/>
+                            <RefreshIcon />
                         </IconButton>
-                    </Box>
-                    <Box>
-                        <Button
-                            variant="contained"
-                            startIcon={<FileDownloadIcon/>}
-                            onClick={() => setExportModalOpen(true)}
-                        >
-                            Export
-                        </Button>
                     </Box>
                 </Stack>
             </Stack>
-            <Box sx={{boxShadow: 2, borderRadius: 2, p: 2}}>
+            <Box sx={{ boxShadow: 2, borderRadius: 2, p: 2 }}>
                 <TasksTable
                     tasks={tasks}
                     sortField={sortField}
@@ -224,10 +232,28 @@ const HistoryTasks: React.FC = () => {
                 aria-labelledby="export-modal-title"
                 aria-describedby="export-modal-description"
             >
-                <Box sx={{ ...modalStyle, textAlign: 'center' }}>
+                <Box
+                    sx={{
+                        ...modalStyle,
+                        width: 'auto',
+                        maxWidth: '90%',
+                        textAlign: 'center',
+                        whiteSpace: 'nowrap',
+                    }}
+                >
                     <Typography id="export-modal-title" variant="h6" component="h2">
                         Select Export Type
                     </Typography>
+                    <FormControlLabel
+                        control={
+                            <Checkbox
+                                checked={anonymize}
+                                onChange={(e) => setAnonymize(e.target.checked)}
+                            />
+                        }
+                        label="Anonymize (remove author)"
+                        sx={{ mt: 2 }}
+                    />
                     <Stack direction="row" spacing={2} sx={{ mt: 2, justifyContent: 'center' }}>
                         <Button variant="contained" onClick={() => exportData('json')}>
                             JSON
