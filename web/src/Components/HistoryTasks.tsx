@@ -257,13 +257,13 @@ const HistoryTasks: React.FC = () => {
                     </Typography>
                     <Stack direction="row" spacing={2} sx={{ justifyContent: 'center', mb: 2 }}>
                         <Button variant="contained" onClick={() => exportData('json')}>
-                            JSON
+                            .JSON
                         </Button>
                         <Button variant="contained" onClick={() => exportData('csv')}>
-                            CSV
+                            .CSV
                         </Button>
                         <Button variant="contained" onClick={() => exportData('xlsx')}>
-                            Excel
+                            .XLSX
                         </Button>
                     </Stack>
                     <FormGroup sx={{ alignItems: 'center' }}>
