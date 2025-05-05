@@ -58,6 +58,9 @@ jobs:
       - name: Install Task
         uses: arduino/setup-task@v2
 
+      - name: Install environment dependencies
+        run: task install-deps
+
       - name: Run database migrations
         run: task ci-migrate
 

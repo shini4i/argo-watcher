@@ -32,6 +32,9 @@ jobs:
       - name: Install Task
         uses: arduino/setup-task@v2
 
+      - name: Install environment dependencies
+        run: task install-deps
+
       - name: Build argo-watcher UI
         run: task build-ui
 
