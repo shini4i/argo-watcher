@@ -1,0 +1,130 @@
+version: '3'
+silent: true
+
+tasks:
+  install-deps:
+    desc: Install dependencies
+    cmds:
+      - echo "===> Installing dependencies"
+      - go install github.com/swaggo/swag/cmd/swag@latest
+      - go install go.uber.org/mock/mockgen@latest
+      - go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+      - echo "===> Done"
+    status:
+      - type swag mockgen migrate
+
+  mocks:
+    desc: Generate mocks for tests
+    internal: true
+    cmds:
+      - echo "===> Generating mocks"
+      - mockgen --source=cmd/argo-watcher/argocd/argo_api.go --destination=cmd/argo-watcher/mock/argo_api.go --package=mock
+      - mockgen --source=cmd/argo-watcher/state/state.go --destination=cmd/argo-watcher/mock/state.go --package=mock
+      - mockgen --source=cmd/argo-watcher/prometheus/metrics.go --destination=cmd/argo-watcher/mock/metrics.go --package=mock
+      - mockgen --source=pkg/updater/interfaces.go --destination=pkg/updater/mock/interfaces.go --package=mock
+    sources:
+      - cmd/argo-watcher/argocd/argo_api.go
+      - cmd/argo-watcher/state/state.go
+      - cmd/argo-watcher/prometheus/metrics.go
+      - pkg/updater/interfaces.go
+    generates:
+      - cmd/argo-watcher/mock/argo_api.go
+      - cmd/argo-watcher/mock/state.go
+      - cmd/argo-watcher/mock/metrics.go
+      - pkg/updater/mock/interfaces.go
+
+  docs:
+    desc: Generate swagger docs
+    dir: cmd/argo-watcher
+    cmds:
+      - echo "===> Generating swagger docs"
+      - swag init --parseDependency --parseInternal
+    sources:
+      - server/router.go
+    generates:
+      - docs/docs.go
+      - docs/swagger.json
+      - docs/swagger.yaml
+
+  test:
+    desc: Run tests
+    deps: [start-test-services]
+    env:
+      DB_HOST: localhost
+      DB_USER: watcher
+      DB_NAME: watcher
+      DB_PASSWORD: watcher
+      DB_PORT: 5432
+      STATE_TYPE: in-memory
+    cmds:
+      - echo "===> Running tests"
+      - go test -v ./... -count=1 -coverprofile coverage.out
+
+  start-test-services:
+    desc: Start test services
+    internal: true
+    cmds:
+      - echo "===> Starting test services"
+      - docker compose up -d postgres migrations
+      - echo "===> Done"
+    status:
+      - docker ps | grep argo-watcher-postgres-1
+
+  build:
+    desc: Build the project
+    deps: [docs]
+    env:
+      CGO_ENABLED: 0
+    cmds:
+      - echo "===> Building the project"
+      - go build -ldflags="-s -w -X github.com/shini4i/argo-watcher/cmd/argo-watcher/server.version=local" -o argo-watcher ./cmd/argo-watcher
+      - echo "===> Done"
+    sources:
+      - cmd/argo-watcher/**/*.go
+    generates:
+      - argo-watcher
+
+  install-web-dependencies:
+    desc: Install web dependencies
+    internal: true
+    dir: web
+    cmds:
+      - echo "===> Installing web dependencies"
+      - npm ci && npm install react-scripts --silent
+      - echo "===> Done"
+    sources:
+      - package.json
+      - package-lock.json
+
+  build-ui:
+    desc: Build the UI
+    deps: [install-web-dependencies]
+    dir: web
+    cmds:
+      - echo "===> Building the UI"
+      - npm run build
+      - echo "===> Done"
+    sources:
+      - src/**/*.ts
+      - src/**/*.tsx
+      - src/**/*.css
+
+  bootstrap:
+    desc: Bring docker compose setup up
+    cmds:
+      - echo "===> Bringing docker compose setup up"
+      - docker compose up -d
+      - echo "===> Done"
+
+  teardown:
+    desc: Bring docker compose setup down
+    cmds:
+      - echo "===> Bringing docker compose setup down"
+      - docker compose down
+      - echo "===> Done"
+
+  ci-migrate:
+    desc: Run migrations in CI
+    cmds:
+      - echo "===> Running migrations"
+      - migrate -path db/migrations -database "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable" up
