@@ -92,7 +92,7 @@ const HistoryTasks: React.FC = () => {
 
         let exportTasks = tasks;
         if (anonymize) {
-            exportTasks = tasks.map(({ author, ...rest }) => rest);
+            exportTasks = tasks.map(({ author, status_reason, ...rest }) => rest);
         }
 
         const filename = `tasks_export_${Date.now()}.${type}`;
@@ -258,7 +258,7 @@ const HistoryTasks: React.FC = () => {
                         </Button>
                     </Stack>
                     <FormGroup sx={{ alignItems: 'center' }}>
-                        <Tooltip title="Remove author from exported data">
+                        <Tooltip title="Remove author, and status_reason from exported data">
                             <FormControlLabel
                                 control={
                                     <Checkbox
