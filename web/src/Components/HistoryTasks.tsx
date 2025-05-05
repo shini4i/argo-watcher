@@ -87,7 +87,7 @@ const HistoryTasks: React.FC = () => {
 
     const exportData = (type: 'json' | 'csv' | 'xlsx') => {
         if (!tasks || tasks.length === 0) {
-            setError('No data available for export.');
+            setError('export_error', 'No tasks available for export.');
             return;
         }
 
