@@ -29,8 +29,17 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Install Task
+        uses: arduino/setup-task@v2
+
+      - name: Install environment dependencies
+        run: task install-deps
+
+      - name: Generate swagger docs
+        run: task docs
+
       - name: Build argo-watcher UI
-        run: make build-ui
+        run: task build-ui
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3.4.0
@@ -39,7 +48,7 @@ jobs:
         uses: anchore/sbom-action@v0
 
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
 

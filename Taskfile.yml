@@ -48,7 +48,7 @@ tasks:
 
   test:
     desc: Run tests
-    deps: [start-test-services]
+    deps: [mocks, docs]
     env:
       DB_HOST: localhost
       DB_USER: watcher
