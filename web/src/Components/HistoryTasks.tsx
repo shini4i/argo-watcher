@@ -101,6 +101,8 @@ const HistoryTasks: React.FC = () => {
         if (type !== 'json') {
             exportTasks = exportTasks.map((task) => ({
                 ...task,
+                created: new Date(task.created * 1000).toLocaleString('en-GB', { hour12: false }),
+                updated: task.updated ? new Date(task.updated * 1000).toLocaleString('en-GB', { hour12: false }) : null,
                 images: task.images.map((img) => `${img.image}:${img.tag}`).join(', '),
                 ...(anonymize ? {} : { status_reason: task.status_reason?.replace(/\n/g, '\\n') }),
             }));
