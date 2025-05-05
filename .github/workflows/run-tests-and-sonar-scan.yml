@@ -24,6 +24,12 @@ jobs:
       - name: Install Task
         uses: arduino/setup-task@v2
 
+      - name: Install environment dependencies
+        run: task install-deps
+
+      - name: Generate swagger docs
+        run: task docs
+
       - name: Run Gosec Security Scanner
         uses: securego/gosec@master
         with:
