@@ -25,7 +25,7 @@ import TasksTable, { useTasks } from './TasksTable';
 import { useErrorContext } from '../ErrorContext';
 
 const modalStyle = {
-    position: 'absolute' as 'absolute',
+    position: 'absolute',
     top: '50%',
     left: '50%',
     transform: 'translate(-50%, -50%)',
