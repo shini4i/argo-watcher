@@ -16,8 +16,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
       - name: Install project dependencies
@@ -43,25 +43,24 @@ jobs:
           --health-retries 5
         ports:
           - 5432:5432
-      mock:
-        image: shini4i/argo-watcher-mock:v0.0.5
-        ports:
-          - 8081:8081
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-go@v4
+      - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
 
+      - name: Install Task
+        uses: arduino/setup-task@v2
+
       - name: Install project dependencies
-        run: make install-deps mocks docs
+        run: task install-deps mocks docs
 
       - name: Run database migrations
-        run: make ci-migrate
+        run: task ci-migrate
 
       - name: Run tests
         env:
@@ -72,7 +71,7 @@ jobs:
           DB_PORT: 5432
           STATE_TYPE: in-memory
           ARGO_URL: http://localhost:8081
-        run: make test
+        run: task test
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v3
