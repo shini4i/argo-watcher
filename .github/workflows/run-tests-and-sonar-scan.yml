@@ -24,9 +24,6 @@ jobs:
       - name: Install Task
         uses: arduino/setup-task@v2
 
-      - name: Install project dependencies
-        run: task install-deps docs
-
       - name: Run Gosec Security Scanner
         uses: securego/gosec@master
         with:
@@ -60,9 +57,6 @@ jobs:
 
       - name: Install Task
         uses: arduino/setup-task@v2
-
-      - name: Install project dependencies
-        run: task install-deps mocks docs
 
       - name: Run database migrations
         run: task ci-migrate
