@@ -35,6 +35,9 @@ jobs:
       - name: Install environment dependencies
         run: task install-deps
 
+      - name: Generate swagger docs
+        run: task docs
+
       - name: Build argo-watcher UI
         run: task build-ui
 

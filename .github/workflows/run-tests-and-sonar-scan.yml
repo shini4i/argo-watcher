@@ -7,8 +7,8 @@ on:
       - '**/*.go'
   pull_request:
     types: [opened, synchronize, reopened]
-#    paths:
-#      - '**/*.go'
+    paths:
+      - '**/*.go'
 
 jobs:
   security_scan:
