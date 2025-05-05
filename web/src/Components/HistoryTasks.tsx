@@ -17,6 +17,7 @@ import 'react-datepicker/dist/react-datepicker.css';
 import FormGroup from '@mui/material/FormGroup';
 import Tooltip from '@mui/material/Tooltip';
 import { endOfDay, startOfDay } from 'date-fns';
+import { unparse } from 'papaparse';
 import * as XLSX from 'xlsx';
 
 import ApplicationsFilter from './ApplicationsFilter';
@@ -91,8 +92,18 @@ const HistoryTasks: React.FC = () => {
         }
 
         let exportTasks = tasks;
+
         if (anonymize) {
+            // Anonymize the data by removing sensitive fields
             exportTasks = tasks.map(({ author, status_reason, ...rest }) => rest);
+        }
+
+        if (type !== 'json') {
+            exportTasks = exportTasks.map((task) => ({
+                ...task,
+                images: task.images.map((img) => `${img.image}:${img.tag}`).join(', '),
+                ...(anonymize ? {} : { status_reason: task.status_reason?.replace(/\n/g, '\\n') }),
+            }));
         }
 
         const filename = `tasks_export_${Date.now()}.${type}`;
@@ -103,11 +114,8 @@ const HistoryTasks: React.FC = () => {
             link.download = filename;
             link.click();
         } else if (type === 'csv') {
-            const csvContent = [
-                Object.keys(exportTasks[0]).join(','), // Header row
-                ...exportTasks.map(task => Object.values(task).join(',')), // Data rows
-            ].join('\n');
-            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const csv = unparse(exportTasks);
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
             link.download = filename;
@@ -122,7 +130,6 @@ const HistoryTasks: React.FC = () => {
         setExportModalOpen(false);
         setSuccess('Data exported successfully.');
     };
-
     useEffect(() => {
         refreshWithFilters(startDate!, endDate!, currentApplication, currentPage);
     }, [startDate, endDate, currentApplication, currentPage]);
