@@ -29,6 +29,11 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
       - name: Install Task
         uses: arduino/setup-task@v2
 
@@ -46,11 +51,6 @@ jobs:
 
       - name: Install Syft for SBOM Generation
         uses: anchore/sbom-action@v0
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v2
