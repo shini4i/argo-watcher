@@ -15,7 +15,6 @@ tasks:
 
   mocks:
     desc: Generate mocks for tests
-    internal: true
     cmds:
       - echo "===> Generating mocks"
       - mockgen --source=cmd/argo-watcher/argocd/argo_api.go --destination=cmd/argo-watcher/mock/argo_api.go --package=mock

@@ -1,6 +1,6 @@
 before:
   hooks:
-    - task install-deps docs
+    - task install-deps docs mocks
     - go mod tidy
 
 builds:
