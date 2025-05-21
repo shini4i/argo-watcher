@@ -431,6 +431,76 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 	})
 }
 
+func TestArgoStatusUpdater_processDeploymentResult(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	apiMock := mock.NewMockArgoApiInterface(ctrl)
+	metricsMock := mock.NewMockMetricsInterface(ctrl)
+	stateMock := mock.NewMockState(ctrl)
+
+	argo := &Argo{}
+	argo.Init(stateMock, apiMock, metricsMock)
+
+	updater := &ArgoStatusUpdater{}
+	updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig)
+
+	// success scenario
+	t.Run("processDeploymentResult - success", func(t *testing.T) {
+		task := models.Task{Id: "test-id", App: "test-app"}
+		app := &models.Application{}
+		app.Status.Summary.Images = []string{"test-registry/ghcr.io/shini4i/argo-watcher:dev"}
+
+		// setup status mocks
+		metricsMock.EXPECT().ResetFailedDeployment(task.App)
+		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
+
+		updater.processDeploymentResult(&task, app)
+		assert.Equal(t, models.StatusDeployedMessage, task.Status)
+	})
+
+	// failure scenario
+	t.Run("processDeploymentResult - failure", func(t *testing.T) {
+		task := models.Task{Id: "test-id", App: "test-app"}
+		app := &models.Application{}
+		// forcing failure by ignoring 'test-registry' mismatch or any condition
+		app.Status.Summary.Images = []string{"another-registry/ghcr.io/shini4i/argo-watcher:dev"}
+
+		metricsMock.EXPECT().AddFailedDeployment(task.App)
+		stateMock.EXPECT().SetTaskStatus(gomock.Any(), models.StatusFailedMessage, gomock.Any())
+
+		updater.processDeploymentResult(&task, app)
+		assert.Equal(t, models.StatusFailedMessage, task.Status)
+	})
+}
+
+func TestArgoStatusUpdater_handleArgoAPIFailure(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	apiMock := mock.NewMockArgoApiInterface(ctrl)
+	metricsMock := mock.NewMockMetricsInterface(ctrl)
+	stateMock := mock.NewMockState(ctrl)
+
+	argo := &Argo{}
+	argo.Init(stateMock, apiMock, metricsMock)
+
+	updater := &ArgoStatusUpdater{}
+	updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig)
+
+	t.Run("handleArgoAPIFailure - generic error", func(t *testing.T) {
+		task := models.Task{Id: "test-id", App: "test-app"}
+		err := fmt.Errorf("some generic error")
+
+		metricsMock.EXPECT().AddFailedDeployment(task.App)
+		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage, gomock.Any())
+
+		updater.handleArgoAPIFailure(task, err)
+	})
+
+	// additional scenarios (app not found, argo unavailable) are covered in WaitForRollout tests
+}
+
 func TestMutexMapGet(t *testing.T) {
 	mm := &MutexMap{}
 
