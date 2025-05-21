@@ -103,32 +103,33 @@ func (updater *ArgoStatusUpdater) processDeploymentResult(task *models.Task, app
 		status = models.ArgoRolloutAppSuccess
 	}
 	if status == models.ArgoRolloutAppSuccess {
-		log.Info().Str("id", task.Id).Msg("App is running on the expected version.")
-		// deployment success
-		updater.argo.metrics.ResetFailedDeployment(task.App)
-		// update task status
-		if err := updater.argo.State.SetTaskStatus(task.Id, models.StatusDeployedMessage, ""); err != nil {
-			log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, err)
-		}
-		// setting task status to handle further notifications
-		task.Status = models.StatusDeployedMessage
-	} else {
-		log.Info().Str("id", task.Id).Msg("App deployment failed.")
-		// deployment failed
-		updater.argo.metrics.AddFailedDeployment(task.App)
-		// generate failure reason
-		reason := fmt.Sprintf(
-			"Application deployment failed. Rollout status \"%s\"\n\n%s",
-			status,
-			application.GetRolloutMessage(status, task.ListImages()),
-		)
-		// update task status
-		if err := updater.argo.State.SetTaskStatus(task.Id, models.StatusFailedMessage, reason); err != nil {
-			log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, err)
-		}
-		// setting task status to handle further notifications
-		task.Status = models.StatusFailedMessage
+		updater.handleDeploymentSuccess(task)
+		return
 	}
+	updater.handleDeploymentFailure(task, status, application)
+}
+
+func (updater *ArgoStatusUpdater) handleDeploymentSuccess(task *models.Task) {
+	log.Info().Str("id", task.Id).Msg("App is running on the expected version.")
+	updater.argo.metrics.ResetFailedDeployment(task.App)
+	if err := updater.argo.State.SetTaskStatus(task.Id, models.StatusDeployedMessage, ""); err != nil {
+		log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, err)
+	}
+	task.Status = models.StatusDeployedMessage
+}
+
+func (updater *ArgoStatusUpdater) handleDeploymentFailure(task *models.Task, status string, application *models.Application) {
+	log.Info().Str("id", task.Id).Msg("App deployment failed.")
+	updater.argo.metrics.AddFailedDeployment(task.App)
+	reason := fmt.Sprintf(
+		"Application deployment failed. Rollout status \"%s\"\n\n%s",
+		status,
+		application.GetRolloutMessage(status, task.ListImages()),
+	)
+	if err := updater.argo.State.SetTaskStatus(task.Id, models.StatusFailedMessage, reason); err != nil {
+		log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, err)
+	}
+	task.Status = models.StatusFailedMessage
 }
 
 func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task) (*models.Application, error) {
