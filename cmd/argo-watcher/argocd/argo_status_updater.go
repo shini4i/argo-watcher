@@ -75,6 +75,7 @@ func (updater *ArgoStatusUpdater) collectInitialAppStatus(task *models.Task) err
 func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 	// increment in progress task counter
 	updater.argo.metrics.AddInProgressTask()
+	defer updater.argo.metrics.RemoveInProgressTask()
 
 	// notify about the deployment start
 	sendWebhookEvent(task, updater.webhookService)
@@ -85,15 +86,18 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 	// handle application failure
 	if err != nil {
 		// deployment failed
-		updater.argo.metrics.AddFailedDeployment(task.App)
-		// update task status regarding failure
 		updater.handleArgoAPIFailure(task, err)
-		// decrement in progress task counter
-		updater.argo.metrics.RemoveInProgressTask()
 		return
 	}
 
-	// get application status
+	// process deployment result
+	updater.processDeploymentResult(&task, application)
+
+	// send webhook event about the deployment result
+	sendWebhookEvent(task, updater.webhookService)
+}
+
+func (updater *ArgoStatusUpdater) processDeploymentResult(task *models.Task, application *models.Application) {
 	status := application.GetRolloutStatus(task.ListImages(), updater.registryProxyUrl, updater.acceptSuspended)
 	if application.IsFireAndForgetModeActive() {
 		status = models.ArgoRolloutAppSuccess
@@ -125,12 +129,6 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 		// setting task status to handle further notifications
 		task.Status = models.StatusFailedMessage
 	}
-
-	// decrement in progress task counter
-	updater.argo.metrics.RemoveInProgressTask()
-
-	// send webhook event about the deployment result
-	sendWebhookEvent(task, updater.webhookService)
 }
 
 func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task) (*models.Application, error) {
@@ -205,8 +203,27 @@ func (updater *ArgoStatusUpdater) waitRollout(task models.Task) (*models.Applica
 	var application *models.Application
 	var err error
 
-	retryOptions := updater.retryOptions
+	retryOptions := updater.configureRetryOptions(task)
+	log.Debug().Str("id", task.Id).Msg("Waiting for rollout")
 
+	_ = retry.Do(func() error {
+		application, err = updater.argo.api.GetApplication(task.App)
+		if err != nil {
+			return handleApplicationFetchError(task, err)
+		}
+		if application.IsFireAndForgetModeActive() {
+			log.Debug().Str("id", task.Id).Msg("Fire and forget mode is active, skipping checks...")
+			return nil
+		}
+		return checkRolloutStatus(task, application, updater.registryProxyUrl, updater.acceptSuspended)
+	}, retryOptions...)
+
+	return application, err
+}
+
+// configureRetryOptions defines retry attempts based on task timeout
+func (updater *ArgoStatusUpdater) configureRetryOptions(task models.Task) []retry.Option {
+	retryOptions := updater.retryOptions
 	if task.Timeout > 0 {
 		log.Debug().Str("id", task.Id).Msgf("Overriding task timeout to %ds", task.Timeout)
 		calculatedAttempts := task.Timeout/15 + 1
@@ -217,50 +234,41 @@ func (updater *ArgoStatusUpdater) waitRollout(task models.Task) (*models.Applica
 		}
 		retryOptions = append(retryOptions, retry.Attempts(uint(calculatedAttempts))) // #nosec G115
 	}
+	return retryOptions
+}
 
-	log.Debug().Str("id", task.Id).Msg("Waiting for rollout")
-	_ = retry.Do(func() error {
-		application, err = updater.argo.api.GetApplication(task.App)
+// handleApplicationFetchError ensures we don't retry for not found errors
+func handleApplicationFetchError(task models.Task, err error) error {
+	if task.IsAppNotFoundError(err) {
+		return retry.Unrecoverable(err)
+	}
+	log.Debug().Str("id", task.Id).Msgf("Failed fetching application status. Error: %s", err.Error())
+	return err
+}
 
-		if application.IsFireAndForgetModeActive() {
-			log.Debug().Str("id", task.Id).Msg("Fire and forge mode is active, skipping checks...")
-			return nil
+// checkRolloutStatus checks if the application completed rollout
+func checkRolloutStatus(task models.Task, application *models.Application, registryProxyUrl string, acceptSuspended bool) error {
+	status := application.GetRolloutStatus(task.ListImages(), registryProxyUrl, acceptSuspended)
+
+	switch status {
+	case models.ArgoRolloutAppDegraded:
+		log.Debug().Str("id", task.Id).Msgf("Application is degraded")
+		hash := helpers.GenerateHash(strings.Join(application.Status.Summary.Images, ","))
+		if !bytes.Equal(task.SavedAppStatus.ImagesHash, hash) {
+			return retry.Unrecoverable(errors.New("application has degraded"))
 		}
-
-		if err != nil {
-			// check if ArgoCD didn't have the app
-			if task.IsAppNotFoundError(err) {
-				// no need to retry in such cases
-				return retry.Unrecoverable(err)
-			}
-			// print application api failure here
-			log.Debug().Str("id", task.Id).Msgf("Failed fetching application status. Error: %s", err.Error())
-			return err
-		}
-
-		status := application.GetRolloutStatus(task.ListImages(), updater.registryProxyUrl, updater.acceptSuspended)
-
-		switch status {
-		case models.ArgoRolloutAppDegraded:
-			log.Debug().Str("id", task.Id).Msgf("Application is degraded")
-			hash := helpers.GenerateHash(strings.Join(application.Status.Summary.Images, ","))
-			if !bytes.Equal(task.SavedAppStatus.ImagesHash, hash) {
-				return retry.Unrecoverable(errors.New("application has degraded"))
-			}
-		case models.ArgoRolloutAppSuccess:
-			log.Debug().Str("id", task.Id).Msgf("Application rollout finished")
-			return nil
-		default:
-			log.Debug().Str("id", task.Id).Msgf("Application status is not final. Status received \"%s\"", status)
-		}
-		return errors.New("force retry")
-	}, retryOptions...)
-
-	// return application and latest error
-	return application, err
+	case models.ArgoRolloutAppSuccess:
+		log.Debug().Str("id", task.Id).Msgf("Application rollout finished")
+		return nil
+	default:
+		log.Debug().Str("id", task.Id).Msgf("Application status is not final. Status received \"%s\"", status)
+	}
+	return errors.New("force retry")
 }
 
 func (updater *ArgoStatusUpdater) handleArgoAPIFailure(task models.Task, err error) {
+	updater.argo.metrics.AddFailedDeployment(task.App)
+
 	var apiFailureStatus = models.StatusFailedMessage
 
 	// check if ArgoCD didn't have the app
