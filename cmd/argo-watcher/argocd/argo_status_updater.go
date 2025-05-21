@@ -268,25 +268,23 @@ func checkRolloutStatus(task models.Task, application *models.Application, regis
 
 func (updater *ArgoStatusUpdater) handleArgoAPIFailure(task models.Task, err error) {
 	updater.argo.metrics.AddFailedDeployment(task.App)
-
-	var apiFailureStatus = models.StatusFailedMessage
-
-	// check if ArgoCD didn't have the app
-	if task.IsAppNotFoundError(err) {
-		apiFailureStatus = models.StatusAppNotFoundMessage
-	}
-	// check if ArgoCD was unavailable
-	if strings.Contains(err.Error(), argoUnavailableErrorMessage) {
-		apiFailureStatus = models.StatusAborted
-	}
-
-	// write debug reason
+	finalStatus := determineFailureStatus(task, err)
 	reason := fmt.Sprintf(ArgoAPIErrorTemplate, err.Error())
-	log.Warn().Str("id", task.Id).Msgf("Deployment failed with status \"%s\". Aborting with error: %s", apiFailureStatus, reason)
+	log.Warn().Str("id", task.Id).Msgf("Deployment failed with status \"%s\". Aborting with error: %s", finalStatus, reason)
 
-	if err := updater.argo.State.SetTaskStatus(task.Id, apiFailureStatus, reason); err != nil {
+	if err := updater.argo.State.SetTaskStatus(task.Id, finalStatus, reason); err != nil {
 		log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, err)
 	}
+}
+
+func determineFailureStatus(task models.Task, err error) string {
+	if task.IsAppNotFoundError(err) {
+		return models.StatusAppNotFoundMessage
+	}
+	if strings.Contains(err.Error(), argoUnavailableErrorMessage) {
+		return models.StatusAborted
+	}
+	return models.StatusFailedMessage
 }
 
 func sendWebhookEvent(task models.Task, webhookService *notifications.WebhookService) {
