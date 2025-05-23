@@ -456,6 +456,8 @@ func TestArgoStatusUpdater_processDeploymentResult(t *testing.T) {
 		}
 		app := &models.Application{}
 		app.Status.Summary.Images = []string{"test-registry/ghcr.io/shini4i/argo-watcher:dev"}
+		app.Status.Sync.Status = "Synced"
+		app.Status.Health.Status = "Healthy"
 
 		// setup status mocks
 		metricsMock.EXPECT().ResetFailedDeployment(task.App)
@@ -470,6 +472,8 @@ func TestArgoStatusUpdater_processDeploymentResult(t *testing.T) {
 		task := models.Task{Id: "test-id", App: "test-app"}
 		app := &models.Application{}
 		app.Metadata.Annotations = map[string]string{"fire-and-forget": "true"}
+		app.Status.Sync.Status = "Synced"
+		app.Status.Health.Status = "Healthy"
 
 		metricsMock.EXPECT().ResetFailedDeployment(task.App)
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
