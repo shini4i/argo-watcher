@@ -83,15 +83,13 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 	// wait for application to get into deployed status or timeout
 	application, err := updater.waitForApplicationDeployment(task)
 
-	// handle application failure
 	if err != nil {
-		// deployment failed
+		// handle application failure
 		updater.handleArgoAPIFailure(task, err)
-		return
+	} else {
+		// process deployment result
+		updater.processDeploymentResult(&task, application)
 	}
-
-	// process deployment result
-	updater.processDeploymentResult(&task, application)
 
 	// send webhook event about the deployment result
 	sendWebhookEvent(task, updater.webhookService)
@@ -102,11 +100,12 @@ func (updater *ArgoStatusUpdater) processDeploymentResult(task *models.Task, app
 	if application.IsFireAndForgetModeActive() {
 		status = models.ArgoRolloutAppSuccess
 	}
+
 	if status == models.ArgoRolloutAppSuccess {
 		updater.handleDeploymentSuccess(task)
-		return
+	} else {
+		updater.handleDeploymentFailure(task, status, application)
 	}
-	updater.handleDeploymentFailure(task, status, application)
 }
 
 func (updater *ArgoStatusUpdater) handleDeploymentSuccess(task *models.Task) {
@@ -133,55 +132,47 @@ func (updater *ArgoStatusUpdater) handleDeploymentFailure(task *models.Task, sta
 }
 
 func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task) (*models.Application, error) {
-	var application *models.Application
-	var err error
-
+	// Fetch initial app state
 	app, err := updater.argo.api.GetApplication(task.App)
 	if err != nil {
 		return nil, err
 	}
 
-	// save the initial application status to compare with the final one
+	// Save the initial application status
 	if err := updater.collectInitialAppStatus(&task); err != nil {
 		return nil, err
 	}
 
-	// This mutex is used only to avoid concurrent updates of the same application.
-	mutex := updater.mutex.Get(task.App)
-
-	// Locking the mutex here to unlock within the next if block without duplicating the code,
-	// avoiding defer to unlock before the function's end. This approach may be revised later
-	mutex.Lock()
-
-	if app.IsManagedByWatcher() && task.Validated {
-		err = updater.updateGitRepo(app, task, mutex)
-	} else {
-		mutex.Unlock()
-		log.Debug().Str("id", task.Id).Msg("Skipping git repo update: Application does not have the necessary annotations or token is missing.")
-	}
-
-	if err != nil {
+	// Handle git repo update if needed
+	if err := updater.handleGitRepoUpdateIfNeeded(app, task); err != nil {
 		return nil, err
 	}
 
-	// wait for application to get into deployed status or timeout
-	application, err = updater.waitRollout(task)
-
-	// return application and latest error
-	return application, err
+	// Wait for rollout completion
+	return updater.waitRollout(task)
 }
 
-func (updater *ArgoStatusUpdater) updateGitRepo(app *models.Application, task models.Task, mutex *sync.Mutex) error {
-	log.Debug().Str("id", task.Id).Msg("Application managed by watcher. Initiating git repo update.")
+func (updater *ArgoStatusUpdater) handleGitRepoUpdateIfNeeded(app *models.Application, task models.Task) error {
+	// This mutex is used only to avoid concurrent updates of the same application
+	mutex := updater.mutex.Get(task.App)
+	mutex.Lock()
+	defer mutex.Unlock()
 
-	// simplest way to deal with potential git conflicts
-	// need to be replaced with a more sophisticated solution after PoC
+	// Skip if not managed by watcher or not validated
+	if !app.IsManagedByWatcher() || !task.Validated {
+		log.Debug().Str("id", task.Id).Msg("Skipping git repo update: Application does not have the necessary annotations or token is missing.")
+		return nil
+	}
+
+	// Application is managed by watcher, update git repo
+	log.Debug().Str("id", task.Id).Msg("Application managed by watcher. Initiating git repo update.")
+	return updater.updateGitRepo(app, task)
+}
+
+func (updater *ArgoStatusUpdater) updateGitRepo(app *models.Application, task models.Task) error {
 	err := retry.Do(
 		func() error {
-			if err := app.UpdateGitImageTag(&task); err != nil {
-				return err
-			}
-			return nil
+			return app.UpdateGitImageTag(&task)
 		},
 		retry.DelayType(retry.BackOffDelay),
 		retry.Attempts(5),
@@ -191,7 +182,6 @@ func (updater *ArgoStatusUpdater) updateGitRepo(app *models.Application, task mo
 		retry.LastErrorOnly(true),
 	)
 
-	mutex.Unlock()
 	if err != nil {
 		log.Error().Str("id", task.Id).Msgf("Failed to update git repo. Error: %s", err.Error())
 		return err
@@ -212,10 +202,13 @@ func (updater *ArgoStatusUpdater) waitRollout(task models.Task) (*models.Applica
 		if err != nil {
 			return handleApplicationFetchError(task, err)
 		}
+
+		// Early return for fire and forget mode
 		if application.IsFireAndForgetModeActive() {
 			log.Debug().Str("id", task.Id).Msg("Fire and forget mode is active, skipping checks...")
 			return nil
 		}
+
 		return checkRolloutStatus(task, application, updater.registryProxyUrl, updater.acceptSuspended)
 	}, retryOptions...)
 
@@ -225,17 +218,19 @@ func (updater *ArgoStatusUpdater) waitRollout(task models.Task) (*models.Applica
 // configureRetryOptions defines retry attempts based on task timeout
 func (updater *ArgoStatusUpdater) configureRetryOptions(task models.Task) []retry.Option {
 	retryOptions := updater.retryOptions
-	if task.Timeout > 0 {
-		log.Debug().Str("id", task.Id).Msgf("Overriding task timeout to %ds", task.Timeout)
-		calculatedAttempts := task.Timeout/15 + 1
-
-		if calculatedAttempts < 0 {
-			log.Error().Msg("Calculated attempts resulted in a negative number, defaulting to 15 attempts.")
-			calculatedAttempts = 15
-		}
-		retryOptions = append(retryOptions, retry.Attempts(uint(calculatedAttempts))) // #nosec G115
+	if task.Timeout <= 0 {
+		return retryOptions
 	}
-	return retryOptions
+
+	log.Debug().Str("id", task.Id).Msgf("Overriding task timeout to %ds", task.Timeout)
+	calculatedAttempts := task.Timeout/15 + 1
+
+	if calculatedAttempts < 0 {
+		log.Error().Msg("Calculated attempts resulted in a negative number, defaulting to 15 attempts.")
+		calculatedAttempts = 15
+	}
+
+	return append(retryOptions, retry.Attempts(uint(calculatedAttempts))) // #nosec G115
 }
 
 // handleApplicationFetchError ensures we don't retry for not found errors
