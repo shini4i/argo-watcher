@@ -21,16 +21,19 @@ import (
 
 const failedToUpdateTaskStatusTemplate string = "Failed to change task status: %s"
 
+// MutexMap provides a thread-safe way to get a mutex for a specific key
 type MutexMap struct {
 	m sync.Map
 }
 
+// Get returns a mutex for the given key. If the key doesn't exist, a new mutex is created.
 func (mm *MutexMap) Get(key string) *sync.Mutex {
 	log.Debug().Msgf("acquiring mutex for %s app", key)
 	m, _ := mm.m.LoadOrStore(key, &sync.Mutex{})
 	return m.(*sync.Mutex) // nolint:forcetypeassert // type assertion is guaranteed to be correct
 }
 
+// ArgoStatusUpdater handles the monitoring and updating of ArgoCD application deployments
 type ArgoStatusUpdater struct {
 	argo             Argo
 	registryProxyUrl string
@@ -40,6 +43,7 @@ type ArgoStatusUpdater struct {
 	webhookService   *notifications.WebhookService
 }
 
+// Init initializes the ArgoStatusUpdater with the provided configuration
 func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, retryDelay time.Duration, registryProxyUrl string, acceptSuspended bool, webhookConfig *config.WebhookConfig) {
 	updater.argo = argo
 	updater.registryProxyUrl = registryProxyUrl
@@ -53,6 +57,8 @@ func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, retryDelay
 	updater.webhookService = notifications.NewWebhookService(webhookConfig)
 }
 
+// collectInitialAppStatus fetches and stores the initial application status
+// This is used to detect changes during the deployment process
 func (updater *ArgoStatusUpdater) collectInitialAppStatus(task *models.Task) error {
 	application, err := updater.argo.api.GetApplication(task.App)
 	if err != nil {
@@ -72,6 +78,8 @@ func (updater *ArgoStatusUpdater) collectInitialAppStatus(task *models.Task) err
 	return nil
 }
 
+// WaitForRollout is the main entry point for tracking an application deployment
+// It monitors the application until it reaches a final state (deployed or failed)
 func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 	// increment in progress task counter
 	updater.argo.metrics.AddInProgressTask()
@@ -95,6 +103,8 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 	sendWebhookEvent(task, updater.webhookService)
 }
 
+// processDeploymentResult determines if the deployment was successful and
+// updates the appropriate status and metrics
 func (updater *ArgoStatusUpdater) processDeploymentResult(task *models.Task, application *models.Application) {
 	status := application.GetRolloutStatus(task.ListImages(), updater.registryProxyUrl, updater.acceptSuspended)
 	if application.IsFireAndForgetModeActive() {
@@ -108,6 +118,7 @@ func (updater *ArgoStatusUpdater) processDeploymentResult(task *models.Task, app
 	}
 }
 
+// handleDeploymentSuccess processes a successful deployment by updating metrics and status
 func (updater *ArgoStatusUpdater) handleDeploymentSuccess(task *models.Task) {
 	log.Info().Str("id", task.Id).Msg("App is running on the expected version.")
 	updater.argo.metrics.ResetFailedDeployment(task.App)
@@ -117,6 +128,7 @@ func (updater *ArgoStatusUpdater) handleDeploymentSuccess(task *models.Task) {
 	task.Status = models.StatusDeployedMessage
 }
 
+// handleDeploymentFailure processes a failed deployment with detailed error information
 func (updater *ArgoStatusUpdater) handleDeploymentFailure(task *models.Task, status string, application *models.Application) {
 	log.Info().Str("id", task.Id).Msg("App deployment failed.")
 	updater.argo.metrics.AddFailedDeployment(task.App)
@@ -131,6 +143,8 @@ func (updater *ArgoStatusUpdater) handleDeploymentFailure(task *models.Task, sta
 	task.Status = models.StatusFailedMessage
 }
 
+// waitForApplicationDeployment coordinates the deployment monitoring process
+// It checks initial status, updates the git repo if needed, and waits for rollout
 func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task) (*models.Application, error) {
 	// Fetch initial app state
 	app, err := updater.argo.api.GetApplication(task.App)
@@ -152,6 +166,8 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 	return updater.waitRollout(task)
 }
 
+// handleGitRepoUpdateIfNeeded updates the git repository if the application
+// is managed by the watcher and has valid credentials
 func (updater *ArgoStatusUpdater) handleGitRepoUpdateIfNeeded(app *models.Application, task models.Task) error {
 	// This mutex is used only to avoid concurrent updates of the same application
 	mutex := updater.mutex.Get(task.App)
@@ -169,6 +185,7 @@ func (updater *ArgoStatusUpdater) handleGitRepoUpdateIfNeeded(app *models.Applic
 	return updater.updateGitRepo(app, task)
 }
 
+// updateGitRepo attempts to update the git repository with retries
 func (updater *ArgoStatusUpdater) updateGitRepo(app *models.Application, task models.Task) error {
 	err := retry.Do(
 		func() error {
@@ -190,6 +207,7 @@ func (updater *ArgoStatusUpdater) updateGitRepo(app *models.Application, task mo
 	return nil
 }
 
+// waitRollout polls the application status until it reaches a final state or times out
 func (updater *ArgoStatusUpdater) waitRollout(task models.Task) (*models.Application, error) {
 	var application *models.Application
 	var err error
@@ -215,7 +233,7 @@ func (updater *ArgoStatusUpdater) waitRollout(task models.Task) (*models.Applica
 	return application, err
 }
 
-// configureRetryOptions defines retry attempts based on task timeout
+// configureRetryOptions sets up retry behavior based on task timeout
 func (updater *ArgoStatusUpdater) configureRetryOptions(task models.Task) []retry.Option {
 	retryOptions := updater.retryOptions
 	if task.Timeout <= 0 {
@@ -242,7 +260,7 @@ func handleApplicationFetchError(task models.Task, err error) error {
 	return err
 }
 
-// checkRolloutStatus checks if the application completed rollout
+// checkRolloutStatus checks if the application completed rollout successfully
 func checkRolloutStatus(task models.Task, application *models.Application, registryProxyUrl string, acceptSuspended bool) error {
 	status := application.GetRolloutStatus(task.ListImages(), registryProxyUrl, acceptSuspended)
 
@@ -262,6 +280,7 @@ func checkRolloutStatus(task models.Task, application *models.Application, regis
 	return errors.New("force retry")
 }
 
+// handleArgoAPIFailure processes API errors and updates task status accordingly
 func (updater *ArgoStatusUpdater) handleArgoAPIFailure(task models.Task, err error) {
 	updater.argo.metrics.AddFailedDeployment(task.App)
 	finalStatus := determineFailureStatus(task, err)
@@ -273,6 +292,7 @@ func (updater *ArgoStatusUpdater) handleArgoAPIFailure(task models.Task, err err
 	}
 }
 
+// determineFailureStatus converts API errors into appropriate status messages
 func determineFailureStatus(task models.Task, err error) string {
 	if task.IsAppNotFoundError(err) {
 		return models.StatusAppNotFoundMessage
@@ -283,6 +303,7 @@ func determineFailureStatus(task models.Task, err error) string {
 	return models.StatusFailedMessage
 }
 
+// sendWebhookEvent sends a notification about deployment status if webhooks are enabled
 func sendWebhookEvent(task models.Task, webhookService *notifications.WebhookService) {
 	if webhookService.Enabled {
 		if err := webhookService.SendWebhook(task); err != nil {
