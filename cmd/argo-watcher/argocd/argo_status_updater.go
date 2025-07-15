@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"net/http"
 	"slices"
 	"strings"
 	"sync"
@@ -45,6 +46,8 @@ type ArgoStatusUpdater struct {
 
 // Init initializes the ArgoStatusUpdater with the provided configuration
 func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, retryDelay time.Duration, registryProxyUrl string, acceptSuspended bool, webhookConfig *config.WebhookConfig) {
+	var err error
+
 	updater.argo = argo
 	updater.registryProxyUrl = registryProxyUrl
 	updater.retryOptions = []retry.Option{
@@ -54,7 +57,14 @@ func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, retryDelay
 		retry.LastErrorOnly(true),
 	}
 	updater.acceptSuspended = acceptSuspended
-	updater.webhookService = notifications.NewWebhookService(webhookConfig)
+
+	httpClient := &http.Client{
+		Timeout: 15 * time.Second,
+	}
+
+	if updater.webhookService, err = notifications.NewWebhookService(webhookConfig, httpClient); err != nil {
+		log.Error().Msgf("Failed to initialize webhook service. Error: %s", err.Error())
+	}
 }
 
 // collectInitialAppStatus fetches and stores the initial application status
