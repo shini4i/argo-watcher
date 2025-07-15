@@ -323,7 +323,7 @@ func determineFailureStatus(task models.Task, err error) string {
 
 // sendWebhookEvent sends a notification about deployment status if webhooks are enabled
 func sendWebhookEvent(task models.Task, webhookService *notifications.WebhookService) {
-	if webhookService.Enabled {
+	if webhookService != nil && webhookService.Enabled {
 		if err := webhookService.SendWebhook(task); err != nil {
 			log.Error().Str("id", task.Id).Msgf("Failed to send webhook. Error: %s", err.Error())
 		}
