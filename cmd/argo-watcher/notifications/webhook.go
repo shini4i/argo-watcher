@@ -69,7 +69,7 @@ func (s *WebhookService) SendWebhook(task models.Task) error {
 	defer cancel()
 
 	var payload bytes.Buffer
-	if err := s.template.Execute(&payload, &task); err != nil {
+	if err := s.template.Execute(&payload, task); err != nil {
 		return fmt.Errorf("failed to execute webhook template: %w", err)
 	}
 
