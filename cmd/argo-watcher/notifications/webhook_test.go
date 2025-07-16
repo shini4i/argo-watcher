@@ -1,110 +1,240 @@
 package notifications
 
 import (
-	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
-	"net/http/httptest"
+	"strings"
 	"testing"
+	"text/template"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	"github.com/shini4i/argo-watcher/internal/models"
-	"github.com/stretchr/testify/assert"
 )
 
-type TestWebhookPayload struct {
-	Id     string `json:"id"`
-	App    string `json:"app"`
-	Status string `json:"status"`
+// MockHTTPClient is a mock implementation of the HTTPClient interface for testing.
+type MockHTTPClient struct {
+	DoFunc func(req *http.Request) (*http.Response, error)
 }
 
-var mockTask = models.Task{
-	Id:     "test-id",
-	App:    "test-app",
-	Status: "test-status",
+// Do calls the underlying DoFunc.
+func (m *MockHTTPClient) Do(req *http.Request) (*http.Response, error) {
+	if m.DoFunc != nil {
+		return m.DoFunc(req)
+	}
+	// Default behavior if DoFunc is not set
+	return nil, errors.New("DoFunc is not implemented")
 }
 
-const expectedAuthToken = "Bearer the-test-token"
+// TestNewWebhookService tests the constructor for WebhookService.
+func TestNewWebhookService(t *testing.T) {
+	t.Run("Success", func(t *testing.T) {
+		// arrange
+		cfg := &config.WebhookConfig{
+			Enabled:              true,
+			Url:                  "http://localhost/webhook",
+			Format:               `{"id":"{{.Id}}"}`,
+			ContentType:          "application/json",
+			AuthorizationHeader:  "X-Token",
+			Token:                "secret",
+			AllowedResponseCodes: []int{200, 201},
+		}
+		client := &MockHTTPClient{}
 
-func setupTestServer(t *testing.T) *httptest.Server {
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := r.Header.Get("Authorization")
-		assert.Equal(t, expectedAuthToken, token)
+		// act
+		service, err := NewWebhookService(cfg, client)
 
-		body, _ := io.ReadAll(r.Body)
-		defer func(Body io.ReadCloser) {
-			err := Body.Close()
-			if err != nil {
-				t.Error(err)
-			}
-		}(r.Body)
+		// assert
+		require.NoError(t, err)
+		assert.NotNil(t, service)
+		assert.True(t, service.Enabled)
+		assert.Equal(t, cfg.Url, service.url)
+		assert.Equal(t, cfg.Token, service.token)
+		assert.Equal(t, cfg.AuthorizationHeader, service.authorizationHeader)
+		assert.Equal(t, cfg.ContentType, service.contentType)
+		assert.Equal(t, cfg.AllowedResponseCodes, service.allowedResponseCodes)
+		assert.NotNil(t, service.template)
+		assert.Same(t, client, service.client)
+	})
 
-		var payload TestWebhookPayload
-		err := json.Unmarshal(body, &payload)
-		assert.NoError(t, err)
-		checkPayload(t, payload)
-	}))
+	t.Run("Nil HTTPClient", func(t *testing.T) {
+		// arrange
+		cfg := &config.WebhookConfig{}
+
+		// act
+		service, err := NewWebhookService(cfg, nil)
+
+		// assert
+		require.Error(t, err)
+		assert.Nil(t, service)
+		assert.Equal(t, "HTTPClient cannot be nil", err.Error())
+	})
 }
 
-func setupErrorTestServer() *httptest.Server {
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-}
-
-func checkPayload(t *testing.T, payload TestWebhookPayload) {
-	assert.Equal(t, mockTask.Id, payload.Id)
-	assert.Equal(t, mockTask.App, payload.App)
-	assert.Equal(t, mockTask.Status, payload.Status)
-}
-
+// TestSendWebhook tests the SendWebhook method of the WebhookService.
 func TestSendWebhook(t *testing.T) {
-	t.Run("Test webhook payload", func(t *testing.T) {
-		testServer := setupTestServer(t)
-		defer testServer.Close()
+	task := models.Task{Id: "test-task-123"}
 
-		webhookConfig := config.WebhookConfig{
-			Url:                  testServer.URL,
-			Format:               `{"id": "{{.Id}}","app": "{{.App}}","status": "{{.Status}}"}`,
-			AuthorizationHeader:  "Authorization",
-			Token:                expectedAuthToken,
-			AllowedResponseCodes: []int{200},
+	// Pre-compile a valid template for reuse in tests
+	tmpl, err := template.New("webhook").Parse(`{"id":"{{.Id}}"}`)
+	require.NoError(t, err)
+
+	t.Run("Successful Webhook", func(t *testing.T) {
+		// arrange
+		mockClient := &MockHTTPClient{
+			DoFunc: func(req *http.Request) (*http.Response, error) {
+				// Assert request details
+				assert.Equal(t, http.MethodPost, req.Method)
+				assert.Equal(t, "http://testhost/hook", req.URL.String())
+				assert.Equal(t, "application/json", req.Header.Get("Content-Type"))
+				assert.Equal(t, "secret-token", req.Header.Get("X-Auth"))
+
+				body, _ := io.ReadAll(req.Body)
+				assert.JSONEq(t, `{"id":"test-task-123"}`, string(body))
+
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader("")),
+				}, nil
+			},
 		}
 
-		service := NewWebhookService(&webhookConfig)
-		err := service.SendWebhook(mockTask)
+		service := &WebhookService{
+			url:                  "http://testhost/hook",
+			token:                "secret-token",
+			authorizationHeader:  "X-Auth",
+			contentType:          "application/json",
+			allowedResponseCodes: []int{200},
+			client:               mockClient,
+			template:             tmpl,
+		}
+
+		// act
+		err := service.SendWebhook(task)
+
+		// assert
 		assert.NoError(t, err)
 	})
 
-	t.Run("Test webhook payload with wrong response code", func(t *testing.T) {
-		testServer := setupTestServer(t)
-		defer testServer.Close()
+	t.Run("Failed Template Execution", func(t *testing.T) {
+		// arrange
+		// Use a template that requires a field not present in the task model
+		invalidTmpl, err := template.New("webhook").Parse(`{"missing_field":"{{.Missing}}>"}`)
+		require.NoError(t, err)
 
-		webhookConfig := config.WebhookConfig{
-			Url:                  testServer.URL,
-			Format:               `{"id": "{{.Id}}","app": "{{.App}}","status": "{{.Status}}"}`,
-			AuthorizationHeader:  "Authorization",
-			Token:                expectedAuthToken,
-			AllowedResponseCodes: []int{202, 204},
+		service := &WebhookService{
+			template: invalidTmpl, // a template that will fail
 		}
 
-		service := NewWebhookService(&webhookConfig)
-		err := service.SendWebhook(mockTask)
-		assert.Error(t, err)
+		// act
+		err = service.SendWebhook(task)
+
+		// assert
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to execute webhook template")
 	})
 
-	t.Run("Test error response", func(t *testing.T) {
-		testServer := setupErrorTestServer()
-		defer testServer.Close()
-
-		webhookConfig := config.WebhookConfig{
-			Url:                  testServer.URL,
-			Format:               `{"id": "{{.Id}}","app": "{{.App}}","status": "{{.Status}}"}`,
-			AllowedResponseCodes: []int{200},
+	t.Run("Failed Request Creation", func(t *testing.T) {
+		// arrange
+		service := &WebhookService{
+			url:      ":invalid-url:", // This will cause http.NewRequestWithContext to fail
+			template: tmpl,
 		}
 
-		service := NewWebhookService(&webhookConfig)
-		err := service.SendWebhook(mockTask)
-		assert.Error(t, err)
+		// act
+		err := service.SendWebhook(task)
+
+		// assert
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to create webhook request")
 	})
+
+	t.Run("Client Throws Error", func(t *testing.T) {
+		// arrange
+		mockClient := &MockHTTPClient{
+			DoFunc: func(req *http.Request) (*http.Response, error) {
+				return nil, errors.New("network error")
+			},
+		}
+
+		service := &WebhookService{
+			url:      "http://testhost/hook",
+			client:   mockClient,
+			template: tmpl,
+		}
+
+		// act
+		err := service.SendWebhook(task)
+
+		// assert
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to send webhook: network error")
+	})
+
+	t.Run("Non-Allowed Status Code", func(t *testing.T) {
+		// arrange
+		mockClient := &MockHTTPClient{
+			DoFunc: func(req *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusInternalServerError,
+					Body:       io.NopCloser(strings.NewReader(`{"error":"internal server error"}`)),
+				}, nil
+			},
+		}
+
+		service := &WebhookService{
+			url:                  "http://testhost/hook",
+			allowedResponseCodes: []int{200},
+			client:               mockClient,
+			template:             tmpl,
+		}
+
+		// act
+		err := service.SendWebhook(task)
+
+		// assert
+		require.Error(t, err)
+		assert.Equal(t, "received non-allowed status code 500: {\"error\":\"internal server error\"}", err.Error())
+	})
+
+	t.Run("Non-Allowed Status Code with Body Read Error", func(t *testing.T) {
+		// arrange
+		// Custom reader that returns an error on Read
+		errorReader := &errorReader{err: errors.New("read error")}
+
+		mockClient := &MockHTTPClient{
+			DoFunc: func(req *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusForbidden,
+					Body:       io.NopCloser(errorReader),
+				}, nil
+			},
+		}
+
+		service := &WebhookService{
+			url:                  "http://testhost/hook",
+			allowedResponseCodes: []int{200},
+			client:               mockClient,
+			template:             tmpl,
+		}
+
+		// act
+		err := service.SendWebhook(task)
+
+		// assert
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "received non-allowed status code 403, and failed to read response body: read error")
+	})
+}
+
+// errorReader is a helper struct that implements io.Reader and always returns an error.
+type errorReader struct {
+	err error
+}
+
+func (r *errorReader) Read(p []byte) (n int, err error) {
+	return 0, r.err
 }

@@ -58,13 +58,16 @@ func RunServer() {
 
 	// initialize argo updater
 	updater := &argocd.ArgoStatusUpdater{}
-	updater.Init(*argo,
+	err = updater.Init(*argo,
 		serverConfig.GetRetryAttempts(),
 		argocd.ArgoSyncRetryDelay,
 		serverConfig.RegistryProxyUrl,
 		serverConfig.AcceptSuspendedApp,
 		&serverConfig.Webhook,
 	)
+	if err != nil {
+		log.Fatal().Msgf("Couldn't initialize the Argo updater. Got the following error: %s", err)
+	}
 
 	// create environment
 	env, err := NewEnv(serverConfig, argo, metrics, updater)

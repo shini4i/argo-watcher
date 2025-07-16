@@ -25,6 +25,7 @@ type DatabaseConfig struct {
 type WebhookConfig struct {
 	Enabled              bool   `env:"WEBHOOK_ENABLED" envDefault:"false" json:"enabled"`
 	Url                  string `env:"WEBHOOK_URL" json:"url,omitempty"`
+	ContentType          string `env:"WEBHOOK_CONTENT_TYPE" envDefault:"application/json" json:"content_type,omitempty"`
 	Format               string `env:"WEBHOOK_FORMAT" json:"format,omitempty"`
 	AuthorizationHeader  string `env:"WEBHOOK_AUTHORIZATION_HEADER_NAME" envDefault:"Authorization" json:"authorization_header,omitempty"`
 	Token                string `env:"WEBHOOK_AUTHORIZATION_HEADER_VALUE" envDefault:"" json:"-"`

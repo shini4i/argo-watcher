@@ -37,7 +37,8 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig)
+		err := updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig)
+		assert.NoError(t, err)
 
 		// prepare test data
 		task := models.Task{

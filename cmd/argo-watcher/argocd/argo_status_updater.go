@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"net/http"
 	"slices"
 	"strings"
 	"sync"
@@ -44,7 +45,9 @@ type ArgoStatusUpdater struct {
 }
 
 // Init initializes the ArgoStatusUpdater with the provided configuration
-func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, retryDelay time.Duration, registryProxyUrl string, acceptSuspended bool, webhookConfig *config.WebhookConfig) {
+func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, retryDelay time.Duration, registryProxyUrl string, acceptSuspended bool, webhookConfig *config.WebhookConfig) error {
+	var err error
+
 	updater.argo = argo
 	updater.registryProxyUrl = registryProxyUrl
 	updater.retryOptions = []retry.Option{
@@ -54,7 +57,22 @@ func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, retryDelay
 		retry.LastErrorOnly(true),
 	}
 	updater.acceptSuspended = acceptSuspended
-	updater.webhookService = notifications.NewWebhookService(webhookConfig)
+
+	if !webhookConfig.Enabled {
+		return nil
+	}
+
+	httpClient := &http.Client{
+		Timeout: 15 * time.Second,
+	}
+
+	webhookService, err := notifications.NewWebhookService(webhookConfig, httpClient)
+	if err != nil {
+		return err
+	}
+
+	updater.webhookService = webhookService
+	return nil
 }
 
 // collectInitialAppStatus fetches and stores the initial application status
@@ -305,7 +323,7 @@ func determineFailureStatus(task models.Task, err error) string {
 
 // sendWebhookEvent sends a notification about deployment status if webhooks are enabled
 func sendWebhookEvent(task models.Task, webhookService *notifications.WebhookService) {
-	if webhookService.Enabled {
+	if webhookService != nil && webhookService.Enabled {
 		if err := webhookService.SendWebhook(task); err != nil {
 			log.Error().Str("id", task.Id).Msgf("Failed to send webhook. Error: %s", err.Error())
 		}
