@@ -14,13 +14,24 @@ import (
 )
 
 // getTestDB creates a new database connection for testing purposes.
-// It reads connection details from environment variables.
-// If the required environment variables are not set, the test will be skipped.
+// It reads connection details from the same environment variables the application uses.
+// The test is skipped if STATE_TYPE is not 'postgres' or if DB variables are missing.
 func getTestDB(t *testing.T) *gorm.DB {
-	dsn := os.Getenv("ARGO_WATCHER_TEST_DB_DSN")
-	if dsn == "" {
-		t.Skip("Skipping postgres lock tests: ARGO_WATCHER_TEST_DB_DSN is not set.")
+	if os.Getenv("STATE_TYPE") != "postgres" {
+		t.Skip("Skipping postgres lock tests: STATE_TYPE is not 'postgres'")
 	}
+
+	host := os.Getenv("DB_HOST")
+	user := os.Getenv("DB_USER")
+	password := os.Getenv("DB_PASSWORD")
+	dbname := os.Getenv("DB_NAME")
+	port := os.Getenv("DB_PORT")
+
+	if host == "" || user == "" || password == "" || dbname == "" || port == "" {
+		t.Skip("Skipping postgres lock tests: STATE_TYPE is 'postgres' but one or more DB_* environment variables are not set.")
+	}
+
+	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable", host, user, password, dbname, port)
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
