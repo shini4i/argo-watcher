@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
@@ -17,35 +16,26 @@ import (
 
 	"github.com/avast/retry-go/v4"
 	"github.com/rs/zerolog/log"
+	"github.com/shini4i/argo-watcher/internal/lock"
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
-const failedToUpdateTaskStatusTemplate string = "Failed to change task status: %s"
-
-// MutexMap provides a thread-safe way to get a mutex for a specific key
-type MutexMap struct {
-	m sync.Map
-}
-
-// Get returns a mutex for the given key. If the key doesn't exist, a new mutex is created.
-func (mm *MutexMap) Get(key string) *sync.Mutex {
-	log.Debug().Msgf("acquiring mutex for %s app", key)
-	m, _ := mm.m.LoadOrStore(key, &sync.Mutex{})
-	return m.(*sync.Mutex) // nolint:forcetypeassert // type assertion is guaranteed to be correct
-}
+const (
+	failedToUpdateTaskStatusTemplate = "Failed to change task status: %s"
+)
 
 // ArgoStatusUpdater handles the monitoring and updating of ArgoCD application deployments
 type ArgoStatusUpdater struct {
 	argo             Argo
 	registryProxyUrl string
 	retryOptions     []retry.Option
-	mutex            MutexMap
+	locker           lock.Locker
 	acceptSuspended  bool
 	webhookService   *notifications.WebhookService
 }
 
 // Init initializes the ArgoStatusUpdater with the provided configuration
-func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, retryDelay time.Duration, registryProxyUrl string, acceptSuspended bool, webhookConfig *config.WebhookConfig) error {
+func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, retryDelay time.Duration, registryProxyUrl string, acceptSuspended bool, webhookConfig *config.WebhookConfig, locker lock.Locker) error {
 	var err error
 
 	updater.argo = argo
@@ -57,6 +47,7 @@ func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, retryDelay
 		retry.LastErrorOnly(true),
 	}
 	updater.acceptSuspended = acceptSuspended
+	updater.locker = locker
 
 	if !webhookConfig.Enabled {
 		return nil
@@ -187,16 +178,22 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 // handleGitRepoUpdateIfNeeded updates the git repository if the application
 // is managed by the watcher and has valid credentials
 func (updater *ArgoStatusUpdater) handleGitRepoUpdateIfNeeded(app *models.Application, task models.Task) error {
-	// This mutex is used only to avoid concurrent updates of the same application
-	mutex := updater.mutex.Get(task.App)
-	mutex.Lock()
-	defer mutex.Unlock()
-
 	// Skip if not managed by watcher or not validated
 	if !app.IsManagedByWatcher() || !task.Validated {
 		log.Debug().Str("id", task.Id).Msg("Skipping git repo update: Application does not have the necessary annotations or token is missing.")
 		return nil
 	}
+
+	// This lock waits for other processes to finish git updates for the same app.
+	if err := updater.locker.Lock(task.App); err != nil {
+		log.Error().Str("id", task.Id).Msgf("Failed to acquire lock for git update: %s", err)
+		return err
+	}
+	defer func() {
+		if err := updater.locker.Unlock(task.App); err != nil {
+			log.Error().Str("id", task.Id).Msgf("Failed to unlock app %s: %s", task.App, err)
+		}
+	}()
 
 	// Application is managed by watcher, update git repo
 	log.Debug().Str("id", task.Id).Msg("Application managed by watcher. Initiating git repo update.")
@@ -233,7 +230,7 @@ func (updater *ArgoStatusUpdater) waitRollout(task models.Task) (*models.Applica
 	retryOptions := updater.configureRetryOptions(task)
 	log.Debug().Str("id", task.Id).Msg("Waiting for rollout")
 
-	_ = retry.Do(func() error {
+	err = retry.Do(func() error {
 		application, err = updater.argo.api.GetApplication(task.App)
 		if err != nil {
 			return handleApplicationFetchError(task, err)
@@ -259,6 +256,7 @@ func (updater *ArgoStatusUpdater) configureRetryOptions(task models.Task) []retr
 	}
 
 	log.Debug().Str("id", task.Id).Msgf("Overriding task timeout to %ds", task.Timeout)
+
 	calculatedAttempts := task.Timeout/15 + 1
 
 	if calculatedAttempts < 0 {

@@ -2,6 +2,7 @@ package server
 
 import (
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/argocd"
+	"github.com/shini4i/argo-watcher/internal/lock"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
 
@@ -12,8 +13,6 @@ import (
 )
 
 // initLogs initializes the logging configuration based on the provided log level.
-// It parses the log level string and sets the global log level accordingly using the zerolog library.
-// If the log level string is invalid, it falls back to the default InfoLevel.
 func initLogs(logLevel string) {
 	if logLevel, err := zerolog.ParseLevel(logLevel); err != nil {
 		log.Warn().Msgf("Couldn't parse log level. Got the following error: %s", err)
@@ -56,6 +55,9 @@ func RunServer() {
 	argo := &argocd.Argo{}
 	argo.Init(state, api, metrics)
 
+	// Create the locker instance
+	locker := lock.NewInMemoryLocker()
+
 	// initialize argo updater
 	updater := &argocd.ArgoStatusUpdater{}
 	err = updater.Init(*argo,
@@ -64,6 +66,7 @@ func RunServer() {
 		serverConfig.RegistryProxyUrl,
 		serverConfig.AcceptSuspendedApp,
 		&serverConfig.Webhook,
+		locker,
 	)
 	if err != nil {
 		log.Fatal().Msgf("Couldn't initialize the Argo updater. Got the following error: %s", err)
