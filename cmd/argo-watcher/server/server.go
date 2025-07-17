@@ -12,7 +12,7 @@ import (
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/state"
 )
 
-// initLogs initializes the logging configuration based on the provided log level.
+// initLogs initializes the logging configuration.
 func initLogs(logLevel string) {
 	if logLevel, err := zerolog.ParseLevel(logLevel); err != nil {
 		log.Warn().Msgf("Couldn't parse log level. Got the following error: %s", err)
@@ -44,19 +44,34 @@ func RunServer() {
 	}
 
 	// create state management
-	state, err := state.NewState(serverConfig)
+	s, err := state.NewState(serverConfig)
 	if err != nil {
 		log.Fatal().Msgf("Couldn't create state manager (in-memory / database). Got the following error: %s", err)
 	}
-	// start cleanup go routine (retryTimes set to 0 to retry indefinitely)
-	go state.ProcessObsoleteTasks(0)
+	// start cleanup go routine
+	go s.ProcessObsoleteTasks(0)
 
 	// initialize argo client
 	argo := &argocd.Argo{}
-	argo.Init(state, api, metrics)
+	argo.Init(s, api, metrics)
 
-	// Create the locker instance
-	locker := lock.NewInMemoryLocker()
+	// Create the locker instance based on the state type
+	var locker lock.Locker
+	if serverConfig.StateType == "postgres" {
+		pgState, ok := s.(*state.PostgresState)
+		if !ok {
+			log.Fatal().Msg("State type is postgres, but the state object is not a PostgresState instance.")
+		}
+		db := pgState.GetDB()
+		if db == nil {
+			log.Fatal().Msg("Could not get a valid DB connection from the postgres state.")
+		}
+		locker = lock.NewPostgresLocker(db)
+		log.Info().Msg("Using Postgres advisory locks for distributed locking.")
+	} else {
+		locker = lock.NewInMemoryLocker()
+		log.Warn().Msg("Using in-memory lock. This is not suitable for HA setups.")
+	}
 
 	// initialize argo updater
 	updater := &argocd.ArgoStatusUpdater{}
