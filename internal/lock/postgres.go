@@ -42,5 +42,9 @@ func generateLockID(key string) int64 {
 	table := crc64.MakeTable(crc64.ISO)
 	hash := crc64.New(table)
 	_, _ = io.WriteString(hash, key) // WriteString on crc64 never returns an error
-	return int64(hash.Sum64())
+	// Gosec flags direct conversion of uint64 to int64 as a potential overflow.
+	// While advisory locks work with negative numbers, we use a bitmask to ensure
+	// the value is always positive to satisfy the linter and avoid ambiguity.
+	// This sacrifices one bit of entropy but is perfectly safe and sufficient.
+	return int64(hash.Sum64() & 0x7FFFFFFFFFFFFFFF)
 }
