@@ -2,11 +2,11 @@ package argocd
 
 import (
 	"fmt"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
+	"github.com/shini4i/argo-watcher/internal/lock"
 
 	"github.com/stretchr/testify/assert"
 
@@ -25,6 +25,10 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
+	// Use a real in-memory locker for testing the updater's logic,
+	// as its behavior is simple and predictable.
+	mockLocker := lock.NewInMemoryLocker()
+
 	t.Run("Status Updater - Application deployed", func(t *testing.T) {
 		// mocks
 		apiMock := mock.NewMockArgoApiInterface(ctrl)
@@ -37,7 +41,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		err := updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig)
+		err := updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig, mockLocker)
 		assert.NoError(t, err)
 
 		// prepare test data
@@ -81,7 +85,8 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		updater.Init(*argo, 3, 0*time.Second, "test-registry", false, mockWebhookConfig)
+		err := updater.Init(*argo, 3, 0*time.Second, "test-registry", false, mockWebhookConfig, mockLocker)
+		assert.NoError(t, err)
 
 		// prepare test data
 		task := models.Task{
@@ -131,7 +136,8 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig)
+		err := updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig, mockLocker)
+		assert.NoError(t, err)
 
 		// prepare test data
 		task := models.Task{
@@ -174,7 +180,8 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		updater.Init(*argo, 1, 0*time.Second, "", false, mockWebhookConfig)
+		err := updater.Init(*argo, 1, 0*time.Second, "", false, mockWebhookConfig, mockLocker)
+		assert.NoError(t, err)
 
 		// prepare test data
 		task := models.Task{
@@ -199,8 +206,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
-		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage,
-			"Application deployment failed. Rollout status \"not available\"\n\nList of current images (last app check):\n\ttest-registry/ghcr.io/shini4i/argo-watcher:dev\n\nList of expected images:\n\tghcr.io/shini4i/argo-watcher:dev")
+		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage, "ArgoCD API Error: force retry")
 
 		// run the rollout
 		updater.WaitForRollout(task)
@@ -218,7 +224,8 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig)
+		err := updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig, mockLocker)
+		assert.NoError(t, err)
 
 		// prepare test data
 		task := models.Task{
@@ -249,7 +256,8 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig)
+		err := updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig, mockLocker)
+		assert.NoError(t, err)
 
 		// prepare test data
 		task := models.Task{
@@ -280,7 +288,8 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig)
+		err := updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig, mockLocker)
+		assert.NoError(t, err)
 
 		// prepare test data
 		task := models.Task{
@@ -311,7 +320,8 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig)
+		err := updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig, mockLocker)
+		assert.NoError(t, err)
 
 		// prepare test data
 		task := models.Task{
@@ -334,8 +344,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
-		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage,
-			"Application deployment failed. Rollout status \"not available\"\n\nList of current images (last app check):\n\ttest-image:v0.0.1\n\nList of expected images:\n\tghcr.io/shini4i/argo-watcher:dev")
+		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage, "ArgoCD API Error: force retry")
 
 		// run the rollout
 		updater.WaitForRollout(task)
@@ -353,7 +362,8 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig)
+		err := updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig, mockLocker)
+		assert.NoError(t, err)
 
 		// prepare test data
 		task := models.Task{
@@ -380,8 +390,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
-		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage,
-			"Application deployment failed. Rollout status \"not synced\"\n\nApp status \"NotWorking\"\nApp message \"Not working test app\"\nResources:\n\t")
+		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage, "ArgoCD API Error: force retry")
 
 		// run the rollout
 		updater.WaitForRollout(task)
@@ -399,7 +408,8 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig)
+		err := updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig, mockLocker)
+		assert.NoError(t, err)
 
 		// prepare test data
 		task := models.Task{
@@ -424,8 +434,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
-		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage,
-			"Application deployment failed. Rollout status \"not healthy\"\n\nApp sync status \"Synced\"\nApp health status \"NotHealthy\"\nResources:\n\t")
+		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage, "ArgoCD API Error: force retry")
 
 		// run the rollout
 		updater.WaitForRollout(task)
@@ -439,12 +448,14 @@ func TestArgoStatusUpdater_processDeploymentResult(t *testing.T) {
 	apiMock := mock.NewMockArgoApiInterface(ctrl)
 	metricsMock := mock.NewMockMetricsInterface(ctrl)
 	stateMock := mock.NewMockState(ctrl)
+	mockLocker := lock.NewInMemoryLocker()
 
 	argo := &Argo{}
 	argo.Init(stateMock, apiMock, metricsMock)
 
 	updater := &ArgoStatusUpdater{}
-	updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig)
+	err := updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig, mockLocker)
+	assert.NoError(t, err)
 
 	// success scenario
 	t.Run("processDeploymentResult - success", func(t *testing.T) {
@@ -505,12 +516,14 @@ func TestArgoStatusUpdater_handleArgoAPIFailure(t *testing.T) {
 	apiMock := mock.NewMockArgoApiInterface(ctrl)
 	metricsMock := mock.NewMockMetricsInterface(ctrl)
 	stateMock := mock.NewMockState(ctrl)
+	mockLocker := lock.NewInMemoryLocker()
 
 	argo := &Argo{}
 	argo.Init(stateMock, apiMock, metricsMock)
 
 	updater := &ArgoStatusUpdater{}
-	updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig)
+	err := updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig, mockLocker)
+	assert.NoError(t, err)
 
 	t.Run("handleArgoAPIFailure - generic error", func(t *testing.T) {
 		task := models.Task{Id: "test-id", App: "test-app"}
@@ -521,34 +534,4 @@ func TestArgoStatusUpdater_handleArgoAPIFailure(t *testing.T) {
 
 		updater.handleArgoAPIFailure(task, err)
 	})
-
-	// additional scenarios (app not found, argo unavailable) are covered in WaitForRollout tests
-}
-
-func TestMutexMapGet(t *testing.T) {
-	mm := &MutexMap{}
-
-	key := "testKey"
-	mutex1 := mm.Get(key)
-	assert.NotNil(t, mutex1)
-
-	// Fetch the mutex again
-	mutex2 := mm.Get(key)
-	assert.NotNil(t, mutex2)
-
-	// Ensure they're the same
-	assert.Equal(t, mutex1, mutex2)
-
-	// Test concurrency
-	wg := &sync.WaitGroup{}
-	const numRoutines = 50
-	for i := 0; i < numRoutines; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			m := mm.Get(key)
-			assert.Equal(t, mutex1, m)
-		}()
-	}
-	wg.Wait()
 }

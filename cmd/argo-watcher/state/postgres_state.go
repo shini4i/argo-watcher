@@ -177,3 +177,9 @@ func (state *PostgresState) doProcessPostgresObsoleteTasks() error {
 
 	return nil
 }
+
+// GetDB returns the underlying GORM database instance.
+// This allows sharing the database connection pool with other components.
+func (state *PostgresState) GetDB() *gorm.DB {
+	return state.orm
+}
