@@ -43,5 +43,5 @@ func generateLockID(key string) int64 {
 	hash := crc64.New(table)
 	_, _ = io.WriteString(hash, key) // WriteString on crc64 never returns an error
 
-	return int64(hash.Sum64()) //gosec:ignore G115
+	return int64(hash.Sum64()) // #nosec G115
 }
