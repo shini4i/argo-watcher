@@ -42,9 +42,12 @@ func generateLockID(key string) int64 {
 	table := crc64.MakeTable(crc64.ISO)
 	hash := crc64.New(table)
 	_, _ = io.WriteString(hash, key) // WriteString on crc64 never returns an error
-	// Gosec flags direct conversion of uint64 to int64 as a potential overflow.
-	// While advisory locks work with negative numbers, we use a bitmask to ensure
-	// the value is always positive to satisfy the linter and avoid ambiguity.
-	// This sacrifices one bit of entropy but is perfectly safe and sufficient.
-	return int64(hash.Sum64() & 0x7FFFFFFFFFFFFFFF)
+
+	// Gosec flags this as a potential overflow. We are intentionally ignoring it because:
+	// 1. PostgreSQL's pg_advisory_lock function accepts a `bigint` (int64), which can be negative.
+	// 2. The wrapping behavior of the conversion is deterministic. The same input string will
+	//    always produce the same int64 output, which is the only requirement for the lock to work.
+	// Therefore, this is a false positive in the context of this specific function call.
+	//gosec:ignore G115
+	return int64(hash.Sum64())
 }
