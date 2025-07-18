@@ -43,11 +43,5 @@ func generateLockID(key string) int64 {
 	hash := crc64.New(table)
 	_, _ = io.WriteString(hash, key) // WriteString on crc64 never returns an error
 
-	// Gosec flags this as a potential overflow. We are intentionally ignoring it because:
-	// 1. PostgreSQL's pg_advisory_lock function accepts a `bigint` (int64), which can be negative.
-	// 2. The wrapping behavior of the conversion is deterministic. The same input string will
-	//    always produce the same int64 output, which is the only requirement for the lock to work.
-	// Therefore, this is a false positive in the context of this specific function call.
-	//gosec:ignore G115
-	return int64(hash.Sum64())
+	return int64(hash.Sum64()) //gosec:ignore G115
 }
