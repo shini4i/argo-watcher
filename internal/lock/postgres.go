@@ -37,6 +37,8 @@ func generateLockID(key string) int64 {
 	hasher := fnv.New64a()
 	// The Write method on hash.Hash never returns an error.
 	_, _ = io.WriteString(hasher, key)
-	// We cast the uint64 hash sum to an int64 for the advisory lock function.
-	return int64(hasher.Sum64())
+	// gosec flags this as a potential overflow, but PostgreSQL's advisory lock
+	// function accepts a signed 64-bit integer (bigint), so negative lock IDs
+	// are perfectly valid. The conversion is deterministic and safe in this context.
+	return int64(hasher.Sum64()) // #nosec G115
 }
