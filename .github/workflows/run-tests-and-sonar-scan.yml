@@ -79,6 +79,7 @@ jobs:
           DB_PORT: 5432
           STATE_TYPE: in-memory
           ARGO_URL: http://localhost:8081
+          POSTGRES_DSN: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
         run: task test
 
       - name: Upload coverage reports to Codecov
