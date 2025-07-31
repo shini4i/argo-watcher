@@ -2,27 +2,29 @@ package lock
 
 import "sync"
 
-// MutexMap is a map of mutexes for each application. It is not exported.
+// mutexMap is a thread-safe map to hold mutexes for different keys.
 type mutexMap struct {
-	mutexes map[string]*sync.Mutex
-	mu      sync.Mutex
+	mu sync.Mutex
+	m  map[string]*sync.Mutex
 }
 
-// newMutexMap creates a new MutexMap.
+// newMutexMap creates a new, initialized mutexMap.
 func newMutexMap() *mutexMap {
 	return &mutexMap{
-		mutexes: make(map[string]*sync.Mutex),
+		m: make(map[string]*sync.Mutex),
 	}
 }
 
-// get returns a mutex for the given key, creating it if it doesn't exist.
+// get returns the mutex for a given key, creating it if it doesn't exist.
 func (m *mutexMap) get(key string) *sync.Mutex {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if _, ok := m.mutexes[key]; !ok {
-		m.mutexes[key] = &sync.Mutex{}
+	if mu, ok := m.m[key]; ok {
+		return mu
 	}
-	return m.mutexes[key]
+	mu := &sync.Mutex{}
+	m.m[key] = mu
+	return mu
 }
 
 // InMemoryLocker is an implementation of the Locker interface that uses
@@ -38,16 +40,10 @@ func NewInMemoryLocker() Locker {
 	}
 }
 
-// Lock acquires a lock for the given key. It is a blocking call.
-func (l *InMemoryLocker) Lock(key string) error {
+// WithLock acquires a lock for the given key, executes the function, and releases the lock.
+func (l *InMemoryLocker) WithLock(key string, f func() error) error {
 	mutex := l.mutexMap.get(key)
 	mutex.Lock()
-	return nil
-}
-
-// Unlock releases the lock for the given key.
-func (l *InMemoryLocker) Unlock(key string) error {
-	mutex := l.mutexMap.get(key)
-	mutex.Unlock()
-	return nil
+	defer mutex.Unlock()
+	return f()
 }
