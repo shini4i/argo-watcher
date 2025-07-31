@@ -1,8 +1,7 @@
 package lock
 
 import (
-	"crypto/sha1"
-	"encoding/binary"
+	"hash/fnv"
 	"io"
 
 	"gorm.io/gorm"
@@ -33,10 +32,11 @@ func (p *PostgresLocker) WithLock(key string, f func() error) error {
 }
 
 // generateLockID creates a deterministic 64-bit integer from a string key.
-// Using a hash prevents collisions and allows arbitrary string keys.
+// Using FNV-1a for a fast, non-cryptographic hash suitable for this use case.
 func generateLockID(key string) int64 {
-	hasher := sha1.New()
+	hasher := fnv.New64a()
+	// The Write method on hash.Hash never returns an error.
 	_, _ = io.WriteString(hasher, key)
-	// We only need the first 8 bytes for a 64-bit integer.
-	return int64(binary.BigEndian.Uint64(hasher.Sum(nil)[:8]))
+	// We cast the uint64 hash sum to an int64 for the advisory lock function.
+	return int64(hasher.Sum64())
 }
