@@ -178,26 +178,23 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 // handleGitRepoUpdateIfNeeded updates the git repository if the application
 // is managed by the watcher and has valid credentials
 func (updater *ArgoStatusUpdater) handleGitRepoUpdateIfNeeded(app *models.Application, task models.Task) error {
-	// Skip if not managed by watcher or not validated
 	if !app.IsManagedByWatcher() || !task.Validated {
 		log.Debug().Str("id", task.Id).Msg("Skipping git repo update: Application does not have the necessary annotations or token is missing.")
 		return nil
 	}
 
-	// This lock waits for other processes to finish git updates for the same app.
-	if err := updater.locker.Lock(task.App); err != nil {
-		log.Error().Str("id", task.Id).Msgf("Failed to acquire lock for git update: %s", err)
+	gitUpdateFunc := func() error {
+		log.Debug().Str("id", task.Id).Msg("Application managed by watcher. Initiating git repo update.")
+		return updater.updateGitRepo(app, task)
+	}
+
+	err := updater.locker.WithLock(task.App, gitUpdateFunc)
+	if err != nil {
+		log.Error().Str("id", task.Id).Msgf("Failed git repo update for app %s: %s", task.App, err)
 		return err
 	}
-	defer func() {
-		if err := updater.locker.Unlock(task.App); err != nil {
-			log.Error().Str("id", task.Id).Msgf("Failed to unlock app %s: %s", task.App, err)
-		}
-	}()
 
-	// Application is managed by watcher, update git repo
-	log.Debug().Str("id", task.Id).Msg("Application managed by watcher. Initiating git repo update.")
-	return updater.updateGitRepo(app, task)
+	return nil
 }
 
 // updateGitRepo attempts to update the git repository with retries
