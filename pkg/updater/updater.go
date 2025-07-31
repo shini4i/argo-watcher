@@ -2,18 +2,20 @@ package updater
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"hash/fnv"
 	"io"
+	"os"
+	"path/filepath"
+	"strconv"
 	"text/template"
 	"time"
 
-	"github.com/go-git/go-billy/v5"
-	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
-	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v3"
 )
@@ -31,37 +33,95 @@ type ArgoParameterOverride struct {
 }
 
 type GitRepo struct {
-	RepoURL    string
-	BranchName string
-	Path       string
-	FileName   string
-	fs         billy.Filesystem
-	localRepo  *git.Repository
-	sshAuth    *ssh.PublicKeys
-
-	gitConfig *GitConfig
-
-	GitHandler GitHandler
+	RepoURL       string
+	BranchName    string
+	Path          string
+	FileName      string
+	localRepo     *git.Repository
+	sshAuth       *ssh.PublicKeys
+	gitConfig     *GitConfig
+	GitHandler    GitHandler
+	repoCachePath string
+	localRepoPath string
 }
 
+// getRepoCachePath generates a unique, deterministic local path for the repository cache using FNV-1a.
+func (repo *GitRepo) getRepoCachePath() string {
+	hasher := fnv.New64a()
+	// The Write method on hash.Hash never returns an error.
+	_, _ = io.WriteString(hasher, fmt.Sprintf("%s-%s", repo.RepoURL, repo.BranchName))
+	hashUint64 := hasher.Sum64()
+	return filepath.Join(repo.repoCachePath, strconv.FormatUint(hashUint64, 16))
+}
+
+// Clone handles the git clone operation with caching.
+// If the repository is already cached locally, it fetches the latest changes.
+// Otherwise, it clones the repository from the remote URL.
 func (repo *GitRepo) Clone() error {
 	var err error
 
-	repo.fs = memfs.New()
+	// Generate a unique path for the repository in the cache
+	repo.localRepoPath = repo.getRepoCachePath()
 
+	// Prepare SSH authentication
 	if repo.sshAuth, err = repo.GitHandler.AddSSHKey("git", repo.gitConfig.SshKeyPath, repo.gitConfig.SshKeyPass); err != nil {
 		return err
 	}
 
-	repo.localRepo, err = repo.GitHandler.Clone(memory.NewStorage(), repo.fs, &git.CloneOptions{
-		URL:           repo.RepoURL,
-		ReferenceName: plumbing.ReferenceName("refs/heads/" + repo.BranchName),
-		SingleBranch:  true,
-		Depth:         1, // This is needed to avoid fetching the entire history, which is not needed in this case
-		Auth:          repo.sshAuth,
-	})
+	// Check if the repository is already cached
+	if _, err = os.Stat(repo.localRepoPath); os.IsNotExist(err) {
+		// Not cached, clone it
+		log.Debug().Msgf("Cloning repository %s into %s", repo.RepoURL, repo.localRepoPath)
+		repo.localRepo, err = repo.GitHandler.PlainClone(repo.localRepoPath, false, &git.CloneOptions{
+			URL:           repo.RepoURL,
+			ReferenceName: plumbing.ReferenceName("refs/heads/" + repo.BranchName),
+			SingleBranch:  true,
+			Auth:          repo.sshAuth,
+		})
+		return err
+	}
 
-	return err
+	// Cached, open it
+	log.Debug().Msgf("Repository %s already cached at %s", repo.RepoURL, repo.localRepoPath)
+	repo.localRepo, err = git.PlainOpen(repo.localRepoPath)
+	if err != nil {
+		return fmt.Errorf("failed to open cached repo: %w", err)
+	}
+
+	// Fetch the latest changes
+	err = repo.localRepo.Fetch(&git.FetchOptions{
+		RemoteName: "origin",
+		Auth:       repo.sshAuth,
+		Force:      true,
+	})
+	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
+		return fmt.Errorf("failed to fetch repo: %w", err)
+	}
+
+	// Reset to the latest version of the branch
+	worktree, err := repo.localRepo.Worktree()
+	if err != nil {
+		return err
+	}
+
+	remoteRef, err := repo.localRepo.Reference(plumbing.NewRemoteReferenceName("origin", repo.BranchName), true)
+	if err != nil {
+		return fmt.Errorf("failed to get remote reference: %w", err)
+	}
+
+	return worktree.Reset(&git.ResetOptions{
+		Commit: remoteRef.Hash(),
+		Mode:   git.HardReset,
+	})
+}
+
+// NukeAndReclone removes the local cache and clones the repository again.
+func (repo *GitRepo) NukeAndReclone() error {
+	log.Debug().Msgf("Nuking cache for %s at %s", repo.RepoURL, repo.localRepoPath)
+	if err := os.RemoveAll(repo.localRepoPath); err != nil {
+		return fmt.Errorf("failed to remove local cache directory: %w", err)
+	}
+	return repo.Clone()
 }
 
 func (repo *GitRepo) generateOverrideFileName(appName string) string {
@@ -91,44 +151,44 @@ func (repo *GitRepo) generateCommitMessage(appName string, tmplData any) (string
 	return message.String(), nil
 }
 
+// UpdateApp is the main entry point for updating the application manifest.
+// It orchestrates the process of merging, committing, and pushing changes.
 func (repo *GitRepo) UpdateApp(appName string, overrideContent *ArgoOverrideFile, tmplData any) error {
 	overrideFileName := repo.generateOverrideFileName(appName)
+	fullPath := filepath.Join(repo.localRepoPath, overrideFileName)
 
 	commitMsg, err := repo.generateCommitMessage(appName, tmplData)
 	if err != nil {
 		return err
 	}
 
-	log.Debug().Msgf("Updating override file: %s", overrideFileName)
+	log.Debug().Msgf("Updating override file: %s", fullPath)
 
-	overrideContent, err = repo.mergeOverrideFileContent(overrideFileName, overrideContent)
+	finalContent, err := repo.mergeOverrideFileContent(fullPath, overrideContent)
 	if err != nil {
 		return err
 	}
 
-	if err := repo.commit(overrideFileName, commitMsg, overrideContent); err != nil {
+	if err := repo.commitAndPush(fullPath, commitMsg, finalContent); err != nil {
 		return err
 	}
-
-	repo.close()
 
 	return nil
 }
 
-func (repo *GitRepo) mergeOverrideFileContent(overrideFileName string, overrideContent *ArgoOverrideFile) (*ArgoOverrideFile, error) {
-	if !repo.overrideFileExists(overrideFileName) {
+func (repo *GitRepo) mergeOverrideFileContent(fullPath string, overrideContent *ArgoOverrideFile) (*ArgoOverrideFile, error) {
+	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
 		return overrideContent, nil
 	}
 
-	existingOverrideFile := ArgoOverrideFile{}
-
-	content, err := repo.getFileContent(overrideFileName)
+	existingContent, err := os.ReadFile(fullPath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to read existing override file: %w", err)
 	}
 
-	if err := yaml.Unmarshal(content, &existingOverrideFile); err != nil {
-		return nil, err
+	existingOverrideFile := ArgoOverrideFile{}
+	if err := yaml.Unmarshal(existingContent, &existingOverrideFile); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal existing override file: %w", err)
 	}
 
 	mergeParameters(&existingOverrideFile, overrideContent)
@@ -136,61 +196,42 @@ func (repo *GitRepo) mergeOverrideFileContent(overrideFileName string, overrideC
 	return &existingOverrideFile, nil
 }
 
-func (repo *GitRepo) getFileContent(filename string) ([]byte, error) {
-	tmp, err := repo.fs.Open(filename)
-	if err != nil {
-		return nil, err
-	}
-
-	defer func(tmp billy.File) {
-		err := tmp.Close()
-		if err != nil {
-			fmt.Println(err)
-		}
-	}(tmp)
-
-	return io.ReadAll(tmp)
-}
-
-// overrideFileExists checks if the override file exists in the repository.
-func (repo *GitRepo) overrideFileExists(filename string) bool {
-	_, err := repo.fs.Stat(filename)
-	return err == nil
-}
-
-// commit commits the override file to the repository.
-func (repo *GitRepo) commit(fileName, commitMsg string, overrideContent *ArgoOverrideFile) error {
-	file, err := repo.fs.Create(fileName)
-	if err != nil {
-		return err
-	}
-
-	encoder := yaml.NewEncoder(file)
-	encoder.SetIndent(2)
-
-	if err := encoder.Encode(overrideContent); err != nil {
-		return err
-	}
-
-	if err := file.Close(); err != nil {
-		return err
-	}
-
+// commitAndPush handles the git commit and push operations.
+func (repo *GitRepo) commitAndPush(fullPath, commitMsg string, overrideContent *ArgoOverrideFile) error {
 	worktree, err := repo.localRepo.Worktree()
 	if err != nil {
 		return err
 	}
 
-	if changed, err := versionChanged(worktree); err != nil {
+	// Write the final content to the override file
+	contentBytes, err := yaml.Marshal(overrideContent)
+	if err != nil {
 		return err
-	} else if !changed {
+	}
+	if err := os.WriteFile(fullPath, contentBytes, 0644); err != nil {
+		return fmt.Errorf("failed to write override file: %w", err)
+	}
+
+	status, err := worktree.Status()
+	if err != nil {
+		return fmt.Errorf("failed to get worktree status: %w", err)
+	}
+
+	if status.IsClean() {
+		log.Debug().Msg("No changes detected. Skipping commit.")
 		return nil
 	}
 
-	if _, err = worktree.Add(fileName); err != nil {
+	// Add the file to the worktree
+	relativePath, err := filepath.Rel(repo.localRepoPath, fullPath)
+	if err != nil {
+		return err
+	}
+	if _, err := worktree.Add(relativePath); err != nil {
 		return err
 	}
 
+	// Commit the changes
 	commitOpts := &git.CommitOptions{
 		Author: &object.Signature{
 			Name:  repo.gitConfig.SshCommitUser,
@@ -198,76 +239,52 @@ func (repo *GitRepo) commit(fileName, commitMsg string, overrideContent *ArgoOve
 			When:  time.Now(),
 		},
 	}
-
 	if _, err = worktree.Commit(commitMsg, commitOpts); err != nil {
 		return err
 	}
 
+	// Push the changes
 	pushOpts := &git.PushOptions{
 		Auth:       repo.sshAuth,
 		RemoteName: "origin",
 	}
-
 	if err = repo.localRepo.Push(pushOpts); err != nil {
+		// The error is returned to be handled by the caller, which will trigger the recovery path.
 		return err
 	}
 
 	return nil
 }
 
-// close sets both the filesystem and the local repository to nil.
-// This will allow the garbage collector to free the memory.
-func (repo *GitRepo) close() {
-	repo.fs = nil
-	repo.localRepo = nil
-}
-
-// versionChanged checks if the override file has changed.
-func versionChanged(worktree *git.Worktree) (bool, error) {
-	status, err := worktree.Status()
-	if err != nil {
-		return false, err
-	}
-
-	if status.IsClean() {
-		log.Debug().Msg("No changes detected. Skipping commit.")
-		return false, nil
-	}
-	return true, nil
-}
-
-// mergeParameters merges the parameters from the new override file into the existing override file.
 func mergeParameters(existing *ArgoOverrideFile, newContent *ArgoOverrideFile) {
 	for _, newParam := range newContent.Helm.Parameters {
 		found := false
 		for idx, existingParam := range existing.Helm.Parameters {
 			if existingParam.Name == newParam.Name {
-				// Update existing parameter
 				existing.Helm.Parameters[idx] = newParam
 				found = true
 				break
 			}
 		}
-		// If parameter with the same name doesn't exist, append it
 		if !found {
 			existing.Helm.Parameters = append(existing.Helm.Parameters, newParam)
 		}
 	}
 }
 
-func NewGitRepo(repoURL, branchName, path, fileName string, gitHandler GitHandler) *GitRepo {
+func NewGitRepo(repoURL, branchName, path, fileName, repoCachePath string, gitHandler GitHandler) *GitRepo {
 	gitConfig, err := NewGitConfig()
 	if err != nil {
-		// This is a fatal error because the GitConfig is required for Updater to work
 		log.Fatal().Err(err).Msg("Failed to load git config")
 	}
 
 	return &GitRepo{
-		RepoURL:    repoURL,
-		BranchName: branchName,
-		Path:       path,
-		FileName:   fileName,
-		gitConfig:  gitConfig,
-		GitHandler: gitHandler,
+		RepoURL:       repoURL,
+		BranchName:    branchName,
+		Path:          path,
+		FileName:      fileName,
+		gitConfig:     gitConfig,
+		GitHandler:    gitHandler,
+		repoCachePath: repoCachePath,
 	}
 }

@@ -1,21 +1,19 @@
 package updater
 
 import (
-	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
-	"github.com/go-git/go-git/v5/storage"
 )
 
 type GitHandler interface {
-	Clone(s storage.Storer, worktree billy.Filesystem, o *git.CloneOptions) (*git.Repository, error)
+	PlainClone(path string, isBare bool, o *git.CloneOptions) (*git.Repository, error)
 	AddSSHKey(user, path, passphrase string) (*ssh.PublicKeys, error)
 }
 
 type GitClient struct{}
 
-func (GitClient) Clone(s storage.Storer, worktree billy.Filesystem, o *git.CloneOptions) (*git.Repository, error) {
-	return git.Clone(s, worktree, o)
+func (GitClient) PlainClone(path string, isBare bool, o *git.CloneOptions) (*git.Repository, error) {
+	return git.PlainClone(path, isBare, o)
 }
 
 func (GitClient) AddSSHKey(user, path, passphrase string) (*ssh.PublicKeys, error) {
