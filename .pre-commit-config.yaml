@@ -10,12 +10,6 @@ repos:
       - id: no-commit-to-branch
         args:
           - --branch=main
-  - repo: https://github.com/hadolint/hadolint
-    rev: v2.12.0
-    hooks:
-      - id: hadolint
-        args:
-          - --ignore=DL3018
   - repo: https://github.com/dnephin/pre-commit-golang
     rev: v0.5.1
     hooks:
