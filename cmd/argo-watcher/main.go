@@ -14,7 +14,6 @@ func main() {
 		log.Fatalf("failed to load config: %v", err)
 	}
 
-	// In production, we provide the config and the global prometheus registry.
 	s, err := server.NewServer(cfg, prometheus.DefaultRegisterer)
 	if err != nil {
 		log.Fatalf("failed to create server: %v", err)

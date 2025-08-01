@@ -1,6 +1,8 @@
 package server
 
 import (
+	"fmt"
+
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
@@ -52,11 +54,11 @@ func NewServer(serverConfig *config.ServerConfig, reg prometheus.Registerer) (*S
 	if serverConfig.StateType == "postgres" {
 		pgState, ok := s.(*state.PostgresState)
 		if !ok {
-			return nil, err
+			return nil, fmt.Errorf("State type is postgres, but the state object is not a PostgresState instance.")
 		}
 		db := pgState.GetDB()
 		if db == nil {
-			return nil, err
+			return nil, fmt.Errorf("Could not get a valid DB connection from the postgres state.")
 		}
 		locker = lock.NewPostgresLocker(db)
 		log.Info().Msg("Using Postgres advisory locks for distributed locking.")
@@ -77,7 +79,7 @@ func NewServer(serverConfig *config.ServerConfig, reg prometheus.Registerer) (*S
 		locker,
 	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Couldn't initialize the Argo updater. Got the following error: %s", err)
 	}
 
 	// create environment

@@ -15,8 +15,8 @@ func TestMetrics_AddProcessedDeployment(t *testing.T) {
 	m := NewMetrics(reg)
 	expectedMetric := `
 		# HELP processed_deployments The amount of deployment processed since startup.
-		# TYPE processed_deployments counter
-		processed_deployments 1
+		# TYPE processed_deployments gauge
+		processed_deployments{app="test-app"} 1
 	`
 
 	// Act
