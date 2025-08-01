@@ -9,19 +9,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/auth"
-
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/argocd"
-
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
-
 	"github.com/coder/websocket"
 	"github.com/gin-gonic/contrib/static"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog/log"
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/argocd"
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/auth"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/docs"
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
 	"github.com/shini4i/argo-watcher/internal/models"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
@@ -73,7 +70,7 @@ func (env *Env) CreateRouter() *gin.Engine {
 		c.File(fmt.Sprintf("%s/index.html", staticFilesPath))
 	})
 	router.GET("/healthz", env.healthz)
-	router.GET("/metrics", prometheusHandler())
+	router.GET("/metrics", prometheusHandler(env.metrics))
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 	router.GET("/ws", env.handleWebSocketConnection)
 
@@ -100,8 +97,8 @@ func (env *Env) StartRouter(router *gin.Engine) {
 	}
 }
 
-func prometheusHandler() gin.HandlerFunc {
-	ph := promhttp.Handler()
+func prometheusHandler(metrics *prometheus.Metrics) gin.HandlerFunc {
+	ph := promhttp.HandlerFor(metrics.GetRegistry(), promhttp.HandlerOpts{})
 
 	return func(c *gin.Context) {
 		ph.ServeHTTP(c.Writer, c.Request)

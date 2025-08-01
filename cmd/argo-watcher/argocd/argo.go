@@ -23,13 +23,12 @@ const (
 )
 
 type Argo struct {
-	metrics prometheus.MetricsInterface
+	metrics *prometheus.Metrics
 	api     ArgoApiInterface
 	State   state.State
 }
 
-func (argo *Argo) Init(state state.State, api ArgoApiInterface, metrics prometheus.MetricsInterface) {
-	// setup dependencies
+func (argo *Argo) Init(state state.State, api ArgoApiInterface, metrics *prometheus.Metrics) {
 	argo.api = api
 	argo.State = state
 	argo.metrics = metrics
@@ -86,7 +85,7 @@ func (argo *Argo) AddTask(task models.Task) (*models.Task, error) {
 		)
 	}
 
-	argo.metrics.AddProcessedDeployment()
+	argo.metrics.AddProcessedDeployment(task.App)
 	return newTask, nil
 }
 
