@@ -79,7 +79,7 @@ func NewServer(serverConfig *config.ServerConfig, reg prometheus.Registerer) (*S
 		locker,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("Couldn't initialize the Argo updater. Got the following error: %s", err)
+		return nil, fmt.Errorf("failed to initialize the argo updater: %w", err)
 	}
 
 	// create environment
