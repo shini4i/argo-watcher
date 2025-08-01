@@ -50,8 +50,6 @@ func (state *PostgresState) Add(task models.Task) (*models.Task, error) {
 		return nil, fmt.Errorf("failed to create task in database")
 	}
 
-	log.Info().Msg(ormTask.Id.String())
-
 	// pass new values to the task object
 	task.Id = ormTask.Id.String()
 	task.Created = float64(ormTask.Created.UnixMilli())

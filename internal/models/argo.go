@@ -266,7 +266,7 @@ func (app *Application) UpdateGitImageTag(task *Task, gitopsRepo *GitopsRepo) er
 		return nil
 	}
 
-	git := updater.NewGitRepo(gitopsRepo.RepoUrl, gitopsRepo.BranchName, gitopsRepo.Path, gitopsRepo.Filename, gitopsRepo.RepoCachePath, updater.GitClient{})
+	git, err := updater.NewGitRepo(gitopsRepo.RepoUrl, gitopsRepo.BranchName, gitopsRepo.Path, gitopsRepo.Filename, gitopsRepo.RepoCachePath, updater.GitClient{})
 
 	// Fast Path
 	if err := git.Clone(); err != nil {

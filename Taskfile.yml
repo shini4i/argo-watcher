@@ -108,6 +108,23 @@ tasks:
       - src/**/*.tsx
       - src/**/*.css
 
+  kind-upload:
+    desc: Build and upload the argo-watcher image to a kind cluster
+    deps: [build-ui]
+    env:
+      CGO_ENABLED: 0
+      GOOS: linux
+      GOARCH: arm64
+    cmds:
+      - echo "===> Building dev version of argo-watcher binary"
+      - go build -ldflags="-s -w -X github.com/shini4i/argo-watcher/cmd/argo-watcher/server.version=dev" -o argo-watcher ./cmd/argo-watcher
+      - echo "===> Building argo-watcher docker image"
+      - docker build -t ghcr.io/shini4i/argo-watcher:dev .
+      - echo "===> Loading argo-watcher docker image into kind cluster"
+      - kind load docker-image ghcr.io/shini4i/argo-watcher:dev -n disposable-cluster
+      - echo "===> Restarting argo-watcher deployment"
+      - kubectl rollout restart deploy argo-watcher -n argo-watcher
+
   bootstrap:
     desc: Bring docker compose setup up
     cmds:
