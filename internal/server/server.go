@@ -54,7 +54,7 @@ func NewServer(serverConfig *config.ServerConfig, reg prometheus.Registerer) (*S
 	if serverConfig.StateType == "postgres" {
 		pgState, ok := s.(*state.PostgresState)
 		if !ok {
-			return nil, fmt.Errorf("State type is postgres, but the state object is not a PostgresState instance.")
+			return nil, fmt.Errorf("state type is postgres but state object is not a PostgresState instance (got %T)", s)
 		}
 		db := pgState.GetDB()
 		if db == nil {
