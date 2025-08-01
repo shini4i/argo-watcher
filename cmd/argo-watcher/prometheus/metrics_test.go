@@ -1,139 +1,110 @@
 package prometheus
 
 import (
+	"strings"
 	"testing"
-
-	"github.com/rs/zerolog/log"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestMetricsValuesChange(t *testing.T) {
-	metrics := &Metrics{}
-	metrics.Init()
+func TestMetrics_AddProcessedDeployment(t *testing.T) {
+	// Arrange
+	reg := prometheus.NewRegistry()
+	m := NewMetrics(reg)
+	expectedMetric := `
+		# HELP processed_deployments The amount of deployment processed since startup.
+		# TYPE processed_deployments counter
+		processed_deployments{app="test-app"} 1
+	`
 
-	app := "testApp"
+	// Act
+	m.AddProcessedDeployment("test-app")
 
-	t.Run("AddFailedDeployment", func(t *testing.T) {
-		// Call the method to test
-		metrics.AddFailedDeployment(app)
-
-		// Get the current value of the metric for the app
-		metric := testutil.ToFloat64(metrics.failedDeployment.With(prometheus.Labels{"app": app}))
-
-		// Check if the metric was incremented
-		assert.Equal(t, 1.0, metric)
-	})
-
-	t.Run("ResetFailedDeployment", func(t *testing.T) {
-		// Call the method to test
-		metrics.ResetFailedDeployment(app)
-
-		// Get the current value of the metric for the app
-		metric := testutil.ToFloat64(metrics.failedDeployment.With(prometheus.Labels{"app": app}))
-
-		// Check if the metric was reset
-		assert.Equal(t, 0.0, metric)
-	})
-
-	t.Run("IncrementProcessedDeployments", func(t *testing.T) {
-		for i := 0; i < 10; i++ {
-			metrics.AddProcessedDeployment()
-		}
-
-		// Get the current value of the metric for the app
-		metric := testutil.ToFloat64(metrics.processedDeployments)
-
-		// Check if the metric was incremented
-		assert.Equal(t, 10.0, metric)
-	})
+	// Assert
+	err := testutil.CollectAndCompare(m.ProcessedDeployments, strings.NewReader(expectedMetric))
+	assert.NoError(t, err)
 }
 
-func TestSetArgoUnavailable(t *testing.T) {
-	metrics := &Metrics{}
-	metrics.Init()
+func TestMetrics_AddFailedDeployment(t *testing.T) {
+	// Arrange
+	reg := prometheus.NewRegistry()
+	m := NewMetrics(reg)
+	appName := "test-app"
+	expectedMetric := `
+		# HELP failed_deployment Per application failed deployment count before first success.
+		# TYPE failed_deployment gauge
+		failed_deployment{app="test-app"} 1
+	`
 
-	t.Run("SetArgoUnavailable to true", func(t *testing.T) {
-		// Call the method to test
-		metrics.SetArgoUnavailable(true)
+	// Act
+	m.AddFailedDeployment(appName)
 
-		// Get the current value of the metric
-		metric := testutil.ToFloat64(metrics.argocdUnavailable)
-
-		// Check if the metric was set to 1
-		assert.Equal(t, 1.0, metric)
-	})
-
-	t.Run("SetArgoUnavailable to false", func(t *testing.T) {
-		// Call the method to test
-		metrics.SetArgoUnavailable(false)
-
-		// Get the current value of the metric
-		metric := testutil.ToFloat64(metrics.argocdUnavailable)
-
-		// Check if the metric was set to 0
-		assert.Equal(t, 0.0, metric)
-	})
+	// Assert
+	err := testutil.CollectAndCompare(m.FailedDeployment, strings.NewReader(expectedMetric))
+	assert.NoError(t, err)
 }
 
-func TestRegister(t *testing.T) {
-	metrics := &Metrics{}
-	metrics.Init()
+func TestMetrics_ResetFailedDeployment(t *testing.T) {
+	// Arrange
+	reg := prometheus.NewRegistry()
+	m := NewMetrics(reg)
+	appName := "test-app"
+	m.AddFailedDeployment(appName) // Set a value first
 
-	// Call the method to test
-	metrics.Register()
+	expectedMetric := `
+		# HELP failed_deployment Per application failed deployment count before first success.
+		# TYPE failed_deployment gauge
+		failed_deployment{app="test-app"} 0
+	`
 
-	// adding a failed deployment to check if the metric was registered
-	metrics.AddFailedDeployment("testApp")
+	// Act
+	m.ResetFailedDeployment(appName)
 
-	// Check if the metrics were registered
-	assert.True(t, testMetricRegistered("failed_deployment"))
-	assert.True(t, testMetricRegistered("processed_deployments"))
-	assert.True(t, testMetricRegistered("argocd_unavailable"))
+	// Assert
+	err := testutil.CollectAndCompare(m.FailedDeployment, strings.NewReader(expectedMetric))
+	assert.NoError(t, err)
 }
 
-// Helper function to check if a metric is registered.
-func testMetricRegistered(metricName string) bool {
-	metricFamilies, err := prometheus.DefaultGatherer.Gather()
-	if err != nil {
-		log.Error().Msgf("Error gathering metrics: %v", err)
-		return false
+func TestMetrics_SetArgoUnavailable(t *testing.T) {
+	testCases := []struct {
+		name          string
+		unavailable   bool
+		expectedValue float64
+	}{
+		{"Set to unavailable", true, 1},
+		{"Set to available", false, 0},
 	}
 
-	for _, m := range metricFamilies {
-		if m.GetName() == metricName {
-			return true
-		}
-	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Arrange
+			reg := prometheus.NewRegistry()
+			m := NewMetrics(reg)
 
-	return false
+			// Act
+			m.SetArgoUnavailable(tc.unavailable)
+
+			// Assert
+			assert.Equal(t, tc.expectedValue, testutil.ToFloat64(m.ArgocdUnavailable))
+		})
+	}
 }
 
-func TestInProgressTasks(t *testing.T) {
-	metrics := &Metrics{}
-	metrics.Init()
+func TestMetrics_InProgressTasks(t *testing.T) {
+	// Arrange
+	reg := prometheus.NewRegistry()
+	m := NewMetrics(reg)
 
-	t.Run("AddInProgressTask", func(t *testing.T) {
-		// Call the method to test
-		metrics.AddInProgressTask()
+	// Assert initial state
+	assert.Equal(t, float64(0), testutil.ToFloat64(m.InProgressTasks))
 
-		// Get the current value of the metric
-		metric := testutil.ToFloat64(metrics.inProgressTasks)
+	// Act: Add a task
+	m.AddInProgressTask()
+	assert.Equal(t, float64(1), testutil.ToFloat64(m.InProgressTasks))
 
-		// Check if the metric was incremented
-		assert.Equal(t, 1.0, metric)
-	})
-
-	t.Run("RemoveInProgressTask", func(t *testing.T) {
-		// Call the method to test
-		metrics.RemoveInProgressTask()
-
-		// Get the current value of the metric
-		metric := testutil.ToFloat64(metrics.inProgressTasks)
-
-		// Check if the metric was decremented
-		assert.Equal(t, 0.0, metric)
-	})
+	// Act: Remove a task
+	m.RemoveInProgressTask()
+	assert.Equal(t, float64(0), testutil.ToFloat64(m.InProgressTasks))
 }

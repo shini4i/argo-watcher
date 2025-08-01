@@ -6,35 +6,40 @@ import (
 	"time"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/state"
 
 	"github.com/rs/zerolog/log"
 
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/state"
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
 var (
+	// ArgoSyncRetryDelay is the delay between ArgoCD sync status retries.
 	ArgoSyncRetryDelay = 15 * time.Second
 )
 
 const (
-	ArgoAPIErrorTemplate        = "ArgoCD API Error: %s"
+	// ArgoAPIErrorTemplate is the template for ArgoCD API errors.
+	ArgoAPIErrorTemplate = "ArgoCD API Error: %s"
+	// argoUnavailableErrorMessage is the specific error message for a refused connection.
 	argoUnavailableErrorMessage = "connect: connection refused"
 )
 
+// Argo is the primary controller for watcher operations.
 type Argo struct {
 	metrics prometheus.MetricsInterface
 	api     ArgoApiInterface
 	State   state.State
 }
 
+// Init initializes the Argo controller with its dependencies.
 func (argo *Argo) Init(state state.State, api ArgoApiInterface, metrics prometheus.MetricsInterface) {
-	// setup dependencies
 	argo.api = api
 	argo.State = state
 	argo.metrics = metrics
 }
 
+// Check performs a health check on ArgoCD and the state backend.
 func (argo *Argo) Check() (string, error) {
 	connectionActive := argo.State.Check()
 	userLoggedIn, loginError := argo.api.GetUserInfo()
@@ -58,10 +63,10 @@ func (argo *Argo) Check() (string, error) {
 	return "up", nil
 }
 
+// AddTask validates a new deployment task and adds it to the state.
 func (argo *Argo) AddTask(task models.Task) (*models.Task, error) {
-	_, err := argo.Check()
-	if err != nil {
-		return nil, errors.New(err.Error())
+	if _, err := argo.Check(); err != nil {
+		return nil, err
 	}
 
 	if task.Images == nil || len(task.Images) == 0 {
@@ -86,26 +91,27 @@ func (argo *Argo) AddTask(task models.Task) (*models.Task, error) {
 		)
 	}
 
-	argo.metrics.AddProcessedDeployment()
+	argo.metrics.AddProcessedDeployment(task.App)
 	return newTask, nil
 }
 
+// GetTasks retrieves tasks from the state within a given time range.
 func (argo *Argo) GetTasks(startTime float64, endTime float64, app string) models.TasksResponse {
-	_, err := argo.Check()
-	tasks := argo.State.GetTasks(startTime, endTime, app)
-
-	if err != nil {
+	if _, err := argo.Check(); err != nil {
 		return models.TasksResponse{
-			Tasks: tasks,
+			Tasks: []models.Task{},
 			Error: err.Error(),
 		}
 	}
+
+	tasks := argo.State.GetTasks(startTime, endTime, app)
 
 	return models.TasksResponse{
 		Tasks: tasks,
 	}
 }
 
+// SimpleHealthCheck checks only the state backend connection.
 func (argo *Argo) SimpleHealthCheck() bool {
 	return argo.State.Check()
 }

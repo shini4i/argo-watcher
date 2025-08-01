@@ -9,19 +9,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/auth"
-
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/argocd"
-
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
-
 	"github.com/coder/websocket"
 	"github.com/gin-gonic/contrib/static"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog/log"
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/argocd"
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/auth"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/docs"
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
 	"github.com/shini4i/argo-watcher/internal/models"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
@@ -100,6 +97,7 @@ func (env *Env) StartRouter(router *gin.Engine) {
 	}
 }
 
+// prometheusHandler returns the default promhttp handler.
 func prometheusHandler() gin.HandlerFunc {
 	ph := promhttp.Handler()
 
@@ -113,7 +111,7 @@ func prometheusHandler() gin.HandlerFunc {
 // @Description Get the version of the server
 // @Tags frontend
 // @Success 200 {string} string
-// @Router /api/v1/version [get].
+// @Router /api/v1/version [get]
 func (env *Env) getVersion(c *gin.Context) {
 	c.JSON(http.StatusOK, version)
 }
@@ -127,7 +125,7 @@ func (env *Env) getVersion(c *gin.Context) {
 // @Param task body models.Task true "Task"
 // @Success 202 {object} models.TaskStatus
 // @Failure 406 {object} models.TaskStatus
-// @Router /api/v1/tasks [post].
+// @Router /api/v1/tasks [post]
 func (env *Env) addTask(c *gin.Context) {
 	var task models.Task
 
@@ -188,7 +186,7 @@ func (env *Env) addTask(c *gin.Context) {
 // @Param from_timestamp query int true "From timestamp" default(1648390029)
 // @Param to_timestamp query int false "To timestamp"
 // @Success 200 {array} models.Task
-// @Router /api/v1/tasks [get].
+// @Router /api/v1/tasks [get]
 func (env *Env) getState(c *gin.Context) {
 	startTime, _ := strconv.ParseFloat(c.Query("from_timestamp"), 64)
 	endTime, _ := strconv.ParseFloat(c.Query("to_timestamp"), 64)
@@ -207,7 +205,7 @@ func (env *Env) getState(c *gin.Context) {
 // @Tags backend
 // @Produce json
 // @Success 200 {object} models.TaskStatus
-// @Router /api/v1/tasks/{id} [get].
+// @Router /api/v1/tasks/{id} [get]
 func (env *Env) getTaskStatus(c *gin.Context) {
 	id := c.Param("id")
 	task, err := env.argo.State.GetTask(id)
@@ -239,7 +237,7 @@ func (env *Env) getTaskStatus(c *gin.Context) {
 // @Produce json
 // @Success 200 {object} models.HealthStatus
 // @Failure 503 {object} models.HealthStatus
-// @Router /healthz [get].
+// @Router /healthz [get]
 func (env *Env) healthz(c *gin.Context) {
 	if env.argo.SimpleHealthCheck() {
 		c.JSON(http.StatusOK, models.HealthStatus{
@@ -259,7 +257,7 @@ func (env *Env) healthz(c *gin.Context) {
 // @Tags backend
 // @Produce json
 // @Success 200 {object} config.ServerConfig
-// @Router /api/v1/config [get].
+// @Router /api/v1/config [get]
 func (env *Env) getConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, env.config)
 }
@@ -269,7 +267,7 @@ func (env *Env) getConfig(c *gin.Context) {
 // @Description Set deploy lock
 // @Tags frontend
 // @Success 200 {string} string
-// @Router /api/v1/deploy-lock [post].
+// @Router /api/v1/deploy-lock [post]
 func (env *Env) SetDeployLock(c *gin.Context) {
 	if env.config.Keycloak.Enabled {
 		valid, err := env.validateToken(c, keycloakHeader)
@@ -303,7 +301,7 @@ func (env *Env) SetDeployLock(c *gin.Context) {
 // @Description Release deploy lock
 // @Tags frontend
 // @Success 200 {string} string
-// @Router /api/v1/deploy-lock [delete].
+// @Router /api/v1/deploy-lock [delete]
 func (env *Env) ReleaseDeployLock(c *gin.Context) {
 	if env.config.Keycloak.Enabled {
 		valid, err := env.validateToken(c, keycloakHeader)
@@ -337,7 +335,7 @@ func (env *Env) ReleaseDeployLock(c *gin.Context) {
 // @Description Check if deploy lock is set
 // @Tags frontend
 // @Success 200 {boolean} boolean
-// @Router /api/v1/deploy-lock [get].
+// @Router /api/v1/deploy-lock [get]
 func (env *Env) isDeployLockSet(c *gin.Context) {
 	c.JSON(http.StatusOK, env.lockdown.IsLocked())
 }
