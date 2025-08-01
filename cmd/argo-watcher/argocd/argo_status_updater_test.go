@@ -41,7 +41,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		err := updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig, mockLocker)
+		err := updater.Init(*argo, 1, 0*time.Second, "test-registry", "/tmp/", false, mockWebhookConfig, mockLocker)
 		assert.NoError(t, err)
 
 		// prepare test data
@@ -85,7 +85,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		err := updater.Init(*argo, 3, 0*time.Second, "test-registry", false, mockWebhookConfig, mockLocker)
+		err := updater.Init(*argo, 3, 0*time.Second, "test-registry", "/tmp", false, mockWebhookConfig, mockLocker)
 		assert.NoError(t, err)
 
 		// prepare test data
@@ -136,7 +136,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		err := updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig, mockLocker)
+		err := updater.Init(*argo, 1, 0*time.Second, "test-registry", "/tmp", false, mockWebhookConfig, mockLocker)
 		assert.NoError(t, err)
 
 		// prepare test data
@@ -180,7 +180,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		err := updater.Init(*argo, 1, 0*time.Second, "", false, mockWebhookConfig, mockLocker)
+		err := updater.Init(*argo, 1, 0*time.Second, "", "/tmp", false, mockWebhookConfig, mockLocker)
 		assert.NoError(t, err)
 
 		// prepare test data
@@ -224,7 +224,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		err := updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig, mockLocker)
+		err := updater.Init(*argo, 1, 0*time.Second, "test-registry", "/tmp", false, mockWebhookConfig, mockLocker)
 		assert.NoError(t, err)
 
 		// prepare test data
@@ -256,7 +256,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		err := updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig, mockLocker)
+		err := updater.Init(*argo, 1, 0*time.Second, "test-registry", "/tmp", false, mockWebhookConfig, mockLocker)
 		assert.NoError(t, err)
 
 		// prepare test data
@@ -288,7 +288,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		err := updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig, mockLocker)
+		err := updater.Init(*argo, 1, 0*time.Second, "test-registry", "/tmp", false, mockWebhookConfig, mockLocker)
 		assert.NoError(t, err)
 
 		// prepare test data
@@ -320,7 +320,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		err := updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig, mockLocker)
+		err := updater.Init(*argo, 1, 0*time.Second, "test-registry", "/tmp", false, mockWebhookConfig, mockLocker)
 		assert.NoError(t, err)
 
 		// prepare test data
@@ -362,7 +362,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		err := updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig, mockLocker)
+		err := updater.Init(*argo, 1, 0*time.Second, "test-registry", "/tmp", false, mockWebhookConfig, mockLocker)
 		assert.NoError(t, err)
 
 		// prepare test data
@@ -408,7 +408,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// argo updater
 		updater := &ArgoStatusUpdater{}
-		err := updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig, mockLocker)
+		err := updater.Init(*argo, 1, 0*time.Second, "test-registry", "/tmp", false, mockWebhookConfig, mockLocker)
 		assert.NoError(t, err)
 
 		// prepare test data
@@ -454,7 +454,7 @@ func TestArgoStatusUpdater_processDeploymentResult(t *testing.T) {
 	argo.Init(stateMock, apiMock, metricsMock)
 
 	updater := &ArgoStatusUpdater{}
-	err := updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig, mockLocker)
+	err := updater.Init(*argo, 1, 0*time.Second, "test-registry", "/tmp", false, mockWebhookConfig, mockLocker)
 	assert.NoError(t, err)
 
 	// success scenario
@@ -522,7 +522,7 @@ func TestArgoStatusUpdater_handleArgoAPIFailure(t *testing.T) {
 	argo.Init(stateMock, apiMock, metricsMock)
 
 	updater := &ArgoStatusUpdater{}
-	err := updater.Init(*argo, 1, 0*time.Second, "test-registry", false, mockWebhookConfig, mockLocker)
+	err := updater.Init(*argo, 1, 0*time.Second, "test-registry", "/tmp", false, mockWebhookConfig, mockLocker)
 	assert.NoError(t, err)
 
 	t.Run("handleArgoAPIFailure - generic error", func(t *testing.T) {

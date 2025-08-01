@@ -7,14 +7,20 @@ import (
 )
 
 type GitopsRepo struct {
-	RepoUrl    string `validate:"required"`
-	BranchName string `validate:"required"`
-	Path       string `validate:"required"`
-	Filename   string
+	RepoUrl       string `validate:"required"`
+	BranchName    string `validate:"required"`
+	Path          string `validate:"required"`
+	Filename      string
+	RepoCachePath string
 }
 
-func NewGitopsRepo(app *Application) (GitopsRepo, error) {
-	return extractGitOverrides(app.Metadata.Annotations, app, app.Spec.Sources == nil)
+func NewGitopsRepo(app *Application, repoCachePath string) (GitopsRepo, error) {
+	gitopsRepo, err := extractGitOverrides(app.Metadata.Annotations, app, app.Spec.Sources == nil)
+	if err != nil {
+		return gitopsRepo, err
+	}
+	gitopsRepo.RepoCachePath = repoCachePath
+	return gitopsRepo, nil
 }
 
 func extractGitOverrides(annotations map[string]string, app *Application, isSourceNil bool) (GitopsRepo, error) {

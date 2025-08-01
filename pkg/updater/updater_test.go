@@ -2,551 +2,421 @@ package updater
 
 import (
 	"errors"
-	"strings"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/go-git/go-billy/v5"
-	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/shini4i/argo-watcher/pkg/updater/mock"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
-	"gopkg.in/yaml.v3"
 )
 
-func TestGitRepoClone(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
+// newTestRepo creates a valid GitRepo instance for testing purposes.
+func newTestRepo(t *testing.T, handler GitHandler) *GitRepo {
+	t.Helper()
+	t.Setenv("SSH_KEY_PATH", "/dev/null")
 
-	mockGitHandler := mock.NewMockGitHandler(ctrl)
-
-	gitConfig, err := NewGitConfig()
-	assert.NoError(t, err)
-
-	tests := []struct {
-		name     string
-		mockSSH  func()
-		expected error
-	}{
-		{
-			name: "successful clone",
-			mockSSH: func() {
-				mockGitHandler.EXPECT().AddSSHKey("git", gitConfig.SshKeyPath, gitConfig.SshKeyPass).Return(&ssh.PublicKeys{}, nil)
-				mockGitHandler.EXPECT().Clone(memory.NewStorage(), memfs.New(), &git.CloneOptions{
-					URL:           "mockRepoURL",
-					ReferenceName: "refs/heads/mockBranch",
-					SingleBranch:  true,
-					Depth:         1,
-					Auth:          &ssh.PublicKeys{},
-				}).Return(&git.Repository{}, nil)
-			},
-			expected: nil,
-		},
-		{
-			name: "failed AddSSHKey",
-			mockSSH: func() {
-				mockGitHandler.EXPECT().AddSSHKey("git", gitConfig.SshKeyPath, gitConfig.SshKeyPass).Return(nil, errors.New("failed to fetch keys"))
-			},
-			expected: errors.New("failed to fetch keys"),
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tt.mockSSH()
-
-			gitRepo := GitRepo{
-				RepoURL:    "mockRepoURL",
-				BranchName: "mockBranch",
-				GitHandler: mockGitHandler,
-
-				gitConfig: gitConfig,
-			}
-
-			err := gitRepo.Clone()
-
-			if tt.expected == nil {
-				assert.NoError(t, err, "Expected no error")
-			} else {
-				assert.EqualError(t, err, tt.expected.Error(), "Error mismatch")
-			}
-		})
-	}
+	repo, err := NewGitRepo("fake-url", "main", "apps", "values.yaml", t.TempDir(), handler)
+	require.NoError(t, err)
+	require.NotNil(t, repo)
+	return repo
 }
 
-func TestGetFileContent(t *testing.T) {
-	// 1. Setup an in-memory file system using billy
-	fs := memfs.New()
-	content := "Hello, World!"
-	fileName := "test.txt"
-
-	// 2. Create a test file in that filesystem
-	file, err := fs.Create(fileName)
-	assert.NoError(t, err)
-	_, err = file.Write([]byte(content))
-	assert.NoError(t, err)
-	err = file.Close()
-	assert.NoError(t, err)
-
-	// 3. Create a GitRepo instance using the in-memory filesystem
-	repo := &GitRepo{
-		fs: fs,
-	}
-
-	t.Run("Successfully read content", func(t *testing.T) {
-		readContent, err := repo.getFileContent(fileName)
+func TestNewGitRepo(t *testing.T) {
+	t.Run("Success", func(t *testing.T) {
+		t.Setenv("SSH_KEY_PATH", "/dev/null")
+		repo, err := NewGitRepo("url", "branch", "path", "file", "cache", &GitClient{})
 		assert.NoError(t, err)
-		assert.Equal(t, content, strings.TrimSpace(string(readContent)))
+		assert.NotNil(t, repo)
 	})
 
-	t.Run("Error on non-existent file", func(t *testing.T) {
-		_, err := repo.getFileContent("non-existent.txt")
+	t.Run("Failure", func(t *testing.T) {
+		repo, err := NewGitRepo("url", "branch", "path", "file", "cache", &GitClient{})
 		assert.Error(t, err)
+		assert.Nil(t, repo)
+	})
+}
+
+func TestGetRepoCachePath(t *testing.T) {
+	repo := newTestRepo(t, nil)
+	path1 := repo.getRepoCachePath()
+	path2 := repo.getRepoCachePath()
+	assert.Equal(t, path1, path2, "Cache path should be deterministic")
+	assert.NotEmpty(t, path1)
+
+	repo.RepoURL = "another-url"
+	path3 := repo.getRepoCachePath()
+	assert.NotEqual(t, path1, path3, "Different repo URL should produce a different path")
+}
+
+func TestGenerateOverrideFileName(t *testing.T) {
+	repo := newTestRepo(t, nil)
+	repo.FileName = "custom.yaml"
+	assert.Equal(t, "apps/custom.yaml", repo.generateOverrideFileName("my-app"))
+
+	repo.FileName = ""
+	assert.Equal(t, "apps/.argocd-source-my-app.yaml", repo.generateOverrideFileName("my-app"))
+}
+
+func TestGenerateCommitMessage(t *testing.T) {
+	repo := newTestRepo(t, nil)
+	tmplData := struct{ AppName string }{AppName: "test-app"}
+
+	repo.gitConfig.CommitMessageFormat = ""
+	msg, err := repo.generateCommitMessage("test-app", tmplData)
+	assert.NoError(t, err)
+	assert.Equal(t, "argo-watcher(test-app): update image tag", msg)
+
+	repo.gitConfig.CommitMessageFormat = "ci: bump {{ .AppName }}"
+	msg, err = repo.generateCommitMessage("test-app", tmplData)
+	assert.NoError(t, err)
+	assert.Equal(t, "ci: bump test-app", msg)
+
+	repo.gitConfig.CommitMessageFormat = "ci: bump {{ .AppName "
+	msg, err = repo.generateCommitMessage("test-app", tmplData)
+	assert.Error(t, err)
+	assert.Equal(t, "argo-watcher(test-app): update image tag", msg, "Should fallback to default on parse error")
+
+	repo.gitConfig.CommitMessageFormat = "ci: bump {{ .MissingKey }}"
+	msg, err = repo.generateCommitMessage("test-app", tmplData)
+	assert.Error(t, err)
+	assert.Equal(t, "argo-watcher(test-app): update image tag", msg, "Should fallback to default on execute error")
+}
+
+func TestMergeParameters(t *testing.T) {
+	existing := &ArgoOverrideFile{}
+	existing.Helm.Parameters = []ArgoParameterOverride{
+		{Name: "image.tag", Value: "v1.0.0"},
+		{Name: "replicaCount", Value: "1"},
+	}
+
+	newContent := &ArgoOverrideFile{}
+	newContent.Helm.Parameters = []ArgoParameterOverride{
+		{Name: "image.tag", Value: "v2.0.0"},
+		{Name: "debug", Value: "true"},
+	}
+
+	mergeParameters(existing, newContent)
+
+	assert.Len(t, existing.Helm.Parameters, 3)
+	assert.Contains(t, existing.Helm.Parameters, ArgoParameterOverride{Name: "image.tag", Value: "v2.0.0"})
+	assert.Contains(t, existing.Helm.Parameters, ArgoParameterOverride{Name: "replicaCount", Value: "1"})
+	assert.Contains(t, existing.Helm.Parameters, ArgoParameterOverride{Name: "debug", Value: "true"})
+}
+
+func TestClone(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockHandler := mock.NewMockGitHandler(ctrl)
+	repo := newTestRepo(t, mockHandler)
+
+	mockHandler.EXPECT().AddSSHKey(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+
+	t.Run("Cache Not Exists", func(t *testing.T) {
+		mockHandler.EXPECT().PlainOpen(gomock.Any()).Return(nil, git.ErrRepositoryNotExists)
+		mockHandler.EXPECT().PlainClone(gomock.Any(), false, gomock.Any()).Return(nil, nil)
+		err := repo.Clone()
+		assert.NoError(t, err)
+	})
+
+	t.Run("Cache Invalid", func(t *testing.T) {
+		repo.localRepoPath = repo.getRepoCachePath()
+		require.NoError(t, os.WriteFile(repo.localRepoPath, []byte("garbage"), 0600))
+
+		mockHandler.EXPECT().PlainOpen(gomock.Any()).Return(nil, errors.New("invalid repo"))
+		mockHandler.EXPECT().PlainClone(gomock.Any(), false, gomock.Any()).Return(nil, nil)
+		err := repo.Clone()
+		assert.NoError(t, err)
+		_, err = os.Stat(repo.localRepoPath)
+		assert.True(t, os.IsNotExist(err), "Corrupted cache should have been removed")
+	})
+
+	t.Run("Cache Exists and is Valid", func(t *testing.T) {
+		memStore := memory.NewStorage()
+		r, err := git.Init(memStore, nil)
+		require.NoError(t, err)
+		_, err = r.CreateRemote(&config.RemoteConfig{Name: "origin", URLs: []string{"dummy-url"}})
+		require.NoError(t, err)
+
+		mockHandler.EXPECT().PlainOpen(gomock.Any()).Return(r, nil)
+
+		err = repo.Clone()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to fetch repo: repository not found")
+	})
+}
+
+func TestNukeAndReclone(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockHandler := mock.NewMockGitHandler(ctrl)
+	repo := newTestRepo(t, mockHandler)
+	repo.localRepoPath = repo.getRepoCachePath()
+
+	require.NoError(t, os.MkdirAll(repo.localRepoPath, 0755))
+	dummyFile := filepath.Join(repo.localRepoPath, "test.txt")
+	require.NoError(t, os.WriteFile(dummyFile, []byte("test"), 0644))
+
+	mockHandler.EXPECT().AddSSHKey(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
+	mockHandler.EXPECT().PlainOpen(gomock.Any()).Return(nil, git.ErrRepositoryNotExists)
+	mockHandler.EXPECT().PlainClone(gomock.Any(), false, gomock.Any()).Return(nil, nil)
+
+	err := repo.NukeAndReclone()
+	assert.NoError(t, err)
+
+	_, err = os.Stat(repo.localRepoPath)
+	assert.True(t, os.IsNotExist(err), "Cache directory should be removed")
+}
+
+// setupGitForTest is a helper to create a clean git environment for each sub-test.
+func setupGitForTest(t *testing.T) (sourceRepo, remoteRepo, localRepo *git.Repository, remotePath, localPath string) {
+	t.Helper()
+
+	// 1. Create a NON-BARE repository first, which will be the source.
+	sourcePath := t.TempDir()
+	sourceRepo, err := git.PlainInit(sourcePath, false)
+	require.NoError(t, err)
+
+	// 2. Create an initial commit in the source repository so it's not empty.
+	sourceWorktree, err := sourceRepo.Worktree()
+	require.NoError(t, err)
+	_, err = sourceWorktree.Commit("initial commit", &git.CommitOptions{
+		Author:            &object.Signature{Name: "Initial", Email: "initial@test.com", When: time.Now()},
+		AllowEmptyCommits: true,
+	})
+	require.NoError(t, err)
+
+	// 3. Create a BARE repository to act as the "origin" remote, by cloning the source.
+	remotePath = t.TempDir()
+	remoteRepo, err = git.PlainClone(remotePath, true, &git.CloneOptions{
+		URL: sourcePath,
+	})
+	require.NoError(t, err)
+
+	// 4. Create the final "local" clone that our code will operate on.
+	localPath = t.TempDir()
+	localRepo, err = git.PlainClone(localPath, false, &git.CloneOptions{
+		URL: remotePath,
+	})
+	require.NoError(t, err)
+
+	return sourceRepo, remoteRepo, localRepo, remotePath, localPath
+}
+
+func TestFullUpdateAppCycle(t *testing.T) {
+	t.Run("Success - With Changes", func(t *testing.T) {
+		_, remoteRepo, localRepo, _, localPath := setupGitForTest(t)
+
+		repo := newTestRepo(t, &GitClient{})
+		repo.localRepo = localRepo
+		repo.localRepoPath = localPath
+		appDir := filepath.Join(localPath, "apps")
+		require.NoError(t, os.Mkdir(appDir, 0755))
+		valuesFile := filepath.Join(appDir, "values.yaml")
+
+		newParams := &ArgoOverrideFile{}
+		newParams.Helm.Parameters = []ArgoParameterOverride{{Name: "image.tag", Value: "v2.0.0"}}
+
+		err := repo.UpdateApp("my-app", newParams, nil)
+		require.NoError(t, err)
+
+		content, err := os.ReadFile(valuesFile)
+		require.NoError(t, err)
+		assert.Contains(t, string(content), "v2.0.0")
+
+		head, err := remoteRepo.Head()
+		require.NoError(t, err)
+		commit, err := remoteRepo.CommitObject(head.Hash())
+		require.NoError(t, err)
+		assert.Contains(t, commit.Message, "argo-watcher(my-app): update image tag")
+	})
+
+	t.Run("Success - No Changes", func(t *testing.T) {
+		_, _, localRepo, _, localPath := setupGitForTest(t)
+
+		repo := newTestRepo(t, &GitClient{})
+		repo.localRepo = localRepo
+		repo.localRepoPath = localPath
+		appDir := filepath.Join(localPath, "apps")
+		require.NoError(t, os.Mkdir(appDir, 0755))
+
+		// First, perform a successful change.
+		initialParams := &ArgoOverrideFile{}
+		initialParams.Helm.Parameters = []ArgoParameterOverride{{Name: "image.tag", Value: "v2.0.0"}}
+		err := repo.UpdateApp("my-app", initialParams, nil)
+		require.NoError(t, err)
+
+		// Now, try again with the same content.
+		headBefore, err := localRepo.Head()
+		require.NoError(t, err)
+
+		err = repo.UpdateApp("my-app", initialParams, nil)
+		require.NoError(t, err)
+
+		headAfter, err := localRepo.Head()
+		require.NoError(t, err)
+		assert.Equal(t, headBefore.Hash(), headAfter.Hash())
+	})
+
+	t.Run("Failure - Push Fails due to Non-Fast-Forward", func(t *testing.T) {
+		sourceRepo, _, localRepo, remotePath, localPath := setupGitForTest(t)
+
+		repo := newTestRepo(t, &GitClient{})
+		repo.localRepo = localRepo
+		repo.localRepoPath = localPath
+		appDir := filepath.Join(localPath, "apps")
+		require.NoError(t, os.Mkdir(appDir, 0755))
+
+		// Get the worktree from the non-bare source repo.
+		sourceWorktree, err := sourceRepo.Worktree()
+		require.NoError(t, err)
+
+		// Add the bare repository as a remote to the source repo.
+		_, err = sourceRepo.CreateRemote(&config.RemoteConfig{
+			Name: "origin",
+			URLs: []string{remotePath},
+		})
+		require.NoError(t, err)
+
+		// Commit a conflicting change to the source repo.
+		_, err = sourceWorktree.Commit("a conflicting commit", &git.CommitOptions{
+			Author:            &object.Signature{Name: "Other", Email: "other@test.com", When: time.Now()},
+			AllowEmptyCommits: true,
+		})
+		require.NoError(t, err)
+
+		// Push the conflicting commit from source to the bare remote.
+		err = sourceRepo.Push(&git.PushOptions{})
+		require.NoError(t, err)
+
+		// Now, try to update our local repo, which will fail on push.
+		newParams := &ArgoOverrideFile{}
+		newParams.Helm.Parameters = []ArgoParameterOverride{{Name: "image.tag", Value: "v3.0.0"}}
+
+		err = repo.UpdateApp("my-app", newParams, nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "non-fast-forward update")
 	})
 }
 
 func TestMergeOverrideFileContent(t *testing.T) {
-	fs := memfs.New()
-	repo := &GitRepo{
-		fs: fs,
-	}
+	repo := newTestRepo(t, nil)
+	newContent := &ArgoOverrideFile{}
+	newContent.Helm.Parameters = []ArgoParameterOverride{{Name: "image.tag", Value: "new"}}
 
-	// Test when the override file doesn't exist
-	t.Run("no existing file", func(t *testing.T) {
-		overrideContent := &ArgoOverrideFile{
-			Helm: struct {
-				Parameters []ArgoParameterOverride `yaml:"parameters"`
-			}{
-				Parameters: []ArgoParameterOverride{
-					{
-						Name:  "param1",
-						Value: "value1",
-					},
-				},
-			},
-		}
-		result, err := repo.mergeOverrideFileContent("nonexistent.yaml", overrideContent)
-		assert.NoError(t, err)
-		assert.Equal(t, overrideContent, result)
+	t.Run("File Not Exist", func(t *testing.T) {
+		tmpFile := filepath.Join(t.TempDir(), "values.yaml")
+		finalContent, err := repo.mergeOverrideFileContent(tmpFile, newContent)
+		require.NoError(t, err)
+		assert.Equal(t, newContent, finalContent)
 	})
 
-	// Test when the override file does exist
-	t.Run("existing file", func(t *testing.T) {
-		// Creating a dummy existing file
-		existingContent := ArgoOverrideFile{
-			Helm: struct {
-				Parameters []ArgoParameterOverride `yaml:"parameters"`
-			}{
-				Parameters: []ArgoParameterOverride{
-					{
-						Name:  "param1",
-						Value: "oldValue1",
-					},
-					{
-						Name:  "param2",
-						Value: "value2",
-					},
-				},
-			},
-		}
-
-		fileName := "existing.yaml"
-		contentBytes, _ := yaml.Marshal(existingContent)
-		file, _ := fs.Create(fileName)
-		_, err := file.Write(contentBytes)
-		assert.NoError(t, err)
-		err = file.Close()
-		assert.NoError(t, err)
-
-		// Merge with this content
-		overrideContent := &ArgoOverrideFile{
-			Helm: struct {
-				Parameters []ArgoParameterOverride `yaml:"parameters"`
-			}{
-				Parameters: []ArgoParameterOverride{
-					{
-						Name:  "param1",
-						Value: "newValue1",
-					},
-				},
-			},
-		}
-
-		expectedMergedContent := &ArgoOverrideFile{
-			Helm: struct {
-				Parameters []ArgoParameterOverride `yaml:"parameters"`
-			}{
-				Parameters: []ArgoParameterOverride{
-					{
-						Name:  "param1",
-						Value: "newValue1", // This assumes newValue1 overwrites oldValue1
-					},
-					{
-						Name:  "param2",
-						Value: "value2",
-					},
-				},
-			},
-		}
-
-		result, err := repo.mergeOverrideFileContent(fileName, overrideContent)
-		assert.NoError(t, err)
-		assert.Equal(t, expectedMergedContent, result)
-	})
-
-	// Test when the existing override file has invalid YAML format
-	t.Run("invalid YAML file", func(t *testing.T) {
-		// Creating a dummy existing file with invalid YAML
-		invalidYAMLContent := `helm:
-  parameters:
-  - name: param1
-	value: value1` // The indentation is intentionally wrong to create an invalid YAML
-
-		fileName := "invalid.yaml"
-		file, _ := fs.Create(fileName)
-		_, err := file.Write([]byte(invalidYAMLContent))
-		assert.NoError(t, err)
-		err = file.Close()
-		assert.NoError(t, err)
-
-		overrideContent := &ArgoOverrideFile{
-			Helm: struct {
-				Parameters []ArgoParameterOverride `yaml:"parameters"`
-			}{
-				Parameters: []ArgoParameterOverride{
-					{
-						Name:  "param1",
-						Value: "newValue1",
-					},
-				},
-			},
-		}
-
-		_, err = repo.mergeOverrideFileContent(fileName, overrideContent)
+	t.Run("File Read Fails", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		_, err := repo.mergeOverrideFileContent(tmpDir, newContent)
 		assert.Error(t, err)
 	})
-}
 
-func TestMergeParameters(t *testing.T) {
-	tests := []struct {
-		name     string
-		existing ArgoOverrideFile
-		new      ArgoOverrideFile
-		expected ArgoOverrideFile
-	}{
-		{
-			name:     "Merge with empty existing",
-			existing: ArgoOverrideFile{},
-			new: ArgoOverrideFile{
-				Helm: struct {
-					Parameters []ArgoParameterOverride `yaml:"parameters"`
-				}{
-					Parameters: []ArgoParameterOverride{
-						{
-							Name:  "param1",
-							Value: "value1",
-						},
-					},
-				},
-			},
-			expected: ArgoOverrideFile{
-				Helm: struct {
-					Parameters []ArgoParameterOverride `yaml:"parameters"`
-				}{
-					Parameters: []ArgoParameterOverride{
-						{
-							Name:  "param1",
-							Value: "value1",
-						},
-					},
-				},
-			},
-		},
-		{
-			name: "Overwrite parameter from newContent",
-			existing: ArgoOverrideFile{
-				Helm: struct {
-					Parameters []ArgoParameterOverride `yaml:"parameters"`
-				}{
-					Parameters: []ArgoParameterOverride{
-						{
-							Name:  "param1",
-							Value: "oldValue",
-						},
-					},
-				},
-			},
-			new: ArgoOverrideFile{
-				Helm: struct {
-					Parameters []ArgoParameterOverride `yaml:"parameters"`
-				}{
-					Parameters: []ArgoParameterOverride{
-						{
-							Name:  "param1",
-							Value: "newValue",
-						},
-					},
-				},
-			},
-			expected: ArgoOverrideFile{
-				Helm: struct {
-					Parameters []ArgoParameterOverride `yaml:"parameters"`
-				}{
-					Parameters: []ArgoParameterOverride{
-						{
-							Name:  "param1",
-							Value: "newValue",
-						},
-					},
-				},
-			},
-		},
-		{
-			name: "Append parameter from newContent",
-			existing: ArgoOverrideFile{
-				Helm: struct {
-					Parameters []ArgoParameterOverride `yaml:"parameters"`
-				}{
-					Parameters: []ArgoParameterOverride{
-						{
-							Name:  "param1",
-							Value: "value1",
-						},
-					},
-				},
-			},
-			new: ArgoOverrideFile{
-				Helm: struct {
-					Parameters []ArgoParameterOverride `yaml:"parameters"`
-				}{
-					Parameters: []ArgoParameterOverride{
-						{
-							Name:  "param2",
-							Value: "value2",
-						},
-					},
-				},
-			},
-			expected: ArgoOverrideFile{
-				Helm: struct {
-					Parameters []ArgoParameterOverride `yaml:"parameters"`
-				}{
-					Parameters: []ArgoParameterOverride{
-						{
-							Name:  "param1",
-							Value: "value1",
-						},
-						{
-							Name:  "param2",
-							Value: "value2",
-						},
-					},
-				},
-			},
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			mergeParameters(&test.existing, &test.new)
-			assert.Equal(t, test.expected, test.existing)
-		})
-	}
-}
-
-func TestOverrideFileExists(t *testing.T) {
-	tests := []struct {
-		name     string
-		setupFs  func(fs billy.Filesystem)
-		filename string
-		expected bool
-	}{
-		{
-			name: "File exists",
-			setupFs: func(fs billy.Filesystem) {
-				if _, err := fs.Create("/path/to/existing/file.yaml"); err != nil {
-					t.Error(err)
-				}
-			},
-			filename: "/path/to/existing/file.yaml",
-			expected: true,
-		},
-		{
-			name:     "File does not exist",
-			setupFs:  func(fs billy.Filesystem) {},
-			filename: "/path/to/nonexistent/file.yaml",
-			expected: false,
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			// Setup mock filesystem
-			mockFs := memfs.New()
-			test.setupFs(mockFs)
-
-			// Initialize GitRepo with mock filesystem
-			repo := &GitRepo{
-				fs: mockFs,
-			}
-
-			got := repo.overrideFileExists(test.filename)
-			assert.Equal(t, test.expected, got)
-		})
-	}
-}
-
-func TestGitRepo_Close(t *testing.T) {
-	mockFs := memfs.New()
-
-	// Mock a local repo. In a real-world scenario, this would be a valid git.Repository
-	mockLocalRepo := &git.Repository{}
-
-	// Initialize an example GitRepo
-	repo := &GitRepo{
-		fs:        mockFs,
-		localRepo: mockLocalRepo,
-	}
-
-	// Check if the fs and localRepo fields are initialized
-	assert.NotNil(t, repo.fs)
-	assert.NotNil(t, repo.localRepo)
-
-	repo.close()
-
-	// Check if the fs and localRepo fields are nil after calling close
-	assert.Nil(t, repo.fs)
-	assert.Nil(t, repo.localRepo)
-}
-
-func TestVersionChanged(t *testing.T) {
-	t.Run("Repo without changes", func(t *testing.T) {
-		fs := memfs.New()
-		storer := memory.NewStorage()
-
-		repo, err := git.Init(storer, fs)
-		assert.NoError(t, err)
-
-		w, err := repo.Worktree()
-		assert.NoError(t, err)
-
-		changed, err := versionChanged(w)
-		assert.NoError(t, err)
-		assert.False(t, changed, "Expected no changes in a newly initialized repo")
-	})
-
-	t.Run("Repo with changes", func(t *testing.T) {
-		fs := memfs.New()
-		storer := memory.NewStorage()
-
-		repo, err := git.Init(storer, fs)
-		assert.NoError(t, err)
-
-		w, err := repo.Worktree()
-		assert.NoError(t, err)
-
-		// Create and commit a file
-		file, err := fs.Create("test.txt")
-		assert.NoError(t, err)
-		_, err = file.Write([]byte("Initial content"))
-		assert.NoError(t, err)
-		err = file.Close()
-		assert.NoError(t, err)
-
-		_, err = w.Add("test.txt")
-		assert.NoError(t, err)
-
-		_, err = w.Commit("Initial commit", &git.CommitOptions{
-			Author: &object.Signature{
-				Name:  "John Doe",
-				Email: "johndoe@example.com",
-				When:  time.Now(),
-			},
-		})
-		assert.NoError(t, err)
-
-		// Make changes to the file
-		file, err = fs.Create("test.txt")
-		assert.NoError(t, err)
-		_, err = file.Write([]byte("Updated content"))
-		assert.NoError(t, err)
-		err = file.Close()
-		assert.NoError(t, err)
-
-		_, err = w.Add("test.txt")
-		assert.NoError(t, err)
-
-		// Test versionChanged function
-		changed, err := versionChanged(w)
-		assert.NoError(t, err)
-		assert.True(t, changed, "Expected changes after modifying the file")
+	t.Run("File Unmarshal Fails", func(t *testing.T) {
+		tmpFile := filepath.Join(t.TempDir(), "values.yaml")
+		require.NoError(t, os.WriteFile(tmpFile, []byte("key: value: invalid"), 0644))
+		_, err := repo.mergeOverrideFileContent(tmpFile, newContent)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "unmarshal")
 	})
 }
 
-func TestGenerateOverrideFileName(t *testing.T) {
-	tests := []struct {
-		name     string
-		appName  string
-		fileName string
-		path     string
-		expected string
-	}{
-		{
-			name:     "Test with empty filename",
-			appName:  "myApp",
-			fileName: "",
-			path:     "/path/to",
-			expected: "/path/to/.argocd-source-myApp.yaml",
-		},
-		{
-			name:     "Test with non-empty filename",
-			appName:  "myApp",
-			fileName: "override.yaml",
-			path:     "/path/to",
-			expected: "/path/to/override.yaml",
-		},
-	}
+func TestCommitAndPush_WriteFileError(t *testing.T) {
+	localPath := t.TempDir()
+	r, err := git.PlainInit(localPath, false)
+	require.NoError(t, err)
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			repo := &GitRepo{
-				Path:     test.path,
-				FileName: test.fileName,
-			}
+	repo := newTestRepo(t, nil)
+	repo.localRepo = r
+	repo.localRepoPath = localPath
 
-			assert.Equal(t, test.expected, repo.generateOverrideFileName(test.appName))
-		})
-	}
+	fullPath := filepath.Join(localPath, "apps")
+	require.NoError(t, os.Mkdir(fullPath, 0755))
+
+	err = repo.commitAndPush(fullPath, "msg", &ArgoOverrideFile{})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to write override file")
 }
 
-func TestGenerateCommitMessage(t *testing.T) {
-	repo := GitRepo{}
-	gitConfig, err := NewGitConfig()
+func TestGitClient_Coverage(t *testing.T) {
+	// 1. Create a source repository with a commit, so it's not empty.
+	sourcePath := t.TempDir()
+	sourceRepo, err := git.PlainInit(sourcePath, false)
+	require.NoError(t, err)
+	wt, err := sourceRepo.Worktree()
+	require.NoError(t, err)
+	_, err = wt.Commit("init", &git.CommitOptions{
+		Author:            &object.Signature{Name: "test", Email: "test", When: time.Now()},
+		AllowEmptyCommits: true,
+	})
+	require.NoError(t, err)
+
+	// 2. Create an instance of the concrete client.
+	client := GitClient{}
+
+	// 3. Execute and cover PlainClone.
+	clonePath := t.TempDir()
+	_, err = client.PlainClone(clonePath, false, &git.CloneOptions{URL: sourcePath})
+	require.NoError(t, err, "PlainClone method failed")
+
+	// 4. Execute and cover PlainOpen on the new clone.
+	_, err = client.PlainOpen(clonePath)
+	require.NoError(t, err, "PlainOpen method failed")
+
+	// 5. Execute and cover AddSSHKey.
+	// We expect an error because it's not a real key, but the call will cover the line.
+	keyFile := filepath.Join(t.TempDir(), "dummy_key")
+	err = os.WriteFile(keyFile, []byte("not-a-real-key"), 0600)
+	require.NoError(t, err)
+	_, err = client.AddSSHKey("git", keyFile, "")
+	assert.Error(t, err, "AddSSHKey should error on an invalid key, but it must be called for coverage")
+}
+
+func TestUpdateApp_ErrorHandling(t *testing.T) {
+	_, _, localRepo, _, localPath := setupGitForTest(t)
+	repo := newTestRepo(t, &GitClient{})
+	repo.localRepo = localRepo
+	repo.localRepoPath = localPath
+
+	t.Run("Failure on generating commit message", func(t *testing.T) {
+		repo.gitConfig.CommitMessageFormat = "{{ .Invalid "
+		newParams := &ArgoOverrideFile{}
+
+		err := repo.UpdateApp("my-app", newParams, nil)
+
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "template: commitMsg:1: unclosed action")
+	})
+}
+
+// TestCorruptedGitRepo_ErrorPaths covers failures on an invalid git repo.
+func TestCorruptedGitRepo_ErrorPaths(t *testing.T) {
+	corruptRepoPath := t.TempDir()
+	gitDir := filepath.Join(corruptRepoPath, ".git")
+	require.NoError(t, os.Mkdir(gitDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(gitDir, "HEAD"), []byte("ref: refs/heads/master"), 0644))
+
+	corruptRepo, err := git.PlainOpen(corruptRepoPath)
+	require.NoError(t, err)
+
+	ctrl := gomock.NewController(t)
+	mockHandler := mock.NewMockGitHandler(ctrl)
+	repo := newTestRepo(t, mockHandler)
+
+	mockHandler.EXPECT().AddSSHKey(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
+	mockHandler.EXPECT().PlainOpen(gomock.Any()).Return(corruptRepo, nil)
+	mockHandler.EXPECT().PlainClone(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
+
+	// The clone should succeed because the corruption triggers a successful re-clone.
+	err = repo.Clone()
 	assert.NoError(t, err)
-	repo.gitConfig = gitConfig
-
-	t.Run("COMMIT_MESSAGE_FORMAT is not set", func(t *testing.T) {
-		repo.gitConfig.CommitMessageFormat = ""
-		msg, err := repo.generateCommitMessage("myApp", nil)
-		assert.NoError(t, err)
-		assert.Equal(t, "argo-watcher(myApp): update image tag", msg)
-	})
-
-	t.Run("COMMIT_MESSAGE_FORMAT is set to a valid template string", func(t *testing.T) {
-		repo.gitConfig.CommitMessageFormat = "argo-watcher({{.App}}): custom message"
-		msg, err := repo.generateCommitMessage("myApp", map[string]string{"App": "myApp"})
-		assert.NoError(t, err)
-		assert.Equal(t, "argo-watcher(myApp): custom message", msg)
-	})
-
-	t.Run("COMMIT_MESSAGE_FORMAT is set to an invalid template string", func(t *testing.T) {
-		repo.gitConfig.CommitMessageFormat = "argo-watcher({{.App): custom message"
-		msg, err := repo.generateCommitMessage("myApp", map[string]string{"App": "myApp"})
-		assert.Error(t, err)
-		assert.Equal(t, "argo-watcher(myApp): update image tag", msg)
-	})
 }

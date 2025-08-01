@@ -79,6 +79,7 @@ func RunServer() {
 		serverConfig.GetRetryAttempts(),
 		argocd.ArgoSyncRetryDelay,
 		serverConfig.RegistryProxyUrl,
+		serverConfig.RepoCachePath,
 		serverConfig.AcceptSuspendedApp,
 		&serverConfig.Webhook,
 		locker,

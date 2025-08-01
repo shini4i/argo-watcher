@@ -250,15 +250,9 @@ func (app *Application) generateOverrideFileContent(annotations map[string]strin
 	return &overrideFileContent, nil
 }
 
-func (app *Application) UpdateGitImageTag(task *Task) error {
-	gitopsRepo, err := NewGitopsRepo(app)
-	if err != nil {
-		return err
-	}
-
+func (app *Application) UpdateGitImageTag(task *Task, gitopsRepo *GitopsRepo) error {
 	if gitopsRepo.Path == "" {
 		log.Warn().Str("id", task.Id).Msgf("No path found for app %s, unsupported Application configuration", app.Metadata.Name)
-		// technically, unsupported Application configuration is not an error (or is it?)
 		return nil
 	}
 
@@ -272,15 +266,27 @@ func (app *Application) UpdateGitImageTag(task *Task) error {
 		return nil
 	}
 
-	git := updater.NewGitRepo(gitopsRepo.RepoUrl, gitopsRepo.BranchName, gitopsRepo.Path, gitopsRepo.Filename, updater.GitClient{})
+	git, err := updater.NewGitRepo(gitopsRepo.RepoUrl, gitopsRepo.BranchName, gitopsRepo.Path, gitopsRepo.Filename, gitopsRepo.RepoCachePath, updater.GitClient{})
 
+	// Fast Path
 	if err := git.Clone(); err != nil {
-		log.Error().Str("id", task.Id).Msgf("Failed to clone git repository %s", app.Spec.Source.RepoURL)
+		log.Error().Str("id", task.Id).Msgf("Failed to clone/fetch git repository %s: %s", gitopsRepo.RepoUrl, err)
 		return err
 	}
 
 	if err := git.UpdateApp(app.Metadata.Name, releaseOverrides, task); err != nil {
-		log.Error().Str("id", task.Id).Msgf("Failed to update git repository %s", app.Spec.Source.RepoURL)
+		if strings.Contains(err.Error(), "non-fast-forward") {
+			// Recovery Path
+			log.Warn().Str("id", task.Id).Msg("Non-fast-forward update detected. Re-cloning repository and retrying.")
+
+			if err := git.NukeAndReclone(); err != nil {
+				return fmt.Errorf("failed to nuke and re-clone: %w", err)
+			}
+
+			// Re-apply changes and push again
+			return git.UpdateApp(app.Metadata.Name, releaseOverrides, task)
+		}
+		// Other unrecoverable error
 		return err
 	}
 

@@ -32,10 +32,11 @@ type ArgoStatusUpdater struct {
 	locker           lock.Locker
 	acceptSuspended  bool
 	webhookService   *notifications.WebhookService
+	repoCachePath    string
 }
 
 // Init initializes the ArgoStatusUpdater with the provided configuration
-func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, retryDelay time.Duration, registryProxyUrl string, acceptSuspended bool, webhookConfig *config.WebhookConfig, locker lock.Locker) error {
+func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, retryDelay time.Duration, registryProxyUrl string, repoCachePath string, acceptSuspended bool, webhookConfig *config.WebhookConfig, locker lock.Locker) error {
 	var err error
 
 	updater.argo = argo
@@ -48,6 +49,7 @@ func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, retryDelay
 	}
 	updater.acceptSuspended = acceptSuspended
 	updater.locker = locker
+	updater.repoCachePath = repoCachePath
 
 	if !webhookConfig.Enabled {
 		return nil
@@ -183,12 +185,18 @@ func (updater *ArgoStatusUpdater) handleGitRepoUpdateIfNeeded(app *models.Applic
 		return nil
 	}
 
-	gitUpdateFunc := func() error {
-		log.Debug().Str("id", task.Id).Msg("Application managed by watcher. Initiating git repo update.")
-		return updater.updateGitRepo(app, task)
+	gitopsRepo, err := models.NewGitopsRepo(app, updater.repoCachePath)
+	if err != nil {
+		log.Error().Str("id", task.Id).Msgf("Failed to get gitops repo info for app %s: %s", task.App, err)
+		return err
 	}
 
-	err := updater.locker.WithLock(task.App, gitUpdateFunc)
+	gitUpdateFunc := func() error {
+		log.Debug().Str("id", task.Id).Msg("Application managed by watcher. Initiating git repo update.")
+		return updater.updateGitRepo(app, &task, &gitopsRepo)
+	}
+
+	err = updater.locker.WithLock(gitopsRepo.RepoUrl, gitUpdateFunc)
 	if err != nil {
 		log.Error().Str("id", task.Id).Msgf("Failed git repo update for app %s: %s", task.App, err)
 		return err
@@ -198,24 +206,12 @@ func (updater *ArgoStatusUpdater) handleGitRepoUpdateIfNeeded(app *models.Applic
 }
 
 // updateGitRepo attempts to update the git repository with retries
-func (updater *ArgoStatusUpdater) updateGitRepo(app *models.Application, task models.Task) error {
-	err := retry.Do(
-		func() error {
-			return app.UpdateGitImageTag(&task)
-		},
-		retry.DelayType(retry.BackOffDelay),
-		retry.Attempts(5),
-		retry.OnRetry(func(n uint, err error) {
-			log.Warn().Str("id", task.Id).Msgf("Failed to update git repo. Error: %s, retrying...", err.Error())
-		}),
-		retry.LastErrorOnly(true),
-	)
-
+func (updater *ArgoStatusUpdater) updateGitRepo(app *models.Application, task *models.Task, gitopsRepo *models.GitopsRepo) error {
+	err := app.UpdateGitImageTag(task, gitopsRepo)
 	if err != nil {
 		log.Error().Str("id", task.Id).Msgf("Failed to update git repo. Error: %s", err.Error())
 		return err
 	}
-
 	return nil
 }
 
