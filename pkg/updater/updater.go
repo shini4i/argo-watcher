@@ -226,7 +226,7 @@ func (repo *GitRepo) UpdateApp(appName string, overrideContent *ArgoOverrideFile
 // new content directly.
 func (repo *GitRepo) mergeOverrideFileContent(fullPath string, overrideContent *ArgoOverrideFile) (*ArgoOverrideFile, error) {
 	// If the file doesn't exist, there's nothing to merge.
-	existingContent, err := os.ReadFile(fullPath)
+	existingContent, err := os.ReadFile(fullPath) // #nosec G304
 	if err != nil {
 		if os.IsNotExist(err) {
 			return overrideContent, nil
@@ -260,7 +260,7 @@ func (repo *GitRepo) commitAndPush(fullPath, commitMsg string, overrideContent *
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(fullPath, contentBytes, 0644); err != nil { // #nosec G306
+	if err := os.WriteFile(fullPath, contentBytes, 0600); err != nil {
 		return fmt.Errorf("failed to write override file: %w", err)
 	}
 
