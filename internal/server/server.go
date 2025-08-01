@@ -2,11 +2,12 @@ package server
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/argocd"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
+	prom "github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/state"
 	"github.com/shini4i/argo-watcher/internal/lock"
 )
@@ -15,18 +16,18 @@ type Server struct {
 	router  *gin.Engine
 	config  *config.ServerConfig
 	argo    *argocd.Argo
-	metrics *prometheus.Metrics
+	metrics *prom.Metrics
 	updater *argocd.ArgoStatusUpdater
 	env     *Env
 }
 
-// NewServer creates a new server instance with the given configuration.
-func NewServer(serverConfig *config.ServerConfig) (*Server, error) {
+// NewServer creates a new server instance with the given configuration and prometheus registerer.
+func NewServer(serverConfig *config.ServerConfig, reg prometheus.Registerer) (*Server, error) {
 	// initialize logs
 	initLogs(serverConfig.LogLevel)
 
-	// initialize metrics
-	metrics := prometheus.NewMetrics()
+	// initialize metrics on the provided prometheus registry
+	metrics := prom.NewMetrics(reg)
 
 	// create API client
 	api := &argocd.ArgoApi{}

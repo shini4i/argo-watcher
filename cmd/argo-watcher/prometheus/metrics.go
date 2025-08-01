@@ -4,21 +4,28 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// Metrics contains all the prometheus collectors and a registry.
+// MetricsInterface defines the interface for the metrics service. This is required
+// for dependency injection and mocking in tests.
+type MetricsInterface interface {
+	AddProcessedDeployment(app string)
+	AddFailedDeployment(app string)
+	ResetFailedDeployment(app string)
+	SetArgoUnavailable(unavailable bool)
+	AddInProgressTask()
+	RemoveInProgressTask()
+}
+
+// Metrics contains all the prometheus collectors.
 type Metrics struct {
-	registry             *prometheus.Registry
 	FailedDeployment     *prometheus.GaugeVec
 	ProcessedDeployments prometheus.Counter
 	ArgocdUnavailable    prometheus.Gauge
 	InProgressTasks      prometheus.Gauge
 }
 
-// NewMetrics creates a new Metrics instance with its own registry and collectors.
-func NewMetrics() *Metrics {
-	registry := prometheus.NewRegistry()
-
+// NewMetrics creates and registers the metrics with the provided Registerer.
+func NewMetrics(reg prometheus.Registerer) *Metrics {
 	m := &Metrics{
-		registry: registry,
 		FailedDeployment: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "failed_deployment",
 			Help: "Per application failed deployment count before first success.",
@@ -37,22 +44,9 @@ func NewMetrics() *Metrics {
 		}),
 	}
 
-	m.register()
+	reg.MustRegister(m.FailedDeployment, m.ProcessedDeployments, m.ArgocdUnavailable, m.InProgressTasks)
 
 	return m
-}
-
-// register registers the metrics with the instance's private registry.
-func (m *Metrics) register() {
-	m.registry.MustRegister(m.FailedDeployment)
-	m.registry.MustRegister(m.ProcessedDeployments)
-	m.registry.MustRegister(m.ArgocdUnavailable)
-	m.registry.MustRegister(m.InProgressTasks)
-}
-
-// GetRegistry returns the private registry of the Metrics instance.
-func (m *Metrics) GetRegistry() *prometheus.Registry {
-	return m.registry
 }
 
 // AddProcessedDeployment increments the ProcessedDeployments counter.

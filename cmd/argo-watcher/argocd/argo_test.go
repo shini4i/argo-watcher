@@ -243,7 +243,7 @@ func TestArgoAddTask(t *testing.T) {
 		}
 		api.EXPECT().GetUserInfo().Return(user, nil)
 		metrics.EXPECT().SetArgoUnavailable(false)
-		metrics.EXPECT().AddProcessedDeployment()
+		metrics.EXPECT().AddProcessedDeployment("test-app")
 
 		// tasks
 		task := models.Task{

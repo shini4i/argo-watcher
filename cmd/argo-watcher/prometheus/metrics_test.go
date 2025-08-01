@@ -4,13 +4,15 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestMetrics_AddProcessedDeployment(t *testing.T) {
 	// Arrange
-	m := NewMetrics()
+	reg := prometheus.NewRegistry()
+	m := NewMetrics(reg)
 	expectedMetric := `
 		# HELP processed_deployments The amount of deployment processed since startup.
 		# TYPE processed_deployments counter
@@ -27,7 +29,8 @@ func TestMetrics_AddProcessedDeployment(t *testing.T) {
 
 func TestMetrics_AddFailedDeployment(t *testing.T) {
 	// Arrange
-	m := NewMetrics()
+	reg := prometheus.NewRegistry()
+	m := NewMetrics(reg)
 	appName := "test-app"
 	expectedMetric := `
 		# HELP failed_deployment Per application failed deployment count before first success.
@@ -45,7 +48,8 @@ func TestMetrics_AddFailedDeployment(t *testing.T) {
 
 func TestMetrics_ResetFailedDeployment(t *testing.T) {
 	// Arrange
-	m := NewMetrics()
+	reg := prometheus.NewRegistry()
+	m := NewMetrics(reg)
 	appName := "test-app"
 	m.AddFailedDeployment(appName) // Set a value first
 
@@ -76,7 +80,8 @@ func TestMetrics_SetArgoUnavailable(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Arrange
-			m := NewMetrics()
+			reg := prometheus.NewRegistry()
+			m := NewMetrics(reg)
 
 			// Act
 			m.SetArgoUnavailable(tc.unavailable)
@@ -89,7 +94,8 @@ func TestMetrics_SetArgoUnavailable(t *testing.T) {
 
 func TestMetrics_InProgressTasks(t *testing.T) {
 	// Arrange
-	m := NewMetrics()
+	reg := prometheus.NewRegistry()
+	m := NewMetrics(reg)
 
 	// Assert initial state
 	assert.Equal(t, float64(0), testutil.ToFloat64(m.InProgressTasks))
