@@ -54,7 +54,7 @@ type ServerConfig struct {
 	LockdownSchedule   string         `env:"LOCKDOWN_SCHEDULE" json:"lockdown_schedule,omitempty"`
 	Webhook            WebhookConfig  `json:"webhook,omitempty"`
 	DevEnvironment     bool           `env:"DEV_ENVIRONMENT" envDefault:"false" json:"devEnvironment"` // Whether a set of dev specific setting should be turned on, do not touch unless you know what you are doing
-	RepoCachePath      string         `env:"REPO_CACHE_PATH" envDefault:"/dev/shm" json:"-"`
+	RepoCachePath      string         `env:"REPO_CACHE_PATH" envDefault:"/data" json:"-"`
 }
 
 // NewServerConfig parses the server configuration from environment variables using the envconfig package.
