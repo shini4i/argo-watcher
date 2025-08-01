@@ -18,7 +18,7 @@ type MetricsInterface interface {
 // Metrics contains all the prometheus collectors.
 type Metrics struct {
 	FailedDeployment     *prometheus.GaugeVec
-	ProcessedDeployments *prometheus.GaugeVec
+	ProcessedDeployments *prometheus.CounterVec
 	ArgocdUnavailable    prometheus.Gauge
 	InProgressTasks      prometheus.Gauge
 }
@@ -30,7 +30,7 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 			Name: "failed_deployment",
 			Help: "Per application failed deployment count before first success.",
 		}, []string{"app"}),
-		ProcessedDeployments: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		ProcessedDeployments: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "processed_deployments",
 			Help: "The amount of deployment processed since startup.",
 		}, []string{"app"}),
