@@ -58,7 +58,7 @@ func NewServer(serverConfig *config.ServerConfig, reg prometheus.Registerer) (*S
 		}
 		db := pgState.GetDB()
 		if db == nil {
-			return nil, fmt.Errorf("Could not get a valid DB connection from the postgres state.")
+			return nil, fmt.Errorf("could not get a valid DB connection from the postgres state")
 		}
 		locker = lock.NewPostgresLocker(db)
 		log.Info().Msg("Using Postgres advisory locks for distributed locking.")
