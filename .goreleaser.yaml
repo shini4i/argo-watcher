@@ -6,6 +6,7 @@ before:
 builds:
   - id: argo-watcher
     main: ./cmd/argo-watcher
+    binary: argo-watcher
     env:
       - CGO_ENABLED=0
     ldflags:
@@ -16,45 +17,100 @@ builds:
       - amd64
       - arm64
 
+  - id: client
+    main: ./cmd/client
+    binary: client
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+
 dockers:
+  # Server image
   - image_templates:
-      - 'ghcr.io/shini4i/{{.ProjectName}}:{{ .Tag }}-amd64'
+      - 'ghcr.io/shini4i/argo-watcher:{{ .Tag }}-amd64'
     use: buildx
     build_flag_templates:
       - "--pull"
       - "--platform=linux/amd64"
       - "--label=org.opencontainers.image.created={{.Date}}"
-      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.title=argo-watcher"
       - "--label=org.opencontainers.image.revision={{.FullCommit}}"
       - "--label=org.opencontainers.image.version={{.Version}}"
       - "--label=org.opencontainers.image.licenses=MIT"
     goos: linux
     goarch: amd64
-    extra_files:
-      - web/build
-      - db
+    dockerfile: Dockerfile.server
+    ids:
+      - argo-watcher
+
   - image_templates:
-      - 'ghcr.io/shini4i/{{.ProjectName}}:{{ .Tag }}-arm64'
+      - 'ghcr.io/shini4i/argo-watcher:{{ .Tag }}-arm64'
     use: buildx
     build_flag_templates:
       - "--pull"
       - "--platform=linux/arm64"
       - "--label=org.opencontainers.image.created={{.Date}}"
-      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.title=argo-watcher"
       - "--label=org.opencontainers.image.revision={{.FullCommit}}"
       - "--label=org.opencontainers.image.version={{.Version}}"
       - "--label=org.opencontainers.image.licenses=MIT"
     goos: linux
     goarch: arm64
-    extra_files:
-      - web/build
-      - db
+    dockerfile: Dockerfile.server
+    ids:
+      - argo-watcher
+
+  # Client image
+  - image_templates:
+      - 'ghcr.io/shini4i/argo-watcher-client:{{ .Tag }}-amd64'
+    use: buildx
+    build_flag_templates:
+      - "--pull"
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title=argo-watcher-client"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.licenses=MIT"
+    goos: linux
+    goarch: amd64
+    dockerfile: Dockerfile.client
+    ids:
+      - client
+
+  - image_templates:
+      - 'ghcr.io/shini4i/argo-watcher-client:{{ .Tag }}-arm64'
+    use: buildx
+    build_flag_templates:
+      - "--pull"
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title=argo-watcher-client"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.licenses=MIT"
+    goos: linux
+    goarch: arm64
+    dockerfile: Dockerfile.client
+    ids:
+      - client
 
 docker_manifests:
-  - name_template: 'ghcr.io/shini4i/{{.ProjectName}}:{{ .Tag }}'
+  - name_template: 'ghcr.io/shini4i/argo-watcher:{{ .Tag }}'
     image_templates:
-      - 'ghcr.io/shini4i/{{.ProjectName}}:{{ .Tag }}-amd64'
-      - 'ghcr.io/shini4i/{{.ProjectName}}:{{ .Tag }}-arm64'
+      - 'ghcr.io/shini4i/argo-watcher:{{ .Tag }}-amd64'
+      - 'ghcr.io/shini4i/argo-watcher:{{ .Tag }}-arm64'
+
+  - name_template: 'ghcr.io/shini4i/argo-watcher-client:{{ .Tag }}'
+    image_templates:
+      - 'ghcr.io/shini4i/argo-watcher-client:{{ .Tag }}-amd64'
+      - 'ghcr.io/shini4i/argo-watcher-client:{{ .Tag }}-arm64'
 
 archives:
   - format: tar.gz
@@ -96,6 +152,5 @@ release:
 
   footer: |
     ## Docker Images
-    - `ghcr.io/shini4i/{{.ProjectName}}:{{ .Tag }}`
-    - `ghcr.io/shini4i/{{.ProjectName}}:{{ .Tag }}-amd64`
-    - `ghcr.io/shini4i/{{.ProjectName}}:{{ .Tag }}-arm64`
+    - `ghcr.io/shini4i/argo-watcher:{{ .Tag }}`
+    - `ghcr.io/shini4i/argo-watcher-client:{{ .Tag }}`
