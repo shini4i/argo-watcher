@@ -14,8 +14,6 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-22.04
-    permissions:
-      packages: write
     steps:
       - name: Set up QEMU # required for multi architecture build - https://goreleaser.com/cookbooks/multi-platform-docker-images/?h=multi#other-things-to-pay-attention-to
         uses: docker/setup-qemu-action@v2
