@@ -1,10 +1,9 @@
 package migrate
 
 import (
+	"errors"
 	"fmt"
 	"log"
-
-	"errors"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
@@ -23,11 +22,11 @@ type Migrator struct {
 }
 
 // NewMigrator initializes a new Migrator with a given configuration.
-// It uses the pre-constructed DSN to create a new instance of the migrate tool.
+// It creates a real migrate instance and is used by the application's main entry point.
 //
 // Parameters:
 //
-//	cfg: The migration configuration containing the database DSN.
+//	cfg: The migration configuration containing the database DSN and path.
 //
 // Returns:
 //
@@ -37,13 +36,28 @@ func NewMigrator(cfg *MigrationConfig) (*Migrator, error) {
 	if err != nil {
 		return nil, fmt.Errorf("migration initialization failed: %w", err)
 	}
+	return NewMigratorWithDriver(m), nil
+}
 
+// NewMigratorWithDriver initializes a new Migrator with a provided driver instance.
+// This constructor is used for testing to inject a mock migrator.
+//
+// Parameters:
+//
+//	driver: An instance that satisfies the migrator interface.
+//
+// Returns:
+//
+//	A pointer to a Migrator.
+func NewMigratorWithDriver(driver migrator) *Migrator {
 	return &Migrator{
-		migrator: m,
-	}, nil
+		migrator: driver,
+	}
 }
 
 // Run applies all available 'up' migrations.
+// It logs the outcome and will panic on failure, as a failed migration
+// should halt the deployment process.
 func (m *Migrator) Run() {
 	log.Println("Applying database migrations...")
 	if err := m.migrator.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {

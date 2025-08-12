@@ -1,4 +1,5 @@
-// internal/migrate/config.go
+// Package migrate handles database migrations. This file defines the
+// configuration loading specific to the migration process.
 package migrate
 
 import (
@@ -17,7 +18,7 @@ type dbConfig struct {
 	Port           string `env:"DB_PORT" validate:"required"`
 	Name           string `env:"DB_NAME" validate:"required"`
 	SslMode        string `env:"DB_SSL_MODE" envDefault:"disable"`
-	MigrationsPath string `env:"MIGRATIONS_PATH" envDefault:"/db/migrations"`
+	MigrationsPath string `env:"DB_MIGRATIONS_PATH" envDefault:"/db/migrations"`
 }
 
 // MigrationConfig holds the configuration required for running migrations.
@@ -44,6 +45,7 @@ func NewMigrationConfig() (*MigrationConfig, error) {
 		return nil, fmt.Errorf("database component validation failed: %w", err)
 	}
 
+	// Escape username and password to handle special characters in the DSN.
 	dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
 		url.QueryEscape(dbCfg.User),
 		url.QueryEscape(dbCfg.Password),
