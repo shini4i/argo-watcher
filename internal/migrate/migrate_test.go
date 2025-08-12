@@ -1,13 +1,14 @@
+// internal/migrate/migrate_test.go
 package migrate
 
 import (
 	"errors"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"testing"
 
 	"github.com/golang-migrate/migrate/v4"
+	// Add blank import for the sqlite3 driver for testing purposes.
 	_ "github.com/golang-migrate/migrate/v4/database/sqlite3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,7 +25,7 @@ func (m *mockMigrator) Up() error {
 }
 
 // TestNewMigratorWithDriver verifies that the constructor for tests correctly
-// assigns the provided driver. This covers the constructor used in other tests.
+// assigns the provided driver.
 func TestNewMigratorWithDriver(t *testing.T) {
 	// Arrange
 	mock := &mockMigrator{}
@@ -62,39 +63,38 @@ func TestMigrator_Run_NoChange(t *testing.T) {
 }
 
 // TestMigrator_Run_Failure tests the case where the migration fails.
-// This test correctly covers the error-handling branch of the 'if' statement.
+// This is the crucial test that covers the fatal error path.
 func TestMigrator_Run_Failure(t *testing.T) {
+	// This "if" block is the key. It checks for an environment variable.
+	// When the test runs itself as a sub-process, this block is executed.
 	if os.Getenv("BE_A_FATAL_TEST") == "1" {
 		mock := &mockMigrator{upError: errors.New("a serious migration error")}
 		m := NewMigratorWithDriver(mock)
+		// This call to Run() will trigger log.Fatalf and terminate the sub-process.
 		m.Run()
 		return
 	}
 
-	// Arrange
+	// Arrange: The main test process creates a command to run itself.
 	cmd := exec.Command(os.Args[0], "-test.run=^TestMigrator_Run_Failure$")
+	// It sets the special environment variable to trigger the logic above.
 	cmd.Env = append(os.Environ(), "BE_A_FATAL_TEST=1")
 
-	// Act
+	// Act: Run the sub-process and capture its output.
 	output, err := cmd.CombinedOutput()
 
-	// Assert
-	require.Error(t, err, "Process should exit with an error")
-	exitErr, ok := err.(*exec.ExitError)
-	require.True(t, ok, "Error should be of type *exec.ExitError")
-	assert.False(t, exitErr.Success(), "Process should not have exited successfully")
+	// Assert: Check that the sub-process failed as expected.
+	require.Error(t, err, "Process should exit with an error because log.Fatalf was called")
+	// Assert that the output contains the specific fatal error message.
 	assert.Contains(t, string(output), "Fatal: An error occurred while applying migrations: a serious migration error")
 }
 
-// TestNewMigrator_Success tests that the real NewMigrator constructor succeeds
-// with a valid, self-contained configuration. This covers the line you mentioned.
+// TestNewMigrator_Success tests that the real NewMigrator constructor succeeds.
 func TestNewMigrator_Success(t *testing.T) {
-	// Arrange: Create a temporary directory for migrations.
+	// Arrange
 	migrationsDir := t.TempDir()
-	err := os.WriteFile(filepath.Join(migrationsDir, "1_init.up.sql"), []byte("CREATE TABLE users (id int);"), 0600)
-	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(migrationsDir+"/1_init.up.sql", []byte("CREATE TABLE users (id int);"), 0600))
 
-	// Use an in-memory sqlite DSN to avoid network calls in a unit test.
 	cfg := &MigrationConfig{
 		DSN:            "sqlite3://file::memory:?cache=shared",
 		MigrationsPath: migrationsDir,
@@ -108,7 +108,7 @@ func TestNewMigrator_Success(t *testing.T) {
 	assert.NotNil(t, migrator)
 }
 
-// TestNewMigrator_Failure tests that the real NewMigrator fails gracefully with an invalid DSN.
+// TestNewMigrator_Failure tests that the real NewMigrator fails gracefully.
 func TestNewMigrator_Failure(t *testing.T) {
 	// Arrange
 	cfg := &MigrationConfig{
