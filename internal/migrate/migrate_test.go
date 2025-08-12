@@ -13,8 +13,6 @@ import (
 
 // mockMigrator implements the migrator interface for testing purposes.
 type mockMigrator struct {
-	// upError is the error that the Up() method will return.
-	// Set to nil for success, migrate.ErrNoChange for no-op, or a standard error for failure.
 	upError error
 }
 
@@ -23,13 +21,26 @@ func (m *mockMigrator) Up() error {
 	return m.upError
 }
 
+// TestNewMigratorWithDriver verifies that the constructor correctly assigns the provided driver.
+func TestNewMigratorWithDriver(t *testing.T) {
+	// Arrange
+	mock := &mockMigrator{}
+
+	// Act
+	m := NewMigratorWithDriver(mock)
+
+	// Assert
+	require.NotNil(t, m, "Migrator should not be nil")
+	assert.Same(t, mock, m.migrator, "The provided driver should be assigned to the migrator field")
+}
+
 // TestMigrator_Run_Success tests the successful execution of migrations.
 func TestMigrator_Run_Success(t *testing.T) {
 	// Arrange
 	mock := &mockMigrator{upError: nil}
-	m := NewMigratorWithDriver(mock) // Use the test constructor
+	m := NewMigratorWithDriver(mock)
 
-	// Act & Assert: This should run without calling log.Fatalf.
+	// Act & Assert
 	assert.NotPanics(t, func() {
 		m.Run()
 	}, "Run should not panic on success")
@@ -39,9 +50,9 @@ func TestMigrator_Run_Success(t *testing.T) {
 func TestMigrator_Run_NoChange(t *testing.T) {
 	// Arrange
 	mock := &mockMigrator{upError: migrate.ErrNoChange}
-	m := NewMigratorWithDriver(mock) // Use the test constructor
+	m := NewMigratorWithDriver(mock)
 
-	// Act & Assert: This should run without calling log.Fatalf.
+	// Act & Assert
 	assert.NotPanics(t, func() {
 		m.Run()
 	}, "Run should not panic when there are no changes")
@@ -50,23 +61,21 @@ func TestMigrator_Run_NoChange(t *testing.T) {
 // TestMigrator_Run_Failure tests the case where the migration fails.
 // It checks that log.Fatalf is called, which terminates the process.
 func TestMigrator_Run_Failure(t *testing.T) {
-	// This test runs the failure case in a separate process to assert that
-	// log.Fatalf is called, as it terminates the current process.
 	if os.Getenv("BE_A_FATAL_TEST") == "1" {
 		mock := &mockMigrator{upError: errors.New("a serious migration error")}
-		m := NewMigratorWithDriver(mock) // Use the test constructor
+		m := NewMigratorWithDriver(mock)
 		m.Run()
 		return
 	}
 
-	// Arrange: Create a new command to run the test function in a separate process.
+	// Arrange
 	cmd := exec.Command(os.Args[0], "-test.run=^TestMigrator_Run_Failure$")
 	cmd.Env = append(os.Environ(), "BE_A_FATAL_TEST=1")
 
-	// Act: Run the command and capture the output.
+	// Act
 	output, err := cmd.CombinedOutput()
 
-	// Assert: Check that the process exited with a non-zero status code.
+	// Assert
 	require.Error(t, err, "Process should exit with an error")
 	exitErr, ok := err.(*exec.ExitError)
 	require.True(t, ok, "Error should be of type *exec.ExitError")
@@ -76,7 +85,7 @@ func TestMigrator_Run_Failure(t *testing.T) {
 
 // TestNewMigrator_Failure tests that the real NewMigrator fails gracefully with an invalid DSN.
 func TestNewMigrator_Failure(t *testing.T) {
-	// Arrange: Create a config with a deliberately invalid DSN format.
+	// Arrange
 	cfg := &MigrationConfig{
 		DSN: "this-is-not-a-valid-uri",
 	}
