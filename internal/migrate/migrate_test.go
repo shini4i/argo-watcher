@@ -1,4 +1,3 @@
-// internal/migrate/migrate_test.go
 package migrate
 
 import (

@@ -23,17 +23,12 @@ type dbConfig struct {
 
 // MigrationConfig holds the configuration required for running migrations.
 type MigrationConfig struct {
-	// DSN is the fully constructed, URI-formatted database source name for golang-migrate.
 	DSN            string
 	MigrationsPath string
 }
 
 // NewMigrationConfig creates a new configuration by parsing environment variables
 // and constructing a URI-based DSN suitable for golang-migrate.
-//
-// Returns:
-//
-//	A pointer to the MigrationConfig struct or an error if parsing or validation fails.
 func NewMigrationConfig() (*MigrationConfig, error) {
 	var dbCfg dbConfig
 	if err := envConfig.Parse(&dbCfg); err != nil {
@@ -45,7 +40,6 @@ func NewMigrationConfig() (*MigrationConfig, error) {
 		return nil, fmt.Errorf("database component validation failed: %w", err)
 	}
 
-	// Escape username and password to handle special characters in the DSN.
 	dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
 		url.QueryEscape(dbCfg.User),
 		url.QueryEscape(dbCfg.Password),
