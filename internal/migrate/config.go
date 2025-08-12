@@ -3,6 +3,7 @@ package migrate
 
 import (
 	"fmt"
+	"net/url"
 
 	envConfig "github.com/caarlos0/env/v11"
 	"github.com/go-playground/validator/v10"
@@ -10,18 +11,20 @@ import (
 
 // dbConfig holds the database connection components required to build a migration-compatible DSN.
 type dbConfig struct {
-	User     string `env:"DB_USER" validate:"required"`
-	Password string `env:"DB_PASSWORD" validate:"required"`
-	Host     string `env:"DB_HOST" validate:"required"`
-	Port     string `env:"DB_PORT" validate:"required"`
-	Name     string `env:"DB_NAME" validate:"required"`
-	SslMode  string `env:"DB_SSL_MODE" envDefault:"disable"`
+	User           string `env:"DB_USER" validate:"required"`
+	Password       string `env:"DB_PASSWORD" validate:"required"`
+	Host           string `env:"DB_HOST" validate:"required"`
+	Port           string `env:"DB_PORT" validate:"required"`
+	Name           string `env:"DB_NAME" validate:"required"`
+	SslMode        string `env:"DB_SSL_MODE" envDefault:"disable"`
+	MigrationsPath string `env:"MIGRATIONS_PATH" envDefault:"/db/migrations"`
 }
 
 // MigrationConfig holds the configuration required for running migrations.
 type MigrationConfig struct {
 	// DSN is the fully constructed, URI-formatted database source name for golang-migrate.
-	DSN string
+	DSN            string
+	MigrationsPath string
 }
 
 // NewMigrationConfig creates a new configuration by parsing environment variables
@@ -42,13 +45,13 @@ func NewMigrationConfig() (*MigrationConfig, error) {
 	}
 
 	dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
-		dbCfg.User,
-		dbCfg.Password,
+		url.QueryEscape(dbCfg.User),
+		url.QueryEscape(dbCfg.Password),
 		dbCfg.Host,
 		dbCfg.Port,
 		dbCfg.Name,
 		dbCfg.SslMode,
 	)
 
-	return &MigrationConfig{DSN: dsn}, nil
+	return &MigrationConfig{DSN: dsn, MigrationsPath: dbCfg.MigrationsPath}, nil
 }
