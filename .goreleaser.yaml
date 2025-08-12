@@ -46,6 +46,9 @@ dockers:
     goos: linux
     goarch: amd64
     dockerfile: Dockerfile.server
+    extra_files:
+      - web/build
+      - db
     ids:
       - argo-watcher
 
@@ -63,6 +66,9 @@ dockers:
     goos: linux
     goarch: arm64
     dockerfile: Dockerfile.server
+    extra_files:
+      - web/build
+      - db
     ids:
       - argo-watcher
 
@@ -113,7 +119,7 @@ docker_manifests:
       - 'ghcr.io/shini4i/argo-watcher-client:{{ .Tag }}-arm64'
 
 archives:
-  - format: tar.gz
+  - formats: ['tar.gz']
     name_template: "{{ .ProjectName }}_{{ .Tag }}_{{ .Os }}_{{ .Arch }}"
 
 sboms:
