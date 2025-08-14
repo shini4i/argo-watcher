@@ -18,7 +18,7 @@ type dbConfig struct {
 	Port           string `env:"DB_PORT" validate:"required"`
 	Name           string `env:"DB_NAME" validate:"required"`
 	SslMode        string `env:"DB_SSL_MODE" envDefault:"disable"`
-	MigrationsPath string `env:"DB_MIGRATIONS_PATH" envDefault:"/db/migrations"`
+	MigrationsPath string `env:"DB_MIGRATIONS_PATH" envDefault:"/app/db/migrations"`
 }
 
 // MigrationConfig holds the configuration required for running migrations.
