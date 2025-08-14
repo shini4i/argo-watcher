@@ -1,11 +1,9 @@
-FROM scratch
+FROM gcr.io/distroless/static:nonroot
 
-COPY argo-watcher /argo-watcher
+WORKDIR /app
 
-COPY web/build /static
-COPY db /db
-COPY --from=golang:1.24-alpine /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --chown=nonroot:nonroot argo-watcher /usr/local/bin/argo-watcher
+COPY --chown=nonroot:nonroot web/build ./static
+COPY --chown=nonroot:nonroot db ./db
 
-USER 65534:65534
-
-CMD ["/argo-watcher"]
+CMD ["argo-watcher"]
