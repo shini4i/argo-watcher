@@ -1,7 +1,8 @@
 ---
 hide:
-- navigation
+  - navigation
 ---
+
 # Installation
 
 ## Server Installation
@@ -90,13 +91,12 @@ Example deployment setup for running with GitLab CI/CD (
 reference: https://docs.gitlab.com/ee/ci/docker/using_kaniko.html)
 
 ```yaml
-# we have only deployment stage
 stages:
+  - build
   - deploy
 
-# build new image
 build:
-  stage: deploy
+  stage: build
   image:
     name: gcr.io/kaniko-project/executor:v1.9.0-debug
     entrypoint: [ "" ]
@@ -105,13 +105,12 @@ build:
       --context "${CI_PROJECT_DIR}"
       --dockerfile "${CI_PROJECT_DIR}/Dockerfile"
       --destination "${CI_REGISTRY_IMAGE}:${CI_COMMIT_TAG}"
-  # build only on main
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
-# deployment monitoring with Argo Watcher
-watch:
-  image: ghcr.io/shini4i/argo-watcher:<VERSION>
+deploy:
+  stage: deploy
+  image: ghcr.io/shini4i/argo-watcher-client:<VERSION>
   variables:
     ARGO_WATCHER_URL: https://argo-watcher.example.com
     ARGO_APP: example
@@ -121,10 +120,7 @@ watch:
     IMAGE_TAG: $CI_COMMIT_TAG
     DEBUG: 1
   script:
-    - /argo-watcher -client
-  # run after we build the image
-  needs: [ build ]
-  # wait only on main and only when build was successfull
+    - /client
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
       when: success
@@ -132,13 +128,16 @@ watch:
 
 Argo Watcher Client supports the following environment variables
 
-| Variable                  | Description                                                                                                               | Mandatory |
-|---------------------------|---------------------------------------------------------------------------------------------------------------------------|-----------|
-| ARGO_WATCHER_URL          | The url of argo-watcher instance                                                                                          | Yes       |
-| ARGO_APP                  | The name of argo app to check for images rollout                                                                          | Yes       |
-| COMMIT_AUTHOR             | The person who made commit/triggered pipeline                                                                             | Yes       |
-| PROJECT_NAME              | An identificator of the business project (not related to argo project)                                                    | Yes       |
-| IMAGES                    | A list of images (separated by ",") that should contain specific tag                                                      | Yes       |
-| IMAGE_TAG                 | An image tag that is expected to be rolled out                                                                            | Yes       |
-| ARGO_WATCHER_DEPLOY_TOKEN | A token to enable git image override (required when argo watcher is managing deployments instead of argocd image updater) | No        |
-| DEBUG                     | Print various debug information                                                                                           | No        |
+| Variable                  | Description                                                                                                                                               | Mandatory |
+|---------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------|-----------|
+| ARGO_WATCHER_URL          | The url of argo-watcher instance                                                                                                                          | Yes       |
+| COMMIT_AUTHOR             | The person who made commit/triggered pipeline                                                                                                             | Yes       |
+| PROJECT_NAME              | An identificator of the business project (not related to argo project)                                                                                    | Yes       |
+| IMAGES                    | A list of images (separated by `,`) that should contain specific tag                                                                                      | Yes       |
+| IMAGE_TAG                 | An image tag that is expected to be rolled out                                                                                                            | Yes       |
+| ARGO_WATCHER_DEPLOY_TOKEN | A token to enable git image override (required when argo watcher is managing deployments instead of argocd image updater)                                 | No        |
+| DEBUG                     | Print various debug information                                                                                                                           | No        |
+| ARGO_WATCHER_DEPLOY_TOKEN | A semi-deprecated token used to validate the request to commit tag override                                                                               | No        |
+| BEARER_TOKEN              | A JWT used to validate the request to commit tag override                                                                                                 | No        |
+| RETRY_INTERVAL            | How often should the client ask the server for an update                                                                                                  | No        |
+| EXPECTED_DEPLOY_TIME      | An experimental value used to indicate when something goes wrong (it will start printing different log message asking to check if there are some problems | No        |
