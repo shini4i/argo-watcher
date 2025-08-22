@@ -8,10 +8,10 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/argocd"
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	prom "github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/state"
+	"github.com/shini4i/argo-watcher/internal/config"
 	"github.com/shini4i/argo-watcher/internal/lock"
+	"github.com/shini4i/argo-watcher/internal/state"
 )
 
 type Server struct {

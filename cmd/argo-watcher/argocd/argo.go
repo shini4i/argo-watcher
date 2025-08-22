@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/state"
+	"github.com/shini4i/argo-watcher/internal/state"
 
 	"github.com/rs/zerolog/log"
 

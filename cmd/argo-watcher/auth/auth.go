@@ -1,6 +1,6 @@
 package auth
 
-import "github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
+import "github.com/shini4i/argo-watcher/internal/config"
 
 // AuthService is an interface for services that verify and validate tokens.
 type AuthService interface {
