@@ -56,7 +56,7 @@ graph TD
 
     subgraph "Argo CD"
         ArgoCD_API[Argo CD API]
-        ArgoCD_UI[Argo CD UI]
+        ArgoCD[Argo CD]
     end
 
     CI_Pipeline -- "1. Build & Push" --> Image_Registry
@@ -65,7 +65,7 @@ graph TD
     Watcher_Server -- "4. (Optional) Update Image Tag" --> Watcher_Updater
     Watcher_Updater -- "5. Commit" --> Git_Repo
     Watcher_Server -- "7. Monitor" --> ArgoCD_API
-    ArgoCD_UI -- "6. Sync" --> Git_Repo
+    ArgoCD -- "6. Sync" --> Git_Repo
     Watcher_Server -- "8. Stream Status" --> Watcher_WebUI
     Watcher_Server -- "8. Report Status" --> Watcher_Client
     Watcher_Client -- "9. Exit Code" --> CI_Pipeline
