@@ -1,7 +1,10 @@
 <div align="center">
 
 # Argo Watcher
-The project bridges traditional pipelines and GitOps, improving deployment visibility with Argo CD Image Updater and a built-in GitOps repo updater
+
+**A feedback loop for your GitOps workflow.**
+
+Argo Watcher bridges the gap between your CI pipeline and Argo CD, providing real-time status and visibility into your deployments. No more "fire-and-forget" deployments.
 
 ![GitHub Actions](https://img.shields.io/github/actions/workflow/status/shini4i/argo-watcher/run-tests-and-sonar-scan.yml?branch=main)
 ![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/shini4i/argo-watcher)
@@ -11,42 +14,76 @@ The project bridges traditional pipelines and GitOps, improving deployment visib
 [![Documentation Status](https://readthedocs.org/projects/argo-watcher/badge/?version=latest)](https://argo-watcher.readthedocs.io/en/latest/?badge=latest)
 ![GitHub](https://img.shields.io/github/license/shini4i/argo-watcher)
 
-<img src="https://raw.githubusercontent.com/shini4i/assets/main/src/argo-watcher/demo.png" alt="Showcase" height="441" width="680">
+<img src="https://raw.githubusercontent.com/shini4i/assets/main/src/argo-watcher/demo.png" alt="Argo Watcher UI" height="441" width="680">
 
 </div>
 
-## Why Use Argo Watcher
+## The Problem
 
-Argo Watcher not only addresses the critical challenge of visibility during deployments with Argo CD Image Updater but also introduces optional built-in image updater.
+In a typical GitOps workflow, a CI pipeline builds an image, pushes it to a registry, and updates a Git repository. Argo CD then detects the change and deploys the new image. The problem is that the CI pipeline has no direct knowledge of the deployment's outcome. Did it succeed? Did it fail? The pipeline is left in the dark.
 
-It actively monitors the ArgoCD API for application changes and synchronizes the status of your image-related modifications, streamlining and potentially accelerating your deployment processes.
+## The Solution
 
-## Prerequisites
+Argo Watcher introduces a control loop that monitors your Argo CD applications for health and sync status changes. It acts as a bridge, reporting the deployment's final state back to the CI pipeline. This provides a clear, synchronous result for an asynchronous process.
 
-1. ArgoCD
-2. Argo CD Image Updater (we encourage you to try out built-in GitOps repo updater instead)
-3. CI/CD solution of your choice
+## Key Features
 
-## Possible workflow
+*   **Deployment Tracking**: Monitors Argo CD applications and reports on their health and sync status.
+*   **CI Integration**: A lightweight client that can be integrated into any CI/CD pipeline to wait for a successful deployment.
+*   **Real-time Web UI**: A comprehensive dashboard to visualize deployment status, history, and application state.
+*   **Built-in GitOps Updater**: An optional, standalone service to update image tags in your GitOps repository, as an alternative to the Argo CD Image Updater.
+*   **Notifications**: Send deployment status notifications to webhooks.
+*   **Authentication**: Supports JWT and Keycloak for secure access to the server and UI.
 
-A possible workflow with Argo Watcher:
+## Architecture
 
-1. **Build and Deploy**: Build a new Docker image of your application and push it to your image repository.
-2. **Monitoring Setup**: Run an Argo Watcher Client job after the new image is pushed. This job oversees the deployment process.
-3. **Image Update in GitOps repo**: Argo CD Image Updater or Argo Watcher commits the updated image tag to the GitOps repository, triggering deployment.
-4. **Deployment Monitoring**: Argo Watcher monitors and reports the deployment status in real-time.
-5. **Pipeline Status Reporting**: The client returns an exit code reflecting the deployment task status, marking the workflow's completion.
+Argo Watcher consists of three main components: the **Server**, the **Client**, and the **Web UI**.
 
-<div align="center">
-<img src="https://raw.githubusercontent.com/shini4i/assets/main/src/argo-watcher/simplified_diagram.png" alt="Showcase" height="540" width="540">
-</div>
+```mermaid
+graph TD
+    subgraph "Your Environment"
+        CI_Pipeline[CI Pipeline]
+        Git_Repo[GitOps Repository]
+        Image_Registry[Image Registry]
+    end
 
-> [!TIP]
-> In addition to pipeline logs, the whole process can be observed through the web UI.
+    subgraph "Argo Watcher"
+        Watcher_Server[Server]
+        Watcher_Client[Client]
+        Watcher_WebUI[Web UI]
+        Watcher_Updater[GitOps Updater]
+    end
+
+    subgraph "Argo CD"
+        ArgoCD_API[Argo CD API]
+        ArgoCD_UI[Argo CD UI]
+    end
+
+    CI_Pipeline -- "1. Build & Push" --> Image_Registry
+    CI_Pipeline -- "2. Run" --> Watcher_Client
+    Watcher_Client -- "3. Create Task" --> Watcher_Server
+    Watcher_Server -- "4. (Optional) Update Image Tag" --> Watcher_Updater
+    Watcher_Updater -- "5. Commit" --> Git_Repo
+    Watcher_Server -- "7. Monitor" --> ArgoCD_API
+    ArgoCD_UI -- "6. Sync" --> Git_Repo
+    Watcher_Server -- "8. Stream Status" --> Watcher_WebUI
+    Watcher_Server -- "8. Report Status" --> Watcher_Client
+    Watcher_Client -- "9. Exit Code" --> CI_Pipeline
+```
+
+## How It Works
+
+1.  **Trigger**: Your CI pipeline builds a new image and pushes it to a registry.
+2.  **Monitor**: The pipeline then runs the Argo Watcher client, telling it which application and image to track.
+3.  **Update**: The image tag is updated in your GitOps repository, either by the Argo CD Image Updater or Argo Watcher's built-in updater.
+4.  **Deploy**: Argo CD detects the change and starts deploying the new image.
+5.  **Track & Report**: The Argo Watcher server continuously polls the Argo CD API. As the deployment progresses, it streams status updates to the Web UI and reports the final status (e.g., `deployed`, `failed`) back to the client.
+6.  **Complete**: The client exits with a status code that reflects the deployment outcome, allowing your CI pipeline to proceed or fail accordingly.
 
 ## Documentation
 
-The up to date documentation is available here: [argo-watcher.readthedocs.io](https://argo-watcher.readthedocs.io).
+For more detailed information on configuration, API usage, and advanced features, please visit our documentation at [argo-watcher.readthedocs.io](https://argo-watcher.readthedocs.io).
 
 ## Contributing
+
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
