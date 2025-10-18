@@ -343,10 +343,13 @@ func (env *Env) isDeployLockSet(c *gin.Context) {
 }
 
 // validateToken ensures that at least one of the configured authentication strategies
-// authorizes the current request. When allowedAuthStrategy is provided it restricts validation
-// to that specific strategy header.
+// authorizes the current request. When allowedAuthStrategy is provided it restricts
+// validation to that specific strategy header and returns the last validation error
+// encountered when none succeed.
 func (env *Env) validateToken(c *gin.Context, allowedAuthStrategy string) (bool, error) {
 	if allowedAuthStrategy != "" {
+		var lastErr error
+
 		for header, strategy := range env.strategies {
 			token := c.GetHeader(header)
 			if token == "" {
@@ -372,10 +375,13 @@ func (env *Env) validateToken(c *gin.Context, allowedAuthStrategy string) (bool,
 			if valid {
 				return true, nil
 			}
-			return false, err
+			if err != nil {
+				lastErr = err
+			}
+			break
 		}
 
-		return false, nil
+		return false, lastErr
 	}
 
 	return env.authenticator.Validate(c.Request)
