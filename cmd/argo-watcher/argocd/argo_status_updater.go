@@ -51,12 +51,12 @@ func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, retryDelay
 	updater.locker = locker
 	updater.repoCachePath = repoCachePath
 
-	httpClient := &http.Client{
-		Timeout: 15 * time.Second,
-	}
-
 	if !webhookConfig.Enabled {
 		return nil
+	}
+
+	httpClient := &http.Client{
+		Timeout: 15 * time.Second,
 	}
 
 	webhookStrategy, err := notifications.NewWebhookStrategy(webhookConfig, httpClient)

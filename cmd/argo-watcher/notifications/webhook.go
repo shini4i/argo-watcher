@@ -104,7 +104,7 @@ func NewWebhookStrategy(cfg *config.WebhookConfig, client HTTPClient) (*WebhookS
 
 // Send delivers the webhook notification for the provided task.
 func (s *WebhookStrategy) Send(task models.Task) error {
-	if s == nil || !s.Enabled {
+	if !s.Enabled {
 		return nil
 	}
 
