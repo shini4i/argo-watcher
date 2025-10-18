@@ -55,24 +55,54 @@ const HistoryTasks: React.FC = () => {
     const [isExportModalOpen, setExportModalOpen] = useState(false);
     const [anonymize, setAnonymize] = useState(false);
 
-    const updateSearchParameters = (start: Date, end: Date, application: string | null, page: number) => {
-        const params: Record<string, any> = {
-            start: Math.floor(start.getTime() / 1000),
-            end: Math.floor(end.getTime() / 1000),
-        };
+    /**
+     * Synchronizes the visible filters with the URL search params so the current view can
+     * be shared or reloaded without losing context.
+     *
+     * @param start The selected start date or null when no range is defined.
+     * @param end The selected end date or null when no range is defined.
+     * @param application The selected application identifier.
+     * @param page The current pagination page.
+     */
+    const updateSearchParameters = (
+        start: Date | null,
+        end: Date | null,
+        application: string | null,
+        page: number
+    ) => {
+        const params: Record<string, string> = {};
+
+        if (start && end) {
+            params.start = Math.floor(start.getTime() / 1000).toString();
+            params.end = Math.floor(end.getTime() / 1000).toString();
+        }
 
         if (application) {
             params.app = application;
         }
 
         if (page !== 1) {
-            params.page = page;
+            params.page = page.toString();
         }
 
         setSearchParams(params);
     };
 
-    const refreshWithFilters = (start: Date | null, end: Date | null, application: string | null, page: number) => {
+    /**
+     * Loads data for the provided date range and application filter while keeping the
+     * local cache and URL in sync.
+     *
+     * @param start The start of the selected range.
+     * @param end The end of the selected range.
+     * @param application The application filter currently applied.
+     * @param page The current page in the table pagination.
+     */
+    const refreshWithFilters = (
+        start: Date | null,
+        end: Date | null,
+        application: string | null,
+        page: number
+    ) => {
         if (start && end) {
             refreshTasksInRange(
                 Math.floor(startOfDay(start).getTime() / 1000),
@@ -85,6 +115,12 @@ const HistoryTasks: React.FC = () => {
         }
     };
 
+    /**
+     * Exports the currently loaded tasks into a selected format while applying
+     * optional anonymisation to hide sensitive information.
+     *
+     * @param type The export format (JSON, CSV, or XLSX).
+     */
     const exportData = (type: 'json' | 'csv' | 'xlsx') => {
         if (!tasks || tasks.length === 0) {
             setError('export_error', 'No tasks available for export.');
@@ -104,7 +140,9 @@ const HistoryTasks: React.FC = () => {
                 created: new Date(task.created * 1000).toLocaleString('en-GB', { hour12: false }),
                 updated: task.updated ? new Date(task.updated * 1000).toLocaleString('en-GB', { hour12: false }) : null,
                 images: task.images.map((img) => `${img.image}:${img.tag}`).join(', '),
-                ...(anonymize ? {} : { status_reason: task.status_reason?.replace(/\n/g, '\\n') }),
+                ...(anonymize
+                    ? {}
+                    : { status_reason: task.status_reason?.replaceAll('\n', String.raw`\n`) }),
             }));
         }
 
@@ -133,7 +171,7 @@ const HistoryTasks: React.FC = () => {
         setSuccess('Data exported successfully.');
     };
     useEffect(() => {
-        refreshWithFilters(startDate!, endDate!, currentApplication, currentPage);
+        refreshWithFilters(startDate, endDate, currentApplication, currentPage);
     }, [startDate, endDate, currentApplication, currentPage]);
 
     return (
@@ -175,7 +213,7 @@ const HistoryTasks: React.FC = () => {
                             onChange={value => {
                                 setCurrentApplication(value);
                                 setCurrentPage(1);
-                                refreshWithFilters(startDate!, endDate!, value, 1);
+                                refreshWithFilters(startDate, endDate, value, 1);
                             }}
                             appNames={appNames}
                         />
@@ -211,7 +249,7 @@ const HistoryTasks: React.FC = () => {
                             title="Reload table"
                             onClick={() => {
                                 setCurrentPage(1);
-                                refreshWithFilters(startDate!, endDate!, currentApplication, 1);
+                                refreshWithFilters(startDate, endDate, currentApplication, 1);
                             }}
                         >
                             <RefreshIcon />
@@ -229,8 +267,8 @@ const HistoryTasks: React.FC = () => {
                     onPageChange={page => {
                         setCurrentPage(page);
                         updateSearchParameters(
-                            startDate!,
-                            endDate!,
+                            startDate,
+                            endDate,
                             currentApplication,
                             page
                         );

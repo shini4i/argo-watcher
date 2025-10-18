@@ -15,6 +15,11 @@ export const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 let keycloak: Keycloak | null = null;
 
+/**
+ * React hook exposing authentication state sourced from Keycloak or the mock configuration.
+ *
+ * @returns Authentication status, metadata and the raw Keycloak token.
+ */
 export function useAuth() {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   const [email, setEmail] = useState<string | null>(null);
@@ -22,6 +27,10 @@ export function useAuth() {
   const [privilegedGroups, setPrivilegedGroups] = useState<string[]>([]);
   const [keycloakToken, setKeycloakToken] = useState<string | null>(null);
 
+  /**
+   * Initializes the authentication context by requesting configuration and, when required,
+   * bootstrapping the Keycloak flow.
+   */
   const initializeAuth = async () => {
     console.log('initializeAuth triggered');
     try {
@@ -61,12 +70,13 @@ export function useAuth() {
 
     if (authenticated) {
       intervalId = setInterval(() => {
-        if (keycloak && keycloak.isTokenExpired(20)) {
+        if (keycloak?.isTokenExpired(20)) {
           keycloak.updateToken(20)
             .then(refreshed => {
               if (refreshed) {
-                console.log('Token refreshed, valid for ' + Math.round((keycloak!.tokenParsed?.exp ?? 0) + (keycloak!.timeSkew ?? 0) - new Date().getTime() / 1000) + ' seconds');
-                setKeycloakToken(keycloak!.token || null);
+                const token = keycloak?.token ?? null;
+                console.log('Token refreshed, valid for ' + Math.round((keycloak?.tokenParsed?.exp ?? 0) + (keycloak?.timeSkew ?? 0) - Date.now() / 1000) + ' seconds');
+                setKeycloakToken(token);
               }
             }).catch((err) => {
             console.error('Failed to refresh token', err);

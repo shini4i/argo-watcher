@@ -29,9 +29,15 @@ import { useDeployLock } from '../Services/DeployLockHandler';
 import { relativeHumanDuration, relativeTime, relativeTimestamp } from '../Utils';
 
 interface ProjectDisplayProps {
-  project: string;
+  readonly project: string;
 }
 
+/**
+ * Displays the project reference either as an external hyperlink or plain text depending on the value.
+ *
+ * @param props Component properties containing the project value.
+ * @returns The rendered project reference.
+ */
 export function ProjectDisplay({ project }: ProjectDisplayProps) {
   if (project.startsWith('http')) {
     return (
@@ -44,9 +50,15 @@ export function ProjectDisplay({ project }: ProjectDisplayProps) {
 }
 
 interface StatusReasonDisplayProps {
-  reason: string;
+  readonly reason: string;
 }
 
+/**
+ * Presents the status reason using a preformatted block to preserve formatting.
+ *
+ * @param props Component properties containing the reason text.
+ * @returns The rendered reason block.
+ */
 export function StatusReasonDisplay({ reason }: StatusReasonDisplayProps) {
   return (
     <Typography
@@ -62,6 +74,13 @@ export function StatusReasonDisplay({ reason }: StatusReasonDisplayProps) {
   );
 }
 
+/**
+ * Calculates the human-readable duration of a task from its creation to completion (or now when ongoing).
+ *
+ * @param created The creation timestamp in seconds.
+ * @param updated The optional completion timestamp in seconds.
+ * @returns The formatted duration string.
+ */
 const taskDuration = (created: number, updated: number | null): string => {
   if (!updated) {
     updated = Math.round(Date.now() / 1000);
@@ -71,6 +90,12 @@ const taskDuration = (created: number, updated: number | null): string => {
 };
 
 const defaultFormatTime = '---';
+/**
+ * Converts a Unix timestamp into a formatted UTC string safe for tooltips and tables.
+ *
+ * @param timestamp The Unix timestamp in seconds.
+ * @returns The formatted timestamp or a placeholder when unavailable.
+ */
 export const formatDateTime = (timestamp: number | null): string => {
   if (!timestamp) {
     return defaultFormatTime;
@@ -88,27 +113,33 @@ export const formatDateTime = (timestamp: number | null): string => {
 };
 
 interface Task {
-  id: string;
-  app: string;
-  project: string;
-  author: string;
-  status: string;
-  created: number;
-  updated: number;
-  images: { id: string; image: string; tag: string }[];
-  status_reason?: string;
+  readonly id: string;
+  readonly app: string;
+  readonly project: string;
+  readonly author: string;
+  readonly status: string;
+  readonly created: number;
+  readonly updated: number;
+  readonly images: readonly { id: string; image: string; tag: string }[];
+  readonly status_reason?: string;
 }
 
 interface SortField {
-  field: keyof Task;
-  direction: 'ASC' | 'DESC';
+  readonly field: keyof Task;
+  readonly direction: 'ASC' | 'DESC';
 }
 
 interface UseTasksParams {
-  setError: (context: string, message: string) => void;
-  setSuccess: (context: string, message: string) => void;
+  readonly setError: (context: string, message: string) => void;
+  readonly setSuccess: (context: string, message: string) => void;
 }
 
+/**
+ * Retrieves and manages task data together with sorting and filtering context for history views.
+ *
+ * @param params Handlers used to report success or failure when talking to the API.
+ * @returns Task data alongside sort state and helper callbacks.
+ */
 export function useTasks({ setError, setSuccess }: UseTasksParams) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [sortField, setSortField] = useState<SortField>({
@@ -188,12 +219,18 @@ export function useTasks({ setError, setSuccess }: UseTasksParams) {
 }
 
 interface TableCellSortedProps {
-  field: keyof Task;
-  sortField: SortField;
-  setSortField: (sortField: SortField) => void;
-  children: React.ReactNode;
+  readonly field: keyof Task;
+  readonly sortField: SortField;
+  readonly setSortField: (sortField: SortField) => void;
+  readonly children: React.ReactNode;
 }
 
+/**
+ * Table header cell that toggles sorting for the provided task field when clicked.
+ *
+ * @param props Sorting state and the cell contents.
+ * @returns The interactive table header cell.
+ */
 function TableCellSorted({ field, sortField, setSortField, children }: TableCellSortedProps) {
   const triggerSortChange = (triggerField: keyof Task) => {
     let sortFieldChange = { ...sortField };
@@ -240,14 +277,20 @@ const getCachedItemsPerPage = (): number => {
 };
 
 interface TasksTableProps {
-  tasks: Task[];
-  sortField: SortField;
-  setSortField: (sortField: SortField) => void;
-  relativeDate: boolean;
-  onPageChange: (page: number) => void;
-  page?: number;
+  readonly tasks: Task[];
+  readonly sortField: SortField;
+  readonly setSortField: (sortField: SortField) => void;
+  readonly relativeDate: boolean;
+  readonly onPageChange: (page: number) => void;
+  readonly page?: number;
 }
 
+/**
+ * Renders the tasks table complete with pagination, sorting and deploy-lock banner.
+ *
+ * @param props Data source, sorting context and pagination callbacks.
+ * @returns The rendered tasks table.
+ */
 function TasksTable({
                       tasks,
                       sortField,
