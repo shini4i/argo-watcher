@@ -29,8 +29,8 @@ func (m *MockHTTPClient) Do(req *http.Request) (*http.Response, error) {
 	return nil, errors.New("DoFunc is not implemented")
 }
 
-// TestNewWebhookService tests the constructor for WebhookService.
-func TestNewWebhookService(t *testing.T) {
+// TestNewWebhookStrategy tests the constructor for WebhookStrategy.
+func TestNewWebhookStrategy(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		// arrange
 		cfg := &config.WebhookConfig{
@@ -45,7 +45,7 @@ func TestNewWebhookService(t *testing.T) {
 		client := &MockHTTPClient{}
 
 		// act
-		service, err := NewWebhookService(cfg, client)
+		service, err := NewWebhookStrategy(cfg, client)
 
 		// assert
 		require.NoError(t, err)
@@ -65,7 +65,7 @@ func TestNewWebhookService(t *testing.T) {
 		cfg := &config.WebhookConfig{}
 
 		// act
-		service, err := NewWebhookService(cfg, nil)
+		service, err := NewWebhookStrategy(cfg, nil)
 
 		// assert
 		require.Error(t, err)
@@ -74,8 +74,8 @@ func TestNewWebhookService(t *testing.T) {
 	})
 }
 
-// TestSendWebhook tests the SendWebhook method of the WebhookService.
-func TestSendWebhook(t *testing.T) {
+// TestSend tests the Send method of the WebhookStrategy.
+func TestSend(t *testing.T) {
 	task := models.Task{Id: "test-task-123"}
 
 	// Pre-compile a valid template for reuse in tests
@@ -102,7 +102,8 @@ func TestSendWebhook(t *testing.T) {
 			},
 		}
 
-		service := &WebhookService{
+		service := &WebhookStrategy{
+			Enabled:              true,
 			url:                  "http://testhost/hook",
 			token:                "secret-token",
 			authorizationHeader:  "X-Auth",
@@ -113,7 +114,7 @@ func TestSendWebhook(t *testing.T) {
 		}
 
 		// act
-		err := service.SendWebhook(task)
+		err := service.Send(task)
 
 		// assert
 		assert.NoError(t, err)
@@ -125,12 +126,13 @@ func TestSendWebhook(t *testing.T) {
 		invalidTmpl, err := template.New("webhook").Parse(`{"missing_field":"{{.Missing}}>"}`)
 		require.NoError(t, err)
 
-		service := &WebhookService{
+		service := &WebhookStrategy{
+			Enabled:  true,
 			template: invalidTmpl, // a template that will fail
 		}
 
 		// act
-		err = service.SendWebhook(task)
+		err = service.Send(task)
 
 		// assert
 		require.Error(t, err)
@@ -139,13 +141,14 @@ func TestSendWebhook(t *testing.T) {
 
 	t.Run("Failed Request Creation", func(t *testing.T) {
 		// arrange
-		service := &WebhookService{
+		service := &WebhookStrategy{
+			Enabled:  true,
 			url:      ":invalid-url:", // This will cause http.NewRequestWithContext to fail
 			template: tmpl,
 		}
 
 		// act
-		err := service.SendWebhook(task)
+		err := service.Send(task)
 
 		// assert
 		require.Error(t, err)
@@ -160,14 +163,15 @@ func TestSendWebhook(t *testing.T) {
 			},
 		}
 
-		service := &WebhookService{
+		service := &WebhookStrategy{
+			Enabled:  true,
 			url:      "http://testhost/hook",
 			client:   mockClient,
 			template: tmpl,
 		}
 
 		// act
-		err := service.SendWebhook(task)
+		err := service.Send(task)
 
 		// assert
 		require.Error(t, err)
@@ -185,7 +189,8 @@ func TestSendWebhook(t *testing.T) {
 			},
 		}
 
-		service := &WebhookService{
+		service := &WebhookStrategy{
+			Enabled:              true,
 			url:                  "http://testhost/hook",
 			allowedResponseCodes: []int{200},
 			client:               mockClient,
@@ -193,7 +198,7 @@ func TestSendWebhook(t *testing.T) {
 		}
 
 		// act
-		err := service.SendWebhook(task)
+		err := service.Send(task)
 
 		// assert
 		require.Error(t, err)
@@ -214,7 +219,8 @@ func TestSendWebhook(t *testing.T) {
 			},
 		}
 
-		service := &WebhookService{
+		service := &WebhookStrategy{
+			Enabled:              true,
 			url:                  "http://testhost/hook",
 			allowedResponseCodes: []int{200},
 			client:               mockClient,
@@ -222,12 +228,47 @@ func TestSendWebhook(t *testing.T) {
 		}
 
 		// act
-		err := service.SendWebhook(task)
+		err := service.Send(task)
 
 		// assert
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "received non-allowed status code 403, and failed to read response body: read error")
 	})
+}
+
+func TestNotifierSend(t *testing.T) {
+	task := models.Task{Id: "aggregate-errors"}
+
+	t.Run("NilNotifier", func(t *testing.T) {
+		var notifier *Notifier
+		assert.NoError(t, notifier.Send(task))
+	})
+
+	t.Run("SkipsNilStrategies", func(t *testing.T) {
+		notifier := NewNotifier(nil)
+		assert.NoError(t, notifier.Send(task))
+	})
+
+	t.Run("AggregatesErrors", func(t *testing.T) {
+		notifier := NewNotifier(NotificationStrategyFunc(func(models.Task) error {
+			return errors.New("first")
+		}), NotificationStrategyFunc(func(models.Task) error {
+			return errors.New("second")
+		}))
+
+		err := notifier.Send(task)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "first")
+		assert.Contains(t, err.Error(), "second")
+	})
+}
+
+// NotificationStrategyFunc allows defining inline notification strategies for tests.
+type NotificationStrategyFunc func(models.Task) error
+
+// Send executes the wrapped function.
+func (f NotificationStrategyFunc) Send(task models.Task) error {
+	return f(task)
 }
 
 // errorReader is a helper struct that implements io.Reader and always returns an error.

@@ -31,7 +31,7 @@ type ArgoStatusUpdater struct {
 	retryOptions     []retry.Option
 	locker           lock.Locker
 	acceptSuspended  bool
-	webhookService   *notifications.WebhookService
+	notifier         *notifications.Notifier
 	repoCachePath    string
 }
 
@@ -51,20 +51,20 @@ func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, retryDelay
 	updater.locker = locker
 	updater.repoCachePath = repoCachePath
 
-	if !webhookConfig.Enabled {
-		return nil
-	}
-
 	httpClient := &http.Client{
 		Timeout: 15 * time.Second,
 	}
 
-	webhookService, err := notifications.NewWebhookService(webhookConfig, httpClient)
+	if !webhookConfig.Enabled {
+		return nil
+	}
+
+	webhookStrategy, err := notifications.NewWebhookStrategy(webhookConfig, httpClient)
 	if err != nil {
 		return err
 	}
 
-	updater.webhookService = webhookService
+	updater.notifier = notifications.NewNotifier(webhookStrategy)
 	return nil
 }
 
@@ -97,7 +97,7 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 	defer updater.argo.metrics.RemoveInProgressTask()
 
 	// notify about the deployment start
-	sendWebhookEvent(task, updater.webhookService)
+	sendNotification(task, updater.notifier)
 
 	// wait for application to get into deployed status or timeout
 	application, err := updater.waitForApplicationDeployment(task)
@@ -111,7 +111,7 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 	}
 
 	// send webhook event about the deployment result
-	sendWebhookEvent(task, updater.webhookService)
+	sendNotification(task, updater.notifier)
 }
 
 // processDeploymentResult determines if the deployment was successful and
@@ -312,11 +312,13 @@ func determineFailureStatus(task models.Task, err error) string {
 	return models.StatusFailedMessage
 }
 
-// sendWebhookEvent sends a notification about deployment status if webhooks are enabled
-func sendWebhookEvent(task models.Task, webhookService *notifications.WebhookService) {
-	if webhookService != nil && webhookService.Enabled {
-		if err := webhookService.SendWebhook(task); err != nil {
-			log.Error().Str("id", task.Id).Msgf("Failed to send webhook. Error: %s", err.Error())
-		}
+// sendNotification sends the task update through the configured notifier if available.
+func sendNotification(task models.Task, notifier *notifications.Notifier) {
+	if notifier == nil {
+		return
+	}
+
+	if err := notifier.Send(task); err != nil {
+		log.Error().Str("id", task.Id).Msgf("Failed to dispatch notification. Error: %s", err.Error())
 	}
 }

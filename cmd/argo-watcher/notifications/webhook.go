@@ -21,14 +21,53 @@ const (
 	maxErrorBodySize = 2 * 1024 // 2 KB
 )
 
+// NotificationStrategy defines the contract for delivering task notifications.
+type NotificationStrategy interface {
+	Send(task models.Task) error
+}
+
 // HTTPClient defines the interface for a client that can perform HTTP requests.
 // This allows for mocking in unit tests.
 type HTTPClient interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
-// WebhookService holds the configuration and a pre-compiled template for sending webhooks.
-type WebhookService struct {
+// Notifier orchestrates the configured notification strategies.
+type Notifier struct {
+	strategies []NotificationStrategy
+}
+
+// NewNotifier constructs a Notifier with the supplied strategies.
+func NewNotifier(strategies ...NotificationStrategy) *Notifier {
+	return &Notifier{strategies: strategies}
+}
+
+// Send dispatches the task notification using all registered strategies and joins encountered errors.
+func (n *Notifier) Send(task models.Task) error {
+	if n == nil {
+		return nil
+	}
+
+	var errs []error
+	for _, strategy := range n.strategies {
+		if strategy == nil {
+			continue
+		}
+
+		if err := strategy.Send(task); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	if len(errs) > 0 {
+		return errors.Join(errs...)
+	}
+
+	return nil
+}
+
+// WebhookStrategy holds the configuration and a pre-compiled template for sending webhooks.
+type WebhookStrategy struct {
 	Enabled              bool
 	url                  string
 	token                string
@@ -39,9 +78,9 @@ type WebhookService struct {
 	template             *template.Template
 }
 
-// NewWebhookService creates and initializes the service.
-// It requires an HTTPClient, making the service testable.
-func NewWebhookService(cfg *config.WebhookConfig, client HTTPClient) (*WebhookService, error) {
+// NewWebhookStrategy creates and initializes the webhook strategy.
+// It requires an HTTPClient, making the strategy testable.
+func NewWebhookStrategy(cfg *config.WebhookConfig, client HTTPClient) (*WebhookStrategy, error) {
 	if client == nil {
 		return nil, errors.New("HTTPClient cannot be nil")
 	}
@@ -51,7 +90,7 @@ func NewWebhookService(cfg *config.WebhookConfig, client HTTPClient) (*WebhookSe
 		return nil, fmt.Errorf("failed to parse webhook template: %w", err)
 	}
 
-	return &WebhookService{
+	return &WebhookStrategy{
 		Enabled:              cfg.Enabled,
 		url:                  cfg.Url,
 		token:                cfg.Token,
@@ -63,8 +102,12 @@ func NewWebhookService(cfg *config.WebhookConfig, client HTTPClient) (*WebhookSe
 	}, nil
 }
 
-// SendWebhook sends a notification for a given task.
-func (s *WebhookService) SendWebhook(task models.Task) error {
+// Send delivers the webhook notification for the provided task.
+func (s *WebhookStrategy) Send(task models.Task) error {
+	if s == nil || !s.Enabled {
+		return nil
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -104,8 +147,7 @@ func (s *WebhookService) SendWebhook(task models.Task) error {
 		return fmt.Errorf("received non-allowed status code %d: %s", resp.StatusCode, string(body))
 	}
 
-	_, err = io.Copy(io.Discard, resp.Body)
-	if err != nil {
+	if _, err = io.Copy(io.Discard, resp.Body); err != nil {
 		log.Warn().Err(err).Str("id", task.Id).Msg("Failed to discard response body on success")
 	}
 
