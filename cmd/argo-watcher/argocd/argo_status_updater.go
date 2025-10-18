@@ -51,7 +51,7 @@ func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, retryDelay
 	updater.locker = locker
 	updater.repoCachePath = repoCachePath
 
-	if !webhookConfig.Enabled {
+	if webhookConfig == nil || !webhookConfig.Enabled {
 		return nil
 	}
 

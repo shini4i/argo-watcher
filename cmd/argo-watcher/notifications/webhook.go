@@ -68,7 +68,6 @@ func (n *Notifier) Send(task models.Task) error {
 
 // WebhookStrategy holds the configuration and a pre-compiled template for sending webhooks.
 type WebhookStrategy struct {
-	Enabled              bool
 	url                  string
 	token                string
 	authorizationHeader  string
@@ -81,6 +80,12 @@ type WebhookStrategy struct {
 // NewWebhookStrategy creates and initializes the webhook strategy.
 // It requires an HTTPClient, making the strategy testable.
 func NewWebhookStrategy(cfg *config.WebhookConfig, client HTTPClient) (*WebhookStrategy, error) {
+	if cfg == nil {
+		return nil, errors.New("webhook configuration cannot be nil")
+	}
+	if !cfg.Enabled {
+		return nil, errors.New("webhook strategy disabled")
+	}
 	if client == nil {
 		return nil, errors.New("HTTPClient cannot be nil")
 	}
@@ -91,7 +96,6 @@ func NewWebhookStrategy(cfg *config.WebhookConfig, client HTTPClient) (*WebhookS
 	}
 
 	return &WebhookStrategy{
-		Enabled:              cfg.Enabled,
 		url:                  cfg.Url,
 		token:                cfg.Token,
 		authorizationHeader:  cfg.AuthorizationHeader,
@@ -104,10 +108,6 @@ func NewWebhookStrategy(cfg *config.WebhookConfig, client HTTPClient) (*WebhookS
 
 // Send delivers the webhook notification for the provided task.
 func (s *WebhookStrategy) Send(task models.Task) error {
-	if !s.Enabled {
-		return nil
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
