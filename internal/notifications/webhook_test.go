@@ -277,6 +277,14 @@ func TestNotifierSend(t *testing.T) {
 	})
 }
 
+// NotificationStrategyFunc allows defining inline notification strategies for tests.
+type NotificationStrategyFunc func(models.Task) error
+
+// Send executes the wrapped function.
+func (f NotificationStrategyFunc) Send(task models.Task) error {
+	return f(task)
+}
+
 // errorReader is a helper struct that implements io.Reader and always returns an error.
 type errorReader struct {
 	err error
