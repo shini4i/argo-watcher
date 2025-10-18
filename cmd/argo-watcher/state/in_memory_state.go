@@ -16,19 +16,20 @@ type InMemoryState struct {
 	tasks []models.Task
 }
 
+var _ TaskRepository = (*InMemoryState)(nil)
+
 // Connect is a placeholder method that does not establish any connection.
 // It logs a debug message indicating that the InMemoryState does not connect to anything and skips the connection process.
-// This method exists to fulfill the State interface requirement and has no functional value.
+// This method exists to fulfill the TaskRepository interface requirement and has no functional value.
 func (state *InMemoryState) Connect(serverConfig *config.ServerConfig) error {
 	log.Debug().Msg("InMemoryState does not connect to anything. Skipping.")
 	return nil
 }
 
-// Add adds a new task to the in-memory state.
-// It takes a models.Task parameter and updates the task's created timestamp and status.
-// The method appends the task to the list of tasks in the in-memory state.
-// It always returns nil as there is no error handling in the in-memory implementation.
-func (state *InMemoryState) Add(task models.Task) (*models.Task, error) {
+// AddTask adds a new task to the in-memory repository.
+// It takes a models.Task parameter, updates timestamps and status, and appends the task to the list of tracked tasks.
+// The method returns the newly created task and a nil error because the in-memory implementation does not surface persistence failures.
+func (state *InMemoryState) AddTask(task models.Task) (*models.Task, error) {
 	task.Id = uuid.New().String()
 	task.Created = float64(time.Now().Unix())
 	task.Updated = float64(time.Now().Unix())
@@ -96,7 +97,7 @@ func (state *InMemoryState) SetTaskStatus(id string, status string, reason strin
 
 // Check is a placeholder method that implements the Check() bool interface.
 // It always returns true and does not perform any actual state checking.
-// This method exists to fulfill the State interface requirement and has no functional value.
+// This method exists to fulfill the TaskRepository interface requirement and has no functional value.
 func (state *InMemoryState) Check() bool {
 	return true
 }

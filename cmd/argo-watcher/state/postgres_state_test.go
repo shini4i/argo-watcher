@@ -57,7 +57,7 @@ var (
 	}
 )
 
-func TestPostgresState_Add(t *testing.T) {
+func TestPostgresState_AddTask(t *testing.T) {
 	var err error
 	var databaseConfig config.DatabaseConfig
 
@@ -77,17 +77,17 @@ func TestPostgresState_Add(t *testing.T) {
 	_, err = db.Exec("TRUNCATE TABLE tasks")
 	assert.NoError(t, err)
 
-	deployedTaskResult, err := postgresState.Add(deployedTask)
+	deployedTaskResult, err := postgresState.AddTask(deployedTask)
 	assert.NoError(t, err)
 
 	deployedTaskId = deployedTaskResult.Id
 
-	appNotFoundTaskResult, err := postgresState.Add(appNotFoundTask)
+	appNotFoundTaskResult, err := postgresState.AddTask(appNotFoundTask)
 	assert.NoError(t, err)
 
 	appNotFoundTaskId = appNotFoundTaskResult.Id
 
-	abortedTaskResult, err := postgresState.Add(abortedTask)
+	abortedTaskResult, err := postgresState.AddTask(abortedTask)
 	assert.NoError(t, err)
 
 	abortedTaskId = abortedTaskResult.Id

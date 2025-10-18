@@ -29,11 +29,11 @@ const (
 type Argo struct {
 	metrics prometheus.MetricsInterface
 	api     ArgoApiInterface
-	State   state.State
+	State   state.TaskRepository
 }
 
 // Init initializes the Argo controller with its dependencies.
-func (argo *Argo) Init(state state.State, api ArgoApiInterface, metrics prometheus.MetricsInterface) {
+func (argo *Argo) Init(state state.TaskRepository, api ArgoApiInterface, metrics prometheus.MetricsInterface) {
 	argo.api = api
 	argo.State = state
 	argo.metrics = metrics
@@ -63,7 +63,7 @@ func (argo *Argo) Check() (string, error) {
 	return "up", nil
 }
 
-// AddTask validates a new deployment task and adds it to the state.
+// AddTask validates a new deployment task and adds it to the task repository.
 func (argo *Argo) AddTask(task models.Task) (*models.Task, error) {
 	if _, err := argo.Check(); err != nil {
 		return nil, err
@@ -77,7 +77,7 @@ func (argo *Argo) AddTask(task models.Task) (*models.Task, error) {
 		return nil, fmt.Errorf("trying to create task without app name")
 	}
 
-	newTask, err := argo.State.Add(task)
+	newTask, err := argo.State.AddTask(task)
 	if err != nil {
 		return nil, err
 	}

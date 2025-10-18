@@ -43,14 +43,14 @@ var (
 	}
 )
 
-func TestInMemoryState_Add(t *testing.T) {
-	firstTask, err := state.Add(tasks[0])
+func TestInMemoryState_AddTask(t *testing.T) {
+	firstTask, err := state.AddTask(tasks[0])
 	if err != nil {
 		t.Errorf("Unexpected error: %s", err)
 	}
 	firstTaskId = firstTask.Id
 
-	secondTask, err := state.Add(tasks[1])
+	secondTask, err := state.AddTask(tasks[1])
 	if err != nil {
 		t.Errorf("Unexpected error: %s", err)
 	}
