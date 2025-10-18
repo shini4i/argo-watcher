@@ -26,8 +26,9 @@
         devShells.default = pkgs.mkShell {
           packages = goToolchain ++ preCommitTools;
           shellHook = ''
-            export GOPATH="${builtins.getEnv "PWD"}/.go"
-            export GOMODCACHE="${builtins.getEnv "PWD"}/.gomod"
+            export GOPATH="$PWD/.go"
+            export GOMODCACHE="$PWD/.gomod"
+            mkdir -p "$GOPATH" "$GOMODCACHE"
             export GO111MODULE=on
           '';
         };

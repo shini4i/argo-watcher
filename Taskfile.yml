@@ -18,12 +18,12 @@ tasks:
     cmds:
       - echo "===> Generating mocks"
       - mockgen --source=cmd/argo-watcher/argocd/argo_api.go --destination=cmd/argo-watcher/mock/argo_api.go --package=mock
-      - mockgen --source=cmd/argo-watcher/state/state.go --destination=cmd/argo-watcher/mock/state.go --package=mock
+      - mockgen --source=internal/state/state.go --destination=cmd/argo-watcher/mock/state.go --package=mock
       - mockgen --source=cmd/argo-watcher/prometheus/metrics.go --destination=cmd/argo-watcher/mock/metrics.go --package=mock
       - mockgen --source=pkg/updater/interfaces.go --destination=pkg/updater/mock/interfaces.go --package=mock
     sources:
       - cmd/argo-watcher/argocd/argo_api.go
-      - cmd/argo-watcher/state/state.go
+      - internal/state/state.go
       - cmd/argo-watcher/prometheus/metrics.go
       - pkg/updater/interfaces.go
     generates:
@@ -123,7 +123,7 @@ tasks:
       - echo "===> Loading argo-watcher docker image into kind cluster"
       - kind load docker-image ghcr.io/shini4i/argo-watcher:dev -n disposable-cluster
       - echo "===> Restarting argo-watcher deployment"
-      - kubectl rollout restart deploy argo-watcher -n argo-watcher
+      - kubectl rollout restart sts argo-watcher -n argo-watcher
 
   bootstrap:
     desc: Bring docker compose setup up
