@@ -342,49 +342,57 @@ func (env *Env) isDeployLockSet(c *gin.Context) {
 	c.JSON(http.StatusOK, env.lockdown.IsLocked())
 }
 
-// validateToken ensures that at least one of the configured authentication strategies
-// authorizes the current request. When allowedAuthStrategy is provided it restricts
-// validation to that specific strategy header and returns the last validation error
-// encountered when none succeed.
+// validateToken validates the incoming request using the configured authentication strategies.
+// When allowedAuthStrategy is empty, the validation delegates to the default authenticator,
+// which returns the last validation error when no strategies succeed. When allowedAuthStrategy
+// is provided, validation is restricted to that specific strategy header and the last error from
+// that strategy is returned if validation ultimately fails.
 func (env *Env) validateToken(c *gin.Context, allowedAuthStrategy string) (bool, error) {
-	if allowedAuthStrategy != "" {
-		var lastErr error
+	if allowedAuthStrategy == "" {
+		return env.authenticator.Validate(c.Request)
+	}
 
-		for header, strategy := range env.strategies {
-			token := c.GetHeader(header)
-			if token == "" {
-				continue
-			}
+	return env.validateAllowedStrategy(c, allowedAuthStrategy)
+}
 
-			if allowedAuthStrategy != header {
-				log.Debug().Msgf("Authorization strategy %s is not allowed for [%s] %s endpoint",
-					header,
-					c.Request.Method,
-					c.Request.URL,
-				)
-				continue
-			}
+// validateAllowedStrategy enforces validation against a single allowed authentication strategy
+// while keeping track of the last validation error produced by that strategy.
+func (env *Env) validateAllowedStrategy(c *gin.Context, allowedHeader string) (bool, error) {
+	var lastErr error
 
-			log.Debug().Msgf("Using %s strategy for [%s] %s", header, c.Request.Method, c.Request.URL)
+	for header, strategy := range env.strategies {
+		token := c.GetHeader(header)
+		if token == "" {
+			continue
+		}
 
-			if strings.HasPrefix(token, "Bearer ") {
-				token = strings.TrimPrefix(token, "Bearer ")
-			}
+		if header != allowedHeader {
+			log.Debug().Msgf("Authorization strategy %s is not allowed for [%s] %s endpoint",
+				header,
+				c.Request.Method,
+				c.Request.URL,
+			)
+			continue
+		}
 
-			valid, err := strategy.Validate(token)
-			if valid {
-				return true, nil
-			}
-			if err != nil {
-				lastErr = err
-			}
-			break
+		log.Debug().Msgf("Using %s strategy for [%s] %s", header, c.Request.Method, c.Request.URL)
+
+		if strings.HasPrefix(token, "Bearer ") {
+			token = strings.TrimPrefix(token, "Bearer ")
+		}
+
+		valid, err := strategy.Validate(token)
+		if err != nil {
+			lastErr = err
+		}
+		if valid {
+			return true, nil
 		}
 
 		return false, lastErr
 	}
 
-	return env.authenticator.Validate(c.Request)
+	return false, lastErr
 }
 
 // handleWebSocketConnection accepts a WebSocket connection, adds it to a slice,
