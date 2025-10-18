@@ -147,7 +147,8 @@ func (s *WebhookStrategy) Send(task models.Task) error {
 		return fmt.Errorf("received non-allowed status code %d: %s", resp.StatusCode, string(body))
 	}
 
-	if _, err = io.Copy(io.Discard, resp.Body); err != nil {
+	_, err = io.Copy(io.Discard, resp.Body)
+	if err != nil {
 		log.Warn().Err(err).Str("id", task.Id).Msg("Failed to discard response body on success")
 	}
 
