@@ -357,6 +357,7 @@ func (env *Env) validateToken(c *gin.Context, allowedAuthStrategy string) (bool,
 
 // validateAllowedStrategy enforces validation against a single allowed authentication strategy
 // while keeping track of the last validation error produced by that strategy.
+// validateAllowedStrategy ensures that the request uses an allowed authorization strategy.
 func (env *Env) validateAllowedStrategy(c *gin.Context, allowedHeader string) (bool, error) {
 	var lastErr error
 
@@ -388,8 +389,6 @@ func (env *Env) validateAllowedStrategy(c *gin.Context, allowedHeader string) (b
 		if valid {
 			return true, nil
 		}
-
-		return false, lastErr
 	}
 
 	return false, lastErr
