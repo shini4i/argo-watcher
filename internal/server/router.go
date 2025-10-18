@@ -15,10 +15,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog/log"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/argocd"
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/auth"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/docs"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
+	"github.com/shini4i/argo-watcher/internal/auth"
 	"github.com/shini4i/argo-watcher/internal/models"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
@@ -50,7 +50,9 @@ type Env struct {
 	// deploy lock
 	lockdown *Lockdown
 	// enabled auth strategies
-	strategies map[string]auth.AuthService
+	strategies map[string]auth.AuthStrategy
+	// authenticator orchestrates registered strategies
+	authenticator *auth.Authenticator
 }
 
 // CreateRouter initialize router.
@@ -340,15 +342,31 @@ func (env *Env) isDeployLockSet(c *gin.Context) {
 	c.JSON(http.StatusOK, env.lockdown.IsLocked())
 }
 
+// validateToken validates the incoming request using the configured authentication strategies.
+// When allowedAuthStrategy is empty, the validation delegates to the default authenticator,
+// which returns the last validation error when no strategies succeed. When allowedAuthStrategy
+// is provided, validation is restricted to that specific strategy header and the last error from
+// that strategy is returned if validation ultimately fails.
 func (env *Env) validateToken(c *gin.Context, allowedAuthStrategy string) (bool, error) {
+	if allowedAuthStrategy == "" {
+		return env.authenticator.Validate(c.Request)
+	}
+
+	return env.validateAllowedStrategy(c, allowedAuthStrategy)
+}
+
+// validateAllowedStrategy enforces validation against the single allowed authentication strategy header.
+// while keeping track of the last validation error produced by that strategy.
+func (env *Env) validateAllowedStrategy(c *gin.Context, allowedStrategyHeader string) (bool, error) {
+	var lastErr error
+
 	for header, strategy := range env.strategies {
 		token := c.GetHeader(header)
 		if token == "" {
 			continue
 		}
 
-		// this is a restriction to be able to specify allowed auth service on per endpoint basis
-		if allowedAuthStrategy != "" && allowedAuthStrategy != header {
+		if header != allowedStrategyHeader {
 			log.Debug().Msgf("Authorization strategy %s is not allowed for [%s] %s endpoint",
 				header,
 				c.Request.Method,
@@ -359,22 +377,20 @@ func (env *Env) validateToken(c *gin.Context, allowedAuthStrategy string) (bool,
 
 		log.Debug().Msgf("Using %s strategy for [%s] %s", header, c.Request.Method, c.Request.URL)
 
-		// strip Bearer prefix for JWT validation, is there a more reasonable approach?
 		if strings.HasPrefix(token, "Bearer ") {
 			token = strings.TrimPrefix(token, "Bearer ")
 		}
 
 		valid, err := strategy.Validate(token)
+		if err != nil {
+			lastErr = err
+		}
 		if valid {
 			return true, nil
 		}
-		if err != nil {
-			return false, err
-		}
 	}
 
-	// No valid token found, but it's not an error in this context.
-	return false, nil
+	return false, lastErr
 }
 
 // handleWebSocketConnection accepts a WebSocket connection, adds it to a slice,
@@ -469,7 +485,7 @@ func NewEnv(serverConfig *config.ServerConfig, argo *argocd.Argo, metrics *prome
 		return nil, err
 	}
 
-	env.strategies = map[string]auth.AuthService{
+	env.strategies = map[string]auth.AuthStrategy{
 		"ARGO_WATCHER_DEPLOY_TOKEN": auth.NewDeployTokenAuthService(env.config.DeployToken),
 	}
 
@@ -480,6 +496,8 @@ func NewEnv(serverConfig *config.ServerConfig, argo *argocd.Argo, metrics *prome
 	if env.config.JWTSecret != "" {
 		env.strategies["Authorization"] = auth.NewJWTAuthService(env.config.JWTSecret)
 	}
+
+	env.authenticator = auth.NewAuthenticator(env.strategies)
 
 	return env, nil
 }

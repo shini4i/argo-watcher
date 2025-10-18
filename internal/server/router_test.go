@@ -6,17 +6,14 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/auth"
-
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/argocd"
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
-
 	"github.com/coder/websocket"
-
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
-
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/argocd"
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
+	"github.com/shini4i/argo-watcher/internal/auth"
 )
 
 func TestGetVersion(t *testing.T) {
@@ -127,11 +124,12 @@ func TestNewEnv(t *testing.T) {
 	assert.Equal(t, env.metrics, metrics)
 	assert.Equal(t, env.updater, updater)
 
-	expectedStrategies := map[string]auth.AuthService{
+	expectedStrategies := map[string]auth.AuthStrategy{
 		"ARGO_WATCHER_DEPLOY_TOKEN": auth.NewDeployTokenAuthService(serverConfig.DeployToken),
 		"Authorization":             auth.NewJWTAuthService(serverConfig.JWTSecret),
 		keycloakHeader:              auth.NewKeycloakAuthService(serverConfig),
 	}
 
 	assert.Equal(t, expectedStrategies, env.strategies)
+	assert.NotNil(t, env.authenticator)
 }
