@@ -61,7 +61,10 @@ func TestNewWebhookStrategy(t *testing.T) {
 
 	t.Run("Nil HTTPClient", func(t *testing.T) {
 		// arrange
-		cfg := &config.WebhookConfig{Enabled: true}
+		cfg := &config.WebhookConfig{
+			Enabled: true,
+			Format:  `{"id":"{{.Id}}"}`,
+		}
 
 		// act
 		service, err := NewWebhookStrategy(cfg, nil)
@@ -70,6 +73,20 @@ func TestNewWebhookStrategy(t *testing.T) {
 		require.Error(t, err)
 		assert.Nil(t, service)
 		assert.Equal(t, "HTTPClient cannot be nil", err.Error())
+	})
+
+	t.Run("Empty Format", func(t *testing.T) {
+		cfg := &config.WebhookConfig{
+			Enabled: true,
+			Format:  "   ",
+		}
+		client := &MockHTTPClient{}
+
+		service, err := NewWebhookStrategy(cfg, client)
+
+		require.Error(t, err)
+		assert.Nil(t, service)
+		assert.Equal(t, "webhook format cannot be empty", err.Error())
 	})
 
 	t.Run("Disabled Config", func(t *testing.T) {

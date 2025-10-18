@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"text/template"
 	"time"
 
@@ -78,13 +79,16 @@ type WebhookStrategy struct {
 }
 
 // NewWebhookStrategy creates and initializes the webhook strategy.
-// It requires an HTTPClient, making the strategy testable.
+// It requires an HTTPClient and a non-empty format template, keeping the strategy testable and predictable.
 func NewWebhookStrategy(cfg *config.WebhookConfig, client HTTPClient) (*WebhookStrategy, error) {
 	if cfg == nil {
 		return nil, errors.New("webhook configuration cannot be nil")
 	}
 	if !cfg.Enabled {
 		return nil, errors.New("webhook strategy disabled")
+	}
+	if strings.TrimSpace(cfg.Format) == "" {
+		return nil, errors.New("webhook format cannot be empty")
 	}
 	if client == nil {
 		return nil, errors.New("HTTPClient cannot be nil")
