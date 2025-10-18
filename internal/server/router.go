@@ -355,10 +355,9 @@ func (env *Env) validateToken(c *gin.Context, allowedAuthStrategy string) (bool,
 	return env.validateAllowedStrategy(c, allowedAuthStrategy)
 }
 
-// validateAllowedStrategy enforces validation against a single allowed authentication strategy
+// validateAllowedStrategy enforces validation against the single allowed authentication strategy header.
 // while keeping track of the last validation error produced by that strategy.
-// validateAllowedStrategy ensures that the request uses an allowed authorization strategy.
-func (env *Env) validateAllowedStrategy(c *gin.Context, allowedHeader string) (bool, error) {
+func (env *Env) validateAllowedStrategy(c *gin.Context, allowedStrategyHeader string) (bool, error) {
 	var lastErr error
 
 	for header, strategy := range env.strategies {
@@ -367,7 +366,7 @@ func (env *Env) validateAllowedStrategy(c *gin.Context, allowedHeader string) (b
 			continue
 		}
 
-		if header != allowedHeader {
+		if header != allowedStrategyHeader {
 			log.Debug().Msgf("Authorization strategy %s is not allowed for [%s] %s endpoint",
 				header,
 				c.Request.Method,
