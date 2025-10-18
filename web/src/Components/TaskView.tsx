@@ -194,8 +194,8 @@ export default function TaskView() {
       author: email,
     };
 
-    const apiEndpoint = (typeof globalThis !== 'undefined' && globalThis.location)
-      ? `${globalThis.location.origin}/api/v1/tasks`
+    const apiEndpoint = (typeof window !== 'undefined' && window.location)
+      ? `${window.location.origin}/api/v1/tasks`
       : '/api/v1/tasks';
 
     try {

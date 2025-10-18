@@ -82,10 +82,10 @@ export function DeployLockProvider({children}: DeployLockProviderProps): JSX.Ele
      * Establishes a WebSocket connection to the server.
      */
     useEffect(() => {
-        if (typeof globalThis === 'undefined' || !globalThis.location) {
+        if (typeof window === 'undefined' || !window.location) {
             return undefined;
         }
-        const { protocol: pageProtocol, host, hostname, port } = globalThis.location;
+        const { protocol: pageProtocol, host, hostname, port } = window.location;
         const wsProtocol = pageProtocol === 'https:' ? 'wss:' : 'ws:';
         const isDevelopment = (hostname === '127.0.0.1' || hostname === 'localhost')
             && port === '3000'; // Checking if we are running in development mode

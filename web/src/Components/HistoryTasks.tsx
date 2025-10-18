@@ -142,7 +142,7 @@ const HistoryTasks: React.FC = () => {
                 images: task.images.map((img) => `${img.image}:${img.tag}`).join(', '),
                 ...(anonymize
                     ? {}
-                    : { status_reason: task.status_reason?.replaceAll('\n', String.raw`\n`) }),
+                    : { status_reason: task.status_reason?.replaceAll('\n', '\\n') }),
             }));
         }
 
