@@ -65,7 +65,7 @@ export async function setDeployLock(keycloakToken: string | null = null): Promis
 export const DeployLockContext = createContext<boolean>(false);
 
 interface DeployLockProviderProps {
-    children: ReactNode;
+    readonly children: ReactNode;
 }
 
 /**
@@ -82,13 +82,16 @@ export function DeployLockProvider({children}: DeployLockProviderProps): JSX.Ele
      * Establishes a WebSocket connection to the server.
      */
     useEffect(() => {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = window.location.host;
-        const isDevelopment = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost')
-            && window.location.port === '3000'; // Checking if we are running in development mode
+        if (typeof window === 'undefined' || !window.location) {
+            return undefined;
+        }
+        const { protocol: pageProtocol, host, hostname, port } = window.location;
+        const wsProtocol = pageProtocol === 'https:' ? 'wss:' : 'ws:';
+        const isDevelopment = (hostname === '127.0.0.1' || hostname === 'localhost')
+            && port === '3000'; // Checking if we are running in development mode
         const wsUrl = isDevelopment
-            ? `${protocol}//127.0.0.1:8080/ws`  // Development WebSocket URL
-            : `${protocol}//${host}/ws`;        // Production WebSocket URL
+            ? `${wsProtocol}//127.0.0.1:8080/ws`  // Development WebSocket URL
+            : `${wsProtocol}//${host}/ws`;        // Production WebSocket URL
         const newSocket = new WebSocket(wsUrl);
         setSocket(newSocket);
 

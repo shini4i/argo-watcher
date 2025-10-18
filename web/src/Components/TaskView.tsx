@@ -56,6 +56,22 @@ interface ConfigType {
   argo_cd_url?: { Scheme: string; Host: string; Path: string };
 }
 
+/**
+ * Type guard ensuring the received value matches the Task structure expected by the view.
+ *
+ * @param value Arbitrary value returned from the API.
+ * @returns True when the value satisfies the Task shape.
+ */
+const isTask = (value: unknown): value is Task => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const candidate = value as Record<string, unknown>;
+  return ['id', 'created', 'updated', 'app', 'author', 'project', 'status', 'images'].every(
+    (key) => key in candidate
+  );
+};
+
 export default function TaskView() {
   const { id } = useParams<{ id: string }>();
   const [task, setTask] = useState<Task | null>(null);
@@ -94,6 +110,11 @@ export default function TaskView() {
     });
   }, [setError]);
 
+  /**
+   * Builds the Argo CD URL for the current task based on the configuration response.
+   *
+   * @returns The fully qualified Argo CD link or an empty string when unavailable.
+   */
   const getArgoCDUrl = () => {
     if (configData?.argo_cd_url_alias) {
       return `${configData.argo_cd_url_alias}/applications/${task?.app}`;
@@ -104,10 +125,18 @@ export default function TaskView() {
   };
 
   useEffect(() => {
-    fetchTask(id!)
+    if (!id) {
+      setError('fetchTask', 'Task identifier is not present in the route.');
+      return;
+    }
+
+    fetchTask(id)
       .then(item => {
+        if (!isTask(item)) {
+          throw new Error('Unexpected task payload received from the server.');
+        }
         setSuccess('fetchTask', 'Fetched task successfully');
-        setTask(item as Task);
+        setTask(item);
       })
       .catch((error: Error) => {
         setError('fetchTasks', error.message);
@@ -118,16 +147,22 @@ export default function TaskView() {
     let intervalId: NodeJS.Timeout;
 
     const fetchTaskStatus = async () => {
+      if (!id) {
+        return;
+      }
       console.log('Fetching task status...');
       try {
-        const updatedTask = await fetchTask(id!);
-        setTask(updatedTask as Task);
+        const updatedTask = await fetchTask(id);
+        if (!isTask(updatedTask)) {
+          throw new Error('Unexpected task payload received from the server.');
+        }
+        setTask(updatedTask);
       } catch (error: any) {
         setError('fetchTaskStatus', error.message);
       }
     };
 
-    if (task && task.status === 'in progress') {
+    if (id && task && task.status === 'in progress') {
       intervalId = setInterval(fetchTaskStatus, 10000);
     }
 
@@ -140,16 +175,31 @@ export default function TaskView() {
 
   const userIsPrivileged = groups && privilegedGroups && groups.some((group: string) => privilegedGroups.includes(group));
 
+  /**
+   * Requests the backend to redeploy the selected task version under the current user.
+   *
+   * @throws When the backend rejects the request or returns an unexpected status.
+   */
   const rollbackToVersion = async () => {
-    if (!task) return;
+    if (!task) {
+      return;
+    }
+    if (!email) {
+      setError('fetchTasks', 'Unable to rollback without a known author.');
+      return;
+    }
 
     const updatedTask = {
       ...task,
-      author: email!,
+      author: email,
     };
 
+    const apiEndpoint = (typeof window !== 'undefined' && window.location)
+      ? `${window.location.origin}/api/v1/tasks`
+      : '/api/v1/tasks';
+
     try {
-      const response = await fetch(`${window.location.origin}/api/v1/tasks`, {
+      const response = await fetch(apiEndpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

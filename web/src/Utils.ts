@@ -1,3 +1,9 @@
+/**
+ * Returns the relative time string (e.g. "5 minutes ago") for the supplied timestamp.
+ *
+ * @param oldTimestamp Unix timestamp in milliseconds.
+ * @returns Human readable relative time description.
+ */
 export const relativeTime = (oldTimestamp: number): string => {
   const timestamp = Date.now();
   const difference = Math.round(timestamp / 1000 - oldTimestamp / 1000);
@@ -7,11 +13,21 @@ export const relativeTime = (oldTimestamp: number): string => {
   return relativeHumanDuration(difference) + ' ago';
 };
 
-export const relativeHumanDuration = (seconds: number): string => {
-  function numberEnding(number: number): string {
-    return number > 1 ? 's' : '';
-  }
+/**
+ * Produces an "s" suffix when the provided number is greater than one to help pluralise units.
+ *
+ * @param value Numeric value to evaluate.
+ * @returns "s" when plural, otherwise an empty string.
+ */
+const numberEnding = (value: number): string => (value > 1 ? 's' : '');
 
+/**
+ * Formats a duration represented in seconds into a human readable string.
+ *
+ * @param seconds Duration in seconds.
+ * @returns Human readable duration string.
+ */
+export const relativeHumanDuration = (seconds: number): string => {
   if (seconds < 60) {
     // Less than a minute has passed:
     return `< 1 minute`;
@@ -37,6 +53,12 @@ export const relativeHumanDuration = (seconds: number): string => {
   return `${Math.floor(seconds / 31449600)} years`;
 };
 
+/**
+ * Computes the timestamp (seconds) relative to the current time given a timeframe in seconds.
+ *
+ * @param timeframe Number of seconds to subtract from now.
+ * @returns The Unix timestamp representing the start of the timeframe.
+ */
 export const relativeTimestamp = (timeframe: number): number => {
   return Math.floor(Date.now() / 1000) - timeframe;
 };

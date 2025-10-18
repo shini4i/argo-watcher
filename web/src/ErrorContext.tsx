@@ -23,12 +23,26 @@ export const useErrorContext = (): ErrorContextType => {
   return context;
 };
 
-export const ErrorProvider: React.FC<{children: ReactNode}> = ({ children }) => {
+interface ErrorProviderProps {
+  readonly children: ReactNode;
+}
+
+/**
+ * Supplies error and success messaging helpers via React context to descendant components.
+ *
+ * @param props Provider properties containing the wrapped children.
+ * @returns The context provider element.
+ */
+export const ErrorProvider: React.FC<ErrorProviderProps> = ({ children }) => {
   const [stack, setStack] = useState<Record<string, ErrorItem>>({});
   const timeouts = useRef<NodeJS.Timeout[]>([]);
 
   useEffect(() => {
-    return () => timeouts.current.forEach(timeout => clearTimeout(timeout));
+    return () => {
+      for (const timeout of timeouts.current) {
+        clearTimeout(timeout);
+      }
+    };
   }, []);
 
   const removeStackItem = (id: string) => {
@@ -45,6 +59,12 @@ export const ErrorProvider: React.FC<{children: ReactNode}> = ({ children }) => 
     );
   };
 
+  /**
+   * Clears the first stack entry that matches the provided status/message combination.
+   *
+   * @param status Message severity to match.
+   * @param message Message body to match.
+   */
   const clearMessage = (status: 'error' | 'success', message: string) => {
     setStack(stack => {
       const newStack = { ...stack };

@@ -24,6 +24,43 @@ type ConfigType = {
 let config: ConfigType | null = null;
 
 /**
+ * Runtime validation helper ensuring the data returned from the configuration endpoint
+ * matches the expected shape before it is cached.
+ *
+ * @param value Arbitrary value to validate.
+ * @returns True when the value matches {@link ConfigType}.
+ */
+const isConfigType = (value: unknown): value is ConfigType => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const candidate = value as Record<string, unknown>;
+  const keycloakCandidate = candidate.keycloak as Record<string, unknown> | undefined;
+  if (!keycloakCandidate || typeof keycloakCandidate.enabled !== 'boolean') {
+    return false;
+  }
+
+  if ('token_validation_interval' in keycloakCandidate
+    && typeof keycloakCandidate.token_validation_interval !== 'number') {
+    return false;
+  }
+
+  if ('privileged_groups' in keycloakCandidate
+    && keycloakCandidate.privileged_groups !== undefined
+    && !Array.isArray(keycloakCandidate.privileged_groups)) {
+    return false;
+  }
+
+  if (keycloakCandidate.enabled) {
+    return typeof keycloakCandidate.url === 'string'
+      && typeof keycloakCandidate.realm === 'string'
+      && typeof keycloakCandidate.client_id === 'string';
+  }
+
+  return true;
+};
+
+/**
  * Fetches tasks from the API endpoint.
  *
  * @param {number | null} fromTimestamp - The timestamp from which to fetch tasks.
@@ -102,8 +139,15 @@ export async function fetchVersion(): Promise<any> {
 export async function fetchConfig(): Promise<ConfigType> {
   if (!config) {
     const response = await fetch('/api/v1/config');
-    const data = await response.json();
-    config = data as ConfigType;
+    if (!response.ok) {
+      throw new Error(response.statusText);
+    }
+
+    const data: unknown = await response.json();
+    if (!isConfigType(data)) {
+      throw new Error('Unable to parse configuration payload from the server.');
+    }
+    config = data;
   }
-  return config as ConfigType;
+  return config;
 }
