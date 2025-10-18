@@ -14,13 +14,15 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/state/state_models"
 	"github.com/shini4i/argo-watcher/internal/models"
+	"github.com/shini4i/argo-watcher/internal/state/state_models"
 )
 
 type PostgresState struct {
 	orm *gorm.DB
 }
+
+var _ TaskRepository = (*PostgresState)(nil)
 
 // Connect establishes a connection to the PostgreSQL database using the provided server configuration.
 func (state *PostgresState) Connect(serverConfig *config.ServerConfig) error {
@@ -33,10 +35,10 @@ func (state *PostgresState) Connect(serverConfig *config.ServerConfig) error {
 	return nil
 }
 
-// Add inserts a new task into the PostgreSQL database with the provided details.
+// AddTask inserts a new task into the PostgreSQL database with the provided details.
 // It takes a models.Task parameter and returns an error if the insertion fails.
 // The method executes an INSERT query to add a new record with the task details, including the current UTC time.
-func (state *PostgresState) Add(task models.Task) (*models.Task, error) {
+func (state *PostgresState) AddTask(task models.Task) (*models.Task, error) {
 	ormTask := state_models.TaskModel{
 		Images:          datatypes.NewJSONSlice(task.Images),
 		Status:          models.StatusInProgressMessage,

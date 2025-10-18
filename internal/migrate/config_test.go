@@ -27,7 +27,7 @@ func TestNewMigrationConfig_Success(t *testing.T) {
 	// Assert
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
-	assert.Equal(t, "/db/migrations", cfg.MigrationsPath)
+	assert.Equal(t, "/app/db/migrations", cfg.MigrationsPath)
 }
 
 // TestNewMigrationConfig_CustomPath tests that a custom migration path from env vars is used.

@@ -9,7 +9,6 @@ db/data
 static/
 
 # environment files
-**/.envrc
 **/.env
 
 # built binary file

@@ -23,7 +23,7 @@ func TestArgoCheck(t *testing.T) {
 		// mocks
 		apiMock := mock.NewMockArgoApiInterface(ctrl)
 		metricsMock := mock.NewMockMetricsInterface(ctrl)
-		stateMock := mock.NewMockState(ctrl)
+		stateMock := mock.NewMockTaskRepository(ctrl)
 
 		// mock calls
 		stateMock.EXPECT().Check().Return(true)
@@ -48,7 +48,7 @@ func TestArgoCheck(t *testing.T) {
 		// mocks
 		api := mock.NewMockArgoApiInterface(ctrl)
 		metrics := mock.NewMockMetricsInterface(ctrl)
-		state := mock.NewMockState(ctrl)
+		state := mock.NewMockTaskRepository(ctrl)
 
 		// mock calls
 		state.EXPECT().Check().Return(false)
@@ -73,7 +73,7 @@ func TestArgoCheck(t *testing.T) {
 		// mocks
 		api := mock.NewMockArgoApiInterface(ctrl)
 		metrics := mock.NewMockMetricsInterface(ctrl)
-		state := mock.NewMockState(ctrl)
+		state := mock.NewMockTaskRepository(ctrl)
 
 		// mock calls
 		state.EXPECT().Check().Return(true)
@@ -98,7 +98,7 @@ func TestArgoCheck(t *testing.T) {
 		// mocks
 		api := mock.NewMockArgoApiInterface(ctrl)
 		metrics := mock.NewMockMetricsInterface(ctrl)
-		state := mock.NewMockState(ctrl)
+		state := mock.NewMockTaskRepository(ctrl)
 
 		// mock calls
 		state.EXPECT().Check().Return(true)
@@ -124,7 +124,7 @@ func TestArgoAddTask(t *testing.T) {
 		// mocks
 		api := mock.NewMockArgoApiInterface(ctrl)
 		metrics := mock.NewMockMetricsInterface(ctrl)
-		state := mock.NewMockState(ctrl)
+		state := mock.NewMockTaskRepository(ctrl)
 
 		// mock calls
 		state.EXPECT().Check().Return(true)
@@ -146,7 +146,7 @@ func TestArgoAddTask(t *testing.T) {
 		// mocks
 		api := mock.NewMockArgoApiInterface(ctrl)
 		metrics := mock.NewMockMetricsInterface(ctrl)
-		state := mock.NewMockState(ctrl)
+		state := mock.NewMockTaskRepository(ctrl)
 
 		// mock calls
 		state.EXPECT().Check().Return(true)
@@ -171,7 +171,7 @@ func TestArgoAddTask(t *testing.T) {
 		// mocks
 		api := mock.NewMockArgoApiInterface(ctrl)
 		metrics := mock.NewMockMetricsInterface(ctrl)
-		state := mock.NewMockState(ctrl)
+		state := mock.NewMockTaskRepository(ctrl)
 
 		// mock calls
 		state.EXPECT().Check().Return(true)
@@ -200,7 +200,7 @@ func TestArgoAddTask(t *testing.T) {
 		// mocks
 		api := mock.NewMockArgoApiInterface(ctrl)
 		metrics := mock.NewMockMetricsInterface(ctrl)
-		state := mock.NewMockState(ctrl)
+		state := mock.NewMockTaskRepository(ctrl)
 
 		// mock calls
 		state.EXPECT().Check().Return(true)
@@ -212,7 +212,7 @@ func TestArgoAddTask(t *testing.T) {
 
 		// mock calls to add task
 		stateError := fmt.Errorf("database error")
-		state.EXPECT().Add(gomock.Any()).Return(nil, stateError)
+		state.EXPECT().AddTask(gomock.Any()).Return(nil, stateError)
 
 		// argo manager
 		argo := &Argo{}
@@ -234,7 +234,7 @@ func TestArgoAddTask(t *testing.T) {
 		// mocks
 		api := mock.NewMockArgoApiInterface(ctrl)
 		metrics := mock.NewMockMetricsInterface(ctrl)
-		state := mock.NewMockState(ctrl)
+		state := mock.NewMockTaskRepository(ctrl)
 
 		// mock calls
 		state.EXPECT().Check().Return(true)
@@ -261,7 +261,7 @@ func TestArgoAddTask(t *testing.T) {
 		}
 
 		// mock calls to add task
-		state.EXPECT().Add(gomock.Any()).Return(&newTask, nil)
+		state.EXPECT().AddTask(gomock.Any()).Return(&newTask, nil)
 
 		// argo manager
 		argo := &Argo{}

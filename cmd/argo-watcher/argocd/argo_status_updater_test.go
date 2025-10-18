@@ -33,7 +33,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		// mocks
 		apiMock := mock.NewMockArgoApiInterface(ctrl)
 		metricsMock := mock.NewMockMetricsInterface(ctrl)
-		stateMock := mock.NewMockState(ctrl)
+		stateMock := mock.NewMockTaskRepository(ctrl)
 
 		// argo manager
 		argo := &Argo{}
@@ -77,7 +77,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		// mocks
 		apiMock := mock.NewMockArgoApiInterface(ctrl)
 		metricsMock := mock.NewMockMetricsInterface(ctrl)
-		stateMock := mock.NewMockState(ctrl)
+		stateMock := mock.NewMockTaskRepository(ctrl)
 
 		// argo manager
 		argo := &Argo{}
@@ -128,7 +128,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		// mocks
 		apiMock := mock.NewMockArgoApiInterface(ctrl)
 		metricsMock := mock.NewMockMetricsInterface(ctrl)
-		stateMock := mock.NewMockState(ctrl)
+		stateMock := mock.NewMockTaskRepository(ctrl)
 
 		// argo manager
 		argo := &Argo{}
@@ -172,7 +172,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		// mocks
 		apiMock := mock.NewMockArgoApiInterface(ctrl)
 		metricsMock := mock.NewMockMetricsInterface(ctrl)
-		stateMock := mock.NewMockState(ctrl)
+		stateMock := mock.NewMockTaskRepository(ctrl)
 
 		// argo manager
 		argo := &Argo{}
@@ -216,7 +216,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		// mocks
 		apiMock := mock.NewMockArgoApiInterface(ctrl)
 		metricsMock := mock.NewMockMetricsInterface(ctrl)
-		stateMock := mock.NewMockState(ctrl)
+		stateMock := mock.NewMockTaskRepository(ctrl)
 
 		// argo manager
 		argo := &Argo{}
@@ -248,7 +248,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		// mocks
 		apiMock := mock.NewMockArgoApiInterface(ctrl)
 		metricsMock := mock.NewMockMetricsInterface(ctrl)
-		stateMock := mock.NewMockState(ctrl)
+		stateMock := mock.NewMockTaskRepository(ctrl)
 
 		// argo manager
 		argo := &Argo{}
@@ -280,7 +280,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		// mocks
 		apiMock := mock.NewMockArgoApiInterface(ctrl)
 		metricsMock := mock.NewMockMetricsInterface(ctrl)
-		stateMock := mock.NewMockState(ctrl)
+		stateMock := mock.NewMockTaskRepository(ctrl)
 
 		// argo manager
 		argo := &Argo{}
@@ -312,7 +312,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		// mocks
 		apiMock := mock.NewMockArgoApiInterface(ctrl)
 		metricsMock := mock.NewMockMetricsInterface(ctrl)
-		stateMock := mock.NewMockState(ctrl)
+		stateMock := mock.NewMockTaskRepository(ctrl)
 
 		// argo manager
 		argo := &Argo{}
@@ -354,7 +354,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		// mocks
 		apiMock := mock.NewMockArgoApiInterface(ctrl)
 		metricsMock := mock.NewMockMetricsInterface(ctrl)
-		stateMock := mock.NewMockState(ctrl)
+		stateMock := mock.NewMockTaskRepository(ctrl)
 
 		// argo manager
 		argo := &Argo{}
@@ -400,7 +400,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		// mocks
 		apiMock := mock.NewMockArgoApiInterface(ctrl)
 		metricsMock := mock.NewMockMetricsInterface(ctrl)
-		stateMock := mock.NewMockState(ctrl)
+		stateMock := mock.NewMockTaskRepository(ctrl)
 
 		// argo manager
 		argo := &Argo{}
@@ -447,7 +447,7 @@ func TestArgoStatusUpdater_processDeploymentResult(t *testing.T) {
 
 	apiMock := mock.NewMockArgoApiInterface(ctrl)
 	metricsMock := mock.NewMockMetricsInterface(ctrl)
-	stateMock := mock.NewMockState(ctrl)
+	stateMock := mock.NewMockTaskRepository(ctrl)
 	mockLocker := lock.NewInMemoryLocker()
 
 	argo := &Argo{}
@@ -515,7 +515,7 @@ func TestArgoStatusUpdater_handleArgoAPIFailure(t *testing.T) {
 
 	apiMock := mock.NewMockArgoApiInterface(ctrl)
 	metricsMock := mock.NewMockMetricsInterface(ctrl)
-	stateMock := mock.NewMockState(ctrl)
+	stateMock := mock.NewMockTaskRepository(ctrl)
 	mockLocker := lock.NewInMemoryLocker()
 
 	argo := &Argo{}

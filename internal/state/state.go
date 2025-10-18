@@ -11,9 +11,18 @@ import (
 
 var errDesiredRetry = errors.New("desired retry error")
 
-type State interface {
+// TaskState represents the application state layer that exposes task repositories.
+// It currently embeds the TaskRepository interface to provide task persistence operations.
+type TaskState interface {
+	TaskRepository
+}
+
+// TaskRepository defines the contract for task persistence.
+// Implementations are responsible for connecting to the underlying storage and
+// offering CRUD-like operations for deployment tasks.
+type TaskRepository interface {
 	Connect(serverConfig *config.ServerConfig) error
-	Add(task models.Task) (*models.Task, error)
+	AddTask(task models.Task) (*models.Task, error)
 	GetTasks(startTime float64, endTime float64, app string) []models.Task
 	GetTask(id string) (*models.Task, error)
 	SetTaskStatus(id string, status string, reason string) error
@@ -21,14 +30,12 @@ type State interface {
 	ProcessObsoleteTasks(retryTimes uint)
 }
 
-// NewState creates a new instance of the state based on the provided server configuration.
-// It initializes the appropriate state based on the StateType field in the server configuration.
-// Currently, it supports "postgres" and "in-memory" state types.
-// It returns the created state instance and an error if the state type is not recognized or if there was an error connecting to the state.
-// The created state instance is already connected to the state storage based on the provided server configuration.
-func NewState(serverConfig *config.ServerConfig) (State, error) {
+// NewState creates a new task repository based on the provided server configuration.
+// It initializes the appropriate repository according to the StateType field and
+// ensures that the returned implementation is already connected to the storage backend.
+func NewState(serverConfig *config.ServerConfig) (TaskState, error) {
 	log.Debug().Msg("Initializing argo-watcher state...")
-	var state State
+	var state TaskState
 	switch name := serverConfig.StateType; name {
 	case "postgres":
 		log.Debug().Msg("Created postgres state..")
