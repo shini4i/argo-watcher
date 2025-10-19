@@ -17,11 +17,6 @@ import (
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
-var (
-	httpNewRequest = http.NewRequest
-	newCookieJar   = cookiejar.New
-)
-
 type ArgoApiInterface interface {
 	Init(serverConfig *config.ServerConfig) error
 	GetUserInfo() (*models.Userinfo, error)
@@ -29,18 +24,22 @@ type ArgoApiInterface interface {
 }
 
 type ArgoApi struct {
-	baseUrl    url.URL
-	client     *http.Client
-	refreshApp bool
+	baseUrl     url.URL
+	client      *http.Client
+	refreshApp  bool
+	requestFn   func(method, url string, body io.Reader) (*http.Request, error)
+	cookieJarFn func(o *cookiejar.Options) (*cookiejar.Jar, error)
 }
 
 func (api *ArgoApi) Init(serverConfig *config.ServerConfig) error {
+	api.ensureDependencies()
+
 	log.Debug().Msg("Initializing argo-watcher client...")
 	// set base url
 	api.baseUrl = serverConfig.ArgoUrl
 
 	// create cookie jar
-	jar, err := newCookieJar(nil)
+	jar, err := api.cookieJarFn(nil)
 	if err != nil {
 		return err
 	}
@@ -71,8 +70,10 @@ func (api *ArgoApi) Init(serverConfig *config.ServerConfig) error {
 }
 
 func (api *ArgoApi) GetUserInfo() (*models.Userinfo, error) {
+	api.ensureDependencies()
+
 	apiUrl := fmt.Sprintf("%s/api/v1/session/userinfo", api.baseUrl.String())
-	req, err := httpNewRequest("GET", apiUrl, nil)
+	req, err := api.requestFn("GET", apiUrl, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -105,8 +106,10 @@ func (api *ArgoApi) GetUserInfo() (*models.Userinfo, error) {
 }
 
 func (api *ArgoApi) GetApplication(app string) (*models.Application, error) {
+	api.ensureDependencies()
+
 	apiUrl := fmt.Sprintf("%s/api/v1/applications/%s", api.baseUrl.String(), app)
-	req, err := httpNewRequest("GET", apiUrl, nil)
+	req, err := api.requestFn("GET", apiUrl, nil)
 	if err != nil {
 		log.Error().Msg(err.Error())
 		return nil, err
@@ -161,4 +164,13 @@ func (api *ArgoApi) GetApplication(app string) (*models.Application, error) {
 	}
 
 	return &argoApp, nil
+}
+
+func (api *ArgoApi) ensureDependencies() {
+	if api.requestFn == nil {
+		api.requestFn = http.NewRequest
+	}
+	if api.cookieJarFn == nil {
+		api.cookieJarFn = cookiejar.New
+	}
 }

@@ -84,14 +84,13 @@ func TestArgoApiInit(t *testing.T) {
 	assert.True(t, api.refreshApp)
 
 	t.Run("returnsErrorWhenCookieJarFails", func(t *testing.T) {
-		api := &ArgoApi{}
-		original := newCookieJar
 		called := false
-		newCookieJar = func(o *cookiejar.Options) (*cookiejar.Jar, error) {
-			called = true
-			return nil, errors.New("jar error")
+		api := &ArgoApi{
+			cookieJarFn: func(o *cookiejar.Options) (*cookiejar.Jar, error) {
+				called = true
+				return nil, errors.New("jar error")
+			},
 		}
-		t.Cleanup(func() { newCookieJar = original })
 
 		err := api.Init(cfg)
 		assert.EqualError(t, err, "jar error")
@@ -127,20 +126,19 @@ func TestArgoApiGetUserInfoErrors(t *testing.T) {
 	testCases := []struct {
 		name     string
 		api      *ArgoApi
-		setup    func(t *testing.T)
+		setup    func(t *testing.T, api *ArgoApi)
 		wantErr  bool
 		wantUser *models.Userinfo
 	}{
 		{
 			name: "requestCreationError",
 			api:  &ArgoApi{baseUrl: *baseURL, client: &http.Client{}},
-			setup: func(t *testing.T) {
-				original := httpNewRequest
-				httpNewRequest = func(string, string, io.Reader) (*http.Request, error) {
+			setup: func(t *testing.T, api *ArgoApi) {
+				api.requestFn = func(string, string, io.Reader) (*http.Request, error) {
 					return nil, errors.New("build request error")
 				}
 				t.Cleanup(func() {
-					httpNewRequest = original
+					api.requestFn = nil
 				})
 			},
 			wantErr: true,
@@ -212,7 +210,7 @@ func TestArgoApiGetUserInfoErrors(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.setup != nil {
-				tc.setup(t)
+				tc.setup(t, tc.api)
 			}
 			userInfo, err := tc.api.GetUserInfo()
 			if tc.wantErr {
@@ -279,19 +277,18 @@ func TestArgoApiGetApplicationErrors(t *testing.T) {
 	testCases := []struct {
 		name    string
 		api     *ArgoApi
-		setup   func(t *testing.T)
+		setup   func(t *testing.T, api *ArgoApi)
 		wantErr bool
 	}{
 		{
 			name: "requestCreationError",
 			api:  &ArgoApi{baseUrl: *baseURL, client: &http.Client{}},
-			setup: func(t *testing.T) {
-				original := httpNewRequest
-				httpNewRequest = func(string, string, io.Reader) (*http.Request, error) {
+			setup: func(t *testing.T, api *ArgoApi) {
+				api.requestFn = func(string, string, io.Reader) (*http.Request, error) {
 					return nil, errors.New("build request error")
 				}
 				t.Cleanup(func() {
-					httpNewRequest = original
+					api.requestFn = nil
 				})
 			},
 			wantErr: true,
@@ -414,7 +411,7 @@ func TestArgoApiGetApplicationErrors(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.setup != nil {
-				tc.setup(t)
+				tc.setup(t, tc.api)
 			}
 			app, err := tc.api.GetApplication("demo")
 			if tc.wantErr {
