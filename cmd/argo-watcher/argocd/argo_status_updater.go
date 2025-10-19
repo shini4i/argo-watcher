@@ -24,32 +24,219 @@ const (
 	failedToUpdateTaskStatusTemplate = "Failed to change task status: %s"
 )
 
-// ArgoStatusUpdater handles the monitoring and updating of ArgoCD application deployments
-type ArgoStatusUpdater struct {
+// DeploymentMonitor encapsulates the logic for tracking ArgoCD application rollouts.
+type DeploymentMonitor struct {
 	argo             Argo
 	registryProxyUrl string
 	retryOptions     []retry.Option
-	locker           lock.Locker
 	acceptSuspended  bool
-	notifier         *notifications.Notifier
-	repoCachePath    string
+}
+
+// GitUpdater encapsulates the logic required to update Git repositories watched by ArgoCD.
+type GitUpdater struct {
+	locker        lock.Locker
+	repoCachePath string
+}
+
+// NewDeploymentMonitor creates a deployment monitor with the supplied configuration.
+func NewDeploymentMonitor(argo Argo, registryProxyUrl string, retryOptions []retry.Option, acceptSuspended bool) *DeploymentMonitor {
+	return &DeploymentMonitor{
+		argo:             argo,
+		registryProxyUrl: registryProxyUrl,
+		retryOptions:     retryOptions,
+		acceptSuspended:  acceptSuspended,
+	}
+}
+
+// BeginTracking increments the in-progress task counter.
+func (monitor *DeploymentMonitor) BeginTracking() {
+	monitor.argo.metrics.AddInProgressTask()
+}
+
+// EndTracking decrements the in-progress task counter.
+func (monitor *DeploymentMonitor) EndTracking() {
+	monitor.argo.metrics.RemoveInProgressTask()
+}
+
+// FetchApplication retrieves the ArgoCD application by name.
+func (monitor *DeploymentMonitor) FetchApplication(appName string) (*models.Application, error) {
+	return monitor.argo.api.GetApplication(appName)
+}
+
+// StoreInitialAppStatus caches the initial rollout status for comparison during monitoring.
+func (monitor *DeploymentMonitor) StoreInitialAppStatus(task *models.Task, application *models.Application) error {
+	if application == nil {
+		return errors.New("application is nil")
+	}
+
+	status := application.GetRolloutStatus(task.ListImages(), monitor.registryProxyUrl, monitor.acceptSuspended)
+
+	// sort images to avoid hash mismatch
+	slices.Sort(application.Status.Summary.Images)
+
+	task.SavedAppStatus = models.SavedAppStatus{
+		Status:     status,
+		ImagesHash: helpers.GenerateHash(strings.Join(application.Status.Summary.Images, ",")),
+	}
+
+	return nil
+}
+
+// WaitRollout polls the application status until it reaches a final state or times out.
+func (monitor *DeploymentMonitor) WaitRollout(task models.Task) (*models.Application, error) {
+	var application *models.Application
+	var err error
+
+	retryOptions := monitor.configureRetryOptions(task)
+	log.Debug().Str("id", task.Id).Msg("Waiting for rollout")
+
+	err = retry.Do(func() error {
+		application, err = monitor.argo.api.GetApplication(task.App)
+		if err != nil {
+			return handleApplicationFetchError(task, err)
+		}
+
+		// Early return for fire and forget mode
+		if application.IsFireAndForgetModeActive() {
+			log.Debug().Str("id", task.Id).Msg("Fire and forget mode is active, skipping checks...")
+			return nil
+		}
+
+		return checkRolloutStatus(task, application, monitor.registryProxyUrl, monitor.acceptSuspended)
+	}, retryOptions...)
+
+	return application, err
+}
+
+func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) []retry.Option {
+	retryOptions := append([]retry.Option{}, monitor.retryOptions...)
+	if task.Timeout <= 0 {
+		return retryOptions
+	}
+
+	log.Debug().Str("id", task.Id).Msgf("Overriding task timeout to %ds", task.Timeout)
+
+	calculatedAttempts := task.Timeout/15 + 1
+
+	if calculatedAttempts < 0 {
+		log.Error().Msg("Calculated attempts resulted in a negative number, defaulting to 15 attempts.")
+		calculatedAttempts = 15
+	}
+
+	return append(retryOptions, retry.Attempts(uint(calculatedAttempts))) // #nosec G115
+}
+
+// ProcessDeploymentResult determines if the deployment was successful and updates the appropriate status and metrics.
+func (monitor *DeploymentMonitor) ProcessDeploymentResult(task *models.Task, application *models.Application) {
+	status := application.GetRolloutStatus(task.ListImages(), monitor.registryProxyUrl, monitor.acceptSuspended)
+	if application.IsFireAndForgetModeActive() {
+		status = models.ArgoRolloutAppSuccess
+	}
+
+	if status == models.ArgoRolloutAppSuccess {
+		monitor.handleDeploymentSuccess(task)
+	} else {
+		monitor.handleDeploymentFailure(task, status, application)
+	}
+}
+
+// HandleArgoAPIFailure processes API errors and updates task status accordingly.
+func (monitor *DeploymentMonitor) HandleArgoAPIFailure(task models.Task, err error) {
+	monitor.argo.metrics.AddFailedDeployment(task.App)
+	finalStatus := determineFailureStatus(task, err)
+	reason := fmt.Sprintf(ArgoAPIErrorTemplate, err.Error())
+	log.Warn().Str("id", task.Id).Msgf("Deployment failed with status \"%s\". Aborting with error: %s", finalStatus, reason)
+
+	if err := monitor.argo.State.SetTaskStatus(task.Id, finalStatus, reason); err != nil {
+		log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, err)
+	}
+}
+
+func (monitor *DeploymentMonitor) handleDeploymentSuccess(task *models.Task) {
+	log.Info().Str("id", task.Id).Msg("App is running on the expected version.")
+	monitor.argo.metrics.ResetFailedDeployment(task.App)
+	if err := monitor.argo.State.SetTaskStatus(task.Id, models.StatusDeployedMessage, ""); err != nil {
+		log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, err)
+	}
+	task.Status = models.StatusDeployedMessage
+}
+
+func (monitor *DeploymentMonitor) handleDeploymentFailure(task *models.Task, status string, application *models.Application) {
+	log.Info().Str("id", task.Id).Msg("App deployment failed.")
+	monitor.argo.metrics.AddFailedDeployment(task.App)
+	reason := fmt.Sprintf(
+		"Application deployment failed. Rollout status \"%s\"\\n\\n%s",
+		status,
+		application.GetRolloutMessage(status, task.ListImages()),
+	)
+	if err := monitor.argo.State.SetTaskStatus(task.Id, models.StatusFailedMessage, reason); err != nil {
+		log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, err)
+	}
+	task.Status = models.StatusFailedMessage
+}
+
+// NewGitUpdater creates a GitUpdater instance.
+func NewGitUpdater(locker lock.Locker, repoCachePath string) *GitUpdater {
+	return &GitUpdater{
+		locker:        locker,
+		repoCachePath: repoCachePath,
+	}
+}
+
+// UpdateIfNeeded updates the git repository if the application is managed by the watcher and has valid credentials.
+func (gitUpdater *GitUpdater) UpdateIfNeeded(app *models.Application, task models.Task) error {
+	if !app.IsManagedByWatcher() || !task.Validated {
+		log.Debug().Str("id", task.Id).Msg("Skipping git repo update: Application does not have the necessary annotations or token is missing.")
+		return nil
+	}
+
+	gitopsRepo, err := models.NewGitopsRepo(app, gitUpdater.repoCachePath)
+	if err != nil {
+		log.Error().Str("id", task.Id).Msgf("Failed to get gitops repo info for app %s: %s", task.App, err)
+		return err
+	}
+
+	gitUpdateFunc := func() error {
+		log.Debug().Str("id", task.Id).Msg("Application managed by watcher. Initiating git repo update.")
+		return gitUpdater.updateGitRepo(app, &task, &gitopsRepo)
+	}
+
+	err = gitUpdater.locker.WithLock(gitopsRepo.RepoUrl, gitUpdateFunc)
+	if err != nil {
+		log.Error().Str("id", task.Id).Msgf("Failed git repo update for app %s: %s", task.App, err)
+		return err
+	}
+
+	return nil
+}
+
+func (gitUpdater *GitUpdater) updateGitRepo(app *models.Application, task *models.Task, gitopsRepo *models.GitopsRepo) error {
+	err := app.UpdateGitImageTag(task, gitopsRepo)
+	if err != nil {
+		log.Error().Str("id", task.Id).Msgf("Failed to update git repo. Error: %s", err.Error())
+		return err
+	}
+	return nil
+}
+
+// ArgoStatusUpdater handles the monitoring and updating of ArgoCD application deployments
+type ArgoStatusUpdater struct {
+	monitor    *DeploymentMonitor
+	gitUpdater *GitUpdater
+	notifier   *notifications.Notifier
 }
 
 // Init initializes the ArgoStatusUpdater with the provided configuration
 func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, retryDelay time.Duration, registryProxyUrl string, repoCachePath string, acceptSuspended bool, webhookConfig *config.WebhookConfig, locker lock.Locker) error {
-	var err error
-
-	updater.argo = argo
-	updater.registryProxyUrl = registryProxyUrl
-	updater.retryOptions = []retry.Option{
+	retryOptions := []retry.Option{
 		retry.DelayType(retry.FixedDelay),
 		retry.Attempts(retryAttempts),
 		retry.Delay(retryDelay),
 		retry.LastErrorOnly(true),
 	}
-	updater.acceptSuspended = acceptSuspended
-	updater.locker = locker
-	updater.repoCachePath = repoCachePath
+
+	updater.monitor = NewDeploymentMonitor(argo, registryProxyUrl, retryOptions, acceptSuspended)
+	updater.gitUpdater = NewGitUpdater(locker, repoCachePath)
 
 	if webhookConfig == nil || !webhookConfig.Enabled {
 		return nil
@@ -68,33 +255,11 @@ func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, retryDelay
 	return nil
 }
 
-// collectInitialAppStatus fetches and stores the initial application status
-// This is used to detect changes during the deployment process
-func (updater *ArgoStatusUpdater) collectInitialAppStatus(task *models.Task) error {
-	application, err := updater.argo.api.GetApplication(task.App)
-	if err != nil {
-		return err
-	}
-
-	status := application.GetRolloutStatus(task.ListImages(), updater.registryProxyUrl, updater.acceptSuspended)
-
-	// sort images to avoid hash mismatch
-	slices.Sort(application.Status.Summary.Images)
-
-	task.SavedAppStatus = models.SavedAppStatus{
-		Status:     status,
-		ImagesHash: helpers.GenerateHash(strings.Join(application.Status.Summary.Images, ",")),
-	}
-
-	return nil
-}
-
 // WaitForRollout is the main entry point for tracking an application deployment
 // It monitors the application until it reaches a final state (deployed or failed)
 func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
-	// increment in progress task counter
-	updater.argo.metrics.AddInProgressTask()
-	defer updater.argo.metrics.RemoveInProgressTask()
+	updater.monitor.BeginTracking()
+	defer updater.monitor.EndTracking()
 
 	// notify about the deployment start
 	sendNotification(task, updater.notifier)
@@ -104,160 +269,37 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 
 	if err != nil {
 		// handle application failure
-		updater.handleArgoAPIFailure(task, err)
+		updater.monitor.HandleArgoAPIFailure(task, err)
 	} else {
 		// process deployment result
-		updater.processDeploymentResult(&task, application)
+		updater.monitor.ProcessDeploymentResult(&task, application)
 	}
 
 	// send webhook event about the deployment result
 	sendNotification(task, updater.notifier)
 }
 
-// processDeploymentResult determines if the deployment was successful and
-// updates the appropriate status and metrics
-func (updater *ArgoStatusUpdater) processDeploymentResult(task *models.Task, application *models.Application) {
-	status := application.GetRolloutStatus(task.ListImages(), updater.registryProxyUrl, updater.acceptSuspended)
-	if application.IsFireAndForgetModeActive() {
-		status = models.ArgoRolloutAppSuccess
-	}
-
-	if status == models.ArgoRolloutAppSuccess {
-		updater.handleDeploymentSuccess(task)
-	} else {
-		updater.handleDeploymentFailure(task, status, application)
-	}
-}
-
-// handleDeploymentSuccess processes a successful deployment by updating metrics and status
-func (updater *ArgoStatusUpdater) handleDeploymentSuccess(task *models.Task) {
-	log.Info().Str("id", task.Id).Msg("App is running on the expected version.")
-	updater.argo.metrics.ResetFailedDeployment(task.App)
-	if err := updater.argo.State.SetTaskStatus(task.Id, models.StatusDeployedMessage, ""); err != nil {
-		log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, err)
-	}
-	task.Status = models.StatusDeployedMessage
-}
-
-// handleDeploymentFailure processes a failed deployment with detailed error information
-func (updater *ArgoStatusUpdater) handleDeploymentFailure(task *models.Task, status string, application *models.Application) {
-	log.Info().Str("id", task.Id).Msg("App deployment failed.")
-	updater.argo.metrics.AddFailedDeployment(task.App)
-	reason := fmt.Sprintf(
-		"Application deployment failed. Rollout status \"%s\"\n\n%s",
-		status,
-		application.GetRolloutMessage(status, task.ListImages()),
-	)
-	if err := updater.argo.State.SetTaskStatus(task.Id, models.StatusFailedMessage, reason); err != nil {
-		log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, err)
-	}
-	task.Status = models.StatusFailedMessage
-}
-
 // waitForApplicationDeployment coordinates the deployment monitoring process
 // It checks initial status, updates the git repo if needed, and waits for rollout
 func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task) (*models.Application, error) {
 	// Fetch initial app state
-	app, err := updater.argo.api.GetApplication(task.App)
+	app, err := updater.monitor.FetchApplication(task.App)
 	if err != nil {
 		return nil, err
 	}
 
 	// Save the initial application status
-	if err := updater.collectInitialAppStatus(&task); err != nil {
+	if err := updater.monitor.StoreInitialAppStatus(&task, app); err != nil {
 		return nil, err
 	}
 
 	// Handle git repo update if needed
-	if err := updater.handleGitRepoUpdateIfNeeded(app, task); err != nil {
+	if err := updater.gitUpdater.UpdateIfNeeded(app, task); err != nil {
 		return nil, err
 	}
 
 	// Wait for rollout completion
-	return updater.waitRollout(task)
-}
-
-// handleGitRepoUpdateIfNeeded updates the git repository if the application
-// is managed by the watcher and has valid credentials
-func (updater *ArgoStatusUpdater) handleGitRepoUpdateIfNeeded(app *models.Application, task models.Task) error {
-	if !app.IsManagedByWatcher() || !task.Validated {
-		log.Debug().Str("id", task.Id).Msg("Skipping git repo update: Application does not have the necessary annotations or token is missing.")
-		return nil
-	}
-
-	gitopsRepo, err := models.NewGitopsRepo(app, updater.repoCachePath)
-	if err != nil {
-		log.Error().Str("id", task.Id).Msgf("Failed to get gitops repo info for app %s: %s", task.App, err)
-		return err
-	}
-
-	gitUpdateFunc := func() error {
-		log.Debug().Str("id", task.Id).Msg("Application managed by watcher. Initiating git repo update.")
-		return updater.updateGitRepo(app, &task, &gitopsRepo)
-	}
-
-	err = updater.locker.WithLock(gitopsRepo.RepoUrl, gitUpdateFunc)
-	if err != nil {
-		log.Error().Str("id", task.Id).Msgf("Failed git repo update for app %s: %s", task.App, err)
-		return err
-	}
-
-	return nil
-}
-
-// updateGitRepo attempts to update the git repository with retries
-func (updater *ArgoStatusUpdater) updateGitRepo(app *models.Application, task *models.Task, gitopsRepo *models.GitopsRepo) error {
-	err := app.UpdateGitImageTag(task, gitopsRepo)
-	if err != nil {
-		log.Error().Str("id", task.Id).Msgf("Failed to update git repo. Error: %s", err.Error())
-		return err
-	}
-	return nil
-}
-
-// waitRollout polls the application status until it reaches a final state or times out
-func (updater *ArgoStatusUpdater) waitRollout(task models.Task) (*models.Application, error) {
-	var application *models.Application
-	var err error
-
-	retryOptions := updater.configureRetryOptions(task)
-	log.Debug().Str("id", task.Id).Msg("Waiting for rollout")
-
-	err = retry.Do(func() error {
-		application, err = updater.argo.api.GetApplication(task.App)
-		if err != nil {
-			return handleApplicationFetchError(task, err)
-		}
-
-		// Early return for fire and forget mode
-		if application.IsFireAndForgetModeActive() {
-			log.Debug().Str("id", task.Id).Msg("Fire and forget mode is active, skipping checks...")
-			return nil
-		}
-
-		return checkRolloutStatus(task, application, updater.registryProxyUrl, updater.acceptSuspended)
-	}, retryOptions...)
-
-	return application, err
-}
-
-// configureRetryOptions sets up retry behavior based on task timeout
-func (updater *ArgoStatusUpdater) configureRetryOptions(task models.Task) []retry.Option {
-	retryOptions := updater.retryOptions
-	if task.Timeout <= 0 {
-		return retryOptions
-	}
-
-	log.Debug().Str("id", task.Id).Msgf("Overriding task timeout to %ds", task.Timeout)
-
-	calculatedAttempts := task.Timeout/15 + 1
-
-	if calculatedAttempts < 0 {
-		log.Error().Msg("Calculated attempts resulted in a negative number, defaulting to 15 attempts.")
-		calculatedAttempts = 15
-	}
-
-	return append(retryOptions, retry.Attempts(uint(calculatedAttempts))) // #nosec G115
+	return updater.monitor.WaitRollout(task)
 }
 
 // handleApplicationFetchError ensures we don't retry for not found errors
@@ -287,18 +329,6 @@ func checkRolloutStatus(task models.Task, application *models.Application, regis
 		log.Debug().Str("id", task.Id).Msgf("Application status is not final. Status received \"%s\"", status)
 	}
 	return errors.New("force retry")
-}
-
-// handleArgoAPIFailure processes API errors and updates task status accordingly
-func (updater *ArgoStatusUpdater) handleArgoAPIFailure(task models.Task, err error) {
-	updater.argo.metrics.AddFailedDeployment(task.App)
-	finalStatus := determineFailureStatus(task, err)
-	reason := fmt.Sprintf(ArgoAPIErrorTemplate, err.Error())
-	log.Warn().Str("id", task.Id).Msgf("Deployment failed with status \"%s\". Aborting with error: %s", finalStatus, reason)
-
-	if err := updater.argo.State.SetTaskStatus(task.Id, finalStatus, reason); err != nil {
-		log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, err)
-	}
 }
 
 // determineFailureStatus converts API errors into appropriate status messages
