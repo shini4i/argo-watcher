@@ -17,6 +17,11 @@ import (
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
+var (
+	httpNewRequest = http.NewRequest
+	newCookieJar   = cookiejar.New
+)
+
 type ArgoApiInterface interface {
 	Init(serverConfig *config.ServerConfig) error
 	GetUserInfo() (*models.Userinfo, error)
@@ -35,7 +40,7 @@ func (api *ArgoApi) Init(serverConfig *config.ServerConfig) error {
 	api.baseUrl = serverConfig.ArgoUrl
 
 	// create cookie jar
-	jar, err := cookiejar.New(nil)
+	jar, err := newCookieJar(nil)
 	if err != nil {
 		return err
 	}
@@ -67,7 +72,7 @@ func (api *ArgoApi) Init(serverConfig *config.ServerConfig) error {
 
 func (api *ArgoApi) GetUserInfo() (*models.Userinfo, error) {
 	apiUrl := fmt.Sprintf("%s/api/v1/session/userinfo", api.baseUrl.String())
-	req, err := http.NewRequest("GET", apiUrl, nil)
+	req, err := httpNewRequest("GET", apiUrl, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +106,7 @@ func (api *ArgoApi) GetUserInfo() (*models.Userinfo, error) {
 
 func (api *ArgoApi) GetApplication(app string) (*models.Application, error) {
 	apiUrl := fmt.Sprintf("%s/api/v1/applications/%s", api.baseUrl.String(), app)
-	req, err := http.NewRequest("GET", apiUrl, nil)
+	req, err := httpNewRequest("GET", apiUrl, nil)
 	if err != nil {
 		log.Error().Msg(err.Error())
 		return nil, err

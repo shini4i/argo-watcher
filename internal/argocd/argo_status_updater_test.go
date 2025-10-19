@@ -491,9 +491,28 @@ func TestArgoStatusUpdater_processDeploymentResult(t *testing.T) {
 	t.Run("processDeploymentResult - fire and forget", func(t *testing.T) {
 		task := models.Task{Id: "test-id", App: "test-app"}
 		app := &models.Application{}
-		app.Metadata.Annotations = map[string]string{"fire-and-forget": "true"}
+		app.Metadata.Annotations = map[string]string{"argo-watcher/fire-and-forget": "true"}
 		app.Status.Sync.Status = "Synced"
 		app.Status.Health.Status = "Healthy"
+
+		metricsMock.EXPECT().ResetFailedDeployment(task.App)
+		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
+
+		updater.monitor.ProcessDeploymentResult(&task, app)
+		assert.Equal(t, models.StatusDeployedMessage, task.Status)
+	})
+
+	t.Run("processDeploymentResult - fire and forget overrides failure", func(t *testing.T) {
+		task := models.Task{
+			Id:  "test-id",
+			App: "test-app",
+			Images: []models.Image{
+				{Image: "ghcr.io/shini4i/argo-watcher", Tag: "dev"},
+			},
+		}
+		app := &models.Application{}
+		app.Metadata.Annotations = map[string]string{"argo-watcher/fire-and-forget": "true"}
+		app.Status.Summary.Images = []string{"another-registry/image:v1"}
 
 		metricsMock.EXPECT().ResetFailedDeployment(task.App)
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "")

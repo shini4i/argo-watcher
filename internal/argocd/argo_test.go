@@ -275,3 +275,64 @@ func TestArgoAddTask(t *testing.T) {
 		assert.Regexp(t, uuidRegexp, newTaskReturned.Id, "Must match Regexp for uuid v4")
 	})
 }
+
+func TestArgoGetTasks(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	t.Run("returnsTasksWhenDependenciesAreHealthy", func(t *testing.T) {
+		api := mock.NewMockArgoApiInterface(ctrl)
+		metrics := mock.NewMockMetricsInterface(ctrl)
+		state := mock.NewMockTaskRepository(ctrl)
+
+		start := 10.0
+		end := 20.0
+
+		state.EXPECT().Check().Return(true)
+		api.EXPECT().GetUserInfo().Return(&models.Userinfo{LoggedIn: true}, nil)
+		metrics.EXPECT().SetArgoUnavailable(false)
+		expectedTasks := []models.Task{
+			{Id: "task-1", App: "demo", Images: []models.Image{{Image: "example.com/app", Tag: "v1.0.0"}}},
+		}
+		state.EXPECT().GetTasks(start, end, "demo").Return(expectedTasks)
+
+		argo := &Argo{}
+		argo.Init(state, api, metrics)
+
+		response := argo.GetTasks(start, end, "demo")
+
+		assert.Equal(t, expectedTasks, response.Tasks)
+		assert.Empty(t, response.Error)
+	})
+
+	t.Run("returnsErrorWhenHealthCheckFails", func(t *testing.T) {
+		api := mock.NewMockArgoApiInterface(ctrl)
+		metrics := mock.NewMockMetricsInterface(ctrl)
+		state := mock.NewMockTaskRepository(ctrl)
+
+		state.EXPECT().Check().Return(false)
+		api.EXPECT().GetUserInfo().Return(&models.Userinfo{LoggedIn: true}, nil)
+		metrics.EXPECT().SetArgoUnavailable(true)
+
+		argo := &Argo{}
+		argo.Init(state, api, metrics)
+
+		response := argo.GetTasks(0, 100, "demo")
+
+		assert.Empty(t, response.Tasks)
+		assert.Equal(t, models.StatusConnectionUnavailable, response.Error)
+	})
+}
+
+func TestArgoSimpleHealthCheck(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	state := mock.NewMockTaskRepository(ctrl)
+	state.EXPECT().Check().Return(true)
+
+	argo := &Argo{}
+	argo.Init(state, nil, nil)
+
+	assert.True(t, argo.SimpleHealthCheck())
+}

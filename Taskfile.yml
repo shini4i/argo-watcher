@@ -17,12 +17,12 @@ tasks:
     desc: Generate mocks for tests
     cmds:
       - echo "===> Generating mocks"
-      - mockgen --source=cmd/argo-watcher/argocd/argo_api.go --destination=cmd/argo-watcher/mock/argo_api.go --package=mock
+      - mockgen --source=internal/argocd/argo_api.go --destination=cmd/argo-watcher/mock/argo_api.go --package=mock
       - mockgen --source=internal/state/state.go --destination=cmd/argo-watcher/mock/state.go --package=mock
       - mockgen --source=cmd/argo-watcher/prometheus/metrics.go --destination=cmd/argo-watcher/mock/metrics.go --package=mock
       - mockgen --source=pkg/updater/interfaces.go --destination=pkg/updater/mock/interfaces.go --package=mock
     sources:
-      - cmd/argo-watcher/argocd/argo_api.go
+      - internal/argocd/argo_api.go
       - internal/state/state.go
       - cmd/argo-watcher/prometheus/metrics.go
       - pkg/updater/interfaces.go
