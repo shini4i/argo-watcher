@@ -109,7 +109,10 @@ func (monitor *DeploymentMonitor) WaitRollout(task models.Task) (*models.Applica
 }
 
 func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) []retry.Option {
-	const minAttempts = 15
+	const (
+		minAttempts        = 15
+		retryWindowSeconds = 15
+	)
 
 	retryOptions := append([]retry.Option{}, monitor.retryOptions...)
 	if task.Timeout <= 0 {
@@ -119,10 +122,10 @@ func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) []retr
 
 	log.Debug().Str("id", task.Id).Msgf("Overriding task timeout to %ds", task.Timeout)
 
-	calculatedAttempts := task.Timeout/15 + 1
+	calculatedAttempts := task.Timeout/retryWindowSeconds + 1
 
 	if calculatedAttempts <= 0 {
-		log.Error().Msgf("Calculated attempts resulted in a non-positive number (%d), defaulting to %d attempts.", calculatedAttempts, minAttempts)
+		log.Warn().Msgf("Calculated attempts resulted in a non-positive number (%d), defaulting to %d attempts.", calculatedAttempts, minAttempts)
 		calculatedAttempts = minAttempts
 	}
 

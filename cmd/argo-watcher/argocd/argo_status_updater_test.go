@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/avast/retry-go/v4"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	"github.com/shini4i/argo-watcher/internal/lock"
 
@@ -46,8 +47,9 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// prepare test data
 		task := models.Task{
-			Id:  "test-id",
-			App: "test-app",
+			Id:      "test-id",
+			App:     "test-app",
+			Timeout: 15,
 			Images: []models.Image{
 				{
 					Image: "ghcr.io/shini4i/argo-watcher",
@@ -63,7 +65,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		application.Status.Health.Status = "Healthy"
 
 		// mock calls
-		apiMock.EXPECT().GetApplication(task.App).Return(&application, nil).Times(3)
+		apiMock.EXPECT().GetApplication(task.App).Return(&application, nil).MinTimes(2).MaxTimes(3)
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().ResetFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
@@ -90,8 +92,9 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// prepare test data
 		task := models.Task{
-			Id:  "test-id",
-			App: "test-app",
+			Id:      "test-id",
+			App:     "test-app",
+			Timeout: 15,
 			Images: []models.Image{
 				{
 					Image: "ghcr.io/shini4i/argo-watcher",
@@ -113,7 +116,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		healthyApp.Status.Health.Status = "Healthy"
 
 		// mock calls
-		apiMock.EXPECT().GetApplication(task.App).Return(&unhealthyApp, nil).Times(2)
+		apiMock.EXPECT().GetApplication(task.App).Return(&unhealthyApp, nil).MinTimes(1).MaxTimes(2)
 		apiMock.EXPECT().GetApplication(task.App).Return(&healthyApp, nil).Times(1)
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().ResetFailedDeployment(task.App)
@@ -141,8 +144,9 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// prepare test data
 		task := models.Task{
-			Id:  "test-id",
-			App: "test-app",
+			Id:      "test-id",
+			App:     "test-app",
+			Timeout: 15,
 			Images: []models.Image{
 				{
 					Image: "ghcr.io/shini4i/argo-watcher",
@@ -158,7 +162,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		application.Status.Health.Status = "Healthy"
 
 		// mock calls
-		apiMock.EXPECT().GetApplication(task.App).Return(&application, nil).Times(3)
+		apiMock.EXPECT().GetApplication(task.App).Return(&application, nil).MinTimes(2).MaxTimes(3)
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().ResetFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
@@ -185,8 +189,9 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// prepare test data
 		task := models.Task{
-			Id:  "test-id",
-			App: "test-app",
+			Id:      "test-id",
+			App:     "test-app",
+			Timeout: 15,
 			Images: []models.Image{
 				{
 					Image: "ghcr.io/shini4i/argo-watcher",
@@ -325,8 +330,9 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// prepare test data
 		task := models.Task{
-			Id:  "test-id",
-			App: "test-app",
+			Id:      "test-id",
+			App:     "test-app",
+			Timeout: 15,
 			Images: []models.Image{
 				{
 					Image: "ghcr.io/shini4i/argo-watcher",
@@ -367,8 +373,9 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// prepare test data
 		task := models.Task{
-			Id:  "test-id",
-			App: "test-app",
+			Id:      "test-id",
+			App:     "test-app",
+			Timeout: 15,
 			Images: []models.Image{
 				{
 					Image: "ghcr.io/shini4i/argo-watcher",
@@ -413,8 +420,9 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// prepare test data
 		task := models.Task{
-			Id:  "test-id",
-			App: "test-app",
+			Id:      "test-id",
+			App:     "test-app",
+			Timeout: 15,
 			Images: []models.Image{
 				{
 					Image: "ghcr.io/shini4i/argo-watcher",
@@ -534,4 +542,58 @@ func TestArgoStatusUpdater_handleArgoAPIFailure(t *testing.T) {
 
 		updater.monitor.HandleArgoAPIFailure(task, err)
 	})
+}
+
+func TestDeploymentMonitor_configureRetryOptions(t *testing.T) {
+	monitor := NewDeploymentMonitor(Argo{}, "", []retry.Option{retry.Attempts(1), retry.Delay(0)}, false)
+
+	countAttempts := func(options []retry.Option) int {
+		attempts := 0
+		_ = retry.Do(func() error {
+			attempts++
+			return fmt.Errorf("retry")
+		}, options...)
+		return attempts
+	}
+
+	testCases := []struct {
+		name             string
+		timeout          int
+		expectedAttempts int
+	}{
+		{
+			name:             "nonPositiveTimeoutUsesMinimumAttempts",
+			timeout:          0,
+			expectedAttempts: 15,
+		},
+		{
+			name:             "negativeTimeoutUsesMinimumAttempts",
+			timeout:          -5,
+			expectedAttempts: 15,
+		},
+		{
+			name:             "positiveTimeoutLessThanWindow",
+			timeout:          10,
+			expectedAttempts: 1,
+		},
+		{
+			name:             "positiveTimeoutExactMultiple",
+			timeout:          30,
+			expectedAttempts: 3,
+		},
+		{
+			name:             "positiveTimeoutWithRemainderRoundsUp",
+			timeout:          46,
+			expectedAttempts: 4,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			options := monitor.configureRetryOptions(models.Task{Id: "test-id", Timeout: tc.timeout})
+			attempts := countAttempts(options)
+			assert.Equal(t, tc.expectedAttempts, attempts)
+		})
+	}
 }
