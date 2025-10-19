@@ -475,7 +475,7 @@ func TestArgoStatusUpdater_processDeploymentResult(t *testing.T) {
 		metricsMock.EXPECT().ResetFailedDeployment(task.App)
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
 
-		updater.processDeploymentResult(&task, app)
+		updater.monitor.ProcessDeploymentResult(&task, app)
 		assert.Equal(t, models.StatusDeployedMessage, task.Status)
 	})
 
@@ -490,7 +490,7 @@ func TestArgoStatusUpdater_processDeploymentResult(t *testing.T) {
 		metricsMock.EXPECT().ResetFailedDeployment(task.App)
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
 
-		updater.processDeploymentResult(&task, app)
+		updater.monitor.ProcessDeploymentResult(&task, app)
 		assert.Equal(t, models.StatusDeployedMessage, task.Status)
 	})
 
@@ -504,7 +504,7 @@ func TestArgoStatusUpdater_processDeploymentResult(t *testing.T) {
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		stateMock.EXPECT().SetTaskStatus(gomock.Any(), models.StatusFailedMessage, gomock.Any())
 
-		updater.processDeploymentResult(&task, app)
+		updater.monitor.ProcessDeploymentResult(&task, app)
 		assert.Equal(t, models.StatusFailedMessage, task.Status)
 	})
 }
@@ -532,6 +532,6 @@ func TestArgoStatusUpdater_handleArgoAPIFailure(t *testing.T) {
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage, gomock.Any())
 
-		updater.handleArgoAPIFailure(task, err)
+		updater.monitor.HandleArgoAPIFailure(task, err)
 	})
 }

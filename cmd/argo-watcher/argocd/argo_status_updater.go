@@ -109,18 +109,21 @@ func (monitor *DeploymentMonitor) WaitRollout(task models.Task) (*models.Applica
 }
 
 func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) []retry.Option {
+	const minAttempts = 15
+
 	retryOptions := append([]retry.Option{}, monitor.retryOptions...)
 	if task.Timeout <= 0 {
-		return retryOptions
+		log.Debug().Str("id", task.Id).Msgf("Task timeout is non-positive, defaulting to %d attempts", minAttempts)
+		return append(retryOptions, retry.Attempts(uint(minAttempts))) // #nosec G115
 	}
 
 	log.Debug().Str("id", task.Id).Msgf("Overriding task timeout to %ds", task.Timeout)
 
 	calculatedAttempts := task.Timeout/15 + 1
 
-	if calculatedAttempts < 0 {
-		log.Error().Msg("Calculated attempts resulted in a negative number, defaulting to 15 attempts.")
-		calculatedAttempts = 15
+	if calculatedAttempts <= 0 {
+		log.Error().Msgf("Calculated attempts resulted in a non-positive number (%d), defaulting to %d attempts.", calculatedAttempts, minAttempts)
+		calculatedAttempts = minAttempts
 	}
 
 	return append(retryOptions, retry.Attempts(uint(calculatedAttempts))) // #nosec G115
@@ -165,7 +168,7 @@ func (monitor *DeploymentMonitor) handleDeploymentFailure(task *models.Task, sta
 	log.Info().Str("id", task.Id).Msg("App deployment failed.")
 	monitor.argo.metrics.AddFailedDeployment(task.App)
 	reason := fmt.Sprintf(
-		"Application deployment failed. Rollout status \"%s\"\\n\\n%s",
+		"Application deployment failed. Rollout status %q\n\n%s",
 		status,
 		application.GetRolloutMessage(status, task.ListImages()),
 	)
