@@ -39,6 +39,7 @@ func initTestUpdater(t *testing.T, cfg ArgoStatusUpdaterConfig, argo *Argo) *Arg
 	t.Helper()
 	updater := &ArgoStatusUpdater{}
 	require.NoError(t, updater.Init(*argo, cfg))
+	require.Equal(t, cfg.RetryAttempts, updater.monitor.defaultAttempts)
 	updater.monitor.retryOptions = []retry.Option{
 		retry.DelayType(retry.FixedDelay),
 		retry.Delay(0),

@@ -32,6 +32,7 @@ type DeploymentMonitor struct {
 	retryOptions     []retry.Option
 	acceptSuspended  bool
 	retryDelay       time.Duration
+	defaultAttempts  uint
 }
 
 // GitUpdater encapsulates the logic required to update Git repositories watched by ArgoCD.
@@ -111,9 +112,9 @@ func (monitor *DeploymentMonitor) WaitRollout(task models.Task) (*models.Applica
 	return application, err
 }
 
-// configureRetryOptions derives retry attempts: minimum 15 when task.Timeout <= 0; otherwise timeout/15 + 1 to span the retry window.
+// configureRetryOptions derives retry attempts: when task.Timeout <= 0 use defaultAttempts (fallback 15); otherwise attempts = floor(timeout/retryDelay) + 1.
 func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) []retry.Option {
-	const minAttempts = 15
+	const fallbackAttempts = uint(15)
 
 	retryOptions := append([]retry.Option{}, monitor.retryOptions...)
 
@@ -122,9 +123,14 @@ func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) []retr
 		delay = ArgoSyncRetryDelay
 	}
 
+	defaultAttempts := monitor.defaultAttempts
+	if defaultAttempts == 0 {
+		defaultAttempts = fallbackAttempts
+	}
+
 	if task.Timeout <= 0 {
-		log.Debug().Str("id", task.Id).Msgf("Task timeout is non-positive, defaulting to %d attempts", minAttempts)
-		return append(retryOptions, retry.Attempts(uint(minAttempts))) // #nosec G115
+		log.Debug().Str("id", task.Id).Msgf("Task timeout is non-positive, defaulting to %d attempts", defaultAttempts)
+		return append(retryOptions, retry.Attempts(defaultAttempts))
 	}
 
 	delaySeconds := delay.Seconds()
@@ -265,6 +271,7 @@ func (updater *ArgoStatusUpdater) Init(argo Argo, cfg ArgoStatusUpdaterConfig) e
 	}
 
 	updater.monitor = NewDeploymentMonitor(argo, cfg.RegistryProxyURL, retryOptions, cfg.AcceptSuspended, cfg.RetryDelay)
+	updater.monitor.defaultAttempts = cfg.RetryAttempts
 	updater.gitUpdater = NewGitUpdater(cfg.Locker, cfg.RepoCachePath)
 
 	if cfg.WebhookConfig == nil || !cfg.WebhookConfig.Enabled {
