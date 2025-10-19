@@ -95,7 +95,7 @@ func (monitor *DeploymentMonitor) WaitRollout(task models.Task) (*models.Applica
 	log.Debug().Str("id", task.Id).Msg("Waiting for rollout")
 
 	err = retry.Do(func() error {
-		application, err = monitor.argo.api.GetApplication(task.App)
+		application, err = monitor.FetchApplication(task.App)
 		if err != nil {
 			return handleApplicationFetchError(task, err)
 		}
