@@ -121,6 +121,8 @@ func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) []retr
 	delay := monitor.retryDelay
 	if delay <= 0 {
 		delay = ArgoSyncRetryDelay
+	} else {
+		retryOptions = append(retryOptions, retry.Delay(delay))
 	}
 
 	defaultAttempts := monitor.defaultAttempts
@@ -262,7 +264,6 @@ type ArgoStatusUpdaterConfig struct {
 func (updater *ArgoStatusUpdater) Init(argo Argo, cfg ArgoStatusUpdaterConfig) error {
 	retryOptions := []retry.Option{
 		retry.DelayType(retry.FixedDelay),
-		retry.Delay(cfg.RetryDelay),
 		retry.LastErrorOnly(true),
 	}
 
