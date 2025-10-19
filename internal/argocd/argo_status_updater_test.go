@@ -49,6 +49,10 @@ func (s failingStrategy) Send(models.Task) error {
 	return s.err
 }
 
+func zeroDelay(_ uint, _ error, _ *retry.Config) time.Duration {
+	return 0
+}
+
 func newUpdaterTestConfig(locker lock.Locker) ArgoStatusUpdaterConfig {
 	return ArgoStatusUpdaterConfig{
 		RetryAttempts:    1,
@@ -67,11 +71,10 @@ func initTestUpdater(t *testing.T, cfg ArgoStatusUpdaterConfig, argo *Argo) *Arg
 	require.NoError(t, updater.Init(*argo, cfg))
 	require.Equal(t, cfg.RetryAttempts, updater.monitor.defaultAttempts)
 	updater.monitor.retryOptions = []retry.Option{
-		retry.DelayType(retry.FixedDelay),
-		retry.Delay(0),
+		retry.DelayType(zeroDelay),
 		retry.LastErrorOnly(true),
 	}
-	updater.monitor.retryDelay = 0
+	updater.monitor.retryDelay = cfg.RetryDelay
 	return updater
 }
 
@@ -505,7 +508,7 @@ func TestDeploymentMonitorHandleDeploymentSuccessHandlesStateError(t *testing.T)
 	monitor := NewDeploymentMonitor(Argo{
 		metrics: metrics,
 		State:   state,
-	}, "", []retry.Option{retry.DelayType(retry.FixedDelay), retry.LastErrorOnly(true)}, false, time.Millisecond)
+	}, "", []retry.Option{retry.DelayType(zeroDelay), retry.LastErrorOnly(true)}, false, time.Millisecond)
 
 	task := models.Task{Id: "task-id", App: "demo"}
 
@@ -526,7 +529,7 @@ func TestDeploymentMonitorHandleDeploymentFailureHandlesStateError(t *testing.T)
 	monitor := NewDeploymentMonitor(Argo{
 		metrics: metrics,
 		State:   state,
-	}, "", []retry.Option{retry.DelayType(retry.FixedDelay), retry.LastErrorOnly(true)}, false, time.Millisecond)
+	}, "", []retry.Option{retry.DelayType(zeroDelay), retry.LastErrorOnly(true)}, false, time.Millisecond)
 
 	task := models.Task{
 		Id:  "task-id",
@@ -557,7 +560,7 @@ func TestDeploymentMonitorHandleArgoAPIFailureHandlesStateError(t *testing.T) {
 	monitor := NewDeploymentMonitor(Argo{
 		metrics: metrics,
 		State:   state,
-	}, "", []retry.Option{retry.DelayType(retry.FixedDelay), retry.LastErrorOnly(true)}, false, time.Millisecond)
+	}, "", []retry.Option{retry.DelayType(zeroDelay), retry.LastErrorOnly(true)}, false, time.Millisecond)
 
 	task := models.Task{Id: "task-id", App: "demo"}
 
@@ -791,7 +794,7 @@ func TestDeploymentMonitorWaitRollout(t *testing.T) {
 	monitor := NewDeploymentMonitor(
 		Argo{api: api},
 		"",
-		[]retry.Option{retry.DelayType(retry.FixedDelay), retry.LastErrorOnly(true)},
+		[]retry.Option{retry.DelayType(zeroDelay), retry.LastErrorOnly(true)},
 		false,
 		time.Millisecond,
 	)

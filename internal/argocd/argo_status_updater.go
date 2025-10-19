@@ -121,9 +121,9 @@ func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) []retr
 	delay := monitor.retryDelay
 	if delay <= 0 {
 		delay = ArgoSyncRetryDelay
-	} else {
-		retryOptions = append(retryOptions, retry.Delay(delay))
 	}
+
+	retryOptions = append(retryOptions, retry.Delay(delay))
 
 	defaultAttempts := monitor.defaultAttempts
 	if defaultAttempts == 0 {
