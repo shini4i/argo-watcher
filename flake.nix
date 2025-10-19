@@ -15,6 +15,7 @@
           go_1_24
           gopls
           gotools
+          mockgen
         ];
 
         preCommitTools = with pkgs; [
