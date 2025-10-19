@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"slices"
 	"strings"
@@ -30,6 +31,7 @@ type DeploymentMonitor struct {
 	registryProxyUrl string
 	retryOptions     []retry.Option
 	acceptSuspended  bool
+	retryDelay       time.Duration
 }
 
 // GitUpdater encapsulates the logic required to update Git repositories watched by ArgoCD.
@@ -39,12 +41,13 @@ type GitUpdater struct {
 }
 
 // NewDeploymentMonitor creates a deployment monitor with the supplied configuration.
-func NewDeploymentMonitor(argo Argo, registryProxyUrl string, retryOptions []retry.Option, acceptSuspended bool) *DeploymentMonitor {
+func NewDeploymentMonitor(argo Argo, registryProxyUrl string, retryOptions []retry.Option, acceptSuspended bool, retryDelay time.Duration) *DeploymentMonitor {
 	return &DeploymentMonitor{
 		argo:             argo,
 		registryProxyUrl: registryProxyUrl,
 		retryOptions:     retryOptions,
 		acceptSuspended:  acceptSuspended,
+		retryDelay:       retryDelay,
 	}
 }
 
@@ -110,20 +113,30 @@ func (monitor *DeploymentMonitor) WaitRollout(task models.Task) (*models.Applica
 
 // configureRetryOptions derives retry attempts: minimum 15 when task.Timeout <= 0; otherwise timeout/15 + 1 to span the retry window.
 func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) []retry.Option {
-	const (
-		minAttempts        = 15
-		retryWindowSeconds = 15
-	)
+	const minAttempts = 15
 
 	retryOptions := append([]retry.Option{}, monitor.retryOptions...)
+
+	delay := monitor.retryDelay
+	if delay <= 0 {
+		delay = 15 * time.Second
+	}
+
 	if task.Timeout <= 0 {
 		log.Debug().Str("id", task.Id).Msgf("Task timeout is non-positive, defaulting to %d attempts", minAttempts)
 		return append(retryOptions, retry.Attempts(uint(minAttempts))) // #nosec G115
 	}
 
-	log.Debug().Str("id", task.Id).Msgf("Overriding task timeout to %ds", task.Timeout)
+	delaySeconds := delay.Seconds()
 
-	calculatedAttempts := task.Timeout/retryWindowSeconds + 1
+	calculatedAttempts := int(math.Floor(float64(task.Timeout)/delaySeconds)) + 1
+
+	log.Debug().Str("id", task.Id).Msgf(
+		"Overriding task timeout to %ds with retry delay %s (%d attempts)",
+		task.Timeout,
+		delay,
+		calculatedAttempts,
+	)
 
 	return append(retryOptions, retry.Attempts(uint(calculatedAttempts))) // #nosec G115
 }
@@ -228,19 +241,34 @@ type ArgoStatusUpdater struct {
 	notifier   *notifications.Notifier
 }
 
+// ArgoStatusUpdaterConfig groups the dependencies required to bootstrap an ArgoStatusUpdater.
+type ArgoStatusUpdaterConfig struct {
+	RetryAttempts    uint
+	RetryDelay       time.Duration
+	RegistryProxyURL string
+	RepoCachePath    string
+	AcceptSuspended  bool
+	WebhookConfig    *config.WebhookConfig
+	Locker           lock.Locker
+}
+
 // Init initializes the ArgoStatusUpdater with the provided configuration
-func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, retryDelay time.Duration, registryProxyUrl string, repoCachePath string, acceptSuspended bool, webhookConfig *config.WebhookConfig, locker lock.Locker) error {
+func (updater *ArgoStatusUpdater) Init(argo Argo, cfg ArgoStatusUpdaterConfig) error {
 	retryOptions := []retry.Option{
 		retry.DelayType(retry.FixedDelay),
-		retry.Attempts(retryAttempts),
-		retry.Delay(retryDelay),
+		retry.Attempts(cfg.RetryAttempts),
+		retry.Delay(cfg.RetryDelay),
 		retry.LastErrorOnly(true),
 	}
 
-	updater.monitor = NewDeploymentMonitor(argo, registryProxyUrl, retryOptions, acceptSuspended)
-	updater.gitUpdater = NewGitUpdater(locker, repoCachePath)
+	if cfg.Locker == nil {
+		return fmt.Errorf("locker cannot be nil")
+	}
 
-	if webhookConfig == nil || !webhookConfig.Enabled {
+	updater.monitor = NewDeploymentMonitor(argo, cfg.RegistryProxyURL, retryOptions, cfg.AcceptSuspended, cfg.RetryDelay)
+	updater.gitUpdater = NewGitUpdater(cfg.Locker, cfg.RepoCachePath)
+
+	if cfg.WebhookConfig == nil || !cfg.WebhookConfig.Enabled {
 		return nil
 	}
 
@@ -248,7 +276,7 @@ func (updater *ArgoStatusUpdater) Init(argo Argo, retryAttempts uint, retryDelay
 		Timeout: 15 * time.Second,
 	}
 
-	webhookStrategy, err := notifications.NewWebhookStrategy(webhookConfig, httpClient)
+	webhookStrategy, err := notifications.NewWebhookStrategy(cfg.WebhookConfig, httpClient)
 	if err != nil {
 		return err
 	}

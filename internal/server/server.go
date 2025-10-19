@@ -7,9 +7,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"github.com/shini4i/argo-watcher/internal/argocd"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	prom "github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
+	"github.com/shini4i/argo-watcher/internal/argocd"
 	"github.com/shini4i/argo-watcher/internal/lock"
 	"github.com/shini4i/argo-watcher/internal/state"
 )
@@ -69,15 +69,15 @@ func NewServer(serverConfig *config.ServerConfig, reg prometheus.Registerer) (*S
 
 	// initialize argo updater
 	updater := &argocd.ArgoStatusUpdater{}
-	err = updater.Init(*argo,
-		serverConfig.GetRetryAttempts(),
-		argocd.ArgoSyncRetryDelay,
-		serverConfig.RegistryProxyUrl,
-		serverConfig.RepoCachePath,
-		serverConfig.AcceptSuspendedApp,
-		&serverConfig.Webhook,
-		locker,
-	)
+	err = updater.Init(*argo, argocd.ArgoStatusUpdaterConfig{
+		RetryAttempts:    serverConfig.GetRetryAttempts(),
+		RetryDelay:       argocd.ArgoSyncRetryDelay,
+		RegistryProxyURL: serverConfig.RegistryProxyUrl,
+		RepoCachePath:    serverConfig.RepoCachePath,
+		AcceptSuspended:  serverConfig.AcceptSuspendedApp,
+		WebhookConfig:    &serverConfig.Webhook,
+		Locker:           locker,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize the argo updater: %w", err)
 	}

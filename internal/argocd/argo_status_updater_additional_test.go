@@ -42,7 +42,7 @@ func (s failingStrategy) Send(models.Task) error {
 }
 
 func TestDeploymentMonitorStoreInitialAppStatusRequiresApplication(t *testing.T) {
-	monitor := NewDeploymentMonitor(Argo{}, "", nil, false)
+	monitor := NewDeploymentMonitor(Argo{}, "", nil, false, 15*time.Second)
 	err := monitor.StoreInitialAppStatus(&models.Task{}, nil)
 	require.Error(t, err)
 	assert.Equal(t, "application is nil", err.Error())
@@ -58,7 +58,7 @@ func TestDeploymentMonitorHandleDeploymentSuccessHandlesStateError(t *testing.T)
 	monitor := NewDeploymentMonitor(Argo{
 		metrics: metrics,
 		State:   state,
-	}, "", nil, false)
+	}, "", []retry.Option{retry.DelayType(retry.FixedDelay), retry.Delay(0)}, false, 15*time.Second)
 
 	task := models.Task{Id: "task-id", App: "demo"}
 
@@ -79,7 +79,7 @@ func TestDeploymentMonitorHandleDeploymentFailureHandlesStateError(t *testing.T)
 	monitor := NewDeploymentMonitor(Argo{
 		metrics: metrics,
 		State:   state,
-	}, "", nil, false)
+	}, "", []retry.Option{retry.DelayType(retry.FixedDelay), retry.Delay(0)}, false, 15*time.Second)
 
 	task := models.Task{
 		Id:  "task-id",
@@ -110,7 +110,7 @@ func TestDeploymentMonitorHandleArgoAPIFailureHandlesStateError(t *testing.T) {
 	monitor := NewDeploymentMonitor(Argo{
 		metrics: metrics,
 		State:   state,
-	}, "", nil, false)
+	}, "", []retry.Option{retry.DelayType(retry.FixedDelay), retry.Delay(0)}, false, 15*time.Second)
 
 	task := models.Task{Id: "task-id", App: "demo"}
 
@@ -234,24 +234,35 @@ func TestGitUpdaterUpdateGitRepo(t *testing.T) {
 }
 
 func TestArgoStatusUpdaterInitWebhook(t *testing.T) {
-	updater := &ArgoStatusUpdater{}
 	locker := lock.NewInMemoryLocker()
 
 	t.Run("handlesNilConfig", func(t *testing.T) {
-		require.NoError(t, updater.Init(Argo{}, 1, time.Second, "", "", false, nil, locker))
+		updater := &ArgoStatusUpdater{}
+		require.NoError(t, updater.Init(Argo{}, ArgoStatusUpdaterConfig{
+			RetryAttempts: 1,
+			RetryDelay:    time.Second,
+			Locker:        locker,
+		}))
 	})
 
 	t.Run("returnsErrorOnWebhookSetupFailure", func(t *testing.T) {
+		updater := &ArgoStatusUpdater{}
 		cfg := &config.WebhookConfig{
 			Enabled: true,
 			Url:     "http://example.com",
 		}
 
-		err := updater.Init(Argo{}, 1, time.Second, "", "", false, cfg, locker)
+		err := updater.Init(Argo{}, ArgoStatusUpdaterConfig{
+			RetryAttempts: 1,
+			RetryDelay:    time.Second,
+			WebhookConfig: cfg,
+			Locker:        locker,
+		})
 		assert.Error(t, err)
 	})
 
 	t.Run("configuresNotifierWhenWebhookEnabled", func(t *testing.T) {
+		updater := &ArgoStatusUpdater{}
 		cfg := &config.WebhookConfig{
 			Enabled:              true,
 			Url:                  "http://example.com",
@@ -262,9 +273,23 @@ func TestArgoStatusUpdaterInitWebhook(t *testing.T) {
 			Format:               `{"app":"{{.App}}"}`,
 		}
 
-		err := updater.Init(Argo{}, 1, time.Second, "", "", false, cfg, locker)
+		err := updater.Init(Argo{}, ArgoStatusUpdaterConfig{
+			RetryAttempts: 1,
+			RetryDelay:    time.Second,
+			WebhookConfig: cfg,
+			Locker:        locker,
+		})
 		require.NoError(t, err)
 		require.NotNil(t, updater.notifier)
+	})
+
+	t.Run("returnsErrorWhenLockerMissing", func(t *testing.T) {
+		updater := &ArgoStatusUpdater{}
+		err := updater.Init(Argo{}, ArgoStatusUpdaterConfig{
+			RetryAttempts: 1,
+			RetryDelay:    time.Second,
+		})
+		assert.EqualError(t, err, "locker cannot be nil")
 	})
 }
 
@@ -280,8 +305,11 @@ func TestArgoStatusUpdaterWaitForApplicationDeploymentErrors(t *testing.T) {
 	argo := &Argo{}
 	argo.Init(state, api, metrics)
 
-	updater := &ArgoStatusUpdater{}
-	require.NoError(t, updater.Init(*argo, 1, 0, "", "/tmp/cache", false, nil, locker))
+	cfg := newUpdaterTestConfig(locker)
+	cfg.RegistryProxyURL = ""
+	cfg.RepoCachePath = "/tmp/cache"
+	cfg.WebhookConfig = nil
+	updater := initTestUpdater(t, cfg, argo)
 
 	task := models.Task{App: "demo", Validated: true}
 
@@ -313,7 +341,13 @@ func TestDeploymentMonitorWaitRollout(t *testing.T) {
 	defer ctrl.Finish()
 
 	api := mock.NewMockArgoApiInterface(ctrl)
-	monitor := NewDeploymentMonitor(Argo{api: api}, "", []retry.Option{retry.Attempts(1)}, false)
+	monitor := NewDeploymentMonitor(
+		Argo{api: api},
+		"",
+		[]retry.Option{retry.DelayType(retry.FixedDelay), retry.Delay(0)},
+		false,
+		15*time.Second,
+	)
 	task := models.Task{App: "demo"}
 
 	t.Run("handlesFireAndForget", func(t *testing.T) {

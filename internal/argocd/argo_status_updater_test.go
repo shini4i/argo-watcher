@@ -10,6 +10,7 @@ import (
 	"github.com/shini4i/argo-watcher/internal/lock"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/mock"
 	"github.com/shini4i/argo-watcher/internal/models"
@@ -21,6 +22,30 @@ var (
 		Enabled: false,
 	}
 )
+
+func newUpdaterTestConfig(locker lock.Locker) ArgoStatusUpdaterConfig {
+	return ArgoStatusUpdaterConfig{
+		RetryAttempts:    1,
+		RetryDelay:       15 * time.Second,
+		RegistryProxyURL: "test-registry",
+		RepoCachePath:    "/tmp",
+		AcceptSuspended:  false,
+		WebhookConfig:    mockWebhookConfig,
+		Locker:           locker,
+	}
+}
+
+func initTestUpdater(t *testing.T, cfg ArgoStatusUpdaterConfig, argo *Argo) *ArgoStatusUpdater {
+	t.Helper()
+	updater := &ArgoStatusUpdater{}
+	require.NoError(t, updater.Init(*argo, cfg))
+	updater.monitor.retryOptions = []retry.Option{
+		retry.DelayType(retry.FixedDelay),
+		retry.Delay(0),
+		retry.LastErrorOnly(true),
+	}
+	return updater
+}
 
 func TestArgoStatusUpdaterCheck(t *testing.T) {
 	ctrl := gomock.NewController(t)
@@ -41,9 +66,9 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		argo.Init(stateMock, apiMock, metricsMock)
 
 		// argo updater
-		updater := &ArgoStatusUpdater{}
-		err := updater.Init(*argo, 1, 0*time.Second, "test-registry", "/tmp/", false, mockWebhookConfig, mockLocker)
-		assert.NoError(t, err)
+		cfg := newUpdaterTestConfig(mockLocker)
+		cfg.RepoCachePath = "/tmp/"
+		updater := initTestUpdater(t, cfg, argo)
 
 		// prepare test data
 		task := models.Task{
@@ -86,9 +111,9 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		argo.Init(stateMock, apiMock, metricsMock)
 
 		// argo updater
-		updater := &ArgoStatusUpdater{}
-		err := updater.Init(*argo, 3, 0*time.Second, "test-registry", "/tmp", false, mockWebhookConfig, mockLocker)
-		assert.NoError(t, err)
+		cfg := newUpdaterTestConfig(mockLocker)
+		cfg.RetryAttempts = 3
+		updater := initTestUpdater(t, cfg, argo)
 
 		// prepare test data
 		task := models.Task{
@@ -138,9 +163,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		argo.Init(stateMock, apiMock, metricsMock)
 
 		// argo updater
-		updater := &ArgoStatusUpdater{}
-		err := updater.Init(*argo, 1, 0*time.Second, "test-registry", "/tmp", false, mockWebhookConfig, mockLocker)
-		assert.NoError(t, err)
+		updater := initTestUpdater(t, newUpdaterTestConfig(mockLocker), argo)
 
 		// prepare test data
 		task := models.Task{
@@ -183,9 +206,9 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		argo.Init(stateMock, apiMock, metricsMock)
 
 		// argo updater
-		updater := &ArgoStatusUpdater{}
-		err := updater.Init(*argo, 1, 0*time.Second, "", "/tmp", false, mockWebhookConfig, mockLocker)
-		assert.NoError(t, err)
+		cfg := newUpdaterTestConfig(mockLocker)
+		cfg.RegistryProxyURL = ""
+		updater := initTestUpdater(t, cfg, argo)
 
 		// prepare test data
 		task := models.Task{
@@ -228,9 +251,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		argo.Init(stateMock, apiMock, metricsMock)
 
 		// argo updater
-		updater := &ArgoStatusUpdater{}
-		err := updater.Init(*argo, 1, 0*time.Second, "test-registry", "/tmp", false, mockWebhookConfig, mockLocker)
-		assert.NoError(t, err)
+		updater := initTestUpdater(t, newUpdaterTestConfig(mockLocker), argo)
 
 		// prepare test data
 		task := models.Task{
@@ -260,9 +281,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		argo.Init(stateMock, apiMock, metricsMock)
 
 		// argo updater
-		updater := &ArgoStatusUpdater{}
-		err := updater.Init(*argo, 1, 0*time.Second, "test-registry", "/tmp", false, mockWebhookConfig, mockLocker)
-		assert.NoError(t, err)
+		updater := initTestUpdater(t, newUpdaterTestConfig(mockLocker), argo)
 
 		// prepare test data
 		task := models.Task{
@@ -292,9 +311,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		argo.Init(stateMock, apiMock, metricsMock)
 
 		// argo updater
-		updater := &ArgoStatusUpdater{}
-		err := updater.Init(*argo, 1, 0*time.Second, "test-registry", "/tmp", false, mockWebhookConfig, mockLocker)
-		assert.NoError(t, err)
+		updater := initTestUpdater(t, newUpdaterTestConfig(mockLocker), argo)
 
 		// prepare test data
 		task := models.Task{
@@ -324,9 +341,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		argo.Init(stateMock, apiMock, metricsMock)
 
 		// argo updater
-		updater := &ArgoStatusUpdater{}
-		err := updater.Init(*argo, 1, 0*time.Second, "test-registry", "/tmp", false, mockWebhookConfig, mockLocker)
-		assert.NoError(t, err)
+		updater := initTestUpdater(t, newUpdaterTestConfig(mockLocker), argo)
 
 		// prepare test data
 		task := models.Task{
@@ -367,9 +382,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		argo.Init(stateMock, apiMock, metricsMock)
 
 		// argo updater
-		updater := &ArgoStatusUpdater{}
-		err := updater.Init(*argo, 1, 0*time.Second, "test-registry", "/tmp", false, mockWebhookConfig, mockLocker)
-		assert.NoError(t, err)
+		updater := initTestUpdater(t, newUpdaterTestConfig(mockLocker), argo)
 
 		// prepare test data
 		task := models.Task{
@@ -414,9 +427,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		argo.Init(stateMock, apiMock, metricsMock)
 
 		// argo updater
-		updater := &ArgoStatusUpdater{}
-		err := updater.Init(*argo, 1, 0*time.Second, "test-registry", "/tmp", false, mockWebhookConfig, mockLocker)
-		assert.NoError(t, err)
+		updater := initTestUpdater(t, newUpdaterTestConfig(mockLocker), argo)
 
 		// prepare test data
 		task := models.Task{
@@ -461,9 +472,7 @@ func TestArgoStatusUpdater_processDeploymentResult(t *testing.T) {
 	argo := &Argo{}
 	argo.Init(stateMock, apiMock, metricsMock)
 
-	updater := &ArgoStatusUpdater{}
-	err := updater.Init(*argo, 1, 0*time.Second, "test-registry", "/tmp", false, mockWebhookConfig, mockLocker)
-	assert.NoError(t, err)
+	updater := initTestUpdater(t, newUpdaterTestConfig(mockLocker), argo)
 
 	// success scenario
 	t.Run("processDeploymentResult - success", func(t *testing.T) {
@@ -548,9 +557,7 @@ func TestArgoStatusUpdater_handleArgoAPIFailure(t *testing.T) {
 	argo := &Argo{}
 	argo.Init(stateMock, apiMock, metricsMock)
 
-	updater := &ArgoStatusUpdater{}
-	err := updater.Init(*argo, 1, 0*time.Second, "test-registry", "/tmp", false, mockWebhookConfig, mockLocker)
-	assert.NoError(t, err)
+	updater := initTestUpdater(t, newUpdaterTestConfig(mockLocker), argo)
 
 	t.Run("handleArgoAPIFailure - generic error", func(t *testing.T) {
 		task := models.Task{Id: "test-id", App: "test-app"}
@@ -564,8 +571,6 @@ func TestArgoStatusUpdater_handleArgoAPIFailure(t *testing.T) {
 }
 
 func TestDeploymentMonitor_configureRetryOptions(t *testing.T) {
-	monitor := NewDeploymentMonitor(Argo{}, "", []retry.Option{retry.Attempts(1), retry.Delay(0)}, false)
-
 	countAttempts := func(options []retry.Option) int {
 		attempts := 0
 		_ = retry.Do(func() error {
@@ -578,38 +583,72 @@ func TestDeploymentMonitor_configureRetryOptions(t *testing.T) {
 	testCases := []struct {
 		name             string
 		timeout          int
+		retryDelay       time.Duration
 		expectedAttempts int
 	}{
 		{
 			name:             "nonPositiveTimeoutUsesMinimumAttempts",
 			timeout:          0,
+			retryDelay:       15 * time.Second,
 			expectedAttempts: 15,
 		},
 		{
 			name:             "negativeTimeoutUsesMinimumAttempts",
 			timeout:          -5,
+			retryDelay:       15 * time.Second,
 			expectedAttempts: 15,
 		},
 		{
 			name:             "positiveTimeoutLessThanWindow",
 			timeout:          10,
+			retryDelay:       15 * time.Second,
 			expectedAttempts: 1,
 		},
 		{
 			name:             "positiveTimeoutExactMultiple",
 			timeout:          30,
+			retryDelay:       15 * time.Second,
 			expectedAttempts: 3,
 		},
 		{
 			name:             "positiveTimeoutWithRemainderRoundsUp",
 			timeout:          46,
+			retryDelay:       15 * time.Second,
 			expectedAttempts: 4,
+		},
+		{
+			name:             "positiveTimeoutCustomRetryDelay",
+			timeout:          25,
+			retryDelay:       5 * time.Second,
+			expectedAttempts: 6,
+		},
+		{
+			name:             "zeroRetryDelayFallsBackToDefaultWindow",
+			timeout:          30,
+			retryDelay:       0,
+			expectedAttempts: 3,
+		},
+		{
+			name:             "negativeRetryDelayFallsBackToDefaultWindow",
+			timeout:          30,
+			retryDelay:       -1 * time.Second,
+			expectedAttempts: 3,
 		},
 	}
 
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
+			monitor := NewDeploymentMonitor(
+				Argo{},
+				"",
+				[]retry.Option{
+					retry.DelayType(retry.FixedDelay),
+					retry.Delay(0),
+				},
+				false,
+				tc.retryDelay,
+			)
 			options := monitor.configureRetryOptions(models.Task{Id: "test-id", Timeout: tc.timeout})
 			attempts := countAttempts(options)
 			assert.Equal(t, tc.expectedAttempts, attempts)
