@@ -40,8 +40,6 @@ func NewArgoApi() *ArgoApi {
 }
 
 func (api *ArgoApi) Init(serverConfig *config.ServerConfig) error {
-	api.ensureDependencies()
-
 	log.Debug().Msg("Initializing argo-watcher client...")
 	// set base url
 	api.baseUrl = serverConfig.ArgoUrl
@@ -168,13 +166,4 @@ func (api *ArgoApi) GetApplication(app string) (*models.Application, error) {
 	}
 
 	return &argoApp, nil
-}
-
-func (api *ArgoApi) ensureDependencies() {
-	if api.requestFn == nil {
-		api.requestFn = http.NewRequest
-	}
-	if api.cookieJarFn == nil {
-		api.cookieJarFn = cookiejar.New
-	}
 }
