@@ -27,6 +27,18 @@ type ArgoApi struct {
 	baseUrl    url.URL
 	client     *http.Client
 	refreshApp bool
+	// requestFn allows injecting a custom HTTP request constructor for testing.
+	requestFn func(method, url string, body io.Reader) (*http.Request, error)
+	// cookieJarFn allows injecting a custom cookie jar factory for testing.
+	cookieJarFn func(o *cookiejar.Options) (*cookiejar.Jar, error)
+}
+
+// NewArgoApi constructs an ArgoApi with default HTTP helpers.
+func NewArgoApi() *ArgoApi {
+	return &ArgoApi{
+		requestFn:   http.NewRequest,
+		cookieJarFn: cookiejar.New,
+	}
 }
 
 func (api *ArgoApi) Init(serverConfig *config.ServerConfig) error {
@@ -35,7 +47,7 @@ func (api *ArgoApi) Init(serverConfig *config.ServerConfig) error {
 	api.baseUrl = serverConfig.ArgoUrl
 
 	// create cookie jar
-	jar, err := cookiejar.New(nil)
+	jar, err := api.cookieJarFn(nil)
 	if err != nil {
 		return err
 	}
@@ -67,7 +79,7 @@ func (api *ArgoApi) Init(serverConfig *config.ServerConfig) error {
 
 func (api *ArgoApi) GetUserInfo() (*models.Userinfo, error) {
 	apiUrl := fmt.Sprintf("%s/api/v1/session/userinfo", api.baseUrl.String())
-	req, err := http.NewRequest("GET", apiUrl, nil)
+	req, err := api.requestFn("GET", apiUrl, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +113,7 @@ func (api *ArgoApi) GetUserInfo() (*models.Userinfo, error) {
 
 func (api *ArgoApi) GetApplication(app string) (*models.Application, error) {
 	apiUrl := fmt.Sprintf("%s/api/v1/applications/%s", api.baseUrl.String(), app)
-	req, err := http.NewRequest("GET", apiUrl, nil)
+	req, err := api.requestFn("GET", apiUrl, nil)
 	if err != nil {
 		log.Error().Msg(err.Error())
 		return nil, err

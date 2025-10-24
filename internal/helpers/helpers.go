@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httputil"
+	"slices"
 	"strings"
 
 	"crypto/sha256"
@@ -76,4 +77,11 @@ func GenerateHash(s string) []byte {
 	// if you know a way to make this return an error, please open an issue
 	hash.Write([]byte(s))
 	return hash.Sum(nil)
+}
+
+// NormalizeImages returns a sorted copy of the provided image slice to guarantee stable ordering without mutating the original.
+func NormalizeImages(images []string) []string {
+	copied := append([]string(nil), images...)
+	slices.Sort(copied)
+	return copied
 }

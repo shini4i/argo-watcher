@@ -10,7 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/argocd"
+	"github.com/shini4i/argo-watcher/internal/argocd"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
 	"github.com/shini4i/argo-watcher/internal/auth"
