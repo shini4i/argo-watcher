@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"math"
 	"net/http"
 	"slices"
 	"strings"
@@ -23,7 +22,7 @@ import (
 
 const (
 	failedToUpdateTaskStatusTemplate = "Failed to change task status: %s"
-	// legacyRetryIntervals preserves the historical 15-step retry window (~3m45s with the default ArgoSyncRetryDelay).
+	// legacyRetryIntervals preserves the historical 15-step retry window (assumes 15s retry delay, totaling ~3m45s).
 	legacyRetryIntervals = 15
 )
 
@@ -114,7 +113,7 @@ func (monitor *DeploymentMonitor) WaitRollout(task models.Task) (*models.Applica
 	return application, err
 }
 
-// configureRetryOptions derives retry attempts by preferring per-task overrides, then monitor defaults, and finally a legacy retry window adjusted to the configured delay.
+// configureRetryOptions derives retry attempts by preferring per-task overrides, then monitor defaults, and finally a legacy retry window aligned with the current retry delay.
 func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) []retry.Option {
 	retryOptions := append([]retry.Option{}, monitor.retryOptions...)
 
@@ -125,17 +124,22 @@ func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) []retr
 
 	retryOptions = append(retryOptions, retry.Delay(delay))
 
+	delaySeconds := int((delay + time.Second - 1) / time.Second)
+	if delaySeconds <= 0 {
+		delaySeconds = 1
+	}
+
 	defaultAttempts := monitor.defaultAttempts
 	if defaultAttempts == 0 {
-		fallbackWindow := time.Duration(legacyRetryIntervals) * ArgoSyncRetryDelay
-		fallbackAttempts := uint(fallbackWindow / delay)
-		if fallbackWindow%delay != 0 {
+		fallbackWindowSeconds := legacyRetryIntervals * int((ArgoSyncRetryDelay+time.Second-1)/time.Second)
+		fallbackAttempts := fallbackWindowSeconds / delaySeconds
+		if fallbackWindowSeconds%delaySeconds != 0 {
 			fallbackAttempts++
 		}
-		if fallbackAttempts == 0 {
+		if fallbackAttempts <= 0 {
 			fallbackAttempts = 1
 		}
-		defaultAttempts = fallbackAttempts
+		defaultAttempts = uint(fallbackAttempts)
 	}
 
 	if task.Timeout <= 0 {
@@ -143,14 +147,13 @@ func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) []retr
 		return append(retryOptions, retry.Attempts(defaultAttempts))
 	}
 
-	delaySeconds := delay.Seconds()
-
-	calculatedAttempts := int(math.Floor(float64(task.Timeout)/delaySeconds)) + 1
+	calculatedAttempts := task.Timeout/delaySeconds + 1
 
 	log.Debug().Str("id", task.Id).Msgf(
-		"Overriding task timeout to %ds with retry delay %s (%d attempts)",
+		"Overriding task timeout to %ds with retry delay %s (~%d second step, %d attempts)",
 		task.Timeout,
 		delay,
+		delaySeconds,
 		calculatedAttempts,
 	)
 

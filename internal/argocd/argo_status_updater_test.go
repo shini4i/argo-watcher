@@ -56,7 +56,7 @@ func zeroDelay(_ uint, _ error, _ *retry.Config) time.Duration {
 func newUpdaterTestConfig(locker lock.Locker) ArgoStatusUpdaterConfig {
 	return ArgoStatusUpdaterConfig{
 		RetryAttempts:    1,
-		RetryDelay:       15 * time.Second,
+		RetryDelay:       ArgoSyncRetryDelay,
 		RegistryProxyURL: "test-registry",
 		RepoCachePath:    "/tmp",
 		AcceptSuspended:  false,
@@ -1034,31 +1034,31 @@ func TestDeploymentMonitor_configureRetryOptions(t *testing.T) {
 		{
 			name:             "nonPositiveTimeoutUsesMinimumAttempts",
 			timeout:          0,
-			retryDelay:       15 * time.Second,
+			retryDelay:       ArgoSyncRetryDelay,
 			expectedAttempts: 15,
 		},
 		{
 			name:             "negativeTimeoutUsesMinimumAttempts",
 			timeout:          -5,
-			retryDelay:       15 * time.Second,
+			retryDelay:       ArgoSyncRetryDelay,
 			expectedAttempts: 15,
 		},
 		{
 			name:             "positiveTimeoutLessThanWindow",
 			timeout:          10,
-			retryDelay:       15 * time.Second,
+			retryDelay:       ArgoSyncRetryDelay,
 			expectedAttempts: 1,
 		},
 		{
 			name:             "positiveTimeoutExactMultiple",
 			timeout:          30,
-			retryDelay:       15 * time.Second,
+			retryDelay:       ArgoSyncRetryDelay,
 			expectedAttempts: 3,
 		},
 		{
 			name:             "positiveTimeoutWithRemainderRoundsUp",
 			timeout:          46,
-			retryDelay:       15 * time.Second,
+			retryDelay:       ArgoSyncRetryDelay,
 			expectedAttempts: 4,
 		},
 		{
