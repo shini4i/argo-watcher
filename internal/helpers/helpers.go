@@ -79,7 +79,7 @@ func GenerateHash(s string) []byte {
 	return hash.Sum(nil)
 }
 
-// NormalizeImages returns a sorted copy of the provided image slice to guarantee stable ordering.
+// NormalizeImages returns a sorted copy of the provided image slice to guarantee stable ordering without mutating the original.
 func NormalizeImages(images []string) []string {
 	copied := append([]string(nil), images...)
 	slices.Sort(copied)

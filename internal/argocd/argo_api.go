@@ -24,10 +24,12 @@ type ArgoApiInterface interface {
 }
 
 type ArgoApi struct {
-	baseUrl     url.URL
-	client      *http.Client
-	refreshApp  bool
-	requestFn   func(method, url string, body io.Reader) (*http.Request, error)
+	baseUrl    url.URL
+	client     *http.Client
+	refreshApp bool
+	// requestFn allows injecting a custom HTTP request constructor for testing.
+	requestFn func(method, url string, body io.Reader) (*http.Request, error)
+	// cookieJarFn allows injecting a custom cookie jar factory for testing.
 	cookieJarFn func(o *cookiejar.Options) (*cookiejar.Jar, error)
 }
 

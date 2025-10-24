@@ -74,9 +74,8 @@ func (monitor *DeploymentMonitor) StoreInitialAppStatus(task *models.Task, appli
 	}
 
 	status := application.GetRolloutStatus(task.ListImages(), monitor.registryProxyUrl, monitor.acceptSuspended)
-	normalizedImages := helpers.NormalizeImages(application.Status.Summary.Images)
-
 	// The ArgoCD API may return images in different orders between calls; sorting guarantees stable hash comparisons.
+	normalizedImages := helpers.NormalizeImages(application.Status.Summary.Images)
 
 	task.SavedAppStatus = models.SavedAppStatus{
 		Status:     status,
@@ -138,7 +137,12 @@ func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) []retr
 		if fallbackAttempts <= 0 {
 			fallbackAttempts = 1
 		}
-		defaultAttempts = uint(fallbackAttempts)
+		maxAttempts := ^uint(0)
+		if uint64(fallbackAttempts) > uint64(maxAttempts) {
+			defaultAttempts = maxAttempts
+		} else {
+			defaultAttempts = uint(fallbackAttempts)
+		}
 	}
 
 	if task.Timeout <= 0 {
@@ -147,6 +151,14 @@ func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) []retr
 	}
 
 	calculatedAttempts := task.Timeout/delaySeconds + 1
+	if calculatedAttempts <= 0 {
+		calculatedAttempts = 1
+	} else {
+		maxAttempts := ^uint(0)
+		if uint64(calculatedAttempts) > uint64(maxAttempts) {
+			calculatedAttempts = int(maxAttempts)
+		}
+	}
 
 	log.Debug().Str("id", task.Id).Msgf(
 		"Overriding task timeout to %ds with retry delay %s (~%d second step, %d attempts)",
