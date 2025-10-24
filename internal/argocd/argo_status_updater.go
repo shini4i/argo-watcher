@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"math"
-	"math/bits"
 	"net/http"
 	"strings"
 	"time"
@@ -165,11 +163,13 @@ func clampAttempts(value int64) uint {
 		return 1
 	}
 
-	if bits.UintSize == 32 && value > int64(math.MaxUint32) {
-		return math.MaxUint
+	uValue := uint64(value)
+	maxUint := ^uint(0)
+	if uValue > uint64(maxUint) {
+		return maxUint
 	}
 
-	return uint(value)
+	return uint(uValue)
 }
 
 // ProcessDeploymentResult determines if the deployment was successful and updates the appropriate status and metrics.
@@ -211,7 +211,7 @@ func (monitor *DeploymentMonitor) handleDeploymentFailure(task *models.Task, sta
 	log.Info().Str("id", task.Id).Msg("App deployment failed.")
 	monitor.argo.metrics.AddFailedDeployment(task.App)
 	reason := fmt.Sprintf(
-		"Application deployment failed. Rollout status %q\n\n%s",
+		"Application deployment failed. Rollout status %s\n\n%s",
 		status,
 		application.GetRolloutMessage(status, task.ListImages()),
 	)
