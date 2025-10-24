@@ -211,7 +211,7 @@ func (monitor *DeploymentMonitor) handleDeploymentFailure(task *models.Task, sta
 	log.Info().Str("id", task.Id).Msg("App deployment failed.")
 	monitor.argo.metrics.AddFailedDeployment(task.App)
 	reason := fmt.Sprintf(
-		"Application deployment failed. Rollout status %s\n\n%s",
+		"Application deployment failed. Rollout status is %s\n\n%s",
 		status,
 		application.GetRolloutMessage(status, task.ListImages()),
 	)
