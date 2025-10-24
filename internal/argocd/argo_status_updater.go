@@ -23,6 +23,8 @@ import (
 
 const (
 	failedToUpdateTaskStatusTemplate = "Failed to change task status: %s"
+	// legacyRetryIntervals preserves the historical 15-step retry window (~3m45s with the default ArgoSyncRetryDelay).
+	legacyRetryIntervals = 15
 )
 
 // DeploymentMonitor encapsulates the logic for tracking ArgoCD application rollouts.
@@ -112,10 +114,8 @@ func (monitor *DeploymentMonitor) WaitRollout(task models.Task) (*models.Applica
 	return application, err
 }
 
-// configureRetryOptions derives retry attempts: when task.Timeout <= 0 use defaultAttempts (fallback 15); otherwise attempts = floor(timeout/retryDelay) + 1.
+// configureRetryOptions derives retry attempts by preferring per-task overrides, then monitor defaults, and finally a legacy retry window adjusted to the configured delay.
 func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) []retry.Option {
-	const fallbackAttempts = uint(15)
-
 	retryOptions := append([]retry.Option{}, monitor.retryOptions...)
 
 	delay := monitor.retryDelay
@@ -127,6 +127,14 @@ func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) []retr
 
 	defaultAttempts := monitor.defaultAttempts
 	if defaultAttempts == 0 {
+		fallbackWindow := time.Duration(legacyRetryIntervals) * ArgoSyncRetryDelay
+		fallbackAttempts := uint(fallbackWindow / delay)
+		if fallbackWindow%delay != 0 {
+			fallbackAttempts++
+		}
+		if fallbackAttempts == 0 {
+			fallbackAttempts = 1
+		}
 		defaultAttempts = fallbackAttempts
 	}
 
@@ -209,7 +217,7 @@ func NewGitUpdater(locker lock.Locker, repoCachePath string) *GitUpdater {
 // UpdateIfNeeded updates the git repository if the application is managed by the watcher and has valid credentials.
 func (gitUpdater *GitUpdater) UpdateIfNeeded(app *models.Application, task models.Task) error {
 	if !app.IsManagedByWatcher() || !task.Validated {
-		log.Debug().Str("id", task.Id).Msg("Skipping git repo update: Application does not have the necessary annotations or token is missing.")
+		log.Debug().Str("id", task.Id).Msg("Skipping git repo update: application not managed by watcher or task not validated.")
 		return nil
 	}
 
@@ -355,7 +363,9 @@ func checkRolloutStatus(task models.Task, application *models.Application, regis
 	switch status {
 	case models.ArgoRolloutAppDegraded:
 		log.Debug().Str("id", task.Id).Msgf("Application is degraded")
-		hash := helpers.GenerateHash(strings.Join(application.Status.Summary.Images, ","))
+		sortedImages := append([]string(nil), application.Status.Summary.Images...)
+		slices.Sort(sortedImages)
+		hash := helpers.GenerateHash(strings.Join(sortedImages, ","))
 		if !bytes.Equal(task.SavedAppStatus.ImagesHash, hash) {
 			return retry.Unrecoverable(errors.New("application has degraded"))
 		}
