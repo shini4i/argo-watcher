@@ -31,6 +31,14 @@ type ArgoApi struct {
 	cookieJarFn func(o *cookiejar.Options) (*cookiejar.Jar, error)
 }
 
+// NewArgoApi constructs an ArgoApi with default HTTP helpers.
+func NewArgoApi() *ArgoApi {
+	return &ArgoApi{
+		requestFn:   http.NewRequest,
+		cookieJarFn: cookiejar.New,
+	}
+}
+
 func (api *ArgoApi) Init(serverConfig *config.ServerConfig) error {
 	api.ensureDependencies()
 
@@ -70,8 +78,6 @@ func (api *ArgoApi) Init(serverConfig *config.ServerConfig) error {
 }
 
 func (api *ArgoApi) GetUserInfo() (*models.Userinfo, error) {
-	api.ensureDependencies()
-
 	apiUrl := fmt.Sprintf("%s/api/v1/session/userinfo", api.baseUrl.String())
 	req, err := api.requestFn("GET", apiUrl, nil)
 	if err != nil {
@@ -106,8 +112,6 @@ func (api *ArgoApi) GetUserInfo() (*models.Userinfo, error) {
 }
 
 func (api *ArgoApi) GetApplication(app string) (*models.Application, error) {
-	api.ensureDependencies()
-
 	apiUrl := fmt.Sprintf("%s/api/v1/applications/%s", api.baseUrl.String(), app)
 	req, err := api.requestFn("GET", apiUrl, nil)
 	if err != nil {

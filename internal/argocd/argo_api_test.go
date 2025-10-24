@@ -65,7 +65,7 @@ func TestArgoApiInit(t *testing.T) {
 		ArgoRefreshApp: true,
 	}
 
-	api := &ArgoApi{}
+	api := NewArgoApi()
 	require.NoError(t, api.Init(cfg))
 
 	assert.Equal(t, cfg.ArgoUrl, api.baseUrl)
@@ -85,11 +85,10 @@ func TestArgoApiInit(t *testing.T) {
 
 	t.Run("returnsErrorWhenCookieJarFails", func(t *testing.T) {
 		called := false
-		api := &ArgoApi{
-			cookieJarFn: func(o *cookiejar.Options) (*cookiejar.Jar, error) {
-				called = true
-				return nil, errors.New("jar error")
-			},
+		api := NewArgoApi()
+		api.cookieJarFn = func(o *cookiejar.Options) (*cookiejar.Jar, error) {
+			called = true
+			return nil, errors.New("jar error")
 		}
 
 		err := api.Init(cfg)
@@ -111,7 +110,9 @@ func TestArgoApiGetUserInfoSuccess(t *testing.T) {
 	parsedURL, err := url.Parse(server.URL)
 	require.NoError(t, err)
 
-	api := &ArgoApi{baseUrl: *parsedURL, client: server.Client()}
+	api := NewArgoApi()
+	api.baseUrl = *parsedURL
+	api.client = server.Client()
 	userInfo, err := api.GetUserInfo()
 	require.NoError(t, err)
 	assert.Equal(t, &expected, userInfo)
@@ -132,7 +133,12 @@ func TestArgoApiGetUserInfoErrors(t *testing.T) {
 	}{
 		{
 			name: "requestCreationError",
-			api:  &ArgoApi{baseUrl: *baseURL, client: &http.Client{}},
+			api: func() *ArgoApi {
+				a := NewArgoApi()
+				a.baseUrl = *baseURL
+				a.client = &http.Client{}
+				return a
+			}(),
 			setup: func(t *testing.T, api *ArgoApi) {
 				api.requestFn = func(string, string, io.Reader) (*http.Request, error) {
 					return nil, errors.New("build request error")
@@ -145,21 +151,24 @@ func TestArgoApiGetUserInfoErrors(t *testing.T) {
 		},
 		{
 			name: "clientDoError",
-			api: &ArgoApi{
-				baseUrl: *baseURL,
-				client: &http.Client{
+			api: func() *ArgoApi {
+				a := NewArgoApi()
+				a.baseUrl = *baseURL
+				a.client = &http.Client{
 					Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
 						return nil, errors.New("network error")
 					}),
-				},
-			},
+				}
+				return a
+			}(),
 			wantErr: true,
 		},
 		{
 			name: "readBodyError",
-			api: &ArgoApi{
-				baseUrl: *baseURL,
-				client: &http.Client{
+			api: func() *ArgoApi {
+				a := NewArgoApi()
+				a.baseUrl = *baseURL
+				a.client = &http.Client{
 					Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
 						return &http.Response{
 							StatusCode: http.StatusOK,
@@ -167,15 +176,17 @@ func TestArgoApiGetUserInfoErrors(t *testing.T) {
 							Header:     make(http.Header),
 						}, nil
 					}),
-				},
-			},
+				}
+				return a
+			}(),
 			wantErr: true,
 		},
 		{
 			name: "unmarshalError",
-			api: &ArgoApi{
-				baseUrl: *baseURL,
-				client: &http.Client{
+			api: func() *ArgoApi {
+				a := NewArgoApi()
+				a.baseUrl = *baseURL
+				a.client = &http.Client{
 					Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
 						return &http.Response{
 							StatusCode: http.StatusOK,
@@ -183,15 +194,17 @@ func TestArgoApiGetUserInfoErrors(t *testing.T) {
 							Header:     make(http.Header),
 						}, nil
 					}),
-				},
-			},
+				}
+				return a
+			}(),
 			wantErr: true,
 		},
 		{
 			name: "closeErrorLoggedButIgnored",
-			api: &ArgoApi{
-				baseUrl: *baseURL,
-				client: &http.Client{
+			api: func() *ArgoApi {
+				a := NewArgoApi()
+				a.baseUrl = *baseURL
+				a.client = &http.Client{
 					Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
 						return &http.Response{
 							StatusCode: http.StatusOK,
@@ -199,8 +212,9 @@ func TestArgoApiGetUserInfoErrors(t *testing.T) {
 							Header:     make(http.Header),
 						}, nil
 					}),
-				},
-			},
+				}
+				return a
+			}(),
 			wantErr:  false,
 			wantUser: &models.Userinfo{LoggedIn: true, Username: "ok"},
 		},
@@ -241,7 +255,9 @@ func TestArgoApiGetApplicationSuccess(t *testing.T) {
 	parsedURL, err := url.Parse(server.URL)
 	require.NoError(t, err)
 
-	api := &ArgoApi{baseUrl: *parsedURL, client: server.Client()}
+	api := NewArgoApi()
+	api.baseUrl = *parsedURL
+	api.client = server.Client()
 	result, err := api.GetApplication("demo")
 	require.NoError(t, err)
 	assert.Equal(t, app.Status.Health.Status, result.Status.Health.Status)
@@ -260,7 +276,10 @@ func TestArgoApiGetApplicationAddsRefreshQuery(t *testing.T) {
 	parsedURL, err := url.Parse(server.URL)
 	require.NoError(t, err)
 
-	api := &ArgoApi{baseUrl: *parsedURL, client: server.Client(), refreshApp: true}
+	api := NewArgoApi()
+	api.baseUrl = *parsedURL
+	api.client = server.Client()
+	api.refreshApp = true
 	_, err = api.GetApplication("demo")
 	assert.NoError(t, err)
 }
@@ -282,7 +301,12 @@ func TestArgoApiGetApplicationErrors(t *testing.T) {
 	}{
 		{
 			name: "requestCreationError",
-			api:  &ArgoApi{baseUrl: *baseURL, client: &http.Client{}},
+			api: func() *ArgoApi {
+				a := NewArgoApi()
+				a.baseUrl = *baseURL
+				a.client = &http.Client{}
+				return a
+			}(),
 			setup: func(t *testing.T, api *ArgoApi) {
 				api.requestFn = func(string, string, io.Reader) (*http.Request, error) {
 					return nil, errors.New("build request error")
@@ -295,21 +319,24 @@ func TestArgoApiGetApplicationErrors(t *testing.T) {
 		},
 		{
 			name: "clientDoError",
-			api: &ArgoApi{
-				baseUrl: *baseURL,
-				client: &http.Client{
+			api: func() *ArgoApi {
+				a := NewArgoApi()
+				a.baseUrl = *baseURL
+				a.client = &http.Client{
 					Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
 						return nil, errors.New("connection refused")
 					}),
-				},
-			},
+				}
+				return a
+			}(),
 			wantErr: true,
 		},
 		{
 			name: "readBodyError",
-			api: &ArgoApi{
-				baseUrl: *baseURL,
-				client: &http.Client{
+			api: func() *ArgoApi {
+				a := NewArgoApi()
+				a.baseUrl = *baseURL
+				a.client = &http.Client{
 					Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
 						return &http.Response{
 							StatusCode: http.StatusOK,
@@ -317,15 +344,17 @@ func TestArgoApiGetApplicationErrors(t *testing.T) {
 							Header:     make(http.Header),
 						}, nil
 					}),
-				},
-			},
+				}
+				return a
+			}(),
 			wantErr: true,
 		},
 		{
 			name: "jsonUnmarshalErrorOnSuccess",
-			api: &ArgoApi{
-				baseUrl: *baseURL,
-				client: &http.Client{
+			api: func() *ArgoApi {
+				a := NewArgoApi()
+				a.baseUrl = *baseURL
+				a.client = &http.Client{
 					Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
 						return &http.Response{
 							StatusCode: http.StatusOK,
@@ -333,15 +362,17 @@ func TestArgoApiGetApplicationErrors(t *testing.T) {
 							Header:     make(http.Header),
 						}, nil
 					}),
-				},
-			},
+				}
+				return a
+			}(),
 			wantErr: true,
 		},
 		{
 			name: "non200WithValidMessage",
-			api: &ArgoApi{
-				baseUrl: *baseURL,
-				client: &http.Client{
+			api: func() *ArgoApi {
+				a := NewArgoApi()
+				a.baseUrl = *baseURL
+				a.client = &http.Client{
 					Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
 						return &http.Response{
 							StatusCode: http.StatusBadRequest,
@@ -349,15 +380,17 @@ func TestArgoApiGetApplicationErrors(t *testing.T) {
 							Header:     make(http.Header),
 						}, nil
 					}),
-				},
-			},
+				}
+				return a
+			}(),
 			wantErr: true,
 		},
 		{
 			name: "non200WithInvalidJSON",
-			api: &ArgoApi{
-				baseUrl: *baseURL,
-				client: &http.Client{
+			api: func() *ArgoApi {
+				a := NewArgoApi()
+				a.baseUrl = *baseURL
+				a.client = &http.Client{
 					Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
 						return &http.Response{
 							StatusCode: http.StatusBadRequest,
@@ -365,15 +398,17 @@ func TestArgoApiGetApplicationErrors(t *testing.T) {
 							Header:     make(http.Header),
 						}, nil
 					}),
-				},
-			},
+				}
+				return a
+			}(),
 			wantErr: true,
 		},
 		{
 			name: "non200WithEmptyMessage",
-			api: &ArgoApi{
-				baseUrl: *baseURL,
-				client: &http.Client{
+			api: func() *ArgoApi {
+				a := NewArgoApi()
+				a.baseUrl = *baseURL
+				a.client = &http.Client{
 					Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
 						return &http.Response{
 							StatusCode: http.StatusBadRequest,
@@ -381,15 +416,17 @@ func TestArgoApiGetApplicationErrors(t *testing.T) {
 							Header:     make(http.Header),
 						}, nil
 					}),
-				},
-			},
+				}
+				return a
+			}(),
 			wantErr: true,
 		},
 		{
 			name: "closeErrorIgnored",
-			api: &ArgoApi{
-				baseUrl: *baseURL,
-				client: &http.Client{
+			api: func() *ArgoApi {
+				a := NewArgoApi()
+				a.baseUrl = *baseURL
+				a.client = &http.Client{
 					Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
 						app := models.Application{}
 						app.Status.Health.Status = "Healthy"
@@ -401,8 +438,9 @@ func TestArgoApiGetApplicationErrors(t *testing.T) {
 							Header:     make(http.Header),
 						}, nil
 					}),
-				},
-			},
+				}
+				return a
+			}(),
 			wantErr: false,
 		},
 	}

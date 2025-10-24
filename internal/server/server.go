@@ -32,7 +32,7 @@ func NewServer(serverConfig *config.ServerConfig, reg prometheus.Registerer) (*S
 	metrics := prom.NewMetrics(reg)
 
 	// create API client
-	api := &argocd.ArgoApi{}
+	api := argocd.NewArgoApi()
 	if err := api.Init(serverConfig); err != nil {
 		return nil, err
 	}

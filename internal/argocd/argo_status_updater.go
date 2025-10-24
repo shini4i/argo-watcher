@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"slices"
 	"strings"
 	"time"
 
@@ -75,13 +74,13 @@ func (monitor *DeploymentMonitor) StoreInitialAppStatus(task *models.Task, appli
 	}
 
 	status := application.GetRolloutStatus(task.ListImages(), monitor.registryProxyUrl, monitor.acceptSuspended)
+	normalizedImages := helpers.NormalizeImages(application.Status.Summary.Images)
 
-	// sort images to avoid hash mismatch
-	slices.Sort(application.Status.Summary.Images)
+	// The ArgoCD API may return images in different orders between calls; sorting guarantees stable hash comparisons.
 
 	task.SavedAppStatus = models.SavedAppStatus{
 		Status:     status,
-		ImagesHash: helpers.GenerateHash(strings.Join(application.Status.Summary.Images, ",")),
+		ImagesHash: helpers.GenerateHash(strings.Join(normalizedImages, ",")),
 	}
 
 	return nil
@@ -157,7 +156,8 @@ func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) []retr
 		calculatedAttempts,
 	)
 
-	return append(retryOptions, retry.Attempts(uint(calculatedAttempts))) // #nosec G115
+	// #nosec G115: calculatedAttempts is guaranteed to be positive thanks to the guard clauses above, making this conversion safe.
+	return append(retryOptions, retry.Attempts(uint(calculatedAttempts)))
 }
 
 // ProcessDeploymentResult determines if the deployment was successful and updates the appropriate status and metrics.
@@ -366,9 +366,8 @@ func checkRolloutStatus(task models.Task, application *models.Application, regis
 	switch status {
 	case models.ArgoRolloutAppDegraded:
 		log.Debug().Str("id", task.Id).Msgf("Application is degraded")
-		sortedImages := append([]string(nil), application.Status.Summary.Images...)
-		slices.Sort(sortedImages)
-		hash := helpers.GenerateHash(strings.Join(sortedImages, ","))
+		normalizedImages := helpers.NormalizeImages(application.Status.Summary.Images)
+		hash := helpers.GenerateHash(strings.Join(normalizedImages, ","))
 		if !bytes.Equal(task.SavedAppStatus.ImagesHash, hash) {
 			return retry.Unrecoverable(errors.New("application has degraded"))
 		}
