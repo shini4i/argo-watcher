@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"math"
+	"math/bits"
 	"net/http"
 	"strings"
 	"time"
@@ -126,23 +128,16 @@ func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) []retr
 	if delaySeconds <= 0 {
 		delaySeconds = 1
 	}
+	delaySecondsInt64 := int64(delaySeconds)
 
 	defaultAttempts := monitor.defaultAttempts
 	if defaultAttempts == 0 {
-		fallbackWindowSeconds := legacyRetryIntervals * int((ArgoSyncRetryDelay+time.Second-1)/time.Second)
-		fallbackAttempts := fallbackWindowSeconds / delaySeconds
-		if fallbackWindowSeconds%delaySeconds != 0 {
+		fallbackWindowSeconds := int64(legacyRetryIntervals) * int64((ArgoSyncRetryDelay+time.Second-1)/time.Second)
+		fallbackAttempts := fallbackWindowSeconds / delaySecondsInt64
+		if fallbackWindowSeconds%delaySecondsInt64 != 0 {
 			fallbackAttempts++
 		}
-		if fallbackAttempts <= 0 {
-			fallbackAttempts = 1
-		}
-		maxAttempts := ^uint(0)
-		if uint64(fallbackAttempts) > uint64(maxAttempts) {
-			defaultAttempts = maxAttempts
-		} else {
-			defaultAttempts = uint(fallbackAttempts)
-		}
+		defaultAttempts = clampAttempts(fallbackAttempts)
 	}
 
 	if task.Timeout <= 0 {
@@ -150,26 +145,31 @@ func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) []retr
 		return append(retryOptions, retry.Attempts(defaultAttempts))
 	}
 
-	calculatedAttempts := task.Timeout/delaySeconds + 1
-	if calculatedAttempts <= 0 {
-		calculatedAttempts = 1
-	} else {
-		maxAttempts := ^uint(0)
-		if uint64(calculatedAttempts) > uint64(maxAttempts) {
-			calculatedAttempts = int(maxAttempts)
-		}
-	}
+	perTaskAttempts := int64(task.Timeout)/delaySecondsInt64 + 1
+	attempts := clampAttempts(perTaskAttempts)
 
 	log.Debug().Str("id", task.Id).Msgf(
 		"Overriding task timeout to %ds with retry delay %s (~%d second step, %d attempts)",
 		task.Timeout,
 		delay,
 		delaySeconds,
-		calculatedAttempts,
+		attempts,
 	)
 
-	// #nosec G115: calculatedAttempts is guaranteed to be positive thanks to the guard clauses above, making this conversion safe.
-	return append(retryOptions, retry.Attempts(uint(calculatedAttempts)))
+	return append(retryOptions, retry.Attempts(attempts))
+}
+
+// clampAttempts normalizes the retry attempt count into a valid uint range while enforcing a minimum of one attempt.
+func clampAttempts(value int64) uint {
+	if value <= 0 {
+		return 1
+	}
+
+	if bits.UintSize == 32 && value > int64(math.MaxUint32) {
+		return math.MaxUint
+	}
+
+	return uint(value)
 }
 
 // ProcessDeploymentResult determines if the deployment was successful and updates the appropriate status and metrics.
