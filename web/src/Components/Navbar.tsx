@@ -73,7 +73,7 @@ const NavigationButton: React.FC<NavigationButtonProps> = ({ to, children, exter
  */
 const Navbar: React.FC = (): JSX.Element => {
   const [version, setVersion] = useState('0.0.0');
-  const [isSidebarOpen, setSidebarOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const { setSuccess, setError } = useErrorContext();
   const readTheDocsUrl = 'https://argo-watcher.readthedocs.io';
   const githubProjectUrl = 'https://github.com/shini4i/argo-watcher';
@@ -98,7 +98,7 @@ const Navbar: React.FC = (): JSX.Element => {
       <AppBar position="static" color="primary" enableColorOnDark>
         <Toolbar>
           <Box display="flex" alignItems="center">
-            <Box onClick={() => setSidebarOpen(true)}>
+            <Box onClick={() => setIsSidebarOpen(true)}>
               <img
                 src={process.env.PUBLIC_URL + '/logo.png'}
                 alt="Argo Watcher Logo"
@@ -164,7 +164,7 @@ const Navbar: React.FC = (): JSX.Element => {
           </Stack>
         </Toolbar>
       </AppBar>
-      <Sidebar open={isSidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <Sidebar open={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
     </Box>
   );
 };

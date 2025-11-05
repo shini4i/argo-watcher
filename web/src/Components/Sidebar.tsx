@@ -218,17 +218,7 @@ const Sidebar: React.FC<SidebarProps> = ({ open, onClose }) => {
   // Gray out the control while the configuration is loading or the user lacks deploy privileges.
   const lockSwitchDisabled = isLoading || (isKeycloakEnabled && !hasDeployPrivileges);
 
-  const handleThemeChange = useCallback(
-    (_event: React.ChangeEvent<HTMLInputElement>, _checked: boolean) => {
-      toggleMode();
-    },
-    [toggleMode],
-  );
-
   const toggleDeployLock = useCallback(async () => {
-    if (lockSwitchDisabled) {
-      return;
-    }
     try {
       if (deployLock) {
         await releaseDeployLock(authenticated ? keycloakToken : null);
@@ -238,7 +228,7 @@ const Sidebar: React.FC<SidebarProps> = ({ open, onClose }) => {
     } catch (error) {
       console.error('Failed to toggle deploy lock:', error);
     }
-  }, [deployLock, authenticated, keycloakToken, lockSwitchDisabled]);
+  }, [deployLock, authenticated, keycloakToken]);
 
   useEffect(() => {
     const loadConfig = async () => {
@@ -366,7 +356,7 @@ const Sidebar: React.FC<SidebarProps> = ({ open, onClose }) => {
           </Box>
           <ThemeSwitch
             checked={isDarkMode}
-            onChange={handleThemeChange}
+            onChange={toggleMode}
             inputProps={{ 'aria-label': 'Toggle dark mode' }}
           />
         </ControlCard>

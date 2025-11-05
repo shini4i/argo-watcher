@@ -1,6 +1,27 @@
 import React, {createContext, useContext, useEffect, useState, ReactNode} from 'react';
 
 /**
+ * Resolves the browser window object from the global scope when available.
+ *
+ * @returns The window reference if running in a browser environment, otherwise undefined.
+ */
+const resolveBrowserWindow = (): Window | undefined => {
+    if (typeof globalThis !== 'object' || globalThis === null) {
+        return undefined;
+    }
+
+    if ('window' in globalThis && globalThis.window) {
+        return (globalThis as typeof globalThis & { window: Window }).window;
+    }
+
+    if ('location' in globalThis) {
+        return globalThis as unknown as Window;
+    }
+
+    return undefined;
+};
+
+/**
  * Fetches the deploy lock status from the server.
  *
  * @returns A promise that resolves to a boolean value representing the deploy lock status.
@@ -76,16 +97,17 @@ interface DeployLockProviderProps {
  * @returns {JSX.Element} - The DeployLockProvider component.
  */
 export function DeployLockProvider({children}: DeployLockProviderProps): JSX.Element {
-    const [deployLock, setDeployLockState] = useState<boolean>(false);
+    const [isDeployLocked, setIsDeployLocked] = useState<boolean>(false);
     const [socket, setSocket] = useState<WebSocket | null>(null);
     /**
      * Establishes a WebSocket connection to the server.
      */
     useEffect(() => {
-        if (typeof window === 'undefined' || !window.location) {
+        const browserWindow = resolveBrowserWindow();
+        if (!browserWindow?.location) {
             return undefined;
         }
-        const { protocol: pageProtocol, host, hostname, port } = window.location;
+        const { protocol: pageProtocol, host, hostname, port } = browserWindow.location;
         const wsProtocol = pageProtocol === 'https:' ? 'wss:' : 'ws:';
         const isDevelopment = (hostname === '127.0.0.1' || hostname === 'localhost')
             && port === '3000'; // Checking if we are running in development mode
@@ -107,21 +129,21 @@ export function DeployLockProvider({children}: DeployLockProviderProps): JSX.Ele
         if (socket) {
             socket.onopen = async () => {
                 const lock = await fetchDeployLock();
-                setDeployLockState(lock);
+                setIsDeployLocked(lock);
             };
             socket.onmessage = (event) => {
                 const message = event.data;
                 if (message === 'locked') {
-                    setDeployLockState(true);
+                    setIsDeployLocked(true);
                 } else if (message === 'unlocked') {
-                    setDeployLockState(false);
+                    setIsDeployLocked(false);
                 }
             };
         }
     }, [socket]);
 
     return (
-        <DeployLockContext.Provider value={deployLock}>
+        <DeployLockContext.Provider value={isDeployLocked}>
             {children}
         </DeployLockContext.Provider>
     );

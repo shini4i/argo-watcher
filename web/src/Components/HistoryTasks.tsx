@@ -51,7 +51,7 @@ const HistoryTasks: React.FC = () => {
     const [currentPage, setCurrentPage] = useState<number>(
         searchParams.get('page') ? Number(searchParams.get('page')) : 1
     );
-    const [isExportModalOpen, setExportModalOpen] = useState(false);
+    const [isExportModalOpen, setIsExportModalOpen] = useState(false);
     const [anonymize, setAnonymize] = useState(false);
 
     /**
@@ -134,6 +134,8 @@ const HistoryTasks: React.FC = () => {
         }
 
         if (type !== 'json') {
+            const newlineCharacter = '\n';
+            const escapedNewline = String.raw`\n`;
             exportTasks = exportTasks.map((task) => ({
                 ...task,
                 created: new Date(task.created * 1000).toLocaleString('en-GB', { hour12: false }),
@@ -141,7 +143,9 @@ const HistoryTasks: React.FC = () => {
                 images: task.images.map((img) => `${img.image}:${img.tag}`).join(', '),
                 ...(anonymize
                     ? {}
-                    : { status_reason: task.status_reason?.replaceAll('\n', '\\n') }),
+                    : {
+                          status_reason: task.status_reason?.replaceAll(newlineCharacter, escapedNewline),
+                      }),
             }));
         }
 
@@ -166,7 +170,7 @@ const HistoryTasks: React.FC = () => {
             XLSX.writeFile(workbook, filename);
         }
 
-        setExportModalOpen(false);
+        setIsExportModalOpen(false);
         setSuccess('Data exported successfully.');
     };
     useEffect(() => {
@@ -211,7 +215,7 @@ const HistoryTasks: React.FC = () => {
                         <Button
                             variant="contained"
                             startIcon={<FileDownloadIcon />}
-                            onClick={() => setExportModalOpen(true)}
+                            onClick={() => setIsExportModalOpen(true)}
                         >
                             Export
                         </Button>
@@ -286,7 +290,7 @@ const HistoryTasks: React.FC = () => {
             </Box>
             <Modal
                 open={isExportModalOpen}
-                onClose={() => setExportModalOpen(false)}
+                onClose={() => setIsExportModalOpen(false)}
                 aria-labelledby="export-modal-title"
                 aria-describedby="export-modal-description"
             >
