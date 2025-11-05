@@ -107,7 +107,10 @@ const getDesignTokens = (mode: PaletteMode): ThemeOptions => ({
  */
 const resolveBrowserWindow = (): Window | undefined => {
   const maybeWindow = (globalThis as typeof globalThis & { window?: Window }).window;
-  return typeof maybeWindow === 'undefined' ? undefined : maybeWindow;
+  if (maybeWindow === undefined) {
+    return undefined;
+  }
+  return maybeWindow;
 };
 
 /**
@@ -117,7 +120,10 @@ const resolveBrowserWindow = (): Window | undefined => {
  */
 const resolveBrowserDocument = (): Document | undefined => {
   const maybeDocument = (globalThis as typeof globalThis & { document?: Document }).document;
-  return typeof maybeDocument === 'undefined' ? undefined : maybeDocument;
+  if (maybeDocument === undefined) {
+    return undefined;
+  }
+  return maybeDocument;
 };
 
 /**

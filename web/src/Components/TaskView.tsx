@@ -423,7 +423,7 @@ export default function TaskView() {
       }
     };
 
-    if (id && task && task.status === 'in progress') {
+    if (task?.status === 'in progress' && id) {
       intervalId = setInterval(fetchTaskStatus, 10000);
     }
 
