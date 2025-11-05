@@ -134,8 +134,6 @@ const HistoryTasks: React.FC = () => {
         }
 
         if (type !== 'json') {
-            const newlineCharacter = '\n';
-            const escapedNewline = String.raw`\n`;
             exportTasks = exportTasks.map((task) => ({
                 ...task,
                 created: new Date(task.created * 1000).toLocaleString('en-GB', { hour12: false }),
@@ -144,7 +142,7 @@ const HistoryTasks: React.FC = () => {
                 ...(anonymize
                     ? {}
                     : {
-                          status_reason: task.status_reason?.replaceAll(newlineCharacter, escapedNewline),
+                          status_reason: task.status_reason?.replaceAll('\n', String.raw`\n`),
                       }),
             }));
         }

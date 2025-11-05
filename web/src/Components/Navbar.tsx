@@ -72,8 +72,8 @@ const NavigationButton: React.FC<NavigationButtonProps> = ({ to, children, exter
  * @returns {JSX.Element} The rendered Navbar component.
  */
 const Navbar: React.FC = (): JSX.Element => {
-  const [version, setVersion] = useState('0.0.0');
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [version, setVersion] = useState<string>('0.0.0');
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const { setSuccess, setError } = useErrorContext();
   const readTheDocsUrl = 'https://argo-watcher.readthedocs.io';
   const githubProjectUrl = 'https://github.com/shini4i/argo-watcher';

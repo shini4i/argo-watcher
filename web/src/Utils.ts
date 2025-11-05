@@ -1,4 +1,25 @@
 /**
+ * Safely resolves the browser window object from the universal global scope.
+ *
+ * @returns The Window instance when running in a browser environment, otherwise undefined.
+ */
+export const resolveBrowserWindow = (): Window | undefined => {
+  if (typeof globalThis !== 'object' || globalThis === null) {
+    return undefined;
+  }
+
+  if ('window' in globalThis && (globalThis as typeof globalThis & { window: Window }).window) {
+    return (globalThis as typeof globalThis & { window: Window }).window;
+  }
+
+  if ('location' in globalThis) {
+    return globalThis as unknown as Window;
+  }
+
+  return undefined;
+};
+
+/**
  * Returns the relative time string (e.g. "5 minutes ago") for the supplied timestamp.
  *
  * @param oldTimestamp Unix timestamp in milliseconds.

@@ -39,7 +39,7 @@ import { useErrorContext } from '../ErrorContext';
 import { formatDateTime, ProjectDisplay, StatusReasonDisplay } from './TasksTable';
 import { AuthContext } from '../Services/Auth';
 import { useDeployLock } from '../Services/DeployLockHandler';
-import { relativeHumanDuration, relativeTime } from '../Utils';
+import { resolveBrowserWindow, relativeHumanDuration, relativeTime } from '../Utils';
 
 interface Task {
   id: string;
@@ -315,7 +315,7 @@ export default function TaskView() {
       author: email,
     };
 
-    const browserWindow = resolveGlobalWindow();
+    const browserWindow = resolveBrowserWindow();
     const apiEndpoint = browserWindow?.location
       ? `${browserWindow.location.origin}/api/v1/tasks`
       : '/api/v1/tasks';
@@ -648,23 +648,3 @@ export default function TaskView() {
     </Container>
   );
 }
-/**
- * Resolves the browser window from the universal global scope when available.
- *
- * @returns The Window instance when running in the browser, otherwise undefined.
- */
-const resolveGlobalWindow = (): Window | undefined => {
-  if (typeof globalThis !== 'object' || globalThis === null) {
-    return undefined;
-  }
-
-  if ('window' in globalThis && globalThis.window) {
-    return (globalThis as typeof globalThis & { window: Window }).window;
-  }
-
-  if ('location' in globalThis) {
-    return globalThis as unknown as Window;
-  }
-
-  return undefined;
-};

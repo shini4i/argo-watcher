@@ -1,25 +1,5 @@
-import React, {createContext, useContext, useEffect, useState, ReactNode} from 'react';
-
-/**
- * Resolves the browser window object from the global scope when available.
- *
- * @returns The window reference if running in a browser environment, otherwise undefined.
- */
-const resolveBrowserWindow = (): Window | undefined => {
-    if (typeof globalThis !== 'object' || globalThis === null) {
-        return undefined;
-    }
-
-    if ('window' in globalThis && globalThis.window) {
-        return (globalThis as typeof globalThis & { window: Window }).window;
-    }
-
-    if ('location' in globalThis) {
-        return globalThis as unknown as Window;
-    }
-
-    return undefined;
-};
+import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { resolveBrowserWindow } from '../Utils';
 
 /**
  * Fetches the deploy lock status from the server.
