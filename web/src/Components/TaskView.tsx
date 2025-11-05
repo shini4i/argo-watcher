@@ -244,13 +244,13 @@ export default function TaskView() {
               <Divider />
             </Grid>
             <Grid item xs={12} sm={6}>
-              <Typography variant="body2" color="textSecondary">
+              <Typography variant="body2" color="text.secondary">
                 ID
               </Typography>
               <Typography variant="body1">{task.id}</Typography>
             </Grid>
             <Grid item xs={12} sm={6}>
-              <Typography variant="body2" color="textSecondary">
+              <Typography variant="body2" color="text.secondary">
                 Created
               </Typography>
               <Typography variant="body1">
@@ -258,7 +258,7 @@ export default function TaskView() {
               </Typography>
             </Grid>
             <Grid item xs={12} sm={6}>
-              <Typography variant="body2" color="textSecondary">
+              <Typography variant="body2" color="text.secondary">
                 Updated
               </Typography>
               <Typography variant="body1">
@@ -266,19 +266,19 @@ export default function TaskView() {
               </Typography>
             </Grid>
             <Grid item xs={12} sm={6}>
-              <Typography variant="body2" color="textSecondary">
+              <Typography variant="body2" color="text.secondary">
                 Application
               </Typography>
               <Typography variant="body1">{task.app}</Typography>
             </Grid>
             <Grid item xs={12} sm={6}>
-              <Typography variant="body2" color="textSecondary">
+              <Typography variant="body2" color="text.secondary">
                 Author
               </Typography>
               <Typography variant="body1">{task.author}</Typography>
             </Grid>
             <Grid item xs={12} sm={6}>
-              <Typography variant="body2" color="textSecondary">
+              <Typography variant="body2" color="text.secondary">
                 Project
               </Typography>
               <Typography variant="body1">
@@ -286,7 +286,7 @@ export default function TaskView() {
               </Typography>
             </Grid>
             <Grid item xs={12} sm={6}>
-              <Typography variant="body2" color="textSecondary">
+              <Typography variant="body2" color="text.secondary">
                 Status
               </Typography>
               {task.status === 'deployed' && (
@@ -312,7 +312,7 @@ export default function TaskView() {
             </Grid>
             {task.status_reason && (
               <Grid item xs={12} sm={12}>
-                <Typography variant="body2" color="textSecondary">
+                <Typography variant="body2" color="text.secondary">
                   Status Details
                 </Typography>
                 <Typography variant="body1">
@@ -326,7 +326,7 @@ export default function TaskView() {
             </Grid>
             {task.images.map((item, index) => (
               <Grid item xs={12} sm={6} key={`${item.image}:${item.tag}`}>
-                <Typography variant="body2" color="textSecondary">
+                <Typography variant="body2" color="text.secondary">
                   Image {index + 1}
                 </Typography>
                 <Typography variant="body1">
@@ -376,18 +376,20 @@ export default function TaskView() {
         )}
       </Paper>
       {deployLock && (
-        <Box sx={{
-          position: 'fixed',
-          bottom: 0,
-          left: 0,
-          width: '100%',
-          backgroundColor: 'error.main',
-          color: 'white',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          py: 2,
-        }}>
+        <Box
+          sx={theme => ({
+            position: 'fixed',
+            bottom: 0,
+            left: 0,
+            width: '100%',
+            backgroundColor: theme.palette.error.main,
+            color: theme.palette.error.contrastText,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            py: 2,
+          })}
+        >
           <Typography variant="h6">Lockdown is active</Typography>
         </Box>
       )}

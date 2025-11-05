@@ -28,7 +28,7 @@ services:
     volumes:
       - .:/app
     working_dir: /app
-    command: go run ./cmd/argo-watcher -server
+    command: go run ./cmd/argo-watcher
     environment:
       STATE_TYPE: postgres
       ARGO_URL: http://mock:8081

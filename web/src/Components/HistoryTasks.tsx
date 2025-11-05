@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
-import Container from '@mui/material/Container';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import TextField from '@mui/material/TextField';
@@ -175,12 +174,22 @@ const HistoryTasks: React.FC = () => {
     }, [startDate, endDate, currentApplication, currentPage]);
 
     return (
-        <Container maxWidth="xl">
+        <Box
+            sx={{
+                px: { xs: 2, md: 3 },
+                py: 2,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 2,
+                width: '100%',
+                height: '100%',
+                boxSizing: 'border-box',
+            }}
+        >
             <Stack
                 direction={{ xs: 'column', md: 'row' }}
                 spacing={2}
                 alignItems="center"
-                sx={{ mb: 2 }}
             >
                 <Typography
                     variant="h5"
@@ -257,7 +266,7 @@ const HistoryTasks: React.FC = () => {
                     </Box>
                 </Stack>
             </Stack>
-            <Box sx={{ boxShadow: 2, borderRadius: 2, p: 2 }}>
+            <Box sx={{ flexGrow: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
                 <TasksTable
                     tasks={tasks}
                     sortField={sortField}
@@ -319,7 +328,7 @@ const HistoryTasks: React.FC = () => {
                     </FormGroup>
                 </Box>
             </Modal>
-        </Container>
+        </Box>
     );
 };
 

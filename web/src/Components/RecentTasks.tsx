@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Box,
-  Container,
   FormControl,
   IconButton,
   InputLabel,
@@ -95,13 +94,19 @@ const RecentTasks: React.FC = () => {
   };
 
   return (
-    <Container maxWidth="xl">
-      <Stack
-        direction={{ xs: 'column', md: 'row' }}
-        spacing={2}
-        alignItems="center"
-        sx={{ mb: 2 }}
-      >
+    <Box
+      sx={{
+        px: { xs: 2, md: 3 },
+        py: 2,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 2,
+        width: '100%',
+        height: '100%',
+        boxSizing: 'border-box',
+      }}
+    >
+      <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems="center">
         <Typography
           variant="h5"
           gutterBottom
@@ -165,7 +170,7 @@ const RecentTasks: React.FC = () => {
           </Box>
         </Stack>
       </Stack>
-      <Box sx={{ boxShadow: 2, borderRadius: 2, p: 2 }}>
+      <Box sx={{ flexGrow: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <TasksTable
           tasks={tasks}
           sortField={sortField}
@@ -178,7 +183,7 @@ const RecentTasks: React.FC = () => {
           }}
         />
       </Box>
-    </Container>
+    </Box>
   );
 };
 

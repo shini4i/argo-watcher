@@ -1,6 +1,6 @@
 import React from 'react';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
-import { Box, CircularProgress, createTheme, lighten, ThemeOptions, ThemeProvider } from '@mui/material';
+import { Box, CircularProgress } from '@mui/material';
 
 import RecentTasks from './Components/RecentTasks';
 import HistoryTasks from './Components/HistoryTasks';
@@ -10,29 +10,7 @@ import { ErrorProvider } from './ErrorContext';
 import TaskView from './Components/TaskView';
 import { AuthContext, useAuth } from './Services/Auth';
 import { DeployLockProvider } from './Services/DeployLockHandler';
-
-const theme = createTheme({
-  palette: {
-    primary: {
-      main: '#2E3B55',
-    },
-    neutral: {
-      main: 'gray',
-    },
-    reason_color: {
-      main: lighten('#ff9800', 0.5),
-    },
-  },
-  components: {
-    MuiTableCell: {
-      styleOverrides: {
-        root: {
-          padding: '12px',
-        },
-      },
-    },
-  },
-} as ThemeOptions);
+import { ThemeModeProvider } from './ThemeModeContext';
 
 const App: React.FC = () => {
   const auth = useAuth();
@@ -48,7 +26,7 @@ const App: React.FC = () => {
   if (auth.authenticated) {
     return (
       <AuthContext.Provider value={auth}>
-        <ThemeProvider theme={theme}>
+        <ThemeModeProvider>
           <ErrorProvider>
             <DeployLockProvider>
               <BrowserRouter>
@@ -63,7 +41,7 @@ const App: React.FC = () => {
               </BrowserRouter>
             </DeployLockProvider>
           </ErrorProvider>
-        </ThemeProvider>
+        </ThemeModeProvider>
       </AuthContext.Provider>
     );
   }
