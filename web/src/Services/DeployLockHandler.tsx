@@ -82,11 +82,11 @@ export function DeployLockProvider({children}: DeployLockProviderProps): JSX.Ele
      * Establishes a WebSocket connection to the server.
      */
     useEffect(() => {
-        const browserWindow =
-            typeof globalThis !== 'undefined' && typeof globalThis.window !== 'undefined'
-                ? globalThis.window
-                : undefined;
-        if (!browserWindow?.location) {
+        const browserWindow = (globalThis as typeof globalThis & { window?: Window }).window;
+        if (browserWindow === undefined) {
+            return undefined;
+        }
+        if (!browserWindow.location) {
             return undefined;
         }
         const { protocol: pageProtocol, host, hostname, port } = browserWindow.location;

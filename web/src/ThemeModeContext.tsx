@@ -101,19 +101,40 @@ const getDesignTokens = (mode: PaletteMode): ThemeOptions => ({
 });
 
 /**
+ * Resolves the browser window object from the global scope when available.
+ *
+ * @returns The Window instance in browser environments, otherwise undefined.
+ */
+const resolveBrowserWindow = (): Window | undefined => {
+  const maybeWindow = (globalThis as typeof globalThis & { window?: Window }).window;
+  return typeof maybeWindow === 'undefined' ? undefined : maybeWindow;
+};
+
+/**
+ * Retrieves the browser document from the universal global scope when it exists.
+ *
+ * @returns The Document instance in browser environments, otherwise undefined.
+ */
+const resolveBrowserDocument = (): Document | undefined => {
+  const maybeDocument = (globalThis as typeof globalThis & { document?: Document }).document;
+  return typeof maybeDocument === 'undefined' ? undefined : maybeDocument;
+};
+
+/**
  * Supplies the application with a persisted light/dark theme.
  * The initial mode is loaded from localStorage or falls back to the system preference.
  */
 export const ThemeModeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [mode, setMode] = useState<PaletteMode>(() => {
-    if (typeof window !== 'undefined') {
-      const storedMode = window.localStorage.getItem(STORAGE_KEY);
+    const browserWindow = resolveBrowserWindow();
+    if (browserWindow) {
+      const storedMode = browserWindow.localStorage.getItem(STORAGE_KEY);
       if (storedMode === 'light' || storedMode === 'dark') {
         return storedMode;
       }
 
-      if (window.matchMedia) {
-        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      if (browserWindow.matchMedia) {
+        const prefersDark = browserWindow.matchMedia('(prefers-color-scheme: dark)').matches;
         if (prefersDark) {
           return 'dark';
         }
@@ -124,12 +145,14 @@ export const ThemeModeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   });
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(STORAGE_KEY, mode);
+    const browserWindow = resolveBrowserWindow();
+    if (browserWindow) {
+      browserWindow.localStorage.setItem(STORAGE_KEY, mode);
     }
 
-    if (typeof document !== 'undefined') {
-      document.documentElement.dataset.themeMode = mode;
+    const browserDocument = resolveBrowserDocument();
+    if (browserDocument) {
+      browserDocument.documentElement.dataset.themeMode = mode;
     }
   }, [mode]);
 

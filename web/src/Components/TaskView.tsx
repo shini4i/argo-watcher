@@ -160,6 +160,146 @@ const describeStatus = (status: string): StatusDescriptor => {
   }
 };
 
+interface TimelineEntry {
+  readonly key: string;
+  readonly label: string;
+  readonly timestamp: number;
+  readonly dotColor: TimelineDotColor;
+}
+
+/**
+ * Converts raw timestamp fields provided by the backend into numeric values when possible.
+ *
+ * @param task The task retrieved from the API.
+ * @returns Normalised created and updated timestamps in seconds since epoch.
+ */
+const computeTaskTimestamps = (task: Task): { created: number | null; updated: number | null } => {
+  const createdRaw = Number(task.created);
+  const created = Number.isFinite(createdRaw) ? createdRaw : null;
+
+  const updatedRaw = task.updated ? Number(task.updated) : null;
+  const updated = updatedRaw !== null && Number.isFinite(updatedRaw) ? updatedRaw : null;
+
+  return { created, updated };
+};
+
+/**
+ * Calculates the duration label shown in the summary card.
+ *
+ * @param status Current task status.
+ * @param created Created timestamp (seconds).
+ * @param updated Updated timestamp (seconds).
+ * @returns Human readable duration or the fallback string.
+ */
+const computeDurationLabelForTask = (
+  status: string,
+  created: number | null,
+  updated: number | null,
+): string => {
+  if (created === null) {
+    return 'Unknown';
+  }
+
+  const effectiveUpdated = status === 'in progress' ? null : updated;
+  return computeTaskDuration(created, effectiveUpdated);
+};
+
+/**
+ * Builds the text shown for the last update field.
+ *
+ * @param updated Updated timestamp (seconds).
+ * @returns Formatted label reflecting the last update moment.
+ */
+const computeLastUpdatedLabel = (updated: number | null): string => {
+  if (updated === null) {
+    return 'Not yet updated';
+  }
+
+  return relativeTime(updated * 1000);
+};
+
+/**
+ * Generates timeline entries for the summary timeline component.
+ *
+ * @param created Created timestamp (seconds).
+ * @param updated Updated timestamp (seconds).
+ * @param descriptor Status descriptor with timeline colour information.
+ * @returns Timeline entries in chronological order.
+ */
+const buildTimelineItems = (
+  created: number | null,
+  updated: number | null,
+  descriptor: StatusDescriptor,
+): TimelineEntry[] => {
+  const items: TimelineEntry[] = [];
+
+  if (created !== null) {
+    items.push({
+      key: 'created',
+      label: 'Created',
+      timestamp: created,
+      dotColor: 'info',
+    });
+  }
+
+  if (updated !== null) {
+    items.push({
+      key: 'status',
+      label: descriptor.label,
+      timestamp: updated,
+      dotColor: descriptor.timelineDot,
+    });
+  }
+
+  return items;
+};
+
+/**
+ * Resolves whether the current user can perform privileged actions.
+ *
+ * @param groups Groups associated with the current user.
+ * @param privilegedGroups Groups with elevated privileges defined in config.
+ * @returns True when user is part of at least one privileged group.
+ */
+const determineUserPrivilege = (
+  groups?: ReadonlyArray<string> | null,
+  privilegedGroups?: ReadonlyArray<string> | null,
+): boolean => {
+  if (!Array.isArray(groups) || !Array.isArray(privilegedGroups)) {
+    return false;
+  }
+
+  return groups.some((group: string) => privilegedGroups.includes(group));
+};
+
+/**
+ * Computes tooltip messaging and disabled state for the rollback button.
+ *
+ * @param status Current task status.
+ * @param deployLock Whether rollout lockdown is active.
+ * @returns Tooltip text and disabled flag for the rollback action.
+ */
+const deriveRollbackState = (status: string, deployLock: boolean): { tooltip: string; disabled: boolean } => {
+  if (status === 'in progress') {
+    return {
+      tooltip: 'Rollback is disabled while the task is running.',
+      disabled: true,
+    };
+  }
+
+  if (deployLock) {
+    return {
+      tooltip: 'Rollback blocked because lockdown is active.',
+      disabled: true,
+    };
+  }
+
+  return {
+    tooltip: '',
+    disabled: false,
+  };
+};
+
 interface InfoFieldProps {
   readonly label: string;
   readonly value: React.ReactNode;
@@ -294,8 +434,6 @@ export default function TaskView() {
     };
   }, [task, id, setError]);
 
-  const userIsPrivileged = groups && privilegedGroups && groups.some((group: string) => privilegedGroups.includes(group));
-
   /**
    * Requests the backend to redeploy the selected task version under the current user.
    *
@@ -315,13 +453,11 @@ export default function TaskView() {
       author: email,
     };
 
-    const browserWindow =
-      typeof globalThis !== 'undefined' && typeof globalThis.window !== 'undefined'
-        ? globalThis.window
-        : undefined;
-    const apiEndpoint = browserWindow?.location
-      ? `${browserWindow.location.origin}/api/v1/tasks`
-      : '/api/v1/tasks';
+    const browserWindow = (globalThis as typeof globalThis & { window?: Window }).window;
+    const apiEndpoint =
+      browserWindow === undefined
+        ? '/api/v1/tasks'
+        : `${browserWindow.location.origin}/api/v1/tasks`;
 
     try {
       const response = await fetch(apiEndpoint, {
@@ -369,50 +505,19 @@ export default function TaskView() {
     );
   }
 
-  const createdTimestampRaw = Number(task.created);
-  const createdTimestamp = Number.isFinite(createdTimestampRaw) ? createdTimestampRaw : null;
-  const updatedTimestampRaw = task.updated ? Number(task.updated) : null;
-  const updatedTimestamp =
-    updatedTimestampRaw !== null && Number.isFinite(updatedTimestampRaw)
-      ? updatedTimestampRaw
-      : null;
+  const { created: createdTimestamp, updated: updatedTimestamp } = computeTaskTimestamps(task);
   const statusDescriptor = describeStatus(task.status);
-  const durationLabel =
-    createdTimestamp !== null
-      ? computeTaskDuration(
-          createdTimestamp,
-          task.status === 'in progress' ? null : updatedTimestamp,
-        )
-      : 'Unknown';
-  const lastUpdatedLabel = updatedTimestamp !== null
-    ? relativeTime(updatedTimestamp * 1000)
-    : 'Not yet updated';
+  const durationLabel = computeDurationLabelForTask(
+    task.status,
+    createdTimestamp,
+    updatedTimestamp,
+  );
+  const lastUpdatedLabel = computeLastUpdatedLabel(updatedTimestamp);
+  const timelineItems = buildTimelineItems(createdTimestamp, updatedTimestamp, statusDescriptor);
   const argoCdUrl = getArgoCDUrl();
-
-  const timelineItems: Array<{
-    readonly key: string;
-    readonly label: string;
-    readonly timestamp: number;
-    readonly dotColor: TimelineDotColor;
-  }> = [];
-
-  if (createdTimestamp !== null) {
-    timelineItems.push({
-      key: 'created',
-      label: 'Created',
-      timestamp: createdTimestamp,
-      dotColor: 'info',
-    });
-  }
-
-  if (updatedTimestamp !== null) {
-    timelineItems.push({
-      key: 'status',
-      label: statusDescriptor.label,
-      timestamp: updatedTimestamp,
-      dotColor: statusDescriptor.timelineDot,
-    });
-  }
+  const rollbackState = deriveRollbackState(task.status, deployLock);
+  const rollbackHoverDisabled = rollbackState.tooltip.length === 0;
+  const userIsPrivileged = determineUserPrivilege(groups, privilegedGroups);
 
   return (
     <Container maxWidth="lg" sx={{ py: 3 }}>
@@ -591,23 +696,12 @@ export default function TaskView() {
                 </Tooltip>
               )}
               {authenticated && userIsPrivileged && (
-                <Tooltip
-                  title={
-                    task.status === 'in progress'
-                      ? 'Rollback is disabled while the task is running.'
-                      : deployLock
-                        ? 'Rollback blocked because lockdown is active.'
-                        : ''
-                  }
-                  disableHoverListener={
-                    task.status !== 'in progress' && !deployLock
-                  }
-                >
+                <Tooltip title={rollbackState.tooltip} disableHoverListener={rollbackHoverDisabled}>
                   <span>
                     <Button
                       variant="contained"
                       onClick={handleClickOpen}
-                      disabled={task.status === 'in progress' || deployLock}
+                      disabled={rollbackState.disabled}
                     >
                       Rollback to this version
                     </Button>
