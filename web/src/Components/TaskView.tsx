@@ -39,7 +39,7 @@ import { useErrorContext } from '../ErrorContext';
 import { formatDateTime, ProjectDisplay, StatusReasonDisplay } from './TasksTable';
 import { AuthContext } from '../Services/Auth';
 import { useDeployLock } from '../Services/DeployLockHandler';
-import { relativeHumanDuration, relativeTime } from '../Utils';
+import { hasPrivilegedAccess, relativeHumanDuration, relativeTime } from '../Utils';
 
 interface Task {
   id: string;
@@ -252,24 +252,6 @@ const buildTimelineItems = (
   }
 
   return items;
-};
-
-/**
- * Resolves whether the current user can perform privileged actions.
- *
- * @param groups Groups associated with the current user.
- * @param privilegedGroups Groups with elevated privileges defined in config.
- * @returns True when user is part of at least one privileged group.
- */
-const determineUserPrivilege = (
-  groups?: ReadonlyArray<string> | null,
-  privilegedGroups?: ReadonlyArray<string> | null,
-): boolean => {
-  if (!Array.isArray(groups) || !Array.isArray(privilegedGroups)) {
-    return false;
-  }
-
-  return groups.some((group: string) => privilegedGroups.includes(group));
 };
 
 /**
@@ -517,7 +499,7 @@ export default function TaskView() {
   const argoCdUrl = getArgoCDUrl();
   const rollbackState = deriveRollbackState(task.status, deployLock);
   const rollbackHoverDisabled = rollbackState.tooltip.length === 0;
-  const userIsPrivileged = determineUserPrivilege(groups, privilegedGroups);
+  const userIsPrivileged = hasPrivilegedAccess(groups, privilegedGroups);
 
   return (
     <Container maxWidth="lg" sx={{ py: 3 }}>

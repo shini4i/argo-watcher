@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
@@ -22,6 +22,9 @@ import * as XLSX from 'xlsx';
 import ApplicationsFilter from './ApplicationsFilter';
 import TasksTable, { useTasks } from './TasksTable';
 import { useErrorContext } from '../ErrorContext';
+import { AuthContext } from '../Services/Auth';
+import { fetchConfig } from '../Services/Data';
+import { hasPrivilegedAccess } from '../Utils';
 
 const modalStyle = {
     position: 'absolute',
@@ -42,6 +45,13 @@ const HistoryTasks: React.FC = () => {
     const { setError, setSuccess } = useErrorContext();
     const { tasks, sortField, setSortField, appNames, refreshTasksInRange, clearTasks } =
         useTasks({ setError, setSuccess });
+    const authContext = useContext(AuthContext);
+    if (!authContext) {
+        throw new Error('AuthContext must be used within an AuthProvider');
+    }
+
+    const { groups, privilegedGroups } = authContext;
+    const [configData, setConfigData] = useState<Awaited<ReturnType<typeof fetchConfig>> | null>(null);
     const [currentApplication, setCurrentApplication] = useState<string | null>(
         searchParams.get('app')
     );
@@ -176,6 +186,25 @@ const HistoryTasks: React.FC = () => {
     useEffect(() => {
         refreshWithFilters(startDate, endDate, currentApplication, currentPage);
     }, [startDate, endDate, currentApplication, currentPage]);
+    useEffect(() => {
+        const loadConfig = async () => {
+            try {
+                const data = await fetchConfig();
+                setConfigData(data);
+            } catch (error) {
+                if (error instanceof Error) {
+                    setError('fetchConfig', error.message);
+                } else {
+                    setError('fetchConfig', 'An unknown error occurred');
+                }
+            }
+        };
+
+        loadConfig();
+    }, [setError]);
+
+    const keycloakEnabled = Boolean(configData?.keycloak?.enabled);
+    const userHasExportPrivileges = !keycloakEnabled || hasPrivilegedAccess(groups, privilegedGroups);
 
     return (
         <Box
@@ -211,15 +240,17 @@ const HistoryTasks: React.FC = () => {
                     <Box sx={{ fontSize: '10px' }}>UTC</Box>
                 </Typography>
                 <Stack direction="row" spacing={2}>
-                    <Box>
-                        <Button
-                            variant="contained"
-                            startIcon={<FileDownloadIcon />}
-                            onClick={() => setIsExportModalOpen(true)}
-                        >
-                            Export
-                        </Button>
-                    </Box>
+                    {userHasExportPrivileges && (
+                        <Box>
+                            <Button
+                                variant="contained"
+                                startIcon={<FileDownloadIcon />}
+                                onClick={() => setIsExportModalOpen(true)}
+                            >
+                                Export
+                            </Button>
+                        </Box>
+                    )}
                     <Box>
                         <ApplicationsFilter
                             value={currentApplication}
