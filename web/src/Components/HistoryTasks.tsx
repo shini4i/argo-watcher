@@ -35,6 +35,8 @@ const modalStyle = {
     borderRadius: 2,
 };
 
+const RAW_NEWLINE = String.raw`\n`;
+
 const HistoryTasks: React.FC = () => {
     const [searchParams, setSearchParams] = useSearchParams();
     const { setError, setSuccess } = useErrorContext();
@@ -51,8 +53,8 @@ const HistoryTasks: React.FC = () => {
     const [currentPage, setCurrentPage] = useState<number>(
         searchParams.get('page') ? Number(searchParams.get('page')) : 1
     );
-    const [isExportModalOpen, setIsExportModalOpen] = useState(false);
-    const [anonymize, setAnonymize] = useState(false);
+    const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
+    const [anonymize, setAnonymize] = useState<boolean>(false);
 
     /**
      * Synchronizes the visible filters with the URL search params so the current view can
@@ -142,7 +144,7 @@ const HistoryTasks: React.FC = () => {
                 ...(anonymize
                     ? {}
                     : {
-                          status_reason: task.status_reason?.replaceAll('\n', String.raw`\n`),
+                          status_reason: task.status_reason?.replaceAll('\n', RAW_NEWLINE),
                       }),
             }));
         }

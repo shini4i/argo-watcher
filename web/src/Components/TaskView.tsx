@@ -39,7 +39,7 @@ import { useErrorContext } from '../ErrorContext';
 import { formatDateTime, ProjectDisplay, StatusReasonDisplay } from './TasksTable';
 import { AuthContext } from '../Services/Auth';
 import { useDeployLock } from '../Services/DeployLockHandler';
-import { resolveBrowserWindow, relativeHumanDuration, relativeTime } from '../Utils';
+import { relativeHumanDuration, relativeTime } from '../Utils';
 
 interface Task {
   id: string;
@@ -315,7 +315,10 @@ export default function TaskView() {
       author: email,
     };
 
-    const browserWindow = resolveBrowserWindow();
+    const browserWindow =
+      typeof globalThis !== 'undefined' && typeof globalThis.window !== 'undefined'
+        ? globalThis.window
+        : undefined;
     const apiEndpoint = browserWindow?.location
       ? `${browserWindow.location.origin}/api/v1/tasks`
       : '/api/v1/tasks';

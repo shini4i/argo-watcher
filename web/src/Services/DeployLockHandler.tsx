@@ -1,5 +1,4 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { resolveBrowserWindow } from '../Utils';
 
 /**
  * Fetches the deploy lock status from the server.
@@ -83,7 +82,10 @@ export function DeployLockProvider({children}: DeployLockProviderProps): JSX.Ele
      * Establishes a WebSocket connection to the server.
      */
     useEffect(() => {
-        const browserWindow = resolveBrowserWindow();
+        const browserWindow =
+            typeof globalThis !== 'undefined' && typeof globalThis.window !== 'undefined'
+                ? globalThis.window
+                : undefined;
         if (!browserWindow?.location) {
             return undefined;
         }
