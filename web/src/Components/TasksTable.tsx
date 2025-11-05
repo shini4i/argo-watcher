@@ -252,8 +252,17 @@ function TableCellSorted({ field, sortField, setSortField, children }: TableCell
       }}
       sx={{ cursor: 'pointer' }}
     >
-      <Box sx={{ display: 'flex', flexDirection: 'row' }}>
-        {children}{' '}
+      <Box
+        sx={{
+          display: 'flex',
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: '100%',
+          gap: 0.5,
+        }}
+      >
+        {children}
         {sortField.field === field &&
           (sortField.direction === 'ASC' ? (
             <KeyboardArrowUpIcon />
@@ -411,13 +420,17 @@ function TasksTable({
                         '&:hover': {
                           textDecoration: 'underline',
                         },
-                        display: 'flex',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: theme => theme.spacing(0.5),
+                        margin: '0 auto',
                       }}
                       component={ReactLink}
                       variant={'body2'}
                     >
                       <span>{task.id.substring(0, 8)}</span>
-                      <LaunchIcon fontSize="small" sx={{ marginLeft: '5px' }} />
+                      <LaunchIcon fontSize="small" />
                     </Typography>
                   </TableCell>
                   <TableCell>{task.app}</TableCell>
