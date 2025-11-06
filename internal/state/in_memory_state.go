@@ -2,6 +2,7 @@ package state
 
 import (
 	"errors"
+	"sort"
 	"time"
 
 	"github.com/avast/retry-go/v4"
@@ -43,13 +44,19 @@ func (state *InMemoryState) AddTask(task models.Task) (*models.Task, error) {
 // If there are no tasks in the in-memory state, it returns an empty slice.
 // The method filters tasks within the time range and, optionally, by app.
 // If an app filter is provided, only matching tasks are included.
-func (state *InMemoryState) GetTasks(startTime float64, endTime float64, app string) []models.Task {
+func (state *InMemoryState) GetTasks(startTime float64, endTime float64, app string, limit int, offset int) ([]models.Task, int64) {
 	if state.tasks == nil {
-		return []models.Task{}
+		return []models.Task{}, 0
+	}
+
+	if limit < 0 {
+		limit = 0
+	}
+	if offset < 0 {
+		offset = 0
 	}
 
 	var tasks []models.Task
-
 	for _, task := range state.tasks {
 		if task.Created >= startTime && task.Created <= endTime {
 			if app == "" {
@@ -60,11 +67,26 @@ func (state *InMemoryState) GetTasks(startTime float64, endTime float64, app str
 		}
 	}
 
-	if tasks == nil {
-		return []models.Task{}
+	if len(tasks) == 0 {
+		return []models.Task{}, 0
 	}
 
-	return tasks
+	sort.Slice(tasks, func(i, j int) bool {
+		return tasks[i].Created > tasks[j].Created
+	})
+
+	total := int64(len(tasks))
+
+	if offset >= len(tasks) {
+		return []models.Task{}, total
+	}
+
+	end := len(tasks)
+	if limit > 0 && offset+limit < end {
+		end = offset + limit
+	}
+
+	return tasks[offset:end], total
 }
 
 // GetTask retrieves a task from the in-memory state based on the provided task ID.

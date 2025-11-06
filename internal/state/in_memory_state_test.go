@@ -65,12 +65,14 @@ func TestInMemoryState_GetTask(t *testing.T) {
 }
 
 func TestInMemoryState_GetTasks(t *testing.T) {
-	currentTasks := state.GetTasks(float64(time.Now().Unix())-10, float64(time.Now().Unix()), "")
-	currentFilteredTasks := state.GetTasks(float64(time.Now().Unix())-10, float64(time.Now().Unix()), "Test")
+	currentTasks, total := state.GetTasks(float64(time.Now().Unix())-10, float64(time.Now().Unix()), "", 0, 0)
+	currentFilteredTasks, filteredTotal := state.GetTasks(float64(time.Now().Unix())-10, float64(time.Now().Unix()), "Test", 0, 0)
 
 	assert.Len(t, currentTasks, 2)
+	assert.Equal(t, int64(2), total)
 	assert.Equal(t, []string{firstTaskId, secondTaskId}, []string{currentTasks[0].Id, currentTasks[1].Id})
 	assert.Len(t, currentFilteredTasks, 1)
+	assert.Equal(t, int64(1), filteredTotal)
 	assert.Equal(t, []string{firstTaskId}, []string{currentFilteredTasks[0].Id})
 
 }
@@ -91,10 +93,11 @@ func TestInMemoryState_ProcessObsoleteTasks(t *testing.T) {
 	state.ProcessObsoleteTasks(1)
 
 	// Call the function under test
-	tasks = state.GetTasks(float64(time.Now().Unix())-60, float64(time.Now().Unix()), "")
+	tasks, total := state.GetTasks(float64(time.Now().Unix())-60, float64(time.Now().Unix()), "", 0, 0)
 
 	// Assert the expected results
 	assert.Len(t, tasks, 2) // Only non-obsolete tasks should remain
+	assert.Equal(t, int64(2), total)
 
 	// Check that the status of the obsolete task has been updated
 	assert.Equal(t, models.StatusAborted, tasks[1].Status)

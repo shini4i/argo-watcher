@@ -57,6 +57,21 @@ services:
       PROXY: http://backend:8080
     ports:
       - "3000:3000"
+  frontend-ra:
+    image: node:22-alpine3.19
+    volumes:
+      - ./web-ra:/app
+    working_dir: /app
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 3100"
+    environment:
+      VITE_API_BASE_URL: http://localhost:8080
+      VITE_API_PROXY_TARGET: http://backend:8080
+      VITE_WS_BASE_URL: ws://localhost:8080
+    depends_on:
+      backend:
+        condition: service_started
+    ports:
+      - "3100:3100"
   mock:
     image: golang:1.24-alpine3.20
     volumes:

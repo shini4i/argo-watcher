@@ -98,12 +98,14 @@ func TestPostgresState_GetTasks(t *testing.T) {
 	time.Sleep(1 * time.Second)
 
 	// get all tasks without app filter
-	tasks := postgresState.GetTasks(created, float64(time.Now().Unix()), "")
+	tasks, total := postgresState.GetTasks(created, float64(time.Now().Unix()), "", 0, 0)
 	assert.Len(t, tasks, 3)
+	assert.Equal(t, int64(3), total)
 
 	// get all tasks with app filter
-	tasks = postgresState.GetTasks(created, float64(time.Now().Unix()), "Test")
+	tasks, total = postgresState.GetTasks(created, float64(time.Now().Unix()), "Test", 0, 0)
 	assert.Len(t, tasks, 1)
+	assert.Equal(t, int64(1), total)
 }
 
 func TestPostgresState_GetTask(t *testing.T) {
@@ -156,7 +158,7 @@ func TestPostgresState_ProcessObsoleteTasks(t *testing.T) {
 	// Check that obsolete task was deleted
 	startTime := float64(time.Now().Unix()) - 10
 	endTime := float64(time.Now().Unix())
-	tasks := postgresState.GetTasks(startTime, endTime, "")
+	tasks, _ := postgresState.GetTasks(startTime, endTime, "", 0, 0)
 	for _, task := range tasks {
 		assert.NotEqual(t, appNotFoundTask, task.Id)
 	}

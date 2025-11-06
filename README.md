@@ -84,6 +84,30 @@ graph TD
 
 For more detailed information on configuration, API usage, and advanced features, please visit our documentation at [argo-watcher.readthedocs.io](https://argo-watcher.readthedocs.io).
 
+## Frontend Development
+
+The repository now hosts two frontend workspaces while we execute the React-admin migration:
+
+- `web/`: the existing Create React App implementation (legacy).
+- `web-ra/`: the new React-admin workspace powered by Vite.
+
+Use the Taskfile helpers to keep both bundles in sync:
+
+```bash
+task install-web-ra-dependencies  # npm ci in web-ra/
+task lint-web-ra                  # eslint pass for the React-admin codebase
+task test-web-ra                  # vitest unit tests (jsdom)
+task build-ui                     # builds legacy (web/build) and React-admin (web-ra/dist) bundles
+```
+
+When running the Go server, select which frontend bundle to serve using environment variables:
+
+- `FRONTEND_VARIANT` (`legacy` | `react-admin`, defaults to `legacy` for now)
+- `STATIC_FILES_PATH` (legacy bundle path, default `static`)
+- `REACT_ADMIN_STATIC_FILES_PATH` (React-admin bundle path, default `static/react-admin`)
+
+In Kubernetes, set `FRONTEND_VARIANT` in the release manifest and restart the Argo Watcher pod to flip between bundles.
+
 ## Contributing
 
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.

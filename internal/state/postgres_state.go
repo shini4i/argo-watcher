@@ -64,19 +64,35 @@ func (state *PostgresState) AddTask(task models.Task) (*models.Task, error) {
 // It returns the tasks as a slice of models.Task.
 // Tasks are filtered based on the time range (start time and end time) and, optionally, the app value.
 // The method handles converting timestamps and unmarshalling images from the database.
-func (state *PostgresState) GetTasks(startTime float64, endTime float64, app string) []models.Task {
+func (state *PostgresState) GetTasks(startTime float64, endTime float64, app string, limit int, offset int) ([]models.Task, int64) {
 	startTimeUTC := time.Unix(int64(startTime), 0).UTC()
 	endTimeUTC := time.Unix(int64(endTime), 0).UTC()
 
 	query := state.orm.Model(&state_models.TaskModel{}).Where("created > ?", startTimeUTC).Where("created <= ?", endTimeUTC)
 	if app != "" {
-		query.Where("app = ?", app)
+		query = query.Where("app = ?", app)
 	}
+
+	countQuery := query.Session(&gorm.Session{NewDB: true}).Model(&state_models.TaskModel{})
+	var total int64
+	if err := countQuery.Count(&total).Error; err != nil {
+		log.Error().Msg(err.Error())
+		return []models.Task{}, 0
+	}
+
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	if offset > 0 {
+		query = query.Offset(offset)
+	}
+
+	query = query.Order("created DESC")
 
 	var ormTasks []state_models.TaskModel
 	if err := query.Find(&ormTasks).Error; err != nil {
 		log.Error().Msg(err.Error())
-		return nil
+		return []models.Task{}, 0
 	}
 
 	tasks := make([]models.Task, len(ormTasks))
@@ -84,7 +100,7 @@ func (state *PostgresState) GetTasks(startTime float64, endTime float64, app str
 		tasks[i] = *ormTask.ConvertToExternalTask()
 	}
 
-	return tasks
+	return tasks, total
 }
 
 // GetTask retrieves a task from the PostgreSQL database based on the provided task ID.

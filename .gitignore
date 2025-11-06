@@ -7,6 +7,8 @@ db/data
 
 # static directory
 static/
+web-ra/dist/
+web-ra/node_modules/
 
 # environment files
 **/.env
@@ -39,6 +41,3 @@ site/
 
 # sandbox directory for random stuff
 sandbox/
-
-# codebuddy
-.codebuddy

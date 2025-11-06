@@ -23,10 +23,15 @@
           pre-commit
           git
         ];
+
+        frontendToolchain = with pkgs; [
+          nodejs_20
+          pnpm
+        ];
       in
       {
         devShells.default = pkgs.mkShell {
-          packages = goToolchain ++ preCommitTools;
+          packages = goToolchain ++ preCommitTools ++ frontendToolchain;
           shellHook = ''
             export GOPATH="$PWD/.go"
             export GOMODCACHE="$PWD/.gomod"

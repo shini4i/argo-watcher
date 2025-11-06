@@ -95,18 +95,67 @@ tasks:
       - package.json
       - package-lock.json
 
-  build-ui:
-    desc: Build the UI
+  install-web-ra-dependencies:
+    desc: Install React-admin web dependencies
+    internal: true
+    dir: web-ra
+    cmds:
+      - echo "===> Installing React-admin dependencies"
+      - npm ci
+      - echo "===> Done"
+    sources:
+      - package.json
+      - package-lock.json
+
+  lint-web-ra:
+    desc: Lint React-admin workspace
+    deps: [install-web-ra-dependencies]
+    dir: web-ra
+    cmds:
+      - echo "===> Linting React-admin workspace"
+      - npm run lint
+      - echo "===> Done"
+
+  test-web-ra:
+    desc: Run React-admin unit tests
+    deps: [install-web-ra-dependencies]
+    dir: web-ra
+    cmds:
+      - echo "===> Running React-admin unit tests"
+      - npm run test
+      - echo "===> Done"
+
+  build-ui-legacy:
+    desc: Build the legacy UI
+    internal: true
     deps: [install-web-dependencies]
     dir: web
     cmds:
-      - echo "===> Building the UI"
+      - echo "===> Building legacy UI"
       - npm run build
       - echo "===> Done"
     sources:
       - src/**/*.ts
       - src/**/*.tsx
       - src/**/*.css
+
+  build-ui-react-admin:
+    desc: Build the React-admin UI
+    deps: [install-web-ra-dependencies]
+    dir: web-ra
+    cmds:
+      - echo "===> Building React-admin UI"
+      - npm run build
+      - echo "===> Done"
+    sources:
+      - src/**/*.ts
+      - src/**/*.tsx
+
+  build-ui:
+    desc: Build all UI bundles
+    deps: [build-ui-legacy, build-ui-react-admin]
+    cmds:
+      - echo "===> UI builds completed (legacy: web/build, react-admin: web-ra/dist)"
 
   kind-upload:
     desc: Build and upload the argo-watcher image to a kind cluster

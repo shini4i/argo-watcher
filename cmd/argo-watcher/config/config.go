@@ -2,9 +2,17 @@ package config
 
 import (
 	"net/url"
+	"strings"
 
 	envConfig "github.com/caarlos0/env/v11"
 	"github.com/go-playground/validator/v10"
+)
+
+const (
+	// FrontendVariantLegacy represents the legacy CRA-based UI.
+	FrontendVariantLegacy = "legacy"
+	// FrontendVariantReactAdmin represents the new React-admin workspace.
+	FrontendVariantReactAdmin = "react-admin"
 )
 
 type KeycloakConfig struct {
@@ -43,6 +51,8 @@ type ServerConfig struct {
 	RegistryProxyUrl   string         `env:"DOCKER_IMAGES_PROXY" json:"registry_proxy_url,omitempty"`
 	StateType          string         `env:"STATE_TYPE,required" validate:"oneof=postgres in-memory" json:"state_type"`
 	StaticFilePath     string         `env:"STATIC_FILES_PATH" envDefault:"static" json:"-"`
+	ReactAdminStaticPath string       `env:"REACT_ADMIN_STATIC_FILES_PATH" envDefault:"static/react-admin" json:"-"`
+	FrontendVariant    string         `env:"FRONTEND_VARIANT" envDefault:"legacy" json:"frontend_variant"`
 	SkipTlsVerify      bool           `env:"SKIP_TLS_VERIFY" envDefault:"false" json:"skip_tls_verify"`
 	LogLevel           string         `env:"LOG_LEVEL" envDefault:"info" json:"log_level"`
 	Host               string         `env:"HOST" envDefault:"0.0.0.0" json:"-"`
@@ -84,4 +94,23 @@ func NewServerConfig() (*ServerConfig, error) {
 // It returns the number of retry attempts as an unsigned integer.
 func (config *ServerConfig) GetRetryAttempts() uint {
 	return config.DeploymentTimeout/15 + 1
+}
+
+// ResolveStaticFilePath selects the static asset directory based on the configured frontend variant.
+// It defaults to the legacy CRA output for backward compatibility and falls back to the React-admin path when requested.
+func (config *ServerConfig) ResolveStaticFilePath() string {
+	switch strings.ToLower(config.FrontendVariant) {
+	case FrontendVariantReactAdmin:
+		if config.ReactAdminStaticPath != "" {
+			return config.ReactAdminStaticPath
+		}
+		return "static/react-admin"
+	case FrontendVariantLegacy:
+		fallthrough
+	default:
+		if config.StaticFilePath != "" {
+			return config.StaticFilePath
+		}
+		return "static"
+	}
 }
