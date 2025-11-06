@@ -105,26 +105,16 @@ const getDesignTokens = (mode: PaletteMode): ThemeOptions => ({
  *
  * @returns The Window instance in browser environments, otherwise undefined.
  */
-const resolveBrowserWindow = (): Window | undefined => {
-  const maybeWindow = (globalThis as typeof globalThis & { window?: Window }).window;
-  if (maybeWindow === undefined) {
-    return undefined;
-  }
-  return maybeWindow;
-};
+const resolveBrowserWindow = (): Window | undefined =>
+  (globalThis as typeof globalThis & { window?: Window }).window;
 
 /**
  * Retrieves the browser document from the universal global scope when it exists.
  *
  * @returns The Document instance in browser environments, otherwise undefined.
  */
-const resolveBrowserDocument = (): Document | undefined => {
-  const maybeDocument = (globalThis as typeof globalThis & { document?: Document }).document;
-  if (maybeDocument === undefined) {
-    return undefined;
-  }
-  return maybeDocument;
-};
+const resolveBrowserDocument = (): Document | undefined =>
+  (globalThis as typeof globalThis & { document?: Document }).document;
 
 /**
  * Supplies the application with a persisted light/dark theme.

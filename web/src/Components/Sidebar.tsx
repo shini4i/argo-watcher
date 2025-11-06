@@ -5,7 +5,6 @@ import {
   CircularProgress,
   Drawer,
   Paper,
-  Switch,
   Table,
   TableBody,
   TableCell,
@@ -14,7 +13,12 @@ import {
   TableRow,
   Typography,
 } from '@mui/material';
+import Switch, { SwitchProps } from '@mui/material/Switch';
 import { alpha, styled } from '@mui/material/styles';
+import DarkModeIcon from '@mui/icons-material/DarkMode';
+import LightModeIcon from '@mui/icons-material/LightMode';
+import LockIcon from '@mui/icons-material/Lock';
+import LockOpenIcon from '@mui/icons-material/LockOpen';
 
 import { fetchConfig } from '../Services/Data';
 import { releaseDeployLock, setDeployLock, useDeployLock } from '../Services/DeployLockHandler';
@@ -86,7 +90,15 @@ const BaseSwitch = styled(Switch)(({ theme }) => ({
   },
 }));
 
-const ThemeSwitch = styled(BaseSwitch)(({ theme }) => ({
+const ThumbIconWrapper = styled('span')({
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: '100%',
+  height: '100%',
+});
+
+const StyledThemeSwitch = styled(BaseSwitch)(({ theme }) => ({
   '& .MuiSwitch-track': {
     background:
       theme.palette.mode === 'light'
@@ -102,59 +114,53 @@ const ThemeSwitch = styled(BaseSwitch)(({ theme }) => ({
   '& .MuiSwitch-thumb': {
     backgroundColor: theme.palette.mode === 'light' ? '#fff7ed' : '#1e293b',
   },
-  '& .MuiSwitch-thumb:before': {
-    content: '"☀️"',
-    position: 'absolute',
-    inset: 0,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '13px',
+  '& .MuiSwitch-thumb svg': {
+    color: theme.palette.mode === 'light' ? '#f59e0b' : '#cbd5f5',
+    fontSize: '0.95rem',
+    transition: theme.transitions.create(['color'], {
+      duration: theme.transitions.duration.shortest,
+    }),
   },
   '& .MuiSwitch-switchBase.Mui-checked .MuiSwitch-thumb': {
     backgroundColor: '#0f172a',
   },
-  '& .MuiSwitch-switchBase.Mui-checked .MuiSwitch-thumb:before': {
-    content: '"🌙"',
-    fontSize: '12px',
+  '& .MuiSwitch-switchBase.Mui-checked .MuiSwitch-thumb svg': {
+    color: '#facc15',
   },
 }));
 
-/**
- * Styled switch that reflects the deploy lock state across light/dark themes
- * while providing distinct visuals for locked/unlocked/disabled states.
- */
-const LockSwitch = styled(BaseSwitch)(({ theme }) => ({
+const ThemeSwitch = React.forwardRef<HTMLButtonElement, SwitchProps>((props, ref) => (
+  <StyledThemeSwitch
+    {...props}
+    ref={ref}
+    icon={
+      <ThumbIconWrapper>
+        <LightModeIcon fontSize="small" />
+      </ThumbIconWrapper>
+    }
+    checkedIcon={
+      <ThumbIconWrapper>
+        <DarkModeIcon fontSize="small" />
+      </ThumbIconWrapper>
+    }
+  />
+));
+ThemeSwitch.displayName = 'ThemeSwitch';
+
+const StyledLockSwitch = styled(BaseSwitch)(({ theme }) => ({
   '& .MuiSwitch-thumb': {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    color: theme.palette.mode === 'light' ? '#047857' : '#dcfce7',
     backgroundColor: theme.palette.mode === 'light' ? '#bbf7d0' : '#0f172a',
     boxShadow:
       theme.palette.mode === 'light'
         ? '0 4px 10px rgba(6, 95, 70, 0.28)'
         : '0 4px 10px rgba(15, 23, 42, 0.35)',
-    position: 'relative',
   },
-  '& .MuiSwitch-thumb::before': {
-    content: '"🔓"',
-    position: 'absolute',
-    inset: 4,
-    borderRadius: '50%',
-    backgroundColor: theme.palette.mode === 'light' ? '#dcfce7' : '#134e4a',
-    opacity: theme.palette.mode === 'light' ? 0.92 : 0.8,
-    zIndex: 0,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '12px',
+  '& .MuiSwitch-thumb svg': {
     color: theme.palette.mode === 'light' ? '#047857' : '#dcfce7',
-  },
-  '& .MuiSwitch-thumb::after': {
-    content: '""',
-    position: 'relative',
-    zIndex: 1,
+    fontSize: '0.9rem',
+    transition: theme.transitions.create(['color'], {
+      duration: theme.transitions.duration.shortest,
+    }),
   },
   '& .MuiSwitch-track': {
     background: 'linear-gradient(135deg, #bbf7d0 0%, #22c55e 100%)',
@@ -165,17 +171,10 @@ const LockSwitch = styled(BaseSwitch)(({ theme }) => ({
   },
   '& .MuiSwitch-switchBase.Mui-checked .MuiSwitch-thumb': {
     backgroundColor: theme.palette.mode === 'light' ? '#fecdd3' : '#7f1d1d',
-    color: theme.palette.mode === 'light' ? '#7f1d1d' : '#fde2e2',
     boxShadow: '0 4px 12px rgba(190, 18, 60, 0.32)',
   },
-  '& .MuiSwitch-switchBase.Mui-checked .MuiSwitch-thumb::before': {
-    content: '"🔒"',
-    backgroundColor: theme.palette.mode === 'light' ? '#fee2e2' : '#7f1d1d',
-    opacity: theme.palette.mode === 'light' ? 0.95 : 0.85,
+  '& .MuiSwitch-switchBase.Mui-checked .MuiSwitch-thumb svg': {
     color: theme.palette.mode === 'light' ? '#7f1d1d' : '#fde2e2',
-  },
-  '& .MuiSwitch-switchBase:not(.Mui-checked) .MuiSwitch-thumb': {
-    backgroundColor: theme.palette.mode === 'light' ? '#bbf7d0' : '#0f172a',
   },
   '&.Mui-disabled': {
     opacity: 0.5,
@@ -189,13 +188,33 @@ const LockSwitch = styled(BaseSwitch)(({ theme }) => ({
   '&.Mui-disabled .MuiSwitch-thumb': {
     boxShadow: 'none',
     backgroundColor: theme.palette.mode === 'light' ? '#e2e8f0' : '#1e293b',
-    color: theme.palette.text.disabled,
   },
-  '&.Mui-disabled .MuiSwitch-thumb::before': {
-    backgroundColor: theme.palette.mode === 'light' ? '#f1f5f9' : '#0f172a',
+  '&.Mui-disabled .MuiSwitch-thumb svg': {
     color: theme.palette.text.disabled,
   },
 }));
+
+/**
+ * Styled switch that reflects the deploy lock state across light/dark themes
+ * while providing distinct visuals for locked/unlocked/disabled states.
+ */
+const LockSwitch = React.forwardRef<HTMLButtonElement, SwitchProps>((props, ref) => (
+  <StyledLockSwitch
+    {...props}
+    ref={ref}
+    icon={
+      <ThumbIconWrapper>
+        <LockOpenIcon fontSize="small" />
+      </ThumbIconWrapper>
+    }
+    checkedIcon={
+      <ThumbIconWrapper>
+        <LockIcon fontSize="small" />
+      </ThumbIconWrapper>
+    }
+  />
+));
+LockSwitch.displayName = 'LockSwitch';
 
 const Sidebar: React.FC<SidebarProps> = ({ open, onClose }) => {
   const [configData, setConfigData] = useState<ConfigData | null>(null);

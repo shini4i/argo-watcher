@@ -608,7 +608,9 @@ export default function TaskView() {
               <Grid item xs={12} md={6}>
                 <InfoField
                   label="Created (UTC)"
-                  value={formatDateTime(createdTimestamp)}
+                  value={
+                    createdTimestamp ? formatDateTime(createdTimestamp) : 'Not yet created'
+                  }
                 />
               </Grid>
               <Grid item xs={12} md={6}>
