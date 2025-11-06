@@ -1,14 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
-import {
-  AppBar,
-  Box,
-  Toolbar,
-  Typography,
-  Link,
-  Stack,
-  Tooltip
-} from '@mui/material';
+import { AppBar, Box, Toolbar, Typography, Link, Stack, Tooltip } from '@mui/material';
+import type { SxProps, Theme } from '@mui/material/styles';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import RestoreIcon from '@mui/icons-material/Restore';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
@@ -35,10 +28,21 @@ interface NavigationButtonProps {
  * @returns {ReactNode} The rendered NavigationButton component.
  */
 const NavigationButton: React.FC<NavigationButtonProps> = ({ to, children, external = false }) => {
+  const linkStyles: SxProps<Theme> = theme => ({
+    display: 'flex',
+    alignItems: 'center',
+    color: 'inherit',
+    textDecoration: 'none',
+    transition: theme.transitions.create('opacity', { duration: theme.transitions.duration.shortest }),
+    '&:hover': {
+      opacity: 0.8,
+    },
+  });
+
   if (external) {
     return (
       <Link
-        sx={{ color: 'white', display: 'flex' }}
+        sx={linkStyles}
         href={to}
         underline="none"
         target="_blank"
@@ -51,7 +55,7 @@ const NavigationButton: React.FC<NavigationButtonProps> = ({ to, children, exter
 
   return (
     <Link
-      sx={{ color: 'white', display: 'flex' }}
+      sx={linkStyles}
       component={RouterLink}
       to={to}
       underline="none"
@@ -68,8 +72,8 @@ const NavigationButton: React.FC<NavigationButtonProps> = ({ to, children, exter
  * @returns {JSX.Element} The rendered Navbar component.
  */
 const Navbar: React.FC = (): JSX.Element => {
-  const [version, setVersion] = useState('0.0.0');
-  const [isSidebarOpen, setSidebarOpen] = useState(false);
+  const [version, setVersion] = useState<string>('0.0.0');
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const { setSuccess, setError } = useErrorContext();
   const readTheDocsUrl = 'https://argo-watcher.readthedocs.io';
   const githubProjectUrl = 'https://github.com/shini4i/argo-watcher';
@@ -91,10 +95,10 @@ const Navbar: React.FC = (): JSX.Element => {
 
   return (
     <Box>
-      <AppBar position="static">
+      <AppBar position="static" color="primary" enableColorOnDark>
         <Toolbar>
           <Box display="flex" alignItems="center">
-            <Box onClick={() => setSidebarOpen(true)}>
+            <Box onClick={() => setIsSidebarOpen(true)}>
               <img
                 src={process.env.PUBLIC_URL + '/logo.png'}
                 alt="Argo Watcher Logo"
@@ -127,15 +131,13 @@ const Navbar: React.FC = (): JSX.Element => {
             direction={'row'}
             alignItems={'center'}
             justifyContent={'flex-end'}
-            sx={{
+            sx={theme => ({
               minWidth: '120px',
-              color: 'white',
-              textTransform: 'unset',
-              textDecoration: 'unset',
-              '&:hover': {
-                color: 'rgba(255,255,255,.85)',
+              color: theme.palette.primary.contrastText,
+              '& a': {
+                color: 'inherit',
               },
-            }}
+            })}
           >
             {/* Docs Button */}
             <NavigationButton to={`${readTheDocsUrl}/en/v${version}`} external>
@@ -152,8 +154,8 @@ const Navbar: React.FC = (): JSX.Element => {
               <Stack spacing={1} direction={'row'} alignItems={'center'}>
                 <GitHubIcon style={{ fontSize: '1.7em' }} />
                 <Stack>
-                  <Typography style={{ fontSize: '14px' }}>GitHub</Typography>
-                  <Typography style={{ fontSize: '11px' }}>
+                  <Typography sx={{ fontSize: '14px' }}>GitHub</Typography>
+                  <Typography sx={{ fontSize: '11px' }}>
                     <LocalOfferIcon style={{ fontSize: '10px' }} /> {version}
                   </Typography>
                 </Stack>
@@ -162,7 +164,7 @@ const Navbar: React.FC = (): JSX.Element => {
           </Stack>
         </Toolbar>
       </AppBar>
-      <Sidebar open={isSidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <Sidebar open={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
     </Box>
   );
 };

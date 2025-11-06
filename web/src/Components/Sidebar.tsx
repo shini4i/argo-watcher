@@ -14,9 +14,12 @@ import {
   TableRow,
   Typography,
 } from '@mui/material';
+import { alpha, styled } from '@mui/material/styles';
+
 import { fetchConfig } from '../Services/Data';
 import { releaseDeployLock, setDeployLock, useDeployLock } from '../Services/DeployLockHandler';
 import { AuthContext } from '../Services/Auth';
+import { useThemeMode } from '../ThemeModeContext';
 
 interface ConfigData {
   [key: string]: any;
@@ -26,6 +29,173 @@ interface SidebarProps {
   open: boolean;
   onClose: () => void;
 }
+
+const ControlCard = styled(Paper)(({ theme }) => ({
+  padding: theme.spacing(1.5),
+  borderRadius: theme.shape.borderRadius * 1.6,
+  border: `1px solid ${alpha(theme.palette.divider, theme.palette.mode === 'light' ? 0.35 : 0.55)}`,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: theme.spacing(1.5),
+  width: '100%',
+  backgroundColor:
+    theme.palette.mode === 'light'
+      ? alpha(theme.palette.background.paper, 0.88)
+      : alpha(theme.palette.background.paper, 0.58),
+  boxShadow: theme.palette.mode === 'light'
+    ? '0 10px 18px rgba(15, 23, 42, 0.08)'
+    : '0 12px 20px rgba(8, 11, 26, 0.3)',
+  backdropFilter: 'blur(6px)',
+}));
+
+const BaseSwitch = styled(Switch)(({ theme }) => ({
+  width: 48,
+  height: 26,
+  padding: 0,
+  '& .MuiSwitch-switchBase': {
+    padding: 2,
+    transform: 'translateX(2px)',
+    '&.Mui-checked': {
+      transform: 'translateX(20px)',
+      color: '#fff',
+      '& + .MuiSwitch-track': {
+        opacity: 1,
+      },
+    },
+  },
+  '& .MuiSwitch-thumb': {
+    width: 20,
+    height: 20,
+    borderRadius: 12,
+    boxShadow: '0 4px 8px rgba(15, 23, 42, 0.28)',
+    backgroundColor: theme.palette.mode === 'light' ? '#ffffff' : '#0f172a',
+    position: 'relative',
+    transition: theme.transitions.create(['background-color'], {
+      duration: theme.transitions.duration.shortest,
+    }),
+  },
+  '& .MuiSwitch-track': {
+    borderRadius: 32,
+    backgroundColor:
+      theme.palette.mode === 'light' ? 'rgba(15, 23, 42, 0.18)' : 'rgba(148, 163, 184, 0.35)',
+    opacity: 1,
+    transition: theme.transitions.create(['background-color'], {
+      duration: theme.transitions.duration.shorter,
+    }),
+  },
+}));
+
+const ThemeSwitch = styled(BaseSwitch)(({ theme }) => ({
+  '& .MuiSwitch-track': {
+    background:
+      theme.palette.mode === 'light'
+        ? 'linear-gradient(135deg, #fde68a 0%, #f59e0b 100%)'
+        : 'linear-gradient(135deg, #312e81 0%, #1f2937 100%)',
+  },
+  '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+    background:
+      theme.palette.mode === 'light'
+        ? 'linear-gradient(135deg, #4338ca 0%, #1f2937 100%)'
+        : 'linear-gradient(135deg, #4f46e5 0%, #0f172a 100%)',
+  },
+  '& .MuiSwitch-thumb': {
+    backgroundColor: theme.palette.mode === 'light' ? '#fff7ed' : '#1e293b',
+  },
+  '& .MuiSwitch-thumb:before': {
+    content: '"☀️"',
+    position: 'absolute',
+    inset: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '13px',
+  },
+  '& .MuiSwitch-switchBase.Mui-checked .MuiSwitch-thumb': {
+    backgroundColor: '#0f172a',
+  },
+  '& .MuiSwitch-switchBase.Mui-checked .MuiSwitch-thumb:before': {
+    content: '"🌙"',
+    fontSize: '12px',
+  },
+}));
+
+/**
+ * Styled switch that reflects the deploy lock state across light/dark themes
+ * while providing distinct visuals for locked/unlocked/disabled states.
+ */
+const LockSwitch = styled(BaseSwitch)(({ theme }) => ({
+  '& .MuiSwitch-thumb': {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: theme.palette.mode === 'light' ? '#047857' : '#dcfce7',
+    backgroundColor: theme.palette.mode === 'light' ? '#bbf7d0' : '#0f172a',
+    boxShadow:
+      theme.palette.mode === 'light'
+        ? '0 4px 10px rgba(6, 95, 70, 0.28)'
+        : '0 4px 10px rgba(15, 23, 42, 0.35)',
+    position: 'relative',
+  },
+  '& .MuiSwitch-thumb::before': {
+    content: '"🔓"',
+    position: 'absolute',
+    inset: 4,
+    borderRadius: '50%',
+    backgroundColor: theme.palette.mode === 'light' ? '#dcfce7' : '#134e4a',
+    opacity: theme.palette.mode === 'light' ? 0.92 : 0.8,
+    zIndex: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '12px',
+    color: theme.palette.mode === 'light' ? '#047857' : '#dcfce7',
+  },
+  '& .MuiSwitch-thumb::after': {
+    content: '""',
+    position: 'relative',
+    zIndex: 1,
+  },
+  '& .MuiSwitch-track': {
+    background: 'linear-gradient(135deg, #bbf7d0 0%, #22c55e 100%)',
+    opacity: 1,
+  },
+  '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+    background: 'linear-gradient(135deg, #f87171 0%, #be123c 100%)',
+  },
+  '& .MuiSwitch-switchBase.Mui-checked .MuiSwitch-thumb': {
+    backgroundColor: theme.palette.mode === 'light' ? '#fecdd3' : '#7f1d1d',
+    color: theme.palette.mode === 'light' ? '#7f1d1d' : '#fde2e2',
+    boxShadow: '0 4px 12px rgba(190, 18, 60, 0.32)',
+  },
+  '& .MuiSwitch-switchBase.Mui-checked .MuiSwitch-thumb::before': {
+    content: '"🔒"',
+    backgroundColor: theme.palette.mode === 'light' ? '#fee2e2' : '#7f1d1d',
+    opacity: theme.palette.mode === 'light' ? 0.95 : 0.85,
+    color: theme.palette.mode === 'light' ? '#7f1d1d' : '#fde2e2',
+  },
+  '& .MuiSwitch-switchBase:not(.Mui-checked) .MuiSwitch-thumb': {
+    backgroundColor: theme.palette.mode === 'light' ? '#bbf7d0' : '#0f172a',
+  },
+  '&.Mui-disabled': {
+    opacity: 0.5,
+  },
+  '&.Mui-disabled .MuiSwitch-track': {
+    background: 'linear-gradient(135deg, rgba(148, 163, 184, 0.3) 0%, rgba(148, 163, 184, 0.45) 100%)',
+  },
+  '&.Mui-disabled .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+    background: 'linear-gradient(135deg, rgba(148, 163, 184, 0.35) 0%, rgba(148, 163, 184, 0.5) 100%)',
+  },
+  '&.Mui-disabled .MuiSwitch-thumb': {
+    boxShadow: 'none',
+    backgroundColor: theme.palette.mode === 'light' ? '#e2e8f0' : '#1e293b',
+    color: theme.palette.text.disabled,
+  },
+  '&.Mui-disabled .MuiSwitch-thumb::before': {
+    backgroundColor: theme.palette.mode === 'light' ? '#f1f5f9' : '#0f172a',
+    color: theme.palette.text.disabled,
+  },
+}));
 
 const Sidebar: React.FC<SidebarProps> = ({ open, onClose }) => {
   const [configData, setConfigData] = useState<ConfigData | null>(null);
@@ -37,8 +207,16 @@ const Sidebar: React.FC<SidebarProps> = ({ open, onClose }) => {
     throw new Error('AuthContext must be used within an AuthProvider');
   }
 
-  const { authenticated, keycloakToken } = authContext;
+  const { authenticated, keycloakToken, groups, privilegedGroups } = authContext;
   const deployLock = useDeployLock();
+  const { mode, toggleMode } = useThemeMode();
+  const isDarkMode = mode === 'dark';
+  const isKeycloakEnabled = Boolean(configData?.keycloak?.enabled);
+  const userGroups = groups ?? [];
+  const allowedGroups = privilegedGroups ?? [];
+  const hasDeployPrivileges = userGroups.some(group => allowedGroups.includes(group));
+  // Gray out the control while the configuration is loading or the user lacks deploy privileges.
+  const lockSwitchDisabled = isLoading || (isKeycloakEnabled && !hasDeployPrivileges);
 
   const toggleDeployLock = useCallback(async () => {
     try {
@@ -146,23 +324,61 @@ const Sidebar: React.FC<SidebarProps> = ({ open, onClose }) => {
   };
 
   return (
-    <Drawer anchor="right" open={open} onClose={onClose} sx={{ '& .MuiDrawer-paper': { width: '350px' } }}>
-      <Box p={2} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: '1 1 auto' }}>
+    <Drawer
+      anchor="right"
+      open={open}
+      onClose={onClose}
+      sx={theme => ({
+        '& .MuiDrawer-paper': {
+          width: '350px',
+          backgroundColor: theme.palette.background.paper,
+        },
+      })}
+    >
+      <Box
+        p={2}
+        sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: '1 1 auto' }}
+      >
         <Typography variant="h5" gutterBottom>
           Config Data
         </Typography>
         {renderContent()}
       </Box>
-      <Paper elevation={3} sx={{ margin: 2, padding: 2 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Typography variant="body1" gutterBottom>
-            Lockdown Mode
-          </Typography>
-          <Switch checked={deployLock} onChange={toggleDeployLock} color="primary" />
-        </Box>
-      </Paper>
-      <Box p={2} sx={{ borderTop: '1px solid gray' }}>
-        <Typography variant="body2" color="textSecondary" align="center">
+      <Box sx={{ px: 2, pb: 1.5, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+        <ControlCard elevation={0} variant="outlined">
+          <Box>
+            <Typography variant="subtitle1" fontWeight={600}>
+              Appearance
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              {isDarkMode ? 'Dark mode is active' : 'Light mode is active'}
+            </Typography>
+          </Box>
+          <ThemeSwitch
+            checked={isDarkMode}
+            onChange={toggleMode}
+            inputProps={{ 'aria-label': 'Toggle dark mode' }}
+          />
+        </ControlCard>
+        <ControlCard elevation={0} variant="outlined">
+          <Box>
+            <Typography variant="subtitle1" fontWeight={600}>
+              Lockdown Mode
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Pause deployments and enforce read-only state while active.
+            </Typography>
+          </Box>
+          <LockSwitch
+            checked={deployLock}
+            onChange={toggleDeployLock}
+            disabled={lockSwitchDisabled}
+            inputProps={{ 'aria-label': 'Toggle deploy lockdown mode' }}
+          />
+        </ControlCard>
+      </Box>
+      <Box p={2} sx={theme => ({ borderTop: `1px solid ${theme.palette.divider}` })}>
+        <Typography variant="body2" color="text.secondary" align="center">
           © 2022 - {new Date().getFullYear()} Vadim Gedz
         </Typography>
       </Box>

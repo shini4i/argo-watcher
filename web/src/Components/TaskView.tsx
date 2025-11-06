@@ -1,8 +1,13 @@
 import React, { useContext, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
+  Alert,
   Box,
   Button,
+  Card,
+  CardContent,
+  CardHeader,
+  Chip,
   CircularProgress,
   Container,
   Dialog,
@@ -10,12 +15,21 @@ import {
   DialogContent,
   DialogContentText,
   DialogTitle,
-  Divider,
   Grid,
-  Paper,
+  Skeleton,
+  Stack,
   Tooltip,
   Typography,
 } from '@mui/material';
+import { AlertColor } from '@mui/material/Alert';
+import {
+  Timeline,
+  TimelineConnector,
+  TimelineContent,
+  TimelineDot,
+  TimelineItem,
+  TimelineSeparator,
+} from '@mui/lab';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
@@ -25,6 +39,7 @@ import { useErrorContext } from '../ErrorContext';
 import { formatDateTime, ProjectDisplay, StatusReasonDisplay } from './TasksTable';
 import { AuthContext } from '../Services/Auth';
 import { useDeployLock } from '../Services/DeployLockHandler';
+import { hasPrivilegedAccess, relativeHumanDuration, relativeTime } from '../Utils';
 
 interface Task {
   id: string;
@@ -72,6 +87,234 @@ const isTask = (value: unknown): value is Task => {
   );
 };
 
+/**
+ * Formats the elapsed time between the provided timestamps into a human readable representation.
+ *
+ * @param created Unix timestamp in seconds representing when the task started.
+ * @param updated Unix timestamp in seconds representing when the task finished or {@code null} when still running.
+ * @returns The formatted duration string.
+ */
+const computeTaskDuration = (created: number, updated: number | null): string => {
+  const endTimestamp = updated ?? Math.round(Date.now() / 1000);
+  return relativeHumanDuration(endTimestamp - created);
+};
+
+type TimelineDotColor = React.ComponentProps<typeof TimelineDot>['color'];
+
+interface StatusDescriptor {
+  readonly label: string;
+  readonly chipColor: 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning';
+  readonly icon: React.ReactNode;
+  readonly timelineDot: TimelineDotColor;
+  readonly reasonSeverity: AlertColor;
+}
+
+/**
+ * Maps API status values onto presentation metadata used throughout the task view.
+ *
+ * @param status The backend status string.
+ * @returns A descriptor covering chip styling, icons and severity cues.
+ */
+const describeStatus = (status: string): StatusDescriptor => {
+  switch (status) {
+    case 'deployed':
+      return {
+        label: 'Deployed',
+        chipColor: 'success',
+        icon: <CheckCircleOutlineIcon fontSize="small" />,
+        timelineDot: 'success',
+        reasonSeverity: 'success',
+      };
+    case 'failed':
+      return {
+        label: 'Failed',
+        chipColor: 'error',
+        icon: <CancelOutlinedIcon fontSize="small" />,
+        timelineDot: 'error',
+        reasonSeverity: 'error',
+      };
+    case 'in progress':
+      return {
+        label: 'In Progress',
+        chipColor: 'warning',
+        icon: <CircularProgress size={16} />,
+        timelineDot: 'warning',
+        reasonSeverity: 'warning',
+      };
+    case 'app not found':
+      return {
+        label: 'App Not Found',
+        chipColor: 'info',
+        icon: <ErrorOutlineIcon fontSize="small" />,
+        timelineDot: 'info',
+        reasonSeverity: 'info',
+      };
+    default:
+      return {
+        label: status,
+        chipColor: 'default',
+        icon: <ErrorOutlineIcon fontSize="small" />,
+        timelineDot: 'grey',
+        reasonSeverity: 'info',
+      };
+  }
+};
+
+interface TimelineEntry {
+  readonly key: string;
+  readonly label: string;
+  readonly timestamp: number;
+  readonly dotColor: TimelineDotColor;
+}
+
+/**
+ * Converts raw timestamp fields provided by the backend into numeric values when possible.
+ *
+ * @param task The task retrieved from the API.
+ * @returns Normalised created and updated timestamps in seconds since epoch.
+ */
+const computeTaskTimestamps = (task: Task): { created: number | null; updated: number | null } => {
+  const createdRaw = Number(task.created);
+  const created = Number.isFinite(createdRaw) ? createdRaw : null;
+
+  const updatedRaw = task.updated ? Number(task.updated) : null;
+  const updated = updatedRaw !== null && Number.isFinite(updatedRaw) ? updatedRaw : null;
+
+  return { created, updated };
+};
+
+/**
+ * Calculates the duration label shown in the summary card.
+ *
+ * @param status Current task status.
+ * @param created Created timestamp (seconds).
+ * @param updated Updated timestamp (seconds).
+ * @returns Human readable duration or the fallback string.
+ */
+const computeDurationLabelForTask = (
+  status: string,
+  created: number | null,
+  updated: number | null,
+): string => {
+  if (created === null) {
+    return 'Unknown';
+  }
+
+  const effectiveUpdated = status === 'in progress' ? null : updated;
+  return computeTaskDuration(created, effectiveUpdated);
+};
+
+/**
+ * Builds the text shown for the last update field.
+ *
+ * @param updated Updated timestamp (seconds).
+ * @returns Formatted label reflecting the last update moment.
+ */
+const computeLastUpdatedLabel = (updated: number | null): string => {
+  if (updated === null) {
+    return 'Not yet updated';
+  }
+
+  return relativeTime(updated * 1000);
+};
+
+/**
+ * Generates timeline entries for the summary timeline component.
+ *
+ * @param created Created timestamp (seconds).
+ * @param updated Updated timestamp (seconds).
+ * @param descriptor Status descriptor with timeline colour information.
+ * @returns Timeline entries in chronological order.
+ */
+const buildTimelineItems = (
+  created: number | null,
+  updated: number | null,
+  descriptor: StatusDescriptor,
+): TimelineEntry[] => {
+  const items: TimelineEntry[] = [];
+
+  if (created !== null) {
+    items.push({
+      key: 'created',
+      label: 'Created',
+      timestamp: created,
+      dotColor: 'info',
+    });
+  }
+
+  if (updated !== null) {
+    items.push({
+      key: 'status',
+      label: descriptor.label,
+      timestamp: updated,
+      dotColor: descriptor.timelineDot,
+    });
+  }
+
+  return items;
+};
+
+/**
+ * Computes tooltip messaging and disabled state for the rollback button.
+ *
+ * @param status Current task status.
+ * @param deployLock Whether rollout lockdown is active.
+ * @returns Tooltip text and disabled flag for the rollback action.
+ */
+const deriveRollbackState = (status: string, deployLock: boolean): { tooltip: string; disabled: boolean } => {
+  if (status === 'in progress') {
+    return {
+      tooltip: 'Rollback is disabled while the task is running.',
+      disabled: true,
+    };
+  }
+
+  if (deployLock) {
+    return {
+      tooltip: 'Rollback blocked because lockdown is active.',
+      disabled: true,
+    };
+  }
+
+  return {
+    tooltip: '',
+    disabled: false,
+  };
+};
+
+interface InfoFieldProps {
+  readonly label: string;
+  readonly value: React.ReactNode;
+}
+
+/**
+ * Renders a compact label/value pair suitable for summary sections.
+ *
+ * @param props Field label and value.
+ * @returns A vertically stacked typography block.
+ */
+const InfoField: React.FC<InfoFieldProps> = ({ label, value }) => (
+  <Box>
+    <Typography
+      variant="caption"
+      color="text.secondary"
+      sx={{ textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: 600 }}
+    >
+      {label}
+    </Typography>
+    {typeof value === 'string' || typeof value === 'number' ? (
+      <Typography variant="body1">{value}</Typography>
+    ) : (
+      value
+    )}
+  </Box>
+);
+
+/**
+ * Displays the detailed task page including summary, metadata, related images and task actions.
+ *
+ * @returns The rendered task details component.
+ */
 export default function TaskView() {
   const { id } = useParams<{ id: string }>();
   const [task, setTask] = useState<Task | null>(null);
@@ -162,7 +405,7 @@ export default function TaskView() {
       }
     };
 
-    if (id && task && task.status === 'in progress') {
+    if (task?.status === 'in progress' && id) {
       intervalId = setInterval(fetchTaskStatus, 10000);
     }
 
@@ -172,8 +415,6 @@ export default function TaskView() {
       }
     };
   }, [task, id, setError]);
-
-  const userIsPrivileged = groups && privilegedGroups && groups.some((group: string) => privilegedGroups.includes(group));
 
   /**
    * Requests the backend to redeploy the selected task version under the current user.
@@ -194,9 +435,11 @@ export default function TaskView() {
       author: email,
     };
 
-    const apiEndpoint = (typeof window !== 'undefined' && window.location)
-      ? `${window.location.origin}/api/v1/tasks`
-      : '/api/v1/tasks';
+    const browserWindow = (globalThis as typeof globalThis & { window?: Window }).window;
+    const apiEndpoint =
+      browserWindow === undefined
+        ? '/api/v1/tasks'
+        : `${browserWindow.location.origin}/api/v1/tasks`;
 
     try {
       const response = await fetch(apiEndpoint, {
@@ -222,175 +465,265 @@ export default function TaskView() {
     }
   };
 
+  if (!task) {
+    return (
+      <Container maxWidth="lg" sx={{ py: 3 }}>
+        <Stack spacing={3}>
+          <Card elevation={3}>
+            <CardContent>
+              <Skeleton variant="text" width="35%" />
+              <Skeleton variant="text" width="55%" />
+              <Skeleton variant="rectangular" height={80} sx={{ mt: 2 }} />
+            </CardContent>
+          </Card>
+          <Card elevation={3}>
+            <CardContent>
+              <Skeleton variant="text" width="30%" />
+              <Skeleton variant="rectangular" height={120} sx={{ mt: 1 }} />
+            </CardContent>
+          </Card>
+        </Stack>
+      </Container>
+    );
+  }
+
+  const { created: createdTimestamp, updated: updatedTimestamp } = computeTaskTimestamps(task);
+  const statusDescriptor = describeStatus(task.status);
+  const durationLabel = computeDurationLabelForTask(
+    task.status,
+    createdTimestamp,
+    updatedTimestamp,
+  );
+  const lastUpdatedLabel = computeLastUpdatedLabel(updatedTimestamp);
+  const timelineItems = buildTimelineItems(createdTimestamp, updatedTimestamp, statusDescriptor);
+  const argoCdUrl = getArgoCDUrl();
+  const rollbackState = deriveRollbackState(task.status, deployLock);
+  const rollbackHoverDisabled = rollbackState.tooltip.length === 0;
+  const userIsPrivileged = hasPrivilegedAccess(groups, privilegedGroups);
+
   return (
-    <Container maxWidth="lg">
-      <Paper elevation={3} sx={{ padding: '20px', marginBottom: '20px' }}>
-        <Typography
-          variant="h5"
-          gutterBottom
-          component="div"
-          sx={{ display: 'flex', alignItems: 'center', marginBottom: '10px' }}
-        >
-          <Box flexGrow={1}>Task Details</Box>
-          <Box fontSize="10px" color="gray">
-            UTC
-          </Box>
-        </Typography>
-        {!task && <Typography>Loading...</Typography>}
-        {task && (
-          <Grid container spacing={2}>
-            <Grid item xs={12}>
-              <Typography variant="h6">Task Information</Typography>
-              <Divider />
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <Typography variant="body2" color="textSecondary">
-                ID
-              </Typography>
-              <Typography variant="body1">{task.id}</Typography>
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <Typography variant="body2" color="textSecondary">
-                Created
-              </Typography>
-              <Typography variant="body1">
-                {formatDateTime(Number(task.created))}
-              </Typography>
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <Typography variant="body2" color="textSecondary">
-                Updated
-              </Typography>
-              <Typography variant="body1">
-                {formatDateTime(Number(task.updated))}
-              </Typography>
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <Typography variant="body2" color="textSecondary">
-                Application
-              </Typography>
-              <Typography variant="body1">{task.app}</Typography>
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <Typography variant="body2" color="textSecondary">
-                Author
-              </Typography>
-              <Typography variant="body1">{task.author}</Typography>
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <Typography variant="body2" color="textSecondary">
-                Project
-              </Typography>
-              <Typography variant="body1">
-                <ProjectDisplay project={task.project} />
-              </Typography>
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <Typography variant="body2" color="textSecondary">
-                Status
-              </Typography>
-              {task.status === 'deployed' && (
-                <Tooltip title="Deployed">
-                  <CheckCircleOutlineIcon style={{ color: 'green' }} />
-                </Tooltip>
-              )}
-              {task.status === 'failed' && (
-                <Tooltip title="Failed">
-                  <CancelOutlinedIcon style={{ color: 'red' }} />
-                </Tooltip>
-              )}
-              {task.status === 'in progress' && (
-                <Tooltip title="In Progress">
-                  <CircularProgress />
-                </Tooltip>
-              )}
-              {task.status === 'app not found' && (
-                <Tooltip title="App Not Found">
-                  <ErrorOutlineIcon style={{ color: 'gray' }} />
-                </Tooltip>
-              )}
-            </Grid>
-            {task.status_reason && (
-              <Grid item xs={12} sm={12}>
-                <Typography variant="body2" color="textSecondary">
-                  Status Details
-                </Typography>
-                <Typography variant="body1">
-                  <StatusReasonDisplay reason={task.status_reason} />
-                </Typography>
-              </Grid>
-            )}
-            <Grid item xs={12}>
-              <Typography variant="h6">Images</Typography>
-              <Divider />
-            </Grid>
-            {task.images.map((item, index) => (
-              <Grid item xs={12} sm={6} key={`${item.image}:${item.tag}`}>
-                <Typography variant="body2" color="textSecondary">
-                  Image {index + 1}
-                </Typography>
-                <Typography variant="body1">
-                  {item.image}:{item.tag}
-                </Typography>
-              </Grid>
-            ))}
-            <Grid item xs={12}>
-              <a href={getArgoCDUrl()} target="_blank" rel="noopener noreferrer">
-                <Button variant="contained" color="primary" style={{ marginRight: '10px' }}>
-                  Open in ArgoCD UI
-                </Button>
-              </a>
-              {authenticated && userIsPrivileged && (
-                <Button
-                  variant="contained"
-                  color="primary"
-                  onClick={handleClickOpen}
-                  disabled={task.status === 'in progress'}
-                >
-                  Rollback to this version
-                </Button>
-              )}
-              <Dialog
-                open={open}
-                onClose={handleClose}
-                aria-labelledby="alert-dialog-title"
-                aria-describedby="alert-dialog-description"
+    <Container maxWidth="lg" sx={{ py: 3 }}>
+      <Stack spacing={3}>
+        <Card elevation={3}>
+          <CardHeader
+            title={`Task ${task.id.substring(0, 8)}`}
+            subheader="UTC"
+            action={
+              <Chip
+                color={statusDescriptor.chipColor}
+                icon={statusDescriptor.icon}
+                label={statusDescriptor.label}
+                variant="filled"
+                sx={{ fontWeight: 600 }}
+              />
+            }
+          />
+          <CardContent>
+            <Stack spacing={3}>
+              <Stack
+                direction={{ xs: 'column', md: 'row' }}
+                spacing={3}
+                justifyContent="space-between"
               >
-                <DialogTitle id="alert-dialog-title">{'Rollback Confirmation'}</DialogTitle>
-                <DialogContent>
-                  <DialogContentText id="alert-dialog-description">
-                    Are you sure you want to rollback to this version?
-                  </DialogContentText>
-                </DialogContent>
-                <DialogActions>
-                  <Button onClick={handleClose} color="primary">
-                    Cancel
-                  </Button>
-                  <Button onClick={handleConfirm} color="primary" autoFocus>
-                    Yes
-                  </Button>
-                </DialogActions>
-              </Dialog>
-            </Grid>
-          </Grid>
+                <InfoField label="Application" value={task.app} />
+                <InfoField label="Author" value={task.author} />
+                <InfoField label="Duration" value={durationLabel} />
+                <InfoField label="Last Updated" value={lastUpdatedLabel} />
+              </Stack>
+              {timelineItems.length > 0 ? (
+                <Timeline
+                  position="right"
+                  sx={{
+                    px: 0,
+                    '& .MuiTimelineItem-root:before': {
+                      display: 'none',
+                    },
+                  }}
+                >
+                  {timelineItems.map((event, index) => (
+                    <TimelineItem key={event.key}>
+                      <TimelineSeparator>
+                        <TimelineDot color={event.dotColor} />
+                        {index < timelineItems.length - 1 && <TimelineConnector />}
+                      </TimelineSeparator>
+                      <TimelineContent sx={{ py: 0.5 }}>
+                        <Typography variant="subtitle2">{event.label}</Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          {formatDateTime(event.timestamp)}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {relativeTime(event.timestamp * 1000)}
+                        </Typography>
+                      </TimelineContent>
+                    </TimelineItem>
+                  ))}
+                </Timeline>
+              ) : (
+                <Typography variant="body2" color="text.secondary">
+                  Timeline information is unavailable for this task.
+                </Typography>
+              )}
+            </Stack>
+          </CardContent>
+        </Card>
+
+        {task.status_reason && (
+          <Alert
+            severity={statusDescriptor.reasonSeverity}
+            sx={{ alignItems: 'flex-start' }}
+          >
+            <Typography variant="subtitle2" sx={{ mb: 1 }}>
+              Status Details
+            </Typography>
+            <StatusReasonDisplay reason={task.status_reason} />
+          </Alert>
         )}
-      </Paper>
-      {deployLock && (
-        <Box sx={{
-          position: 'fixed',
-          bottom: 0,
-          left: 0,
-          width: '100%',
-          backgroundColor: 'error.main',
-          color: 'white',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          py: 2,
-        }}>
-          <Typography variant="h6">Lockdown is active</Typography>
-        </Box>
-      )}
+
+        <Card elevation={3}>
+          <CardHeader title="Task Metadata" />
+          <CardContent>
+            <Grid container spacing={3}>
+              <Grid item xs={12} md={6}>
+                <InfoField
+                  label="Task ID"
+                  value={
+                    <Typography variant="body1" sx={{ fontFamily: 'monospace' }}>
+                      {task.id}
+                    </Typography>
+                  }
+                />
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <InfoField label="Application" value={task.app} />
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <InfoField label="Author" value={task.author} />
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <InfoField
+                  label="Project"
+                  value={<ProjectDisplay project={task.project} />}
+                />
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <InfoField
+                  label="Created (UTC)"
+                  value={formatDateTime(createdTimestamp)}
+                />
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <InfoField
+                  label="Updated (UTC)"
+                  value={
+                    updatedTimestamp ? formatDateTime(updatedTimestamp) : 'Not yet updated'
+                  }
+                />
+              </Grid>
+            </Grid>
+          </CardContent>
+        </Card>
+
+        <Card elevation={3}>
+          <CardHeader title="Images" />
+          <CardContent>
+            {task.images.length > 0 ? (
+              <Stack spacing={1.5}>
+                {task.images.map((item) => (
+                  <Stack
+                    key={`${item.image}:${item.tag}`}
+                    direction={{ xs: 'column', sm: 'row' }}
+                    spacing={1}
+                    alignItems={{ xs: 'flex-start', sm: 'center' }}
+                    justifyContent="space-between"
+                  >
+                    <Typography
+                      variant="body2"
+                      sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}
+                    >
+                      {item.image}
+                    </Typography>
+                    <Chip label={item.tag} size="small" color="primary" variant="outlined" />
+                  </Stack>
+                ))}
+              </Stack>
+            ) : (
+              <Typography variant="body2" color="text.secondary">
+                No container images were reported for this task.
+              </Typography>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card elevation={3}>
+          <CardHeader title="Actions" />
+          <CardContent>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+              {argoCdUrl ? (
+                <Button
+                  component="a"
+                  href={argoCdUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  variant="outlined"
+                >
+                  Open in Argo CD UI
+                </Button>
+              ) : (
+                <Tooltip title="Argo CD URL is not configured.">
+                  <span>
+                    <Button variant="outlined" disabled>
+                      Open in Argo CD UI
+                    </Button>
+                  </span>
+                </Tooltip>
+              )}
+              {authenticated && userIsPrivileged && (
+                <Tooltip title={rollbackState.tooltip} disableHoverListener={rollbackHoverDisabled}>
+                  <span>
+                    <Button
+                      variant="contained"
+                      onClick={handleClickOpen}
+                      disabled={rollbackState.disabled}
+                    >
+                      Rollback to this version
+                    </Button>
+                  </span>
+                </Tooltip>
+              )}
+            </Stack>
+          </CardContent>
+        </Card>
+
+        {deployLock && (
+          <Alert
+            severity="error"
+            icon={<ErrorOutlineIcon />}
+            sx={{ alignItems: 'center' }}
+          >
+            Lockdown is active. Deployments are forbidden.
+          </Alert>
+        )}
+      </Stack>
+
+      <Dialog
+        open={open}
+        onClose={handleClose}
+        aria-labelledby="alert-dialog-title"
+        aria-describedby="alert-dialog-description"
+      >
+        <DialogTitle id="alert-dialog-title">{'Rollback Confirmation'}</DialogTitle>
+        <DialogContent>
+          <DialogContentText id="alert-dialog-description">
+            Are you sure you want to rollback to this version?
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleClose}>Cancel</Button>
+          <Button onClick={handleConfirm} autoFocus>
+            Yes
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 }

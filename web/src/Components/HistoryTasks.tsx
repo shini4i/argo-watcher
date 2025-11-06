@@ -1,7 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
-import Container from '@mui/material/Container';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import TextField from '@mui/material/TextField';
@@ -23,6 +22,9 @@ import * as XLSX from 'xlsx';
 import ApplicationsFilter from './ApplicationsFilter';
 import TasksTable, { useTasks } from './TasksTable';
 import { useErrorContext } from '../ErrorContext';
+import { AuthContext } from '../Services/Auth';
+import { fetchConfig } from '../Services/Data';
+import { hasPrivilegedAccess } from '../Utils';
 
 const modalStyle = {
     position: 'absolute',
@@ -36,11 +38,20 @@ const modalStyle = {
     borderRadius: 2,
 };
 
+const RAW_NEWLINE = String.raw`\n`;
+
 const HistoryTasks: React.FC = () => {
     const [searchParams, setSearchParams] = useSearchParams();
     const { setError, setSuccess } = useErrorContext();
     const { tasks, sortField, setSortField, appNames, refreshTasksInRange, clearTasks } =
         useTasks({ setError, setSuccess });
+    const authContext = useContext(AuthContext);
+    if (!authContext) {
+        throw new Error('AuthContext must be used within an AuthProvider');
+    }
+
+    const { groups, privilegedGroups } = authContext;
+    const [configData, setConfigData] = useState<Awaited<ReturnType<typeof fetchConfig>> | null>(null);
     const [currentApplication, setCurrentApplication] = useState<string | null>(
         searchParams.get('app')
     );
@@ -52,8 +63,8 @@ const HistoryTasks: React.FC = () => {
     const [currentPage, setCurrentPage] = useState<number>(
         searchParams.get('page') ? Number(searchParams.get('page')) : 1
     );
-    const [isExportModalOpen, setExportModalOpen] = useState(false);
-    const [anonymize, setAnonymize] = useState(false);
+    const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
+    const [anonymize, setAnonymize] = useState<boolean>(false);
 
     /**
      * Synchronizes the visible filters with the URL search params so the current view can
@@ -142,7 +153,9 @@ const HistoryTasks: React.FC = () => {
                 images: task.images.map((img) => `${img.image}:${img.tag}`).join(', '),
                 ...(anonymize
                     ? {}
-                    : { status_reason: task.status_reason?.replaceAll('\n', '\\n') }),
+                    : {
+                          status_reason: task.status_reason?.replaceAll('\n', RAW_NEWLINE),
+                      }),
             }));
         }
 
@@ -167,20 +180,49 @@ const HistoryTasks: React.FC = () => {
             XLSX.writeFile(workbook, filename);
         }
 
-        setExportModalOpen(false);
+        setIsExportModalOpen(false);
         setSuccess('Data exported successfully.');
     };
     useEffect(() => {
         refreshWithFilters(startDate, endDate, currentApplication, currentPage);
     }, [startDate, endDate, currentApplication, currentPage]);
+    useEffect(() => {
+        const loadConfig = async () => {
+            try {
+                const data = await fetchConfig();
+                setConfigData(data);
+            } catch (error) {
+                if (error instanceof Error) {
+                    setError('fetchConfig', error.message);
+                } else {
+                    setError('fetchConfig', 'An unknown error occurred');
+                }
+            }
+        };
+
+        loadConfig();
+    }, [setError]);
+
+    const keycloakEnabled = Boolean(configData?.keycloak?.enabled);
+    const userHasExportPrivileges = !keycloakEnabled || hasPrivilegedAccess(groups, privilegedGroups);
 
     return (
-        <Container maxWidth="xl">
+        <Box
+            sx={{
+                px: { xs: 2, md: 3 },
+                py: 2,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 2,
+                width: '100%',
+                height: '100%',
+                boxSizing: 'border-box',
+            }}
+        >
             <Stack
                 direction={{ xs: 'column', md: 'row' }}
                 spacing={2}
                 alignItems="center"
-                sx={{ mb: 2 }}
             >
                 <Typography
                     variant="h5"
@@ -198,15 +240,17 @@ const HistoryTasks: React.FC = () => {
                     <Box sx={{ fontSize: '10px' }}>UTC</Box>
                 </Typography>
                 <Stack direction="row" spacing={2}>
-                    <Box>
-                        <Button
-                            variant="contained"
-                            startIcon={<FileDownloadIcon />}
-                            onClick={() => setExportModalOpen(true)}
-                        >
-                            Export
-                        </Button>
-                    </Box>
+                    {userHasExportPrivileges && (
+                        <Box>
+                            <Button
+                                variant="contained"
+                                startIcon={<FileDownloadIcon />}
+                                onClick={() => setIsExportModalOpen(true)}
+                            >
+                                Export
+                            </Button>
+                        </Box>
+                    )}
                     <Box>
                         <ApplicationsFilter
                             value={currentApplication}
@@ -257,7 +301,7 @@ const HistoryTasks: React.FC = () => {
                     </Box>
                 </Stack>
             </Stack>
-            <Box sx={{ boxShadow: 2, borderRadius: 2, p: 2 }}>
+            <Box sx={{ flexGrow: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
                 <TasksTable
                     tasks={tasks}
                     sortField={sortField}
@@ -277,7 +321,7 @@ const HistoryTasks: React.FC = () => {
             </Box>
             <Modal
                 open={isExportModalOpen}
-                onClose={() => setExportModalOpen(false)}
+                onClose={() => setIsExportModalOpen(false)}
                 aria-labelledby="export-modal-title"
                 aria-describedby="export-modal-description"
             >
@@ -319,7 +363,7 @@ const HistoryTasks: React.FC = () => {
                     </FormGroup>
                 </Box>
             </Modal>
-        </Container>
+        </Box>
     );
 };
 

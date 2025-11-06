@@ -1,4 +1,4 @@
-import React, {createContext, useContext, useEffect, useState, ReactNode} from 'react';
+import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 
 /**
  * Fetches the deploy lock status from the server.
@@ -76,16 +76,20 @@ interface DeployLockProviderProps {
  * @returns {JSX.Element} - The DeployLockProvider component.
  */
 export function DeployLockProvider({children}: DeployLockProviderProps): JSX.Element {
-    const [deployLock, setDeployLockState] = useState<boolean>(false);
+    const [isDeployLocked, setIsDeployLocked] = useState<boolean>(false);
     const [socket, setSocket] = useState<WebSocket | null>(null);
     /**
      * Establishes a WebSocket connection to the server.
      */
     useEffect(() => {
-        if (typeof window === 'undefined' || !window.location) {
+        const browserWindow = (globalThis as typeof globalThis & { window?: Window }).window;
+        if (browserWindow === undefined) {
             return undefined;
         }
-        const { protocol: pageProtocol, host, hostname, port } = window.location;
+        if (!browserWindow.location) {
+            return undefined;
+        }
+        const { protocol: pageProtocol, host, hostname, port } = browserWindow.location;
         const wsProtocol = pageProtocol === 'https:' ? 'wss:' : 'ws:';
         const isDevelopment = (hostname === '127.0.0.1' || hostname === 'localhost')
             && port === '3000'; // Checking if we are running in development mode
@@ -107,21 +111,21 @@ export function DeployLockProvider({children}: DeployLockProviderProps): JSX.Ele
         if (socket) {
             socket.onopen = async () => {
                 const lock = await fetchDeployLock();
-                setDeployLockState(lock);
+                setIsDeployLocked(lock);
             };
             socket.onmessage = (event) => {
                 const message = event.data;
                 if (message === 'locked') {
-                    setDeployLockState(true);
+                    setIsDeployLocked(true);
                 } else if (message === 'unlocked') {
-                    setDeployLockState(false);
+                    setIsDeployLocked(false);
                 }
             };
         }
     }, [socket]);
 
     return (
-        <DeployLockContext.Provider value={deployLock}>
+        <DeployLockContext.Provider value={isDeployLocked}>
             {children}
         </DeployLockContext.Provider>
     );

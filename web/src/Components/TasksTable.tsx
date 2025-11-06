@@ -16,6 +16,7 @@ import {
   Typography,
   Link,
 } from '@mui/material';
+import { alpha } from '@mui/material/styles';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
 import CircularProgress from '@mui/material/CircularProgress';
@@ -251,8 +252,17 @@ function TableCellSorted({ field, sortField, setSortField, children }: TableCell
       }}
       sx={{ cursor: 'pointer' }}
     >
-      <Box sx={{ display: 'flex', flexDirection: 'row' }}>
-        {children}{' '}
+      <Box
+        sx={{
+          display: 'flex',
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: '100%',
+          gap: 0.5,
+        }}
+      >
+        {children}
         {sortField.field === field &&
           (sortField.direction === 'ASC' ? (
             <KeyboardArrowUpIcon />
@@ -327,8 +337,41 @@ function TasksTable({
 
   return (
     <>
-      <TableContainer>
-        <Table sx={{ minWidth: 650 }}>
+      <TableContainer
+        sx={theme => ({
+          borderRadius: theme.shape.borderRadius,
+          border: `1px solid ${alpha(theme.palette.divider, theme.palette.mode === 'dark' ? 0.6 : 0.25)}`,
+          backgroundColor: theme.palette.background.paper,
+          width: '100%',
+          flexGrow: 1,
+        })}
+      >
+        <Table
+          sx={theme => ({
+            minWidth: 650,
+            borderCollapse: 'collapse',
+            '& thead th': {
+              backgroundColor:
+                theme.palette.mode === 'dark'
+                  ? alpha(theme.palette.background.default, 0.6)
+                  : alpha(theme.palette.primary.main, 0.03),
+              fontWeight: 600,
+              color: theme.palette.text.primary,
+            },
+            '& td, & th': {
+              border: `1px solid ${alpha(theme.palette.divider, theme.palette.mode === 'dark' ? 0.6 : 0.18)}`,
+              padding: theme.spacing(1.25),
+              textAlign: 'center',
+              verticalAlign: 'middle',
+            },
+            '& tbody tr:hover': {
+              backgroundColor: alpha(
+                theme.palette.primary.main,
+                theme.palette.mode === 'dark' ? 0.12 : 0.05,
+              ),
+            },
+          })}
+        >
           <TableHead>
             <TableRow>
               <TableCellSorted sortField={sortField} setSortField={setSortField} field={'id'}>
@@ -360,23 +403,34 @@ function TasksTable({
           <TableBody>
             {tasksPaginated.map((task) => (
               <React.Fragment key={task.id}>
-                <TableRow>
+                <TableRow
+                  sx={theme => ({
+                    '& td': {
+                      paddingTop: theme.spacing(1.5),
+                      paddingBottom: theme.spacing(1.5),
+                    },
+                  })}
+                >
                   <TableCell>
                     <Typography
                       to={`/task/${task.id}`}
                       sx={{
                         textDecoration: 'none',
-                        color: 'neutral.main',
+                        color: theme => theme.palette.primary.main,
                         '&:hover': {
                           textDecoration: 'underline',
                         },
-                        display: 'flex',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: theme => theme.spacing(0.5),
+                        margin: '0 auto',
                       }}
                       component={ReactLink}
                       variant={'body2'}
                     >
                       <span>{task.id.substring(0, 8)}</span>
-                      <LaunchIcon fontSize="small" sx={{ marginLeft: '5px' }} />
+                      <LaunchIcon fontSize="small" />
                     </Typography>
                   </TableCell>
                   <TableCell>{task.app}</TableCell>
@@ -439,9 +493,26 @@ function TasksTable({
                 </TableRow>
                 {task.status_reason && visibleReasons.includes(task.id) && (
                   <TableRow
-                    sx={{
-                      backgroundColor: 'reason_color.main',
-                    }}
+                    sx={theme => ({
+                      backgroundColor: alpha(
+                        theme.palette.warning.main,
+                        theme.palette.mode === 'dark' ? 0.28 : 0.18,
+                      ),
+                      '& td': {
+                        borderTop: `1px solid ${alpha(
+                          theme.palette.warning.dark,
+                          theme.palette.mode === 'dark' ? 0.3 : 0.2,
+                        )}`,
+                        color:
+                          theme.palette.mode === 'dark'
+                            ? theme.palette.warning.contrastText
+                            : theme.palette.text.primary,
+                        borderColor: alpha(
+                          theme.palette.warning.dark,
+                          theme.palette.mode === 'dark' ? 0.35 : 0.25,
+                        ),
+                      },
+                    })}
                   >
                     <TableCell colSpan={8}>
                       <StatusReasonDisplay reason={task.status_reason} />
@@ -493,18 +564,18 @@ function TasksTable({
       </Box>
       {deployLock && (
         <Box
-          sx={{
+          sx={theme => ({
             position: 'fixed',
             bottom: 0,
             left: 0,
             width: '100%',
-            backgroundColor: 'error.main',
-            color: 'white',
+            backgroundColor: theme.palette.error.main,
+            color: theme.palette.error.contrastText,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             py: 2,
-          }}
+          })}
         >
           <Typography variant="h6">Lockdown is active</Typography>
         </Box>

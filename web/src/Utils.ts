@@ -62,3 +62,21 @@ export const relativeHumanDuration = (seconds: number): string => {
 export const relativeTimestamp = (timeframe: number): number => {
   return Math.floor(Date.now() / 1000) - timeframe;
 };
+
+/**
+ * Determines whether the current user belongs to at least one privileged group.
+ *
+ * @param userGroups Groups attached to the authenticated user.
+ * @param privilegedGroups Groups that grant elevated permissions.
+ * @returns True when the user belongs to a privileged group, otherwise false.
+ */
+export const hasPrivilegedAccess = (
+  userGroups?: ReadonlyArray<string> | null,
+  privilegedGroups?: ReadonlyArray<string> | null,
+): boolean => {
+  if (!Array.isArray(userGroups) || !Array.isArray(privilegedGroups)) {
+    return false;
+  }
+
+  return userGroups.some(group => privilegedGroups.includes(group));
+};
