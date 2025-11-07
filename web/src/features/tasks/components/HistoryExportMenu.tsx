@@ -13,7 +13,12 @@ const timestampFilename = () => {
 /**
  * Export menu for history tasks allowing CSV/JSON/XLSX downloads with optional anonymisation.
  */
-export const HistoryExportMenu = ({ anonymizeForced }: { anonymizeForced: boolean }) => {
+interface HistoryExportMenuProps {
+  anonymizeForced: boolean;
+  disabled?: boolean;
+}
+
+export const HistoryExportMenu = ({ anonymizeForced, disabled = false }: HistoryExportMenuProps) => {
   const notify = useNotify();
   const { data } = useListContext<Task>();
   const records = useMemo(() => (Array.isArray(data) ? data : []), [data]);
@@ -22,7 +27,12 @@ export const HistoryExportMenu = ({ anonymizeForced }: { anonymizeForced: boolea
   const [anonymize, setAnonymize] = useState<boolean>(true);
 
   const open = Boolean(anchorEl);
-  const handleOpen = (event: React.MouseEvent<HTMLButtonElement>) => setAnchorEl(event.currentTarget);
+  const handleOpen = (event: React.MouseEvent<HTMLButtonElement>) => {
+    if (disabled || records.length === 0) {
+      return;
+    }
+    setAnchorEl(event.currentTarget);
+  };
   const handleClose = () => setAnchorEl(null);
 
   const runExport = (format: 'json' | 'csv' | 'xlsx') => {
@@ -59,7 +69,12 @@ export const HistoryExportMenu = ({ anonymizeForced }: { anonymizeForced: boolea
       justifyContent="flex-end"
       sx={{ width: { xs: '100%', md: 'auto' } }}
     >
-      <Button variant="contained" startIcon={<FileDownloadIcon />} onClick={handleOpen} disabled={records.length === 0}>
+      <Button
+        variant="contained"
+        startIcon={<FileDownloadIcon />}
+        onClick={handleOpen}
+        disabled={records.length === 0 || disabled}
+      >
         Export
       </Button>
       <FormControlLabel
@@ -68,7 +83,7 @@ export const HistoryExportMenu = ({ anonymizeForced }: { anonymizeForced: boolea
             size="small"
             checked={anonymizeForced ? true : anonymize}
             onChange={event => setAnonymize(event.target.checked)}
-            disabled={anonymizeForced}
+            disabled={anonymizeForced || disabled}
           />
         }
         label="Anonymize"

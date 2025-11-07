@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Box, Card, CardContent, Stack, Typography } from '@mui/material';
+import { Box, Stack } from '@mui/material';
 import { List, Pagination, type ListProps } from 'react-admin';
 import { PerPagePersistence, readPersistentPerPage } from '../../../shared/hooks/usePersistentPerPage';
 
@@ -9,21 +9,10 @@ interface TaskListLayoutProps {
   defaultPerPage?: number;
   header?: ReactNode | ReadonlyArray<ReactNode>;
   children: ReactNode;
-  emptyComponent?: ReactNode;
   paginationOptions?: number[];
   listProps?: Partial<ListProps>;
+  emptyComponent?: ReactNode | false;
 }
-
-const defaultEmptyState = (
-  <Card variant="outlined">
-    <CardContent>
-      <Typography variant="h6">No tasks found</Typography>
-      <Typography variant="body2" color="text.secondary">
-        No tasks match the current filters.
-      </Typography>
-    </CardContent>
-  </Card>
-);
 
 /**
  * Shared wrapper for task list pages handling pagination persistence, headers, and empty states.
@@ -34,9 +23,9 @@ export const TaskListLayout = ({
   defaultPerPage = 25,
   header,
   children,
-  emptyComponent = defaultEmptyState,
   paginationOptions = [10, 25, 50, 100],
   listProps,
+  emptyComponent = false,
 }: TaskListLayoutProps) => {
   const perPage = readPersistentPerPage(perPageStorageKey, defaultPerPage);
 
@@ -61,10 +50,10 @@ export const TaskListLayout = ({
       resource={resource}
       sort={sort}
       perPage={perPage}
-      empty={emptyComponent}
       pagination={resolvedPagination}
       actions={actions}
       storeKey={storeKey}
+      empty={emptyComponent}
       {...rest}
     >
       <PerPagePersistence storageKey={perPageStorageKey} />

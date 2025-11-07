@@ -70,7 +70,6 @@ func (env *Env) CreateRouter() *gin.Engine {
 
 	staticFilesPath := env.config.ResolveStaticFilePath()
 	log.Info().
-		Str("frontend_variant", env.config.FrontendVariant).
 		Str("static_path", staticFilesPath).
 		Msg("serving frontend assets")
 	router.Use(static.Serve("/", static.LocalFile(staticFilesPath, true)))

@@ -1,52 +1,31 @@
-import React from 'react';
-import { BrowserRouter, Route, Routes } from 'react-router-dom';
-import { Box, CircularProgress } from '@mui/material';
+import { Route } from 'react-router-dom';
+import { Admin, CustomRoutes, Resource } from 'react-admin';
+import { AppLayout } from './layout/AppLayout';
+import { dataProvider } from './data/dataProvider';
+import { authProvider } from './auth/authProvider';
+import { RecentTasksList } from './features/tasks/RecentTasksList';
+import { HistoryTasksList } from './features/tasks/HistoryTasksList';
+import { AppNotification } from './layout/components/AppNotification';
+import { TaskShow } from './features/tasks/show/TaskShow';
+import { useThemeMode } from './theme';
 
-import RecentTasks from './Components/RecentTasks';
-import HistoryTasks from './Components/HistoryTasks';
-import Layout from './Layout';
-import Page404 from './Page404';
-import { ErrorProvider } from './ErrorContext';
-import TaskView from './Components/TaskView';
-import { AuthContext, useAuth } from './Services/Auth';
-import { DeployLockProvider } from './Services/DeployLockHandler';
-import { ThemeModeProvider } from './ThemeModeContext';
+export const App = () => {
+  const { theme } = useThemeMode();
 
-const App: React.FC = () => {
-  const auth = useAuth();
-
-  if (auth.authenticated === null) {
-    return (
-      <Box display="flex" justifyContent="center" alignItems="center" height="100vh">
-        <CircularProgress />
-      </Box>
-    );
-  }
-
-  if (auth.authenticated) {
-    return (
-      <AuthContext.Provider value={auth}>
-        <ThemeModeProvider>
-          <ErrorProvider>
-            <DeployLockProvider>
-              <BrowserRouter>
-                <Routes>
-                  <Route path="/" element={<Layout />}>
-                    <Route index element={<RecentTasks />} />
-                    <Route path="/history" element={<HistoryTasks />} />
-                    <Route path="/task/:id" element={<TaskView />} />
-                  </Route>
-                  <Route path="*" element={<Page404 />} />
-                </Routes>
-              </BrowserRouter>
-            </DeployLockProvider>
-          </ErrorProvider>
-        </ThemeModeProvider>
-      </AuthContext.Provider>
-    );
-  }
-
-  return null;
+  return (
+    <Admin
+      layout={AppLayout}
+      dataProvider={dataProvider}
+      authProvider={authProvider}
+      notification={AppNotification}
+      disableTelemetry
+      theme={theme}
+    >
+      <Resource name="tasks" options={{ label: 'Recent Tasks' }} list={RecentTasksList} />
+      <CustomRoutes>
+        <Route path="/history" element={<HistoryTasksList />} />
+        <Route path="/task/:id" element={<TaskShow />} />
+      </CustomRoutes>
+    </Admin>
+  );
 };
-
-export default App;

@@ -39,14 +39,14 @@ const sampleRecords: Task[] = [
   },
 ];
 
-const renderMenu = (records: Task[] = sampleRecords, anonymizeForced = false) => {
+const renderMenu = (records: Task[] = sampleRecords, anonymizeForced = false, disabled = false) => {
   const contextValue = {
     data: records,
   } as unknown as ListContextValue<Task>;
 
   return render(
     <ListContextProvider value={contextValue}>
-      <HistoryExportMenu anonymizeForced={anonymizeForced} />
+      <HistoryExportMenu anonymizeForced={anonymizeForced} disabled={disabled} />
     </ListContextProvider>,
   );
 };
@@ -63,6 +63,12 @@ describe('HistoryExportMenu', () => {
   it('disables the export button when there are no records', () => {
     renderMenu([]);
     expect(screen.getByRole('button', { name: /export/i })).toBeDisabled();
+  });
+
+  it('disables export entirely when disabled prop is true', () => {
+    renderMenu(sampleRecords, false, true);
+    const exportButton = screen.getByRole('button', { name: /export/i });
+    expect(exportButton).toBeDisabled();
   });
 
   it('allows toggling anonymisation and exporting CSV data', async () => {

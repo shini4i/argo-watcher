@@ -24,10 +24,27 @@
           git
         ];
 
-        frontendToolchain = with pkgs; [
-          nodejs_20
-          pnpm
-        ];
+        viteShim = pkgs.writeShellApplication {
+          name = "vite";
+          runtimeInputs = [ pkgs.nodejs_20 ];
+          text = ''
+            set -euo pipefail
+            if [ -x "$PWD/node_modules/.bin/vite" ]; then
+              exec "$PWD/node_modules/.bin/vite" "$@"
+            elif [ -x "$PWD/web/node_modules/.bin/vite" ]; then
+              exec "$PWD/web/node_modules/.bin/vite" "$@"
+            else
+              exec npx --yes vite "$@"
+            fi
+          '';
+        };
+
+        frontendToolchain =
+          (with pkgs; [
+            nodejs_20
+            pnpm
+            corepack
+          ]) ++ [ viteShim ];
       in
       {
         devShells.default = pkgs.mkShell {

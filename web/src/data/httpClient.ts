@@ -49,6 +49,11 @@ const buildRequestInit = (options: HttpClientOptions): RequestInit => {
   const token = getAccessToken();
   if (token && !headers.Authorization) {
     headers.Authorization = `Bearer ${token}`;
+    if (!headers['Keycloak-Authorization']) {
+      headers['Keycloak-Authorization'] = `Bearer ${token}`;
+    }
+  } else if (token && headers.Authorization && !headers['Keycloak-Authorization']) {
+    headers['Keycloak-Authorization'] = headers.Authorization;
   }
 
   const init: RequestInit = { method, headers };

@@ -3,7 +3,7 @@ FROM gcr.io/distroless/static:nonroot
 WORKDIR /app
 
 COPY --chown=nonroot:nonroot argo-watcher /usr/local/bin/argo-watcher
-COPY --chown=nonroot:nonroot web/build ./static
+COPY --chown=nonroot:nonroot web/dist ./static
 COPY --chown=nonroot:nonroot db ./db
 
 CMD ["argo-watcher"]

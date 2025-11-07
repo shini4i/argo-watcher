@@ -7,7 +7,7 @@ db/data
 
 # static directory artifacts (compiled frontend assets and vendored modules)
 static/               # mkdocs or other asset dumps
-web-ra/dist/          # Vite build output for React Admin
+web/dist/             # Vite build output for React Admin
 **/node_modules/      # installed dependencies
 .pnpm-store/          # pnpm shared store created during installs
 

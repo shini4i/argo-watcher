@@ -29,7 +29,10 @@ describe('httpClient', () => {
     const response = await httpClient('/status');
     expect(response.data).toEqual({ status: 'ok' });
     const [, init] = mockFetch.mock.calls[0];
-    expect(init?.headers).toMatchObject({ Authorization: 'Bearer token-abc' });
+    expect(init?.headers).toMatchObject({
+      Authorization: 'Bearer token-abc',
+      'Keycloak-Authorization': 'Bearer token-abc',
+    });
   });
 
   it('throws HttpError when server returns error payload', async () => {

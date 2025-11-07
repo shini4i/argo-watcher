@@ -86,27 +86,18 @@ For more detailed information on configuration, API usage, and advanced features
 
 ## Frontend Development
 
-The repository now hosts two frontend workspaces while we execute the React-admin migration:
-
-- `web/`: the existing Create React App implementation (legacy).
-- `web-ra/`: the new React-admin workspace powered by Vite.
-
-Use the Taskfile helpers to keep both bundles in sync:
+The `web/` directory now contains the React-admin UI powered by Vite.
+Use the Taskfile helpers to install dependencies, lint, test, and build the bundle:
 
 ```bash
-task install-web-ra-dependencies  # npm ci in web-ra/
-task lint-web-ra                  # eslint pass for the React-admin codebase
-task test-web-ra                  # vitest unit tests (jsdom)
-task build-ui                     # builds legacy (web/build) and React-admin (web-ra/dist) bundles
+task install-web-dependencies  # npm ci in web/
+task lint-web                  # eslint pass for the React-admin codebase
+task test-web                  # vitest unit tests (jsdom)
+task build-ui                  # builds the Vite bundle into web/dist
 ```
 
-When running the Go server, select which frontend bundle to serve using environment variables:
-
-- `FRONTEND_VARIANT` (`legacy` | `react-admin`, defaults to `legacy` for now)
-- `STATIC_FILES_PATH` (legacy bundle path, default `static`)
-- `REACT_ADMIN_STATIC_FILES_PATH` (React-admin bundle path, default `static/react-admin`)
-
-In Kubernetes, set `FRONTEND_VARIANT` in the release manifest and restart the Argo Watcher pod to flip between bundles.
+The Go server always serves the compiled assets from `STATIC_FILES_PATH`
+(defaults to `static`). Override this path if you publish the bundle elsewhere.
 
 ## Contributing
 
