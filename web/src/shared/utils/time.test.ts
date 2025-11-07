@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { formatDateTime, formatDuration, formatRelativeTime, relativeTimestamp } from './time';
 
 describe('time utilities', () => {

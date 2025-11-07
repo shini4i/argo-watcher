@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useListPaginationContext } from 'react-admin';
 
+/** Retrieves the stored per-page value or falls back when absent/invalid. */
 const readPerPage = (storageKey: string, fallback: number) => {
   if (typeof window === 'undefined') {
     return fallback;
@@ -12,6 +13,7 @@ const readPerPage = (storageKey: string, fallback: number) => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 };
 
+/** Persists the current per-page value to localStorage. */
 const writePerPage = (storageKey: string, value: number) => {
   if (typeof window === 'undefined') {
     return;

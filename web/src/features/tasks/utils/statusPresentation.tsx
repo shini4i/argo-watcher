@@ -14,6 +14,7 @@ export interface TaskStatusPresentation {
   readonly icon: ReactNode;
 }
 
+/** Fallback rendering instructions when a status is unknown or missing. */
 const DEFAULT_PRESENTATION: TaskStatusPresentation = {
   label: 'Unknown',
   chipColor: 'default',

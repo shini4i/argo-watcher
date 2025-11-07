@@ -1,5 +1,5 @@
 import { HttpError } from 'react-admin';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dataProvider } from './dataProvider';
 import { clearAccessToken, setAccessToken } from '../auth/tokenStore';
 

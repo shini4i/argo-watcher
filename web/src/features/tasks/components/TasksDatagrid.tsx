@@ -1,53 +1,58 @@
 import type { ReactNode } from 'react';
 import { Button, Chip, Link, Stack, Typography } from '@mui/material';
 import { alpha, type SxProps, type Theme } from '@mui/material/styles';
-import { Datagrid, DateField, FunctionField, TextField, useRecordContext } from 'react-admin';
+import { Datagrid, FunctionField, TextField, useRecordContext } from 'react-admin';
 import { Link as RouterLink } from 'react-router-dom';
 import type { Task } from '../../../data/types';
 import { formatDuration, formatRelativeTime } from '../../../shared/utils';
 import { describeTaskStatus } from '../utils/statusPresentation';
 import { useEffect, useState } from 'react';
+import { useTimezone } from '../../../shared/providers/TimezoneProvider';
 
 /**
  * Renders the shared task table used by both recent and history views.
  */
-export const TasksDatagrid = () => (
-  <Datagrid
-    rowClick="expand"
-    bulkActionButtons={false}
-    expand={<StatusReasonPanel />}
-    isRowExpandable={(record?: Task) => Boolean(record?.status_reason)}
-    sx={datagridSx}
-  >
-    <TextField source="app" label="Application" />
-    <FunctionField label="Project" render={(record: Task) => <ProjectReference project={record.project} />} />
-    <TextField source="author" label="Author" />
-    <FunctionField
-      label="Status"
-      render={(record: Task) => <TaskStatusChip status={record.status} />}
-    />
-    <DateField source="created" showTime label="Created" />
-    <FunctionField label="Updated" render={(record: Task) => formatRelativeTime(record.updated)} />
-    <FunctionField
-      label="Duration"
-      render={(record: Task) => <DurationField record={record} />}
-    />
-    <FunctionField
-      label="Images"
-      sortable={false}
-      render={(record: Task) => <ImagesList images={record.images} />}
-    />
-    <FunctionField
-      label="Details"
-      sortable={false}
-      render={(record: Task) => (
-        <Button component={RouterLink} to={`/task/${record.id}`} size="small" variant="outlined">
-          View
-        </Button>
-      )}
-    />
-  </Datagrid>
-);
+export const TasksDatagrid = () => {
+  const { formatDate } = useTimezone();
+
+  return (
+    <Datagrid
+      rowClick="expand"
+      bulkActionButtons={false}
+      expand={<StatusReasonPanel />}
+      isRowExpandable={(record?: Task) => Boolean(record?.status_reason)}
+      sx={datagridSx}
+    >
+      <TextField source="app" label="Application" />
+      <FunctionField label="Project" render={(record: Task) => <ProjectReference project={record.project} />} />
+      <TextField source="author" label="Author" />
+      <FunctionField
+        label="Status"
+        render={(record: Task) => <TaskStatusChip status={record.status} />}
+      />
+      <FunctionField label="Created" render={(record: Task) => formatDate(record.created)} sortBy="created" />
+      <FunctionField label="Updated" render={(record: Task) => formatRelativeTime(record.updated)} />
+      <FunctionField
+        label="Duration"
+        render={(record: Task) => <DurationField record={record} />}
+      />
+      <FunctionField
+        label="Images"
+        sortable={false}
+        render={(record: Task) => <ImagesList images={record.images} />}
+      />
+      <FunctionField
+        label="Details"
+        sortable={false}
+        render={(record: Task) => (
+          <Button component={RouterLink} to={`/task/${record.id}`} size="small" variant="outlined">
+            View
+          </Button>
+        )}
+      />
+    </Datagrid>
+  );
+};
 
 const datagridSx: SxProps<Theme> = theme => ({
   '& .RaDatagrid-headerCell': {

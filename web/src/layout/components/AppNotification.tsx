@@ -27,11 +27,13 @@ const defaultSnackbarOffset: SxProps<Theme> = theme => ({
   },
 });
 
+/** Splits the MUI sx prop from the rest of the props helper components forward. */
 const extractSx = <T extends object>(input: T): [SxProps<Theme> | undefined, Omit<T, 'sx'>] => {
   const { sx, ...rest } = input as T & { sx?: SxProps<Theme> };
   return [sx, rest];
 };
 
+/** Maps react-admin notification types to MUI alert severities. */
 const severityFromType = (type?: string): AlertColor => {
   switch (type) {
     case 'error':
@@ -44,6 +46,9 @@ const severityFromType = (type?: string): AlertColor => {
   }
 };
 
+/**
+ * Custom notification component that mirrors react-admin notifications while supporting undo flows.
+ */
 export const AppNotification = (props: NotificationProps) => {
   const { autoHideDuration = 4000, anchorOrigin = defaultAnchorOrigin, className, type = 'info', ...rest } = props;
   const { notifications, takeNotification } = useNotificationContext();
@@ -80,10 +85,12 @@ export const AppNotification = (props: NotificationProps) => {
     return undefined;
   }, [notifications, currentNotification, takeNotification]);
 
+  /** Closes the snackbar without triggering undo behavior. */
   const handleClose = useCallback(() => {
     setOpen(false);
   }, []);
 
+  /** Invoked after the snackbar exits to flush undoable mutations. */
   const handleExited = useCallback(() => {
     if (currentNotification?.notificationOptions?.undoable) {
       const mutation = takeMutation();
@@ -96,6 +103,7 @@ export const AppNotification = (props: NotificationProps) => {
     setCurrentNotification(undefined);
   }, [currentNotification, takeMutation]);
 
+  /** Executes the undo callback when the user presses the Undo button. */
   const handleUndo = useCallback(() => {
     const mutation = takeMutation();
     if (mutation) {

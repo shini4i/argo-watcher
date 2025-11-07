@@ -13,6 +13,7 @@ const STORAGE_KEY_PER_PAGE = 'historyTasks.perPage';
 /**
  * History tasks list rendering archival deployments with advanced filters and export actions.
  */
+/** React-admin list page surfacing historical tasks with filters and exports. */
 export const HistoryTasksList = () => {
   useEffect(() => {
     const previousTitle = document.title;

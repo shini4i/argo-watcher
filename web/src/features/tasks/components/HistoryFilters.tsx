@@ -20,6 +20,7 @@ const endOfDaySeconds = (value: string) => Math.floor(new Date(`${value}T23:59:5
 /**
  * Date range and application filters for the history list, allowing app-only queries when no dates are specified.
  */
+/** Date range + application filters powering the history list. */
 export const HistoryFilters = () => {
   const { filterValues = {}, setFilters, data } = useListContext<Task>();
   const records = useMemo(() => (Array.isArray(data) ? data : []), [data]);

@@ -5,6 +5,7 @@ import { useListContext, useNotify } from 'react-admin';
 import type { Task } from '../../../data/types';
 import { exportAsCsv, exportAsJson, exportAsXlsx, prepareExportRows } from '../exportUtils';
 
+/** Generates a timestamped filename prefix for exported history datasets. */
 const timestampFilename = () => {
   const now = new Date();
   return `history-tasks-${now.toISOString().replace(/[:T]/g, '-').slice(0, 19)}`;
@@ -18,6 +19,7 @@ interface HistoryExportMenuProps {
   disabled?: boolean;
 }
 
+/** Dropdown export menu that offers CSV/JSON/XLSX downloads for the history list. */
 export const HistoryExportMenu = ({ anonymizeForced, disabled = false }: HistoryExportMenuProps) => {
   const notify = useNotify();
   const { data } = useListContext<Task>();

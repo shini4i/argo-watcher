@@ -1,5 +1,7 @@
 import { useEffect } from 'react';
 import { Box, CircularProgress, Stack, Typography } from '@mui/material';
+import { useListContext } from 'react-admin';
+import type { RaRecord } from 'react-admin';
 
 interface NoTasksPlaceholderProps {
   title: string;
@@ -15,12 +17,18 @@ export const NoTasksPlaceholder = ({
   description,
   reloadIntervalMs = 15_000,
 }: NoTasksPlaceholderProps) => {
+  const { refetch } = useListContext<RaRecord>();
+
   useEffect(() => {
+    if (!refetch) {
+      return undefined;
+    }
+
     const id = window.setInterval(() => {
-      window.location.reload();
+      void refetch();
     }, reloadIntervalMs);
     return () => window.clearInterval(id);
-  }, [reloadIntervalMs]);
+  }, [refetch, reloadIntervalMs]);
 
   return (
     <Box
@@ -40,8 +48,8 @@ export const NoTasksPlaceholder = ({
           {description}
         </Typography>
         <Typography variant="caption" color="text.secondary">
-          Checking again every {Math.round(reloadIntervalMs / 1000)} seconds…
-        </Typography>
+        Auto-refreshing every {Math.round(reloadIntervalMs / 1000)} seconds…
+      </Typography>
       </Stack>
     </Box>
   );

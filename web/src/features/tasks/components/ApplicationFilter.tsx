@@ -4,6 +4,7 @@ import type { Task } from '../../../data/types';
 
 const DEFAULT_STORAGE_KEY = 'recentTasks.app';
 
+/** Reads the persisted application filter (if any) from localStorage. */
 const readStoredApp = (storageKey: string) => {
   if (typeof window === 'undefined') {
     return '';
@@ -51,5 +52,6 @@ export const ApplicationFilter = ({
   );
 };
 
+/** Convenience helper for initializing filters from localStorage. */
 export const readInitialApplication = (storageKey: string = DEFAULT_STORAGE_KEY): string =>
   readStoredApp(storageKey);

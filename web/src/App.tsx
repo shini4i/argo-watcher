@@ -9,6 +9,9 @@ import { AppNotification } from './layout/components/AppNotification';
 import { TaskShow } from './features/tasks/show/TaskShow';
 import { useThemeMode } from './theme';
 
+/**
+ * Root React-admin application wiring data/auth providers, resources, and custom routes.
+ */
 export const App = () => {
   const { theme } = useThemeMode();
 

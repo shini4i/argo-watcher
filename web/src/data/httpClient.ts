@@ -21,12 +21,14 @@ export interface HttpResponse<T> {
   headers: Headers;
 }
 
+/** Combines the API base URL with a relative path while cleaning duplicate slashes. */
 const joinUrl = (base: string, path: string): string => {
   const normalizedBase = base.endsWith('/') ? base.slice(0, -1) : base;
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
   return `${normalizedBase}${normalizedPath}`;
 };
 
+/** Converts various header shapes (Headers, arrays, objects) into a plain object. */
 const normalizeHeaders = (headers?: HeadersInit): Record<string, string> => {
   if (!headers) {
     return {};
@@ -43,6 +45,7 @@ const normalizeHeaders = (headers?: HeadersInit): Record<string, string> => {
   return { ...headers };
 };
 
+/** Builds a fetch RequestInit including auth headers and serialized bodies. */
 const buildRequestInit = (options: HttpClientOptions): RequestInit => {
   const method = options.method ?? 'GET';
   const headers = { ...DEFAULT_HEADERS, ...normalizeHeaders(options.headers) };
@@ -66,6 +69,7 @@ const buildRequestInit = (options: HttpClientOptions): RequestInit => {
   return init;
 };
 
+/** Parses JSON bodies defensively, returning undefined for non-json responses. */
 const parseJson = async <T>(response: Response): Promise<T | undefined> => {
   const contentType = response.headers.get('Content-Type') ?? '';
   if (!contentType.includes('application/json')) {
@@ -84,6 +88,7 @@ const parseJson = async <T>(response: Response): Promise<T | undefined> => {
   }
 };
 
+/** Creates a HttpError with the most descriptive message available from the payload. */
 const buildHttpError = (status: number, body: unknown, fallbackMessage: string): HttpError => {
   if (body && typeof body === 'object' && 'status' in body && typeof body.status === 'string') {
     return new HttpError(body.status, status, body);
@@ -100,6 +105,7 @@ const buildHttpError = (status: number, body: unknown, fallbackMessage: string):
   return new HttpError('Request failed', status, body);
 };
 
+/** Wrapper around fetch that injects auth headers and normalizes error handling. */
 export const httpClient = async <T>(path: string, options: HttpClientOptions = {}): Promise<HttpResponse<T>> => {
   const url = joinUrl(API_BASE_URL, path);
   const requestInit = buildRequestInit(options);
@@ -132,6 +138,7 @@ export const httpClient = async <T>(path: string, options: HttpClientOptions = {
   };
 };
 
+/** Serializes REST query parameters, omitting empty values. */
 export const buildQueryString = (params: Record<string, string | number | boolean | undefined>) => {
   const searchParams = new URLSearchParams();
 

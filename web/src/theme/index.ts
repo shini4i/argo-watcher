@@ -4,6 +4,7 @@ import { createTheme, lighten } from '@mui/material/styles';
 /**
  * Reuses the legacy UI branding tokens so both frontends stay visually aligned.
  */
+/** Derives the design tokens (palette, typography, overrides) for the requested palette mode. */
 const getDesignTokens = (mode: PaletteMode): ThemeOptions => ({
   palette: {
     mode,
@@ -91,6 +92,7 @@ const getDesignTokens = (mode: PaletteMode): ThemeOptions => ({
   },
 });
 
+/** Convenient wrapper to build the MUI theme based on the current palette mode. */
 export const createAppTheme = (mode: PaletteMode) => createTheme(getDesignTokens(mode));
 
 export const lightTheme = createAppTheme('light');

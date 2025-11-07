@@ -1,4 +1,4 @@
-const DEFAULT_DATE_FORMAT: Intl.DateTimeFormatOptions = {
+export const DEFAULT_DATE_FORMAT: Intl.DateTimeFormatOptions = {
   year: 'numeric',
   month: 'short',
   day: '2-digit',
@@ -7,6 +7,7 @@ const DEFAULT_DATE_FORMAT: Intl.DateTimeFormatOptions = {
   second: '2-digit',
 };
 
+/** Converts supported timestamp inputs into a Date instance, returning null when invalid. */
 const toDate = (value: Date | number | string | null | undefined): Date | null => {
   if (value === null || value === undefined) {
     return null;
@@ -28,6 +29,7 @@ const toDate = (value: Date | number | string | null | undefined): Date | null =
   return new Date(parsed);
 };
 
+/** Formats timestamps with locale-aware date+time options, defaulting to en-GB. */
 export const formatDateTime = (
   value: Date | number | string | null | undefined,
   locale: string | string[] = 'en-GB',
@@ -43,6 +45,7 @@ export const formatDateTime = (
 
 const pluralize = (value: number, unit: string) => `${value} ${unit}${value === 1 ? '' : 's'}`;
 
+/** Converts elapsed seconds into a human-readable relative duration string. */
 export const formatDuration = (seconds: number): string => {
   if (!Number.isFinite(seconds) || seconds < 0) {
     return '—';
@@ -76,6 +79,7 @@ export const formatDuration = (seconds: number): string => {
   return pluralize(years, 'year');
 };
 
+/** Formats timestamps as "X minutes ago" relative to now. */
 export const formatRelativeTime = (value: Date | number | string | null | undefined) => {
   const date = toDate(value);
   if (!date) {
@@ -87,6 +91,7 @@ export const formatRelativeTime = (value: Date | number | string | null | undefi
   return `${formatDuration(differenceSeconds)} ago`;
 };
 
+/** Returns a UNIX timestamp offset by the provided seconds from the current moment. */
 export const relativeTimestamp = (offsetSeconds: number) => {
   if (!Number.isFinite(offsetSeconds) || offsetSeconds < 0) {
     return Math.floor(Date.now() / 1000);

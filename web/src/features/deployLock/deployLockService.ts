@@ -8,6 +8,7 @@ export type DeployLockListener = (locked: boolean) => void;
 
 const WS_RETRY_DELAY_MS = 5000;
 
+/** Determines the websocket endpoint based on env overrides or current location. */
 const resolveWebSocketUrl = () => {
   const base = import.meta.env.VITE_WS_BASE_URL ?? '';
   if (base) {
@@ -81,11 +82,13 @@ export class DeployLockService {
     };
   }
 
+  /** Broadcasts the new lock status to all subscribers. */
   private updateStatus(locked: boolean) {
     this.currentStatus = locked;
     this.listeners.forEach(listener => listener(locked));
   }
 
+  /** Ensures a websocket connection exists whenever there are active listeners. */
   private ensureSocket() {
     if (this.socket || this.listeners.size === 0) {
       return;
@@ -116,6 +119,7 @@ export class DeployLockService {
     };
   }
 
+  /** Schedules a websocket reconnect attempt with basic backoff. */
   private scheduleReconnect() {
     if (this.reconnectHandle !== null) {
       return;
@@ -127,6 +131,7 @@ export class DeployLockService {
     }, WS_RETRY_DELAY_MS);
   }
 
+  /** Closes any active websocket and cancels pending reconnect timers. */
   private teardownSocket() {
     if (this.reconnectHandle !== null) {
       window.clearTimeout(this.reconnectHandle);

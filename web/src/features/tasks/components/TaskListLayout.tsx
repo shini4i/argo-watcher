@@ -17,6 +17,7 @@ interface TaskListLayoutProps {
 /**
  * Shared wrapper for task list pages handling pagination persistence, headers, and empty states.
  */
+/** Shared list scaffold wrapping React-admin's List with toolbar/header handling. */
 export const TaskListLayout = ({
   title,
   perPageStorageKey,

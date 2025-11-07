@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { ThemeModeProvider } from '../../theme/ThemeModeProvider';
 import { DeployLockProvider } from '../../features/deployLock/DeployLockProvider';
 import { DeployLockBanner } from '../../features/deployLock/DeployLockBanner';
+import { TimezoneProvider } from './TimezoneProvider';
 
 interface AppProvidersProps {
   children: ReactNode;
@@ -13,9 +14,11 @@ interface AppProvidersProps {
  */
 export const AppProviders = ({ children }: AppProvidersProps) => (
   <ThemeModeProvider>
-    <DeployLockProvider>
-      {children}
-      <DeployLockBanner />
-    </DeployLockProvider>
+    <TimezoneProvider>
+      <DeployLockProvider>
+        {children}
+        <DeployLockBanner />
+      </DeployLockProvider>
+    </TimezoneProvider>
   </ThemeModeProvider>
 );

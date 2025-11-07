@@ -7,6 +7,7 @@ import { AppTopBar } from './components/AppTopBar';
  * Custom application layout ensuring the branded AppBar sits flush with the viewport while
  * delegating the rest of the shell concerns to React-admin.
  */
+/** Removes the default react-admin top margin so our custom app bar sits flush. */
 const layoutSx: SxProps<Theme> = theme => ({
   '& .RaLayout-appFrame': {
     marginTop: 0,
@@ -28,6 +29,7 @@ const EmptyMenu = (): ReactElement | null => null;
  */
 const EmptySidebar = (_props: SidebarProps): ReactElement | null => null;
 
+/** Wraps react-admin Layout to inject our custom app bar, menu, and sidebar. */
 export const AppLayout = (props: LayoutProps) => (
   <Layout
     {...props}

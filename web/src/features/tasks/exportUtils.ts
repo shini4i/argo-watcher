@@ -7,6 +7,7 @@ import type { Task } from '../../data/types';
  */
 export type ExportRow = Record<string, string | number | boolean | null>;
 
+/** Flattens a Task into a serialisable row, optionally removing author/reason. */
 const sanitizeTask = (task: Task, anonymize: boolean): ExportRow => {
   const base: ExportRow = {
     id: task.id,
@@ -32,6 +33,7 @@ const sanitizeTask = (task: Task, anonymize: boolean): ExportRow => {
 export const prepareExportRows = (records: Task[], anonymize: boolean): ExportRow[] =>
   records.map(record => sanitizeTask(record, anonymize));
 
+/** Creates a temporary link to download the given blob with the provided filename. */
 const triggerDownload = (blob: Blob, filename: string) => {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');

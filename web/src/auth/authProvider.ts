@@ -72,11 +72,17 @@ let silentSsoSupported = !readSilentSsoPreference();
 
 type GroupSource = 'token' | 'profile';
 
+/**
+ * Stores the latest Keycloak group membership along with its data source (token vs userinfo).
+ */
 const updateUserGroupsCache = (groups?: unknown, source: GroupSource = 'token') => {
   cachedUserGroups = Array.isArray(groups) ? [...groups] : null;
   userGroupsLoadedFromProfile = source === 'profile' && Array.isArray(groups);
 };
 
+/**
+ * Clears cached user groups and resets session validation timers.
+ */
 const clearUserGroupsCache = () => {
   cachedUserGroups = null;
   userGroupsLoadedFromProfile = false;
@@ -88,6 +94,9 @@ interface EnsureGroupsOptions {
   strict?: boolean;
 }
 
+/**
+ * Ensures Keycloak group membership is available, optionally forcing a reload via userinfo.
+ */
 const ensureUserGroupsLoaded = async (
   keycloak: KeycloakInstance,
   options: EnsureGroupsOptions = {},
@@ -113,6 +122,9 @@ const ensureUserGroupsLoaded = async (
   }
 };
 
+/**
+ * Periodically revalidates the Keycloak session to capture disabled accounts or group changes.
+ */
 const ensureSessionValidation = async (keycloak: KeycloakInstance) => {
   const now = Date.now();
   if (now - lastSessionValidation < SESSION_REVALIDATION_INTERVAL_MS) {
@@ -123,6 +135,9 @@ const ensureSessionValidation = async (keycloak: KeycloakInstance) => {
   lastSessionValidation = now;
 };
 
+/**
+ * Builds an absolute URL to a static asset within the SPA using the Vite base URL.
+ */
 const resolveAppUrl = (path: string) => {
   const base = import.meta.env.BASE_URL ?? '/';
   const normalizedBase = base.endsWith('/') ? base : `${base}/`;
@@ -130,6 +145,9 @@ const resolveAppUrl = (path: string) => {
   return new URL(normalizedPath, `${window.location.origin}${normalizedBase}`).toString();
 };
 
+/**
+ * Resolves the final redirect URI for Keycloak login/logout flows.
+ */
 const resolveRedirectUri = (redirectTo?: string) => {
   const base = import.meta.env.BASE_URL ?? '/';
   const baseUrl = new URL(base.startsWith('/') ? base : `/${base}`, window.location.origin);
@@ -139,6 +157,9 @@ const resolveRedirectUri = (redirectTo?: string) => {
   return new URL(redirectTo, baseUrl).toString();
 };
 
+/**
+ * Fetches the backend configuration once and caches the promise for subsequent calls.
+ */
 const fetchServerConfig = async (): Promise<ServerConfig> => {
   if (!serverConfigPromise) {
     serverConfigPromise = fetch('/api/v1/config', {
@@ -166,12 +187,18 @@ const fetchServerConfig = async (): Promise<ServerConfig> => {
   return serverConfig;
 };
 
+/**
+ * Verifies that the Keycloak config contains the minimum required fields.
+ */
 const assertKeycloakFields = (config: KeycloakConfig) => {
   if (!config.url || !config.realm || !config.client_id) {
     throw new HttpError('Keycloak configuration is incomplete', 500, config);
   }
 };
 
+/**
+ * Lazily constructs the singleton Keycloak instance when SSO is enabled server-side.
+ */
 const ensureKeycloakInstance = async (): Promise<KeycloakInstance | null> => {
   const config = await fetchServerConfig();
   if (!config.keycloak?.enabled) {
@@ -191,6 +218,9 @@ const ensureKeycloakInstance = async (): Promise<KeycloakInstance | null> => {
   return keycloakInstance;
 };
 
+/**
+ * Installs an interval that keeps the Keycloak token fresh and updates cached groups.
+ */
 const scheduleTokenRefresh = (keycloak: KeycloakInstance) => {
   if (refreshInterval) {
     window.clearInterval(refreshInterval);
@@ -214,6 +244,9 @@ const scheduleTokenRefresh = (keycloak: KeycloakInstance) => {
 
 type InitMode = 'silent' | 'interactive';
 
+/**
+ * Creates Keycloak init options for either the silent SSO or interactive flows.
+ */
 const buildInitOptions = (mode: InitMode): KeycloakInitOptions => {
   switch (mode) {
     case 'interactive':
@@ -234,6 +267,9 @@ const buildInitOptions = (mode: InitMode): KeycloakInitOptions => {
   }
 };
 
+/**
+ * Executes keycloak.init with the provided options and wires token persistence.
+ */
 const runKeycloakInit = async (keycloak: KeycloakInstance, options: KeycloakInitOptions) => {
   const authenticated = await keycloak.init(options);
   if (authenticated) {
@@ -248,6 +284,9 @@ const runKeycloakInit = async (keycloak: KeycloakInstance, options: KeycloakInit
   return authenticated;
 };
 
+/**
+ * Central authentication path used by the authProvider to ensure the user session is valid.
+ */
 const authenticate = async () => {
   const keycloak = await ensureKeycloakInstance();
   if (!keycloak) {
@@ -293,6 +332,9 @@ const authenticate = async () => {
   }
 };
 
+/**
+ * Collects group-based permission metadata for React-admin consumers.
+ */
 const resolvePermissions = (): Permissions => {
   const config = serverConfig?.keycloak;
   const privilegedGroups = config?.privileged_groups ?? [];
@@ -300,6 +342,9 @@ const resolvePermissions = (): Permissions => {
   return { groups, privilegedGroups };
 };
 
+/**
+ * React-admin AuthProvider implementation backed by Keycloak for login, logout, and permissions.
+ */
 export const authProvider: AuthProvider = {
   async login(params) {
     const keycloak = await ensureKeycloakInstance();
@@ -385,6 +430,7 @@ export const authProvider: AuthProvider = {
 };
 
 export const __testing = {
+  /** Resets cached Keycloak state for unit tests so each test starts fresh. */
   reset() {
     serverConfigPromise = null;
     serverConfig = null;
@@ -397,10 +443,12 @@ export const __testing = {
     clearAccessToken();
     clearUserGroupsCache();
   },
+  /** Forces the provider to skip silent SSO attempts, used to simulate iframe failures. */
   disableSilentSso() {
     silentSsoSupported = false;
     persistSilentSsoPreference(true);
   },
+  /** Reloads the silent SSO preference from storage to emulate page reloads in tests. */
   reloadSilentPreference() {
     silentSsoSupported = !readSilentSsoPreference();
   },

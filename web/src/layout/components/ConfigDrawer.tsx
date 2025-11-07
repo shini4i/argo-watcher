@@ -17,6 +17,8 @@ import {
   TableCell,
   TableHead,
   TableRow,
+  ToggleButton,
+  ToggleButtonGroup,
   Typography,
 } from '@mui/material';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -26,6 +28,7 @@ import { httpClient } from '../../data/httpClient';
 import { useDeployLock } from '../../features/deployLock/DeployLockProvider';
 import { useKeycloakEnabled } from '../../shared/hooks/useKeycloakEnabled';
 import { hasPrivilegedAccess } from '../../shared/utils/permissions';
+import { useTimezone } from '../../shared/providers/TimezoneProvider';
 
 interface ConfigDrawerProps {
   open: boolean;
@@ -35,6 +38,7 @@ interface ConfigDrawerProps {
 
 type ConfigData = Record<string, unknown>;
 
+/** Renders nested configuration values as strings for the drawer table. */
 const renderValue = (value: unknown): string => {
   if (value === null) {
     return 'null';
@@ -60,6 +64,8 @@ export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
   const [error, setError] = useState<string | null>(null);
   const [lockUpdating, setLockUpdating] = useState(false);
   const { mode, toggleMode } = useThemeMode();
+  const { timezone, setTimezone } = useTimezone();
+  const browserZone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'local', []);
   const notify = useNotify();
   const { locked: deployLock, setLock, releaseLock } = useDeployLock();
   const keycloakEnabled = useKeycloakEnabled();
@@ -99,6 +105,7 @@ export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
       });
   }, [notify, open]);
 
+  /** Copies the current config object to the clipboard in JSON form. */
   const handleCopy = useCallback(async () => {
     if (!config) {
       return;
@@ -126,6 +133,7 @@ export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
     }
   }, [config, notify]);
 
+  /** Toggles the deploy lock via the REST API and surfaces user feedback. */
   const handleDeployLockToggle = useCallback(async () => {
     if (!canToggleLock) {
       return;
@@ -177,6 +185,21 @@ export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
               Switch to {mode === 'light' ? 'dark' : 'light'}
             </Button>
           </Stack>
+          <Stack direction="row" alignItems="center" justifyContent="space-between">
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Typography variant="body2">Timezone</Typography>
+            </Stack>
+            <ToggleButtonGroup
+              size="small"
+              exclusive
+              value={timezone}
+              onChange={(_event, value) => value && setTimezone(value)}
+              aria-label="Timezone selection"
+            >
+              <ToggleButton value="local">Local ({browserZone})</ToggleButton>
+              <ToggleButton value="utc">UTC</ToggleButton>
+            </ToggleButtonGroup>
+          </Stack>
         </Stack>
 
         <Divider />
@@ -206,59 +229,63 @@ export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
           )}
         </Stack>
 
-        <Divider />
+        {(!keycloakEnabled || privileged) && (
+          <>
+            <Divider />
 
-        <Stack direction="row" alignItems="center" justifyContent="space-between" component="section">
-          <Typography variant="subtitle2" color="text.secondary">
-            Backend Configuration
-          </Typography>
-          <IconButton size="small" onClick={handleCopy} aria-label="Copy configuration" disableRipple>
-            <ContentCopyIcon fontSize="inherit" />
-          </IconButton>
-        </Stack>
+            <Stack direction="row" alignItems="center" justifyContent="space-between" component="section">
+              <Typography variant="subtitle2" color="text.secondary">
+                Backend Configuration
+              </Typography>
+              <IconButton size="small" onClick={handleCopy} aria-label="Copy configuration" disableRipple>
+                <ContentCopyIcon fontSize="inherit" />
+              </IconButton>
+            </Stack>
 
-        {loading ? (
-          <Stack alignItems="center" sx={{ py: 4 }}>
-            <CircularProgress size={24} />
-          </Stack>
-        ) : error ? (
-          <Typography variant="body2" color="error">
-            {error}
-          </Typography>
-        ) : entries.length === 0 ? (
-          <Typography variant="body2" color="text.secondary">
-            No configuration available.
-          </Typography>
-        ) : (
-          <Box sx={{ flexGrow: 1, overflow: 'auto' }}>
-            <Table size="small" stickyHeader>
-              <TableHead>
-                <TableRow>
-                  <TableCell sx={{ width: '35%' }}>Key</TableCell>
-                  <TableCell>Value</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {entries.map(([key, value]) => (
-                  <TableRow key={key} hover>
-                    <TableCell component="th" scope="row">
-                      <Typography variant="body2" fontWeight={600}>
-                        {key}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography
-                        variant="body2"
-                        sx={{ whiteSpace: 'pre-wrap', fontFamily: theme => theme.typography.fontFamily }}
-                      >
-                        {renderValue(value)}
-                      </Typography>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </Box>
+            {loading ? (
+              <Stack alignItems="center" sx={{ py: 4 }}>
+                <CircularProgress size={24} />
+              </Stack>
+            ) : error ? (
+              <Typography variant="body2" color="error">
+                {error}
+              </Typography>
+            ) : entries.length === 0 ? (
+              <Typography variant="body2" color="text.secondary">
+                No configuration available.
+              </Typography>
+            ) : (
+              <Box sx={{ flexGrow: 1, overflow: 'auto' }}>
+                <Table size="small" stickyHeader>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell sx={{ width: '35%' }}>Key</TableCell>
+                      <TableCell>Value</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {entries.map(([key, value]) => (
+                      <TableRow key={key} hover>
+                        <TableCell component="th" scope="row">
+                          <Typography variant="body2" fontWeight={600}>
+                            {key}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Typography
+                            variant="body2"
+                            sx={{ whiteSpace: 'pre-wrap', fontFamily: theme => theme.typography.fontFamily }}
+                          >
+                            {renderValue(value)}
+                          </Typography>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </Box>
+            )}
+          </>
         )}
 
         <Box sx={{ textAlign: 'right' }}>
@@ -266,6 +293,7 @@ export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
         </Box>
         <Box
           sx={{
+            mt: 'auto',
             pt: 1.5,
             borderTop: theme => `1px solid ${theme.palette.divider}`,
             textAlign: 'center',

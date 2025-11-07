@@ -28,13 +28,14 @@ import type { ReactNode } from 'react';
 import { useGetIdentity, useGetOne, useNotify, usePermissions } from 'react-admin';
 import { useNavigate, useParams } from 'react-router-dom';
 import type { TaskStatus } from '../../../data/types';
-import { formatDateTime, formatDuration, formatRelativeTime } from '../../../shared/utils/time';
+import { formatDuration, formatRelativeTime } from '../../../shared/utils/time';
 import { describeTaskStatus } from '../utils/statusPresentation';
 import { useDeployLockState } from '../../deployLock/useDeployLockState';
 import { useKeycloakEnabled } from '../../../shared/hooks/useKeycloakEnabled';
 import { hasPrivilegedAccess } from '../../../shared/utils/permissions';
 import { httpClient } from '../../../data/httpClient';
 import { getAccessToken } from '../../../auth/tokenStore';
+import { useTimezone } from '../../../shared/providers/TimezoneProvider';
 
 interface TimelineEntry {
   readonly id: string;
@@ -43,6 +44,7 @@ interface TimelineEntry {
   readonly color: 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning';
 }
 
+/** Casts different timestamp representations to seconds, returning null when invalid. */
 const normalizeTimestamp = (value: unknown): number | null => {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value;
@@ -181,6 +183,7 @@ export const TaskShow = () => {
   const keycloakEnabled = useKeycloakEnabled();
   const { permissions } = usePermissions();
   const { data: identity } = useGetIdentity();
+  const { formatDate } = useTimezone();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [rollbackLoading, setRollbackLoading] = useState(false);
   const [configData, setConfigData] = useState<ConfigResponse | null>(null);
@@ -376,13 +379,13 @@ export const TaskShow = () => {
               <Grid item xs={12} md={6}>
                 <Stack spacing={1.5}>
                   <InfoField label="Task ID" value={data.id} />
-                  <InfoField label="Created" value={formatDateTime(createdTimestamp)} />
+                  <InfoField label="Created" value={formatDate(createdTimestamp ?? null)} />
                   <InfoField
                     label="Last Updated"
                     value={
                       updatedTimestamp !== null ? (
                         <Stack spacing={0.5}>
-                          <Typography variant="body1">{formatDateTime(updatedTimestamp)}</Typography>
+                          <Typography variant="body1">{formatDate(updatedTimestamp ?? null)}</Typography>
                           <Typography variant="caption" color="text.secondary">
                             {formatRelativeTime(updatedTimestamp)}
                           </Typography>
@@ -405,7 +408,12 @@ export const TaskShow = () => {
                 </Typography>
                 <Stack spacing={2}>
                   {timelineEntries.map((entry, index) => (
-                    <TimelineRow key={entry.id} entry={entry} isLast={index === timelineEntries.length - 1} />
+                    <TimelineRow
+                      key={entry.id}
+                      entry={entry}
+                      formattedTimestamp={formatDate(entry.timestamp)}
+                      isLast={index === timelineEntries.length - 1}
+                    />
                   ))}
                 </Stack>
               </Stack>
@@ -502,6 +510,9 @@ interface InfoFieldProps {
   readonly value: ReactNode;
 }
 
+/**
+ * Displays a single piece of labeled metadata inside the task details view.
+ */
 const InfoField = ({ label, value }: InfoFieldProps) => (
   <Box>
     <Typography
@@ -539,7 +550,15 @@ const ProjectReference = ({ project }: { project?: string | null }) => {
 };
 
 /** Visual row within the timeline stack with a connector to mimic the legacy UI flow. */
-const TimelineRow = ({ entry, isLast }: { entry: TimelineEntry; isLast: boolean }) => (
+const TimelineRow = ({
+  entry,
+  isLast,
+  formattedTimestamp,
+}: {
+  entry: TimelineEntry;
+  formattedTimestamp: string;
+  isLast: boolean;
+}) => (
   <Stack direction="row" spacing={2}>
     <Box sx={{ position: 'relative', width: 24, display: 'flex', justifyContent: 'center' }}>
       <FiberManualRecordIcon color={entry.color === 'default' ? 'disabled' : entry.color} fontSize="small" />
@@ -559,7 +578,7 @@ const TimelineRow = ({ entry, isLast }: { entry: TimelineEntry; isLast: boolean 
     <Stack spacing={0.25}>
       <Typography variant="subtitle2">{entry.label}</Typography>
       <Typography variant="body2" color="text.secondary">
-        {formatDateTime(entry.timestamp)}
+        {formattedTimestamp}
       </Typography>
       <Typography variant="caption" color="text.secondary">
         {formatRelativeTime(entry.timestamp)}

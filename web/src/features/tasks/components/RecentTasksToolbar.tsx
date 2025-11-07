@@ -29,6 +29,7 @@ const readStoredRefreshInterval = () => {
 /**
  * Action toolbar for the recent tasks list providing application filtering, manual refresh, and auto-refresh controls.
  */
+/** Toolbar with application filter, auto-refresh controls, and manual refresh for recent tasks. */
 export const RecentTasksToolbar = ({ storageKey = 'recentTasks.app' }: { storageKey?: string }) => {
   const { data, filterValues, setFilters, refetch } = useListContext<Task>();
   const records = useMemo(() => (Array.isArray(data) ? data : []), [data]);

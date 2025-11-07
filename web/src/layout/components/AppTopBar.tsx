@@ -3,7 +3,17 @@ import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import QuizRoundedIcon from '@mui/icons-material/QuizRounded';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import LocalOfferIcon from '@mui/icons-material/LocalOffer';
-import { AppBar, Box, Chip, IconButton, Link, Stack, Toolbar, Tooltip, Typography } from '@mui/material';
+import {
+  AppBar,
+  Box,
+  Chip,
+  IconButton,
+  Link,
+  Stack,
+  Toolbar,
+  Tooltip,
+  Typography,
+} from '@mui/material';
 import type { SxProps, Theme } from '@mui/material/styles';
 import type { AppBarProps } from 'react-admin';
 import { useNotify } from 'react-admin';
@@ -12,6 +22,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { httpClient } from '../../data/httpClient';
 import { ConfigDrawer } from './ConfigDrawer';
 import logoUrl from '../../assets/logo.png';
+import { useTimezone } from '../../shared/providers/TimezoneProvider';
 
 const DOCS_BASE_URL = 'https://argo-watcher.readthedocs.io';
 const GITHUB_REPO_URL = 'https://github.com/shini4i/argo-watcher';
@@ -41,6 +52,7 @@ const appBarStyles: SxProps<Theme> = theme => {
   };
 };
 
+/** Returns true when the supplied pathname matches a nav target path. */
 const routeIsActive = (pathname: string, target: string) => {
   if (target === '/') {
     return pathname === target;
@@ -59,6 +71,8 @@ export const AppTopBar = (props: AppBarProps) => {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const notify = useNotify();
   const location = useLocation();
+  const { timezone } = useTimezone();
+  const browserZone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'local', []);
 
   const fetchVersion = useCallback(async () => {
     try {
@@ -154,7 +168,7 @@ export const AppTopBar = (props: AppBarProps) => {
               <Chip
                 size="small"
                 color="secondary"
-                label="Timezone: UTC"
+                label={timezone === 'utc' ? 'Timezone: UTC' : `Timezone: Local (${browserZone})`}
                 sx={{ fontWeight: 500, letterSpacing: 0.3 }}
               />
               <Tooltip title="Documentation">
