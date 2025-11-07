@@ -73,7 +73,7 @@ func (state *PostgresState) GetTasks(startTime float64, endTime float64, app str
 		query = query.Where(`"tasks"."app" = ?`, app)
 	}
 
-	countQuery := query.Session(&gorm.Session{NewDB: true}).Model(&state_models.TaskModel{})
+	countQuery := query.Session(&gorm.Session{})
 	var total int64
 	if err := countQuery.Count(&total).Error; err != nil {
 		log.Error().Msg(err.Error())
