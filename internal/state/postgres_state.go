@@ -70,7 +70,7 @@ func (state *PostgresState) GetTasks(startTime float64, endTime float64, app str
 
 	query := state.orm.Model(&state_models.TaskModel{}).Where("created > ?", startTimeUTC).Where("created <= ?", endTimeUTC)
 	if app != "" {
-		query = query.Where("app = ?", app)
+		query = query.Where(`"tasks"."app" = ?`, app)
 	}
 
 	countQuery := query.Session(&gorm.Session{NewDB: true}).Model(&state_models.TaskModel{})
