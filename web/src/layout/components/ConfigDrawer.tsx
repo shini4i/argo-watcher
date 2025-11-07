@@ -165,18 +165,19 @@ export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
       aria-label="Workspace configuration drawer"
     >
       <Stack spacing={2} sx={{ height: '100%' }}>
-        <Stack direction="row" alignItems="center" justifyContent="space-between">
-          <Typography variant="h6">Workspace Controls</Typography>
-          <Typography variant="body2" color="text.secondary">
-            v{version}
-          </Typography>
-        </Stack>
-
-        <Stack spacing={1.5} component="section" aria-labelledby="drawer-appearance">
-          <Typography variant="subtitle2" color="text.secondary">
-            <span id="drawer-appearance">Appearance</span>
-          </Typography>
+        <Stack spacing={2} sx={{ flexGrow: 1 }}>
           <Stack direction="row" alignItems="center" justifyContent="space-between">
+            <Typography variant="h6">Workspace Controls</Typography>
+            <Typography variant="body2" color="text.secondary">
+              v{version}
+            </Typography>
+          </Stack>
+
+          <Stack spacing={1.5} component="section" aria-labelledby="drawer-appearance">
+            <Typography variant="subtitle2" color="text.secondary">
+              <span id="drawer-appearance">Appearance</span>
+            </Typography>
+            <Stack direction="row" alignItems="center" justifyContent="space-between">
             <Stack direction="row" spacing={1} alignItems="center">
               {mode === 'light' ? <LightModeIcon fontSize="small" /> : <NightlightIcon fontSize="small" />}
               <Typography variant="body2">Theme mode</Typography>
@@ -200,14 +201,14 @@ export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
               <ToggleButton value="utc">UTC</ToggleButton>
             </ToggleButtonGroup>
           </Stack>
-        </Stack>
+          </Stack>
 
-        <Divider />
+          <Divider />
 
-        <Stack spacing={1.5} component="section" aria-labelledby="drawer-lock">
-          <Typography variant="subtitle2" color="text.secondary">
-            <span id="drawer-lock">Deploy Lock</span>
-          </Typography>
+          <Stack spacing={1.5} component="section" aria-labelledby="drawer-lock">
+            <Typography variant="subtitle2" color="text.secondary">
+              <span id="drawer-lock">Deploy Lock</span>
+            </Typography>
           <Stack direction="row" alignItems="center" justifyContent="space-between">
             <Stack direction="row" spacing={1} alignItems="center">
               {deployLock ? <LockIcon fontSize="small" /> : <LockOpenIcon fontSize="small" />}
@@ -227,11 +228,11 @@ export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
               Deploy lock requires privileged access.
             </Typography>
           )}
-        </Stack>
+          </Stack>
 
-        {(!keycloakEnabled || privileged) && (
-          <>
-            <Divider />
+          {(!keycloakEnabled || privileged) && (
+            <>
+              <Divider />
 
             <Stack direction="row" alignItems="center" justifyContent="space-between" component="section">
               <Typography variant="subtitle2" color="text.secondary">
@@ -286,7 +287,8 @@ export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
               </Box>
             )}
           </>
-        )}
+          )}
+        </Stack>
 
         <Box sx={{ textAlign: 'right' }}>
           <Button onClick={onClose}>Close</Button>

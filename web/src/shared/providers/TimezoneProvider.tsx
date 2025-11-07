@@ -61,7 +61,16 @@ export const TimezoneProvider = ({ children }: { children: ReactNode }) => {
 export const useTimezone = () => {
   const context = useContext(TimezoneContext);
   if (!context) {
-    throw new Error('useTimezone must be used within a TimezoneProvider');
+    return {
+      timezone: 'utc' as TimezoneMode,
+      setTimezone: () => {
+        if (import.meta.env.DEV) {
+          console.warn('useTimezone fallback: provider missing; defaulting to UTC.');
+        }
+      },
+      formatDate: (value: Parameters<typeof formatDateTime>[0], options?: Intl.DateTimeFormatOptions) =>
+        formatDateTime(value, undefined, { ...DEFAULT_DATE_FORMAT, ...(options ?? {}), timeZone: 'UTC' }),
+    } satisfies TimezoneContextValue;
   }
   return context;
 };
