@@ -51,6 +51,9 @@ const renderValue = (value: unknown): string => {
   return String(value);
 };
 
+/**
+ * Side drawer that surfaces runtime configuration, theme toggles, and deploy lock controls.
+ */
 export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
   const [config, setConfig] = useState<ConfigData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -143,7 +146,7 @@ export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
     } finally {
       setLockUpdating(false);
     }
-  }, [canToggleLock, deployLock, notify]);
+  }, [canToggleLock, deployLock, notify, releaseLock, setLock]);
 
   return (
     <Drawer
@@ -260,6 +263,17 @@ export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
 
         <Box sx={{ textAlign: 'right' }}>
           <Button onClick={onClose}>Close</Button>
+        </Box>
+        <Box
+          sx={{
+            pt: 1.5,
+            borderTop: theme => `1px solid ${theme.palette.divider}`,
+            textAlign: 'center',
+          }}
+        >
+          <Typography variant="caption" color="text.secondary">
+            © 2022 - {new Date().getFullYear()} Vadim Gedz
+          </Typography>
         </Box>
       </Stack>
     </Drawer>

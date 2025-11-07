@@ -21,6 +21,9 @@ const EmptyState = () => (
   </Card>
 );
 
+/**
+ * History tasks list rendering archival deployments with advanced filters and export actions.
+ */
 export const HistoryTasksList = () => {
   useEffect(() => {
     const previousTitle = document.title;
@@ -44,6 +47,7 @@ export const HistoryTasksList = () => {
       ]}
       emptyComponent={<EmptyState />}
       listProps={{
+        storeKey: 'historyTasks',
         pagination: <Pagination rowsPerPageOptions={[10, 25, 50, 100]} />,
       }}
     >

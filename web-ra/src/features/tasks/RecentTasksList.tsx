@@ -38,6 +38,7 @@ export const RecentTasksList = () => {
       header={<RecentTasksToolbar storageKey="recentTasks.app" />}
       emptyComponent={<EmptyState />}
       listProps={{
+        storeKey: 'recentTasks',
         pagination: <Pagination rowsPerPageOptions={[10, 25, 50, 100]} />,
       }}
     >

@@ -26,8 +26,23 @@ describe('per-page persistence utilities', () => {
     expect(readPersistentPerPage('key', 25)).toBe(100);
   });
 
+  it('readPersistentPerPage falls back when storage value is invalid', () => {
+    window.localStorage.setItem('key', 'oops');
+    expect(readPersistentPerPage('key', 25)).toBe(25);
+  });
+
+  it('readPersistentPerPage falls back when storage missing', () => {
+    expect(readPersistentPerPage('missing', 40)).toBe(40);
+  });
+
   it('PerPagePersistence writes current perPage into storage', () => {
     render(<PerPagePersistence storageKey="key" />);
     expect(window.localStorage.getItem('key')).toBe('50');
+  });
+
+  it('PerPagePersistence does nothing when perPage is undefined', () => {
+    (useListPaginationContext as unknown as vi.Mock).mockReturnValue({ perPage: undefined });
+    render(<PerPagePersistence storageKey="key" />);
+    expect(window.localStorage.getItem('key')).toBeNull();
   });
 });

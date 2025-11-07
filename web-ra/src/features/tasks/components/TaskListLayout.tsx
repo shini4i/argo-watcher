@@ -25,6 +25,9 @@ const defaultEmptyState = (
   </Card>
 );
 
+/**
+ * Shared wrapper for task list pages handling pagination persistence, headers, and empty states.
+ */
 export const TaskListLayout = ({
   title,
   perPageStorageKey,
@@ -37,8 +40,14 @@ export const TaskListLayout = ({
 }: TaskListLayoutProps) => {
   const perPage = readPersistentPerPage(perPageStorageKey, defaultPerPage);
 
-  const { pagination, resource = 'tasks', sort = { field: 'created', order: 'DESC' }, actions = false, ...rest } =
-    listProps ?? {};
+  const {
+    pagination,
+    resource = 'tasks',
+    sort = { field: 'created', order: 'DESC' },
+    actions = false,
+    storeKey,
+    ...rest
+  } = listProps ?? {};
 
   const resolvedPagination = pagination ?? (
     <Pagination rowsPerPageOptions={paginationOptions} />
@@ -55,32 +64,34 @@ export const TaskListLayout = ({
       empty={emptyComponent}
       pagination={resolvedPagination}
       actions={actions}
+      storeKey={storeKey}
       {...rest}
     >
       <PerPagePersistence storageKey={perPageStorageKey} />
-      <Stack
-        direction={{ xs: 'column', md: 'row' }}
-        spacing={{ xs: 1.5, md: 2 }}
-        sx={{ px: 2, py: 1, width: '100%' }}
-        justifyContent="flex-end"
-        alignItems={{ xs: 'flex-end', md: 'center' }}
-      >
-        {headerContent.length > 0 ? (
-          headerContent.map((node, index) => (
-            <Box
-              key={index}
-              sx={{
-                display: 'flex',
-                justifyContent: 'flex-end',
-                width: { xs: '100%', md: 'auto' },
-              }}
-            >
-              {node}
-            </Box>
-          ))
-        ) : (
-          <Box sx={{ width: '100%' }} />
-        )}
+      <Stack sx={{ px: 2, py: 1, width: '100%' }} spacing={0.5}>
+        <Stack
+          direction={{ xs: 'column', md: 'row' }}
+          spacing={{ xs: 1.5, md: 2 }}
+          justifyContent="flex-end"
+          alignItems={{ xs: 'flex-end', md: 'center' }}
+        >
+          {headerContent.length > 0 ? (
+            headerContent.map((node, index) => (
+              <Box
+                key={index}
+                sx={{
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  width: { xs: '100%', md: 'auto' },
+                }}
+              >
+                {node}
+              </Box>
+            ))
+          ) : (
+            <Box sx={{ width: '100%' }} />
+          )}
+        </Stack>
       </Stack>
       {children}
     </List>

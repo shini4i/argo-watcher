@@ -3,7 +3,7 @@ import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import QuizRoundedIcon from '@mui/icons-material/QuizRounded';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import LocalOfferIcon from '@mui/icons-material/LocalOffer';
-import { AppBar, Box, IconButton, Link, Stack, Toolbar, Tooltip, Typography } from '@mui/material';
+import { AppBar, Box, Chip, IconButton, Link, Stack, Toolbar, Tooltip, Typography } from '@mui/material';
 import type { SxProps, Theme } from '@mui/material/styles';
 import type { AppBarProps } from 'react-admin';
 import { useNotify } from 'react-admin';
@@ -48,8 +48,12 @@ const routeIsActive = (pathname: string, target: string) => {
   return pathname.startsWith(target);
 };
 
+/**
+ * Branded application bar providing navigation shortcuts, docs/GitHub links,
+ * timezone context, and access to the configuration drawer.
+ */
 export const AppTopBar = (props: AppBarProps) => {
-  const { sx: appBarSxProp, alwaysOn: _alwaysOn, toolbar: _toolbar, userMenu: _userMenu, ...appBarProps } = props;
+  const { sx: appBarSxProp, ...appBarProps } = props;
   const composedSx: SxProps<Theme> = appBarSxProp ? [appBarStyles, appBarSxProp] : appBarStyles;
   const [version, setVersion] = useState<string>('—');
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -147,6 +151,12 @@ export const AppTopBar = (props: AppBarProps) => {
             </Stack>
 
             <Stack direction="row" spacing={2} alignItems="center" sx={{ flexWrap: 'wrap', rowGap: 0.5 }}>
+              <Chip
+                size="small"
+                color="secondary"
+                label="Timezone: UTC"
+                sx={{ fontWeight: 500, letterSpacing: 0.3 }}
+              />
               <Tooltip title="Documentation">
                 <Link
                   component="a"

@@ -93,6 +93,7 @@ export const RecentTasksToolbar = ({ storageKey = 'recentTasks.app' }: { storage
           size="small"
           value={refreshInterval}
           onChange={event => setRefreshInterval(Number(event.target.value))}
+          aria-label="Auto-refresh interval"
         >
           {AUTO_REFRESH_OPTIONS.map(option => (
             <MenuItem key={option.label} value={option.seconds}>

@@ -18,7 +18,7 @@ const startOfDaySeconds = (value: string) => Math.floor(new Date(`${value}T00:00
 const endOfDaySeconds = (value: string) => Math.floor(new Date(`${value}T23:59:59Z`).getTime() / 1000);
 
 /**
- * Date range and application filters for the history list.
+ * Date range and application filters for the history list, allowing app-only queries when no dates are specified.
  */
 export const HistoryFilters = () => {
   const { filterValues = {}, setFilters, data } = useListContext<Task>();
@@ -103,6 +103,24 @@ export const HistoryFilters = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const normalizedStart = start ?? '';
+  const normalizedEnd = end ?? '';
+  const normalizedApplication = application ?? '';
+  const appliedStart =
+    searchParams.get('startDate') ?? toDateValue(filterValues.start as number | undefined);
+  const appliedEnd = searchParams.get('endDate') ?? toDateValue(filterValues.end as number | undefined);
+  const appliedApplication =
+    searchParams.get('app') ?? (typeof filterValues.app === 'string' ? (filterValues.app as string) : '');
+
+  const hasStart = Boolean(normalizedStart);
+  const hasEnd = Boolean(normalizedEnd);
+  const hasPartialDateRange = (hasStart && !hasEnd) || (!hasStart && hasEnd);
+  const hasChanges =
+    normalizedStart !== appliedStart ||
+    normalizedEnd !== appliedEnd ||
+    normalizedApplication !== appliedApplication;
+  const isApplyDisabled = hasPartialDateRange || !hasChanges;
+
   return (
     <Stack
       direction={{ xs: 'column', md: 'row' }}
@@ -133,7 +151,7 @@ export const HistoryFilters = () => {
         value={application}
         onChange={setApplication}
       />
-      <Button variant="contained" onClick={applyFilters} disabled={!start || !end}>
+      <Button variant="contained" onClick={applyFilters} disabled={isApplyDisabled}>
         Apply
       </Button>
     </Stack>

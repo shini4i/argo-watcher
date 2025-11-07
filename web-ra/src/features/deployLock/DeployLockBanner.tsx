@@ -24,7 +24,13 @@ export const DeployLockBanner = () => {
       autoHideDuration={null}
       sx={snackbarPosition}
     >
-      <Alert severity="warning" variant="filled" sx={{ minWidth: 320, alignItems: 'center' }}>
+      <Alert
+        severity="warning"
+        variant="filled"
+        sx={{ minWidth: 320, alignItems: 'center' }}
+        role="status"
+        aria-live="polite"
+      >
         Deploy lock is active — privileged users must release the lock before triggering new deployments.
       </Alert>
     </Snackbar>

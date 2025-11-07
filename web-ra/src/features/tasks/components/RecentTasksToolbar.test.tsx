@@ -7,6 +7,16 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { Task } from '../../../data/types';
 import { RecentTasksToolbar } from './RecentTasksToolbar';
 
+const useAutoRefreshSpy = vi.fn();
+let latestAutoRefreshHandler: (() => void) | undefined;
+
+vi.mock('../../../shared/hooks/useAutoRefresh', () => ({
+  useAutoRefresh: (interval: number, handler: () => void) => {
+    useAutoRefreshSpy(interval);
+    latestAutoRefreshHandler = handler;
+  },
+}));
+
 vi.mock('./ApplicationFilter', () => ({
   ApplicationFilter: ({ value, onChange }: { value: string; onChange: (next: string) => void }) => (
     <input
@@ -73,6 +83,9 @@ const renderToolbar = (initialEntry: string) => {
 describe('RecentTasksToolbar', () => {
   beforeEach(() => {
     capturedLocation = undefined;
+    latestAutoRefreshHandler = undefined;
+    useAutoRefreshSpy.mockClear();
+    localStorage.clear();
   });
 
   it('merges application filter changes with existing search params', async () => {
@@ -112,5 +125,52 @@ describe('RecentTasksToolbar', () => {
 
     expect(setFilters).toHaveBeenCalledTimes(1);
     expect(setFilters.mock.calls[0]).toEqual([{ app: 'beta' }, {}, false]);
+  });
+
+  it('invokes manual refresh when clicking the refresh button', async () => {
+    const { refetch } = renderToolbar('/');
+    const refreshButton = screen.getByRole('button', { name: /refresh now/i });
+
+    refetch.mockClear();
+    fireEvent.click(refreshButton);
+
+    expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('wires auto-refresh handler so interval ticks trigger refetch', async () => {
+    const { refetch } = renderToolbar('/');
+
+    await waitFor(() => expect(useAutoRefreshSpy).toHaveBeenCalled());
+    refetch.mockClear();
+
+    latestAutoRefreshHandler?.();
+
+    expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('updates the refresh interval selection, persists it, and allows disabling auto refresh', async () => {
+    renderToolbar('/tasks');
+
+    await waitFor(() => expect(useAutoRefreshSpy).toHaveBeenCalledWith(30));
+
+    const selectControl = screen.getByRole('combobox');
+    fireEvent.mouseDown(selectControl);
+    const tenOption = await screen.findByRole('option', { name: '10s' });
+    fireEvent.click(tenOption);
+
+    await waitFor(() => {
+      expect(useAutoRefreshSpy).toHaveBeenCalledWith(10);
+    });
+    expect(window.localStorage.getItem('recentTasks.refreshInterval')).toBe('10');
+
+    const updatedSelectControl = screen.getByRole('combobox');
+    fireEvent.mouseDown(updatedSelectControl);
+    const offOption = await screen.findByRole('option', { name: 'Off' });
+    fireEvent.click(offOption);
+
+    await waitFor(() => {
+      expect(useAutoRefreshSpy).toHaveBeenCalledWith(0);
+    });
+    expect(window.localStorage.getItem('recentTasks.refreshInterval')).toBe('0');
   });
 });

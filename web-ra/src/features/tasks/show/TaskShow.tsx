@@ -1,12 +1,14 @@
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import LaunchIcon from '@mui/icons-material/Launch';
 import {
   Alert,
   Box,
   Button,
   Card,
   CardContent,
+  CardHeader,
   Chip,
   CircularProgress,
   Dialog,
@@ -16,20 +18,12 @@ import {
   DialogTitle,
   Divider,
   Grid,
-  List,
-  ListItem,
-  ListItemIcon,
-  ListItemText,
+  Link,
   Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
   Tooltip,
   Typography,
 } from '@mui/material';
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useGetIdentity, useGetOne, useNotify, usePermissions } from 'react-admin';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -75,6 +69,15 @@ interface RollbackState {
   message: string;
 }
 
+interface ConfigResponse {
+  argo_cd_url_alias?: string;
+  argo_cd_url?: {
+    Scheme?: string;
+    Host?: string;
+    Path?: string;
+  };
+}
+
 const computeRollbackState = (
   status: string | null,
   deployLock: boolean,
@@ -107,6 +110,68 @@ const computeRollbackState = (
   };
 };
 
+/** Builds the Argo CD application deep link from the config payload when possible. */
+const buildArgoCdUrl = (config: ConfigResponse | null, app?: string | null): string | null => {
+  if (!config || !app) {
+    return null;
+  }
+
+  if (typeof config.argo_cd_url_alias === 'string' && config.argo_cd_url_alias.length > 0) {
+    return `${config.argo_cd_url_alias.replace(/\/$/, '')}/applications/${app}`;
+  }
+
+  const { Scheme, Host, Path } = config.argo_cd_url ?? {};
+  if (Scheme && Host) {
+    const normalizedPath = Path ?? '';
+    return `${Scheme}://${Host}${normalizedPath}/applications/${app}`;
+  }
+
+  return null;
+};
+
+/** Derives the elapsed duration for the task, accounting for in-progress polling. */
+const computeDurationSeconds = (
+  status: string | null,
+  created: number | null,
+  updated: number | null,
+): number | null => {
+  if (created === null) {
+    return null;
+  }
+
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const effectiveUpdated = status === 'in progress' || updated === null ? nowSeconds : updated;
+  return Math.max(0, effectiveUpdated - created);
+};
+
+/** Produces timeline entries for the created and updated timestamps shown in the UI. */
+const buildTimelineEntries = (
+  created: number | null,
+  updated: number | null,
+  descriptor: ReturnType<typeof describeTaskStatus>,
+): TimelineEntry[] => {
+  const entries: TimelineEntry[] = [];
+  if (created !== null) {
+    entries.push({
+      id: 'created',
+      label: 'Created',
+      timestamp: created,
+      color: 'info',
+    });
+  }
+
+  if (updated !== null) {
+    entries.push({
+      id: 'status',
+      label: descriptor.label,
+      timestamp: updated,
+      color: descriptor.timelineDotColor,
+    });
+  }
+
+  return entries;
+};
+
 /** Displays the task detail screen at `/task/:id` mirroring the legacy Task View experience. */
 export const TaskShow = () => {
   const { id } = useParams<{ id: string }>();
@@ -118,6 +183,7 @@ export const TaskShow = () => {
   const { data: identity } = useGetIdentity();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [rollbackLoading, setRollbackLoading] = useState(false);
+  const [configData, setConfigData] = useState<ConfigResponse | null>(null);
 
   const {
     data,
@@ -133,6 +199,28 @@ export const TaskShow = () => {
     }
   }, [error, isError, notify]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    httpClient<ConfigResponse>('/api/v1/config')
+      .then(response => {
+        if (!cancelled) {
+          setConfigData(response.data ?? null);
+        }
+      })
+      .catch(err => {
+        if (cancelled) {
+          return;
+        }
+        const message = err instanceof Error ? err.message : 'Failed to load configuration.';
+        notify(message, { type: 'warning' });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [notify]);
+
   const status = data?.status ?? null;
   const identityEmail = identity?.email ?? '';
   const groups: readonly string[] = (permissions as { groups?: string[] })?.groups ?? [];
@@ -140,6 +228,17 @@ export const TaskShow = () => {
     (permissions as { privilegedGroups?: string[] })?.privilegedGroups ?? [];
   const userIsPrivileged = hasPrivilegedAccess(groups, privilegedGroups);
   const showRollbackButton = keycloakEnabled && userIsPrivileged;
+  const descriptor = describeTaskStatus(status);
+  const createdTimestamp = normalizeTimestamp(data?.created);
+  const updatedTimestamp = normalizeTimestamp(data?.updated);
+  const durationSeconds = computeDurationSeconds(status, createdTimestamp, updatedTimestamp);
+  const timelineEntries = buildTimelineEntries(createdTimestamp, updatedTimestamp, descriptor);
+  const displayedImages = (data?.images ?? []).slice(0, MAX_IMAGES_RENDERED);
+  const hasAdditionalImages = (data?.images?.length ?? 0) > displayedImages.length;
+  const argoCdUrl = buildArgoCdUrl(configData, data?.app);
+  const rollbackState = computeRollbackState(status, deployLock, Boolean(identityEmail));
+  const rollbackDisabled = rollbackState.disabled || rollbackLoading;
+  const rollbackTooltip = rollbackDisabled && !rollbackLoading ? rollbackState.message : '';
 
   useEffect(() => {
     if (!id || status !== 'in progress') {
@@ -245,58 +344,10 @@ export const TaskShow = () => {
     );
   }
 
-  const descriptor = describeTaskStatus(data.status);
-  const createdTimestamp = normalizeTimestamp(data.created);
-  const updatedTimestamp = normalizeTimestamp(data.updated);
-
-  const durationSeconds = useMemo(() => {
-    if (createdTimestamp === null) {
-      return null;
-    }
-    const effectiveUpdated =
-      data.status === 'in progress' || updatedTimestamp === null
-        ? Math.floor(Date.now() / 1000)
-        : updatedTimestamp;
-    return Math.max(0, effectiveUpdated - createdTimestamp);
-  }, [createdTimestamp, updatedTimestamp, data.status]);
-
-  const timelineEntries = useMemo(() => {
-    const entries: TimelineEntry[] = [];
-    if (createdTimestamp !== null) {
-      entries.push({
-        id: 'created',
-        label: 'Created',
-        timestamp: createdTimestamp,
-        color: 'info',
-      });
-    }
-    if (updatedTimestamp !== null) {
-      entries.push({
-        id: 'status',
-        label: descriptor.label,
-        timestamp: updatedTimestamp,
-        color: descriptor.timelineDotColor,
-      });
-    }
-    return entries;
-  }, [createdTimestamp, descriptor.label, descriptor.timelineDotColor, updatedTimestamp]);
-
-  const images = (data.images ?? []).slice(0, MAX_IMAGES_RENDERED);
-
-  const rollbackState = computeRollbackState(status, deployLock, Boolean(identityEmail));
-  const rollbackDisabled = rollbackState.disabled || rollbackLoading;
-  const rollbackTooltip = rollbackDisabled && !rollbackLoading ? rollbackState.message : '';
-
   return (
     <Stack spacing={3} sx={{ mt: { xs: 1.5, sm: 2 }, px: { xs: 1, md: 0 } }}>
-      <Stack
-        direction={{ xs: 'column', sm: 'row' }}
-        justifyContent={{ xs: 'flex-start', sm: 'space-between' }}
-        alignItems={{ xs: 'stretch', sm: 'center' }}
-        spacing={1.5}
-        sx={{ width: '100%', rowGap: 1.5 }}
-      >
-        <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: { xs: 'wrap', sm: 'nowrap' } }}>
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems="center">
+        <Stack direction="row" spacing={1} flexWrap="wrap">
           <Button onClick={handleBack} startIcon={<ArrowBackIcon />} variant="text">
             Back
           </Button>
@@ -304,121 +355,125 @@ export const TaskShow = () => {
             Refresh
           </Button>
         </Stack>
-        <Stack
-          direction="row"
-          spacing={1}
-          alignItems="center"
-          justifyContent={{ xs: 'flex-start', sm: 'flex-end' }}
-          sx={{ flexWrap: { xs: 'wrap', sm: 'nowrap' } }}
-        >
-          <Chip label={descriptor.label} color={descriptor.chipColor} size="medium" icon={descriptor.icon as ReactNode} />
-          {showRollbackButton && (
-            <Tooltip title={rollbackTooltip} disableHoverListener={!rollbackTooltip}>
-              <span>
-                <Button
-                  variant="contained"
-                  onClick={handleOpenConfirm}
-                  disabled={rollbackDisabled}
-                  startIcon={rollbackLoading ? <CircularProgress size={16} /> : undefined}
-                >
-                  Rollback to this version
-                </Button>
-              </span>
-            </Tooltip>
-          )}
-        </Stack>
       </Stack>
 
-      <Card>
+      <Card elevation={3}>
+        <CardHeader
+          title={`Task ${data.id?.slice(0, 8) ?? '—'}`}
+          subheader="UTC"
+          action={<Chip label={descriptor.label} color={descriptor.chipColor} size="medium" icon={descriptor.icon as ReactNode} />}
+        />
         <CardContent>
-          <Grid container spacing={3}>
-            <Grid item xs={12} md={6}>
-              <Typography variant="h5" gutterBottom>
-                {data.app ?? 'Unknown application'}
-              </Typography>
-              <Stack spacing={1}>
-                <InfoField label="Task ID" value={data.id} />
-                <InfoField label="Project" value={data.project ?? '—'} />
-                <InfoField label="Author" value={data.author ?? '—'} />
-              </Stack>
+          <Stack spacing={3}>
+            <Grid container spacing={3}>
+              <Grid item xs={12} md={6}>
+                <Stack spacing={1.5}>
+                  <InfoField label="Application" value={data.app ?? 'Unknown'} />
+                  <InfoField label="Project" value={<ProjectReference project={data.project} />} />
+                  <InfoField label="Author" value={data.author ?? '—'} />
+                </Stack>
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <Stack spacing={1.5}>
+                  <InfoField label="Task ID" value={data.id} />
+                  <InfoField label="Created" value={formatDateTime(createdTimestamp)} />
+                  <InfoField
+                    label="Last Updated"
+                    value={
+                      updatedTimestamp !== null ? (
+                        <Stack spacing={0.5}>
+                          <Typography variant="body1">{formatDateTime(updatedTimestamp)}</Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {formatRelativeTime(updatedTimestamp)}
+                          </Typography>
+                        </Stack>
+                      ) : (
+                        'Not yet updated'
+                      )
+                    }
+                  />
+                  <InfoField label="Duration" value={durationSeconds !== null ? formatDuration(durationSeconds) : '—'} />
+                </Stack>
+              </Grid>
             </Grid>
-            <Grid item xs={12} md={6}>
-              <Stack spacing={1}>
-                <InfoField label="Created" value={formatDateTime(createdTimestamp)} />
-                <InfoField label="Last Updated" value={updatedTimestamp ? formatRelativeTime(updatedTimestamp) : 'Not yet updated'} />
-                <InfoField label="Duration" value={durationSeconds !== null ? formatDuration(durationSeconds) : '—'} />
+
+            {timelineEntries.length > 0 && (
+              <Stack spacing={2}>
+                <Divider />
+                <Typography variant="subtitle2" color="text.secondary">
+                  Timeline
+                </Typography>
+                <Stack spacing={2}>
+                  {timelineEntries.map((entry, index) => (
+                    <TimelineRow key={entry.id} entry={entry} isLast={index === timelineEntries.length - 1} />
+                  ))}
+                </Stack>
               </Stack>
-            </Grid>
-          </Grid>
+            )}
+          </Stack>
         </CardContent>
       </Card>
 
-      {timelineEntries.length > 0 && (
-        <Card>
-          <CardContent>
-            <Typography variant="h6" gutterBottom>
-              Timeline
-            </Typography>
-            <List sx={{ '& .MuiListItem-root': { alignItems: 'flex-start' } }}>
-              {timelineEntries.map((entry, index) => (
-                <Fragment key={entry.id}>
-                  <ListItem disableGutters>
-                    <ListItemIcon sx={{ minWidth: 32 }}>
-                      <FiberManualRecordIcon
-                        color={entry.color === 'default' ? 'disabled' : entry.color}
-                        fontSize="small"
-                      />
-                    </ListItemIcon>
-                    <ListItemText
-                      primary={entry.label}
-                      secondary={formatDateTime(entry.timestamp)}
-                      primaryTypographyProps={{ variant: 'body1' }}
-                      secondaryTypographyProps={{ variant: 'body2', color: 'text.secondary' }}
-                    />
-                  </ListItem>
-                  {index < timelineEntries.length - 1 && <Divider component="li" variant="inset" />}
-                </Fragment>
-              ))}
-            </List>
-          </CardContent>
-        </Card>
-      )}
+      <Card elevation={3}>
+        <CardHeader title="Actions" />
+        <CardContent>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+            {argoCdUrl ? (
+              <Button
+                component="a"
+                href={argoCdUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                variant="outlined"
+                startIcon={<LaunchIcon fontSize="small" />}
+              >
+                Open in Argo CD UI
+              </Button>
+            ) : (
+              <Tooltip title="Argo CD URL is not configured for this environment.">
+                <span>
+                  <Button variant="outlined" disabled startIcon={<LaunchIcon fontSize="small" />}>
+                    Open in Argo CD UI
+                  </Button>
+                </span>
+              </Tooltip>
+            )}
+            {showRollbackButton && (
+              <Tooltip title={rollbackTooltip} disableHoverListener={!rollbackTooltip}>
+                <span>
+                  <Button
+                    variant="contained"
+                    onClick={handleOpenConfirm}
+                    disabled={rollbackDisabled}
+                    startIcon={rollbackLoading ? <CircularProgress size={16} /> : undefined}
+                  >
+                    Rollback to this version
+                  </Button>
+                </span>
+              </Tooltip>
+            )}
+          </Stack>
+        </CardContent>
+      </Card>
 
       {data.status_reason && (
-        <Alert severity={descriptor.reasonSeverity}>
+        <Alert severity={descriptor.reasonSeverity} role="status" aria-live="polite">
           <Typography component="pre" sx={{ whiteSpace: 'pre-wrap', m: 0 }}>
             {data.status_reason}
           </Typography>
         </Alert>
       )}
 
-      {images.length > 0 && (
-        <Card>
-          <CardContent>
-            <Typography variant="h6" gutterBottom>
-              Images
-            </Typography>
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>Image</TableCell>
-                  <TableCell>Tag</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {images.map(image => (
-                  <TableRow key={`${image.image}:${image.tag}`}>
-                    <TableCell>{image.image}</TableCell>
-                    <TableCell>{image.tag}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
+      <Card>
+        <CardContent>
+          <Typography variant="h6" gutterBottom>
+            Images
+          </Typography>
+          <ImagesList images={displayedImages} hasAdditional={hasAdditionalImages} />
+        </CardContent>
+      </Card>
       {deployLock && (
-        <Alert severity="error">
+        <Alert severity="error" role="status" aria-live="assertive">
           Deploy lock is active. Rollbacks are temporarily blocked.
         </Alert>
       )}
@@ -463,3 +518,93 @@ const InfoField = ({ label, value }: InfoFieldProps) => (
     )}
   </Box>
 );
+
+/** Renders the project field, converting URLs into external links. */
+const ProjectReference = ({ project }: { project?: string | null }) => {
+  if (!project) {
+    return <Typography variant="body1">—</Typography>;
+  }
+
+  const isUrl = project.startsWith('http://') || project.startsWith('https://');
+  if (!isUrl) {
+    return <Typography variant="body1">{project}</Typography>;
+  }
+
+  const label = project.replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  return (
+    <Link href={project} target="_blank" rel="noopener noreferrer">
+      {label}
+    </Link>
+  );
+};
+
+/** Visual row within the timeline stack with a connector to mimic the legacy UI flow. */
+const TimelineRow = ({ entry, isLast }: { entry: TimelineEntry; isLast: boolean }) => (
+  <Stack direction="row" spacing={2}>
+    <Box sx={{ position: 'relative', width: 24, display: 'flex', justifyContent: 'center' }}>
+      <FiberManualRecordIcon color={entry.color === 'default' ? 'disabled' : entry.color} fontSize="small" />
+      {!isLast && (
+        <Box
+          sx={theme => ({
+            position: 'absolute',
+            top: 18,
+            width: 2,
+            height: 'calc(100% - 18px)',
+            backgroundColor: theme.palette.divider,
+            borderRadius: 1,
+          })}
+        />
+      )}
+    </Box>
+    <Stack spacing={0.25}>
+      <Typography variant="subtitle2">{entry.label}</Typography>
+      <Typography variant="body2" color="text.secondary">
+        {formatDateTime(entry.timestamp)}
+      </Typography>
+      <Typography variant="caption" color="text.secondary">
+        {formatRelativeTime(entry.timestamp)}
+      </Typography>
+    </Stack>
+  </Stack>
+);
+
+/** Displays container images using monospace references and chip-style tags. */
+const ImagesList = ({
+  images,
+  hasAdditional,
+}: {
+  images: TaskStatus['images'];
+  hasAdditional: boolean;
+}) => {
+  const list = images ?? [];
+  if (!list.length) {
+    return (
+      <Typography variant="body2" color="text.secondary">
+        No container images were reported for this task.
+      </Typography>
+    );
+  }
+
+  return (
+    <Stack spacing={1.25}>
+      {list.map(image => (
+        <Stack
+          key={`${image.image}:${image.tag}`}
+          direction={{ xs: 'column', sm: 'row' }}
+          spacing={1}
+          alignItems={{ xs: 'flex-start', sm: 'center' }}
+        >
+          <Typography variant="body2" sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
+            {image.image}
+          </Typography>
+          <Chip label={image.tag} size="small" color="primary" variant="outlined" />
+        </Stack>
+      ))}
+      {hasAdditional && (
+        <Typography variant="caption" color="text.secondary">
+          Showing the first {MAX_IMAGES_RENDERED} images.
+        </Typography>
+      )}
+    </Stack>
+  );
+};

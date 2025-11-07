@@ -136,4 +136,41 @@ describe('HistoryFilters', () => {
       expect(params.has('app')).toBe(false);
     });
   });
+
+  it('enables the Apply button when only the application filter is provided', async () => {
+    const { setFilters } = renderFilters('/history');
+    const appInput = screen.getByTestId('app-filter') as HTMLInputElement;
+    const applyButton = screen.getByRole('button', { name: /apply/i });
+
+    expect(applyButton).toBeDisabled();
+
+    fireEvent.change(appInput, { target: { value: 'gamma' } });
+
+    await waitFor(() => expect(applyButton).toBeEnabled());
+
+    fireEvent.click(applyButton);
+
+    await waitFor(() => {
+      expect(setFilters).toHaveBeenCalledWith({ app: 'gamma' }, {}, false);
+    });
+  });
+
+  it('enables the Apply button when clearing an existing application filter without dates', async () => {
+    const { setFilters } = renderFilters('/history?app=delta');
+    const appInput = screen.getByTestId('app-filter') as HTMLInputElement;
+    const applyButton = screen.getByRole('button', { name: /apply/i });
+
+    await waitFor(() => expect(appInput.value).toBe('delta'));
+    expect(applyButton).toBeDisabled();
+
+    fireEvent.change(appInput, { target: { value: '' } });
+    await waitFor(() => expect(appInput.value).toBe(''));
+    await waitFor(() => expect(applyButton).toBeEnabled());
+
+    fireEvent.click(applyButton);
+
+    await waitFor(() => {
+      expect(setFilters).toHaveBeenCalledWith({}, {}, false);
+    });
+  });
 });

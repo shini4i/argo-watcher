@@ -1,43 +1,48 @@
-# IDE settings
+# IDE settings (developer-specific IntelliJ/JetBrains configs)
 .idea
 .run
 
-# database for development
+# database for development (local sqlite volumes created by dev docker-compose)
 db/data
 
-# static directory
-static/
-web-ra/dist/
-web-ra/node_modules/
+# static directory artifacts (compiled frontend assets and vendored modules)
+static/               # mkdocs or other asset dumps
+web-ra/dist/          # Vite build output for React Admin
+**/node_modules/      # installed dependencies
+.pnpm-store/          # pnpm shared store created during installs
 
-# environment files
+# package manager locks (pnpm) – generated locally but not used in this workspace
+**/pnpm-lock.yaml
+
+# environment files (contain developer-specific secrets)
 **/.env
 
-# built binary file
+# built binary file emitted by go build
 /argo-watcher
 
-# swagger files
+# swagger files (generated via swag)
 **/swagger.*
 
-# code coverage files
+# code coverage files/directories created by go/vitest coverage jobs
 **/coverage.*
+**/coverage/
 
-# Taskfile cashe
+# Taskfile cache (genny metadata)
 .task/
 
-# dynamicly generated files
+# dynamically generated mocks/docs (invoke scripts regenerate them)
 cmd/argo-watcher/docs
 cmd/argo-watcher/mock
 pkg/updater/mock
 
-# goreleaser
+# goreleaser artifacts (tarballs, binaries)
 dist/
 
-# generated docs
+# generated docs for mkdocs publish
 site/
 
-# mkdocs cache
+# mkdocs cache (build acceleration)
 .cache/
 
-# sandbox directory for random stuff
+# sandbox directory for experiments and scratch work
 sandbox/

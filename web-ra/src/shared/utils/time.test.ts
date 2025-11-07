@@ -38,12 +38,25 @@ describe('time utilities', () => {
     expect(formatDuration(63_000_000)).toBe('2 years');
   });
 
+  it('returns placeholder for invalid duration', () => {
+    expect(formatDuration(-10)).toBe('—');
+    expect(formatDuration(Number.NaN)).toBe('—');
+  });
+
   it('formats relative time strings', () => {
     const timestamp = Date.parse('2024-12-31T23:59:00Z');
     expect(formatRelativeTime(timestamp)).toBe('1 minute ago');
   });
 
+  it('returns placeholder for invalid relative time', () => {
+    expect(formatRelativeTime('oops')).toBe('—');
+  });
+
   it('computes relative timestamps', () => {
     expect(relativeTimestamp(60)).toBe(1735689540);
+  });
+
+  it('falls back to now when relative timestamp input invalid', () => {
+    expect(relativeTimestamp(-10)).toBe(1735689600);
   });
 });
