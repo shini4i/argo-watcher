@@ -29,7 +29,7 @@ describe('dataProvider', () => {
     vi.useRealTimers();
   });
 
-  it('defaults total to response length when backend omits total', async () => {
+  it('infers total from pagination context when backend omits total', async () => {
     const fetch = mockFetch().mockResolvedValue(
       jsonResponse({
         tasks: [{ id: '1', created: 1, updated: 1, app: 'demo', author: 'alice', project: 'proj', images: [] }],
@@ -44,20 +44,18 @@ describe('dataProvider', () => {
     const url = fetch.mock.calls[0][0] as string;
     expect(url).toContain('limit=10');
     expect(url).toContain('offset=10');
-    expect(result.total).toBe(1);
+    expect(result.total).toBe(11);
     expect(result.data).toHaveLength(1);
   });
 
-  it('clamps total when backend over-reports fewer returned records', async () => {
+  it('trusts backend totals when provided', async () => {
     mockFetch().mockResolvedValue(
       jsonResponse({
         tasks: [
           { id: '1', created: 1, updated: 1, app: 'demo', author: 'alice', project: 'proj', images: [] },
           { id: '2', created: 2, updated: 2, app: 'demo', author: 'bob', project: 'proj', images: [] },
-          { id: '3', created: 3, updated: 3, app: 'demo', author: 'carol', project: 'proj', images: [] },
-          { id: '4', created: 4, updated: 4, app: 'demo', author: 'dan', project: 'proj', images: [] },
         ],
-        total: 35,
+        total: 42,
       }),
     );
 
@@ -66,8 +64,8 @@ describe('dataProvider', () => {
       pagination: { page: 1, perPage: 25 },
     });
 
-    expect(result.total).toBe(4);
-    expect(result.data).toHaveLength(4);
+    expect(result.total).toBe(42);
+    expect(result.data).toHaveLength(2);
   });
 
   it('fetches task list with default timeframe and returns paginated data', async () => {

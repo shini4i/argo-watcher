@@ -69,13 +69,8 @@ const toRaListResult = (response: TasksResponse, params: GetListParams): GetList
   const perPage = pagination.perPage ?? tasks.length;
   const offset = Math.max(0, (pagination.page - 1) * (pagination.perPage ?? 0));
 
-  let total = typeof response.total === 'number' ? response.total : tasks.length;
-
-  if (perPage <= 0) {
-    total = tasks.length;
-  } else if (tasks.length < perPage && total > offset + tasks.length) {
-    total = offset + tasks.length;
-  }
+  const total =
+    typeof response.total === 'number' ? response.total : Math.max(tasks.length, offset + tasks.length);
 
   return {
     data: tasks,
