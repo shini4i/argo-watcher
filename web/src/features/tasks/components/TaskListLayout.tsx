@@ -55,7 +55,7 @@ export const TaskListLayout = ({
 
   return (
     <List
-      {...(title !== undefined ? { title } : {})}
+      title={title}
       resource={resource}
       sort={sort}
       perPage={perPage}

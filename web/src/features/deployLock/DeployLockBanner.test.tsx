@@ -12,9 +12,9 @@ describe('DeployLockBanner', () => {
   it('renders banner when lock is active', () => {
     (useDeployLockState as unknown as vi.Mock).mockReturnValue(true);
     render(<DeployLockBanner />);
-    const alert = screen.getByRole('status');
-    expect(alert).toHaveAttribute('role', 'status');
-    expect(alert).toHaveAttribute('aria-live', 'polite');
+    const statusOutput = screen.getByRole('status');
+    expect(statusOutput.tagName).toBe('OUTPUT');
+    expect(statusOutput).toHaveAttribute('aria-live', 'polite');
   });
 
   it('renders nothing when lock is inactive', () => {

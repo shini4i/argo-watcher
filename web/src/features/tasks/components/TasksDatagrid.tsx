@@ -1,4 +1,3 @@
-import type { ReactNode } from 'react';
 import { Button, Chip, Link, Stack, Typography } from '@mui/material';
 import { alpha, type SxProps, type Theme } from '@mui/material/styles';
 import { Datagrid, FunctionField, TextField, useRecordContext } from 'react-admin';

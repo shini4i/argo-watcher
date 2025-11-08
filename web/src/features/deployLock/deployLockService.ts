@@ -67,21 +67,22 @@ export class DeployLockService {
   public subscribe(listener: DeployLockListener): () => void {
     this.listeners.add(listener);
 
-    if (this.currentStatus !== null) {
-      listener(this.currentStatus);
-    } else {
+    if (this.currentStatus === null) {
       this.fetchStatus().catch(error => {
         console.error('[deploy-lock] Failed to fetch initial status', error);
       });
+    } else {
+      listener(this.currentStatus);
     }
 
     this.ensureSocket();
 
     return () => {
       this.listeners.delete(listener);
-      if (this.listeners.size === 0) {
-        this.teardownSocket();
+      if (this.listeners.size > 0) {
+        return;
       }
+      this.teardownSocket();
     };
   }
 

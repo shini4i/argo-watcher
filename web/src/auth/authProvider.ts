@@ -197,27 +197,25 @@ const resolveRedirectUri = (redirectTo?: string) => {
  * Fetches the backend configuration once and caches the promise for subsequent calls.
  */
 const fetchServerConfig = async (): Promise<ServerConfig> => {
-  if (!serverConfigPromise) {
-    serverConfigPromise = fetch('/api/v1/config', {
-      headers: {
-        Accept: 'application/json',
-      },
+  serverConfigPromise ??= fetch('/api/v1/config', {
+    headers: {
+      Accept: 'application/json',
+    },
+  })
+    .then(async response => {
+      const body = await response.json();
+      if (!response.ok) {
+        throw new HttpError(body?.error ?? 'Failed to load configuration', response.status, body);
+      }
+      return body as ServerConfig;
     })
-      .then(async response => {
-        const body = await response.json();
-        if (!response.ok) {
-          throw new HttpError(body?.error ?? 'Failed to load configuration', response.status, body);
-        }
-        return body as ServerConfig;
-      })
-      .catch(error => {
-        serverConfigPromise = null;
-        if (error instanceof HttpError) {
-          throw error;
-        }
-        throw new HttpError('Failed to load configuration', 0, { cause: error });
-      });
-  }
+    .catch(error => {
+      serverConfigPromise = null;
+      if (error instanceof HttpError) {
+        throw error;
+      }
+      throw new HttpError('Failed to load configuration', 0, { cause: error });
+    });
 
   serverConfig = await serverConfigPromise;
   return serverConfig;

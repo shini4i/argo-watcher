@@ -62,32 +62,26 @@ export const RecentTasksToolbar = ({ storageKey = 'recentTasks.app' }: { storage
     getBrowserWindow()?.localStorage?.setItem(STORAGE_KEY_INTERVAL, String(refreshInterval));
   }, [refreshInterval]);
 
-  useAutoRefresh(
-    refreshInterval,
-    useCallback(() => {
-      refetch
-        ?.()
-        .catch(error => {
-          if (import.meta.env.DEV) {
-            console.warn('RecentTasksToolbar auto-refresh failed', error);
-          }
-        });
-    }, [refetch]),
-  );
+  const triggerRefetch = useCallback(() => {
+    const result = refetch?.();
+    if (result && typeof (result as Promise<unknown>).catch === 'function') {
+      (result as Promise<unknown>).catch(error => {
+        if (import.meta.env.DEV) {
+          console.warn('RecentTasksToolbar refresh failed', error);
+        }
+      });
+    }
+  }, [refetch]);
+
+  useAutoRefresh(refreshInterval, triggerRefetch);
 
   const handleApplicationChange = useCallback((next: string) => {
     setApplication(next);
   }, []);
 
   const handleManualRefresh = useCallback(() => {
-    refetch
-      ?.()
-      .catch(error => {
-        if (import.meta.env.DEV) {
-          console.warn('RecentTasksToolbar manual refresh failed', error);
-        }
-      });
-  }, [refetch]);
+    triggerRefetch();
+  }, [triggerRefetch]);
 
   return (
     <Stack

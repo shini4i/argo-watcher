@@ -254,11 +254,14 @@ export const TaskShow = () => {
     }
 
     const intervalId = browserWindow.setInterval(() => {
-      refetch().catch(error => {
-        if (import.meta.env.DEV) {
-          console.warn('TaskShow refetch failed', error);
-        }
-      });
+      const result = refetch();
+      if (result && typeof result.catch === 'function') {
+        result.catch(error => {
+          if (import.meta.env.DEV) {
+            console.warn('TaskShow refetch failed', error);
+          }
+        });
+      }
     }, 10_000);
 
     return () => browserWindow.clearInterval(intervalId);
@@ -269,12 +272,14 @@ export const TaskShow = () => {
   }, [navigate]);
 
   const handleRefresh = useCallback(() => {
-    refetch()
-      .catch(error => {
+    const result = refetch();
+    if (result && typeof result.catch === 'function') {
+      result.catch(error => {
         if (import.meta.env.DEV) {
           console.warn('TaskShow refresh failed', error);
         }
       });
+    }
   }, [refetch]);
 
   const handleOpenConfirm = useCallback(() => {
@@ -409,7 +414,10 @@ export const TaskShow = () => {
                       )
                     }
                   />
-                  <InfoField label="Duration" value={durationSeconds !== null ? formatDuration(durationSeconds) : '—'} />
+                  <InfoField
+                    label="Duration"
+                    value={durationSeconds === null ? '—' : formatDuration(durationSeconds)}
+                  />
                 </Stack>
               </Grid>
             </Grid>
@@ -480,7 +488,7 @@ export const TaskShow = () => {
 
       {data.status_reason && (
         <Alert severity={descriptor.reasonSeverity}>
-          <output role="status" aria-live="polite" style={{ display: 'block' }}>
+          <output aria-live="polite" style={{ display: 'block' }}>
             <Typography component="pre" sx={{ whiteSpace: 'pre-wrap', m: 0 }}>
               {data.status_reason}
             </Typography>
@@ -498,7 +506,7 @@ export const TaskShow = () => {
       </Card>
       {deployLock && (
         <Alert severity="error">
-          <output role="status" aria-live="assertive" style={{ display: 'block' }}>
+          <output aria-live="assertive" style={{ display: 'block' }}>
             Deploy lock is active. Rollbacks are temporarily blocked.
           </output>
         </Alert>

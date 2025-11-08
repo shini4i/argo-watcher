@@ -52,7 +52,23 @@ const renderValue = (value: unknown): string => {
     }
   }
 
-  return String(value);
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  if (typeof value === 'number' || typeof value === 'bigint' || typeof value === 'boolean') {
+    return String(value);
+  }
+
+  if (typeof value === 'undefined') {
+    return 'undefined';
+  }
+
+  if (typeof value === 'function') {
+    return '[function]';
+  }
+
+  return '[unsupported]';
 };
 
 /**
