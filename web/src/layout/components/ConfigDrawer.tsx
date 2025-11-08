@@ -60,7 +60,7 @@ const renderValue = (value: unknown): string => {
     return String(value);
   }
 
-  if (typeof value === 'undefined') {
+  if (value === undefined) {
     return 'undefined';
   }
 

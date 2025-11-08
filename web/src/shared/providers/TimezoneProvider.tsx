@@ -28,8 +28,7 @@ const readInitialTimezone = (): TimezoneMode => {
 
 /** React context provider that exposes timezone selection and formatting helpers. */
 export const TimezoneProvider = ({ children }: { children: ReactNode }) => {
-  const initialTimezone = useMemo(() => readInitialTimezone(), []);
-  const [timezone, setTimezoneState] = useState<TimezoneMode>(initialTimezone);
+  const [timezone, setTimezoneState] = useState<TimezoneMode>(() => readInitialTimezone());
 
   const setTimezone = useCallback((mode: TimezoneMode) => {
     setTimezoneState(mode);
