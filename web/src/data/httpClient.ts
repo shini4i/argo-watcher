@@ -142,13 +142,13 @@ export const httpClient = async <T>(path: string, options: HttpClientOptions = {
 export const buildQueryString = (params: Record<string, string | number | boolean | undefined>) => {
   const searchParams = new URLSearchParams();
 
-  Object.entries(params).forEach(([key, value]) => {
+  for (const [key, value] of Object.entries(params)) {
     if (value === undefined || value === '') {
-      return;
+      continue;
     }
 
     searchParams.append(key, String(value));
-  });
+  }
 
   const query = searchParams.toString();
   return query ? `?${query}` : '';

@@ -29,6 +29,15 @@ vi.mock('./ApplicationFilter', () => ({
   readInitialApplication: () => '',
 }));
 
+/** Retrieves the browser window shim for tests or throws when unavailable. */
+const getBrowserWindow = (): Window => {
+  const browserWindow = globalThis.window;
+  if (!browserWindow) {
+    throw new Error('Browser window is required for RecentTasksToolbar tests.');
+  }
+  return browserWindow;
+};
+
 const sampleTasks: Task[] = [
   {
     id: '1',
@@ -161,7 +170,7 @@ describe('RecentTasksToolbar', () => {
     await waitFor(() => {
       expect(useAutoRefreshSpy).toHaveBeenCalledWith(10);
     });
-    expect(window.localStorage.getItem('recentTasks.refreshInterval')).toBe('10');
+    expect(getBrowserWindow().localStorage.getItem('recentTasks.refreshInterval')).toBe('10');
 
     const updatedSelectControl = screen.getByRole('combobox');
     fireEvent.mouseDown(updatedSelectControl);
@@ -171,6 +180,6 @@ describe('RecentTasksToolbar', () => {
     await waitFor(() => {
       expect(useAutoRefreshSpy).toHaveBeenCalledWith(0);
     });
-    expect(window.localStorage.getItem('recentTasks.refreshInterval')).toBe('0');
+    expect(getBrowserWindow().localStorage.getItem('recentTasks.refreshInterval')).toBe('0');
   });
 });

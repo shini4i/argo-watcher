@@ -46,10 +46,19 @@ const mockConfig = (config: unknown) => {
 
 const SILENT_SSO_STORAGE_KEY = 'argo-watcher:silent-sso-disabled';
 
+/** Ensures a browser-like window object exists when tests require DOM APIs. */
+const getBrowserWindow = (): Window => {
+  const browserWindow = globalThis.window;
+  if (!browserWindow) {
+    throw new Error('Browser window not available in authProvider tests.');
+  }
+  return browserWindow;
+};
+
 describe('authProvider', () => {
   beforeEach(async () => {
     vi.restoreAllMocks();
-    window.localStorage.clear();
+    getBrowserWindow().localStorage.clear();
     keycloakMock.init.mockReset();
     keycloakMock.login.mockReset();
     keycloakMock.logout.mockReset();
@@ -225,7 +234,7 @@ describe('authProvider', () => {
   });
 
   it('reuses existing tokens instead of re-initializing', async () => {
-    window.localStorage.clear();
+    getBrowserWindow().localStorage.clear();
     mockConfig({
       keycloak: {
         enabled: true,
@@ -246,7 +255,7 @@ describe('authProvider', () => {
   });
 
   it('remembers silent SSO failures across reloads', async () => {
-    window.localStorage.clear();
+    getBrowserWindow().localStorage.clear();
     mockConfig({
       keycloak: {
         enabled: true,
@@ -263,7 +272,7 @@ describe('authProvider', () => {
 
     const provider = await loadAuthProvider();
     await expect(provider.checkAuth({})).resolves.toBeUndefined();
-    expect(window.localStorage.getItem(SILENT_SSO_STORAGE_KEY)).toBe('true');
+    expect(getBrowserWindow().localStorage.getItem(SILENT_SSO_STORAGE_KEY)).toBe('true');
     warnSpy.mockRestore();
 
     const module = await import('./authProvider');
@@ -298,7 +307,7 @@ describe('authProvider', () => {
 
     expect(keycloakMock.login).toHaveBeenCalledWith(
       expect.objectContaining({
-        redirectUri: `${window.location.origin}/history`,
+        redirectUri: `${getBrowserWindow().location.origin}/history`,
       }),
     );
   });

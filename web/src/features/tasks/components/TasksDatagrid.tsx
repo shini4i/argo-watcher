@@ -4,7 +4,7 @@ import { alpha, type SxProps, type Theme } from '@mui/material/styles';
 import { Datagrid, FunctionField, TextField, useRecordContext } from 'react-admin';
 import { Link as RouterLink } from 'react-router-dom';
 import type { Task } from '../../../data/types';
-import { formatDuration, formatRelativeTime } from '../../../shared/utils';
+import { formatDuration, formatRelativeTime, getBrowserWindow } from '../../../shared/utils';
 import { describeTaskStatus } from '../utils/statusPresentation';
 import { useEffect, useState } from 'react';
 import { useTimezone } from '../../../shared/providers/TimezoneProvider';
@@ -83,12 +83,7 @@ const datagridSx: SxProps<Theme> = theme => ({
 const TaskStatusChip = ({ status }: { status?: string | null }) => {
   const presentation = describeTaskStatus(status);
   return (
-    <Chip
-      size="small"
-      label={presentation.label}
-      color={presentation.chipColor}
-      icon={presentation.icon as ReactNode}
-    />
+    <Chip size="small" label={presentation.label} color={presentation.chipColor} icon={presentation.icon} />
   );
 };
 
@@ -167,8 +162,12 @@ const useNowTicker = (enabled: boolean, intervalMs: number = 10000) => {
     if (!enabled) {
       return undefined;
     }
-    const id = window.setInterval(() => setNow(Date.now()), intervalMs);
-    return () => window.clearInterval(id);
+    const browserWindow = getBrowserWindow();
+    if (!browserWindow) {
+      return undefined;
+    }
+    const id = browserWindow.setInterval(() => setNow(Date.now()), intervalMs);
+    return () => browserWindow.clearInterval(id);
   }, [enabled, intervalMs]);
 
   return now;

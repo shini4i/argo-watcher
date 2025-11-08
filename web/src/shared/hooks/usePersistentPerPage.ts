@@ -1,13 +1,15 @@
 import { useEffect } from 'react';
 import { useListPaginationContext } from 'react-admin';
+import { getBrowserWindow } from '../utils';
 
 /** Retrieves the stored per-page value or falls back when absent/invalid. */
 const readPerPage = (storageKey: string, fallback: number) => {
-  if (typeof window === 'undefined') {
+  const storage = getBrowserWindow()?.localStorage;
+  if (!storage) {
     return fallback;
   }
 
-  const raw = window.localStorage.getItem(storageKey);
+  const raw = storage.getItem(storageKey);
   const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
 
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -15,10 +17,11 @@ const readPerPage = (storageKey: string, fallback: number) => {
 
 /** Persists the current per-page value to localStorage. */
 const writePerPage = (storageKey: string, value: number) => {
-  if (typeof window === 'undefined') {
+  const storage = getBrowserWindow()?.localStorage;
+  if (!storage) {
     return;
   }
-  window.localStorage.setItem(storageKey, String(value));
+  storage.setItem(storageKey, String(value));
 };
 
 /**

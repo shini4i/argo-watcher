@@ -2,6 +2,7 @@ import Keycloak from 'keycloak-js';
 import type { KeycloakInitOptions, KeycloakInstance } from 'keycloak-js';
 import type { AuthProvider, Identifier } from 'react-admin';
 import { HttpError } from 'react-admin';
+import { getBrowserWindow } from '../shared/utils';
 import { clearAccessToken, getAccessToken, setAccessToken } from './tokenStore';
 
 interface KeycloakConfig {
@@ -44,7 +45,11 @@ const SILENT_SSO_DISABLED_KEY = 'argo-watcher:silent-sso-disabled';
  */
 const readSilentSsoPreference = () => {
   try {
-    const disabled = window.localStorage.getItem(SILENT_SSO_DISABLED_KEY);
+    const storage = getBrowserWindow()?.localStorage;
+    if (!storage) {
+      return false;
+    }
+    const disabled = storage.getItem(SILENT_SSO_DISABLED_KEY);
     return disabled === 'true';
   } catch (error) {
     console.warn('[auth] Failed to read silent SSO preference, defaulting to enabled.', error);
@@ -58,10 +63,14 @@ const readSilentSsoPreference = () => {
  */
 const persistSilentSsoPreference = (disabled: boolean) => {
   try {
+    const storage = getBrowserWindow()?.localStorage;
+    if (!storage) {
+      return;
+    }
     if (disabled) {
-      window.localStorage.setItem(SILENT_SSO_DISABLED_KEY, 'true');
+      storage.setItem(SILENT_SSO_DISABLED_KEY, 'true');
     } else {
-      window.localStorage.removeItem(SILENT_SSO_DISABLED_KEY);
+      storage.removeItem(SILENT_SSO_DISABLED_KEY);
     }
   } catch (error) {
     console.warn('[auth] Failed to persist silent SSO preference, fallback logic still applies.', error);
@@ -87,6 +96,18 @@ const clearUserGroupsCache = () => {
   cachedUserGroups = null;
   userGroupsLoadedFromProfile = false;
   lastSessionValidation = 0;
+};
+
+/** Clears the scheduled token refresh interval when it exists. */
+const clearRefreshInterval = () => {
+  if (!refreshInterval) {
+    return;
+  }
+  const browserWindow = getBrowserWindow();
+  if (browserWindow) {
+    browserWindow.clearInterval(refreshInterval);
+  }
+  refreshInterval = null;
 };
 
 interface EnsureGroupsOptions {
@@ -142,7 +163,12 @@ const resolveAppUrl = (path: string) => {
   const base = import.meta.env.BASE_URL ?? '/';
   const normalizedBase = base.endsWith('/') ? base : `${base}/`;
   const normalizedPath = path.startsWith('/') ? path.slice(1) : path;
-  return new URL(normalizedPath, `${window.location.origin}${normalizedBase}`).toString();
+  const browserWindow = getBrowserWindow();
+  const origin = browserWindow?.location.origin;
+  if (!origin) {
+    return `${normalizedBase}${normalizedPath}`;
+  }
+  return new URL(normalizedPath, `${origin}${normalizedBase}`).toString();
 };
 
 /**
@@ -150,7 +176,17 @@ const resolveAppUrl = (path: string) => {
  */
 const resolveRedirectUri = (redirectTo?: string) => {
   const base = import.meta.env.BASE_URL ?? '/';
-  const baseUrl = new URL(base.startsWith('/') ? base : `/${base}`, window.location.origin);
+  const normalizedBasePath = base.startsWith('/') ? base : `/${base}`;
+  const relativeBase = normalizedBasePath.endsWith('/') ? normalizedBasePath : `${normalizedBasePath}/`;
+  const browserWindow = getBrowserWindow();
+  const origin = browserWindow?.location.origin;
+  if (!origin) {
+    if (!redirectTo) {
+      return relativeBase;
+    }
+    return `${relativeBase}${redirectTo.replace(/^\//, '')}`;
+  }
+  const baseUrl = new URL(relativeBase, origin);
   if (!redirectTo) {
     return baseUrl.toString();
   }
@@ -207,13 +243,11 @@ const ensureKeycloakInstance = async (): Promise<KeycloakInstance | null> => {
 
   assertKeycloakFields(config.keycloak);
 
-  if (!keycloakInstance) {
-    keycloakInstance = new Keycloak({
-      url: config.keycloak.url!,
-      realm: config.keycloak.realm!,
-      clientId: config.keycloak.client_id!,
-    });
-  }
+  keycloakInstance ??= new Keycloak({
+    url: config.keycloak.url!,
+    realm: config.keycloak.realm!,
+    clientId: config.keycloak.client_id!,
+  });
 
   return keycloakInstance;
 };
@@ -222,11 +256,14 @@ const ensureKeycloakInstance = async (): Promise<KeycloakInstance | null> => {
  * Installs an interval that keeps the Keycloak token fresh and updates cached groups.
  */
 const scheduleTokenRefresh = (keycloak: KeycloakInstance) => {
-  if (refreshInterval) {
-    window.clearInterval(refreshInterval);
+  clearRefreshInterval();
+  const browserWindow = getBrowserWindow();
+  if (!browserWindow) {
+    console.warn('[auth] Unable to schedule token refresh because window is unavailable.');
+    return;
   }
 
-  refreshInterval = window.setInterval(async () => {
+  refreshInterval = browserWindow.setInterval(async () => {
     try {
       const refreshed = await keycloak.updateToken(30);
       if (refreshed) {
@@ -351,7 +388,7 @@ export const authProvider: AuthProvider = {
     if (!keycloak) {
       setAccessToken(null);
       clearUserGroupsCache();
-      return Promise.resolve();
+      return;
     }
 
     const redirectUri = resolveRedirectUri(params?.redirectTo);
@@ -361,18 +398,15 @@ export const authProvider: AuthProvider = {
 
   async logout(params) {
     const keycloak = await ensureKeycloakInstance();
-    if (refreshInterval) {
-      window.clearInterval(refreshInterval);
-      refreshInterval = null;
-    }
+    clearRefreshInterval();
     clearAccessToken();
     clearUserGroupsCache();
 
     if (!keycloak) {
-      return Promise.resolve();
+      return;
     }
 
-    const redirectUri = params?.redirectTo ?? window.location.origin;
+    const redirectUri = resolveRedirectUri(params?.redirectTo);
     await keycloak.logout({ redirectUri });
   },
 
@@ -434,10 +468,7 @@ export const __testing = {
   reset() {
     serverConfigPromise = null;
     serverConfig = null;
-    if (refreshInterval) {
-      window.clearInterval(refreshInterval);
-      refreshInterval = null;
-    }
+    clearRefreshInterval();
     keycloakInstance = null;
     silentSsoSupported = !readSilentSsoPreference();
     clearAccessToken();

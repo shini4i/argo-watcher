@@ -8,7 +8,7 @@ import { HistoryExportMenu } from './HistoryExportMenu';
 const notifyMock = vi.fn();
 
 vi.mock('react-admin', async () => {
-  const actual = (await vi.importActual<typeof import('react-admin')>('react-admin')) as typeof import('react-admin');
+  const actual = await vi.importActual<typeof import('react-admin')>('react-admin');
   return {
     ...actual,
     useNotify: () => notifyMock,

@@ -1,5 +1,6 @@
 import type { HttpResponse } from '../../data/httpClient';
 import { httpClient } from '../../data/httpClient';
+import { getBrowserWindow } from '../../shared/utils';
 
 /**
  * Subscribed listener signature invoked whenever the deploy-lock status changes.
@@ -15,8 +16,10 @@ const resolveWebSocketUrl = () => {
     return base.endsWith('/') ? `${base}ws` : `${base}/ws`;
   }
 
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${protocol}//${window.location.host}/ws`;
+  const location = getBrowserWindow()?.location;
+  const protocol = location?.protocol === 'https:' ? 'wss:' : 'ws:';
+  const host = location?.host ?? 'localhost';
+  return `${protocol}//${host}/ws`;
 };
 
 /**
@@ -25,7 +28,7 @@ const resolveWebSocketUrl = () => {
  */
 export class DeployLockService {
   private currentStatus: boolean | null = null;
-  private listeners = new Set<DeployLockListener>();
+  private readonly listeners = new Set<DeployLockListener>();
   private socket: WebSocket | null = null;
   private reconnectHandle: number | null = null;
 
@@ -85,7 +88,9 @@ export class DeployLockService {
   /** Broadcasts the new lock status to all subscribers. */
   private updateStatus(locked: boolean) {
     this.currentStatus = locked;
-    this.listeners.forEach(listener => listener(locked));
+    for (const listener of this.listeners) {
+      listener(locked);
+    }
   }
 
   /** Ensures a websocket connection exists whenever there are active listeners. */
@@ -125,7 +130,12 @@ export class DeployLockService {
       return;
     }
 
-    this.reconnectHandle = window.setTimeout(() => {
+    const browserWindow = getBrowserWindow();
+    if (!browserWindow) {
+      return;
+    }
+
+    this.reconnectHandle = browserWindow.setTimeout(() => {
       this.reconnectHandle = null;
       this.ensureSocket();
     }, WS_RETRY_DELAY_MS);
@@ -134,7 +144,8 @@ export class DeployLockService {
   /** Closes any active websocket and cancels pending reconnect timers. */
   private teardownSocket() {
     if (this.reconnectHandle !== null) {
-      window.clearTimeout(this.reconnectHandle);
+      const browserWindow = getBrowserWindow();
+      browserWindow?.clearTimeout(this.reconnectHandle);
       this.reconnectHandle = null;
     }
 

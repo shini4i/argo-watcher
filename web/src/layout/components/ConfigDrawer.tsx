@@ -48,7 +48,7 @@ const renderValue = (value: unknown): string => {
     try {
       return JSON.stringify(value, null, 2);
     } catch {
-      return String(value);
+      return '[unserializable]';
     }
   }
 
@@ -84,6 +84,65 @@ export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
     return Object.entries(config);
   }, [config]);
 
+  /** Renders the configuration section (loading, error, empty, or table). */
+  const renderConfigContent = () => {
+    if (loading) {
+      return (
+        <Stack alignItems="center" sx={{ py: 4 }}>
+          <CircularProgress size={24} />
+        </Stack>
+      );
+    }
+
+    if (error) {
+      return (
+        <Typography variant="body2" color="error">
+          {error}
+        </Typography>
+      );
+    }
+
+    if (entries.length === 0) {
+      return (
+        <Typography variant="body2" color="text.secondary">
+          No configuration available.
+        </Typography>
+      );
+    }
+
+    return (
+      <Box sx={{ flexGrow: 1, overflow: 'auto' }}>
+        <Table size="small" stickyHeader>
+          <TableHead>
+            <TableRow>
+              <TableCell sx={{ width: '35%' }}>Key</TableCell>
+              <TableCell>Value</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {entries.map(([key, value]) => (
+              <TableRow key={key} hover>
+                <TableCell component="th" scope="row">
+                  <Typography variant="body2" fontWeight={600}>
+                    {key}
+                  </Typography>
+                </TableCell>
+                <TableCell>
+                  <Typography
+                    variant="body2"
+                    sx={{ whiteSpace: 'pre-wrap', fontFamily: theme => theme.typography.fontFamily }}
+                  >
+                    {renderValue(value)}
+                  </Typography>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </Box>
+    );
+  };
+
   useEffect(() => {
     if (!open) {
       return;
@@ -113,19 +172,10 @@ export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
 
     const text = JSON.stringify(config, null, 2);
     try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
-      } else {
-        const textarea = document.createElement('textarea');
-        textarea.value = text;
-        textarea.style.position = 'fixed';
-        textarea.style.opacity = '0';
-        document.body.appendChild(textarea);
-        textarea.focus();
-        textarea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textarea);
+      if (!navigator.clipboard?.writeText) {
+        throw new Error('Clipboard API unavailable in this environment.');
       }
+      await navigator.clipboard.writeText(text);
       notify('Configuration copied to clipboard.', { type: 'info' });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Copy failed';
@@ -243,49 +293,7 @@ export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
               </IconButton>
             </Stack>
 
-            {loading ? (
-              <Stack alignItems="center" sx={{ py: 4 }}>
-                <CircularProgress size={24} />
-              </Stack>
-            ) : error ? (
-              <Typography variant="body2" color="error">
-                {error}
-              </Typography>
-            ) : entries.length === 0 ? (
-              <Typography variant="body2" color="text.secondary">
-                No configuration available.
-              </Typography>
-            ) : (
-              <Box sx={{ flexGrow: 1, overflow: 'auto' }}>
-                <Table size="small" stickyHeader>
-                  <TableHead>
-                    <TableRow>
-                      <TableCell sx={{ width: '35%' }}>Key</TableCell>
-                      <TableCell>Value</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {entries.map(([key, value]) => (
-                      <TableRow key={key} hover>
-                        <TableCell component="th" scope="row">
-                          <Typography variant="body2" fontWeight={600}>
-                            {key}
-                          </Typography>
-                        </TableCell>
-                        <TableCell>
-                          <Typography
-                            variant="body2"
-                            sx={{ whiteSpace: 'pre-wrap', fontFamily: theme => theme.typography.fontFamily }}
-                          >
-                            {renderValue(value)}
-                          </Typography>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </Box>
-            )}
+            {renderConfigContent()}
           </>
           )}
         </Stack>

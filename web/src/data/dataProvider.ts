@@ -69,8 +69,8 @@ const selectListWindow = (params: GetListParams) => {
 const toRaListResult = (response: TasksResponse, params: GetListParams): GetListResult<Task> => {
   const tasks = response.tasks ?? [];
   const pagination = params.pagination ?? { page: 1, perPage: tasks.length || 0 };
-  const perPage = pagination.perPage ?? tasks.length;
-  const offset = Math.max(0, (pagination.page - 1) * (pagination.perPage ?? 0));
+  const pageSize = pagination.perPage ?? tasks.length;
+  const offset = Math.max(0, (pagination.page - 1) * pageSize);
 
   const total =
     typeof response.total === 'number' ? response.total : Math.max(tasks.length, offset + tasks.length);
@@ -154,13 +154,15 @@ export const dataProvider: DataProvider = {
     const records = await Promise.all(
       params.ids.map(async id => {
         const result = await getOne({ id });
-        return result.data as TaskStatus & RaRecord;
+        const typedResult: TaskStatus & RaRecord = {
+          ...result.data,
+          id: result.data.id ?? id,
+        };
+        return typedResult;
       }),
     );
 
-    return {
-      data: records,
-    } as unknown as GetManyResult<TaskStatus & RaRecord>;
+    return { data: records } satisfies GetManyResult<TaskStatus & RaRecord>;
   },
   getManyReference: async (resource, _params: GetManyReferenceParams): Promise<GetManyReferenceResult<RaRecord>> => {
     ensureSupportedResource(resource);

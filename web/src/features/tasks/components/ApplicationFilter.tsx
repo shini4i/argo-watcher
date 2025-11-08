@@ -1,16 +1,12 @@
 import { Autocomplete, TextField } from '@mui/material';
 import { useEffect, useState } from 'react';
 import type { Task } from '../../../data/types';
+import { getBrowserWindow } from '../../../shared/utils';
 
 const DEFAULT_STORAGE_KEY = 'recentTasks.app';
 
 /** Reads the persisted application filter (if any) from localStorage. */
-const readStoredApp = (storageKey: string) => {
-  if (typeof window === 'undefined') {
-    return '';
-  }
-  return window.localStorage.getItem(storageKey) ?? '';
-};
+const readStoredApp = (storageKey: string) => getBrowserWindow()?.localStorage?.getItem(storageKey) ?? '';
 
 /**
  * Autocomplete component used to filter tasks by application name.
@@ -40,9 +36,9 @@ export const ApplicationFilter = ({
       size="small"
       options={options}
       value={value}
-      onChange={(_event, newValue) => {
-        const next = newValue ?? '';
-        window.localStorage.setItem(storageKey, next);
+      onChange={(_event, newValue = '') => {
+        const next = newValue;
+        getBrowserWindow()?.localStorage?.setItem(storageKey, next);
         onChange(next);
       }}
       renderInput={params => <TextField {...params} label="Application" placeholder="Filter" />}

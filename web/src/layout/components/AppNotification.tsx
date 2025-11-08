@@ -11,6 +11,7 @@ import {
   useTakeUndoableMutation,
   useTranslate,
 } from 'ra-core';
+import { getBrowserWindow } from '../../shared/utils';
 
 const NETWORK_ERROR_MESSAGE = 'Network error';
 const NETWORK_ERROR_HELP =
@@ -71,15 +72,17 @@ export const AppNotification = (props: NotificationProps) => {
     if (currentNotification?.notificationOptions?.undoable) {
       const beforeUnload = (event: BeforeUnloadEvent) => {
         event.preventDefault();
-        const confirmationMessage = '';
-        event.returnValue = confirmationMessage;
-        return confirmationMessage;
+        return '';
       };
 
-      window.addEventListener('beforeunload', beforeUnload);
-      return () => {
-        window.removeEventListener('beforeunload', beforeUnload);
-      };
+      const browserWindow = getBrowserWindow();
+      if (browserWindow) {
+        browserWindow.addEventListener('beforeunload', beforeUnload);
+        return () => {
+          browserWindow.removeEventListener('beforeunload', beforeUnload);
+        };
+      }
+      return undefined;
     }
 
     return undefined;
@@ -167,7 +170,7 @@ export const AppNotification = (props: NotificationProps) => {
         <Alert
           severity={severity}
           variant="filled"
-          onClose={!undoable ? handleClose : undefined}
+          onClose={undoable ? undefined : handleClose}
           sx={{
             minWidth: 320,
             alignItems: 'flex-start',

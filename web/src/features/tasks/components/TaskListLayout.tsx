@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { Children, isValidElement, type ReactNode } from 'react';
 import { Box, Stack } from '@mui/material';
 import { List, Pagination, type ListProps } from 'react-admin';
 import { PerPagePersistence, readPersistentPerPage } from '../../../shared/hooks/usePersistentPerPage';
@@ -43,7 +43,15 @@ export const TaskListLayout = ({
     <Pagination rowsPerPageOptions={paginationOptions} />
   );
 
-  const headerContent = Array.isArray(header) ? header : header ? [header] : [];
+  const headerContent = header
+    ? Children.toArray(header).map(node =>
+        typeof node === 'string' || typeof node === 'number' ? (
+          <span key={`literal-${node}`}>{node}</span>
+        ) : (
+          node
+        ),
+      )
+    : [];
 
   return (
     <List
@@ -66,18 +74,21 @@ export const TaskListLayout = ({
           alignItems={{ xs: 'flex-end', md: 'center' }}
         >
           {headerContent.length > 0 ? (
-            headerContent.map((node, index) => (
-              <Box
-                key={index}
-                sx={{
-                  display: 'flex',
-                  justifyContent: 'flex-end',
-                  width: { xs: '100%', md: 'auto' },
-                }}
-              >
-                {node}
-              </Box>
-            ))
+            headerContent.map(node => {
+              const boxKey = isValidElement(node) && node.key != null ? String(node.key) : undefined;
+              return (
+                <Box
+                  key={boxKey}
+                  sx={{
+                    display: 'flex',
+                    justifyContent: 'flex-end',
+                    width: { xs: '100%', md: 'auto' },
+                  }}
+                >
+                  {node}
+                </Box>
+              );
+            })
           ) : (
             <Box sx={{ width: '100%' }} />
           )}

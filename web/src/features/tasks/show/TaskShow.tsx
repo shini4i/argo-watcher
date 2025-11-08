@@ -32,7 +32,7 @@ import { formatDuration, formatRelativeTime } from '../../../shared/utils/time';
 import { describeTaskStatus } from '../utils/statusPresentation';
 import { useDeployLockState } from '../../deployLock/useDeployLockState';
 import { useKeycloakEnabled } from '../../../shared/hooks/useKeycloakEnabled';
-import { hasPrivilegedAccess } from '../../../shared/utils/permissions';
+import { getBrowserWindow, hasPrivilegedAccess } from '../../../shared/utils';
 import { httpClient } from '../../../data/httpClient';
 import { getAccessToken } from '../../../auth/tokenStore';
 import { useTimezone } from '../../../shared/providers/TimezoneProvider';
@@ -248,11 +248,20 @@ export const TaskShow = () => {
       return;
     }
 
-    const intervalId = window.setInterval(() => {
-      void refetch();
+    const browserWindow = getBrowserWindow();
+    if (!browserWindow) {
+      return undefined;
+    }
+
+    const intervalId = browserWindow.setInterval(() => {
+      refetch().catch(error => {
+        if (import.meta.env.DEV) {
+          console.warn('TaskShow refetch failed', error);
+        }
+      });
     }, 10_000);
 
-    return () => window.clearInterval(intervalId);
+    return () => browserWindow.clearInterval(intervalId);
   }, [id, refetch, status]);
 
   const handleBack = useCallback(() => {
@@ -260,7 +269,12 @@ export const TaskShow = () => {
   }, [navigate]);
 
   const handleRefresh = useCallback(() => {
-    void refetch();
+    refetch()
+      .catch(error => {
+        if (import.meta.env.DEV) {
+          console.warn('TaskShow refresh failed', error);
+        }
+      });
   }, [refetch]);
 
   const handleOpenConfirm = useCallback(() => {
@@ -364,7 +378,7 @@ export const TaskShow = () => {
         <CardHeader
           title={`Task ${data.id?.slice(0, 8) ?? '—'}`}
           subheader="UTC"
-          action={<Chip label={descriptor.label} color={descriptor.chipColor} size="medium" icon={descriptor.icon as ReactNode} />}
+          action={<Chip label={descriptor.label} color={descriptor.chipColor} size="medium" icon={descriptor.icon} />}
         />
         <CardContent>
           <Stack spacing={3}>
@@ -383,15 +397,15 @@ export const TaskShow = () => {
                   <InfoField
                     label="Last Updated"
                     value={
-                      updatedTimestamp !== null ? (
+                      updatedTimestamp === null ? (
+                        'Not yet updated'
+                      ) : (
                         <Stack spacing={0.5}>
-                          <Typography variant="body1">{formatDate(updatedTimestamp ?? null)}</Typography>
+                          <Typography variant="body1">{formatDate(updatedTimestamp)}</Typography>
                           <Typography variant="caption" color="text.secondary">
                             {formatRelativeTime(updatedTimestamp)}
                           </Typography>
                         </Stack>
-                      ) : (
-                        'Not yet updated'
                       )
                     }
                   />
@@ -465,10 +479,12 @@ export const TaskShow = () => {
       </Card>
 
       {data.status_reason && (
-        <Alert severity={descriptor.reasonSeverity} role="status" aria-live="polite">
-          <Typography component="pre" sx={{ whiteSpace: 'pre-wrap', m: 0 }}>
-            {data.status_reason}
-          </Typography>
+        <Alert severity={descriptor.reasonSeverity}>
+          <output role="status" aria-live="polite" style={{ display: 'block' }}>
+            <Typography component="pre" sx={{ whiteSpace: 'pre-wrap', m: 0 }}>
+              {data.status_reason}
+            </Typography>
+          </output>
         </Alert>
       )}
 
@@ -481,8 +497,10 @@ export const TaskShow = () => {
         </CardContent>
       </Card>
       {deployLock && (
-        <Alert severity="error" role="status" aria-live="assertive">
-          Deploy lock is active. Rollbacks are temporarily blocked.
+        <Alert severity="error">
+          <output role="status" aria-live="assertive" style={{ display: 'block' }}>
+            Deploy lock is active. Rollbacks are temporarily blocked.
+          </output>
         </Alert>
       )}
       <Dialog open={confirmOpen} onClose={handleCloseConfirm} aria-labelledby="rollback-dialog-title">

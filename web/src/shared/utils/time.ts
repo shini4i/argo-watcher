@@ -7,8 +7,10 @@ export const DEFAULT_DATE_FORMAT: Intl.DateTimeFormatOptions = {
   second: '2-digit',
 };
 
+type SupportedTimestamp = Date | number | string | null | undefined;
+
 /** Converts supported timestamp inputs into a Date instance, returning null when invalid. */
-const toDate = (value: Date | number | string | null | undefined): Date | null => {
+const toDate = (value: SupportedTimestamp): Date | null => {
   if (value === null || value === undefined) {
     return null;
   }
@@ -31,7 +33,7 @@ const toDate = (value: Date | number | string | null | undefined): Date | null =
 
 /** Formats timestamps with locale-aware date+time options, defaulting to en-GB. */
 export const formatDateTime = (
-  value: Date | number | string | null | undefined,
+  value: SupportedTimestamp,
   locale: string | string[] = 'en-GB',
   options: Intl.DateTimeFormatOptions = DEFAULT_DATE_FORMAT,
 ) => {
@@ -80,7 +82,7 @@ export const formatDuration = (seconds: number): string => {
 };
 
 /** Formats timestamps as "X minutes ago" relative to now. */
-export const formatRelativeTime = (value: Date | number | string | null | undefined) => {
+export const formatRelativeTime = (value: SupportedTimestamp) => {
   const date = toDate(value);
   if (!date) {
     return '—';

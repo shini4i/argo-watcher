@@ -6,6 +6,7 @@ import { useSearchParams } from 'react-router-dom';
 import { ApplicationFilter, readInitialApplication } from './ApplicationFilter';
 import type { Task } from '../../../data/types';
 import { useAutoRefresh } from '../../../shared/hooks/useAutoRefresh';
+import { getBrowserWindow } from '../../../shared/utils';
 
 const STORAGE_KEY_INTERVAL = 'recentTasks.refreshInterval';
 const DEFAULT_REFRESH = 30;
@@ -19,10 +20,11 @@ const AUTO_REFRESH_OPTIONS: Array<{ label: string; seconds: number }> = [
 ];
 
 const readStoredRefreshInterval = () => {
-  if (typeof window === 'undefined') {
+  const storage = getBrowserWindow()?.localStorage;
+  if (!storage) {
     return DEFAULT_REFRESH;
   }
-  const value = Number.parseInt(window.localStorage.getItem(STORAGE_KEY_INTERVAL) ?? '', 10);
+  const value = Number.parseInt(storage.getItem(STORAGE_KEY_INTERVAL) ?? '', 10);
   return Number.isFinite(value) ? value : DEFAULT_REFRESH;
 };
 
@@ -57,13 +59,19 @@ export const RecentTasksToolbar = ({ storageKey = 'recentTasks.app' }: { storage
   }, [application, filterValues, searchParams, setFilters, setSearchParams]);
 
   useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEY_INTERVAL, String(refreshInterval));
+    getBrowserWindow()?.localStorage?.setItem(STORAGE_KEY_INTERVAL, String(refreshInterval));
   }, [refreshInterval]);
 
   useAutoRefresh(
     refreshInterval,
     useCallback(() => {
-      void refetch?.();
+      refetch
+        ?.()
+        .catch(error => {
+          if (import.meta.env.DEV) {
+            console.warn('RecentTasksToolbar auto-refresh failed', error);
+          }
+        });
     }, [refetch]),
   );
 
@@ -72,7 +80,13 @@ export const RecentTasksToolbar = ({ storageKey = 'recentTasks.app' }: { storage
   }, []);
 
   const handleManualRefresh = useCallback(() => {
-    void refetch?.();
+    refetch
+      ?.()
+      .catch(error => {
+        if (import.meta.env.DEV) {
+          console.warn('RecentTasksToolbar manual refresh failed', error);
+        }
+      });
   }, [refetch]);
 
   return (

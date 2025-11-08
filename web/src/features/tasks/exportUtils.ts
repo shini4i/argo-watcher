@@ -41,7 +41,7 @@ const triggerDownload = (blob: Blob, filename: string) => {
   anchor.download = filename;
   document.body.appendChild(anchor);
   anchor.click();
-  document.body.removeChild(anchor);
+  anchor.remove();
   URL.revokeObjectURL(url);
 };
 

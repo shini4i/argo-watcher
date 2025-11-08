@@ -4,6 +4,7 @@ import { useListContext } from 'react-admin';
 import { useSearchParams } from 'react-router-dom';
 import type { Task } from '../../../data/types';
 import { ApplicationFilter, readInitialApplication } from './ApplicationFilter';
+import { getBrowserWindow } from '../../../shared/utils';
 
 const STORAGE_KEY_APP = 'historyTasks.app';
 
@@ -31,38 +32,31 @@ export const HistoryFilters = () => {
   const [end, setEnd] = useState(() => searchParams.get('endDate') ?? toDateValue(filterValues.end as number | undefined));
 
   const syncSearchParams = useCallback(
-    (nextStart: string, nextEnd: string, nextApp: string) => {
-      const normalizedNextStart = nextStart ?? '';
-      const normalizedNextEnd = nextEnd ?? '';
-      const normalizedNextApp = nextApp ?? '';
+    (nextStart: string = '', nextEnd: string = '', nextApp: string = '') => {
       const currentStart = searchParams.get('startDate') ?? '';
       const currentEnd = searchParams.get('endDate') ?? '';
       const currentApp = searchParams.get('app') ?? '';
 
-      if (
-        currentStart === normalizedNextStart &&
-        currentEnd === normalizedNextEnd &&
-        currentApp === normalizedNextApp
-      ) {
+      if (currentStart === nextStart && currentEnd === nextEnd && currentApp === nextApp) {
         return;
       }
 
       const mergedParams = new URLSearchParams(searchParams);
 
-      if (normalizedNextStart) {
-        mergedParams.set('startDate', normalizedNextStart);
+      if (nextStart) {
+        mergedParams.set('startDate', nextStart);
       } else {
         mergedParams.delete('startDate');
       }
 
-      if (normalizedNextEnd) {
-        mergedParams.set('endDate', normalizedNextEnd);
+      if (nextEnd) {
+        mergedParams.set('endDate', nextEnd);
       } else {
         mergedParams.delete('endDate');
       }
 
-      if (normalizedNextApp) {
-        mergedParams.set('app', normalizedNextApp);
+      if (nextApp) {
+        mergedParams.set('app', nextApp);
       } else {
         mergedParams.delete('app');
       }
@@ -87,12 +81,14 @@ export const HistoryFilters = () => {
       delete nextFilters.end;
     }
 
+    const storage = getBrowserWindow()?.localStorage;
+
     if (application) {
       nextFilters.app = application;
-      window.localStorage.setItem(STORAGE_KEY_APP, application);
+      storage?.setItem(STORAGE_KEY_APP, application);
     } else {
       delete nextFilters.app;
-      window.localStorage.removeItem(STORAGE_KEY_APP);
+      storage?.removeItem(STORAGE_KEY_APP);
     }
 
     setFilters(nextFilters, {}, false);

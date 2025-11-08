@@ -24,10 +24,20 @@ export const NoTasksPlaceholder = ({
       return undefined;
     }
 
-    const id = window.setInterval(() => {
-      void refetch();
+    const browserWindow = globalThis.window;
+    if (!browserWindow) {
+      return undefined;
+    }
+
+    const id = browserWindow.setInterval(() => {
+      refetch().catch((error) => {
+        if (import.meta.env.DEV) {
+          console.warn('NoTasksPlaceholder refetch failed', error);
+        }
+      });
     }, reloadIntervalMs);
-    return () => window.clearInterval(id);
+
+    return () => browserWindow.clearInterval(id);
   }, [refetch, reloadIntervalMs]);
 
   return (
@@ -48,8 +58,8 @@ export const NoTasksPlaceholder = ({
           {description}
         </Typography>
         <Typography variant="caption" color="text.secondary">
-        Auto-refreshing every {Math.round(reloadIntervalMs / 1000)} seconds…
-      </Typography>
+          Auto-refreshing every {Math.round(reloadIntervalMs / 1000)} seconds…
+        </Typography>
       </Stack>
     </Box>
   );

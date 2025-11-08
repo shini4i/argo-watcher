@@ -54,6 +54,15 @@ const renderDrawer = () =>
     </ThemeModeProvider>,
   );
 
+/** Retrieves the browser navigator shim used for clipboard operations in tests. */
+const getBrowserNavigator = (): Navigator => {
+  const browserWindow = globalThis.window;
+  if (!browserWindow) {
+    throw new Error('Browser window is required for ConfigDrawer tests.');
+  }
+  return browserWindow.navigator;
+};
+
 describe('ConfigDrawer', () => {
   beforeEach(() => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -92,7 +101,7 @@ describe('ConfigDrawer', () => {
 
   it('renders configuration values and copies JSON to clipboard', async () => {
     const writeText = vi.fn();
-    Object.defineProperty(window.navigator, 'clipboard', {
+    Object.defineProperty(getBrowserNavigator(), 'clipboard', {
       value: { writeText },
       configurable: true,
     });

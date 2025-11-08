@@ -6,7 +6,12 @@
   </head>
   <body>
     <script>
-      parent.postMessage(window.location.href, window.location.origin);
+      const rootContext = globalThis;
+      const targetWindow = rootContext.parent ?? rootContext;
+      const currentLocation = rootContext.location;
+      if (currentLocation) {
+        targetWindow.postMessage(currentLocation.href, currentLocation.origin);
+      }
     </script>
   </body>
 </html>

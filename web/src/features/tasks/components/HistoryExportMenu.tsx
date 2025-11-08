@@ -8,7 +8,8 @@ import { exportAsCsv, exportAsJson, exportAsXlsx, prepareExportRows } from '../e
 /** Generates a timestamped filename prefix for exported history datasets. */
 const timestampFilename = () => {
   const now = new Date();
-  return `history-tasks-${now.toISOString().replace(/[:T]/g, '-').slice(0, 19)}`;
+  const timestamp = now.toISOString().slice(0, 19).replace('T', '-').replaceAll(':', '-');
+  return `history-tasks-${timestamp}`;
 };
 
 /**

@@ -19,10 +19,10 @@ class MockWebSocket {
     this.onmessage?.({ data: message });
   }
 
-  static instances: MockWebSocket[] = [];
+  static readonly instances: MockWebSocket[] = [];
 
   static reset() {
-    MockWebSocket.instances = [];
+    MockWebSocket.instances.length = 0;
   }
 }
 

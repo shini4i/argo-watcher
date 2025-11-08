@@ -3,7 +3,7 @@ import { describeTaskStatus } from './statusPresentation';
 
 describe('describeTaskStatus', () => {
   it('returns default presentation when status missing', () => {
-    expect(describeTaskStatus(undefined)).toMatchObject({
+    expect(describeTaskStatus()).toMatchObject({
       label: 'Unknown',
       chipColor: 'default',
       timelineDotColor: 'default',

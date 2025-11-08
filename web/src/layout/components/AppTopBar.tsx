@@ -90,7 +90,7 @@ export const AppTopBar = (props: AppBarProps) => {
   }, [notify]);
 
   useEffect(() => {
-    void fetchVersion();
+    fetchVersion();
   }, [fetchVersion]);
 
   const docsUrl = useMemo(() => `${DOCS_BASE_URL}/en/v${version}`, [version]);
