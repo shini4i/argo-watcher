@@ -5,8 +5,23 @@ import { getBrowserWindow } from '../../../shared/utils';
 
 const DEFAULT_STORAGE_KEY = 'recentTasks.app';
 
+/** Normalizes application filter inputs, collapsing null-like strings into empty values. */
+export const normalizeApplicationFilterValue = (value?: string | null): string => {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.toLowerCase() === 'null') {
+    return '';
+  }
+
+  return value;
+};
+
 /** Reads the persisted application filter (if any) from localStorage. */
-const readStoredApp = (storageKey: string) => getBrowserWindow()?.localStorage?.getItem(storageKey) ?? '';
+const readStoredApp = (storageKey: string) =>
+  normalizeApplicationFilterValue(getBrowserWindow()?.localStorage?.getItem(storageKey));
 
 /**
  * Autocomplete component used to filter tasks by application name.
@@ -25,9 +40,13 @@ export const ApplicationFilter = ({
   const [options, setOptions] = useState<string[]>([]);
 
   useEffect(() => {
-    const unique = Array.from(new Set(records.map(record => record.app))).sort((a, b) =>
-      a.localeCompare(b),
-    );
+    const unique = Array.from(
+      new Set(
+        records
+          .map(record => normalizeApplicationFilterValue(record.app))
+          .filter((app): app is string => Boolean(app)),
+      ),
+    ).sort((a, b) => a.localeCompare(b));
     setOptions(unique);
   }, [records]);
 
@@ -37,8 +56,13 @@ export const ApplicationFilter = ({
       options={options}
       value={value}
       onChange={(_event, newValue = '') => {
-        const next = newValue;
-        getBrowserWindow()?.localStorage?.setItem(storageKey, next);
+        const next = normalizeApplicationFilterValue(newValue);
+        const storage = getBrowserWindow()?.localStorage;
+        if (next) {
+          storage?.setItem(storageKey, next);
+        } else {
+          storage?.removeItem(storageKey);
+        }
         onChange(next);
       }}
       renderInput={params => <TextField {...params} label="Application" placeholder="Filter" />}

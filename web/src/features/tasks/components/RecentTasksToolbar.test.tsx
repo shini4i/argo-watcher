@@ -27,6 +27,16 @@ vi.mock('./ApplicationFilter', () => ({
     />
   ),
   readInitialApplication: () => '',
+  normalizeApplicationFilterValue: (value?: string | null) => {
+    if (typeof value !== 'string') {
+      return '';
+    }
+    const trimmed = value.trim();
+    if (!trimmed || trimmed.toLowerCase() === 'null') {
+      return '';
+    }
+    return value;
+  },
 }));
 
 /** Retrieves the browser window shim for tests or throws when unavailable. */

@@ -3,7 +3,7 @@ import { IconButton, MenuItem, Select, Stack } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { useListContext } from 'react-admin';
 import { useSearchParams } from 'react-router-dom';
-import { ApplicationFilter, readInitialApplication } from './ApplicationFilter';
+import { ApplicationFilter, normalizeApplicationFilterValue, readInitialApplication } from './ApplicationFilter';
 import type { Task } from '../../../data/types';
 import { useAutoRefresh } from '../../../shared/hooks/useAutoRefresh';
 import { getBrowserWindow } from '../../../shared/utils';
@@ -33,30 +33,79 @@ const readStoredRefreshInterval = () => {
  */
 /** Toolbar with application filter, auto-refresh controls, and manual refresh for recent tasks. */
 export const RecentTasksToolbar = ({ storageKey = 'recentTasks.app' }: { storageKey?: string }) => {
-  const { data, filterValues, setFilters, refetch } = useListContext<Task>();
+  const { data, filterValues = {}, setFilters, refetch } = useListContext<Task>();
   const records = useMemo(() => (Array.isArray(data) ? data : []), [data]);
 
   const [searchParams, setSearchParams] = useSearchParams();
-  const [application, setApplication] = useState<string>(() => searchParams.get('app') ?? filterValues?.app ?? readInitialApplication(storageKey));
+  const searchParamsKey = searchParams.toString();
+
+  const filterAppValue = typeof filterValues?.app === 'string' ? (filterValues.app as string) : '';
+  const normalizedFilterApplication = useMemo(
+    () => normalizeApplicationFilterValue(filterAppValue),
+    [filterAppValue],
+  );
+  const normalizedQueryApplication = useMemo(
+    () => normalizeApplicationFilterValue(searchParams.get('app')),
+    // Depend on the serialized search params so we only recompute when the string changes.
+    [searchParamsKey],
+  );
+
+  const [application, setApplication] = useState<string>(() => {
+    if (normalizedQueryApplication) {
+      return normalizedQueryApplication;
+    }
+    if (normalizedFilterApplication) {
+      return normalizedFilterApplication;
+    }
+    return readInitialApplication(storageKey);
+  });
+  const normalizedApplication = normalizeApplicationFilterValue(application);
   const [refreshInterval, setRefreshInterval] = useState<number>(readStoredRefreshInterval);
 
   useEffect(() => {
-    const next = application || undefined;
-    if (filterValues?.app !== next) {
-      setFilters?.({ ...filterValues, app: next }, {}, false);
+    const hasFilterMismatch = filterAppValue !== normalizedApplication;
+    if (hasFilterMismatch && setFilters) {
+      const nextFilters: Record<string, unknown> = { ...filterValues };
+      if (normalizedApplication) {
+        nextFilters.app = normalizedApplication;
+      } else {
+        delete nextFilters.app;
+      }
+      setFilters(nextFilters, {}, false);
     }
 
-    const currentAppParam = searchParams.get('app') ?? undefined;
-    if (currentAppParam !== next) {
-      const mergedParams = new URLSearchParams(searchParams);
-      if (next) {
-        mergedParams.set('app', next);
+    if (normalizedQueryApplication !== normalizedApplication) {
+      const mergedParams = new URLSearchParams(searchParamsKey);
+      if (normalizedApplication) {
+        mergedParams.set('app', normalizedApplication);
       } else {
         mergedParams.delete('app');
       }
       setSearchParams(mergedParams, { replace: true });
     }
-  }, [application, filterValues, searchParams, setFilters, setSearchParams]);
+  }, [
+    filterAppValue,
+    filterValues,
+    normalizedApplication,
+    normalizedFilterApplication,
+    normalizedQueryApplication,
+    searchParamsKey,
+    setFilters,
+    setSearchParams,
+  ]);
+
+  useEffect(() => {
+    const storage = getBrowserWindow()?.localStorage;
+    if (!storage) {
+      return;
+    }
+
+    if (normalizedApplication) {
+      storage.setItem(storageKey, normalizedApplication);
+    } else {
+      storage.removeItem(storageKey);
+    }
+  }, [normalizedApplication, storageKey]);
 
   useEffect(() => {
     getBrowserWindow()?.localStorage?.setItem(STORAGE_KEY_INTERVAL, String(refreshInterval));
@@ -76,7 +125,7 @@ export const RecentTasksToolbar = ({ storageKey = 'recentTasks.app' }: { storage
   useAutoRefresh(refreshInterval, triggerRefetch);
 
   const handleApplicationChange = useCallback((next: string) => {
-    setApplication(next);
+    setApplication(normalizeApplicationFilterValue(next));
   }, []);
 
   const handleManualRefresh = useCallback(() => {
