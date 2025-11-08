@@ -28,10 +28,10 @@ const readInitialTimezone = (): TimezoneMode => {
 
 /** React context provider that exposes timezone selection and formatting helpers. */
 export const TimezoneProvider = ({ children }: { children: ReactNode }) => {
-  const [timezone, setTimezoneState] = useState<TimezoneMode>(() => readInitialTimezone());
+  const [timezone, setTimezone] = useState<TimezoneMode>(() => readInitialTimezone());
 
-  const setTimezone = useCallback((mode: TimezoneMode) => {
-    setTimezoneState(mode);
+  const persistTimezone = useCallback((mode: TimezoneMode) => {
+    setTimezone(mode);
     const browserWindow = globalThis.window;
     if (browserWindow) {
       browserWindow.localStorage.setItem(STORAGE_KEY, mode);
@@ -50,10 +50,10 @@ export const TimezoneProvider = ({ children }: { children: ReactNode }) => {
   const value = useMemo(
     () => ({
       timezone,
-      setTimezone,
+      setTimezone: persistTimezone,
       formatDate,
     }),
-    [timezone, setTimezone, formatDate],
+    [timezone, persistTimezone, formatDate],
   );
 
   return <TimezoneContext.Provider value={value}>{children}</TimezoneContext.Provider>;
