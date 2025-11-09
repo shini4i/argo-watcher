@@ -1,5 +1,6 @@
 import type { HttpResponse } from '../../data/httpClient';
 import { httpClient } from '../../data/httpClient';
+import type { HttpResponse } from '../../data/httpClient';
 import { getBrowserWindow } from '../../shared/utils';
 
 /**

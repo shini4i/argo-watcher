@@ -1,5 +1,5 @@
 import Keycloak from 'keycloak-js';
-import type { KeycloakInitOptions, KeycloakInstance } from 'keycloak-js';
+import Keycloak, { type KeycloakInitOptions, type KeycloakInstance } from 'keycloak-js';
 import type { AuthProvider, Identifier } from 'react-admin';
 import { HttpError } from 'react-admin';
 import { getBrowserWindow } from '../shared/utils';
