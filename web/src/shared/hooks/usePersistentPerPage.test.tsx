@@ -3,14 +3,14 @@ import { __testing, readPersistentPerPage } from './usePersistentPerPage';
 
 describe('usePersistentPerPage', () => {
   beforeEach(() => {
-    window.localStorage.clear();
+    globalThis.window?.localStorage?.clear();
   });
 
   it('reads stored per-page value and falls back when invalid or missing', () => {
-    window.localStorage.setItem('recent.perPage', '50');
+    globalThis.window?.localStorage?.setItem('recent.perPage', '50');
     expect(readPersistentPerPage('recent.perPage', 25)).toBe(50);
 
-    window.localStorage.setItem('recent.perPage', 'invalid');
+    globalThis.window?.localStorage?.setItem('recent.perPage', 'invalid');
     expect(readPersistentPerPage('recent.perPage', 25)).toBe(25);
   });
 

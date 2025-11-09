@@ -190,7 +190,7 @@ describe('ConfigDrawer', () => {
       await user.click(await screen.findByRole('button', { name: /Local/ }));
     });
 
-    expect(window.localStorage.getItem('argo-watcher:timezone')).toBe('local');
+    expect(globalThis.localStorage?.getItem('argo-watcher:timezone')).toBe('local');
   });
 
   it('releases deploy lock when already engaged', async () => {

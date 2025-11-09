@@ -8,17 +8,17 @@ const wrapper = ({ children }: { children: ReactNode }) => <TimezoneProvider>{ch
 
 describe('TimezoneProvider', () => {
   beforeEach(() => {
-    window.localStorage.clear();
+    globalThis.window?.localStorage?.clear();
   });
 
   it('initializes from localStorage and persists timezone changes', () => {
-    window.localStorage.setItem('argo-watcher:timezone', 'local');
+    globalThis.window?.localStorage?.setItem('argo-watcher:timezone', 'local');
 
     const { result } = renderHook(() => useTimezone(), { wrapper });
     expect(result.current.timezone).toBe('local');
 
     act(() => result.current.setTimezone('utc'));
-    expect(window.localStorage.getItem('argo-watcher:timezone')).toBe('utc');
+    expect(globalThis.window?.localStorage?.getItem('argo-watcher:timezone')).toBe('utc');
   });
 
   it('formats dates using UTC vs local options', () => {

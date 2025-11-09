@@ -42,9 +42,7 @@ export const ApplicationFilter = ({
   useEffect(() => {
     const unique = Array.from(
       new Set(
-        records
-          .map(record => normalizeApplicationFilterValue(record.app))
-          .filter((app): app is string => Boolean(app)),
+        records.map(record => normalizeApplicationFilterValue(record.app)).filter(Boolean),
       ),
     ).sort((a, b) => a.localeCompare(b));
     setOptions(unique);

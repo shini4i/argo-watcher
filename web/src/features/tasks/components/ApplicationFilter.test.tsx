@@ -80,7 +80,7 @@ describe('ApplicationFilter', () => {
   });
 
   it('normalizes filter values', () => {
-    expect(normalizeApplicationFilterValue(undefined)).toBe('');
+    expect(normalizeApplicationFilterValue()).toBe('');
     expect(normalizeApplicationFilterValue(null)).toBe('');
     expect(normalizeApplicationFilterValue('   ')).toBe('');
     expect(normalizeApplicationFilterValue('null')).toBe('');
@@ -109,7 +109,8 @@ describe('ApplicationFilter', () => {
     );
 
     expect(screen.getByTestId('options')).toHaveTextContent('api,frontend');
-    expect(screen.getByTestId('text-field').getAttribute('data-label')).toBe('Application');
+    const textField = screen.getByTestId('text-field');
+    expect(textField.dataset.label).toBe('Application');
   });
 
   it('persists selection changes and clears storage when emptied', () => {

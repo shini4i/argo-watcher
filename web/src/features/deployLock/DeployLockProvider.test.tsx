@@ -29,7 +29,11 @@ describe('DeployLockProvider', () => {
     });
 
     expect(result.current.locked).toBe(false);
-    await act(async () => listeners.forEach(cb => cb(true)));
+    await act(async () => {
+      for (const callback of listeners) {
+        callback(true);
+      }
+    });
     await waitFor(() => expect(result.current.locked).toBe(true));
 
     unmount();

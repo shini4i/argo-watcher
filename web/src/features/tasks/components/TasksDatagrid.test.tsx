@@ -7,7 +7,7 @@ import { TasksDatagrid, __testing } from './TasksDatagrid';
 
 const formatDurationMock = vi.fn((seconds: number) => `${seconds}s`);
 const formatRelativeTimeMock = vi.fn((value?: number | null) => `relative-${value}`);
-const getBrowserWindowMock = vi.fn(() => window);
+const getBrowserWindowMock = vi.fn(() => globalThis.window as Window);
 
 vi.mock('../../../shared/utils', async () => {
   const actual = await vi.importActual<typeof import('../../../shared/utils')>('../../../shared/utils');
@@ -79,7 +79,7 @@ describe('TasksDatagrid', () => {
     formatDurationMock.mockClear();
     formatRelativeTimeMock.mockClear();
     getBrowserWindowMock.mockReset();
-    getBrowserWindowMock.mockReturnValue(window);
+    getBrowserWindowMock.mockReturnValue(globalThis.window as Window);
   });
 
   it('configures Datagrid and renders status chips, dates, and links', () => {
@@ -157,7 +157,7 @@ describe('TasksDatagrid', () => {
         },
         clearInterval: clearIntervalMock,
       } as unknown as Window)
-      .mockReturnValue(window);
+      .mockReturnValue(globalThis.window as Window);
 
     const { rerender } = render(<DurationField record={baseRecord} />);
     expect(formatDurationMock).toHaveBeenCalledWith(expect.any(Number));

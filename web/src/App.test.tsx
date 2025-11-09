@@ -1,5 +1,4 @@
 import { render, screen } from '@testing-library/react';
-import { render, screen } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';

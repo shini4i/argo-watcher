@@ -71,15 +71,14 @@ afterEach(() => {
 
   it('exports rows as JSON and triggers download', () => {
     exportAsJson(sampleTasks as never, 'tasks');
-    const createSpy = (URL as unknown as { createObjectURL: ReturnType<typeof vi.fn> }).createObjectURL as ReturnType<
-      typeof vi.fn
-    >;
-    const revokeSpy = (URL as unknown as { revokeObjectURL: ReturnType<typeof vi.fn> }).revokeObjectURL as ReturnType<
-      typeof vi.fn
-    >;
+    const { createObjectURL, revokeObjectURL } = URL as unknown as {
+      createObjectURL: ReturnType<typeof vi.fn>;
+      revokeObjectURL: ReturnType<typeof vi.fn>;
+    };
     expect(anchorMock.download).toBe('tasks.json');
     expect(anchorMock.click).toHaveBeenCalled();
-    expect(revokeSpy).toHaveBeenCalledWith('blob:mock');
+    expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:mock');
   });
 
   it('exports rows as CSV using Papa.unparse', () => {

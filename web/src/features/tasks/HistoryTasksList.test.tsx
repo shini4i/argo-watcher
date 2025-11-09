@@ -110,14 +110,19 @@ describe('HistoryTasksList', () => {
       storeKey: 'historyTasks',
     });
 
-    const headerNodes = Children.toArray(props.header).filter(Boolean) as ReactElement[];
+    const headerNodes = Children.toArray(props.header).filter(
+      (node): node is ReactElement => Boolean(node),
+    );
     expect(headerNodes.map(node => node.type)).toContain(HistoryFiltersMock);
 
-    const exportNode = headerNodes.find(node => node.type === HistoryExportMenuMock) as ReactElement;
+    const exportNode = headerNodes.find(node => node.type === HistoryExportMenuMock);
     expect(exportNode).toBeDefined();
+    if (!exportNode) {
+      throw new Error('HistoryExportMenu should be present when exports are allowed');
+    }
     expect(exportNode.props.anonymizeForced).toBe(false);
 
-    const emptyComponent = props.emptyComponent as ReactElement;
+    const emptyComponent = props.emptyComponent;
     expect(emptyComponent.props.title).toBe('No history yet');
     expect(emptyComponent.props.description).toMatch(/Adjust filters/);
 
@@ -135,7 +140,9 @@ describe('HistoryTasksList', () => {
     render(<HistoryTasksList />);
 
     const props = lastLayoutProps() as { header: ReactElement | ReactElement[] };
-    const headerNodes = Children.toArray(props.header).filter(Boolean) as ReactElement[];
+    const headerNodes = Children.toArray(props.header).filter(
+      (node): node is ReactElement => Boolean(node),
+    );
     expect(headerNodes).toHaveLength(1);
     expect(headerNodes[0].type).toBe(HistoryFiltersMock);
   });
