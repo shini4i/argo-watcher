@@ -91,6 +91,13 @@ const TaskStatusChip = ({ status }: { status?: string | null }) => {
  */
 const StatusReasonPanel = () => {
   const record = useRecordContext<Task>();
+  return <StatusReasonContent record={record} />;
+};
+
+/**
+ * Renders the status reason body independent of React-admin context to simplify testing.
+ */
+const StatusReasonContent = ({ record }: { record?: Task | null }) => {
   if (!record) {
     return null;
   }
@@ -182,4 +189,15 @@ const DurationField = ({ record }: { record: Task }) => {
   const seconds = Math.max(0, effectiveUpdated - record.created);
 
   return <Typography variant="body2">{formatDuration(seconds)}</Typography>;
+};
+
+/**
+ * Internal testing helpers used to verify formatted sub-components without rendering Datagrid context.
+ */
+export const __testing = {
+  ProjectReference,
+  ImagesList,
+  StatusReasonContent,
+  DurationField,
+  datagridSx,
 };

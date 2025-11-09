@@ -159,3 +159,10 @@ export class DeployLockService {
  * Shared singleton instance consumed by the React-admin UI.
  */
 export const deployLockService = new DeployLockService();
+
+/**
+ * Internal testing hooks exposing non-exported helpers.
+ */
+export const __testing = {
+  resolveWebSocketUrl,
+};
