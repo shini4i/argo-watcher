@@ -161,17 +161,27 @@ describe('DeployLockService', () => {
   });
 
   it('builds websocket URLs from env overrides and window location', () => {
+    const customWindow = {
+      location: {
+        protocol: 'https:',
+        host: 'custom.example',
+      },
+    } as unknown as Window;
+    const windowSpy = vi.spyOn(sharedUtils, 'getBrowserWindow').mockReturnValue(customWindow);
+
     import.meta.env.VITE_WS_BASE_URL = 'wss://custom.example';
     expect(__testing.resolveWebSocketUrl()).toBe('wss://custom.example/ws');
 
-    import.meta.env.VITE_WS_BASE_URL = '';
-    const win = {
+    windowSpy.mockReturnValue({
       location: {
         protocol: 'https:',
         host: 'argo.example',
       },
-    } as unknown as Window;
-    const windowSpy = vi.spyOn(sharedUtils, 'getBrowserWindow').mockReturnValue(win);
+    } as unknown as Window);
+    import.meta.env.VITE_WS_BASE_URL = 'wss://malicious.example';
+    expect(__testing.resolveWebSocketUrl()).toBe('wss://argo.example/ws');
+
+    import.meta.env.VITE_WS_BASE_URL = '';
     expect(__testing.resolveWebSocketUrl()).toBe('wss://argo.example/ws');
     windowSpy.mockRestore();
   });

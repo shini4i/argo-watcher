@@ -31,6 +31,7 @@ let userGroupsLoadedFromProfile = false;
 let lastSessionValidation = 0;
 
 const SESSION_REVALIDATION_INTERVAL_MS = 60_000;
+const SILENT_SSO_ASSET = 'silent-check-sso.html';
 
 /**
  * LocalStorage flag that records whether silent SSO is safe to execute.
@@ -296,7 +297,7 @@ const buildInitOptions = (mode: InitMode): KeycloakInitOptions => {
         onLoad: 'check-sso',
         checkLoginIframe: false,
         pkceMethod: 'S256',
-        silentCheckSsoRedirectUri: resolveAppUrl('silent-check-sso.html'),
+        silentCheckSsoRedirectUri: resolveAppUrl(SILENT_SSO_ASSET),
         silentCheckSsoFallback: false,
       };
   }
@@ -347,8 +348,9 @@ const authenticate = async () => {
       persistSilentSsoPreference(false);
       return authenticated;
     } catch (error) {
+      const silentRedirectUri = resolveAppUrl(SILENT_SSO_ASSET);
       console.warn(
-        '[auth] Silent SSO failed, falling back to explicit login flow. Ensure the Keycloak client allows /silent-check-sso.html in redirect URIs.',
+        `[auth] Silent SSO failed, falling back to explicit login flow. Ensure the Keycloak client allows ${silentRedirectUri} (including any base path) in redirect URIs.`,
         error,
       );
       silentSsoSupported = false;

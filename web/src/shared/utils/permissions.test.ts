@@ -13,4 +13,9 @@ describe('permissions utilities', () => {
   it('returns false when inputs are invalid', () => {
     expect(hasPrivilegedAccess(null, ['admins'])).toBe(false);
   });
+
+  it('respects a precomputed privileged Set to skip allocations', () => {
+    const privilegedSet = new Set(['devops']);
+    expect(hasPrivilegedAccess(['devops'], null, privilegedSet)).toBe(true);
+  });
 });

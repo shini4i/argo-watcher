@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ThemeModeProvider, useThemeMode } from './ThemeModeProvider';
 
+vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+
 const ModeConsumer = () => {
   const { mode, toggleMode } = useThemeMode();
   return (
@@ -31,4 +33,3 @@ describe('ThemeModeProvider', () => {
     expect(screen.getByTestId('mode').textContent).toBe('dark');
   });
 });
-vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);

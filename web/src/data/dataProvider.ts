@@ -104,12 +104,16 @@ const getList = async (params: GetListParams): Promise<GetListResult<Task>> => {
   });
 
   const { data } = await httpClient<TasksResponse>(`/api/v1/${RESOURCE_TASKS}${query}`);
-  return toRaListResult(data, params);
+  const response = data ?? { tasks: [], total: 0 };
+  return toRaListResult(response, params);
 };
 
 /** Retrieves a single task detail, throwing when the backend reports an error. */
 const getOne = async (params: GetOneParams): Promise<GetOneResult<TaskStatus>> => {
   const { data } = await httpClient<TaskStatus>(`/api/v1/${RESOURCE_TASKS}/${params.id}`);
+  if (!data) {
+    throw new HttpError('Task not found', 404);
+  }
   if (data.error) {
     throw new HttpError(data.error, 404, data);
   }
@@ -128,7 +132,7 @@ const createTask = async (params: CreateParams): Promise<CreateResult<TaskStatus
     body: payload,
   });
 
-  if (!data.id) {
+  if (!data || !data.id) {
     throw new HttpError('Task creation did not return an identifier', status, data);
   }
 

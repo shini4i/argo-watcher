@@ -8,6 +8,9 @@ import { AppTopBar } from './AppTopBar';
 import { DeployLockProvider } from '../../features/deployLock/DeployLockProvider';
 import { deployLockService } from '../../features/deployLock/deployLockService';
 
+// Flag the environment as act-aware before tests run to suppress React warnings during async renders.
+vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+
 const httpClientMock = vi.fn();
 const notifyMock = vi.fn();
 const permissionsMock = vi.fn();
@@ -37,9 +40,6 @@ vi.mock('react-admin', async () => {
     usePermissions: () => permissionsMock(),
   };
 });
-
-// Flag the environment as act-aware before tests run to suppress React warnings during async renders.
-vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
 
 describe('AppTopBar', () => {
   beforeEach(() => {

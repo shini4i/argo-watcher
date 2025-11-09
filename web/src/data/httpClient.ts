@@ -16,7 +16,8 @@ export interface HttpClientOptions {
 }
 
 export interface HttpResponse<T> {
-  data: T;
+  /** Parsed JSON payload or undefined when the response has no body. */
+  data: T | undefined;
   status: number;
   headers: Headers;
 }
@@ -132,7 +133,7 @@ export const httpClient = async <T>(path: string, options: HttpClientOptions = {
   }
 
   return {
-    data: (data ?? ({} as T)),
+    data,
     status: response.status,
     headers: response.headers,
   };

@@ -92,7 +92,7 @@ describe('httpClient', () => {
     await expect(httpClient('/status')).rejects.toBeInstanceOf(HttpError);
   });
 
-  it('returns empty objects when response is not JSON', async () => {
+  it('returns undefined when response is not JSON', async () => {
     mockFetch.mockResolvedValue(
       new Response('plain', {
         status: 200,
@@ -101,7 +101,7 @@ describe('httpClient', () => {
     );
 
     const response = await httpClient('/status');
-    expect(response.data).toEqual({});
+    expect(response.data).toBeUndefined();
   });
 
   it('throws parsing errors for malformed JSON payloads', async () => {

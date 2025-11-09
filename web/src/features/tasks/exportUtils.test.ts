@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Papa from 'papaparse';
 import type { Task } from '../../data/types';
 import { exportAsCsv, exportAsJson, exportAsXlsx, prepareExportRows } from './exportUtils';
@@ -21,40 +21,39 @@ const sampleTasks: Task[] = [
 ];
 
 describe('exportUtils', () => {
-let anchorMock: HTMLAnchorElement;
-let originalCreateObjectURL: ((obj: Blob | MediaSource) => string) | undefined;
-let originalRevokeObjectURL: ((url: string) => void) | undefined;
+  let anchorMock: HTMLAnchorElement;
+  let originalCreateObjectURL: ((obj: Blob | MediaSource) => string) | undefined;
+  let originalRevokeObjectURL: ((url: string) => void) | undefined;
 
-beforeEach(() => {
-  anchorMock = {
-    click: vi.fn(),
-    remove: vi.fn(),
-  } as unknown as HTMLAnchorElement;
-  originalCreateObjectURL = (URL as unknown as Record<string, unknown>).createObjectURL as
-    | ((obj: Blob | MediaSource) => string)
-    | undefined;
-  originalRevokeObjectURL = (URL as unknown as Record<string, unknown>).revokeObjectURL as
-    | ((url: string) => void)
-    | undefined;
-  (URL as unknown as Record<string, unknown>).createObjectURL = vi.fn(() => 'blob:mock');
-  (URL as unknown as Record<string, unknown>).revokeObjectURL = vi.fn();
-  vi.spyOn(document, 'createElement').mockReturnValue(anchorMock);
-  vi.spyOn(document.body, 'appendChild').mockImplementation(() => anchorMock);
-});
+  beforeEach(() => {
+    anchorMock = document.createElement('a');
+    vi.spyOn(anchorMock, 'click').mockImplementation(() => undefined);
+    vi.spyOn(anchorMock, 'remove').mockImplementation(() => undefined);
+    originalCreateObjectURL = (URL as unknown as Record<string, unknown>).createObjectURL as
+      | ((obj: Blob | MediaSource) => string)
+      | undefined;
+    originalRevokeObjectURL = (URL as unknown as Record<string, unknown>).revokeObjectURL as
+      | ((url: string) => void)
+      | undefined;
+    (URL as unknown as Record<string, unknown>).createObjectURL = vi.fn(() => 'blob:mock');
+    (URL as unknown as Record<string, unknown>).revokeObjectURL = vi.fn();
+    vi.spyOn(document, 'createElement').mockReturnValue(anchorMock);
+    vi.spyOn(document.body, 'appendChild').mockImplementation(() => anchorMock);
+  });
 
-afterEach(() => {
-  if (originalCreateObjectURL) {
-    (URL as unknown as Record<string, unknown>).createObjectURL = originalCreateObjectURL;
-  } else {
-    delete (URL as unknown as Record<string, unknown>).createObjectURL;
-  }
-  if (originalRevokeObjectURL) {
-    (URL as unknown as Record<string, unknown>).revokeObjectURL = originalRevokeObjectURL;
-  } else {
-    delete (URL as unknown as Record<string, unknown>).revokeObjectURL;
-  }
-  vi.restoreAllMocks();
-});
+  afterEach(() => {
+    if (originalCreateObjectURL) {
+      (URL as unknown as Record<string, unknown>).createObjectURL = originalCreateObjectURL;
+    } else {
+      delete (URL as unknown as Record<string, unknown>).createObjectURL;
+    }
+    if (originalRevokeObjectURL) {
+      (URL as unknown as Record<string, unknown>).revokeObjectURL = originalRevokeObjectURL;
+    } else {
+      delete (URL as unknown as Record<string, unknown>).revokeObjectURL;
+    }
+    vi.restoreAllMocks();
+  });
 
   it('prepares export rows with optional anonymization', () => {
     const rows = prepareExportRows(sampleTasks, false);

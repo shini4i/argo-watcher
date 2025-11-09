@@ -1,6 +1,4 @@
-import type { HttpResponse } from '../../data/httpClient';
-import { httpClient } from '../../data/httpClient';
-import type { HttpResponse } from '../../data/httpClient';
+import { httpClient, type HttpResponse } from '../../data/httpClient';
 import { getBrowserWindow } from '../../shared/utils';
 
 /**
@@ -10,14 +8,62 @@ export type DeployLockListener = (locked: boolean) => void;
 
 const WS_RETRY_DELAY_MS = 5000;
 
-/** Determines the websocket endpoint based on env overrides or current location. */
-const resolveWebSocketUrl = () => {
-  const base = import.meta.env.VITE_WS_BASE_URL ?? '';
-  if (base) {
-    return base.endsWith('/') ? `${base}ws` : `${base}/ws`;
+/** Normalizes custom websocket base URLs ensuring they match the current origin and use safe protocols. */
+const sanitizeCustomSocketBase = (rawBase: string, location?: Location | null): URL | null => {
+  const trimmed = rawBase.trim();
+  if (!trimmed) {
+    return null;
   }
 
-  const location = getBrowserWindow()?.location;
+  try {
+    const candidate =
+      trimmed.startsWith('http') || trimmed.startsWith('ws')
+        ? new URL(trimmed)
+        : new URL(trimmed.startsWith('/') ? trimmed : `/${trimmed}`, location?.origin ?? 'http://localhost');
+
+    const isHttp = candidate.protocol === 'http:' || candidate.protocol === 'https:';
+    const isWs = candidate.protocol === 'ws:' || candidate.protocol === 'wss:';
+
+    if (!isHttp && !isWs) {
+      console.warn('[deploy-lock] Ignoring custom websocket URL with unsupported protocol:', candidate.protocol);
+      return null;
+    }
+
+    if (location && candidate.host !== location.host) {
+      console.warn(
+        `[deploy-lock] Ignoring custom websocket URL (${candidate.origin}) because it does not match the current host (${location.host}).`,
+      );
+      return null;
+    }
+
+    return candidate;
+  } catch (error) {
+    console.warn('[deploy-lock] Invalid custom websocket URL, falling back to window.location.', error);
+    return null;
+  }
+};
+
+/** Ensures the socket URL ends with `/ws` and uses the websocket protocol scheme. */
+const toSocketUrl = (url: URL): string => {
+  const normalizedPath = url.pathname.endsWith('/ws')
+    ? url.pathname
+    : `${url.pathname.replace(/\/$/, '') || ''}/ws`;
+  const protocol =
+    url.protocol === 'https:' ? 'wss:' : url.protocol === 'http:' ? 'ws:' : (url.protocol as 'ws:' | 'wss:');
+  return `${protocol}//${url.host}${normalizedPath}`;
+};
+
+/** Determines the websocket endpoint based on env overrides or current location, validating custom hosts. */
+const resolveWebSocketUrl = () => {
+  const location = getBrowserWindow()?.location ?? null;
+  const base = import.meta.env.VITE_WS_BASE_URL ?? '';
+  if (base) {
+    const sanitized = sanitizeCustomSocketBase(base, location);
+    if (sanitized) {
+      return toSocketUrl(sanitized);
+    }
+  }
+
   const protocol = location?.protocol === 'https:' ? 'wss:' : 'ws:';
   const host = location?.host ?? 'localhost';
   return `${protocol}//${host}/ws`;
