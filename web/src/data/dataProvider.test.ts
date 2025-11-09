@@ -18,6 +18,8 @@ const createListParams = () => ({
   filter: {},
 });
 
+const getQueryParams = (call: string) => new URL(call, 'https://example.test').searchParams;
+
 describe('dataProvider', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -125,6 +127,33 @@ describe('dataProvider', () => {
     expect(url).toContain('to_timestamp=2000');
   });
 
+  it('converts Date and ISO filter inputs to unix timestamps', async () => {
+    const fetch = mockFetch().mockResolvedValue(jsonResponse({ tasks: [] }));
+    await dataProvider.getList('tasks', {
+      ...createListParams(),
+      filter: {
+        from: new Date('2024-12-31T12:00:00Z'),
+        to: '2025-01-02T03:04:05Z',
+      },
+    });
+
+    const params = getQueryParams(fetch.mock.calls[0][0] as string);
+    expect(params.get('from_timestamp')).toBe(String(Math.floor(Date.parse('2024-12-31T12:00:00Z') / 1000)));
+    expect(params.get('to_timestamp')).toBe(String(Math.floor(Date.parse('2025-01-02T03:04:05Z') / 1000)));
+  });
+
+  it('falls back to default timeframe when filters are invalid', async () => {
+    const fetch = mockFetch().mockResolvedValue(jsonResponse({ tasks: [] }));
+    await dataProvider.getList('tasks', {
+      ...createListParams(),
+      filter: { from: 'invalid', to: 'invalid' },
+    });
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const params = getQueryParams(fetch.mock.calls[0][0] as string);
+    expect(params.get('from_timestamp')).toBe(String(nowSeconds - 24 * 60 * 60));
+    expect(params.get('to_timestamp')).toBe(String(nowSeconds));
+  });
+
   it('throws HttpError when backend responds with error payload', async () => {
     mockFetch().mockResolvedValue(
       jsonResponse({
@@ -206,6 +235,24 @@ describe('dataProvider', () => {
     ).rejects.toThrow(HttpError);
   });
 
+  it('throws when creation response omits the identifier', async () => {
+    mockFetch().mockResolvedValue(
+      jsonResponse(
+        {
+          status: 'accepted',
+        },
+        { status: 202 },
+      ),
+    );
+
+    await expect(
+      dataProvider.create('tasks', {
+        data: { app: 'demo' },
+        previousData: undefined,
+      }),
+    ).rejects.toThrow('Task creation did not return an identifier');
+  });
+
   it('rejects unsupported update operations', async () => {
     await expect(
       dataProvider.update('tasks', {
@@ -214,5 +261,40 @@ describe('dataProvider', () => {
         previousData: {},
       }),
     ).rejects.toThrow(HttpError);
+  });
+
+  it('rejects unsupported resources', async () => {
+    await expect(dataProvider.getList('unknown', createListParams())).rejects.toThrow('Unsupported resource');
+  });
+
+  it('retrieves multiple records via getMany and preserves fallback ids', async () => {
+    mockFetch()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          id: 'task-1',
+          status: 'ok',
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: 'queued',
+        }),
+      );
+
+    const result = await dataProvider.getMany('tasks', { ids: ['task-1', 'missing-id'] });
+    expect(result.data).toHaveLength(2);
+    expect(result.data[0].id).toBe('task-1');
+    expect(result.data[1].id).toBe('missing-id');
+  });
+
+  it('returns empty data for getManyReference', async () => {
+    const result = await dataProvider.getManyReference('tasks', {
+      target: 'app',
+      id: 'demo',
+      pagination: { page: 1, perPage: 5 },
+      sort: { field: 'created', order: 'DESC' },
+      filter: {},
+    });
+    expect(result).toEqual({ data: [], total: 0 });
   });
 });
