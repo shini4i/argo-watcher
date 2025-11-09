@@ -54,6 +54,7 @@ func (task *Task) IsAppNotFoundError(err error) bool {
 type TasksResponse struct {
 	Tasks []Task `json:"tasks"`
 	Error string `json:"error,omitempty"`
+	Total int64  `json:"total,omitempty"`
 }
 
 type HealthStatus struct {

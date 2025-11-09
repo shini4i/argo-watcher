@@ -47,7 +47,7 @@ dockers:
     goarch: amd64
     dockerfile: Dockerfile.server
     extra_files:
-      - web/build
+      - web/dist
       - db
     ids:
       - argo-watcher
@@ -67,7 +67,7 @@ dockers:
     goarch: arm64
     dockerfile: Dockerfile.server
     extra_files:
-      - web/build
+      - web/dist
       - db
     ids:
       - argo-watcher

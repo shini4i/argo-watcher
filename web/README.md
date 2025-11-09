@@ -1,70 +1,120 @@
-# Getting Started with Create React App
+# Argo Watcher React-admin Frontend
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+This workspace contains the Vite/React-admin rewrite of the Argo Watcher UI. The goals of the new shell are:
 
-## Available Scripts
+- reduce custom dashboard code in favour of React-admin resources and generators
+- share layouts, deploy-lock state, and theming logic with the Go backend
+- keep the developer workflow fast (Vite + HMR) while still producing static assets that the Go server can embed
 
-In the project directory, you can run:
+React 18, React-admin 5, Material UI 5, Emotion, TypeScript, ESLint, and Vitest/JSDOM are the primary dependencies. Keycloak is the supported identity provider, with fully anonymous mode when the backend returns `keycloak.enabled = false`.
 
-### `npm start`
+## Directory Layout
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+| Path | Purpose |
+| ---- | ------- |
+| `src/main.tsx` | React entry point that wires React Router, shared providers, and the `App` component. |
+| `src/App.tsx` | Placeholder React-admin shell; extend this file with `<Admin>` resources as migration phases land. |
+| `src/auth/` | Authentication helpers. `authProvider.ts` talks to Keycloak + `/api/v1/config`, and `tokenStore.ts` persists bearer tokens. |
+| `src/data/` | HTTP layer and React-admin `dataProvider` implementation that targets `/api/v1/tasks` and related endpoints. |
+| `src/features/` | Feature modules (currently `tasks/` and `deployLock/`). Each folder owns its components, hooks, and service logic. |
+| `src/layout/` | Reusable React-admin layout primitives (notifications, top bar, nav, etc.). |
+| `src/shared/` | Cross-cutting hooks, context providers (timezone), and utilities (time formatting, Keycloak toggles). |
+| `src/theme/` | Material UI theme factory plus `ThemeModeProvider` for light/dark persistence. |
+| `assets/` + `public/` | Static assets (logos, favicons) delivered verbatim by Vite. |
+| `dist/` | Build output consumed by the Go server (`STATIC_FILES_PATH`) or Docker images. Generated via `npm run build`. |
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+## Environment & Runtime Configuration
 
-### `npm test`
+All configuration is driven through the backend plus a small set of Vite runtime variables:
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+| Variable | Default | Usage |
+| -------- | ------- | ----- |
+| `VITE_API_PROXY_TARGET` | `http://localhost:8080` | Dev-only proxy target for `/api` + `/ws` when running `npm run dev`. |
+| `VITE_API_BASE_URL` | `''` (same origin) | Prepended to every REST call executed by `httpClient`. Set this when serving the SPA from a CDN or different domain. |
+| `VITE_WS_BASE_URL` | `''` (derived from `window.location`) | Optional WebSocket origin for the deploy-lock service. Provide when tunneling through another host. |
 
-### `npm run build`
+Keycloak settings (URL, realm, client_id, privileged groups, token intervals) come from `/api/v1/config`. The frontend caches the config and only attempts SSO flows when `keycloak.enabled` is true.
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+## Development Workflow
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+1. **Enter the dev shell (recommended)**  
+   ```bash
+   nix develop        # or direnv allow (uses flake.nix to expose Go + Node toolchains)
+   ```
+   The shell exports `nodejs@20`, pnpm/corepack helpers, Vite shim, Go toolchain, and pre-commit hooks.
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+2. **Install dependencies** (run once per clone or after package updates)  
+   ```bash
+   cd web
+   npm install
+   ```
 
-### `npm run eject`
+3. **Start the Vite dev server**  
+   ```bash
+   npm run dev
+   ```  
+   - Serves `http://localhost:5173` with hot module reloading.  
+   - Proxies `/api` to `VITE_API_PROXY_TARGET` and upgrades `/ws` for deploy-lock streaming.  
+   - Ensure the Go API (or `docker-compose up`) is running locally on port 8080 unless you updated the proxy target.
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+4. **Preview the production build locally**  
+   ```bash
+   npm run build
+   npm run preview   # serves dist/ with the same routing as production
+   ```
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+## npm Scripts
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+| Command | Description |
+| ------- | ----------- |
+| `npm run dev` | Vite dev server with proxy + HMR. |
+| `npm run build` | Production build with sourcemaps -> `web/dist`. |
+| `npm run preview` | Serves `dist/` to validate routing before shipping. |
+| `npm run lint` | ESLint (`@typescript-eslint`, React, hooks, prettier config). |
+| `npm run test` | Vitest in CI mode (`--run`). Generates text + LCOV coverage. |
+| `npm run test:watch` | Interactive Vitest watch mode. |
+| `npm run test:ui` | Vitest UI (requires a browser) for debugging complex suites. |
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+## Data, Auth, and Real-time Architecture
 
-## Learn More
+- **HTTP client (`src/data/httpClient.ts`)** – wraps `fetch`, injects `Authorization`/`Keycloak-Authorization` headers from `tokenStore`, normalises errors into `HttpError`, and provides helpers such as `buildQueryString`.
+- **React-admin `dataProvider` (`src/data/dataProvider.ts`)** – currently implements the `tasks` resource (list/detail/create) and infers pagination totals when the backend omits them. Extend this file when exposing additional Argo watcher endpoints.
+- **Auth provider (`src/auth/authProvider.ts`)** – lazy-loads `/api/v1/config`, boots Keycloak when enabled, caches silent SSO preferences to avoid redirect loops, periodically refreshes tokens, and exposes permissions (groups/privileged groups) to React-admin.
+- **Keycloak toggle hook (`src/shared/hooks/useKeycloakEnabled.ts`)** – tiny helper for gating UI affordances when running without identity.
+- **Deploy lock service (`src/features/deployLock/deployLockService.ts`)** – shares lock state through REST endpoints plus the `/ws` channel. Automatic retries and subscriber management keep the UI in sync even if the socket drops.
+- **Global providers (`src/shared/providers/AppProviders.tsx`)** – wraps the app with the theme mode, timezone, and deploy-lock providers, plus a global banner that reflects lock status.
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+## Shared UX Infrastructure
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+- `ThemeModeProvider` persists light/dark preference in `localStorage`, syncs the `<html data-theme-mode>` attribute, and exposes `useThemeMode`.
+- `TimezoneProvider` stores the preferred timezone (`utc` vs `local`) and exposes helpers for deterministic formatting (`formatDateTime` lives in `shared/utils/time.ts`).
+- `layout/components` contains building blocks for notifications, navigation, and placeholders—extend these instead of forking React-admin defaults.
+- Feature folders follow the “colocate everything” pattern (components, hooks, tests alongside their feature) to keep future phases modular.
 
-### Code Splitting
+## Testing & Quality Gates
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+- Vitest runs in `jsdom` with globals + `vitest.setup.ts` (place shared mocks, `@testing-library/jest-dom`, etc.).  
+- Tests live next to the code as `*.test.ts(x)` and are auto-discovered via `vitest.config.ts`.  
+- Coverage reporters: text summary in CI plus LCOV for Codecov. Keep critical flows (auth provider, data provider, deploy-lock logic, utilities) covered.  
+- ESLint enforces React 18, hooks rules, and TypeScript strictness. Configure additional lint rules under `.eslintrc.cjs` (pending) if new conventions emerge.
 
-### Analyzing the Bundle Size
+## Building & Shipping
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+1. Run `npm run build` from `web/`.  
+2. The output in `web/dist` is what the Go server serves when `STATIC_FILES_PATH` points to this directory (default). The Dockerfiles already copy `web/dist` into the container image during CI.  
+3. If you need to publish the frontend separately (e.g., to an object store), upload the contents of `dist/` and set `VITE_API_BASE_URL`/`VITE_WS_BASE_URL` accordingly before building so the SPA calls the correct origin.
 
-### Making a Progressive Web App
+## Extending the Frontend
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
+1. **Add new resources** – create a folder under `src/features/<resource>` with its pages, register the resource in `App.tsx`, and extend `dataProvider`.  
+2. **Integrate new API endpoints** – implement helpers in `src/data/httpClient.ts` or compose smaller services similar to `deployLockService`.  
+3. **UI building blocks** – prefer MUI components themed through `theme/index.ts`. Keep styling in Emotion for server-render compatibility down the line.
 
-### Advanced Configuration
+## Troubleshooting
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
+- **Dev server cannot reach the API**: ensure `VITE_API_PROXY_TARGET` matches your backend host or export `VITE_API_BASE_URL` so the SPA calls the right origin.  
+- **Endless Keycloak redirects**: clear `localStorage` key `argo-watcher:silent-sso-disabled` and verify the backend Keycloak config exposes the current redirect URI.  
+- **WebSocket errors**: set `VITE_WS_BASE_URL` when proxying through TLS terminators that do not support upgrade requests, or confirm `/ws` is exposed by the Go server.  
+- **Timezones look wrong**: toggle the timezone via the user menu (wired to `TimezoneProvider`). The selection lives under `argo-watcher:timezone`.
 
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+This README should stay exhaustive—update it whenever you add scripts, env vars, or architectural pieces so contributors can onboard without spelunking through the codebase.

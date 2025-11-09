@@ -1,175 +1,150 @@
 package state
 
 import (
+	"os"
 	"testing"
 	"time"
 
 	envConfig "github.com/caarlos0/env/v11"
-
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
-var (
-	created       = float64(time.Now().Unix())
-	postgresState = PostgresState{}
+type postgresTestEnv struct {
+	state *PostgresState
+}
 
-	deployedTaskId string
-	deployedTask   = models.Task{
-		Created: created,
-		App:     "Test",
-		Author:  "Test Author",
-		Project: "Test Project",
-		Images: []models.Image{
-			{
-				Image: "test",
-				Tag:   "v0.0.1",
-			},
-		},
-	}
-	appNotFoundTaskId string
-	appNotFoundTask   = models.Task{
-		Created: created,
-		App:     "Test2",
-		Author:  "Test Author",
-		Project: "Test Project",
-		Images: []models.Image{
-			{
-				Image: "test2",
-				Tag:   "v0.0.1",
-			},
-		},
-	}
-	abortedTaskId string
-	abortedTask   = models.Task{
-		Created: created,
-		App:     "ObsoleteApp",
-		Author:  "Test Author",
-		Project: "Test Project",
-		Images: []models.Image{
-			{
-				Image: "test",
-				Tag:   "v0.0.1",
-			},
-		},
-	}
-)
+// newPostgresTestEnv prepares an isolated Postgres-backed repository for integration testing.
+// Tests are skipped automatically when no Postgres configuration is present in the environment.
+func newPostgresTestEnv(t *testing.T) *postgresTestEnv {
+	t.Helper()
 
-func TestPostgresState_AddTask(t *testing.T) {
-	var err error
-	var databaseConfig config.DatabaseConfig
+	if os.Getenv("DB_DSN") == "" && os.Getenv("DB_HOST") == "" {
+		t.Skip("Postgres integration tests require DB_DSN or DB_HOST to be configured")
+	}
 
-	databaseConfig, err = envConfig.ParseAs[config.DatabaseConfig]()
-	assert.NoError(t, err)
+	databaseConfig, err := envConfig.ParseAs[config.DatabaseConfig]()
+	require.NoError(t, err)
 
 	testConfig := &config.ServerConfig{
 		StateType: "postgres",
 		Db:        databaseConfig,
 	}
-	err = postgresState.Connect(testConfig)
-	assert.NoError(t, err)
 
-	db, err := postgresState.orm.DB()
-	assert.NoError(t, err)
+	env := &postgresTestEnv{state: &PostgresState{}}
+	require.NoError(t, env.state.Connect(testConfig))
+
+	db, err := env.state.orm.DB()
+	require.NoError(t, err)
 
 	_, err = db.Exec("TRUNCATE TABLE tasks")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
-	deployedTaskResult, err := postgresState.AddTask(deployedTask)
-	assert.NoError(t, err)
+	return env
+}
 
-	deployedTaskId = deployedTaskResult.Id
+// addTask persists a task fixture and returns the stored record.
+func (env *postgresTestEnv) addTask(t *testing.T, task models.Task) *models.Task {
+	t.Helper()
+	result, err := env.state.AddTask(task)
+	require.NoError(t, err)
+	return result
+}
 
-	appNotFoundTaskResult, err := postgresState.AddTask(appNotFoundTask)
-	assert.NoError(t, err)
+// sampleTask builds a reusable task definition for integration tests.
+func sampleTask(app string) models.Task {
+	return models.Task{
+		App:     app,
+		Author:  "Test Author",
+		Project: "Test Project",
+		Images: []models.Image{
+			{Image: "test", Tag: "v0.0.1"},
+		},
+	}
+}
 
-	appNotFoundTaskId = appNotFoundTaskResult.Id
+func TestPostgresState_AddTask(t *testing.T) {
+	env := newPostgresTestEnv(t)
 
-	abortedTaskResult, err := postgresState.AddTask(abortedTask)
-	assert.NoError(t, err)
+	task := sampleTask("Test")
+	result := env.addTask(t, task)
 
-	abortedTaskId = abortedTaskResult.Id
+	assert.NotEmpty(t, result.Id)
+	assert.Equal(t, models.StatusInProgressMessage, result.Status)
+	assert.Equal(t, "Test", result.App)
 }
 
 func TestPostgresState_GetTasks(t *testing.T) {
-	// a temporary solution to wait for the task to be added to the database
-	time.Sleep(1 * time.Second)
+	env := newPostgresTestEnv(t)
 
-	// get all tasks without app filter
-	tasks := postgresState.GetTasks(created, float64(time.Now().Unix()), "")
+	start := float64(time.Now().Add(-time.Hour).Unix())
+	env.addTask(t, sampleTask("Test"))
+	env.addTask(t, sampleTask("Test2"))
+	env.addTask(t, sampleTask("ObsoleteApp"))
+	end := float64(time.Now().Add(time.Hour).Unix())
+
+	tasks, total := env.state.GetTasks(start, end, "", 0, 0)
 	assert.Len(t, tasks, 3)
+	assert.Equal(t, int64(3), total)
 
-	// get all tasks with app filter
-	tasks = postgresState.GetTasks(created, float64(time.Now().Unix()), "Test")
+	tasks, total = env.state.GetTasks(start, end, "Test", 0, 0)
 	assert.Len(t, tasks, 1)
+	assert.Equal(t, int64(1), total)
 }
 
 func TestPostgresState_GetTask(t *testing.T) {
-	var task *models.Task
-	var err error
+	env := newPostgresTestEnv(t)
+	inserted := env.addTask(t, sampleTask("Test"))
 
-	task, err = postgresState.GetTask(deployedTaskId)
+	task, err := env.state.GetTask(inserted.Id)
 	assert.NoError(t, err)
-
+	assert.Equal(t, inserted.Id, task.Id)
 	assert.Equal(t, models.StatusInProgressMessage, task.Status)
 }
 
 func TestPostgresState_SetTaskStatus(t *testing.T) {
-	var err error
+	env := newPostgresTestEnv(t)
+	inserted := env.addTask(t, sampleTask("Test"))
 
-	err = postgresState.SetTaskStatus(deployedTaskId, models.StatusDeployedMessage, "")
+	err := env.state.SetTaskStatus(inserted.Id, models.StatusDeployedMessage, "finished")
 	assert.NoError(t, err)
 
-	err = postgresState.SetTaskStatus(appNotFoundTaskId, models.StatusAppNotFoundMessage, "")
+	taskInfo, err := env.state.GetTask(inserted.Id)
 	assert.NoError(t, err)
-
-	var taskInfo *models.Task
-	taskInfo, _ = postgresState.GetTask(deployedTaskId)
 	assert.Equal(t, models.StatusDeployedMessage, taskInfo.Status)
-
-	taskInfo, _ = postgresState.GetTask(appNotFoundTaskId)
-	assert.Equal(t, models.StatusAppNotFoundMessage, taskInfo.Status)
+	assert.Equal(t, "finished", taskInfo.StatusReason)
 }
 
 func TestPostgresState_ProcessObsoleteTasks(t *testing.T) {
-	// set updated time to 2 hour ago for obsolete task
-	updatedTime := time.Now().UTC().Add(-2 * time.Hour)
+	env := newPostgresTestEnv(t)
 
-	// get connections
-	db, err := postgresState.orm.DB()
+	obsolete := env.addTask(t, sampleTask("ObsoleteApp"))
+	appNotFound := env.addTask(t, sampleTask("Test2"))
+
+	db, err := env.state.orm.DB()
+	require.NoError(t, err)
+
+	expired := time.Now().UTC().Add(-2 * time.Hour)
+	_, err = db.Exec("UPDATE tasks SET created = $1 WHERE id = $2", expired, obsolete.Id)
+	require.NoError(t, err)
+
+	_, err = db.Exec("UPDATE tasks SET status = $1, created = $2 WHERE id = $3", models.StatusAppNotFoundMessage, expired, appNotFound.Id)
+	require.NoError(t, err)
+
+	env.state.ProcessObsoleteTasks(1)
+
+	_, err = env.state.GetTask(appNotFound.Id)
+	assert.Error(t, err)
+
+	task, err := env.state.GetTask(obsolete.Id)
 	assert.NoError(t, err)
-
-	// update obsolete task
-	if _, err := db.Exec("UPDATE tasks SET created = $1 WHERE id = $2", updatedTime, abortedTaskId); err != nil {
-		t.Errorf("got error %s, expected nil", err.Error())
-	}
-
-	// update not found task
-	if _, err := db.Exec("UPDATE tasks SET created = $1 WHERE id = $2", updatedTime, appNotFoundTaskId); err != nil {
-		t.Errorf("got error %s, expected nil", err.Error())
-	}
-
-	postgresState.ProcessObsoleteTasks(1)
-
-	// Check that obsolete task was deleted
-	startTime := float64(time.Now().Unix()) - 10
-	endTime := float64(time.Now().Unix())
-	tasks := postgresState.GetTasks(startTime, endTime, "")
-	for _, task := range tasks {
-		assert.NotEqual(t, appNotFoundTask, task.Id)
-	}
-
-	// Check that task status was changed to aborted
-	if task, err := postgresState.GetTask(abortedTaskId); err != nil {
-		t.Errorf("got error %s, expected nil", err.Error())
-	} else {
-		assert.Equal(t, models.StatusAborted, task.Status)
-	}
+	assert.Equal(t, models.StatusAborted, task.Status)
 }
 
 func TestPostgresState_Check(t *testing.T) {
-	// Check that we return true if connection is ok
-	assert.True(t, postgresState.Check())
+	env := newPostgresTestEnv(t)
+	assert.True(t, env.state.Check())
 }

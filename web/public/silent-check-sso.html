@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Keycloak Silent Check</title>
+  </head>
+  <body>
+    <script>
+      const rootContext = globalThis;
+      const targetWindow = rootContext.parent ?? rootContext;
+      const currentLocation = rootContext.location;
+      if (currentLocation) {
+        targetWindow.postMessage(currentLocation.href, currentLocation.origin);
+      }
+    </script>
+  </body>
+</html>

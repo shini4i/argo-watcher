@@ -85,3 +85,12 @@ func NewServerConfig() (*ServerConfig, error) {
 func (config *ServerConfig) GetRetryAttempts() uint {
 	return config.DeploymentTimeout/15 + 1
 }
+
+// ResolveStaticFilePath returns the directory that hosts the compiled frontend bundle.
+// The path defaults to `static` but can be overridden through the `STATIC_FILES_PATH` environment variable.
+func (config *ServerConfig) ResolveStaticFilePath() string {
+	if config.StaticFilePath != "" {
+		return config.StaticFilePath
+	}
+	return "static"
+}

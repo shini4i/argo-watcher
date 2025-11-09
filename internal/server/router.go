@@ -10,14 +10,15 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/contrib/static"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog/log"
-	"github.com/shini4i/argo-watcher/internal/argocd"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/docs"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
+	"github.com/shini4i/argo-watcher/internal/argocd"
 	"github.com/shini4i/argo-watcher/internal/auth"
 	"github.com/shini4i/argo-watcher/internal/models"
 	swaggerFiles "github.com/swaggo/files"
@@ -65,8 +66,12 @@ func (env *Env) CreateRouter() *gin.Engine {
 
 	router := gin.New()
 	router.Use(gin.Recovery())
+	router.Use(cors.New(env.corsConfig()))
 
-	staticFilesPath := env.config.StaticFilePath
+	staticFilesPath := env.config.ResolveStaticFilePath()
+	log.Info().
+		Str("static_path", staticFilesPath).
+		Msg("serving frontend assets")
 	router.Use(static.Serve("/", static.LocalFile(staticFilesPath, true)))
 	router.NoRoute(func(c *gin.Context) {
 		c.File(fmt.Sprintf("%s/index.html", staticFilesPath))
@@ -97,6 +102,33 @@ func (env *Env) StartRouter(router *gin.Engine) {
 	if err := router.Run(routerBind); err != nil {
 		panic(err)
 	}
+}
+
+func (env *Env) corsConfig() cors.Config {
+	config := cors.Config{
+		AllowMethods:           []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions},
+		AllowHeaders:           []string{"Origin", "Content-Type", "Accept", "Authorization", keycloakHeader, "ARGO_WATCHER_DEPLOY_TOKEN"},
+		ExposeHeaders:          []string{"Content-Length"},
+		AllowWebSockets:        true,
+		AllowBrowserExtensions: true,
+		MaxAge:                 12 * time.Hour,
+	}
+
+	if env.config.DevEnvironment {
+		config.AllowOrigins = []string{
+			"http://localhost:3000",
+			"http://127.0.0.1:3000",
+			"http://localhost:3100",
+			"http://127.0.0.1:3100",
+			"http://localhost:5173",
+			"http://127.0.0.1:5173",
+		}
+		config.AllowCredentials = true
+	} else {
+		config.AllowAllOrigins = true
+	}
+
+	return config
 }
 
 // prometheusHandler returns the default promhttp handler.
@@ -187,7 +219,9 @@ func (env *Env) addTask(c *gin.Context) {
 // @Param app query string false "App name"
 // @Param from_timestamp query int true "From timestamp" default(1648390029)
 // @Param to_timestamp query int false "To timestamp"
-// @Success 200 {array} models.Task
+// @Param limit query int false "Maximum number of tasks to return"
+// @Param offset query int false "Number of tasks to skip before returning results"
+// @Success 200 {object} models.TasksResponse
 // @Router /api/v1/tasks [get]
 func (env *Env) getState(c *gin.Context) {
 	startTime, _ := strconv.ParseFloat(c.Query("from_timestamp"), 64)
@@ -197,7 +231,16 @@ func (env *Env) getState(c *gin.Context) {
 	}
 	app := c.Query("app")
 
-	c.JSON(http.StatusOK, env.argo.GetTasks(startTime, endTime, app))
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	offset, _ := strconv.Atoi(c.Query("offset"))
+	if limit < 0 {
+		limit = 0
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	c.JSON(http.StatusOK, env.argo.GetTasks(startTime, endTime, app, limit, offset))
 }
 
 // getTaskStatus godoc
