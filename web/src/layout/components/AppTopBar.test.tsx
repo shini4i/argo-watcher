@@ -38,9 +38,11 @@ vi.mock('react-admin', async () => {
   };
 });
 
+// Flag the environment as act-aware before tests run to suppress React warnings during async renders.
+vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+
 describe('AppTopBar', () => {
   beforeEach(() => {
-    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     httpClientMock.mockReset();
     notifyMock.mockReset();
     permissionsMock.mockReset();
@@ -92,4 +94,3 @@ describe('AppTopBar', () => {
     await screen.findByText(/foo/i);
   });
 });
-vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);

@@ -1,5 +1,5 @@
 import { render } from '@testing-library/react';
-import { Children, type ReactElement } from 'react';
+import { Children, type ReactElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { HistoryTasksList } from './HistoryTasksList';
 
@@ -84,6 +84,8 @@ vi.mock('../../shared/utils', () => ({
 }));
 
 const lastLayoutProps = () => layoutCalls.at(-1)!;
+/** Type guard ensuring a node is a concrete ReactElement before use in expectations. */
+const isReactElement = (node: ReactNode): node is ReactElement => Boolean(node);
 
 describe('HistoryTasksList', () => {
   beforeEach(() => {
@@ -110,9 +112,7 @@ describe('HistoryTasksList', () => {
       storeKey: 'historyTasks',
     });
 
-    const headerNodes = Children.toArray(props.header).filter(
-      (node): node is ReactElement => Boolean(node),
-    );
+    const headerNodes = Children.toArray(props.header).filter(isReactElement);
     expect(headerNodes.map(node => node.type)).toContain(HistoryFiltersMock);
 
     const exportNode = headerNodes.find(node => node.type === HistoryExportMenuMock);
@@ -140,9 +140,7 @@ describe('HistoryTasksList', () => {
     render(<HistoryTasksList />);
 
     const props = lastLayoutProps() as { header: ReactElement | ReactElement[] };
-    const headerNodes = Children.toArray(props.header).filter(
-      (node): node is ReactElement => Boolean(node),
-    );
+    const headerNodes = Children.toArray(props.header).filter(isReactElement);
     expect(headerNodes).toHaveLength(1);
     expect(headerNodes[0].type).toBe(HistoryFiltersMock);
   });
