@@ -7,6 +7,15 @@ import { getBrowserWindow } from '../../shared/utils';
 export type DeployLockListener = (locked: boolean) => void;
 
 const WS_RETRY_DELAY_MS = 5000;
+const IS_DEV_BUILD = import.meta.env?.DEV ?? false;
+
+const warnInvalidSocketConfig = (message: string, ...details: unknown[]) => {
+  if (IS_DEV_BUILD) {
+    console.warn(message, ...details);
+  } else {
+    console.warn('[deploy-lock] Invalid websocket configuration; falling back to defaults.');
+  }
+};
 
 /** Normalizes custom websocket base URLs ensuring they match the current origin and use safe protocols. */
 const sanitizeCustomSocketBase = (rawBase: string, location?: Location | null): URL | null => {
@@ -28,12 +37,12 @@ const sanitizeCustomSocketBase = (rawBase: string, location?: Location | null): 
     const isWs = candidate.protocol === 'ws:' || candidate.protocol === 'wss:';
 
     if (!isHttp && !isWs) {
-      console.warn('[deploy-lock] Ignoring custom websocket URL with unsupported protocol:', candidate.protocol);
+      warnInvalidSocketConfig('[deploy-lock] Ignoring custom websocket URL with unsupported protocol:', candidate.protocol);
       return null;
     }
 
     if (location && candidate.host !== location.host) {
-      console.warn(
+      warnInvalidSocketConfig(
         `[deploy-lock] Ignoring custom websocket URL (${candidate.origin}) because it does not match the current host (${location.host}).`,
       );
       return null;
@@ -41,7 +50,7 @@ const sanitizeCustomSocketBase = (rawBase: string, location?: Location | null): 
 
     return candidate;
   } catch (error) {
-    console.warn('[deploy-lock] Invalid custom websocket URL, falling back to window.location.', error);
+    warnInvalidSocketConfig('[deploy-lock] Invalid custom websocket URL, falling back to window.location.', error);
     return null;
   }
 };

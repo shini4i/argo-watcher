@@ -20,7 +20,10 @@ const toDate = (value: SupportedTimestamp): Date | null => {
   }
 
   if (typeof value === 'number') {
-    return new Date(value * (value < 10_000_000_000 ? 1000 : 1));
+    // Unix timestamps stay below 10_000_000_000 seconds until the year 2286,
+    // so values under that threshold are interpreted as seconds instead of ms.
+    const normalized = value < 10_000_000_000 ? value * 1000 : value;
+    return new Date(normalized);
   }
 
   const parsed = Date.parse(value);
