@@ -1,57 +1,40 @@
-import React from 'react';
-import { render } from '@testing-library/react';
-import { vi, describe, it, expect, beforeEach } from 'vitest';
+import { describe, expect, it, beforeEach, vi } from 'vitest';
+import { __testing, readPersistentPerPage } from './usePersistentPerPage';
 
-vi.mock('react-admin', async () => {
-  const actual = await vi.importActual<Record<string, unknown>>('react-admin');
-  return {
-    ...actual,
-    useListPaginationContext: vi.fn(() => ({
-      perPage: 50,
-    })),
-  };
-});
-
-import { useListPaginationContext } from 'react-admin';
-import { PerPagePersistence, readPersistentPerPage } from './usePersistentPerPage';
-
-/** Provides the browser window shim used by the tests, throwing if unavailable. */
-const getBrowserWindow = (): Window => {
-  const browserWindow = globalThis.window;
-  if (!browserWindow) {
-    throw new Error('Browser window is required for per-page persistence tests.');
-  }
-  return browserWindow;
-};
-
-describe('per-page persistence utilities', () => {
+describe('usePersistentPerPage', () => {
   beforeEach(() => {
-    getBrowserWindow().localStorage.clear();
-    (useListPaginationContext as unknown as vi.Mock).mockReturnValue({ perPage: 50 });
+    window.localStorage.clear();
   });
 
-  it('readPersistentPerPage returns stored value when present', () => {
-    getBrowserWindow().localStorage.setItem('key', '100');
-    expect(readPersistentPerPage('key', 25)).toBe(100);
+  it('reads stored per-page value and falls back when invalid or missing', () => {
+    window.localStorage.setItem('recent.perPage', '50');
+    expect(readPersistentPerPage('recent.perPage', 25)).toBe(50);
+
+    window.localStorage.setItem('recent.perPage', 'invalid');
+    expect(readPersistentPerPage('recent.perPage', 25)).toBe(25);
   });
 
-  it('readPersistentPerPage falls back when storage value is invalid', () => {
-    getBrowserWindow().localStorage.setItem('key', 'oops');
-    expect(readPersistentPerPage('key', 25)).toBe(25);
+  it('falls back when browser window is unavailable', () => {
+    const originalWindow = globalThis.window;
+    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete, @typescript-eslint/ban-ts-comment
+    // @ts-ignore
+    delete globalThis.window;
+    expect(readPersistentPerPage('history.perPage', 10)).toBe(10);
+    globalThis.window = originalWindow;
   });
 
-  it('readPersistentPerPage falls back when storage missing', () => {
-    expect(readPersistentPerPage('missing', 40)).toBe(40);
+  it('writes per-page values via helper utilities', () => {
+    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
+    __testing.writePerPage('tasks.perPage', 75);
+    expect(setItemSpy).toHaveBeenCalledWith('tasks.perPage', '75');
   });
 
-  it('PerPagePersistence writes current perPage into storage', () => {
-    render(<PerPagePersistence storageKey="key" />);
-    expect(getBrowserWindow().localStorage.getItem('key')).toBe('50');
-  });
-
-  it('PerPagePersistence does nothing when perPage is undefined', () => {
-    (useListPaginationContext as unknown as vi.Mock).mockReturnValue({ perPage: undefined });
-    render(<PerPagePersistence storageKey="key" />);
-    expect(getBrowserWindow().localStorage.getItem('key')).toBeNull();
+  it('skips writes when window is unavailable', () => {
+    const originalWindow = globalThis.window;
+    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete, @typescript-eslint/ban-ts-comment
+    // @ts-ignore
+    delete globalThis.window;
+    expect(() => __testing.writePerPage('tasks.perPage', 20)).not.toThrow();
+    globalThis.window = originalWindow;
   });
 });

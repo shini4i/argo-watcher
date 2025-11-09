@@ -1,28 +1,96 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
+import Papa from 'papaparse';
 import type { Task } from '../../data/types';
-import { prepareExportRows } from './exportUtils';
+import { exportAsCsv, exportAsJson, exportAsXlsx, prepareExportRows } from './exportUtils';
 
-const sampleTask: Task = {
-  id: '1',
-  app: 'demo',
-  project: 'proj',
-  author: 'alice',
-  status: 'deployed',
-  created: 100,
-  updated: 200,
-  images: [{ image: 'img', tag: 'latest' }],
-  status_reason: 'Success',
-};
+const sampleTasks: Task[] = [
+  {
+    id: '1',
+    app: 'demo',
+    author: 'alice',
+    project: 'https://github.com/org/repo',
+    created: 100,
+    updated: 200,
+    images: [
+      { image: 'api', tag: '1' },
+      { image: 'worker', tag: '2' },
+    ],
+    status: 'ok',
+    status_reason: 'all good',
+  },
+];
 
 describe('exportUtils', () => {
-  it('retains author fields when anonymisation disabled', () => {
-    const rows = prepareExportRows([sampleTask], false);
-    expect(rows[0]).toMatchObject({ author: 'alice', status_reason: 'Success' });
+let anchorMock: HTMLAnchorElement;
+let originalCreateObjectURL: ((obj: Blob | MediaSource) => string) | undefined;
+let originalRevokeObjectURL: ((url: string) => void) | undefined;
+
+beforeEach(() => {
+  anchorMock = {
+    click: vi.fn(),
+    remove: vi.fn(),
+  } as unknown as HTMLAnchorElement;
+  originalCreateObjectURL = (URL as unknown as Record<string, unknown>).createObjectURL as
+    | ((obj: Blob | MediaSource) => string)
+    | undefined;
+  originalRevokeObjectURL = (URL as unknown as Record<string, unknown>).revokeObjectURL as
+    | ((url: string) => void)
+    | undefined;
+  (URL as unknown as Record<string, unknown>).createObjectURL = vi.fn(() => 'blob:mock');
+  (URL as unknown as Record<string, unknown>).revokeObjectURL = vi.fn();
+  vi.spyOn(document, 'createElement').mockReturnValue(anchorMock);
+  vi.spyOn(document.body, 'appendChild').mockImplementation(() => anchorMock);
+});
+
+afterEach(() => {
+  if (originalCreateObjectURL) {
+    (URL as unknown as Record<string, unknown>).createObjectURL = originalCreateObjectURL;
+  } else {
+    delete (URL as unknown as Record<string, unknown>).createObjectURL;
+  }
+  if (originalRevokeObjectURL) {
+    (URL as unknown as Record<string, unknown>).revokeObjectURL = originalRevokeObjectURL;
+  } else {
+    delete (URL as unknown as Record<string, unknown>).revokeObjectURL;
+  }
+  vi.restoreAllMocks();
+});
+
+  it('prepares export rows with optional anonymization', () => {
+    const rows = prepareExportRows(sampleTasks, false);
+    expect(rows[0]).toMatchObject({
+      author: 'alice',
+      status_reason: 'all good',
+      images: 'api:1, worker:2',
+    });
+
+    const anonymized = prepareExportRows(sampleTasks, true);
+    expect(anonymized[0]).not.toHaveProperty('author');
+    expect(anonymized[0]).not.toHaveProperty('status_reason');
   });
 
-  it('removes sensitive fields when anonymisation enabled', () => {
-    const rows = prepareExportRows([sampleTask], true);
-    expect(rows[0]).not.toHaveProperty('author');
-    expect(rows[0]).not.toHaveProperty('status_reason');
+  it('exports rows as JSON and triggers download', () => {
+    exportAsJson(sampleTasks as never, 'tasks');
+    const createSpy = (URL as unknown as { createObjectURL: ReturnType<typeof vi.fn> }).createObjectURL as ReturnType<
+      typeof vi.fn
+    >;
+    const revokeSpy = (URL as unknown as { revokeObjectURL: ReturnType<typeof vi.fn> }).revokeObjectURL as ReturnType<
+      typeof vi.fn
+    >;
+    expect(anchorMock.download).toBe('tasks.json');
+    expect(anchorMock.click).toHaveBeenCalled();
+    expect(revokeSpy).toHaveBeenCalledWith('blob:mock');
+  });
+
+  it('exports rows as CSV using Papa.unparse', () => {
+    const unparseSpy = vi.spyOn(Papa, 'unparse').mockReturnValue('csv-content');
+    exportAsCsv(sampleTasks as never, 'tasks');
+    expect(unparseSpy).toHaveBeenCalledWith(expect.any(Array));
+    expect(anchorMock.download).toBe('tasks.csv');
+  });
+
+  it('exports rows as XLSX using sheet utilities', () => {
+    exportAsXlsx(sampleTasks as never, 'tasks');
+    expect(anchorMock.download).toBe('tasks.xlsx');
   });
 });

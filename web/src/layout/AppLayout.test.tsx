@@ -39,4 +39,24 @@ describe('AppLayout', () => {
     expect(props.sidebar({} as never)).toBeNull();
     expect(typeof props.sx).toBe('function');
   });
+
+  it('applies custom layout styles removing top margin on all breakpoints', () => {
+    render(<AppLayout />);
+    const props = layoutCalls[0] as { sx: (theme: ThemeLike) => Record<string, unknown> };
+    const theme: ThemeLike = {
+      breakpoints: {
+        down: () => '@media (max-width:600px)',
+      },
+    };
+
+    const styles = props.sx(theme);
+    expect(styles['& .RaLayout-appFrame']).toMatchObject({ marginTop: 0 });
+    expect(styles['& .RaLayout-appFrame']['@media (max-width:600px)']).toMatchObject({ marginTop: 0 });
+  });
 });
+
+interface ThemeLike {
+  breakpoints: {
+    down: (value: string) => string;
+  };
+}

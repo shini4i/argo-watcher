@@ -44,3 +44,8 @@ export const PerPagePersistence = ({ storageKey }: { storageKey: string }) => {
 
   return null;
 };
+
+export const __testing = {
+  readPerPage,
+  writePerPage,
+};

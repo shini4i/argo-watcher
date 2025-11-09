@@ -6,6 +6,7 @@ import { ThemeModeProvider, useThemeMode } from '../../theme/ThemeModeProvider';
 import { ConfigDrawer } from './ConfigDrawer';
 import { deployLockService } from '../../features/deployLock/deployLockService';
 import { DeployLockProvider } from '../../features/deployLock/DeployLockProvider';
+import { TimezoneProvider } from '../../shared/providers/TimezoneProvider';
 
 vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
 
@@ -47,10 +48,12 @@ const ThemeModeConsumer = () => {
 const renderDrawer = () =>
   render(
     <ThemeModeProvider>
-      <DeployLockProvider>
-        <ThemeModeConsumer />
-        <ConfigDrawer open onClose={() => undefined} version="1.0.0" />
-      </DeployLockProvider>
+      <TimezoneProvider>
+        <DeployLockProvider>
+          <ThemeModeConsumer />
+          <ConfigDrawer open onClose={() => undefined} version="1.0.0" />
+        </DeployLockProvider>
+      </TimezoneProvider>
     </ThemeModeProvider>,
   );
 
@@ -64,6 +67,8 @@ const getBrowserNavigator = (): Navigator => {
 };
 
 describe('ConfigDrawer', () => {
+  let clipboardWriteMock: ReturnType<typeof vi.fn>;
+
   beforeEach(() => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     httpClientMock.mockReset();
@@ -97,15 +102,14 @@ describe('ConfigDrawer', () => {
       status: 200,
       headers: {} as HttpResponse<unknown>['headers'],
     });
+    clipboardWriteMock = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(getBrowserNavigator(), 'clipboard', {
+      value: { writeText: clipboardWriteMock },
+      configurable: true,
+    });
   });
 
   it('renders configuration values and copies JSON to clipboard', async () => {
-    const writeText = vi.fn();
-    Object.defineProperty(getBrowserNavigator(), 'clipboard', {
-      value: { writeText },
-      configurable: true,
-    });
-
     renderDrawer();
 
     await screen.findByText(/foo/i);
@@ -152,5 +156,55 @@ describe('ConfigDrawer', () => {
       await user.click(screen.getByRole('checkbox', { name: /toggle deploy lock/i }));
     });
     expect(deployLockService.setLock).toHaveBeenCalled();
+  });
+
+  it('shows configuration fetch errors and notifies user', async () => {
+    httpClientMock.mockRejectedValueOnce(new Error('boom'));
+    renderDrawer();
+
+    await screen.findByText('boom');
+    expect(notifyMock).toHaveBeenCalledWith('boom', { type: 'warning' });
+  });
+
+  it('warns when clipboard API is unavailable during copy', async () => {
+    renderDrawer();
+    const user = userEvent.setup();
+
+    await screen.findByText(/foo/i);
+    const clipboard = getBrowserNavigator().clipboard as { writeText: () => Promise<unknown> };
+    const originalWrite = clipboard.writeText;
+    clipboard.writeText = () => Promise.reject(new Error('fail'));
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: /copy configuration/i }));
+    });
+
+    expect(notifyMock).toHaveBeenCalledWith('fail', { type: 'warning' });
+
+    clipboard.writeText = originalWrite;
+  });
+
+  it('updates timezone preference when toggled', async () => {
+    renderDrawer();
+    const user = userEvent.setup();
+    await act(async () => {
+      await user.click(await screen.findByRole('button', { name: /Local/ }));
+    });
+
+    expect(window.localStorage.getItem('argo-watcher:timezone')).toBe('local');
+  });
+
+  it('releases deploy lock when already engaged', async () => {
+    vi.mocked(deployLockService.subscribe).mockImplementation(listener => {
+      listener(true);
+      return () => undefined;
+    });
+    renderDrawer();
+    const user = userEvent.setup();
+    await act(async () => {
+      await user.click(await screen.findByRole('checkbox', { name: /toggle deploy lock/i }));
+    });
+
+    expect(deployLockService.releaseLock).toHaveBeenCalled();
+    expect(notifyMock).toHaveBeenCalledWith('Deploy lock released.', { type: 'info' });
   });
 });

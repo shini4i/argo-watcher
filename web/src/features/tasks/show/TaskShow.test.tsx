@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { render, screen, act, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TaskStatus } from '../../../data/types';
@@ -111,6 +112,57 @@ describe('TaskShow', () => {
     expect(screen.getByText('task-1')).toBeInTheDocument();
     expect(screen.getByText('Images')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Refresh/i })).toBeInTheDocument();
+  });
+
+  it('shows loading indicator while fetching data', async () => {
+    mockUseGetOne.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isError: false,
+      refetch: vi.fn(),
+    });
+
+    await renderWithRouter('/task/task-1');
+    expect(screen.getByText(/Loading task details/i)).toBeInTheDocument();
+  });
+
+  it('renders not found message when API returns no data', async () => {
+    mockUseGetOne.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+
+    await renderWithRouter('/task/task-1');
+    expect(screen.getByText(/Task not found/i)).toBeInTheDocument();
+  });
+
+  it('notifies when task fetch fails', async () => {
+    mockUseGetOne.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error('boom'),
+      refetch: vi.fn(),
+    });
+
+    await renderWithRouter('/task/task-1');
+    expect(mockUseNotify).toHaveBeenCalledWith('Failed to load task details.', { type: 'error' });
+  });
+
+  it('warns when configuration request fails', async () => {
+    mockUseGetOne.mockReturnValue({
+      data: buildTask(),
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+    mockHttpClient.mockRejectedValueOnce(new Error('cfg fail'));
+
+    await renderWithRouter('/task/task-1');
+
+    await waitFor(() => expect(mockUseNotify).toHaveBeenCalledWith('cfg fail', { type: 'warning' }));
   });
 
   it('invokes refetch when Refresh button clicked', async () => {
@@ -246,5 +298,20 @@ describe('TaskShow', () => {
 
     const link = await screen.findByRole('link', { name: /Open in Argo CD UI/i });
     expect(link).toHaveAttribute('href', 'https://argocd.example/applications/demo-app');
+  });
+
+  it('builds Argo CD link from structured configuration', async () => {
+    configResponse = { argo_cd_url: { Scheme: 'https', Host: 'argocd.local', Path: '/platform' } };
+    mockUseGetOne.mockReturnValue({
+      data: buildTask(),
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+
+    await renderWithRouter('/task/task-1');
+
+    const link = await screen.findByRole('link', { name: /Open in Argo CD UI/i });
+    expect(link).toHaveAttribute('href', 'https://argocd.local/platform/applications/demo-app');
   });
 });
