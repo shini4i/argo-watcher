@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthProvider } from 'react-admin';
 import { HttpError } from 'react-admin';
+import * as browserUtils from '../shared/utils';
+import { getAccessToken, setAccessToken } from './tokenStore';
 
 vi.mock('keycloak-js', () => {
   return {
@@ -47,7 +49,7 @@ const mockConfig = (config: unknown) => {
 const SILENT_SSO_STORAGE_KEY = 'argo-watcher:silent-sso-disabled';
 
 /** Ensures a browser-like window object exists when tests require DOM APIs. */
-const getBrowserWindow = (): Window => {
+const ensureBrowserWindow = (): Window => {
   const browserWindow = globalThis.window;
   if (!browserWindow) {
     throw new Error('Browser window not available in authProvider tests.');
@@ -58,7 +60,7 @@ const getBrowserWindow = (): Window => {
 describe('authProvider', () => {
   beforeEach(async () => {
     vi.restoreAllMocks();
-    getBrowserWindow().localStorage.clear();
+    ensureBrowserWindow().localStorage.clear();
     keycloakMock.init.mockReset();
     keycloakMock.login.mockReset();
     keycloakMock.logout.mockReset();
@@ -234,7 +236,7 @@ describe('authProvider', () => {
   });
 
   it('reuses existing tokens instead of re-initializing', async () => {
-    getBrowserWindow().localStorage.clear();
+    ensureBrowserWindow().localStorage.clear();
     mockConfig({
       keycloak: {
         enabled: true,
@@ -255,7 +257,7 @@ describe('authProvider', () => {
   });
 
   it('remembers silent SSO failures across reloads', async () => {
-    getBrowserWindow().localStorage.clear();
+    ensureBrowserWindow().localStorage.clear();
     mockConfig({
       keycloak: {
         enabled: true,
@@ -272,7 +274,7 @@ describe('authProvider', () => {
 
     const provider = await loadAuthProvider();
     await expect(provider.checkAuth({})).resolves.toBeUndefined();
-    expect(getBrowserWindow().localStorage.getItem(SILENT_SSO_STORAGE_KEY)).toBe('true');
+    expect(ensureBrowserWindow().localStorage.getItem(SILENT_SSO_STORAGE_KEY)).toBe('true');
     warnSpy.mockRestore();
 
     const module = await import('./authProvider');
@@ -305,10 +307,263 @@ describe('authProvider', () => {
     const provider = await loadAuthProvider();
     await provider.login({ redirectTo: '/history' });
 
-    expect(keycloakMock.login).toHaveBeenCalledWith(
-      expect.objectContaining({
-        redirectUri: `${getBrowserWindow().location.origin}/history`,
+  expect(keycloakMock.login).toHaveBeenCalledWith(
+    expect.objectContaining({
+      redirectUri: `${ensureBrowserWindow().location.origin}/history`,
+    }),
+  );
+  });
+
+  it('defaults silent SSO to enabled when localStorage is unavailable', async () => {
+    mockConfig({ keycloak: { enabled: false } });
+    const module = await import('./authProvider');
+    module.__testing.disableSilentSso();
+    const windowSpy = vi.spyOn(browserUtils, 'getBrowserWindow').mockReturnValue({} as Window);
+
+    module.__testing.reloadSilentPreference();
+
+    expect(module.__testing.isSilentSsoEnabled()).toBe(true);
+    windowSpy.mockRestore();
+  });
+
+  it('logs when reading the silent SSO preference fails', async () => {
+    mockConfig({ keycloak: { enabled: false } });
+    const module = await import('./authProvider');
+    module.__testing.disableSilentSso();
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const storageError = new Error('storage-failure');
+    const windowSpy = vi.spyOn(browserUtils, 'getBrowserWindow').mockImplementation(() => {
+      throw storageError;
+    });
+
+    module.__testing.reloadSilentPreference();
+
+    expect(module.__testing.isSilentSsoEnabled()).toBe(true);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Failed to read silent SSO preference'),
+      storageError,
+    );
+    windowSpy.mockRestore();
+    warnSpy.mockRestore();
+  });
+
+  it('skips persisting silent SSO failures when storage is unavailable', async () => {
+    mockConfig({ keycloak: { enabled: false } });
+    const module = await import('./authProvider');
+    const windowSpy = vi.spyOn(browserUtils, 'getBrowserWindow').mockReturnValue({} as Window);
+
+    module.__testing.disableSilentSso();
+
+    expect(module.__testing.isSilentSsoEnabled()).toBe(false);
+    expect(ensureBrowserWindow().localStorage.getItem(SILENT_SSO_STORAGE_KEY)).toBeNull();
+    windowSpy.mockRestore();
+  });
+
+  it('warns when persisting the silent SSO preference throws', async () => {
+    mockConfig({ keycloak: { enabled: false } });
+    const module = await import('./authProvider');
+    const storageError = new Error('denied');
+    const storage = {
+      setItem: vi.fn(() => {
+        throw storageError;
+      }),
+      removeItem: vi.fn(() => {
+        throw storageError;
+      }),
+    } as unknown as Storage;
+    const windowSpy = vi.spyOn(browserUtils, 'getBrowserWindow').mockReturnValue({
+      localStorage: storage,
+    } as Window);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    module.__testing.disableSilentSso();
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Failed to persist silent SSO preference'),
+      storageError,
+    );
+    windowSpy.mockRestore();
+    warnSpy.mockRestore();
+  });
+
+  it('returns cached groups without reloading the user profile', async () => {
+    mockConfig({
+      keycloak: {
+        enabled: true,
+        url: 'https://keycloak.example.com',
+        realm: 'demo',
+        client_id: 'argo',
+        privileged_groups: ['admins'],
+      },
+    });
+    keycloakMock.init.mockResolvedValue(true);
+    const provider = await loadAuthProvider();
+    await provider.getPermissions();
+    keycloakMock.loadUserInfo.mockReset();
+    keycloakMock.loadUserInfo.mockImplementation(() => {
+      throw new Error('should not reload');
+    });
+
+    const permissions = (await provider.getPermissions()) as { groups: string[] };
+
+    expect(keycloakMock.loadUserInfo).not.toHaveBeenCalled();
+    expect(permissions.groups).toContain('admins');
+  });
+
+  it('falls back to token groups when user info cannot be loaded', async () => {
+    mockConfig({
+      keycloak: {
+        enabled: true,
+        url: 'https://keycloak.example.com',
+        realm: 'demo',
+        client_id: 'argo',
+        privileged_groups: ['admins'],
+      },
+    });
+    keycloakMock.init.mockResolvedValue(true);
+    keycloakMock.tokenParsed.groups = ['token-only'];
+    keycloakMock.loadUserInfo.mockRejectedValueOnce(new Error('userinfo failed'));
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const provider = await loadAuthProvider();
+
+    const permissions = (await provider.getPermissions()) as { groups: string[] };
+
+    expect(permissions.groups).toEqual(['token-only']);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Failed to load user info'),
+      expect.any(Error),
+    );
+    warnSpy.mockRestore();
+  });
+
+  it('resolves app URLs when the browser origin is unavailable', async () => {
+    const module = await import('./authProvider');
+    const windowSpy = vi.spyOn(browserUtils, 'getBrowserWindow').mockReturnValue(undefined as unknown as Window);
+
+    expect(module.__testing.resolveAppUrl('/foo')).toBe('/foo');
+
+    windowSpy.mockRestore();
+  });
+
+  it('resolves redirect URIs when the browser origin is unavailable', async () => {
+    const module = await import('./authProvider');
+    const windowSpy = vi.spyOn(browserUtils, 'getBrowserWindow').mockReturnValue(undefined as unknown as Window);
+
+    expect(module.__testing.resolveRedirectUri()).toBe('/');
+    expect(module.__testing.resolveRedirectUri('history')).toBe('/history');
+
+    windowSpy.mockRestore();
+  });
+
+  it('propagates configuration endpoint HTTP errors', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ error: 'boom' }), {
+        status: 502,
+        headers: { 'Content-Type': 'application/json' },
       }),
     );
+    const provider = await loadAuthProvider();
+
+    await expect(provider.checkAuth({})).rejects.toMatchObject({ status: 502 });
+  });
+
+  it('wraps configuration endpoint network failures', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'));
+    const provider = await loadAuthProvider();
+
+    await expect(provider.checkAuth({})).rejects.toMatchObject({ status: 0 });
+  });
+
+  it('throws when required Keycloak configuration fields are missing', async () => {
+    mockConfig({
+      keycloak: {
+        enabled: true,
+        url: 'https://keycloak.example.com',
+        realm: 'demo',
+      },
+    });
+    const provider = await loadAuthProvider();
+
+    await expect(provider.checkAuth({})).rejects.toMatchObject({ status: 500 });
+  });
+
+  it('warns when the token refresh interval cannot be scheduled', async () => {
+    mockConfig({
+      keycloak: {
+        enabled: true,
+        url: 'https://keycloak.example.com',
+        realm: 'demo',
+        client_id: 'argo',
+        privileged_groups: [],
+      },
+    });
+    keycloakMock.init.mockResolvedValue(true);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const windowSpy = vi.spyOn(browserUtils, 'getBrowserWindow').mockReturnValue(undefined as unknown as Window);
+    const provider = await loadAuthProvider();
+
+    await provider.checkAuth({});
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[auth] Unable to schedule token refresh because window is unavailable.',
+    );
+    windowSpy.mockRestore();
+    warnSpy.mockRestore();
+  });
+
+  it('clears the cached token when scheduled refresh fails', async () => {
+    const module = await import('./authProvider');
+    module.__testing.setCachedUserGroups(['alpha']);
+    setAccessToken('token');
+    const refreshError = new Error('refresh failed');
+    keycloakMock.updateToken.mockRejectedValueOnce(refreshError);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const windowSpy = vi.spyOn(browserUtils, 'getBrowserWindow').mockReturnValue({
+      setInterval(handler: () => Promise<void>) {
+        handler();
+        return 42 as unknown as number;
+      },
+      clearInterval: vi.fn(),
+    } as Window);
+
+    module.__testing.scheduleTokenRefresh(keycloakMock as never);
+    await Promise.resolve();
+
+    expect(getAccessToken()).toBeNull();
+    expect(module.__testing.getCachedUserGroups()).toBeNull();
+    expect(errorSpy).toHaveBeenCalledWith('[auth] Failed to refresh token', refreshError);
+    windowSpy.mockRestore();
+    errorSpy.mockRestore();
+    module.__testing.reset();
+  });
+
+  it('propagates interactive init failures after silent SSO is disabled', async () => {
+    mockConfig({
+      keycloak: {
+        enabled: true,
+        url: 'https://keycloak.example.com',
+        realm: 'demo',
+        client_id: 'argo',
+        privileged_groups: [],
+      },
+    });
+    const module = await import('./authProvider');
+    module.__testing.disableSilentSso();
+    const interactiveError = new Error('interactive failed');
+    keycloakMock.init.mockRejectedValueOnce(interactiveError);
+    const provider = await loadAuthProvider();
+
+    await expect(provider.checkAuth({})).rejects.toMatchObject({ status: 500 });
+  });
+
+  it('short-circuits login when Keycloak is disabled', async () => {
+    mockConfig({ keycloak: { enabled: false } });
+    const provider = await loadAuthProvider();
+    setAccessToken('token');
+
+    await expect(provider.login({ redirectTo: '/history' })).resolves.toBeUndefined();
+
+    expect(keycloakMock.login).not.toHaveBeenCalled();
+    expect(getAccessToken()).toBeNull();
   });
 });

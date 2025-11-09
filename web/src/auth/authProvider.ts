@@ -481,4 +481,22 @@ export const __testing = {
   reloadSilentPreference() {
     silentSsoSupported = !readSilentSsoPreference();
   },
+  /** Returns the current silent SSO flag for white-box assertions. */
+  isSilentSsoEnabled() {
+    return silentSsoSupported;
+  },
+  /** Allows tests to seed cached user groups without hitting Keycloak. */
+  setCachedUserGroups(groups: string[] | null) {
+    updateUserGroupsCache(groups ?? undefined);
+  },
+  /** Provides a snapshot of the cached groups for validation in tests. */
+  getCachedUserGroups() {
+    return cachedUserGroups ? [...cachedUserGroups] : null;
+  },
+  /** Exposes app URL resolution so tests can cover browser-less environments. */
+  resolveAppUrl,
+  /** Exposes redirect resolution for direct verification in tests. */
+  resolveRedirectUri,
+  /** Exposes the token refresh scheduler for deterministic timer testing. */
+  scheduleTokenRefresh,
 };
