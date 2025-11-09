@@ -132,7 +132,7 @@ const createTask = async (params: CreateParams): Promise<CreateResult<TaskStatus
     body: payload,
   });
 
-  if (!data || !data.id) {
+  if (!data?.id) {
     throw new HttpError('Task creation did not return an identifier', status, data);
   }
 

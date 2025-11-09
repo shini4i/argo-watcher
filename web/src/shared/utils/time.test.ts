@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { formatDateTime, formatDuration, formatRelativeTime, relativeTimestamp } from './time';
 
 /** Verifies the shared time formatting helpers cover edge cases and timer lifecycle management. */

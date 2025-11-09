@@ -16,10 +16,13 @@ const sanitizeCustomSocketBase = (rawBase: string, location?: Location | null): 
   }
 
   try {
-    const candidate =
-      trimmed.startsWith('http') || trimmed.startsWith('ws')
-        ? new URL(trimmed)
-        : new URL(trimmed.startsWith('/') ? trimmed : `/${trimmed}`, location?.origin ?? 'http://localhost');
+    let candidate: URL;
+    if (trimmed.startsWith('http') || trimmed.startsWith('ws')) {
+      candidate = new URL(trimmed);
+    } else {
+      const relativePath = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+      candidate = new URL(relativePath, location?.origin ?? 'http://localhost');
+    }
 
     const isHttp = candidate.protocol === 'http:' || candidate.protocol === 'https:';
     const isWs = candidate.protocol === 'ws:' || candidate.protocol === 'wss:';
@@ -48,8 +51,15 @@ const toSocketUrl = (url: URL): string => {
   const normalizedPath = url.pathname.endsWith('/ws')
     ? url.pathname
     : `${url.pathname.replace(/\/$/, '') || ''}/ws`;
-  const protocol =
-    url.protocol === 'https:' ? 'wss:' : url.protocol === 'http:' ? 'ws:' : (url.protocol as 'ws:' | 'wss:');
+
+  let protocol: 'ws:' | 'wss:';
+  if (url.protocol === 'https:') {
+    protocol = 'wss:';
+  } else if (url.protocol === 'http:') {
+    protocol = 'ws:';
+  } else {
+    protocol = url.protocol as 'ws:' | 'wss:';
+  }
   return `${protocol}//${url.host}${normalizedPath}`;
 };
 
