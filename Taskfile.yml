@@ -158,6 +158,20 @@ tasks:
       - docker compose down
       - echo "===> Done"
 
+  e2e:
+    desc: Run Playwright-based frontend end-to-end tests (starts docker compose unless skipped)
+    cmds:
+      - |
+        if [ "${E2E_SKIP_BOOTSTRAP}" != "1" ]; then
+          task bootstrap
+        fi
+      - |
+        cd web && npm run test:e2e
+      - |
+        if [ "${E2E_KEEP_STACK}" != "1" ] && [ "${E2E_SKIP_BOOTSTRAP}" != "1" ]; then
+          task teardown
+        fi
+
   ci-migrate:
     desc: Run migrations in CI
     cmds:

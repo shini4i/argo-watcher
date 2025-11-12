@@ -8,8 +8,9 @@ db/data
 # static directory artifacts (compiled frontend assets and vendored modules)
 static/               # mkdocs or other asset dumps
 web/dist/             # Vite build output for React Admin
-**/node_modules/      # installed dependencies
+**/node_modules/
 .pnpm-store/          # pnpm shared store created during installs
+web/e2e/artifacts/    # Playwright screenshots/trace output
 
 # package manager locks (pnpm) – generated locally but not used in this workspace
 **/pnpm-lock.yaml
@@ -26,6 +27,7 @@ web/dist/             # Vite build output for React Admin
 # code coverage files/directories created by go/vitest coverage jobs
 **/coverage.*
 **/coverage/
+*.tsbuildinfo
 
 # Taskfile cache (genny metadata)
 .task/

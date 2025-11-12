@@ -99,6 +99,8 @@ task build-ui                  # builds the Vite bundle into web/dist
 The Go server always serves the compiled assets from `STATIC_FILES_PATH`
 (defaults to `static`). Override this path if you publish the bundle elsewhere.
 
+For cross-stack verification, a Playwright-based end-to-end suite lives under `web/e2e`. See [docs/e2e-testing.md](docs/e2e-testing.md) for setup details.
+
 ## Contributing
 
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
