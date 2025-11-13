@@ -14,9 +14,9 @@ test.describe('Recent tasks list', () => {
 
     await expect(page).toHaveTitle(/Recent Tasks — Argo Watcher/);
 
-    const grid = page.getByRole('grid');
-    await expect(grid).toBeVisible({ timeout: 15000 });
-    const tableBody = grid.getByRole('rowgroup').nth(1);
+    const table = page.getByRole('table');
+    await expect(table).toBeVisible({ timeout: 15000 });
+    const tableBody = table.getByRole('rowgroup').nth(1);
     await expect(tableBody.getByRole('row')).toHaveCount(tasks.length, { timeout: 15000 });
 
     for (const task of tasks) {

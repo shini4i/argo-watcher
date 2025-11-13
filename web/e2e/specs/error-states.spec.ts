@@ -21,11 +21,9 @@ test.describe('Error and empty states', () => {
     await page.route('**/api/v1/config', handler);
 
     await page.goto('/');
+    await page.getByRole('button', { name: /open configuration drawer/i }).click();
 
-    const alert = page.getByRole('alert').filter({
-      hasText: /Unable to reach the Argo Watcher API/i,
-    });
-    await expect(alert).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText(/Unable to reach the Argo Watcher API/i)).toBeVisible({ timeout: 15000 });
     await captureScreenshot(page, testInfo, 'config-fetch-error');
 
     await page.unroute('**/api/v1/config', handler);

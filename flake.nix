@@ -44,6 +44,7 @@
             nodejs_20
             pnpm
             corepack
+            playwright
           ]) ++ [ viteShim ];
       in
       {

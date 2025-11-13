@@ -9,6 +9,42 @@ const webBaseUrl = process.env.WEB_BASE_URL ?? 'http://localhost:3100';
 const apiBaseUrl = process.env.API_BASE_URL ?? 'http://localhost:8080';
 
 const artifactsDir = path.join(__dirname, 'e2e', 'artifacts');
+const requestedBrowsers = (process.env.PLAYWRIGHT_BROWSERS ?? 'chromium')
+  .split(',')
+  .map(browser => browser.trim().toLowerCase())
+  .filter(Boolean);
+
+const deviceMap: Record<string, typeof devices['Desktop Chrome']> = {
+  chromium: devices['Desktop Chrome'],
+  firefox: devices['Desktop Firefox'],
+  webkit: devices['Desktop Safari'],
+};
+
+const resolvedProjects = requestedBrowsers
+  .map(name => {
+    const device = deviceMap[name];
+    if (!device) {
+      return null;
+    }
+    return {
+      name,
+      use: {
+        ...device,
+      },
+    };
+  })
+  .filter((project): project is NonNullable<typeof project> => Boolean(project));
+
+const projects = resolvedProjects.length
+  ? resolvedProjects
+  : [
+      {
+        name: 'chromium',
+        use: {
+          ...devices['Desktop Chrome'],
+        },
+      },
+    ];
 
 export default defineConfig({
   testDir: path.join(__dirname, 'e2e', 'specs'),
@@ -39,12 +75,5 @@ export default defineConfig({
   },
   globalSetup: path.join(__dirname, 'e2e', 'global.setup.ts'),
   globalTeardown: path.join(__dirname, 'e2e', 'global.teardown.ts'),
-  projects: [
-    {
-      name: 'chromium',
-      use: {
-        ...devices['Desktop Chrome'],
-      },
-    },
-  ],
+  projects,
 });
