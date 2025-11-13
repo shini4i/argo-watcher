@@ -84,23 +84,6 @@ graph TD
 
 For more detailed information on configuration, API usage, and advanced features, please visit our documentation at [argo-watcher.readthedocs.io](https://argo-watcher.readthedocs.io).
 
-## Frontend Development
-
-The `web/` directory now contains the React-admin UI powered by Vite.
-Use the Taskfile helpers to install dependencies, lint, test, and build the bundle:
-
-```bash
-task install-web-dependencies  # npm ci in web/
-task lint-web                  # eslint pass for the React-admin codebase
-task test-web                  # vitest unit tests (jsdom)
-task build-ui                  # builds the Vite bundle into web/dist
-```
-
-The Go server always serves the compiled assets from `STATIC_FILES_PATH`
-(defaults to `static`). Override this path if you publish the bundle elsewhere.
-
-For cross-stack verification, a Playwright-based end-to-end suite lives under `web/e2e`. See [docs/e2e-testing.md](docs/e2e-testing.md) for setup details.
-
 ## Contributing
 
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
