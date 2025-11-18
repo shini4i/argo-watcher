@@ -46,6 +46,9 @@ jobs:
       - name: Build argo-watcher UI
         run: task build-ui
 
+      - name: Clean frontend install artifacts
+        run: rm -rf web/node_modules
+
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3.4.0
 
