@@ -3,7 +3,8 @@ import { Button, FormControlLabel, Menu, MenuItem, Stack, Switch } from '@mui/ma
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import { useListContext, useNotify } from 'react-admin';
 import type { Task } from '../../../data/types';
-import { exportAsCsv, exportAsJson, exportAsXlsx, prepareExportRows } from '../exportUtils';
+import type { HistoryExportFormat } from '../exportService';
+import { requestHistoryExport } from '../exportService';
 
 /** Generates a timestamped filename prefix for exported history datasets. */
 const timestampFilename = () => {
@@ -12,54 +13,68 @@ const timestampFilename = () => {
   return `history-tasks-${timestamp}`;
 };
 
+/** Creates a temporary link to download a blob with the provided filename. */
+const triggerDownload = (blob: Blob, filename: string) => {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+};
+
 /**
- * Export menu for history tasks allowing CSV/JSON/XLSX downloads with optional anonymisation.
+ * Export menu for history tasks allowing CSV/JSON downloads with optional anonymisation.
  */
 interface HistoryExportMenuProps {
   anonymizeForced: boolean;
   disabled?: boolean;
 }
 
-/** Dropdown export menu that offers CSV/JSON/XLSX downloads for the history list. */
+/** Dropdown export menu that offers CSV/JSON downloads for the history list. */
 export const HistoryExportMenu = ({ anonymizeForced, disabled = false }: HistoryExportMenuProps) => {
   const notify = useNotify();
-  const { data } = useListContext<Task>();
+  const { data, filterValues = {} } = useListContext<Task>();
   const records = useMemo(() => (Array.isArray(data) ? data : []), [data]);
 
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [anonymize, setAnonymize] = useState<boolean>(true);
+  const [exporting, setExporting] = useState(false);
 
   const open = Boolean(anchorEl);
   const handleOpen = (event: React.MouseEvent<HTMLButtonElement>) => {
-    if (disabled || records.length === 0) {
+    if (disabled || exporting || records.length === 0) {
       return;
     }
     setAnchorEl(event.currentTarget);
   };
   const handleClose = () => setAnchorEl(null);
 
-  const runExport = (format: 'json' | 'csv' | 'xlsx') => {
+  const resolvedFilters = useMemo(() => {
+    const start = typeof filterValues.start === 'number' ? filterValues.start : undefined;
+    const end = typeof filterValues.end === 'number' ? filterValues.end : undefined;
+    const app = typeof filterValues.app === 'string' ? filterValues.app : undefined;
+    return { start, end, app };
+  }, [filterValues]);
+
+  const runExport = async (format: HistoryExportFormat) => {
+    setExporting(true);
     try {
-      const rows = prepareExportRows(records, anonymizeForced ? true : anonymize);
-      const filename = timestampFilename();
-
-      switch (format) {
-        case 'json':
-          exportAsJson(rows, filename);
-          break;
-        case 'csv':
-          exportAsCsv(rows, filename);
-          break;
-        case 'xlsx':
-          exportAsXlsx(rows, filename);
-          break;
-      }
-
+      const blob = await requestHistoryExport({
+        format,
+        anonymize: anonymizeForced ? true : anonymize,
+        filters: resolvedFilters,
+      });
+      const filename = `${timestampFilename()}.${format}`;
+      triggerDownload(blob, filename);
       notify('Export completed', { type: 'info' });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unexpected export failure';
       notify(message, { type: 'warning' });
     } finally {
+      setExporting(false);
       handleClose();
     }
   };
@@ -76,7 +91,7 @@ export const HistoryExportMenu = ({ anonymizeForced, disabled = false }: History
         variant="contained"
         startIcon={<FileDownloadIcon />}
         onClick={handleOpen}
-        disabled={records.length === 0 || disabled}
+        disabled={records.length === 0 || disabled || exporting}
       >
         Export
       </Button>
@@ -94,7 +109,6 @@ export const HistoryExportMenu = ({ anonymizeForced, disabled = false }: History
       <Menu anchorEl={anchorEl} open={open} onClose={handleClose}>
         <MenuItem onClick={() => runExport('json')}>Download JSON</MenuItem>
         <MenuItem onClick={() => runExport('csv')}>Download CSV</MenuItem>
-        <MenuItem onClick={() => runExport('xlsx')}>Download XLSX</MenuItem>
       </Menu>
     </Stack>
   );

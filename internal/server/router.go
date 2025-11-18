@@ -20,6 +20,7 @@ import (
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
 	"github.com/shini4i/argo-watcher/internal/argocd"
 	"github.com/shini4i/argo-watcher/internal/auth"
+	"github.com/shini4i/argo-watcher/internal/export/history"
 	"github.com/shini4i/argo-watcher/internal/models"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
@@ -36,6 +37,7 @@ const (
 	deployLockEndpoint  = "/deploy-lock"
 	unauthorizedMessage = "You are not authorized to perform this action"
 	keycloakHeader      = "Keycloak-Authorization"
+	historyExportBatch  = 1000
 )
 
 // Env reference: https://www.alexedwards.net/blog/organising-database-access
@@ -86,6 +88,7 @@ func (env *Env) CreateRouter() *gin.Engine {
 		v1.POST("/tasks", env.addTask)
 		v1.GET("/tasks", env.getState)
 		v1.GET("/tasks/:id", env.getTaskStatus)
+		v1.GET("/tasks/export", env.exportTasks)
 		v1.GET("/version", env.getVersion)
 		v1.GET("/config", env.getConfig)
 		v1.POST(deployLockEndpoint, env.SetDeployLock)
@@ -241,6 +244,117 @@ func (env *Env) getState(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, env.argo.GetTasks(startTime, endTime, app, limit, offset))
+}
+
+// exportTasks godoc
+// @Summary Export historical tasks
+// @Description Streams the filtered task history as CSV or JSON.
+// @Tags backend, frontend
+// @Produce text/csv
+// @Produce application/json
+// @Param format query string false "Export format (csv or json)" Enums(csv,json)
+// @Param anonymize query bool false "Remove author and status_reason columns" default(true)
+// @Param from_timestamp query int false "Start timestamp (seconds since epoch)"
+// @Param to_timestamp query int false "End timestamp (seconds since epoch)"
+// @Param app query string false "Filter by application name"
+// @Success 200
+// @Failure 400 {object} models.TaskStatus
+// @Failure 401 {object} models.TaskStatus
+// @Failure 503 {object} models.TaskStatus
+// @Router /api/v1/tasks/export [get]
+func (env *Env) exportTasks(c *gin.Context) {
+	format := strings.ToLower(c.DefaultQuery("format", "csv"))
+	if format != "csv" && format != "json" {
+		c.JSON(http.StatusBadRequest, models.TaskStatus{
+			Status: "unsupported export format",
+		})
+		return
+	}
+
+	anonymize, err := parseBoolOrDefault(c.Query("anonymize"), true)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, models.TaskStatus{
+			Status: fmt.Sprintf("invalid anonymize flag: %v", err),
+		})
+		return
+	}
+
+	now := time.Now().UTC()
+	defaultFrom := now.Add(-24 * time.Hour).Unix()
+
+	startTime, err := parseTimestampOrDefault(c.Query("from_timestamp"), float64(defaultFrom))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, models.TaskStatus{
+			Status: fmt.Sprintf("invalid from_timestamp: %v", err),
+		})
+		return
+	}
+
+	endTime, err := parseTimestampOrDefault(c.Query("to_timestamp"), float64(now.Unix()))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, models.TaskStatus{
+			Status: fmt.Sprintf("invalid to_timestamp: %v", err),
+		})
+		return
+	}
+
+	if endTime < startTime {
+		c.JSON(http.StatusBadRequest, models.TaskStatus{
+			Status: "to_timestamp must be greater than or equal to from_timestamp",
+		})
+		return
+	}
+
+	if env.config.Keycloak.Enabled {
+		valid, validationErr := env.validateToken(c, keycloakHeader)
+		if validationErr != nil {
+			log.Error().Err(validationErr).Msg("failed to validate export token")
+			c.JSON(http.StatusInternalServerError, models.TaskStatus{
+				Status: "validation process failed",
+			})
+			return
+		}
+		if !valid {
+			c.JSON(http.StatusUnauthorized, models.TaskStatus{
+				Status: unauthorizedMessage,
+			})
+			return
+		}
+	}
+
+	var (
+		writer      history.RowWriter
+		contentType string
+	)
+
+	switch format {
+	case "json":
+		writer = history.NewJSONWriter(c.Writer)
+		contentType = "application/json"
+	default:
+		writer = history.NewCSVWriter(c.Writer, history.ColumnsFor(anonymize))
+		contentType = "text/csv"
+	}
+
+	defer func() {
+		if err := writer.Close(); err != nil {
+			log.Error().Err(err).Msg("failed to flush export writer")
+		}
+	}()
+
+	filename := fmt.Sprintf("history-tasks-%s.%s", now.Format("2006-01-02-15-04-05"), format)
+	c.Header("Content-Type", contentType)
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
+	c.Status(http.StatusOK)
+
+	if err := env.streamExportRows(startTime, endTime, c.Query("app"), anonymize, writer); err != nil {
+		log.Error().Err(err).Msg("failed to stream export rows")
+		if !c.Writer.Written() {
+			c.JSON(http.StatusServiceUnavailable, models.TaskStatus{
+				Status: "failed to stream export rows",
+			})
+		}
+	}
 }
 
 // getTaskStatus godoc
@@ -434,6 +548,47 @@ func (env *Env) validateAllowedStrategy(c *gin.Context, allowedStrategyHeader st
 	}
 
 	return false, lastErr
+}
+
+// streamExportRows fetches tasks in batches and streams them via the provided writer.
+func (env *Env) streamExportRows(start float64, end float64, app string, anonymize bool, writer history.RowWriter) error {
+	if env.argo == nil || env.argo.State == nil {
+		return fmt.Errorf("task repository is not initialised")
+	}
+
+	offset := 0
+	for {
+		tasks, _ := env.argo.State.GetTasks(start, end, app, historyExportBatch, offset)
+		if len(tasks) == 0 {
+			return nil
+		}
+
+		for _, task := range tasks {
+			if err := writer.WriteRow(history.SanitizeTask(task, anonymize)); err != nil {
+				return err
+			}
+		}
+
+		offset += len(tasks)
+	}
+}
+
+func parseTimestampOrDefault(value string, fallback float64) (float64, error) {
+	if value == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return 0, err
+	}
+	return parsed, nil
+}
+
+func parseBoolOrDefault(value string, fallback bool) (bool, error) {
+	if value == "" {
+		return fallback, nil
+	}
+	return strconv.ParseBool(value)
 }
 
 // handleWebSocketConnection accepts a WebSocket connection, adds it to a slice,

@@ -1,19 +1,22 @@
 package server
 
 import (
+	"encoding/csv"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/coder/websocket"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/shini4i/argo-watcher/internal/argocd"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
+	"github.com/shini4i/argo-watcher/internal/argocd"
 	"github.com/shini4i/argo-watcher/internal/auth"
+	"github.com/shini4i/argo-watcher/internal/models"
 )
 
 func TestGetVersion(t *testing.T) {
@@ -132,4 +135,118 @@ func TestNewEnv(t *testing.T) {
 
 	assert.Equal(t, expectedStrategies, env.strategies)
 	assert.NotNil(t, env.authenticator)
+}
+
+func TestExportTasksCSV(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repository := &fakeTaskRepository{
+		tasks: []models.Task{
+			{
+				Id:      "1",
+				App:     "demo",
+				Project: "proj",
+				Status:  "ok",
+				Images: []models.Image{
+					{Image: "svc", Tag: "1"},
+				},
+				Author:       "alice",
+				StatusReason: "done",
+			},
+		},
+	}
+
+	env := &Env{
+		config: &config.ServerConfig{},
+		argo: &argocd.Argo{
+			State: repository,
+		},
+	}
+
+	router := gin.Default()
+	router.GET("/api/v1/tasks/export", env.exportTasks)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks/export?format=csv&anonymize=false", nil)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	assert.Equal(t, http.StatusOK, resp.Code)
+	assert.Equal(t, "text/csv", resp.Header().Get("Content-Type"))
+	reader := csv.NewReader(strings.NewReader(resp.Body.String()))
+	rows, err := reader.ReadAll()
+	assert.NoError(t, err)
+	assert.Len(t, rows, 2)
+	assert.Equal(t, "demo", rows[1][1])
+	assert.Equal(t, "alice", rows[1][7])
+}
+
+func TestExportTasksRequiresKeycloak(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repository := &fakeTaskRepository{}
+	env := &Env{
+		config: &config.ServerConfig{
+			Keycloak: config.KeycloakConfig{
+				Enabled: true,
+			},
+		},
+		argo: &argocd.Argo{
+			State: repository,
+		},
+		strategies: map[string]auth.AuthStrategy{
+			keycloakHeader: fakeStrategy{valid: false},
+		},
+	}
+
+	router := gin.Default()
+	router.GET("/api/v1/tasks/export", env.exportTasks)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks/export", nil)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	assert.Equal(t, http.StatusUnauthorized, resp.Code)
+	assert.Contains(t, resp.Body.String(), unauthorizedMessage)
+}
+
+type fakeTaskRepository struct {
+	tasks []models.Task
+}
+
+func (f *fakeTaskRepository) Connect(_ *config.ServerConfig) error             { return nil }
+func (f *fakeTaskRepository) AddTask(task models.Task) (*models.Task, error)   { return &task, nil }
+func (f *fakeTaskRepository) GetTask(_ string) (*models.Task, error)           { return nil, nil }
+func (f *fakeTaskRepository) SetTaskStatus(_ string, _ string, _ string) error { return nil }
+func (f *fakeTaskRepository) Check() bool                                      { return true }
+func (f *fakeTaskRepository) ProcessObsoleteTasks(_ uint)                      {}
+func (f *fakeTaskRepository) GetTasks(_ float64, _ float64, app string, limit, offset int) ([]models.Task, int64) {
+	filtered := f.tasks
+	if app != "" {
+		filtered = make([]models.Task, 0, len(f.tasks))
+		for _, task := range f.tasks {
+			if task.App == app {
+				filtered = append(filtered, task)
+			}
+		}
+	}
+
+	total := len(filtered)
+	if offset >= total {
+		return []models.Task{}, int64(total)
+	}
+
+	end := offset + limit
+	if limit <= 0 || end > total {
+		end = total
+	}
+
+	return filtered[offset:end], int64(total)
+}
+
+type fakeStrategy struct {
+	valid bool
+	err   error
+}
+
+func (f fakeStrategy) Validate(string) (bool, error) {
+	return f.valid, f.err
 }
