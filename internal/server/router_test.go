@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -18,6 +19,8 @@ import (
 	"github.com/shini4i/argo-watcher/internal/auth"
 	"github.com/shini4i/argo-watcher/internal/models"
 )
+
+const exportEndpoint = "/api/v1/tasks/export"
 
 func TestGetVersion(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -137,6 +140,7 @@ func TestNewEnv(t *testing.T) {
 	assert.NotNil(t, env.authenticator)
 }
 
+// TestExportTasksCSV ensures CSV exports stream the expected rows and headers.
 func TestExportTasksCSV(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repository := &fakeTaskRepository{
@@ -163,20 +167,90 @@ func TestExportTasksCSV(t *testing.T) {
 	}
 
 	router := gin.Default()
-	router.GET("/api/v1/tasks/export", env.exportTasks)
+	router.GET(exportEndpoint, env.exportTasks)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks/export?format=csv&anonymize=false", nil)
+	req := httptest.NewRequest(http.MethodGet, exportEndpoint+"?format=csv&anonymize=false", nil)
 	resp := httptest.NewRecorder()
 	router.ServeHTTP(resp, req)
 
 	assert.Equal(t, http.StatusOK, resp.Code)
 	assert.Equal(t, "text/csv", resp.Header().Get("Content-Type"))
+	disposition := resp.Header().Get("Content-Disposition")
+	assert.Contains(t, disposition, "attachment; filename=history-tasks-")
+	assert.True(t, strings.HasSuffix(disposition, ".csv"))
 	reader := csv.NewReader(strings.NewReader(resp.Body.String()))
 	rows, err := reader.ReadAll()
 	assert.NoError(t, err)
 	assert.Len(t, rows, 2)
 	assert.Equal(t, "demo", rows[1][1])
 	assert.Equal(t, "alice", rows[1][7])
+}
+
+// TestExportTasksJSONHeaders verifies JSON exports respond with correct metadata.
+func TestExportTasksJSONHeaders(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repository := &fakeTaskRepository{
+		tasks: []models.Task{
+			{
+				Id:      "1",
+				App:     "demo",
+				Project: "proj",
+				Status:  "ok",
+				Images: []models.Image{
+					{Image: "svc", Tag: "1"},
+				},
+				Author:       "alice",
+				StatusReason: "done",
+			},
+		},
+	}
+
+	env := &Env{
+		config: &config.ServerConfig{},
+		argo: &argocd.Argo{
+			State: repository,
+		},
+	}
+
+	router := gin.Default()
+	router.GET(exportEndpoint, env.exportTasks)
+
+	req := httptest.NewRequest(http.MethodGet, exportEndpoint+"?format=json", nil)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	assert.Equal(t, http.StatusOK, resp.Code)
+	assert.Equal(t, "application/json", resp.Header().Get("Content-Type"))
+	disposition := resp.Header().Get("Content-Disposition")
+	assert.Contains(t, disposition, "attachment; filename=history-tasks-")
+	assert.True(t, strings.HasSuffix(disposition, ".json"))
+
+	var payload []map[string]any
+	err := json.Unmarshal(resp.Body.Bytes(), &payload)
+	assert.NoError(t, err)
+	assert.Len(t, payload, 1)
+	assert.Equal(t, "demo", payload[0]["app"])
+}
+
+// TestExportTasksRejectsInvalidFormat ensures unsupported formats are rejected.
+func TestExportTasksRejectsInvalidFormat(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	env := &Env{
+		config: &config.ServerConfig{},
+		argo: &argocd.Argo{
+			State: &fakeTaskRepository{},
+		},
+	}
+
+	router := gin.Default()
+	router.GET(exportEndpoint, env.exportTasks)
+
+	req := httptest.NewRequest(http.MethodGet, exportEndpoint+"?format=xml", nil)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	assert.Equal(t, http.StatusBadRequest, resp.Code)
+	assert.Contains(t, resp.Body.String(), "unsupported export format")
 }
 
 func TestExportTasksRequiresKeycloak(t *testing.T) {
@@ -198,9 +272,9 @@ func TestExportTasksRequiresKeycloak(t *testing.T) {
 	}
 
 	router := gin.Default()
-	router.GET("/api/v1/tasks/export", env.exportTasks)
+	router.GET(exportEndpoint, env.exportTasks)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks/export", nil)
+	req := httptest.NewRequest(http.MethodGet, exportEndpoint, nil)
 	resp := httptest.NewRecorder()
 	router.ServeHTTP(resp, req)
 
