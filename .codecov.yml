@@ -1,3 +1,4 @@
 ignore:
   - "pkg/updater/interfaces.go"
   - "cmd/mock/main.go"
+  - "web/e2e/"
