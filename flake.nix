@@ -12,7 +12,7 @@
         };
 
         goToolchain = with pkgs; [
-          go_1_24
+          go_1_25
           gopls
           gotools
           gosec
