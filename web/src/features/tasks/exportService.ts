@@ -59,7 +59,6 @@ export const requestHistoryExport = async ({ format, anonymize, filters }: Histo
   const token = getAccessToken();
   const headers: Record<string, string> = {};
   if (token) {
-    headers.Authorization = `Bearer ${token}`;
     headers['Keycloak-Authorization'] = `Bearer ${token}`;
   }
 

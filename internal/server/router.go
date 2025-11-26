@@ -570,6 +570,10 @@ func (env *Env) streamExportRows(start float64, end float64, app string, anonymi
 		}
 
 		offset += len(tasks)
+
+		if len(tasks) < historyExportBatch {
+			return nil
+		}
 	}
 }
 
