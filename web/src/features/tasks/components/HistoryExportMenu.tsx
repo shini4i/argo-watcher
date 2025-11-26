@@ -45,7 +45,7 @@ export const HistoryExportMenu = ({ anonymizeForced, disabled = false }: History
 
   const open = Boolean(anchorEl);
   const handleOpen = (event: React.MouseEvent<HTMLButtonElement>) => {
-    if (disabled || exporting || records.length === 0) {
+    if (disabled || exporting) {
       return;
     }
     setAnchorEl(event.currentTarget);
@@ -91,7 +91,7 @@ export const HistoryExportMenu = ({ anonymizeForced, disabled = false }: History
         variant="contained"
         startIcon={<FileDownloadIcon />}
         onClick={handleOpen}
-        disabled={records.length === 0 || disabled || exporting}
+        disabled={disabled || exporting}
       >
         Export
       </Button>

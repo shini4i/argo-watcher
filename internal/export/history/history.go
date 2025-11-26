@@ -54,7 +54,7 @@ func SanitizeTask(task models.Task, anonymize bool) Row {
 		columnID:      task.Id,
 		columnApp:     task.App,
 		columnProject: task.Project,
-		columnStatus:  defaultString(task.Status),
+		columnStatus:  task.Status,
 		columnCreated: task.Created,
 		columnUpdated: task.Updated,
 		columnImages:  joinImages(task.Images),
@@ -62,7 +62,7 @@ func SanitizeTask(task models.Task, anonymize bool) Row {
 
 	if !anonymize {
 		row[columnAuthor] = task.Author
-		row[columnStatusReason] = defaultString(task.StatusReason)
+		row[columnStatusReason] = task.StatusReason
 	}
 
 	return row
@@ -192,13 +192,6 @@ func joinImages(images []models.Image) string {
 	}
 
 	return strings.Join(parts, ", ")
-}
-
-func defaultString(value string) string {
-	if value == "" {
-		return ""
-	}
-	return value
 }
 
 func stringifyValue(value any) string {

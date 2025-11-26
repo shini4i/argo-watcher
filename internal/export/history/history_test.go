@@ -69,6 +69,13 @@ func TestJSONWriterEmpty(t *testing.T) {
 	require.Equal(t, "[]", buffer.String())
 }
 
+func TestJSONWriterWriteAfterClose(t *testing.T) {
+	buffer := new(bytes.Buffer)
+	writer := NewJSONWriter(buffer)
+	require.NoError(t, writer.Close())
+	require.Error(t, writer.WriteRow(Row{"id": "1"}))
+}
+
 func TestCSVWriter(t *testing.T) {
 	buffer := new(bytes.Buffer)
 	columns := ColumnsFor(false)
@@ -94,4 +101,11 @@ func TestCSVWriter(t *testing.T) {
 	require.Equal(t, columns, records[0])
 	require.Equal(t, "demo", records[1][1])
 	require.Equal(t, "svc:1.0", records[1][6])
+}
+
+func TestCSVWriterWriteAfterClose(t *testing.T) {
+	buffer := new(bytes.Buffer)
+	writer := NewCSVWriter(buffer, ColumnsFor(false))
+	require.NoError(t, writer.Close())
+	require.Error(t, writer.WriteRow(Row{"id": "1"}))
 }

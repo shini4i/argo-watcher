@@ -227,15 +227,52 @@ func (env *Env) addTask(c *gin.Context) {
 // @Success 200 {object} models.TasksResponse
 // @Router /api/v1/tasks [get]
 func (env *Env) getState(c *gin.Context) {
-	startTime, _ := strconv.ParseFloat(c.Query("from_timestamp"), 64)
-	endTime, _ := strconv.ParseFloat(c.Query("to_timestamp"), 64)
-	if endTime == 0 {
-		endTime = float64(time.Now().Unix())
+	startTime, err := strconv.ParseFloat(c.Query("from_timestamp"), 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, models.TaskStatus{
+			Status: fmt.Sprintf("invalid from_timestamp: %v", err),
+		})
+		return
 	}
+
+	endTimeParam := c.Query("to_timestamp")
+	endTime := float64(time.Now().Unix())
+	if endTimeParam != "" {
+		endTime, err = strconv.ParseFloat(endTimeParam, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, models.TaskStatus{
+				Status: fmt.Sprintf("invalid to_timestamp: %v", err),
+			})
+			return
+		}
+	}
+
 	app := c.Query("app")
 
-	limit, _ := strconv.Atoi(c.Query("limit"))
-	offset, _ := strconv.Atoi(c.Query("offset"))
+	limitParam := c.Query("limit")
+	limit := 0
+	if limitParam != "" {
+		limit, err = strconv.Atoi(limitParam)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, models.TaskStatus{
+				Status: fmt.Sprintf("invalid limit: %v", err),
+			})
+			return
+		}
+	}
+
+	offsetParam := c.Query("offset")
+	offset := 0
+	if offsetParam != "" {
+		offset, err = strconv.Atoi(offsetParam)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, models.TaskStatus{
+				Status: fmt.Sprintf("invalid offset: %v", err),
+			})
+			return
+		}
+	}
+
 	if limit < 0 {
 		limit = 0
 	}
@@ -263,78 +300,22 @@ func (env *Env) getState(c *gin.Context) {
 // @Failure 503 {object} models.TaskStatus
 // @Router /api/v1/tasks/export [get]
 func (env *Env) exportTasks(c *gin.Context) {
-	format := strings.ToLower(c.DefaultQuery("format", "csv"))
-	if format != "csv" && format != "json" {
-		c.JSON(http.StatusBadRequest, models.TaskStatus{
-			Status: "unsupported export format",
+	params, reqErr := env.parseExportParams(c)
+	if reqErr != nil {
+		c.JSON(reqErr.statusCode, models.TaskStatus{
+			Status: reqErr.message,
 		})
 		return
 	}
 
-	anonymize, err := parseBoolOrDefault(c.Query("anonymize"), true)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, models.TaskStatus{
-			Status: fmt.Sprintf("invalid anonymize flag: %v", err),
+	if reqErr = env.ensureExportAuthorized(c); reqErr != nil {
+		c.JSON(reqErr.statusCode, models.TaskStatus{
+			Status: reqErr.message,
 		})
 		return
 	}
 
-	now := time.Now().UTC()
-	defaultFrom := now.Add(-24 * time.Hour).Unix()
-
-	startTime, err := parseTimestampOrDefault(c.Query("from_timestamp"), float64(defaultFrom))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, models.TaskStatus{
-			Status: fmt.Sprintf("invalid from_timestamp: %v", err),
-		})
-		return
-	}
-
-	endTime, err := parseTimestampOrDefault(c.Query("to_timestamp"), float64(now.Unix()))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, models.TaskStatus{
-			Status: fmt.Sprintf("invalid to_timestamp: %v", err),
-		})
-		return
-	}
-
-	if endTime < startTime {
-		c.JSON(http.StatusBadRequest, models.TaskStatus{
-			Status: "to_timestamp must be greater than or equal to from_timestamp",
-		})
-		return
-	}
-
-	if env.config.Keycloak.Enabled {
-		valid, validationErr := env.validateToken(c, keycloakHeader)
-		if validationErr != nil {
-			log.Error().Err(validationErr).Msg("failed to validate export token")
-			c.JSON(http.StatusInternalServerError, models.TaskStatus{
-				Status: "validation process failed",
-			})
-			return
-		}
-		if !valid {
-			c.JSON(http.StatusUnauthorized, models.TaskStatus{
-				Status: unauthorizedMessage,
-			})
-			return
-		}
-	}
-
-	var (
-		writer      history.RowWriter
-		contentType string
-	)
-
-	switch format {
-	case "json":
-		writer = history.NewJSONWriter(c.Writer)
-		contentType = "application/json"
-	default:
-		writer = history.NewCSVWriter(c.Writer, history.ColumnsFor(anonymize))
-		contentType = "text/csv"
-	}
+	writer, contentType := buildExportWriter(params.format, params.anonymize, c.Writer)
 
 	defer func() {
 		if err := writer.Close(); err != nil {
@@ -342,12 +323,13 @@ func (env *Env) exportTasks(c *gin.Context) {
 		}
 	}()
 
-	filename := fmt.Sprintf("history-tasks-%s.%s", now.Format("2006-01-02-15-04-05"), format)
+	now := time.Now().UTC()
+	filename := fmt.Sprintf("history-tasks-%s.%s", now.Format("2006-01-02-15-04-05"), params.format)
 	c.Header("Content-Type", contentType)
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
 	c.Status(http.StatusOK)
 
-	if err := env.streamExportRows(startTime, endTime, c.Query("app"), anonymize, writer); err != nil {
+	if err := env.streamExportRows(params.startTime, params.endTime, params.app, params.anonymize, writer); err != nil {
 		log.Error().Err(err).Msg("failed to stream export rows")
 		if !c.Writer.Written() {
 			c.JSON(http.StatusServiceUnavailable, models.TaskStatus{
@@ -550,6 +532,102 @@ func (env *Env) validateAllowedStrategy(c *gin.Context, allowedStrategyHeader st
 	return false, lastErr
 }
 
+// parseExportParams extracts and validates query parameters for export requests.
+func (env *Env) parseExportParams(c *gin.Context) (exportParams, *requestError) {
+	params := exportParams{
+		format: strings.ToLower(c.DefaultQuery("format", "csv")),
+		app:    c.Query("app"),
+	}
+
+	if params.format != "csv" && params.format != "json" {
+		return params, &requestError{
+			statusCode: http.StatusBadRequest,
+			message:    "unsupported export format",
+		}
+	}
+
+	anonymize, err := parseBoolOrDefault(c.Query("anonymize"), true)
+	if err != nil {
+		return params, &requestError{
+			statusCode: http.StatusBadRequest,
+			message:    fmt.Sprintf("invalid anonymize flag: %v", err),
+		}
+	}
+
+	now := time.Now().UTC()
+	defaultFrom := now.Add(-24 * time.Hour).Unix()
+
+	params.startTime, err = parseTimestampOrDefault(c.Query("from_timestamp"), float64(defaultFrom))
+	if err != nil {
+		return params, &requestError{
+			statusCode: http.StatusBadRequest,
+			message:    fmt.Sprintf("invalid from_timestamp: %v", err),
+		}
+	}
+
+	params.endTime, err = parseTimestampOrDefault(c.Query("to_timestamp"), float64(now.Unix()))
+	if err != nil {
+		return params, &requestError{
+			statusCode: http.StatusBadRequest,
+			message:    fmt.Sprintf("invalid to_timestamp: %v", err),
+		}
+	}
+
+	if params.endTime < params.startTime {
+		return params, &requestError{
+			statusCode: http.StatusBadRequest,
+			message:    "to_timestamp must be greater than or equal to from_timestamp",
+		}
+	}
+
+	params.anonymize = anonymize
+
+	return params, nil
+}
+
+// ensureExportAuthorized validates authorization for export requests when authentication is configured.
+func (env *Env) ensureExportAuthorized(c *gin.Context) *requestError {
+	if !env.hasAuthConfigured() {
+		return nil
+	}
+
+	if env.config.Keycloak.Enabled {
+		valid, validationErr := env.validateToken(c, keycloakHeader)
+		if validationErr != nil {
+			log.Error().Err(validationErr).Msg("failed to validate export token")
+			return &requestError{
+				statusCode: http.StatusInternalServerError,
+				message:    "validation process failed",
+			}
+		}
+		if !valid {
+			return &requestError{
+				statusCode: http.StatusUnauthorized,
+				message:    unauthorizedMessage,
+			}
+		}
+
+		return nil
+	}
+
+	valid, validationErr := env.validateToken(c, "")
+	if validationErr != nil {
+		log.Error().Err(validationErr).Msg("failed to validate export token")
+		return &requestError{
+			statusCode: http.StatusInternalServerError,
+			message:    "validation process failed",
+		}
+	}
+	if !valid {
+		return &requestError{
+			statusCode: http.StatusUnauthorized,
+			message:    unauthorizedMessage,
+		}
+	}
+
+	return nil
+}
+
 // streamExportRows fetches tasks in batches and streams them via the provided writer.
 func (env *Env) streamExportRows(start float64, end float64, app string, anonymize bool, writer history.RowWriter) error {
 	if env.argo == nil || env.argo.State == nil {
@@ -558,7 +636,7 @@ func (env *Env) streamExportRows(start float64, end float64, app string, anonymi
 
 	offset := 0
 	for {
-		tasks, _ := env.argo.State.GetTasks(start, end, app, historyExportBatch, offset)
+		tasks, total := env.argo.State.GetTasks(start, end, app, historyExportBatch, offset)
 		if len(tasks) == 0 {
 			return nil
 		}
@@ -571,10 +649,42 @@ func (env *Env) streamExportRows(start float64, end float64, app string, anonymi
 
 		offset += len(tasks)
 
-		if len(tasks) < historyExportBatch {
+		if offset >= int(total) || len(tasks) < historyExportBatch {
 			return nil
 		}
 	}
+}
+
+// buildExportWriter returns the export writer and related content type for a format and anonymization flag.
+func buildExportWriter(format string, anonymize bool, writer http.ResponseWriter) (history.RowWriter, string) {
+	switch format {
+	case "json":
+		return history.NewJSONWriter(writer), "application/json"
+	default:
+		return history.NewCSVWriter(writer, history.ColumnsFor(anonymize)), "text/csv"
+	}
+}
+
+// requestError represents an HTTP error response that should be returned to the client.
+type requestError struct {
+	statusCode int
+	message    string
+}
+
+// exportParams bundles request parameters required for history export.
+type exportParams struct {
+	format    string
+	anonymize bool
+	startTime float64
+	endTime   float64
+	app       string
+}
+
+// hasAuthConfigured reports whether any authentication mechanism is configured and should be enforced.
+func (env *Env) hasAuthConfigured() bool {
+	return env.config.Keycloak.Enabled ||
+		env.config.JWTSecret != "" ||
+		env.config.DeployToken != ""
 }
 
 func parseTimestampOrDefault(value string, fallback float64) (float64, error) {

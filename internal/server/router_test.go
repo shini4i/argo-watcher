@@ -186,6 +186,47 @@ func TestExportTasksCSV(t *testing.T) {
 	assert.Equal(t, "alice", rows[1][7])
 }
 
+func TestExportTasksCSVAnonymized(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repository := &fakeTaskRepository{
+		tasks: []models.Task{
+			{
+				Id:      "1",
+				App:     "demo",
+				Project: "proj",
+				Status:  "ok",
+				Images: []models.Image{
+					{Image: "svc", Tag: "1"},
+				},
+				Author:       "alice",
+				StatusReason: "done",
+			},
+		},
+	}
+
+	env := &Env{
+		config: &config.ServerConfig{},
+		argo: &argocd.Argo{
+			State: repository,
+		},
+	}
+
+	router := gin.Default()
+	router.GET(exportEndpoint, env.exportTasks)
+
+	req := httptest.NewRequest(http.MethodGet, exportEndpoint+"?format=csv&anonymize=true", nil)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	assert.Equal(t, http.StatusOK, resp.Code)
+	reader := csv.NewReader(strings.NewReader(resp.Body.String()))
+	rows, err := reader.ReadAll()
+	assert.NoError(t, err)
+	assert.Len(t, rows, 2)
+	assert.Len(t, rows[0], 7)
+	assert.Equal(t, "demo", rows[1][1])
+}
+
 // TestExportTasksJSONHeaders verifies JSON exports respond with correct metadata.
 func TestExportTasksJSONHeaders(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -230,6 +271,50 @@ func TestExportTasksJSONHeaders(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Len(t, payload, 1)
 	assert.Equal(t, "demo", payload[0]["app"])
+}
+
+func TestExportTasksJSONAnonymized(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repository := &fakeTaskRepository{
+		tasks: []models.Task{
+			{
+				Id:      "1",
+				App:     "demo",
+				Project: "proj",
+				Status:  "ok",
+				Images: []models.Image{
+					{Image: "svc", Tag: "1"},
+				},
+				Author:       "alice",
+				StatusReason: "done",
+			},
+		},
+	}
+
+	env := &Env{
+		config: &config.ServerConfig{},
+		argo: &argocd.Argo{
+			State: repository,
+		},
+	}
+
+	router := gin.Default()
+	router.GET(exportEndpoint, env.exportTasks)
+
+	req := httptest.NewRequest(http.MethodGet, exportEndpoint+"?format=json&anonymize=true", nil)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	assert.Equal(t, http.StatusOK, resp.Code)
+
+	var payload []map[string]any
+	err := json.Unmarshal(resp.Body.Bytes(), &payload)
+	assert.NoError(t, err)
+	assert.Len(t, payload, 1)
+	_, authorPresent := payload[0]["author"]
+	_, reasonPresent := payload[0]["status_reason"]
+	assert.False(t, authorPresent)
+	assert.False(t, reasonPresent)
 }
 
 // TestExportTasksRejectsInvalidFormat ensures unsupported formats are rejected.
