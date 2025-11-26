@@ -220,19 +220,17 @@ func (env *Env) addTask(c *gin.Context) {
 // @Description Get all tasks that match the provided parameters
 // @Tags backend, frontend
 // @Param app query string false "App name"
-// @Param from_timestamp query int true "From timestamp" default(1648390029)
-// @Param to_timestamp query int false "To timestamp"
+// @Param from_timestamp query number false "From timestamp (seconds since epoch, fractional seconds supported)"
+// @Param to_timestamp query number false "To timestamp (seconds since epoch, fractional seconds supported)"
 // @Param limit query int false "Maximum number of tasks to return"
 // @Param offset query int false "Number of tasks to skip before returning results"
 // @Success 200 {object} models.TasksResponse
 // @Router /api/v1/tasks [get]
 func (env *Env) getState(c *gin.Context) {
-	startTime, err := strconv.ParseFloat(c.Query("from_timestamp"), 64)
+	startTime, err := parseTimestampOrDefault(c.Query("from_timestamp"), 0)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, models.TaskStatus{
-			Status: fmt.Sprintf("invalid from_timestamp: %v", err),
-		})
-		return
+		log.Warn().Msgf("invalid from_timestamp provided, using default: %v", err)
+		startTime = 0
 	}
 
 	endTimeParam := c.Query("to_timestamp")
@@ -291,8 +289,8 @@ func (env *Env) getState(c *gin.Context) {
 // @Produce application/json
 // @Param format query string false "Export format (csv or json)" Enums(csv,json)
 // @Param anonymize query bool false "Remove author and status_reason columns" default(true)
-// @Param from_timestamp query int false "Start timestamp (seconds since epoch)"
-// @Param to_timestamp query int false "End timestamp (seconds since epoch)"
+// @Param from_timestamp query number false "Start timestamp (seconds since epoch, fractional seconds supported)"
+// @Param to_timestamp query number false "End timestamp (seconds since epoch, fractional seconds supported)"
 // @Param app query string false "Filter by application name"
 // @Success 200
 // @Failure 400 {object} models.TaskStatus
@@ -581,6 +579,10 @@ func (env *Env) parseExportParams(c *gin.Context) (exportParams, *requestError) 
 	}
 
 	params.anonymize = anonymize
+	if !env.config.Keycloak.Enabled {
+		// Without keycloak-provided privilege context, default to anonymized exports.
+		params.anonymize = true
+	}
 
 	return params, nil
 }
@@ -669,6 +671,11 @@ func buildExportWriter(format string, anonymize bool, writer http.ResponseWriter
 type requestError struct {
 	statusCode int
 	message    string
+}
+
+// Error implements the error interface for requestError.
+func (r requestError) Error() string {
+	return r.message
 }
 
 // exportParams bundles request parameters required for history export.

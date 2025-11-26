@@ -182,8 +182,8 @@ func TestExportTasksCSV(t *testing.T) {
 	rows, err := reader.ReadAll()
 	assert.NoError(t, err)
 	assert.Len(t, rows, 2)
+	assert.Len(t, rows[0], 7) // anonymized export removes author columns when keycloak is disabled
 	assert.Equal(t, "demo", rows[1][1])
-	assert.Equal(t, "alice", rows[1][7])
 }
 
 func TestExportTasksCSVAnonymized(t *testing.T) {

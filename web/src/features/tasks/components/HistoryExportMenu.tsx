@@ -36,8 +36,7 @@ interface HistoryExportMenuProps {
 /** Dropdown export menu that offers CSV/JSON downloads for the history list. */
 export const HistoryExportMenu = ({ anonymizeForced, disabled = false }: HistoryExportMenuProps) => {
   const notify = useNotify();
-  const { data, filterValues = {} } = useListContext<Task>();
-  const records = useMemo(() => (Array.isArray(data) ? data : []), [data]);
+  const { filterValues = {} } = useListContext<Task>();
 
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [anonymize, setAnonymize] = useState<boolean>(true);
