@@ -86,11 +86,11 @@ func (env *Env) CreateRouter() *gin.Engine {
 	v1 := router.Group("/api/v1")
 	{
 		v1.POST("/tasks", env.addTask)
-		v1.GET("/tasks", env.getState)
-		v1.GET("/tasks/:id", env.getTaskStatus)
+		v1.GET("/tasks", env.stateHandler)
+		v1.GET("/tasks/:id", env.taskStatusHandler)
 		v1.GET("/tasks/export", env.exportTasks)
-		v1.GET("/version", env.getVersion)
-		v1.GET("/config", env.getConfig)
+		v1.GET("/version", env.versionHandler)
+		v1.GET("/config", env.configHandler)
 		v1.POST(deployLockEndpoint, env.SetDeployLock)
 		v1.DELETE(deployLockEndpoint, env.ReleaseDeployLock)
 		v1.GET(deployLockEndpoint, env.isDeployLockSet)
@@ -143,13 +143,13 @@ func prometheusHandler() gin.HandlerFunc {
 	}
 }
 
-// getVersion godoc
+// versionHandler godoc
 // @Summary Get the version of the server
 // @Description Get the version of the server
 // @Tags frontend
 // @Success 200 {string} string
 // @Router /api/v1/version [get]
-func (env *Env) getVersion(c *gin.Context) {
+func (env *Env) versionHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, version)
 }
 
@@ -215,7 +215,7 @@ func (env *Env) addTask(c *gin.Context) {
 	})
 }
 
-// getState godoc
+// stateHandler godoc
 // @Summary Get state content
 // @Description Get all tasks that match the provided parameters
 // @Tags backend, frontend
@@ -226,7 +226,7 @@ func (env *Env) addTask(c *gin.Context) {
 // @Param offset query int false "Number of tasks to skip before returning results"
 // @Success 200 {object} models.TasksResponse
 // @Router /api/v1/tasks [get]
-func (env *Env) getState(c *gin.Context) {
+func (env *Env) stateHandler(c *gin.Context) {
 	startTime, err := parseTimestampOrDefault(c.Query("from_timestamp"), 0)
 	if err != nil {
 		log.Warn().Msgf("invalid from_timestamp provided, using default: %v", err)
@@ -337,7 +337,7 @@ func (env *Env) exportTasks(c *gin.Context) {
 	}
 }
 
-// getTaskStatus godoc
+// taskStatusHandler godoc
 // @Summary Get the status of a task
 // @Description Get the status of a task
 // @Param id path string true "Task id" default(9185fae0-add5-11ec-87f3-56b185c552fa)
@@ -345,7 +345,7 @@ func (env *Env) exportTasks(c *gin.Context) {
 // @Produce json
 // @Success 200 {object} models.TaskStatus
 // @Router /api/v1/tasks/{id} [get]
-func (env *Env) getTaskStatus(c *gin.Context) {
+func (env *Env) taskStatusHandler(c *gin.Context) {
 	id := c.Param("id")
 	task, err := env.argo.State.GetTask(id)
 
@@ -390,14 +390,14 @@ func (env *Env) healthz(c *gin.Context) {
 
 }
 
-// getConfig godoc
+// configHandler godoc
 // @Summary Get the configuration of the server (excluding sensitive data)
 // @Description Get the configuration of the server (excluding sensitive data)
 // @Tags backend
 // @Produce json
 // @Success 200 {object} config.ServerConfig
 // @Router /api/v1/config [get]
-func (env *Env) getConfig(c *gin.Context) {
+func (env *Env) configHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, env.config)
 }
 
@@ -743,6 +743,7 @@ func (env *Env) checkConnection(c *websocket.Conn) {
 		// for some reason it's failing even if the connection is still alive
 		// if you know how to fix it, please open an issue or PR
 		if err := c.Write(context.Background(), websocket.MessageText, []byte("heartbeat")); err != nil {
+			log.Debug().Err(err).Msg("websocket heartbeat failed, removing connection")
 			removeWebSocketConnection(c)
 			return
 		}
@@ -763,6 +764,7 @@ func notifyWebSocketClients(message string) {
 		go func(c *websocket.Conn, message string) {
 			defer wg.Done()
 			if err := c.Write(context.Background(), websocket.MessageText, []byte(message)); err != nil {
+				log.Debug().Err(err).Msg("websocket broadcast failed, removing connection")
 				removeWebSocketConnection(c)
 			}
 		}(conn, message)

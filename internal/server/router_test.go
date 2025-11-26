@@ -27,7 +27,7 @@ func TestGetVersion(t *testing.T) {
 
 	router := gin.Default()
 	env := &Env{}
-	router.GET("/api/v1/version", env.getVersion)
+	router.GET("/api/v1/version", env.versionHandler)
 
 	req, err := http.NewRequest(http.MethodGet, "/api/v1/version", nil)
 	if err != nil {
