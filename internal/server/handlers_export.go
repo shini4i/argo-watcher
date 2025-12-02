@@ -1,9 +1,7 @@
 package server
 
 import (
-	"bytes"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -46,39 +44,8 @@ func (env *Env) exportTasks(c *gin.Context) {
 		return
 	}
 
-	// For JSON we buffer before committing headers to surface errors.
-	if params.format == "json" {
-		var buffer bytes.Buffer
-		writer := history.NewJSONWriter(&buffer)
-		if err := env.streamExportRows(params.startTime, params.endTime, params.app, params.anonymize, writer); err != nil {
-			log.Error().Err(err).Msg("failed to stream export rows")
-			_ = writer.Close()
-			c.JSON(http.StatusServiceUnavailable, models.TaskStatus{
-				Status: "failed to stream export rows",
-			})
-			return
-		}
-		if err := writer.Close(); err != nil {
-			log.Error().Err(err).Msg("failed to close export writer")
-			c.JSON(http.StatusServiceUnavailable, models.TaskStatus{
-				Status: "failed to stream export rows",
-			})
-			return
-		}
-
-		now := time.Now().UTC()
-		filename := fmt.Sprintf("history-tasks-%s.%s", now.Format("2006-01-02-15-04-05"), params.format)
-		c.Header("Content-Type", "application/json")
-		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
-		c.Status(http.StatusOK)
-
-		if _, err := io.Copy(c.Writer, &buffer); err != nil {
-			log.Error().Err(err).Msg("failed to flush buffered export payload")
-		}
-		return
-	}
-
-	writer, contentType := buildExportWriter(params.format, params.anonymize, c.Writer)
+	lazyWriter := &LazyResponseWriter{ResponseWriter: c.Writer, headerMap: make(http.Header)}
+	writer, contentType := buildExportWriter(params.format, params.anonymize, lazyWriter)
 
 	defer func() {
 		if err := writer.Close(); err != nil {
@@ -88,17 +55,18 @@ func (env *Env) exportTasks(c *gin.Context) {
 
 	now := time.Now().UTC()
 	filename := fmt.Sprintf("history-tasks-%s.%s", now.Format("2006-01-02-15-04-05"), params.format)
-	c.Header("Content-Type", contentType)
-	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
-	c.Status(http.StatusOK)
+	lazyWriter.Header().Set("Content-Type", contentType)
+	lazyWriter.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
 
 	if err := env.streamExportRows(params.startTime, params.endTime, params.app, params.anonymize, writer); err != nil {
 		log.Error().Err(err).Msg("failed to stream export rows")
-		if !c.Writer.Written() {
+		if !lazyWriter.wroteHeader {
 			c.JSON(http.StatusServiceUnavailable, models.TaskStatus{
 				Status: "failed to stream export rows",
 			})
+			return
 		}
+		return
 	}
 }
 
@@ -227,6 +195,88 @@ func (env *Env) ensureTokenValid(c *gin.Context, header string) *requestError {
 	}
 
 	return nil
+}
+
+// LazyResponseWriter defers committing headers and status until the first write,
+// enabling the handler to return a JSON error if streaming fails before any bytes are sent.
+type LazyResponseWriter struct {
+	gin.ResponseWriter
+	status      int
+	headerMap   http.Header
+	wroteHeader bool
+}
+
+func (w *LazyResponseWriter) Header() http.Header {
+	if w.headerMap == nil {
+		w.headerMap = make(http.Header)
+	}
+	return w.headerMap
+}
+
+func (w *LazyResponseWriter) WriteHeader(statusCode int) {
+	if w.wroteHeader {
+		return
+	}
+	w.status = statusCode
+}
+
+func (w *LazyResponseWriter) Write(b []byte) (int, error) {
+	if !w.wroteHeader {
+		if w.status == 0 {
+			w.status = http.StatusOK
+		}
+		dest := w.ResponseWriter.Header()
+		for key, values := range w.headerMap {
+			for _, value := range values {
+				dest.Add(key, value)
+			}
+		}
+		w.ResponseWriter.WriteHeader(w.status)
+		w.wroteHeader = true
+	}
+	return w.ResponseWriter.Write(b)
+}
+
+func (w *LazyResponseWriter) WriteString(s string) (int, error) {
+	return w.Write([]byte(s))
+}
+
+func (w *LazyResponseWriter) Status() int {
+	if w.status != 0 {
+		return w.status
+	}
+	return w.ResponseWriter.Status()
+}
+
+func (w *LazyResponseWriter) Written() bool {
+	return w.wroteHeader || w.ResponseWriter.Written()
+}
+
+func (w *LazyResponseWriter) WriteHeaderNow() {
+	// Force header write immediately.
+	if !w.wroteHeader {
+		if w.status == 0 {
+			w.status = http.StatusOK
+		}
+		dest := w.ResponseWriter.Header()
+		for key, values := range w.headerMap {
+			for _, value := range values {
+				dest.Add(key, value)
+			}
+		}
+		w.ResponseWriter.WriteHeader(w.status)
+		w.wroteHeader = true
+	}
+
+	if whn, ok := w.ResponseWriter.(interface{ WriteHeaderNow() }); ok {
+		whn.WriteHeaderNow()
+	}
+}
+
+func (w *LazyResponseWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 // requestError represents an HTTP error response that should be returned to the client.

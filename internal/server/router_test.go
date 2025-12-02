@@ -367,6 +367,70 @@ func TestExportTasksRequiresKeycloak(t *testing.T) {
 	assert.Contains(t, resp.Body.String(), unauthorizedMessage)
 }
 
+func TestExportTasksReturnsErrorBeforeWrite(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	// Force streamExportRows to fail before any bytes are written.
+	env := &Env{
+		config: &config.ServerConfig{},
+		argo:   nil,
+	}
+
+	router := gin.Default()
+	router.GET(exportEndpoint, env.exportTasks)
+
+	req := httptest.NewRequest(http.MethodGet, exportEndpoint+"?format=json", nil)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	assert.Equal(t, http.StatusServiceUnavailable, resp.Code)
+	assert.Contains(t, resp.Body.String(), "failed to stream export rows")
+}
+
+func TestExportTasksStreamingErrorAfterHeaders(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repository := &fakeTaskRepository{
+		tasks: []models.Task{
+			{
+				Id:      "1",
+				App:     "demo",
+				Project: "proj",
+				Status:  "ok",
+			},
+		},
+	}
+
+	env := &Env{
+		config: &config.ServerConfig{},
+		argo: &argocd.Argo{
+			State: repository,
+		},
+	}
+
+	router := gin.Default()
+	router.GET(exportEndpoint, env.exportTasks)
+
+	req := httptest.NewRequest(http.MethodGet, exportEndpoint+"?format=json", nil)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = req
+	failWriter := &failingResponseWriter{
+		ResponseWriter: c.Writer,
+		recorder:       recorder,
+		failAfter:      1, // fail on second write
+	}
+	c.Writer = failWriter
+
+	router.HandleContext(c)
+
+	// Headers committed; we expect 200 with partial payload, not a late JSON error.
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	body := recorder.Body.String()
+	assert.NotContains(t, body, "failed to stream export rows")
+	assert.NotEmpty(t, body)
+}
+
 type fakeTaskRepository struct {
 	tasks []models.Task
 }
@@ -408,4 +472,23 @@ type fakeStrategy struct {
 
 func (f fakeStrategy) Validate(string) (bool, error) {
 	return f.valid, f.err
+}
+
+type failingResponseWriter struct {
+	gin.ResponseWriter
+	recorder  *httptest.ResponseRecorder
+	failAfter int
+	writes    int
+}
+
+func (w *failingResponseWriter) Write(data []byte) (int, error) {
+	w.writes++
+	if w.writes > w.failAfter {
+		return 0, fmt.Errorf("injected write failure")
+	}
+	return w.ResponseWriter.Write(data)
+}
+
+func (w *failingResponseWriter) WriteString(s string) (int, error) {
+	return w.Write([]byte(s))
 }
