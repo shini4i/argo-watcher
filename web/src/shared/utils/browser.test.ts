@@ -11,12 +11,14 @@ describe('browser utils', () => {
     (globalThis as Record<string, unknown>).window = fakeWindow;
     (globalThis as Record<string, unknown>).document = fakeWindow.document;
 
-    expect(getBrowserWindow()).toBe(fakeWindow);
-    expect(getBrowserDocument()).toBe(fakeWindow.document as Document);
-    expect(hasBrowserWindow()).toBe(true);
-
-    (globalThis as Record<string, unknown>).window = originalWindow;
-    (globalThis as Record<string, unknown>).document = originalDocument;
+    try {
+      expect(getBrowserWindow()).toBe(fakeWindow);
+      expect(getBrowserDocument()).toBe(fakeWindow.document);
+      expect(hasBrowserWindow()).toBe(true);
+    } finally {
+      (globalThis as Record<string, unknown>).window = originalWindow;
+      (globalThis as Record<string, unknown>).document = originalDocument;
+    }
   });
 
   it('handles non-browser environments gracefully', () => {
@@ -25,11 +27,13 @@ describe('browser utils', () => {
     delete (globalThis as Record<string, unknown>).window;
     delete (globalThis as Record<string, unknown>).document;
 
-    expect(getBrowserWindow()).toBeUndefined();
-    expect(getBrowserDocument()).toBeUndefined();
-    expect(hasBrowserWindow()).toBe(false);
-
-    (globalThis as Record<string, unknown>).window = originalWindow;
-    (globalThis as Record<string, unknown>).document = originalDocument;
+    try {
+      expect(getBrowserWindow()).toBeUndefined();
+      expect(getBrowserDocument()).toBeUndefined();
+      expect(hasBrowserWindow()).toBe(false);
+    } finally {
+      (globalThis as Record<string, unknown>).window = originalWindow;
+      (globalThis as Record<string, unknown>).document = originalDocument;
+    }
   });
 });

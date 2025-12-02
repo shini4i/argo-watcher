@@ -109,3 +109,39 @@ func TestCSVWriterWriteAfterClose(t *testing.T) {
 	require.NoError(t, writer.Close())
 	require.Error(t, writer.WriteRow(Row{"id": "1"}))
 }
+
+type testStringer struct {
+	value string
+}
+
+func (t testStringer) String() string {
+	return t.value
+}
+
+func TestStringifyValue(t *testing.T) {
+	t.Run("primitive and stringer types", func(t *testing.T) {
+		assertions := map[string]any{
+			"text":          "text",
+			"stringer":      testStringer{value: "stringer-value"},
+			"int":           42,
+			"int64":         int64(99),
+			"float64":       float64(1.25),
+			"float32":       float32(2.5),
+			"boolTrue":      true,
+			"boolFalse":     false,
+			"nil":           nil,
+			"fallbackValue": struct{ field string }{field: "x"},
+		}
+
+		require.Equal(t, "text", stringifyValue(assertions["text"]))
+		require.Equal(t, "stringer-value", stringifyValue(assertions["stringer"]))
+		require.Equal(t, "42", stringifyValue(assertions["int"]))
+		require.Equal(t, "99", stringifyValue(assertions["int64"]))
+		require.Equal(t, "1.25", stringifyValue(assertions["float64"]))
+		require.Equal(t, "2.5", stringifyValue(assertions["float32"]))
+		require.Equal(t, "true", stringifyValue(assertions["boolTrue"]))
+		require.Equal(t, "false", stringifyValue(assertions["boolFalse"]))
+		require.Equal(t, "", stringifyValue(assertions["nil"]))
+		require.Equal(t, "{x}", stringifyValue(assertions["fallbackValue"]))
+	})
+}
