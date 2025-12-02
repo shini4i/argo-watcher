@@ -92,7 +92,7 @@ describe('requestHistoryExport', () => {
     expect(init?.headers).toEqual({});
   });
 
-  it('propagates descriptive error messages from status and error fields', async () => {
+  it('propagates descriptive error messages from status field', async () => {
     vi.stubEnv('VITE_API_BASE_URL', '');
     const { requestHistoryExport } = await importService();
 
@@ -106,6 +106,11 @@ describe('requestHistoryExport', () => {
     await expect(
       requestHistoryExport({ format: 'json', anonymize: false, filters: {} }),
     ).rejects.toThrow('export not ready');
+  });
+
+  it('propagates descriptive error messages from error field', async () => {
+    vi.stubEnv('VITE_API_BASE_URL', '');
+    const { requestHistoryExport } = await importService();
 
     fetchMock.mockResolvedValue(
       new Response(JSON.stringify({ error: 'bad filters' }), {
