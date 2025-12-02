@@ -227,6 +227,55 @@ func TestExportTasksCSVAnonymized(t *testing.T) {
 	assert.Equal(t, "demo", rows[1][1])
 }
 
+func TestExportTasksCSVWithKeycloak(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repository := &fakeTaskRepository{
+		tasks: []models.Task{
+			{
+				Id:      "1",
+				App:     "demo",
+				Project: "proj",
+				Status:  "ok",
+				Images: []models.Image{
+					{Image: "svc", Tag: "1"},
+				},
+				Author:       "alice",
+				StatusReason: "done",
+			},
+		},
+	}
+
+	env := &Env{
+		config: &config.ServerConfig{
+			Keycloak: config.KeycloakConfig{
+				Enabled: true,
+			},
+		},
+		argo: &argocd.Argo{
+			State: repository,
+		},
+		strategies: map[string]auth.AuthStrategy{
+			keycloakHeader: fakeStrategy{valid: true},
+		},
+	}
+
+	router := gin.Default()
+	router.GET(exportEndpoint, env.exportTasks)
+
+	req := httptest.NewRequest(http.MethodGet, exportEndpoint+"?format=csv&anonymize=false", nil)
+	req.Header.Set(keycloakHeader, "Bearer token")
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	assert.Equal(t, http.StatusOK, resp.Code)
+	reader := csv.NewReader(strings.NewReader(resp.Body.String()))
+	rows, err := reader.ReadAll()
+	assert.NoError(t, err)
+	assert.Len(t, rows, 2)
+	assert.Len(t, rows[0], 9) // non-anonymized includes author and status_reason
+	assert.Equal(t, "alice", rows[1][7])
+}
+
 // TestExportTasksJSONHeaders verifies JSON exports respond with correct metadata.
 func TestExportTasksJSONHeaders(t *testing.T) {
 	gin.SetMode(gin.TestMode)

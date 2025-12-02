@@ -206,6 +206,7 @@ type LazyResponseWriter struct {
 	wroteHeader bool
 }
 
+// Header returns the buffered header map without committing it to the underlying writer.
 func (w *LazyResponseWriter) Header() http.Header {
 	if w.headerMap == nil {
 		w.headerMap = make(http.Header)
@@ -213,6 +214,7 @@ func (w *LazyResponseWriter) Header() http.Header {
 	return w.headerMap
 }
 
+// WriteHeader stores the status code without committing headers yet.
 func (w *LazyResponseWriter) WriteHeader(statusCode int) {
 	if w.wroteHeader {
 		return
@@ -220,6 +222,7 @@ func (w *LazyResponseWriter) WriteHeader(statusCode int) {
 	w.status = statusCode
 }
 
+// Write commits headers on the first call and delegates the body write.
 func (w *LazyResponseWriter) Write(b []byte) (int, error) {
 	if !w.wroteHeader {
 		if w.status == 0 {
@@ -237,10 +240,12 @@ func (w *LazyResponseWriter) Write(b []byte) (int, error) {
 	return w.ResponseWriter.Write(b)
 }
 
+// WriteString writes a string payload while honoring deferred headers.
 func (w *LazyResponseWriter) WriteString(s string) (int, error) {
 	return w.Write([]byte(s))
 }
 
+// Status returns the pending status code if set, otherwise the underlying writer's status.
 func (w *LazyResponseWriter) Status() int {
 	if w.status != 0 {
 		return w.status
@@ -248,10 +253,12 @@ func (w *LazyResponseWriter) Status() int {
 	return w.ResponseWriter.Status()
 }
 
+// Written reports whether headers have been committed.
 func (w *LazyResponseWriter) Written() bool {
 	return w.wroteHeader || w.ResponseWriter.Written()
 }
 
+// WriteHeaderNow forces header commit immediately.
 func (w *LazyResponseWriter) WriteHeaderNow() {
 	// Force header write immediately.
 	if !w.wroteHeader {
@@ -273,6 +280,7 @@ func (w *LazyResponseWriter) WriteHeaderNow() {
 	}
 }
 
+// Flush propagates Flush to the underlying writer when supported.
 func (w *LazyResponseWriter) Flush() {
 	if f, ok := w.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
