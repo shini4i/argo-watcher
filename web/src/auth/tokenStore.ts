@@ -1,7 +1,5 @@
 let accessToken: string | null = null;
 
-let accessToken: string | null = null;
-
 /** Stores the current Keycloak access token in memory for API calls. */
 export const setAccessToken = (token: string | null): void => {
   accessToken = token ?? null;
