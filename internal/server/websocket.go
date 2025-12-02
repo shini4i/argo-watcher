@@ -76,6 +76,9 @@ func notifyWebSocketClients(message string) {
 			defer wg.Done()
 			if err := c.Write(context.Background(), websocket.MessageText, []byte(message)); err != nil {
 				log.Debug().Err(err).Msg("websocket broadcast failed, removing connection")
+				if closeErr := c.Close(websocket.StatusGoingAway, "broadcast failed"); closeErr != nil {
+					log.Debug().Err(closeErr).Msg("failed to close websocket after broadcast error")
+				}
 				removeWebSocketConnection(c)
 			}
 		}(conn, message)

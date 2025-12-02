@@ -11,7 +11,7 @@ import (
 type Env struct {
 	// environment configurations
 	config *config.ServerConfig
-	// argo argo
+	// argo client
 	argo *argocd.Argo
 	// argo updater
 	updater *argocd.ArgoStatusUpdater

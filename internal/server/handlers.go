@@ -1,14 +1,17 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
 	"github.com/shini4i/argo-watcher/internal/models"
+	"gorm.io/gorm"
 )
 
 // addTask godoc
@@ -87,20 +90,18 @@ func (env *Env) addTask(c *gin.Context) {
 func (env *Env) stateHandler(c *gin.Context) {
 	startTime, err := parseTimestampOrDefault(c.Query("from_timestamp"), 0)
 	if err != nil {
-		log.Warn().Msgf("invalid from_timestamp provided, using default: %v", err)
-		startTime = 0
+		c.JSON(http.StatusBadRequest, models.TaskStatus{
+			Status: fmt.Sprintf("invalid from_timestamp: %v", err),
+		})
+		return
 	}
 
-	endTimeParam := c.Query("to_timestamp")
-	endTime := float64(time.Now().Unix())
-	if endTimeParam != "" {
-		endTime, err = strconv.ParseFloat(endTimeParam, 64)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, models.TaskStatus{
-				Status: fmt.Sprintf("invalid to_timestamp: %v", err),
-			})
-			return
-		}
+	endTime, err := parseTimestampOrDefault(c.Query("to_timestamp"), float64(time.Now().Unix()))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, models.TaskStatus{
+			Status: fmt.Sprintf("invalid to_timestamp: %v", err),
+		})
+		return
 	}
 
 	app := c.Query("app")
@@ -152,23 +153,29 @@ func (env *Env) taskStatusHandler(c *gin.Context) {
 	task, err := env.argo.State.GetTask(id)
 
 	if err != nil {
-		c.JSON(http.StatusOK, models.TaskStatus{
+		status := http.StatusInternalServerError
+		if errors.Is(err, gorm.ErrRecordNotFound) || strings.Contains(strings.ToLower(err.Error()), "not found") {
+			status = http.StatusNotFound
+		}
+
+		c.JSON(status, models.TaskStatus{
 			Id:    id,
 			Error: err.Error(),
 		})
-	} else {
-		c.JSON(http.StatusOK, models.TaskStatus{
-			Id:           task.Id,
-			Created:      task.Created,
-			Updated:      task.Updated,
-			App:          task.App,
-			Author:       task.Author,
-			Project:      task.Project,
-			Images:       task.Images,
-			Status:       task.Status,
-			StatusReason: task.StatusReason,
-		})
+		return
 	}
+
+	c.JSON(http.StatusOK, models.TaskStatus{
+		Id:           task.Id,
+		Created:      task.Created,
+		Updated:      task.Updated,
+		App:          task.App,
+		Author:       task.Author,
+		Project:      task.Project,
+		Images:       task.Images,
+		Status:       task.Status,
+		StatusReason: task.StatusReason,
+	})
 }
 
 // SetDeployLock godoc

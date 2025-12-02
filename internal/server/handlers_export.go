@@ -1,7 +1,9 @@
 package server
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -41,6 +43,38 @@ func (env *Env) exportTasks(c *gin.Context) {
 		c.JSON(reqErr.statusCode, models.TaskStatus{
 			Status: reqErr.message,
 		})
+		return
+	}
+
+	// For JSON we buffer before committing headers to surface errors.
+	if params.format == "json" {
+		var buffer bytes.Buffer
+		writer := history.NewJSONWriter(&buffer)
+		if err := env.streamExportRows(params.startTime, params.endTime, params.app, params.anonymize, writer); err != nil {
+			log.Error().Err(err).Msg("failed to stream export rows")
+			_ = writer.Close()
+			c.JSON(http.StatusServiceUnavailable, models.TaskStatus{
+				Status: "failed to stream export rows",
+			})
+			return
+		}
+		if err := writer.Close(); err != nil {
+			log.Error().Err(err).Msg("failed to close export writer")
+			c.JSON(http.StatusServiceUnavailable, models.TaskStatus{
+				Status: "failed to stream export rows",
+			})
+			return
+		}
+
+		now := time.Now().UTC()
+		filename := fmt.Sprintf("history-tasks-%s.%s", now.Format("2006-01-02-15-04-05"), params.format)
+		c.Header("Content-Type", "application/json")
+		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
+		c.Status(http.StatusOK)
+
+		if _, err := io.Copy(c.Writer, &buffer); err != nil {
+			log.Error().Err(err).Msg("failed to flush buffered export payload")
+		}
 		return
 	}
 
@@ -131,41 +165,12 @@ func (env *Env) ensureExportAuthorized(c *gin.Context) *requestError {
 		return nil
 	}
 
+	header := ""
 	if env.config.Keycloak.Enabled {
-		valid, validationErr := env.validateToken(c, keycloakHeader)
-		if validationErr != nil {
-			log.Error().Err(validationErr).Msg("failed to validate export token")
-			return &requestError{
-				statusCode: http.StatusInternalServerError,
-				message:    "validation process failed",
-			}
-		}
-		if !valid {
-			return &requestError{
-				statusCode: http.StatusUnauthorized,
-				message:    unauthorizedMessage,
-			}
-		}
-
-		return nil
+		header = keycloakHeader
 	}
 
-	valid, validationErr := env.validateToken(c, "")
-	if validationErr != nil {
-		log.Error().Err(validationErr).Msg("failed to validate export token")
-		return &requestError{
-			statusCode: http.StatusInternalServerError,
-			message:    "validation process failed",
-		}
-	}
-	if !valid {
-		return &requestError{
-			statusCode: http.StatusUnauthorized,
-			message:    unauthorizedMessage,
-		}
-	}
-
-	return nil
+	return env.ensureTokenValid(c, header)
 }
 
 // streamExportRows fetches tasks in batches and streams them via the provided writer.
@@ -203,6 +208,25 @@ func buildExportWriter(format string, anonymize bool, writer http.ResponseWriter
 	default:
 		return history.NewCSVWriter(writer, history.ColumnsFor(anonymize), anonymize), "text/csv"
 	}
+}
+
+func (env *Env) ensureTokenValid(c *gin.Context, header string) *requestError {
+	valid, validationErr := env.validateToken(c, header)
+	if validationErr != nil {
+		log.Error().Err(validationErr).Msg("failed to validate export token")
+		return &requestError{
+			statusCode: http.StatusInternalServerError,
+			message:    "validation process failed",
+		}
+	}
+	if !valid {
+		return &requestError{
+			statusCode: http.StatusUnauthorized,
+			message:    unauthorizedMessage,
+		}
+	}
+
+	return nil
 }
 
 // requestError represents an HTTP error response that should be returned to the client.
