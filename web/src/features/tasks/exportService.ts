@@ -59,7 +59,9 @@ export const requestHistoryExport = async ({ format, anonymize, filters }: Histo
   const token = getAccessToken();
   const headers: Record<string, string> = {};
   if (token) {
-    headers['Keycloak-Authorization'] = `Bearer ${token}`;
+    const bearerToken = `Bearer ${token}`;
+    headers['Keycloak-Authorization'] = bearerToken;
+    headers.Authorization = bearerToken;
   }
 
   const response = await fetch(buildExportUrl(`/api/v1/tasks/export${query}`), {
