@@ -36,15 +36,17 @@ interface HistoryExportMenuProps {
 /** Dropdown export menu that offers CSV/JSON downloads for the history list. */
 export const HistoryExportMenu = ({ anonymizeForced, disabled = false }: HistoryExportMenuProps) => {
   const notify = useNotify();
-  const { filterValues = {} } = useListContext<Task>();
+  const { filterValues = {}, data = [] } = useListContext<Task>();
 
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [anonymize, setAnonymize] = useState<boolean>(true);
   const [exporting, setExporting] = useState(false);
+  const hasRecords = Array.isArray(data) && data.length > 0;
 
+  const exportDisabled = disabled || exporting || !hasRecords;
   const open = Boolean(anchorEl);
   const handleOpen = (event: React.MouseEvent<HTMLButtonElement>) => {
-    if (disabled || exporting) {
+    if (exportDisabled) {
       return;
     }
     setAnchorEl(event.currentTarget);
@@ -90,7 +92,7 @@ export const HistoryExportMenu = ({ anonymizeForced, disabled = false }: History
         variant="contained"
         startIcon={<FileDownloadIcon />}
         onClick={handleOpen}
-        disabled={disabled || exporting}
+        disabled={exportDisabled}
       >
         Export
       </Button>
