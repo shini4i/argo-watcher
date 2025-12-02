@@ -27,10 +27,12 @@ func (env *Env) handleWebSocketConnection(c *gin.Context) {
 	conn, err := websocket.Accept(c.Writer, c.Request, options)
 	if err != nil {
 		log.Error().Msgf("couldn't accept websocket connection, got the following error: %s", err)
+		return
 	}
 
-	// Append the connection before starting the goroutine
+	connectionsMutex.Lock()
 	connections = append(connections, conn)
+	connectionsMutex.Unlock()
 
 	go env.checkConnection(conn)
 }
@@ -47,6 +49,7 @@ func (env *Env) checkConnection(c *websocket.Conn) {
 		// if you know how to fix it, please open an issue or PR
 		if err := c.Write(context.Background(), websocket.MessageText, []byte("heartbeat")); err != nil {
 			log.Debug().Err(err).Msg("websocket heartbeat failed, removing connection")
+			_ = c.Close(websocket.StatusGoingAway, "heartbeat failed")
 			removeWebSocketConnection(c)
 			return
 		}
@@ -61,7 +64,12 @@ func (env *Env) checkConnection(c *websocket.Conn) {
 func notifyWebSocketClients(message string) {
 	var wg sync.WaitGroup
 
-	for _, conn := range connections {
+	connectionsMutex.Lock()
+	snapshot := make([]*websocket.Conn, len(connections))
+	copy(snapshot, connections)
+	connectionsMutex.Unlock()
+
+	for _, conn := range snapshot {
 		wg.Add(1)
 
 		go func(c *websocket.Conn, message string) {

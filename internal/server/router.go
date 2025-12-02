@@ -57,8 +57,8 @@ func (env *Env) CreateRouter() *gin.Engine {
 	{
 		v1.POST("/tasks", env.addTask)
 		v1.GET("/tasks", env.stateHandler)
-		v1.GET("/tasks/:id", env.taskStatusHandler)
 		v1.GET("/tasks/export", env.exportTasks)
+		v1.GET("/tasks/:id", env.taskStatusHandler)
 		v1.GET("/version", env.versionHandler)
 		v1.GET("/config", env.configHandler)
 		v1.POST(deployLockEndpoint, env.SetDeployLock)
