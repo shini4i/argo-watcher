@@ -4,12 +4,6 @@ import { HttpError } from 'react-admin';
 import * as browserUtils from '../shared/utils';
 import { getAccessToken, setAccessToken } from './tokenStore';
 
-vi.mock('keycloak-js', () => {
-  return {
-    default: vi.fn(() => keycloakMock),
-  };
-});
-
 const keycloakMock = {
   init: vi.fn(),
   login: vi.fn(),
@@ -24,6 +18,15 @@ const keycloakMock = {
     groups: ['users', 'admins'],
   },
 };
+
+/** Provides a constructor-safe Keycloak stub that always returns the shared mock. */
+const mockKeycloakConstructor = vi.fn(function mockKeycloakConstructor() {
+  return keycloakMock;
+});
+
+vi.mock('keycloak-js', () => ({
+  default: mockKeycloakConstructor,
+}));
 
 const loadAuthProvider = async (): Promise<AuthProvider & { __testing?: { reset: () => void } }> => {
   const module = await import('./authProvider');
