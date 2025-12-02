@@ -201,7 +201,7 @@ func buildExportWriter(format string, anonymize bool, writer http.ResponseWriter
 	case "json":
 		return history.NewJSONWriter(writer), "application/json"
 	default:
-		return history.NewCSVWriter(writer, history.ColumnsFor(anonymize)), "text/csv"
+		return history.NewCSVWriter(writer, history.ColumnsFor(anonymize), anonymize), "text/csv"
 	}
 }
 

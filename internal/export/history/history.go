@@ -24,8 +24,37 @@ const (
 	columnStatusReason = "status_reason"
 )
 
-// Row represents a serialisable export entry keyed by the output column names.
-type Row map[string]any
+// ExportRow represents a strongly typed export entry.
+type ExportRow struct {
+	ID           string `json:"id"`
+	App          string `json:"app"`
+	Project      string `json:"project"`
+	Status       string `json:"status"`
+	Created      int64  `json:"created"`
+	Updated      int64  `json:"updated"`
+	Images       string `json:"images"`
+	Author       string `json:"author,omitempty"`
+	StatusReason string `json:"status_reason,omitempty"`
+}
+
+// ToCSV returns the ordered CSV values for the row, respecting anonymization.
+func (r ExportRow) ToCSV(anonymize bool) []string {
+	values := []string{
+		r.ID,
+		r.App,
+		r.Project,
+		r.Status,
+		strconv.FormatInt(r.Created, 10),
+		strconv.FormatInt(r.Updated, 10),
+		r.Images,
+	}
+
+	if !anonymize {
+		values = append(values, r.Author, r.StatusReason)
+	}
+
+	return values
+}
 
 // ColumnsFor returns the ordered column names that should be used for the export,
 // adapting to the anonymisation flag.
@@ -49,20 +78,20 @@ func ColumnsFor(anonymize bool) []string {
 
 // SanitizeTask flattens a Task into a Row while optionally stripping
 // personally identifiable fields.
-func SanitizeTask(task models.Task, anonymize bool) Row {
-	row := Row{
-		columnID:      task.Id,
-		columnApp:     task.App,
-		columnProject: task.Project,
-		columnStatus:  task.Status,
-		columnCreated: task.Created,
-		columnUpdated: task.Updated,
-		columnImages:  joinImages(task.Images),
+func SanitizeTask(task models.Task, anonymize bool) ExportRow {
+	row := ExportRow{
+		ID:      task.Id,
+		App:     task.App,
+		Project: task.Project,
+		Status:  task.Status,
+		Created: int64(task.Created),
+		Updated: int64(task.Updated),
+		Images:  joinImages(task.Images),
 	}
 
 	if !anonymize {
-		row[columnAuthor] = task.Author
-		row[columnStatusReason] = task.StatusReason
+		row.Author = task.Author
+		row.StatusReason = task.StatusReason
 	}
 
 	return row
@@ -70,7 +99,7 @@ func SanitizeTask(task models.Task, anonymize bool) Row {
 
 // RowWriter streams rows into a concrete format (JSON, CSV, etc.).
 type RowWriter interface {
-	WriteRow(Row) error
+	WriteRow(ExportRow) error
 	Close() error
 }
 
@@ -88,7 +117,7 @@ func NewJSONWriter(destination io.Writer) *JSONWriter {
 }
 
 // WriteRow writes a single row, inserting separators as needed.
-func (w *JSONWriter) WriteRow(row Row) error {
+func (w *JSONWriter) WriteRow(row ExportRow) error {
 	if w.completed {
 		return errors.New("json writer already closed")
 	}
@@ -137,21 +166,23 @@ type CSVWriter struct {
 	header      []string
 	wroteHeader bool
 	closed      bool
+	anonymize   bool
 }
 
 // NewCSVWriter initialises a CSV writer that writes the supplied header and rows to destination.
-func NewCSVWriter(destination io.Writer, header []string) *CSVWriter {
+func NewCSVWriter(destination io.Writer, header []string, anonymize bool) *CSVWriter {
 	headerCopy := make([]string, len(header))
 	copy(headerCopy, header)
 
 	return &CSVWriter{
-		writer: csv.NewWriter(destination),
-		header: headerCopy,
+		writer:    csv.NewWriter(destination),
+		header:    headerCopy,
+		anonymize: anonymize,
 	}
 }
 
 // WriteRow writes the header (if necessary) followed by the ordered row values.
-func (w *CSVWriter) WriteRow(row Row) error {
+func (w *CSVWriter) WriteRow(row ExportRow) error {
 	if w.closed {
 		return errors.New("csv writer already closed")
 	}
@@ -163,12 +194,7 @@ func (w *CSVWriter) WriteRow(row Row) error {
 		w.wroteHeader = true
 	}
 
-	record := make([]string, len(w.header))
-	for index, key := range w.header {
-		record[index] = stringifyValue(row[key])
-	}
-
-	return w.writer.Write(record)
+	return w.writer.Write(row.ToCSV(w.anonymize))
 }
 
 // Close flushes the CSV writer so callers can observe any buffered errors.
@@ -192,27 +218,4 @@ func joinImages(images []models.Image) string {
 	}
 
 	return strings.Join(parts, ", ")
-}
-
-func stringifyValue(value any) string {
-	switch typed := value.(type) {
-	case string:
-		return typed
-	case fmt.Stringer:
-		return typed.String()
-	case int:
-		return strconv.Itoa(typed)
-	case int64:
-		return strconv.FormatInt(typed, 10)
-	case float64:
-		return strconv.FormatFloat(typed, 'f', -1, 64)
-	case float32:
-		return strconv.FormatFloat(float64(typed), 'f', -1, 32)
-	case bool:
-		return strconv.FormatBool(typed)
-	case nil:
-		return ""
-	default:
-		return fmt.Sprint(typed)
-	}
 }
