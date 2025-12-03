@@ -37,9 +37,10 @@ tasks:
     dir: cmd/argo-watcher
     cmds:
       - echo "===> Generating swagger docs"
-      - swag init --parseDependency --parseInternal
+      - swag init --parseDependency --parseInternal --dir .,../../internal/server --output ./docs
     sources:
-      - server/router.go
+      - ../../internal/server/**/*.go
+      - main.go
     generates:
       - docs/docs.go
       - docs/swagger.json
@@ -129,14 +130,12 @@ tasks:
 
   kind-upload:
     desc: Build and upload the argo-watcher image to a kind cluster
-    deps: [build-ui]
+    deps: [build, build-ui]
     env:
       CGO_ENABLED: 0
       GOOS: linux
       GOARCH: arm64
     cmds:
-      - echo "===> Building dev version of argo-watcher binary"
-      - go build -ldflags="-s -w -X github.com/shini4i/argo-watcher/cmd/argo-watcher/server.version=dev" -o argo-watcher ./cmd/argo-watcher
       - echo "===> Building argo-watcher docker image"
       - docker build -t ghcr.io/shini4i/argo-watcher:dev -f Dockerfile.server .
       - echo "===> Loading argo-watcher docker image into kind cluster"

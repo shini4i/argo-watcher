@@ -10,6 +10,11 @@ import (
 	"github.com/shini4i/argo-watcher/internal/server"
 )
 
+// @title Argo-Watcher API
+// @version 0.10.0
+// @description Deployment visibility and control API for Argo workflows
+// @BasePath /api/v1/
+
 func main() {
 	migrateFlag := flag.Bool("migrate", false, "Run database migrations and exit.")
 	flag.Parse()

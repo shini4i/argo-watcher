@@ -14,7 +14,7 @@ type Env struct {
 	// argo client
 	argo *argocd.Argo
 	// argo updater
-	updater *argocd.ArgoStatusUpdater
+	updater Updater
 	// metrics
 	metrics *prometheus.Metrics
 	// deploy lock

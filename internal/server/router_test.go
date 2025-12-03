@@ -485,7 +485,10 @@ type fakeTaskRepository struct {
 }
 
 func (f *fakeTaskRepository) Connect(_ *config.ServerConfig) error             { return nil }
-func (f *fakeTaskRepository) AddTask(task models.Task) (*models.Task, error)   { return &task, nil }
+func (f *fakeTaskRepository) AddTask(task models.Task) (*models.Task, error) {
+	task.Id = "test-task-id"
+	return &task, nil
+}
 func (f *fakeTaskRepository) GetTask(_ string) (*models.Task, error)           { return nil, nil }
 func (f *fakeTaskRepository) SetTaskStatus(_ string, _ string, _ string) error { return nil }
 func (f *fakeTaskRepository) Check() bool                                      { return true }
