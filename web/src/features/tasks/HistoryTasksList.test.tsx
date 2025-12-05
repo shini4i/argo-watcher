@@ -3,18 +3,13 @@ import { Children, type ReactElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { HistoryTasksList } from './HistoryTasksList';
 
-let permissionsMock: Record<string, unknown> = {};
-let keycloakEnabled = false;
-
 const {
   layoutCalls,
   PaginationMock,
   TaskListLayoutMock,
   HistoryFiltersMock,
-  HistoryExportMenuMock,
   NoTasksPlaceholderMock,
   TasksDatagridMock,
-  hasPrivilegedAccessMock,
 } = vi.hoisted(() => {
   const layoutCallsInternal: Array<Record<string, unknown>> = [];
 
@@ -28,31 +23,23 @@ const {
   };
 
   const filters = () => <div data-testid="history-filters" />;
-  const exportMenu = ({ anonymizeForced }: { anonymizeForced: boolean }) => (
-    <div data-testid="history-export" data-anonymize={String(anonymizeForced)} />
-  );
   const placeholder = (props: Record<string, unknown>) => (
     <div data-testid="history-placeholder" {...props} />
   );
   const datagrid = () => <div data-testid="history-datagrid" />;
-
-  const privilegedAccess = vi.fn(() => false);
 
   return {
     layoutCalls: layoutCallsInternal,
     PaginationMock: pagination,
     TaskListLayoutMock: taskListLayout,
     HistoryFiltersMock: filters,
-    HistoryExportMenuMock: exportMenu,
     NoTasksPlaceholderMock: placeholder,
     TasksDatagridMock: datagrid,
-    hasPrivilegedAccessMock: privilegedAccess,
   };
 });
 
 vi.mock('react-admin', () => ({
   Pagination: PaginationMock,
-  usePermissions: () => ({ permissions: permissionsMock }),
 }));
 
 vi.mock('./components/TaskListLayout', () => ({
@@ -63,10 +50,6 @@ vi.mock('./components/HistoryFilters', () => ({
   HistoryFilters: HistoryFiltersMock,
 }));
 
-vi.mock('./components/HistoryExportMenu', () => ({
-  HistoryExportMenu: HistoryExportMenuMock,
-}));
-
 vi.mock('./components/NoTasksPlaceholder', () => ({
   NoTasksPlaceholder: NoTasksPlaceholderMock,
 }));
@@ -75,15 +58,8 @@ vi.mock('./components/TasksDatagrid', () => ({
   TasksDatagrid: TasksDatagridMock,
 }));
 
-vi.mock('../../shared/hooks/useKeycloakEnabled', () => ({
-  useKeycloakEnabled: () => keycloakEnabled,
-}));
-
-vi.mock('../../shared/utils', () => ({
-  hasPrivilegedAccess: hasPrivilegedAccessMock,
-}));
-
 const lastLayoutProps = () => layoutCalls.at(-1)!;
+
 /** Type guard ensuring a node is a concrete ReactElement before use in expectations. */
 const isReactElement = (node: ReactNode): node is ReactElement =>
   typeof node === 'object' && node !== null && 'type' in (node as Record<string, unknown>);
@@ -91,13 +67,10 @@ const isReactElement = (node: ReactNode): node is ReactElement =>
 describe('HistoryTasksList', () => {
   beforeEach(() => {
     layoutCalls.length = 0;
-    permissionsMock = { groups: ['dev'], privilegedGroups: ['ops'] };
-    keycloakEnabled = false;
-    hasPrivilegedAccessMock.mockReturnValue(true);
     document.title = 'Original title';
   });
 
-  it('renders filters, export menu, and placeholder when exports are allowed', () => {
+  it('renders filters and placeholder', () => {
     const { unmount } = render(<HistoryTasksList />);
 
     expect(document.title).toBe('History Tasks — Argo Watcher');
@@ -115,13 +88,7 @@ describe('HistoryTasksList', () => {
 
     const headerNodes = Children.toArray(props.header).filter(isReactElement);
     expect(headerNodes.map(node => node.type)).toContain(HistoryFiltersMock);
-
-    const exportNode = headerNodes.find(node => node.type === HistoryExportMenuMock);
-    expect(exportNode).toBeDefined();
-    if (!exportNode) {
-      throw new Error('HistoryExportMenu should be present when exports are allowed');
-    }
-    expect(exportNode.props.anonymizeForced).toBe(false);
+    expect(headerNodes).toHaveLength(1);
 
     const emptyComponent = props.emptyComponent;
     expect(emptyComponent.props.title).toBe('No history yet');
@@ -132,17 +99,5 @@ describe('HistoryTasksList', () => {
 
     unmount();
     expect(document.title).toBe('Original title');
-  });
-
-  it('hides the export menu when Keycloak is enabled and user lacks privileges', () => {
-    keycloakEnabled = true;
-    hasPrivilegedAccessMock.mockReturnValue(false);
-
-    render(<HistoryTasksList />);
-
-    const props = lastLayoutProps() as { header: ReactElement | ReactElement[] };
-    const headerNodes = Children.toArray(props.header).filter(isReactElement);
-    expect(headerNodes).toHaveLength(1);
-    expect(headerNodes[0].type).toBe(HistoryFiltersMock);
   });
 });
