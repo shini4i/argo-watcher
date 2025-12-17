@@ -196,11 +196,14 @@ describe('authProvider', () => {
     keycloakMock.loadUserInfo.mockRejectedValueOnce(new Error('disabled'));
     nowSpy.mockReturnValue(120_000);
 
+    // After clearing token due to validation failure, silent SSO will be attempted
+    // which will also fail since we're in a test environment, resulting in 401
+    keycloakMock.init.mockRejectedValueOnce(new Error('silent failed'));
     await expect(provider.checkAuth({})).rejects.toBeInstanceOf(HttpError);
     nowSpy.mockRestore();
   });
 
-  it('falls back to non-silent init when silent SSO fails', async () => {
+  it('throws 401 when silent SSO fails instead of auto-redirecting', async () => {
     mockConfig({
       keycloak: {
         enabled: true,
@@ -213,24 +216,17 @@ describe('authProvider', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const silentError = new Error('silent failure');
     keycloakMock.init.mockRejectedValueOnce(silentError);
-    keycloakMock.init.mockResolvedValueOnce(true);
 
     const provider = await loadAuthProvider();
-    await expect(provider.checkAuth({})).resolves.toBeUndefined();
+    // Should throw 401 instead of auto-redirecting to Keycloak
+    await expect(provider.checkAuth({})).rejects.toMatchObject({ status: 401 });
 
-    expect(keycloakMock.init).toHaveBeenNthCalledWith(
-      1,
+    expect(keycloakMock.init).toHaveBeenCalledTimes(1);
+    expect(keycloakMock.init).toHaveBeenCalledWith(
       expect.objectContaining({
         silentCheckSsoRedirectUri: expect.stringContaining('silent-check-sso.html'),
       }),
     );
-    expect(keycloakMock.init).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        onLoad: 'login-required',
-      }),
-    );
-    expect(keycloakMock.init).toHaveBeenCalledTimes(2);
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining('Silent SSO failed'),
       silentError,
@@ -259,7 +255,7 @@ describe('authProvider', () => {
     expect(keycloakMock.init).not.toHaveBeenCalled();
   });
 
-  it('remembers silent SSO failures across reloads', async () => {
+  it('remembers silent SSO failures across reloads and throws 401', async () => {
     ensureBrowserWindow().localStorage.clear();
     mockConfig({
       keycloak: {
@@ -273,26 +269,23 @@ describe('authProvider', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const silentError = new Error('silent blocked');
     keycloakMock.init.mockRejectedValueOnce(silentError);
-    keycloakMock.init.mockResolvedValue(true);
 
     const provider = await loadAuthProvider();
-    await expect(provider.checkAuth({})).resolves.toBeUndefined();
+    // First call: silent SSO fails, should throw 401 (no auto-redirect)
+    await expect(provider.checkAuth({})).rejects.toMatchObject({ status: 401 });
     expect(ensureBrowserWindow().localStorage.getItem(SILENT_SSO_STORAGE_KEY)).toBe('true');
     warnSpy.mockRestore();
 
+    // Simulate reload - silent SSO should be disabled from localStorage
     const module = await import('./authProvider');
     module.__testing.reset();
     module.__testing.reloadSilentPreference();
     keycloakMock.init.mockClear();
-    keycloakMock.init.mockResolvedValueOnce(true);
 
-    await expect(provider.checkAuth({})).resolves.toBeUndefined();
-    expect(keycloakMock.init).toHaveBeenCalledTimes(1);
-    expect(keycloakMock.init).toHaveBeenCalledWith(
-      expect.objectContaining({
-        onLoad: 'login-required',
-      }),
-    );
+    // On next checkAuth, silent SSO is disabled, so it should immediately throw 401
+    await expect(provider.checkAuth({})).rejects.toMatchObject({ status: 401 });
+    // No init calls since silent SSO is disabled and we don't auto-redirect
+    expect(keycloakMock.init).not.toHaveBeenCalled();
   });
 
   it('builds absolute redirect URIs during login', async () => {
@@ -540,7 +533,7 @@ describe('authProvider', () => {
     module.__testing.reset();
   });
 
-  it('propagates interactive init failures after silent SSO is disabled', async () => {
+  it('throws 401 when silent SSO is disabled and user is not authenticated', async () => {
     mockConfig({
       keycloak: {
         enabled: true,
@@ -552,11 +545,11 @@ describe('authProvider', () => {
     });
     const module = await import('./authProvider');
     module.__testing.disableSilentSso();
-    const interactiveError = new Error('interactive failed');
-    keycloakMock.init.mockRejectedValueOnce(interactiveError);
     const provider = await loadAuthProvider();
 
-    await expect(provider.checkAuth({})).rejects.toMatchObject({ status: 500 });
+    // When silent SSO is disabled and user has no token, should throw 401
+    // (no auto-redirect to Keycloak)
+    await expect(provider.checkAuth({})).rejects.toMatchObject({ status: 401 });
   });
 
   it('short-circuits login when Keycloak is disabled', async () => {

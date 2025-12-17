@@ -194,6 +194,35 @@ const resolveRedirectUri = (redirectTo?: string) => {
 };
 
 /**
+ * Detects whether the current URL contains OAuth authorization code parameters,
+ * indicating a redirect back from Keycloak after authentication.
+ */
+export const hasOAuthCallback = (): boolean => {
+  const browserWindow = getBrowserWindow();
+  if (!browserWindow) {
+    return false;
+  }
+  const params = new URLSearchParams(browserWindow.location.search);
+  return params.has('code') && params.has('state');
+};
+
+/**
+ * Clears OAuth callback parameters from the URL without triggering a page reload.
+ */
+const clearOAuthCallbackParams = () => {
+  const browserWindow = getBrowserWindow();
+  if (!browserWindow) {
+    return;
+  }
+  const url = new URL(browserWindow.location.href);
+  url.searchParams.delete('code');
+  url.searchParams.delete('state');
+  url.searchParams.delete('session_state');
+  url.searchParams.delete('iss');
+  browserWindow.history.replaceState({}, '', url.toString());
+};
+
+/**
  * Fetches the backend configuration once and caches the promise for subsequent calls.
  */
 const fetchServerConfig = async (): Promise<ServerConfig> => {
@@ -277,16 +306,22 @@ const scheduleTokenRefresh = (keycloak: KeycloakInstance) => {
   }, 60_000);
 };
 
-type InitMode = 'silent' | 'interactive';
+type InitMode = 'silent' | 'interactive' | 'callback';
 
 /**
- * Creates Keycloak init options for either the silent SSO or interactive flows.
+ * Creates Keycloak init options for the silent SSO, interactive, or callback flows.
  */
 const buildInitOptions = (mode: InitMode): KeycloakInitOptions => {
   switch (mode) {
     case 'interactive':
       return {
         onLoad: 'login-required',
+        checkLoginIframe: false,
+        pkceMethod: 'S256',
+      };
+    case 'callback':
+      // No onLoad - processes OAuth callback without auto-redirecting
+      return {
         checkLoginIframe: false,
         pkceMethod: 'S256',
       };
@@ -321,51 +356,98 @@ const runKeycloakInit = async (keycloak: KeycloakInstance, options: KeycloakInit
 
 /**
  * Central authentication path used by the authProvider to ensure the user session is valid.
+ * Does NOT auto-redirect to Keycloak; throws HttpError(401) when not authenticated,
+ * allowing React-admin to show the login page.
  */
 const authenticate = async () => {
   const keycloak = await ensureKeycloakInstance();
   if (!keycloak) {
+    // Keycloak is disabled - allow anonymous access
     setAccessToken(null);
     clearUserGroupsCache();
     return true;
   }
 
-  if (getAccessToken()) {
-    try {
-      await ensureSessionValidation(keycloak);
-    } catch (validationError) {
-      clearAccessToken();
-      clearUserGroupsCache();
-      throw new HttpError('Authentication required', 401, { cause: validationError });
-    }
+  // If keycloak is already authenticated (e.g., after OAuth callback processed)
+  if (keycloak.authenticated && keycloak.token) {
+    setAccessToken(keycloak.token);
+    scheduleTokenRefresh(keycloak);
     return true;
   }
 
+  // If we have a token, validate the session
+  if (getAccessToken()) {
+    try {
+      await ensureSessionValidation(keycloak);
+      return true;
+    } catch (validationError) {
+      clearAccessToken();
+      clearUserGroupsCache();
+      // Fall through to try silent SSO
+    }
+  }
+
+  // Try silent SSO to check for existing session without redirect
   if (silentSsoSupported) {
     try {
       const authenticated = await runKeycloakInit(keycloak, buildInitOptions('silent'));
-      persistSilentSsoPreference(false);
-      return authenticated;
+      if (authenticated) {
+        persistSilentSsoPreference(false);
+        return true;
+      }
     } catch (error) {
       const silentRedirectUri = resolveAppUrl(SILENT_SSO_ASSET);
       console.warn(
-        `[auth] Silent SSO failed, falling back to explicit login flow. Ensure the Keycloak client allows ${silentRedirectUri} (including any base path) in redirect URIs.`,
+        `[auth] Silent SSO failed. Ensure Keycloak client allows ${silentRedirectUri} in redirect URIs.`,
         error,
       );
       silentSsoSupported = false;
       persistSilentSsoPreference(true);
-      clearAccessToken();
-      clearUserGroupsCache();
     }
   }
 
-  try {
-    return await runKeycloakInit(keycloak, buildInitOptions('interactive'));
-  } catch (fallbackError) {
-    clearAccessToken();
-    clearUserGroupsCache();
-    throw new HttpError('Keycloak initialization failed', 500, { cause: fallbackError });
+  // NOT authenticated - throw error to trigger login page display
+  // DO NOT auto-redirect to Keycloak here!
+  clearAccessToken();
+  clearUserGroupsCache();
+  throw new HttpError('Authentication required', 401);
+};
+
+/**
+ * Initializes the authentication system. Must be called before React-admin mounts.
+ * Handles OAuth callback processing if returning from Keycloak.
+ *
+ * @returns Object containing keycloakEnabled status
+ */
+export const initializeAuth = async (): Promise<{ keycloakEnabled: boolean }> => {
+  const config = await fetchServerConfig();
+
+  if (!config.keycloak?.enabled) {
+    return { keycloakEnabled: false };
   }
+
+  assertKeycloakFields(config.keycloak);
+
+  const keycloak = await ensureKeycloakInstance();
+  if (!keycloak) {
+    return { keycloakEnabled: false };
+  }
+
+  // If we're returning from Keycloak with authorization code, process it
+  if (hasOAuthCallback()) {
+    try {
+      await runKeycloakInit(keycloak, buildInitOptions('callback'));
+      // Clear URL params to prevent retry on refresh
+      clearOAuthCallbackParams();
+    } catch (error) {
+      console.error('[auth] Failed to process OAuth callback:', error);
+      // Clear URL params to prevent infinite retry loops
+      clearOAuthCallbackParams();
+      throw new HttpError('Authentication failed', 401, { cause: error });
+    }
+  }
+
+  return { keycloakEnabled: true };
 };
 
 /**
@@ -500,4 +582,6 @@ export const __testing = {
   resolveRedirectUri,
   /** Exposes the token refresh scheduler for deterministic timer testing. */
   scheduleTokenRefresh,
+  /** Exposes OAuth callback param clearing for tests. */
+  clearOAuthCallbackParams,
 };

@@ -12,6 +12,7 @@ const {
   MockResource,
   MockCustomRoutes,
   MockRoute,
+  MockAuthBootstrap,
   RecentTasksListStub,
   HistoryTasksListStub,
   TaskShowStub,
@@ -46,6 +47,10 @@ const {
     return <div data-testid={`route-${props.path as string}`} />;
   };
 
+  const AuthBootstrap = ({ children }: { children: (keycloakEnabled: boolean) => ReactElement }) => (
+    <div data-testid="auth-bootstrap">{children(false)}</div>
+  );
+
   const RecentList = () => <div data-testid="recent-list" />;
   const HistoryList = () => <div data-testid="history-list" />;
   const TaskShow = () => <div data-testid="task-show" />;
@@ -61,6 +66,7 @@ const {
     MockResource: Resource,
     MockCustomRoutes: CustomRoutes,
     MockRoute: Route,
+    MockAuthBootstrap: AuthBootstrap,
     RecentTasksListStub: RecentList,
     HistoryTasksListStub: HistoryList,
     TaskShowStub: TaskShow,
@@ -82,6 +88,8 @@ vi.mock('react-router-dom', () => ({
 
 vi.mock('./data/dataProvider', () => ({ dataProvider: dataProviderStub }));
 vi.mock('./auth/authProvider', () => ({ authProvider: authProviderStub }));
+vi.mock('./auth/AuthBootstrap', () => ({ AuthBootstrap: MockAuthBootstrap }));
+vi.mock('./auth/LoginPage', () => ({ LoginPage: () => <div data-testid="login-page" /> }));
 vi.mock('./features/tasks/RecentTasksList', () => ({ RecentTasksList: RecentTasksListStub }));
 vi.mock('./features/tasks/HistoryTasksList', () => ({ HistoryTasksList: HistoryTasksListStub }));
 vi.mock('./features/tasks/show/TaskShow', () => ({ TaskShow: TaskShowStub }));
