@@ -3,6 +3,7 @@ package state
 import (
 	"errors"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/avast/retry-go/v4"
@@ -13,7 +14,17 @@ import (
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
+const (
+	// TaskStaleThresholdSeconds is the time in seconds after which an in-progress task is considered stale and aborted.
+	TaskStaleThresholdSeconds = 3600
+	// ObsoleteTaskCheckInterval is the interval between checks for obsolete tasks.
+	ObsoleteTaskCheckInterval = 60 * time.Minute
+)
+
+// InMemoryState provides a thread-safe in-memory implementation of task storage.
+// It uses a read-write mutex to protect concurrent access to the tasks slice.
 type InMemoryState struct {
+	mu    sync.RWMutex
 	tasks []models.Task
 }
 
@@ -31,6 +42,9 @@ func (state *InMemoryState) Connect(serverConfig *config.ServerConfig) error {
 // It takes a models.Task parameter, updates timestamps and status, and appends the task to the list of tracked tasks.
 // The method returns the newly created task and a nil error because the in-memory implementation does not surface persistence failures.
 func (state *InMemoryState) AddTask(task models.Task) (*models.Task, error) {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+
 	task.Id = uuid.New().String()
 	task.Created = float64(time.Now().Unix())
 	task.Updated = float64(time.Now().Unix())
@@ -45,6 +59,9 @@ func (state *InMemoryState) AddTask(task models.Task) (*models.Task, error) {
 // The method filters tasks within the time range and, optionally, by app.
 // If an app filter is provided, only matching tasks are included.
 func (state *InMemoryState) GetTasks(startTime float64, endTime float64, app string, limit int, offset int) ([]models.Task, int64) {
+	state.mu.RLock()
+	defer state.mu.RUnlock()
+
 	if state.tasks == nil {
 		return []models.Task{}, 0
 	}
@@ -94,6 +111,9 @@ func (state *InMemoryState) GetTasks(startTime float64, endTime float64, app str
 // The method iterates over the tasks in the in-memory state and returns the task if a matching ID is found.
 // If no task with the given ID is found, it returns an error indicating that the task was not found.
 func (state *InMemoryState) GetTask(id string) (*models.Task, error) {
+	state.mu.RLock()
+	defer state.mu.RUnlock()
+
 	for _, task := range state.tasks {
 		if task.Id == id {
 			return &task, nil
@@ -105,16 +125,20 @@ func (state *InMemoryState) GetTask(id string) (*models.Task, error) {
 // SetTaskStatus updates the status and status reason of a task in the in-memory state based on the provided task ID.
 // It takes a string parameter for the task ID, status, and reason.
 // The method iterates over the tasks in the in-memory state and updates the task with the matching ID.
-// Note that this method does not perform any error handling if the task ID is not found.
+// Returns an error if the task ID is not found.
 func (state *InMemoryState) SetTaskStatus(id string, status string, reason string) error {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+
 	for idx, task := range state.tasks {
 		if task.Id == id {
 			state.tasks[idx].Status = status
 			state.tasks[idx].StatusReason = reason
 			state.tasks[idx].Updated = float64(time.Now().Unix())
+			return nil
 		}
 	}
-	return nil
+	return errors.New("task not found")
 }
 
 // Check is a placeholder method that implements the Check() bool interface.
@@ -131,11 +155,13 @@ func (state *InMemoryState) ProcessObsoleteTasks(retryTimes uint) {
 	log.Debug().Msg("Starting watching for obsolete tasks...")
 	err := retry.Do(
 		func() error {
+			state.mu.Lock()
+			defer state.mu.Unlock()
 			state.tasks = processInMemoryObsoleteTasks(state.tasks)
 			return errDesiredRetry
 		},
 		retry.DelayType(retry.FixedDelay),
-		retry.Delay(60*time.Minute),
+		retry.Delay(ObsoleteTaskCheckInterval),
 		retry.Attempts(retryTimes),
 	)
 	if err != nil {
@@ -156,7 +182,7 @@ func processInMemoryObsoleteTasks(tasks []models.Task) []models.Task {
 		if task.Status == models.StatusAppNotFoundMessage {
 			continue
 		}
-		if task.Status == models.StatusInProgressMessage && task.Updated+3600 < float64(time.Now().Unix()) {
+		if task.Status == models.StatusInProgressMessage && task.Updated+TaskStaleThresholdSeconds < float64(time.Now().Unix()) {
 			task.Status = models.StatusAborted
 		}
 		updatedTasks = append(updatedTasks, task)

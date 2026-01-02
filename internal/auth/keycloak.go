@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-
-	"github.com/shini4i/argo-watcher/internal/helpers"
+	"net/url"
+	"slices"
 
 	"github.com/rs/zerolog/log"
 )
@@ -39,7 +39,7 @@ func (k *KeycloakAuthService) Init(url, realm, clientId string, privilegedGroups
 func (k *KeycloakAuthService) Validate(token string) (bool, error) {
 	var keycloakResponse KeycloakResponse
 
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/realms/%s/protocol/openid-connect/userinfo", k.Url, k.Realm), nil)
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/realms/%s/protocol/openid-connect/userinfo", k.Url, url.PathEscape(k.Realm)), nil)
 	if err != nil {
 		return false, fmt.Errorf("error creating request: %v", err)
 	}
@@ -77,11 +77,11 @@ func (k *KeycloakAuthService) Validate(token string) (bool, error) {
 	return false, fmt.Errorf("token validation failed with status: %v", resp.Status)
 }
 
-// allowedToRollback checks if the user is a member of any of the privileged groups
-// It duplicates the logic from fronted just to be sure that the user did not generate the request manually
+// allowedToRollback checks if the user is a member of any of the privileged groups.
+// It duplicates the logic from frontend just to be sure that the user did not generate the request manually.
 func (k *KeycloakAuthService) allowedToRollback(username string, groups []string) bool {
 	for _, group := range groups {
-		if helpers.Contains(k.PrivilegedGroups, group) {
+		if slices.Contains(k.PrivilegedGroups, group) {
 			log.Debug().Msgf("%s is a member of the privileged group: %v", username, group)
 			return true
 		}

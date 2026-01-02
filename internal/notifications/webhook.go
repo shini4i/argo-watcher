@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"text/template"
 	"time"
@@ -14,7 +15,6 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
-	"github.com/shini4i/argo-watcher/internal/helpers"
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
@@ -142,7 +142,7 @@ func (s *WebhookStrategy) Send(task models.Task) error {
 		}
 	}()
 
-	if !helpers.Contains(s.allowedResponseCodes, resp.StatusCode) {
+	if !slices.Contains(s.allowedResponseCodes, resp.StatusCode) {
 		lr := io.LimitReader(resp.Body, maxErrorBodySize)
 		body, readErr := io.ReadAll(lr)
 		if readErr != nil {

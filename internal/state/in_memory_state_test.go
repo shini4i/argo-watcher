@@ -85,9 +85,18 @@ func TestInMemoryState_SetTaskStatus(t *testing.T) {
 	assert.Equal(t, models.StatusDeployedMessage, taskInfo.Status)
 }
 
+func TestInMemoryState_SetTaskStatus_NotFound(t *testing.T) {
+	localState := InMemoryState{}
+	err := localState.SetTaskStatus("non-existent-id", models.StatusDeployedMessage, "")
+	assert.Error(t, err)
+	assert.Equal(t, "task not found", err.Error())
+}
+
 func TestInMemoryState_ProcessObsoleteTasks(t *testing.T) {
-	// update task update time
+	// update task update time (acquire lock for thread safety)
+	state.mu.Lock()
 	state.tasks[1].Updated = state.tasks[1].Updated - 3601
+	state.mu.Unlock()
 
 	// run processing
 	state.ProcessObsoleteTasks(1)

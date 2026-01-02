@@ -3,10 +3,10 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"slices"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
-	"github.com/shini4i/argo-watcher/internal/helpers"
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
@@ -46,7 +46,7 @@ func mockReturnAppStatus(c *gin.Context) {
 
 	app := c.Param("id")
 
-	if !helpers.Contains(apps, app) {
+	if !slices.Contains(apps, app) {
 		c.String(http.StatusNotFound, fmt.Sprintf("applications.argoproj.io \"%s\" not found", app))
 		return
 	}

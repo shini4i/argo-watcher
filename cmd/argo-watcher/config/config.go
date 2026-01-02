@@ -87,10 +87,7 @@ func (config *ServerConfig) GetRetryAttempts() uint {
 }
 
 // ResolveStaticFilePath returns the directory that hosts the compiled frontend bundle.
-// The path defaults to `static` but can be overridden through the `STATIC_FILES_PATH` environment variable.
+// The path defaults to `static` through envDefault and can be overridden through the `STATIC_FILES_PATH` environment variable.
 func (config *ServerConfig) ResolveStaticFilePath() string {
-	if config.StaticFilePath != "" {
-		return config.StaticFilePath
-	}
-	return "static"
+	return config.StaticFilePath
 }

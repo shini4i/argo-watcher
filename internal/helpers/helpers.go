@@ -10,17 +10,6 @@ import (
 	"crypto/sha256"
 )
 
-// Contains is a utility function that checks if a given item exists in a slice.
-// It uses Go's generics to handle different types (string, int, etc.).
-func Contains[T comparable](slice []T, item T) bool {
-	for _, v := range slice {
-		if v == item {
-			return true
-		}
-	}
-	return false
-}
-
 // ImagesContains checks whether a given list of images contains a specific image.
 // It takes into account an optional registry proxy and checks both the image with
 // and without the proxy to ensure compatibility with mutating webhooks.
@@ -30,9 +19,9 @@ func ImagesContains(images []string, image string, registryProxy string) bool {
 		imageWithProxy := registryProxy + "/" + image
 		// We need to check image with and without proxy because mutating webhook
 		// might not have finished image copy during first rollout part. (due to 30s timeout)
-		return Contains(images, image) || Contains(images, imageWithProxy)
+		return slices.Contains(images, image) || slices.Contains(images, imageWithProxy)
 	} else {
-		return Contains(images, image)
+		return slices.Contains(images, image)
 	}
 }
 
@@ -50,7 +39,7 @@ func CurlCommandFromRequest(request *http.Request) (string, error) {
 	// Iterate over request headers and add them to the cURL command
 	for key, values := range request.Header {
 		for _, value := range values {
-			cmd += fmt.Sprintf(" -H '%s: %s'", key, value)
+			cmd += fmt.Sprintf(" -H '%s: %s'", shellEscapeSingleQuote(key), shellEscapeSingleQuote(value))
 		}
 	}
 
@@ -59,14 +48,21 @@ func CurlCommandFromRequest(request *http.Request) (string, error) {
 		// Exclude the request line and headers when adding the body
 		body := string(clonedRequest[strings.Index(string(clonedRequest), "\r\n\r\n")+4:])
 		if len(body) > 0 {
-			cmd += " -d '" + body + "'"
+			cmd += " -d '" + shellEscapeSingleQuote(body) + "'"
 		}
 	}
 
 	// Add request URL to cURL command
-	cmd += " '" + request.URL.String() + "'"
+	cmd += " '" + shellEscapeSingleQuote(request.URL.String()) + "'"
 
 	return cmd, nil
+}
+
+// shellEscapeSingleQuote escapes single quotes for use inside single-quoted shell strings.
+// It replaces each single quote with the sequence '\'' which ends the current single-quoted
+// string, adds an escaped single quote, and starts a new single-quoted string.
+func shellEscapeSingleQuote(s string) string {
+	return strings.ReplaceAll(s, "'", `'\''`)
 }
 
 // GenerateHash generates a SHA256 hash from a given string.

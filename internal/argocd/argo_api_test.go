@@ -265,6 +265,39 @@ func TestArgoApiGetApplicationSuccess(t *testing.T) {
 	assert.Equal(t, app.Status.Summary.Images, result.Status.Summary.Images)
 }
 
+func TestArgoApiGetApplicationEscapesAppName(t *testing.T) {
+	testCases := []struct {
+		appName     string
+		expectedURL string
+	}{
+		{"my/app", "/api/v1/applications/my%2Fapp"},
+		{"app with spaces", "/api/v1/applications/app%20with%20spaces"},
+		{"../traversal", "/api/v1/applications/..%2Ftraversal"},
+		{"app?param=value", "/api/v1/applications/app%3Fparam=value"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.appName, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				// Use EscapedPath to verify percent-encoding is preserved
+				assert.Equal(t, tc.expectedURL, r.URL.EscapedPath())
+				w.Header().Set("Content-Type", "application/json")
+				require.NoError(t, json.NewEncoder(w).Encode(models.Application{}))
+			}))
+			defer server.Close()
+
+			parsedURL, err := url.Parse(server.URL)
+			require.NoError(t, err)
+
+			api := NewArgoApi()
+			api.baseUrl = *parsedURL
+			api.client = server.Client()
+			_, err = api.GetApplication(tc.appName)
+			assert.NoError(t, err)
+		})
+	}
+}
+
 func TestArgoApiGetApplicationAddsRefreshQuery(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "refresh=normal", r.URL.RawQuery)
