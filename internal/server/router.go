@@ -224,15 +224,27 @@ func (env *Env) addTask(c *gin.Context) {
 // @Success 200 {object} models.TasksResponse
 // @Router /api/v1/tasks [get]
 func (env *Env) getState(c *gin.Context) {
-	startTime, _ := strconv.ParseFloat(c.Query("from_timestamp"), 64)
-	endTime, _ := strconv.ParseFloat(c.Query("to_timestamp"), 64)
+	startTime, err := strconv.ParseFloat(c.Query("from_timestamp"), 64)
+	if err != nil && c.Query("from_timestamp") != "" {
+		log.Debug().Str("from_timestamp", c.Query("from_timestamp")).Msg("invalid from_timestamp, defaulting to 0")
+	}
+	endTime, err := strconv.ParseFloat(c.Query("to_timestamp"), 64)
+	if err != nil && c.Query("to_timestamp") != "" {
+		log.Debug().Str("to_timestamp", c.Query("to_timestamp")).Msg("invalid to_timestamp, defaulting to current time")
+	}
 	if endTime == 0 {
 		endTime = float64(time.Now().Unix())
 	}
 	app := c.Query("app")
 
-	limit, _ := strconv.Atoi(c.Query("limit"))
-	offset, _ := strconv.Atoi(c.Query("offset"))
+	limit, err := strconv.Atoi(c.Query("limit"))
+	if err != nil && c.Query("limit") != "" {
+		log.Debug().Str("limit", c.Query("limit")).Msg("invalid limit, defaulting to 0")
+	}
+	offset, err := strconv.Atoi(c.Query("offset"))
+	if err != nil && c.Query("offset") != "" {
+		log.Debug().Str("offset", c.Query("offset")).Msg("invalid offset, defaulting to 0")
+	}
 	if limit < 0 {
 		limit = 0
 	}

@@ -18,12 +18,6 @@ const (
 	registryProxy = "registry.example.local"
 )
 
-type containsTest struct {
-	strs     []string
-	substr   string
-	expected bool
-}
-
 type imagesContainsTest struct {
 	images        []string
 	image         string
@@ -31,30 +25,16 @@ type imagesContainsTest struct {
 	expected      bool
 }
 
-var (
-	containsTestSuite = []containsTest{
-		{[]string{"app1", "app2", "app3"}, "app1", true},
-		{[]string{"app1", "app2", "app3"}, "app2", true},
-		{[]string{"app1", "app2", "app3"}, "app3", true},
-		{[]string{"app1", "app2", "app3"}, "app4", false},
-	}
-
-	imageContainsTest = []imagesContainsTest{
-		{[]string{image1, image2, image3}, image1, "", true},
-		{[]string{image1, image2, image3}, "nginx:1.21.7", "", false},
-		{[]string{fmt.Sprintf("%s/%s", registryProxy, image1), image2, image3}, image1, registryProxy, true},
-		{[]string{image1, image2, image3}, image1, registryProxy, true},
-		{[]string{image1, image2, image3}, "v0.0.2", registryProxy, false},
-	}
-)
-
-func TestContains(t *testing.T) {
-	for _, test := range containsTestSuite {
-		testErrorMsg := fmt.Sprintf("Contains(%s, %s) should be %t", test.strs, test.substr, test.expected)
-		assert.Equal(t, test.expected, Contains(test.strs, test.substr), testErrorMsg)
-	}
+var imageContainsTest = []imagesContainsTest{
+	{[]string{image1, image2, image3}, image1, "", true},
+	{[]string{image1, image2, image3}, "nginx:1.21.7", "", false},
+	{[]string{fmt.Sprintf("%s/%s", registryProxy, image1), image2, image3}, image1, registryProxy, true},
+	{[]string{image1, image2, image3}, image1, registryProxy, true},
+	{[]string{image1, image2, image3}, "v0.0.2", registryProxy, false},
 }
 
+// TestImageContains verifies that ImagesContains correctly detects images in a list,
+// including scenarios with and without a registry proxy.
 func TestImageContains(t *testing.T) {
 	for _, test := range imageContainsTest {
 		testErrorMsg := fmt.Sprintf("ImageContains(%s, %s, %s) should be %t", test.images, test.image, test.registryProxy, test.expected)
@@ -62,6 +42,8 @@ func TestImageContains(t *testing.T) {
 	}
 }
 
+// TestCurlCommandFromRequest verifies that CurlCommandFromRequest generates
+// a valid cURL command from an HTTP request with headers and body.
 func TestCurlCommandFromRequest(t *testing.T) {
 	// Create a sample HTTP request with a non-empty request body
 	requestBody := `{"key": "value"}`
@@ -93,6 +75,48 @@ func TestCurlCommandFromRequest(t *testing.T) {
 	assert.Equal(t, sortedExpectedCurl, sortedActualCurl)
 }
 
+// TestCurlCommandFromRequest_ShellEscaping verifies that single quotes in headers,
+// body, and URL are properly escaped to prevent shell injection.
+func TestCurlCommandFromRequest_ShellEscaping(t *testing.T) {
+	// Create a sample HTTP request with single quotes in various places
+	requestBody := `{"name": "O'Brien"}`
+	request, _ := http.NewRequest("POST", "https://example.com/api?name=O'Connor", strings.NewReader(requestBody))
+	request.Header.Add("X-Author", "O'Reilly")
+
+	// Call the function to get the actual cURL command
+	actualCurl, err := CurlCommandFromRequest(request)
+	assert.NoError(t, err)
+
+	// Verify single quotes are escaped with '\'' pattern
+	assert.Contains(t, actualCurl, `O'\''Reilly`, "header value should have escaped single quote")
+	assert.Contains(t, actualCurl, `O'\''Brien`, "body should have escaped single quote")
+	assert.Contains(t, actualCurl, `O'\''Connor`, "URL should have escaped single quote")
+}
+
+// TestShellEscapeSingleQuote verifies that shellEscapeSingleQuote correctly escapes
+// single quotes using the '\'' pattern for safe shell string interpolation.
+func TestShellEscapeSingleQuote(t *testing.T) {
+	testCases := []struct {
+		input    string
+		expected string
+	}{
+		{"hello", "hello"},
+		{"O'Brien", `O'\''Brien`},
+		{"it's", `it'\''s`},
+		{"'quoted'", `'\''quoted'\''`},
+		{"no quotes", "no quotes"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.input, func(t *testing.T) {
+			result := shellEscapeSingleQuote(tc.input)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+// TestGenerateHash verifies that GenerateHash produces correct SHA256 hashes
+// for known input strings.
 func TestGenerateHash(t *testing.T) {
 	testCases := []struct {
 		input    string

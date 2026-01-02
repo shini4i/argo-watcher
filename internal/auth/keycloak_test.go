@@ -8,6 +8,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestKeycloakAuthService_Init verifies that the Keycloak auth service is properly initialized
+// with URL, realm, client ID and HTTP client.
 func TestKeycloakAuthService_Init(t *testing.T) {
 	service := &KeycloakAuthService{}
 
@@ -23,7 +25,36 @@ func TestKeycloakAuthService_Init(t *testing.T) {
 	assert.IsType(t, &http.Client{}, service.client)
 }
 
+// TestKeycloakAuthService_Validate tests token validation scenarios including
+// URL escaping, privileged group membership, and invalid tokens.
 func TestKeycloakAuthService_Validate(t *testing.T) {
+	t.Run("should escape realm name in URL", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+			// Realm with special chars should be escaped in the path
+			// Use EscapedPath to verify percent-encoding is preserved
+			assert.Equal(t, "/realms/my%2Frealm/protocol/openid-connect/userinfo", req.URL.EscapedPath())
+			rw.WriteHeader(http.StatusOK)
+			_, err := rw.Write([]byte(`{"groups": ["group1"]}`))
+			if err != nil {
+				t.Error(err)
+			}
+		}))
+		defer server.Close()
+
+		service := &KeycloakAuthService{
+			Url:              server.URL,
+			Realm:            "my/realm", // realm with slash
+			ClientId:         "test",
+			PrivilegedGroups: []string{"group1"},
+			client:           server.Client(),
+		}
+
+		ok, err := service.Validate("test")
+
+		assert.NoError(t, err)
+		assert.True(t, ok)
+	})
+
 	t.Run("should return true if token is valid and user is in privileged group", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 			assert.Equal(t, req.URL.String(), "/realms/test/protocol/openid-connect/userinfo")

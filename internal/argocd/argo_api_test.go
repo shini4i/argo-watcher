@@ -53,6 +53,8 @@ func (b *stubBody) Close() error {
 	return b.closeErr
 }
 
+// TestArgoApiInit verifies that the ArgoCD API client is properly initialized
+// with URL, token, timeout, and TLS settings.
 func TestArgoApiInit(t *testing.T) {
 	argoURL, err := url.Parse("https://example.com")
 	require.NoError(t, err)
@@ -97,6 +99,8 @@ func TestArgoApiInit(t *testing.T) {
 	})
 }
 
+// TestArgoApiGetUserInfoSuccess verifies that GetUserInfo returns user information
+// when the API call succeeds.
 func TestArgoApiGetUserInfoSuccess(t *testing.T) {
 	expected := models.Userinfo{Username: "tester", LoggedIn: true}
 
@@ -118,6 +122,8 @@ func TestArgoApiGetUserInfoSuccess(t *testing.T) {
 	assert.Equal(t, &expected, userInfo)
 }
 
+// TestArgoApiGetUserInfoErrors verifies error handling for various failure scenarios
+// in GetUserInfo including request errors, body read errors, and JSON parsing errors.
 func TestArgoApiGetUserInfoErrors(t *testing.T) {
 	baseURL, err := url.Parse("https://example.com")
 	require.NoError(t, err)
@@ -238,6 +244,8 @@ func TestArgoApiGetUserInfoErrors(t *testing.T) {
 	}
 }
 
+// TestArgoApiGetApplicationSuccess verifies that GetApplication returns application
+// details when the API call succeeds.
 func TestArgoApiGetApplicationSuccess(t *testing.T) {
 	app := models.Application{}
 	app.Status.Health.Status = "Healthy"
@@ -265,6 +273,43 @@ func TestArgoApiGetApplicationSuccess(t *testing.T) {
 	assert.Equal(t, app.Status.Summary.Images, result.Status.Summary.Images)
 }
 
+// TestArgoApiGetApplicationEscapesAppName verifies that special characters in app names
+// are properly URL-escaped to prevent path traversal and injection attacks.
+func TestArgoApiGetApplicationEscapesAppName(t *testing.T) {
+	testCases := []struct {
+		appName     string
+		expectedURL string
+	}{
+		{"my/app", "/api/v1/applications/my%2Fapp"},
+		{"app with spaces", "/api/v1/applications/app%20with%20spaces"},
+		{"../traversal", "/api/v1/applications/..%2Ftraversal"},
+		{"app?param=value", "/api/v1/applications/app%3Fparam=value"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.appName, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				// Use EscapedPath to verify percent-encoding is preserved
+				assert.Equal(t, tc.expectedURL, r.URL.EscapedPath())
+				w.Header().Set("Content-Type", "application/json")
+				require.NoError(t, json.NewEncoder(w).Encode(models.Application{}))
+			}))
+			defer server.Close()
+
+			parsedURL, err := url.Parse(server.URL)
+			require.NoError(t, err)
+
+			api := NewArgoApi()
+			api.baseUrl = *parsedURL
+			api.client = server.Client()
+			_, err = api.GetApplication(tc.appName)
+			assert.NoError(t, err)
+		})
+	}
+}
+
+// TestArgoApiGetApplicationAddsRefreshQuery verifies that the refresh query parameter
+// is added when refreshApp is enabled.
 func TestArgoApiGetApplicationAddsRefreshQuery(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "refresh=normal", r.URL.RawQuery)
@@ -284,6 +329,8 @@ func TestArgoApiGetApplicationAddsRefreshQuery(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// TestArgoApiGetApplicationErrors verifies error handling for various failure scenarios
+// in GetApplication including request errors, body read errors, and API error responses.
 func TestArgoApiGetApplicationErrors(t *testing.T) {
 	baseURL, err := url.Parse("https://example.com")
 	require.NoError(t, err)

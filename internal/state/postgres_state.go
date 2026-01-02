@@ -2,6 +2,7 @@ package state
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -118,6 +119,7 @@ func (state *PostgresState) GetTask(id string) (*models.Task, error) {
 // SetTaskStatus updates the status, status_reason, and updated fields of a task in the PostgreSQL database.
 // It takes the task ID, new status, and status reason as input parameters.
 // The updated field is set to the current UTC time.
+// Returns an error if the task ID is not found.
 func (state *PostgresState) SetTaskStatus(id string, status string, reason string) error {
 	uuidv4, err := uuid.Parse(id)
 	if err != nil {
@@ -127,6 +129,9 @@ func (state *PostgresState) SetTaskStatus(id string, status string, reason strin
 	result := state.orm.Model(ormTask).Updates(state_models.TaskModel{Status: status, StatusReason: sql.NullString{String: reason, Valid: true}})
 	if result.Error != nil {
 		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return errors.New("task not found")
 	}
 
 	return nil

@@ -90,18 +90,16 @@ func (api *ArgoApi) GetUserInfo() (*models.Userinfo, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			log.Error().Err(closeErr).Msg("failed to close response body")
+		}
+	}()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
-
-	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
-			log.Error().Msg(err.Error())
-		}
-	}(resp.Body)
 
 	var userInfo models.Userinfo
 	if err = json.Unmarshal(body, &userInfo); err != nil {
@@ -112,7 +110,7 @@ func (api *ArgoApi) GetUserInfo() (*models.Userinfo, error) {
 }
 
 func (api *ArgoApi) GetApplication(app string) (*models.Application, error) {
-	apiUrl := fmt.Sprintf("%s/api/v1/applications/%s", api.baseUrl.String(), app)
+	apiUrl := fmt.Sprintf("%s/api/v1/applications/%s", api.baseUrl.String(), url.PathEscape(app))
 	req, err := api.requestFn("GET", apiUrl, nil)
 	if err != nil {
 		log.Error().Msg(err.Error())
@@ -129,22 +127,20 @@ func (api *ArgoApi) GetApplication(app string) (*models.Application, error) {
 
 	resp, err := api.client.Do(req)
 	if err != nil {
-		log.Error().Msg(err.Error())
+		log.Error().Err(err).Msg("failed to execute request")
 		return nil, err
 	}
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			log.Error().Err(closeErr).Msg("failed to close response body")
+		}
+	}()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Error().Msg(err.Error())
+		log.Error().Err(err).Msg("failed to read response body")
 		return nil, err
 	}
-
-	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
-			log.Error().Msg(err.Error())
-		}
-	}(resp.Body)
 
 	if resp.StatusCode != 200 {
 		var argoErrorResponse models.ArgoApiErrorResponse
