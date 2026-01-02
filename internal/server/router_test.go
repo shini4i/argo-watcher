@@ -10,11 +10,66 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/shini4i/argo-watcher/internal/argocd"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
+	"github.com/shini4i/argo-watcher/internal/argocd"
 	"github.com/shini4i/argo-watcher/internal/auth"
+	"github.com/shini4i/argo-watcher/internal/models"
 )
+
+// mockArgoApi is a minimal mock for ArgoApiInterface used in tests.
+type mockArgoApi struct{}
+
+func (m *mockArgoApi) Init(_ *config.ServerConfig) error {
+	return nil
+}
+
+func (m *mockArgoApi) GetUserInfo() (*models.Userinfo, error) {
+	return &models.Userinfo{LoggedIn: true, Username: "test"}, nil
+}
+
+func (m *mockArgoApi) GetApplication(_ string) (*models.Application, error) {
+	return &models.Application{}, nil
+}
+
+// mockTaskRepository is a minimal mock for TaskRepository used in tests.
+type mockTaskRepository struct{}
+
+func (m *mockTaskRepository) Connect(_ *config.ServerConfig) error {
+	return nil
+}
+
+func (m *mockTaskRepository) AddTask(task models.Task) (*models.Task, error) {
+	return &task, nil
+}
+
+func (m *mockTaskRepository) GetTasks(_, _ float64, _ string, _, _ int) ([]models.Task, int64) {
+	return []models.Task{}, 0
+}
+
+func (m *mockTaskRepository) GetTask(_ string) (*models.Task, error) {
+	return &models.Task{}, nil
+}
+
+func (m *mockTaskRepository) SetTaskStatus(_, _, _ string) error {
+	return nil
+}
+
+func (m *mockTaskRepository) Check() bool {
+	return true
+}
+
+func (m *mockTaskRepository) ProcessObsoleteTasks(_ uint) {}
+
+// mockMetrics is a minimal mock for MetricsInterface used in tests.
+type mockMetrics struct{}
+
+func (m *mockMetrics) AddProcessedDeployment(_ string) {}
+func (m *mockMetrics) AddFailedDeployment(_ string)    {}
+func (m *mockMetrics) ResetFailedDeployment(_ string)  {}
+func (m *mockMetrics) SetArgoUnavailable(_ bool)       {}
+func (m *mockMetrics) AddInProgressTask()              {}
+func (m *mockMetrics) RemoveInProgressTask()           {}
 
 func TestGetVersion(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -132,4 +187,72 @@ func TestNewEnv(t *testing.T) {
 
 	assert.Equal(t, expectedStrategies, env.strategies)
 	assert.NotNil(t, env.authenticator)
+}
+
+// TestGetStateInvalidQueryParams verifies that the getState handler gracefully handles
+// invalid query parameters by logging debug messages and using default values.
+func TestGetStateInvalidQueryParams(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	// Set up Argo with mock dependencies
+	argo := &argocd.Argo{}
+	argo.Init(&mockTaskRepository{}, &mockArgoApi{}, &mockMetrics{})
+
+	env := &Env{
+		argo:   argo,
+		config: &config.ServerConfig{},
+	}
+
+	router := gin.Default()
+	router.GET("/api/v1/tasks", env.getState)
+
+	testCases := []struct {
+		name        string
+		queryParams string
+	}{
+		{
+			name:        "invalid from_timestamp",
+			queryParams: "?from_timestamp=notanumber",
+		},
+		{
+			name:        "invalid to_timestamp",
+			queryParams: "?to_timestamp=notanumber",
+		},
+		{
+			name:        "invalid limit",
+			queryParams: "?limit=notanumber",
+		},
+		{
+			name:        "invalid offset",
+			queryParams: "?offset=notanumber",
+		},
+		{
+			name:        "negative limit",
+			queryParams: "?limit=-5",
+		},
+		{
+			name:        "negative offset",
+			queryParams: "?offset=-10",
+		},
+		{
+			name:        "all invalid params",
+			queryParams: "?from_timestamp=abc&to_timestamp=xyz&limit=foo&offset=bar",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			req, err := http.NewRequest(http.MethodGet, "/api/v1/tasks"+tc.queryParams, nil)
+			if err != nil {
+				t.Fatalf("Couldn't create request: %v\n", err)
+			}
+
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+
+			// The handler should return 200 OK even with invalid params
+			// (it falls back to defaults and logs debug messages)
+			assert.Equal(t, http.StatusOK, w.Code)
+		})
+	}
 }

@@ -8,6 +8,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestKeycloakAuthService_Init verifies that the Keycloak auth service is properly initialized
+// with URL, realm, client ID and HTTP client.
 func TestKeycloakAuthService_Init(t *testing.T) {
 	service := &KeycloakAuthService{}
 
@@ -23,6 +25,8 @@ func TestKeycloakAuthService_Init(t *testing.T) {
 	assert.IsType(t, &http.Client{}, service.client)
 }
 
+// TestKeycloakAuthService_Validate tests token validation scenarios including
+// URL escaping, privileged group membership, and invalid tokens.
 func TestKeycloakAuthService_Validate(t *testing.T) {
 	t.Run("should escape realm name in URL", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
