@@ -188,15 +188,24 @@ func (env *Env) CreateRouter() *gin.Engine {
 		requestedPath := filepath.Clean(c.Request.URL.Path)
 		fullPath := filepath.Join(absStaticPath, requestedPath)
 
+		// Resolve any symlinks to get the real path - this prevents symlink-based escapes
+		realPath, err := filepath.EvalSymlinks(fullPath)
+		if err != nil {
+			// File doesn't exist or symlink resolution failed - serve index.html for SPA routing
+			c.File(filepath.Join(absStaticPath, "index.html"))
+			return
+		}
+
 		// Security: ensure the resolved path is within the static directory
-		if !strings.HasPrefix(fullPath, absStaticPath+string(filepath.Separator)) && fullPath != absStaticPath {
+		// This check uses the symlink-resolved path to prevent escapes via symlinks
+		if !strings.HasPrefix(realPath, absStaticPath+string(filepath.Separator)) && realPath != absStaticPath {
 			c.File(filepath.Join(absStaticPath, "index.html"))
 			return
 		}
 
 		// Check if file exists and is not a directory
-		if info, err := os.Stat(fullPath); err == nil && !info.IsDir() {
-			http.ServeFile(c.Writer, c.Request, fullPath)
+		if info, err := os.Stat(realPath); err == nil && !info.IsDir() {
+			http.ServeFile(c.Writer, c.Request, realPath) // #nosec G304 - path validated above
 			return
 		}
 
@@ -595,7 +604,7 @@ func (env *Env) handleWebSocketConnection(c *gin.Context) {
 	conn, err := websocket.Accept(wrappedWriter, c.Request, options)
 	if err != nil {
 		log.Error().Err(err).Msg("failed to accept websocket connection")
-		netConn.Close()
+		_ = netConn.Close() // #nosec G104 - best effort cleanup, already in error path
 		return
 	}
 
