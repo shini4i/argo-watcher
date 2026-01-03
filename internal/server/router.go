@@ -204,8 +204,11 @@ func (env *Env) CreateRouter() *gin.Engine {
 		}
 
 		// Check if file exists and is not a directory
-		if info, err := os.Stat(realPath); err == nil && !info.IsDir() {
-			http.ServeFile(c.Writer, c.Request, realPath) // #nosec G304 - path validated above
+		// Security: realPath is safe to use here because:
+		// 1. filepath.EvalSymlinks resolved any symlinks to get the real path
+		// 2. strings.HasPrefix check above ensures realPath is within absStaticPath
+		if info, err := os.Stat(realPath); err == nil && !info.IsDir() { // lgtm[go/path-injection]
+			http.ServeFile(c.Writer, c.Request, realPath) // #nosec G304 lgtm[go/path-injection]
 			return
 		}
 
