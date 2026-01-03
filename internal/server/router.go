@@ -48,8 +48,9 @@ const (
 // (before WriteHeader) and stores the raw connection for later use.
 type wsResponseWriter struct {
 	gin.ResponseWriter
-	conn net.Conn
-	brw  *bufio.ReadWriter
+	conn          net.Conn
+	brw           *bufio.ReadWriter
+	headerWritten bool
 }
 
 // Hijack returns the pre-hijacked connection, bypassing gin's "already written" check.
@@ -75,7 +76,13 @@ func (w *wsResponseWriter) Write(data []byte) (int, error) {
 // WriteHeader writes the status line and headers through the buffered writer.
 // Note: The http.ResponseWriter interface does not allow WriteHeader to return an error,
 // so errors are logged but cannot be propagated to the caller.
+// Per http.ResponseWriter contract, multiple calls should be no-ops after the first.
 func (w *wsResponseWriter) WriteHeader(code int) {
+	if w.headerWritten {
+		return
+	}
+	w.headerWritten = true
+
 	if w.brw == nil {
 		log.Error().Msg("buffered writer not available during WriteHeader")
 		return

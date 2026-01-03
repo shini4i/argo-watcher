@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
@@ -52,6 +53,9 @@ func validateSSHKeyFile(path string) error {
 	if path == "" {
 		return ErrSSHKeyNotProvided
 	}
+
+	// Normalize the path to prevent directory traversal attacks
+	path = filepath.Clean(path)
 
 	// Check if file exists
 	info, err := os.Stat(path)
