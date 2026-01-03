@@ -58,16 +58,25 @@ func (fs safeFileSystem) Open(name string) (http.File, error) {
 		return nil, err
 	}
 
-	// Additional symlink protection: verify the real path is within bounds
-	fullPath := filepath.Join(fs.basePath, filepath.Clean(name))
-	realPath, err := filepath.EvalSymlinks(fullPath)
+	// Additional symlink protection: get the real path from the opened file
+	// and verify it's within bounds. We use the file handle's name to avoid
+	// constructing paths from user input.
+	osFile, ok := f.(*os.File)
+	if !ok {
+		// If it's not an *os.File, we can't do symlink validation
+		// This shouldn't happen with http.Dir but handle gracefully
+		return f, nil
+	}
+
+	// Get the real path by resolving symlinks on the opened file's path
+	realPath, err := filepath.EvalSymlinks(osFile.Name())
 	if err != nil {
-		f.Close()
+		_ = f.Close() // #nosec G104 - best effort cleanup, already returning error
 		return nil, err
 	}
 
 	if !strings.HasPrefix(realPath, fs.basePath+string(filepath.Separator)) && realPath != fs.basePath {
-		f.Close()
+		_ = f.Close() // #nosec G104 - best effort cleanup, already returning error
 		return nil, os.ErrPermission
 	}
 
