@@ -460,10 +460,13 @@ func (env *Env) handleWebSocketConnection(c *gin.Context) {
 	conn, err := websocket.Accept(c.Writer, c.Request, options)
 	if err != nil {
 		log.Error().Msgf("couldn't accept websocket connection, got the following error: %s", err)
+		return
 	}
 
 	// Append the connection before starting the goroutine
+	connectionsMutex.Lock()
 	connections = append(connections, conn)
+	connectionsMutex.Unlock()
 
 	go env.checkConnection(conn)
 }
@@ -479,6 +482,7 @@ func (env *Env) checkConnection(c *websocket.Conn) {
 		// for some reason it's failing even if the connection is still alive
 		// if you know how to fix it, please open an issue or PR
 		if err := c.Write(context.Background(), websocket.MessageText, []byte("heartbeat")); err != nil {
+			_ = c.Close(websocket.StatusNormalClosure, "heartbeat failed")
 			removeWebSocketConnection(c)
 			return
 		}
@@ -499,6 +503,7 @@ func notifyWebSocketClients(message string) {
 		go func(c *websocket.Conn, message string) {
 			defer wg.Done()
 			if err := c.Write(context.Background(), websocket.MessageText, []byte(message)); err != nil {
+				_ = c.Close(websocket.StatusNormalClosure, "write failed")
 				removeWebSocketConnection(c)
 			}
 		}(conn, message)
@@ -511,6 +516,7 @@ func notifyWebSocketClients(message string) {
 // from the global connections slice. It is used to clean up connections that are no longer active.
 // The function takes a WebSocket connection as an argument and removes it from the connections slice.
 // It uses a mutex to prevent concurrent access to the connections slice, ensuring thread safety.
+// Note: Callers are responsible for closing the connection before calling this function.
 func removeWebSocketConnection(conn *websocket.Conn) {
 	connectionsMutex.Lock()
 	defer connectionsMutex.Unlock()
