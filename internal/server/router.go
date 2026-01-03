@@ -1,9 +1,15 @@
 package server
 
 import (
+	"bufio"
 	"context"
+	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -11,7 +17,6 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/gin-contrib/cors"
-	"github.com/gin-gonic/contrib/static"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog/log"
@@ -37,6 +42,144 @@ const (
 	unauthorizedMessage = "You are not authorized to perform this action"
 	keycloakHeader      = "Keycloak-Authorization"
 )
+
+// safeFileSystem wraps http.Dir with additional symlink protection.
+// This provides defense-in-depth beyond http.Dir's built-in path sanitization.
+type safeFileSystem struct {
+	root     http.Dir
+	basePath string
+}
+
+// validatePath checks if a path is safe before any I/O operations.
+// Returns the cleaned path if valid, or an error if the path would escape the base directory.
+// This performs validation without any I/O operations by checking the cleaned path.
+func (fs safeFileSystem) validatePath(name string) (string, error) {
+	// Clean the path to remove any .. or . components
+	cleanName := filepath.Clean("/" + name)
+
+	// Construct the would-be full path and verify it stays within bounds
+	// filepath.Join handles path separators and cleaning
+	fullPath := filepath.Join(fs.basePath, cleanName)
+
+	// Clean the full path to resolve any remaining . or .. components
+	cleanedFull := filepath.Clean(fullPath)
+
+	// Verify the cleaned path is still within the base directory
+	// Check for exact match (root directory) or proper prefix with separator
+	if cleanedFull != fs.basePath && !strings.HasPrefix(cleanedFull, fs.basePath+string(filepath.Separator)) {
+		log.Debug().
+			Str("requested_path", name).
+			Str("resolved_path", cleanedFull).
+			Str("base_path", fs.basePath).
+			Msg("blocked path traversal attempt")
+		return "", os.ErrPermission
+	}
+
+	return cleanName, nil
+}
+
+// Open implements http.FileSystem interface with path validation and symlink protection.
+func (fs safeFileSystem) Open(name string) (http.File, error) {
+	// Validate path before any I/O operation
+	cleanName, err := fs.validatePath(name)
+	if err != nil {
+		return nil, err
+	}
+
+	// Open using the validated clean path
+	// http.Dir.Open has its own path sanitization as additional protection
+	f, err := fs.root.Open(cleanName)
+	if err != nil {
+		return nil, err
+	}
+
+	// Additional symlink protection: verify the real path is within bounds
+	osFile, ok := f.(*os.File)
+	if !ok {
+		return f, nil
+	}
+
+	realPath, err := filepath.EvalSymlinks(osFile.Name())
+	if err != nil {
+		_ = f.Close() // #nosec G104 - best effort cleanup
+		return nil, err
+	}
+
+	if !strings.HasPrefix(realPath, fs.basePath+string(filepath.Separator)) && realPath != fs.basePath {
+		log.Debug().
+			Str("requested_path", name).
+			Str("resolved_path", realPath).
+			Str("base_path", fs.basePath).
+			Msg("blocked symlink escape attempt")
+		_ = f.Close() // #nosec G104 - best effort cleanup
+		return nil, os.ErrPermission
+	}
+
+	return f, nil
+}
+
+// wsResponseWriter wraps gin's ResponseWriter to provide proper WebSocket hijacking.
+// gin's ResponseWriter fails Hijack() after WriteHeader() is called, but WebSocket
+// upgrade requires both operations. This wrapper hijacks the connection early
+// (before WriteHeader) and stores the raw connection for later use.
+type wsResponseWriter struct {
+	gin.ResponseWriter
+	conn          net.Conn
+	brw           *bufio.ReadWriter
+	headerWritten bool
+}
+
+// Hijack returns the pre-hijacked connection, bypassing gin's "already written" check.
+func (w *wsResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if w.conn == nil {
+		return nil, nil, errors.New("connection was not pre-hijacked")
+	}
+	return w.conn, w.brw, nil
+}
+
+// Write writes data through the buffered writer to maintain consistency.
+func (w *wsResponseWriter) Write(data []byte) (int, error) {
+	if w.brw == nil {
+		return 0, errors.New("buffered writer not available")
+	}
+	n, err := w.brw.Write(data)
+	if err != nil {
+		return n, err
+	}
+	return n, w.brw.Flush()
+}
+
+// WriteHeader writes the status line and headers through the buffered writer.
+// Note: The http.ResponseWriter interface does not allow WriteHeader to return an error,
+// so errors are logged but cannot be propagated to the caller.
+// Per http.ResponseWriter contract, multiple calls should be no-ops after the first.
+func (w *wsResponseWriter) WriteHeader(code int) {
+	if w.headerWritten {
+		return
+	}
+	w.headerWritten = true
+
+	if w.brw == nil {
+		log.Error().Msg("buffered writer not available during WriteHeader")
+		return
+	}
+	statusLine := fmt.Sprintf("HTTP/1.1 %d %s\r\n", code, http.StatusText(code))
+	if _, err := w.brw.WriteString(statusLine); err != nil {
+		log.Error().Err(err).Msg("failed to write status line during WebSocket upgrade")
+		return
+	}
+	if err := w.Header().Write(w.brw); err != nil {
+		log.Error().Err(err).Msg("failed to write headers during WebSocket upgrade")
+		return
+	}
+	if _, err := w.brw.WriteString("\r\n"); err != nil {
+		log.Error().Err(err).Msg("failed to write header terminator during WebSocket upgrade")
+		return
+	}
+	if err := w.brw.Flush(); err != nil {
+		log.Error().Err(err).Msg("failed to flush WebSocket upgrade response")
+	}
+}
 
 // Env reference: https://www.alexedwards.net/blog/organising-database-access
 type Env struct {
@@ -66,20 +209,37 @@ func (env *Env) CreateRouter() *gin.Engine {
 
 	router := gin.New()
 	router.Use(gin.Recovery())
+
+	// WebSocket interceptor - must run BEFORE CORS middleware to prevent "response already written" errors
+	// CORS middleware writes headers that interfere with WebSocket hijacking
+	router.Use(func(c *gin.Context) {
+		if c.Request.URL.Path == "/ws" {
+			log.Debug().
+				Str("upgrade", c.Request.Header.Get("Upgrade")).
+				Str("connection", c.Request.Header.Get("Connection")).
+				Bool("written", c.Writer.Written()).
+				Msg("WebSocket request received")
+
+			if strings.EqualFold(c.Request.Header.Get("Upgrade"), "websocket") {
+				env.handleWebSocketConnection(c)
+				c.Abort()
+				return
+			}
+		}
+		c.Next()
+	})
+
 	router.Use(cors.New(env.corsConfig()))
 
-	staticFilesPath := env.config.ResolveStaticFilePath()
-	log.Info().
-		Str("static_path", staticFilesPath).
-		Msg("serving frontend assets")
-	router.Use(static.Serve("/", static.LocalFile(staticFilesPath, true)))
-	router.NoRoute(func(c *gin.Context) {
-		c.File(fmt.Sprintf("%s/index.html", staticFilesPath))
+	// Keep the route registered for non-upgrade requests to /ws (will return 400)
+	router.GET("/ws", func(c *gin.Context) {
+		c.String(http.StatusBadRequest, "WebSocket upgrade required")
 	})
+
+	// API routes
 	router.GET("/healthz", env.healthz)
 	router.GET("/metrics", prometheusHandler())
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
-	router.GET("/ws", env.handleWebSocketConnection)
 
 	v1 := router.Group("/api/v1")
 	{
@@ -93,7 +253,62 @@ func (env *Env) CreateRouter() *gin.Engine {
 		v1.GET(deployLockEndpoint, env.isDeployLockSet)
 	}
 
+	// Static file serving - use NoRoute to handle unmatched paths
+	// This prevents static middleware from interfering with API and WebSocket routes
+	staticFilesPath := env.config.ResolveStaticFilePath()
+	log.Debug().
+		Str("static_path", staticFilesPath).
+		Msg("serving frontend assets")
+
+	// Get absolute path for security validation
+	absStaticPath, err := filepath.Abs(staticFilesPath)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to resolve static files path")
+	}
+
+	// Create a safe file system with symlink protection
+	fs := safeFileSystem{
+		root:     http.Dir(absStaticPath),
+		basePath: absStaticPath,
+	}
+
+	router.NoRoute(env.createStaticFileHandler(fs, absStaticPath))
+
 	return router
+}
+
+// createStaticFileHandler returns a handler for serving static files with SPA fallback.
+// It attempts to serve the requested file, falling back to index.html for SPA routing.
+func (env *Env) createStaticFileHandler(fs safeFileSystem, staticPath string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if tryServeStaticFile(c, fs) {
+			return
+		}
+		// Fall back to index.html for SPA routing
+		c.File(filepath.Join(staticPath, "index.html"))
+	}
+}
+
+// tryServeStaticFile attempts to serve a static file and returns true if successful.
+func tryServeStaticFile(c *gin.Context, fs safeFileSystem) bool {
+	f, err := fs.Open(c.Request.URL.Path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+
+	stat, err := f.Stat()
+	if err != nil || stat.IsDir() {
+		return false
+	}
+
+	rs, ok := f.(io.ReadSeeker)
+	if !ok {
+		return false
+	}
+
+	http.ServeContent(c.Writer, c.Request, stat.Name(), stat.ModTime(), rs)
+	return true
 }
 
 func (env *Env) StartRouter(router *gin.Engine) {
@@ -457,13 +672,41 @@ func (env *Env) handleWebSocketConnection(c *gin.Context) {
 		InsecureSkipVerify: env.config.DevEnvironment, // It will disable websocket host validation if set to true
 	}
 
-	conn, err := websocket.Accept(c.Writer, c.Request, options)
+	// Pre-hijack the connection BEFORE WriteHeader is called
+	// gin's ResponseWriter fails Hijack after WriteHeader, so we hijack first
+	hijacker, ok := c.Writer.(http.Hijacker)
+	if !ok {
+		log.Error().Msg("ResponseWriter does not support hijacking")
+		c.String(http.StatusInternalServerError, "WebSocket not supported")
+		return
+	}
+
+	netConn, brw, err := hijacker.Hijack()
 	if err != nil {
-		log.Error().Msgf("couldn't accept websocket connection, got the following error: %s", err)
+		log.Error().Err(err).Msg("failed to hijack connection for WebSocket")
+		// After a failed hijack, the connection state is unknown and we cannot reliably
+		// write a response. The client connection will eventually timeout.
+		return
+	}
+
+	// Create wrapper with pre-hijacked connection
+	wrappedWriter := &wsResponseWriter{
+		ResponseWriter: c.Writer,
+		conn:           netConn,
+		brw:            brw,
+	}
+
+	conn, err := websocket.Accept(wrappedWriter, c.Request, options)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to accept websocket connection")
+		_ = netConn.Close() // #nosec G104 - best effort cleanup, already in error path
+		return
 	}
 
 	// Append the connection before starting the goroutine
+	connectionsMutex.Lock()
 	connections = append(connections, conn)
+	connectionsMutex.Unlock()
 
 	go env.checkConnection(conn)
 }
@@ -479,6 +722,7 @@ func (env *Env) checkConnection(c *websocket.Conn) {
 		// for some reason it's failing even if the connection is still alive
 		// if you know how to fix it, please open an issue or PR
 		if err := c.Write(context.Background(), websocket.MessageText, []byte("heartbeat")); err != nil {
+			_ = c.Close(websocket.StatusNormalClosure, "heartbeat failed")
 			removeWebSocketConnection(c)
 			return
 		}
@@ -493,12 +737,19 @@ func (env *Env) checkConnection(c *websocket.Conn) {
 func notifyWebSocketClients(message string) {
 	var wg sync.WaitGroup
 
-	for _, conn := range connections {
+	// Copy connections slice under mutex to avoid race condition during iteration
+	connectionsMutex.Lock()
+	connsCopy := make([]*websocket.Conn, len(connections))
+	copy(connsCopy, connections)
+	connectionsMutex.Unlock()
+
+	for _, conn := range connsCopy {
 		wg.Add(1)
 
 		go func(c *websocket.Conn, message string) {
 			defer wg.Done()
 			if err := c.Write(context.Background(), websocket.MessageText, []byte(message)); err != nil {
+				_ = c.Close(websocket.StatusNormalClosure, "write failed")
 				removeWebSocketConnection(c)
 			}
 		}(conn, message)
@@ -511,6 +762,7 @@ func notifyWebSocketClients(message string) {
 // from the global connections slice. It is used to clean up connections that are no longer active.
 // The function takes a WebSocket connection as an argument and removes it from the connections slice.
 // It uses a mutex to prevent concurrent access to the connections slice, ensuring thread safety.
+// Note: Callers are responsible for closing the connection before calling this function.
 func removeWebSocketConnection(conn *websocket.Conn) {
 	connectionsMutex.Lock()
 	defer connectionsMutex.Unlock()

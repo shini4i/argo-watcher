@@ -37,6 +37,21 @@ func TestNewServerConfig(t *testing.T) {
 		_, err := NewServerConfig()
 		assert.Error(t, err)
 	})
+
+	t.Run("Tokens with whitespace are trimmed", func(t *testing.T) {
+		t.Setenv("ARGO_URL", "https://example.com")
+		t.Setenv("ARGO_TOKEN", "  secret-token\n")
+		t.Setenv("ARGO_WATCHER_DEPLOY_TOKEN", "  deploy-token\n")
+		t.Setenv("JWT_SECRET", "  jwt-secret\n")
+		t.Setenv("STATE_TYPE", "postgres")
+
+		cfg, err := NewServerConfig()
+
+		assert.NoError(t, err)
+		assert.Equal(t, "secret-token", cfg.ArgoToken)
+		assert.Equal(t, "deploy-token", cfg.DeployToken)
+		assert.Equal(t, "jwt-secret", cfg.JWTSecret)
+	})
 }
 
 func TestNewServerConfig_RequiredFieldsMissing(t *testing.T) {

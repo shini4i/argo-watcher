@@ -267,6 +267,10 @@ func (app *Application) UpdateGitImageTag(task *Task, gitopsRepo *GitopsRepo) er
 	}
 
 	git, err := updater.NewGitRepo(gitopsRepo.RepoUrl, gitopsRepo.BranchName, gitopsRepo.Path, gitopsRepo.Filename, gitopsRepo.RepoCachePath, updater.GitClient{})
+	if err != nil {
+		log.Error().Str("id", task.Id).Msgf("Failed to create git repo instance for %s: %s", gitopsRepo.RepoUrl, err)
+		return err
+	}
 
 	// Fast Path
 	if err := git.Clone(); err != nil {

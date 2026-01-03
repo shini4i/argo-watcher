@@ -2,6 +2,7 @@ package config
 
 import (
 	"net/url"
+	"strings"
 
 	envConfig "github.com/caarlos0/env/v11"
 	"github.com/go-playground/validator/v10"
@@ -68,6 +69,11 @@ func NewServerConfig() (*ServerConfig, error) {
 	if config, err = envConfig.ParseAs[ServerConfig](); err != nil {
 		return nil, err
 	}
+
+	// Trim whitespace from tokens to prevent issues with trailing newlines from env vars
+	config.ArgoToken = strings.TrimSpace(config.ArgoToken)
+	config.DeployToken = strings.TrimSpace(config.DeployToken)
+	config.JWTSecret = strings.TrimSpace(config.JWTSecret)
 
 	validate := validator.New()
 	if err := validate.Struct(&config); err != nil {

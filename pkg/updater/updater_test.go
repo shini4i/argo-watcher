@@ -420,3 +420,108 @@ func TestCorruptedGitRepo_ErrorPaths(t *testing.T) {
 	err = repo.Clone()
 	assert.NoError(t, err)
 }
+
+// TestValidateSSHKeyFile tests the SSH key validation function.
+func TestValidateSSHKeyFile(t *testing.T) {
+	t.Run("Empty path returns error", func(t *testing.T) {
+		err := validateSSHKeyFile("")
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, ErrSSHKeyNotProvided)
+	})
+
+	t.Run("Non-existent file returns error", func(t *testing.T) {
+		err := validateSSHKeyFile("/nonexistent/path/to/key")
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, ErrSSHKeyNotFound)
+	})
+
+	t.Run("Empty file returns error", func(t *testing.T) {
+		tmpFile := filepath.Join(t.TempDir(), "empty_key")
+		err := os.WriteFile(tmpFile, []byte{}, 0600)
+		require.NoError(t, err)
+
+		err = validateSSHKeyFile(tmpFile)
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, ErrSSHKeyEmpty)
+	})
+
+	t.Run("Invalid key format returns error", func(t *testing.T) {
+		tmpFile := filepath.Join(t.TempDir(), "invalid_key")
+		err := os.WriteFile(tmpFile, []byte("not-a-valid-ssh-key"), 0600)
+		require.NoError(t, err)
+
+		err = validateSSHKeyFile(tmpFile)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid SSH key format")
+	})
+
+	t.Run("Valid unencrypted key succeeds", func(t *testing.T) {
+		// Valid Ed25519 SSH private key (generated for testing)
+		validKey := `-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+QyNTUxOQAAACAC9T4h865mZBBtHdvtGIOAi0l8qogye+9+EKkrrNbVlAAAAJirs5HLq7OR
+ywAAAAtzc2gtZWQyNTUxOQAAACAC9T4h865mZBBtHdvtGIOAi0l8qogye+9+EKkrrNbVlA
+AAAECOtNdCM3z6ouKDjZgB3DjTiUBBfS8NmONZLkpV1EgeKAL1PiHzrmZkEG0d2+0Yg4CL
+SXyqiDJ7734QqSus1tWUAAAAFHNoaW5pNGlAZnJhbWV3b3JrLTEzAQ==
+-----END OPENSSH PRIVATE KEY-----`
+		tmpFile := filepath.Join(t.TempDir(), "valid_key")
+		err := os.WriteFile(tmpFile, []byte(validKey), 0600)
+		require.NoError(t, err)
+
+		err = validateSSHKeyFile(tmpFile)
+		assert.NoError(t, err)
+	})
+
+	t.Run("Valid encrypted key succeeds", func(t *testing.T) {
+		// Valid Ed25519 SSH private key encrypted with passphrase "testpass"
+		encryptedKey := `-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAACmFlczI1Ni1jdHIAAAAGYmNyeXB0AAAAGAAAABB7upjLwQ
+AqkI4IJ+iES3CQAAAAGAAAAAEAAAAzAAAAC3NzaC1lZDI1NTE5AAAAICpBc9pX6uJ9yVUV
+SQRskuz4jZCAfgtcqTi9nXzgJXskAAAAkNKmGjfrN8moWBtZTotUr9Dw+OcxErFtT+5FCE
++6TzFqWPcM820d4ZNHgz3HJ494RRmOcWRTjQbturOddTC0r5tf1kU2rIMke0FPGsivVv00
+CasAIVVHpCHI6L70/csWGiHHxGUGntRpH61OyRXmlRLithA71mvrZpoec9fEzN6VypcFfB
+OWSUtQ6YwycX/LFw==
+-----END OPENSSH PRIVATE KEY-----`
+		tmpFile := filepath.Join(t.TempDir(), "encrypted_key")
+		err := os.WriteFile(tmpFile, []byte(encryptedKey), 0600)
+		require.NoError(t, err)
+
+		err = validateSSHKeyFile(tmpFile)
+		assert.NoError(t, err)
+	})
+
+	t.Run("Directory path returns error", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		err := validateSSHKeyFile(tmpDir)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "SSH key path is a directory")
+	})
+}
+
+// TestAddSSHKeyValidation tests that AddSSHKey validates keys before loading.
+func TestAddSSHKeyValidation(t *testing.T) {
+	client := GitClient{}
+
+	t.Run("Empty path returns validation error", func(t *testing.T) {
+		_, err := client.AddSSHKey("git", "", "")
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, ErrSSHKeyNotProvided)
+	})
+
+	t.Run("Non-existent file returns validation error", func(t *testing.T) {
+		_, err := client.AddSSHKey("git", "/nonexistent/key", "")
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, ErrSSHKeyNotFound)
+	})
+
+	t.Run("Invalid key format returns validation error", func(t *testing.T) {
+		tmpFile := filepath.Join(t.TempDir(), "invalid_key")
+		err := os.WriteFile(tmpFile, []byte("invalid-key-content"), 0600)
+		require.NoError(t, err)
+
+		_, err = client.AddSSHKey("git", tmpFile, "")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid SSH key format")
+	})
+}
