@@ -1,11 +1,15 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/coder/websocket"
 	"github.com/gin-gonic/gin"
@@ -152,9 +156,13 @@ func TestDeployLock(t *testing.T) {
 
 func TestRemoveWebSocketConnection(t *testing.T) {
 	conn := &websocket.Conn{}
+	connectionsMutex.Lock()
 	connections = append(connections, conn)
+	connectionsMutex.Unlock()
 	removeWebSocketConnection(conn)
+	connectionsMutex.Lock()
 	assert.NotContains(t, connections, conn)
+	connectionsMutex.Unlock()
 }
 
 func TestWebSocketConnectionsConcurrentAccess(t *testing.T) {
@@ -286,4 +294,236 @@ func TestGetStateInvalidQueryParams(t *testing.T) {
 			assert.Equal(t, http.StatusOK, w.Code)
 		})
 	}
+}
+
+func TestStaticFileServing(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	// Create a temporary directory for static files
+	tmpDir := t.TempDir()
+
+	// Create test files
+	indexContent := []byte("<html><body>Index</body></html>")
+	jsContent := []byte("console.log('test');")
+
+	err := os.WriteFile(tmpDir+"/index.html", indexContent, 0644)
+	assert.NoError(t, err)
+
+	err = os.MkdirAll(tmpDir+"/assets", 0755)
+	assert.NoError(t, err)
+
+	err = os.WriteFile(tmpDir+"/assets/main.js", jsContent, 0644)
+	assert.NoError(t, err)
+
+	serverConfig := &config.ServerConfig{
+		StaticFilePath: tmpDir,
+	}
+
+	env := &Env{
+		config: serverConfig,
+	}
+
+	env.lockdown, _ = NewLockdown("")
+
+	router := env.CreateRouter()
+
+	t.Run("serves existing static file", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodGet, "/assets/main.js", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, string(jsContent), w.Body.String())
+	})
+
+	t.Run("serves index.html for SPA routes", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodGet, "/dashboard", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, string(indexContent), w.Body.String())
+	})
+
+	t.Run("prevents path traversal attack", func(t *testing.T) {
+		// Try to access /etc/passwd via path traversal
+		// Note: Go's net/http rejects malformed URLs with 400, which is also protection
+		req, _ := http.NewRequest(http.MethodGet, "/../../../etc/passwd", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		// Should either return 400 (Go's built-in protection) or index.html (our protection)
+		// Either way, /etc/passwd should NOT be served
+		assert.NotContains(t, w.Body.String(), "root:")
+	})
+
+	t.Run("prevents encoded path traversal", func(t *testing.T) {
+		// URL-encoded path traversal attempt
+		// Note: Go's net/http rejects malformed URLs with 400, which is also protection
+		req, _ := http.NewRequest(http.MethodGet, "/..%2F..%2F..%2Fetc%2Fpasswd", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		// Should either return 400 (Go's built-in protection) or index.html (our protection)
+		// Either way, /etc/passwd should NOT be served
+		assert.NotContains(t, w.Body.String(), "root:")
+	})
+
+	t.Run("prevents double-dot path traversal in valid URL", func(t *testing.T) {
+		// This path looks valid but tries to escape using /../
+		req, _ := http.NewRequest(http.MethodGet, "/assets/../../../etc/passwd", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		// Should not serve /etc/passwd
+		assert.NotContains(t, w.Body.String(), "root:")
+	})
+
+	t.Run("serves index.html for directory requests", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodGet, "/assets/", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, string(indexContent), w.Body.String())
+	})
+}
+
+func TestWebSocketInterceptor(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	// Create a minimal test environment
+	tmpDir := t.TempDir()
+	err := os.WriteFile(tmpDir+"/index.html", []byte("<html></html>"), 0644)
+	assert.NoError(t, err)
+
+	serverConfig := &config.ServerConfig{
+		StaticFilePath: tmpDir,
+	}
+
+	env := &Env{
+		config: serverConfig,
+	}
+	env.lockdown, _ = NewLockdown("")
+
+	router := env.CreateRouter()
+
+	t.Run("non-upgrade GET to /ws returns 400", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodGet, "/ws", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+		assert.Contains(t, w.Body.String(), "WebSocket upgrade required")
+	})
+
+	t.Run("case-insensitive Upgrade header check", func(t *testing.T) {
+		// Test with different case variations - all should be intercepted by the WebSocket handler
+		// The handler will fail at websocket.Accept (missing Sec-WebSocket-Version), but the key
+		// assertion is that the response body does NOT contain "WebSocket upgrade required"
+		// (which would mean it fell through to the fallback route handler)
+		testCases := []string{"websocket", "WebSocket", "WEBSOCKET", "Websocket"}
+
+		for _, upgradeValue := range testCases {
+			t.Run(upgradeValue, func(t *testing.T) {
+				req, _ := http.NewRequest(http.MethodGet, "/ws", nil)
+				req.Header.Set("Upgrade", upgradeValue)
+				req.Header.Set("Connection", "Upgrade")
+				w := httptest.NewRecorder()
+				router.ServeHTTP(w, req)
+
+				// The interceptor should have handled this, NOT the fallback route
+				// websocket.Accept will fail (missing proper headers), but it should NOT
+				// return our custom "WebSocket upgrade required" message
+				assert.NotContains(t, w.Body.String(), "WebSocket upgrade required",
+					"Upgrade header '%s' should be intercepted by WebSocket handler", upgradeValue)
+			})
+		}
+	})
+}
+
+func TestWebSocketConnectionIntegration(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	// Reset connections at start to ensure clean state
+	connectionsMutex.Lock()
+	connections = nil
+	connectionsMutex.Unlock()
+
+	// Cleanup at end
+	t.Cleanup(func() {
+		connectionsMutex.Lock()
+		connections = nil
+		connectionsMutex.Unlock()
+	})
+
+	// Create a temporary directory for static files
+	tmpDir := t.TempDir()
+	err := os.WriteFile(tmpDir+"/index.html", []byte("<html></html>"), 0644)
+	assert.NoError(t, err)
+
+	serverConfig := &config.ServerConfig{
+		StaticFilePath: tmpDir,
+		DevEnvironment: true, // Allow test origins
+	}
+
+	env := &Env{config: serverConfig}
+	env.lockdown, _ = NewLockdown("")
+
+	router := env.CreateRouter()
+
+	// Use httptest.Server for real HTTP connection (supports hijacking)
+	server := httptest.NewServer(router)
+	defer server.Close()
+
+	// Convert http:// to ws://
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Attempt WebSocket connection
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("WebSocket connection failed: %v", err)
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "test complete")
+
+	// Connection succeeded - the pre-hijack wrapper works
+	t.Log("WebSocket connection established successfully")
+}
+
+func TestWsResponseWriterHijackNilConn(t *testing.T) {
+	w := &wsResponseWriter{
+		ResponseWriter: nil,
+		conn:           nil,
+		brw:            nil,
+	}
+	_, _, err := w.Hijack()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "connection was not pre-hijacked")
+}
+
+func TestWsResponseWriterWriteNilBrw(t *testing.T) {
+	w := &wsResponseWriter{
+		ResponseWriter: nil,
+		conn:           nil,
+		brw:            nil,
+	}
+	n, err := w.Write([]byte("test"))
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "buffered writer not available")
+	assert.Equal(t, 0, n)
+}
+
+func TestWsResponseWriterWriteHeaderNilBrw(t *testing.T) {
+	w := &wsResponseWriter{
+		ResponseWriter: nil,
+		conn:           nil,
+		brw:            nil,
+	}
+	// WriteHeader returns void, so we verify it doesn't panic
+	assert.NotPanics(t, func() {
+		w.WriteHeader(http.StatusSwitchingProtocols)
+	})
 }

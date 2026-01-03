@@ -459,10 +459,10 @@ func TestUpdateGitImageTag(t *testing.T) {
 
 	t.Run("Returns error when NewGitRepo fails", func(t *testing.T) {
 		// Ensure SSH_KEY_PATH is not set so NewGitRepo fails
-		originalSSHKeyPath := os.Getenv("SSH_KEY_PATH")
+		originalSSHKeyPath, wasSet := os.LookupEnv("SSH_KEY_PATH")
 		os.Unsetenv("SSH_KEY_PATH")
 		defer func() {
-			if originalSSHKeyPath != "" {
+			if wasSet {
 				os.Setenv("SSH_KEY_PATH", originalSSHKeyPath)
 			}
 		}()

@@ -1,9 +1,14 @@
 package server
 
 import (
+	"bufio"
 	"context"
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -11,7 +16,6 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/gin-contrib/cors"
-	"github.com/gin-gonic/contrib/static"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog/log"
@@ -37,6 +41,62 @@ const (
 	unauthorizedMessage = "You are not authorized to perform this action"
 	keycloakHeader      = "Keycloak-Authorization"
 )
+
+// wsResponseWriter wraps gin's ResponseWriter to provide proper WebSocket hijacking.
+// gin's ResponseWriter fails Hijack() after WriteHeader() is called, but WebSocket
+// upgrade requires both operations. This wrapper hijacks the connection early
+// (before WriteHeader) and stores the raw connection for later use.
+type wsResponseWriter struct {
+	gin.ResponseWriter
+	conn net.Conn
+	brw  *bufio.ReadWriter
+}
+
+// Hijack returns the pre-hijacked connection, bypassing gin's "already written" check.
+func (w *wsResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if w.conn == nil {
+		return nil, nil, errors.New("connection was not pre-hijacked")
+	}
+	return w.conn, w.brw, nil
+}
+
+// Write writes data through the buffered writer to maintain consistency.
+func (w *wsResponseWriter) Write(data []byte) (int, error) {
+	if w.brw == nil {
+		return 0, errors.New("buffered writer not available")
+	}
+	n, err := w.brw.Write(data)
+	if err != nil {
+		return n, err
+	}
+	return n, w.brw.Flush()
+}
+
+// WriteHeader writes the status line and headers through the buffered writer.
+// Note: The http.ResponseWriter interface does not allow WriteHeader to return an error,
+// so errors are logged but cannot be propagated to the caller.
+func (w *wsResponseWriter) WriteHeader(code int) {
+	if w.brw == nil {
+		log.Error().Msg("buffered writer not available during WriteHeader")
+		return
+	}
+	statusLine := fmt.Sprintf("HTTP/1.1 %d %s\r\n", code, http.StatusText(code))
+	if _, err := w.brw.WriteString(statusLine); err != nil {
+		log.Error().Err(err).Msg("failed to write status line during WebSocket upgrade")
+		return
+	}
+	if err := w.Header().Write(w.brw); err != nil {
+		log.Error().Err(err).Msg("failed to write headers during WebSocket upgrade")
+		return
+	}
+	if _, err := w.brw.WriteString("\r\n"); err != nil {
+		log.Error().Err(err).Msg("failed to write header terminator during WebSocket upgrade")
+		return
+	}
+	if err := w.brw.Flush(); err != nil {
+		log.Error().Err(err).Msg("failed to flush WebSocket upgrade response")
+	}
+}
 
 // Env reference: https://www.alexedwards.net/blog/organising-database-access
 type Env struct {
@@ -66,20 +126,37 @@ func (env *Env) CreateRouter() *gin.Engine {
 
 	router := gin.New()
 	router.Use(gin.Recovery())
+
+	// WebSocket interceptor - must run BEFORE CORS middleware to prevent "response already written" errors
+	// CORS middleware writes headers that interfere with WebSocket hijacking
+	router.Use(func(c *gin.Context) {
+		if c.Request.URL.Path == "/ws" {
+			log.Debug().
+				Str("upgrade", c.Request.Header.Get("Upgrade")).
+				Str("connection", c.Request.Header.Get("Connection")).
+				Bool("written", c.Writer.Written()).
+				Msg("WebSocket request received")
+
+			if strings.EqualFold(c.Request.Header.Get("Upgrade"), "websocket") {
+				env.handleWebSocketConnection(c)
+				c.Abort()
+				return
+			}
+		}
+		c.Next()
+	})
+
 	router.Use(cors.New(env.corsConfig()))
 
-	staticFilesPath := env.config.ResolveStaticFilePath()
-	log.Info().
-		Str("static_path", staticFilesPath).
-		Msg("serving frontend assets")
-	router.Use(static.Serve("/", static.LocalFile(staticFilesPath, true)))
-	router.NoRoute(func(c *gin.Context) {
-		c.File(fmt.Sprintf("%s/index.html", staticFilesPath))
+	// Keep the route registered for non-upgrade requests to /ws (will return 400)
+	router.GET("/ws", func(c *gin.Context) {
+		c.String(http.StatusBadRequest, "WebSocket upgrade required")
 	})
+
+	// API routes
 	router.GET("/healthz", env.healthz)
 	router.GET("/metrics", prometheusHandler())
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
-	router.GET("/ws", env.handleWebSocketConnection)
 
 	v1 := router.Group("/api/v1")
 	{
@@ -92,6 +169,40 @@ func (env *Env) CreateRouter() *gin.Engine {
 		v1.DELETE(deployLockEndpoint, env.ReleaseDeployLock)
 		v1.GET(deployLockEndpoint, env.isDeployLockSet)
 	}
+
+	// Static file serving - use NoRoute to handle unmatched paths
+	// This prevents static middleware from interfering with API and WebSocket routes
+	staticFilesPath := env.config.ResolveStaticFilePath()
+	log.Info().
+		Str("static_path", staticFilesPath).
+		Msg("serving frontend assets")
+
+	// Get absolute path for security validation
+	absStaticPath, err := filepath.Abs(staticFilesPath)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to resolve static files path")
+	}
+
+	router.NoRoute(func(c *gin.Context) {
+		// Clean and validate the path to prevent directory traversal attacks
+		requestedPath := filepath.Clean(c.Request.URL.Path)
+		fullPath := filepath.Join(absStaticPath, requestedPath)
+
+		// Security: ensure the resolved path is within the static directory
+		if !strings.HasPrefix(fullPath, absStaticPath+string(filepath.Separator)) && fullPath != absStaticPath {
+			c.File(filepath.Join(absStaticPath, "index.html"))
+			return
+		}
+
+		// Check if file exists and is not a directory
+		if info, err := os.Stat(fullPath); err == nil && !info.IsDir() {
+			http.ServeFile(c.Writer, c.Request, fullPath)
+			return
+		}
+
+		// Fall back to index.html for SPA routing
+		c.File(filepath.Join(absStaticPath, "index.html"))
+	})
 
 	return router
 }
@@ -457,9 +568,34 @@ func (env *Env) handleWebSocketConnection(c *gin.Context) {
 		InsecureSkipVerify: env.config.DevEnvironment, // It will disable websocket host validation if set to true
 	}
 
-	conn, err := websocket.Accept(c.Writer, c.Request, options)
+	// Pre-hijack the connection BEFORE WriteHeader is called
+	// gin's ResponseWriter fails Hijack after WriteHeader, so we hijack first
+	hijacker, ok := c.Writer.(http.Hijacker)
+	if !ok {
+		log.Error().Msg("ResponseWriter does not support hijacking")
+		c.String(http.StatusInternalServerError, "WebSocket not supported")
+		return
+	}
+
+	netConn, brw, err := hijacker.Hijack()
 	if err != nil {
-		log.Error().Msgf("couldn't accept websocket connection, got the following error: %s", err)
+		log.Error().Err(err).Msg("failed to hijack connection for WebSocket")
+		// After a failed hijack, the connection state is unknown and we cannot reliably
+		// write a response. The client connection will eventually timeout.
+		return
+	}
+
+	// Create wrapper with pre-hijacked connection
+	wrappedWriter := &wsResponseWriter{
+		ResponseWriter: c.Writer,
+		conn:           netConn,
+		brw:            brw,
+	}
+
+	conn, err := websocket.Accept(wrappedWriter, c.Request, options)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to accept websocket connection")
+		netConn.Close()
 		return
 	}
 
