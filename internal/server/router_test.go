@@ -1,8 +1,10 @@
 package server
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -504,6 +506,26 @@ func TestWsResponseWriterHijackNilConn(t *testing.T) {
 	assert.Contains(t, err.Error(), "connection was not pre-hijacked")
 }
 
+func TestWsResponseWriterHijackSuccess(t *testing.T) {
+	// Create a pipe to simulate a connection
+	server, client := net.Pipe()
+	defer server.Close()
+	defer client.Close()
+
+	brw := bufio.NewReadWriter(bufio.NewReader(server), bufio.NewWriter(server))
+
+	w := &wsResponseWriter{
+		ResponseWriter: nil,
+		conn:           server,
+		brw:            brw,
+	}
+
+	conn, readWriter, err := w.Hijack()
+	assert.NoError(t, err)
+	assert.Equal(t, server, conn)
+	assert.Equal(t, brw, readWriter)
+}
+
 func TestWsResponseWriterWriteNilBrw(t *testing.T) {
 	w := &wsResponseWriter{
 		ResponseWriter: nil,
@@ -516,6 +538,35 @@ func TestWsResponseWriterWriteNilBrw(t *testing.T) {
 	assert.Equal(t, 0, n)
 }
 
+func TestWsResponseWriterWriteSuccess(t *testing.T) {
+	// Create a pipe to simulate a connection
+	server, client := net.Pipe()
+	defer server.Close()
+	defer client.Close()
+
+	brw := bufio.NewReadWriter(bufio.NewReader(server), bufio.NewWriter(server))
+
+	w := &wsResponseWriter{
+		ResponseWriter: nil,
+		conn:           server,
+		brw:            brw,
+	}
+
+	// Write in a goroutine since pipes are synchronous
+	done := make(chan struct{})
+	go func() {
+		buf := make([]byte, 4)
+		_, _ = client.Read(buf)
+		close(done)
+	}()
+
+	n, err := w.Write([]byte("test"))
+	<-done
+
+	assert.NoError(t, err)
+	assert.Equal(t, 4, n)
+}
+
 func TestWsResponseWriterWriteHeaderNilBrw(t *testing.T) {
 	w := &wsResponseWriter{
 		ResponseWriter: nil,
@@ -525,5 +576,231 @@ func TestWsResponseWriterWriteHeaderNilBrw(t *testing.T) {
 	// WriteHeader returns void, so we verify it doesn't panic
 	assert.NotPanics(t, func() {
 		w.WriteHeader(http.StatusSwitchingProtocols)
+	})
+}
+
+func TestWsResponseWriterWriteHeaderSuccess(t *testing.T) {
+	// Create a pipe to simulate a connection
+	server, client := net.Pipe()
+	defer server.Close()
+	defer client.Close()
+
+	brw := bufio.NewReadWriter(bufio.NewReader(server), bufio.NewWriter(server))
+
+	// Create a mock ResponseWriter that provides headers
+	mockRW := httptest.NewRecorder()
+	mockRW.Header().Set("Upgrade", "websocket")
+	mockRW.Header().Set("Connection", "Upgrade")
+
+	w := &wsResponseWriter{
+		ResponseWriter: &mockGinResponseWriter{ResponseRecorder: mockRW},
+		conn:           server,
+		brw:            brw,
+	}
+
+	// Read in a goroutine since pipes are synchronous
+	done := make(chan string)
+	go func() {
+		buf := make([]byte, 1024)
+		n, _ := client.Read(buf)
+		done <- string(buf[:n])
+	}()
+
+	w.WriteHeader(http.StatusSwitchingProtocols)
+	result := <-done
+
+	assert.Contains(t, result, "HTTP/1.1 101 Switching Protocols")
+	assert.Contains(t, result, "Upgrade: websocket")
+	assert.Contains(t, result, "Connection: Upgrade")
+}
+
+// mockGinResponseWriter implements gin.ResponseWriter for testing.
+type mockGinResponseWriter struct {
+	*httptest.ResponseRecorder
+}
+
+func (m *mockGinResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return nil, nil, nil
+}
+
+func (m *mockGinResponseWriter) CloseNotify() <-chan bool {
+	return make(chan bool)
+}
+
+func (m *mockGinResponseWriter) Status() int {
+	return m.ResponseRecorder.Code
+}
+
+func (m *mockGinResponseWriter) Size() int {
+	return m.ResponseRecorder.Body.Len()
+}
+
+func (m *mockGinResponseWriter) WriteString(s string) (int, error) {
+	return m.ResponseRecorder.WriteString(s)
+}
+
+func (m *mockGinResponseWriter) Written() bool {
+	return m.ResponseRecorder.Code != 0
+}
+
+func (m *mockGinResponseWriter) WriteHeaderNow() {}
+
+func (m *mockGinResponseWriter) Pusher() http.Pusher {
+	return nil
+}
+
+func (m *mockGinResponseWriter) Flush() {}
+
+// errorWriter is a writer that always fails for testing error paths.
+type errorWriter struct {
+	failAfter int // Number of successful writes before failing
+	count     int
+}
+
+func (e *errorWriter) Write(p []byte) (n int, err error) {
+	e.count++
+	if e.failAfter > 0 && e.count <= e.failAfter {
+		return len(p), nil
+	}
+	return 0, fmt.Errorf("write error")
+}
+
+func (e *errorWriter) Read(p []byte) (n int, err error) {
+	return 0, nil
+}
+
+func TestWsResponseWriterWriteFlushError(t *testing.T) {
+	// Create a writer that always fails
+	// The error occurs on Flush, not on the initial Write (which buffers)
+	ew := &errorWriter{}
+	brw := bufio.NewReadWriter(bufio.NewReader(ew), bufio.NewWriter(ew))
+
+	w := &wsResponseWriter{
+		ResponseWriter: nil,
+		conn:           nil,
+		brw:            brw,
+	}
+
+	// Write succeeds (buffered), but Flush fails
+	n, err := w.Write([]byte("test"))
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "write error")
+	assert.Equal(t, 4, n) // Data was written to buffer
+}
+
+func TestWsResponseWriterWriteBufferOverflow(t *testing.T) {
+	// Create a writer with a tiny buffer that will overflow immediately
+	ew := &errorWriter{}
+	// Use a 1-byte buffer - any write larger than 1 byte will try to flush
+	brw := bufio.NewReadWriter(
+		bufio.NewReader(ew),
+		bufio.NewWriterSize(ew, 1),
+	)
+
+	w := &wsResponseWriter{
+		ResponseWriter: nil,
+		conn:           nil,
+		brw:            brw,
+	}
+
+	// Write larger than buffer forces immediate flush, which fails
+	n, err := w.Write([]byte("test data that exceeds buffer"))
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "write error")
+	assert.Equal(t, 0, n) // Write should fail with 0 bytes
+}
+
+func TestWsResponseWriterWriteHeaderErrors(t *testing.T) {
+	t.Run("status line write error with tiny buffer", func(t *testing.T) {
+		mockRW := httptest.NewRecorder()
+		mockRW.Header().Set("Test", "value")
+
+		ew := &errorWriter{failAfter: 0} // Fail immediately
+		// Use a 1-byte buffer to force immediate write failure
+		brw := bufio.NewReadWriter(
+			bufio.NewReader(ew),
+			bufio.NewWriterSize(ew, 1),
+		)
+
+		w := &wsResponseWriter{
+			ResponseWriter: &mockGinResponseWriter{ResponseRecorder: mockRW},
+			conn:           nil,
+			brw:            brw,
+		}
+
+		// Should not panic, just log error and return
+		assert.NotPanics(t, func() {
+			w.WriteHeader(http.StatusOK)
+		})
+	})
+
+	t.Run("header write error", func(t *testing.T) {
+		mockRW := httptest.NewRecorder()
+		// Add a header that will be written
+		mockRW.Header().Set("Upgrade", "websocket")
+
+		// Fail after status line succeeds (need enough writes for "HTTP/1.1 101 Switching Protocols\r\n")
+		// With 1-byte buffer and ~35 char status line, we need 35+ successful writes
+		ew := &errorWriter{failAfter: 40}
+		brw := bufio.NewReadWriter(
+			bufio.NewReader(ew),
+			bufio.NewWriterSize(ew, 1),
+		)
+
+		w := &wsResponseWriter{
+			ResponseWriter: &mockGinResponseWriter{ResponseRecorder: mockRW},
+			conn:           nil,
+			brw:            brw,
+		}
+
+		// Should not panic, just log error and return
+		assert.NotPanics(t, func() {
+			w.WriteHeader(http.StatusSwitchingProtocols)
+		})
+	})
+
+	t.Run("header terminator write error", func(t *testing.T) {
+		mockRW := httptest.NewRecorder()
+		// No headers - empty header section
+
+		// Status line (~20 chars) + empty headers, then fail on terminator "\r\n"
+		ew := &errorWriter{failAfter: 25}
+		brw := bufio.NewReadWriter(
+			bufio.NewReader(ew),
+			bufio.NewWriterSize(ew, 1),
+		)
+
+		w := &wsResponseWriter{
+			ResponseWriter: &mockGinResponseWriter{ResponseRecorder: mockRW},
+			conn:           nil,
+			brw:            brw,
+		}
+
+		// Should not panic, just log error and return
+		assert.NotPanics(t, func() {
+			w.WriteHeader(http.StatusOK)
+		})
+	})
+
+	t.Run("flush error", func(t *testing.T) {
+		mockRW := httptest.NewRecorder()
+
+		// Fail on flush (after all writes succeed) - need many successful writes
+		ew := &errorWriter{failAfter: 100}
+		brw := bufio.NewReadWriter(
+			bufio.NewReader(ew),
+			bufio.NewWriterSize(ew, 1),
+		)
+
+		w := &wsResponseWriter{
+			ResponseWriter: &mockGinResponseWriter{ResponseRecorder: mockRW},
+			conn:           nil,
+			brw:            brw,
+		}
+
+		// Should not panic, just log error and return
+		assert.NotPanics(t, func() {
+			w.WriteHeader(http.StatusOK)
+		})
 	})
 }
