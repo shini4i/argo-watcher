@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -42,32 +43,35 @@ const (
 	keycloakHeader      = "Keycloak-Authorization"
 )
 
-// sanitizeStaticFilePath validates and sanitizes a user-provided path to ensure
-// it resolves to a file within the allowed static directory. It returns the
-// sanitized absolute path if valid, or an error if the path is outside the
-// allowed directory or invalid.
-//
-// Security measures applied:
-//   - filepath.Clean normalizes the path and removes .. components
-//   - filepath.EvalSymlinks resolves symlinks to prevent symlink-based escapes
-//   - strings.HasPrefix ensures the resolved path is within the base directory
-func sanitizeStaticFilePath(basePath, requestedPath string) (string, error) {
-	// Clean and join the paths
-	cleanPath := filepath.Clean(requestedPath)
-	fullPath := filepath.Join(basePath, cleanPath)
+// safeFileSystem wraps http.Dir with additional symlink protection.
+// This provides defense-in-depth beyond http.Dir's built-in path sanitization.
+type safeFileSystem struct {
+	root     http.Dir
+	basePath string
+}
 
-	// Resolve symlinks to get the real path
+// Open implements http.FileSystem interface with symlink validation.
+func (fs safeFileSystem) Open(name string) (http.File, error) {
+	// http.Dir.Open already sanitizes the path (prevents .. traversal)
+	f, err := fs.root.Open(name)
+	if err != nil {
+		return nil, err
+	}
+
+	// Additional symlink protection: verify the real path is within bounds
+	fullPath := filepath.Join(fs.basePath, filepath.Clean(name))
 	realPath, err := filepath.EvalSymlinks(fullPath)
 	if err != nil {
-		return "", err
+		f.Close()
+		return nil, err
 	}
 
-	// Ensure the resolved path is within the base directory
-	if !strings.HasPrefix(realPath, basePath+string(filepath.Separator)) && realPath != basePath {
-		return "", errors.New("path outside allowed directory")
+	if !strings.HasPrefix(realPath, fs.basePath+string(filepath.Separator)) && realPath != fs.basePath {
+		f.Close()
+		return nil, os.ErrPermission
 	}
 
-	return realPath, nil
+	return f, nil
 }
 
 // wsResponseWriter wraps gin's ResponseWriter to provide proper WebSocket hijacking.
@@ -218,19 +222,23 @@ func (env *Env) CreateRouter() *gin.Engine {
 		log.Fatal().Err(err).Msg("failed to resolve static files path")
 	}
 
-	router.NoRoute(func(c *gin.Context) {
-		// Sanitize and validate the requested path
-		safePath, err := sanitizeStaticFilePath(absStaticPath, c.Request.URL.Path)
-		if err != nil {
-			// Path validation failed - serve index.html for SPA routing
-			c.File(filepath.Join(absStaticPath, "index.html"))
-			return
-		}
+	// Create a safe file system with symlink protection
+	fs := safeFileSystem{
+		root:     http.Dir(absStaticPath),
+		basePath: absStaticPath,
+	}
 
-		// Check if file exists and is not a directory
-		if info, err := os.Stat(safePath); err == nil && !info.IsDir() {
-			http.ServeFile(c.Writer, c.Request, safePath) // #nosec G304 - safePath validated by sanitizeStaticFilePath
-			return
+	router.NoRoute(func(c *gin.Context) {
+		// Try to serve the file using the safe file system
+		// http.Dir handles path sanitization internally
+		f, err := fs.Open(c.Request.URL.Path)
+		if err == nil {
+			defer f.Close()
+			stat, err := f.Stat()
+			if err == nil && !stat.IsDir() {
+				http.ServeContent(c.Writer, c.Request, stat.Name(), stat.ModTime(), f.(io.ReadSeeker))
+				return
+			}
 		}
 
 		// Fall back to index.html for SPA routing
