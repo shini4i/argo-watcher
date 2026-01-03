@@ -808,6 +808,10 @@ func TestWsResponseWriterWriteHeaderErrors(t *testing.T) {
 }
 
 // TestValidatePath tests the path validation function.
+// Security model: validatePath cleans the input path and joins it with basePath.
+// The security check verifies that the JOINED path stays within basePath.
+// Example: input "/../etc/passwd" → cleaned "/etc/passwd" → joined "/tmp/etc/passwd"
+// This is SAFE because the actual file served would be /tmp/etc/passwd, NOT /etc/passwd.
 func TestValidatePath(t *testing.T) {
 	fs := safeFileSystem{
 		root:     http.Dir("/tmp"),
@@ -844,17 +848,19 @@ func TestValidatePath(t *testing.T) {
 		assert.Equal(t, "/", cleanPath)
 	})
 
-	t.Run("path with leading dotdot is cleaned to absolute", func(t *testing.T) {
-		// filepath.Clean normalizes /../ to /, so this becomes /etc/passwd
-		// The actual security comes from http.Dir.Open which restricts to root
+	t.Run("leading dotdot at root level is normalized and joined safely", func(t *testing.T) {
+		// Input: /../etc/passwd → Cleaned: /etc/passwd → Joined: /tmp/etc/passwd
+		// This is SAFE because the joined path /tmp/etc/passwd IS within basePath /tmp/
+		// The file that would be served is /tmp/etc/passwd, NOT /etc/passwd
 		cleanPath, err := fs.validatePath("/../etc/passwd")
 		assert.NoError(t, err)
 		assert.Equal(t, "/etc/passwd", cleanPath)
 	})
 
-	t.Run("path escaping via dotdot is cleaned", func(t *testing.T) {
-		// filepath.Clean normalizes /subdir/../../ to /, so this becomes /etc/passwd
-		// The actual security comes from http.Dir.Open which restricts to root
+	t.Run("dotdot in path is normalized and joined safely", func(t *testing.T) {
+		// Input: /subdir/../../etc/passwd → Cleaned: /etc/passwd → Joined: /tmp/etc/passwd
+		// This is SAFE because the joined path /tmp/etc/passwd IS within basePath /tmp/
+		// The file that would be served is /tmp/etc/passwd, NOT /etc/passwd
 		cleanPath, err := fs.validatePath("/subdir/../../etc/passwd")
 		assert.NoError(t, err)
 		assert.Equal(t, "/etc/passwd", cleanPath)
