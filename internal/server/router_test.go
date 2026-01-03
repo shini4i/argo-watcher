@@ -807,6 +807,66 @@ func TestWsResponseWriterWriteHeaderErrors(t *testing.T) {
 	})
 }
 
+// TestValidatePath tests the path validation function.
+func TestValidatePath(t *testing.T) {
+	fs := safeFileSystem{
+		root:     http.Dir("/tmp"),
+		basePath: "/tmp",
+	}
+
+	t.Run("valid simple path", func(t *testing.T) {
+		cleanPath, err := fs.validatePath("/file.txt")
+		assert.NoError(t, err)
+		assert.Equal(t, "/file.txt", cleanPath)
+	})
+
+	t.Run("valid nested path", func(t *testing.T) {
+		cleanPath, err := fs.validatePath("/subdir/file.txt")
+		assert.NoError(t, err)
+		assert.Equal(t, "/subdir/file.txt", cleanPath)
+	})
+
+	t.Run("path without leading slash", func(t *testing.T) {
+		cleanPath, err := fs.validatePath("file.txt")
+		assert.NoError(t, err)
+		assert.Equal(t, "/file.txt", cleanPath)
+	})
+
+	t.Run("path with dot components is cleaned", func(t *testing.T) {
+		cleanPath, err := fs.validatePath("/./subdir/../file.txt")
+		assert.NoError(t, err)
+		assert.Equal(t, "/file.txt", cleanPath)
+	})
+
+	t.Run("root path is valid", func(t *testing.T) {
+		cleanPath, err := fs.validatePath("/")
+		assert.NoError(t, err)
+		assert.Equal(t, "/", cleanPath)
+	})
+
+	t.Run("path with leading dotdot is cleaned to absolute", func(t *testing.T) {
+		// filepath.Clean normalizes /../ to /, so this becomes /etc/passwd
+		// The actual security comes from http.Dir.Open which restricts to root
+		cleanPath, err := fs.validatePath("/../etc/passwd")
+		assert.NoError(t, err)
+		assert.Equal(t, "/etc/passwd", cleanPath)
+	})
+
+	t.Run("path escaping via dotdot is cleaned", func(t *testing.T) {
+		// filepath.Clean normalizes /subdir/../../ to /, so this becomes /etc/passwd
+		// The actual security comes from http.Dir.Open which restricts to root
+		cleanPath, err := fs.validatePath("/subdir/../../etc/passwd")
+		assert.NoError(t, err)
+		assert.Equal(t, "/etc/passwd", cleanPath)
+	})
+
+	t.Run("empty path becomes root", func(t *testing.T) {
+		cleanPath, err := fs.validatePath("")
+		assert.NoError(t, err)
+		assert.Equal(t, "/", cleanPath)
+	})
+}
+
 // TestSafeFileSystem tests the safe file system implementation.
 func TestSafeFileSystem(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -860,5 +920,41 @@ func TestSafeFileSystem(t *testing.T) {
 		assert.NoError(t, err)
 		assert.NotNil(t, f)
 		f.Close()
+	})
+
+	t.Run("open root directory", func(t *testing.T) {
+		f, err := fs.Open("/")
+		assert.NoError(t, err)
+		assert.NotNil(t, f)
+		stat, err := f.Stat()
+		assert.NoError(t, err)
+		assert.True(t, stat.IsDir())
+		f.Close()
+	})
+}
+
+// TestSafeFileSystemSymlinkProtection tests symlink escape prevention.
+func TestSafeFileSystemSymlinkProtection(t *testing.T) {
+	tmpDir := t.TempDir()
+	outsideDir := t.TempDir()
+
+	// Create a file outside the static directory
+	err := os.WriteFile(filepath.Join(outsideDir, "secret.txt"), []byte("secret data"), 0644)
+	require.NoError(t, err)
+
+	// Create a symlink inside tmpDir that points outside
+	symlinkPath := filepath.Join(tmpDir, "escape")
+	err = os.Symlink(outsideDir, symlinkPath)
+	require.NoError(t, err)
+
+	fs := safeFileSystem{
+		root:     http.Dir(tmpDir),
+		basePath: tmpDir,
+	}
+
+	t.Run("symlink escaping directory is blocked", func(t *testing.T) {
+		_, err := fs.Open("/escape/secret.txt")
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, os.ErrPermission)
 	})
 }
