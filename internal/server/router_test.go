@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 
 	"github.com/coder/websocket"
@@ -154,6 +155,36 @@ func TestRemoveWebSocketConnection(t *testing.T) {
 	connections = append(connections, conn)
 	removeWebSocketConnection(conn)
 	assert.NotContains(t, connections, conn)
+}
+
+func TestWebSocketConnectionsConcurrentAccess(t *testing.T) {
+	// Reset connections slice
+	connectionsMutex.Lock()
+	connections = nil
+	connectionsMutex.Unlock()
+
+	// Test concurrent add and remove operations don't cause race conditions
+	var wg sync.WaitGroup
+	numGoroutines := 10
+
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			conn := &websocket.Conn{}
+			connectionsMutex.Lock()
+			connections = append(connections, conn)
+			connectionsMutex.Unlock()
+			removeWebSocketConnection(conn)
+		}()
+	}
+
+	wg.Wait()
+
+	// All connections should have been removed
+	connectionsMutex.Lock()
+	assert.Empty(t, connections)
+	connectionsMutex.Unlock()
 }
 
 func TestNewEnv(t *testing.T) {

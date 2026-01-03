@@ -497,7 +497,13 @@ func (env *Env) checkConnection(c *websocket.Conn) {
 func notifyWebSocketClients(message string) {
 	var wg sync.WaitGroup
 
-	for _, conn := range connections {
+	// Copy connections slice under mutex to avoid race condition during iteration
+	connectionsMutex.Lock()
+	connsCopy := make([]*websocket.Conn, len(connections))
+	copy(connsCopy, connections)
+	connectionsMutex.Unlock()
+
+	for _, conn := range connsCopy {
 		wg.Add(1)
 
 		go func(c *websocket.Conn, message string) {

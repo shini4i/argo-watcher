@@ -432,3 +432,64 @@ func TestIsFireAndForgetModeActive(t *testing.T) {
 		})
 	}
 }
+
+func TestUpdateGitImageTag(t *testing.T) {
+	t.Run("Returns nil when path is empty", func(t *testing.T) {
+		app := &Application{}
+		task := &Task{Id: "test-id"}
+		gitopsRepo := &GitopsRepo{Path: ""}
+
+		err := app.UpdateGitImageTag(task, gitopsRepo)
+		assert.NoError(t, err)
+	})
+
+	t.Run("Returns nil when no release overrides found", func(t *testing.T) {
+		app := &Application{
+			Metadata: ApplicationMetadata{
+				Name:        "test-app",
+				Annotations: map[string]string{},
+			},
+		}
+		task := &Task{Id: "test-id"}
+		gitopsRepo := &GitopsRepo{Path: "/some/path"}
+
+		err := app.UpdateGitImageTag(task, gitopsRepo)
+		assert.NoError(t, err)
+	})
+
+	t.Run("Returns error when NewGitRepo fails", func(t *testing.T) {
+		// Ensure SSH_KEY_PATH is not set so NewGitRepo fails
+		originalSSHKeyPath := os.Getenv("SSH_KEY_PATH")
+		os.Unsetenv("SSH_KEY_PATH")
+		defer func() {
+			if originalSSHKeyPath != "" {
+				os.Setenv("SSH_KEY_PATH", originalSSHKeyPath)
+			}
+		}()
+
+		app := &Application{
+			Metadata: ApplicationMetadata{
+				Name: "test-app",
+				Annotations: map[string]string{
+					"argo-watcher/managed-images":         "app=myimage",
+					"argo-watcher/app.helm.image-tag":     "image.tag",
+				},
+			},
+		}
+		task := &Task{
+			Id: "test-id",
+			Images: []Image{
+				{Image: "myimage", Tag: "v1.0.0"},
+			},
+		}
+		gitopsRepo := &GitopsRepo{
+			RepoUrl:    "git@github.com:test/repo.git",
+			BranchName: "main",
+			Path:       "/some/path",
+		}
+
+		err := app.UpdateGitImageTag(task, gitopsRepo)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to load git config")
+	})
+}
