@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -16,6 +17,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
@@ -802,5 +804,53 @@ func TestWsResponseWriterWriteHeaderErrors(t *testing.T) {
 		assert.NotPanics(t, func() {
 			w.WriteHeader(http.StatusOK)
 		})
+	})
+}
+
+// TestSanitizeStaticFilePath tests the path sanitization function.
+func TestSanitizeStaticFilePath(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create test files
+	err := os.WriteFile(filepath.Join(tmpDir, "file.txt"), []byte("content"), 0644)
+	require.NoError(t, err)
+
+	err = os.MkdirAll(filepath.Join(tmpDir, "subdir"), 0755)
+	require.NoError(t, err)
+
+	err = os.WriteFile(filepath.Join(tmpDir, "subdir", "nested.txt"), []byte("nested"), 0644)
+	require.NoError(t, err)
+
+	t.Run("valid path returns sanitized path", func(t *testing.T) {
+		safePath, err := sanitizeStaticFilePath(tmpDir, "/file.txt")
+		assert.NoError(t, err)
+		assert.Equal(t, filepath.Join(tmpDir, "file.txt"), safePath)
+	})
+
+	t.Run("nested valid path returns sanitized path", func(t *testing.T) {
+		safePath, err := sanitizeStaticFilePath(tmpDir, "/subdir/nested.txt")
+		assert.NoError(t, err)
+		assert.Equal(t, filepath.Join(tmpDir, "subdir", "nested.txt"), safePath)
+	})
+
+	t.Run("path traversal attack returns error", func(t *testing.T) {
+		_, err := sanitizeStaticFilePath(tmpDir, "/../../../etc/passwd")
+		assert.Error(t, err)
+	})
+
+	t.Run("dotdot in middle returns error for outside path", func(t *testing.T) {
+		_, err := sanitizeStaticFilePath(tmpDir, "/subdir/../../etc/passwd")
+		assert.Error(t, err)
+	})
+
+	t.Run("non-existent file returns error", func(t *testing.T) {
+		_, err := sanitizeStaticFilePath(tmpDir, "/nonexistent.txt")
+		assert.Error(t, err)
+	})
+
+	t.Run("clean path removes redundant components", func(t *testing.T) {
+		safePath, err := sanitizeStaticFilePath(tmpDir, "/./subdir/../file.txt")
+		assert.NoError(t, err)
+		assert.Equal(t, filepath.Join(tmpDir, "file.txt"), safePath)
 	})
 }
