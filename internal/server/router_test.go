@@ -887,23 +887,27 @@ func TestSafeFileSystem(t *testing.T) {
 	err = os.WriteFile(filepath.Join(tmpDir, "subdir", "nested.txt"), []byte("nested"), 0644)
 	require.NoError(t, err)
 
+	// Resolve symlinks to ensure consistent path comparison (important on macOS)
+	resolvedBase, err := filepath.EvalSymlinks(tmpDir)
+	require.NoError(t, err)
+
 	fs := safeFileSystem{
 		root:     http.Dir(tmpDir),
-		basePath: tmpDir,
+		basePath: resolvedBase,
 	}
 
 	t.Run("valid path opens file", func(t *testing.T) {
 		f, err := fs.Open("/file.txt")
-		assert.NoError(t, err)
-		assert.NotNil(t, f)
-		f.Close()
+		require.NoError(t, err)
+		require.NotNil(t, f)
+		defer f.Close()
 	})
 
 	t.Run("nested valid path opens file", func(t *testing.T) {
 		f, err := fs.Open("/subdir/nested.txt")
-		assert.NoError(t, err)
-		assert.NotNil(t, f)
-		f.Close()
+		require.NoError(t, err)
+		require.NotNil(t, f)
+		defer f.Close()
 	})
 
 	t.Run("path traversal attack returns error", func(t *testing.T) {
@@ -923,19 +927,19 @@ func TestSafeFileSystem(t *testing.T) {
 
 	t.Run("clean path with redundant components works", func(t *testing.T) {
 		f, err := fs.Open("/./subdir/../file.txt")
-		assert.NoError(t, err)
-		assert.NotNil(t, f)
-		f.Close()
+		require.NoError(t, err)
+		require.NotNil(t, f)
+		defer f.Close()
 	})
 
 	t.Run("open root directory", func(t *testing.T) {
 		f, err := fs.Open("/")
-		assert.NoError(t, err)
-		assert.NotNil(t, f)
+		require.NoError(t, err)
+		require.NotNil(t, f)
+		defer f.Close()
 		stat, err := f.Stat()
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.True(t, stat.IsDir())
-		f.Close()
 	})
 }
 
@@ -953,9 +957,13 @@ func TestSafeFileSystemSymlinkProtection(t *testing.T) {
 	err = os.Symlink(outsideDir, symlinkPath)
 	require.NoError(t, err)
 
+	// Resolve symlinks to ensure consistent path comparison (important on macOS)
+	resolvedBase, err := filepath.EvalSymlinks(tmpDir)
+	require.NoError(t, err)
+
 	fs := safeFileSystem{
 		root:     http.Dir(tmpDir),
-		basePath: tmpDir,
+		basePath: resolvedBase,
 	}
 
 	t.Run("symlink escaping directory is blocked", func(t *testing.T) {

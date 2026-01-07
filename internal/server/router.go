@@ -33,8 +33,9 @@ import (
 var version = "local"
 
 var (
-	connectionsMutex sync.Mutex
+	connectionsMutex sync.RWMutex
 	connections      []*websocket.Conn
+	closedConns      = make(map[*websocket.Conn]bool) // Track closed connections to prevent use-after-close
 )
 
 const (
@@ -197,10 +198,18 @@ type Env struct {
 	strategies map[string]auth.AuthStrategy
 	// authenticator orchestrates registered strategies
 	authenticator *auth.Authenticator
+	// shutdown context for graceful shutdown
+	shutdownCtx    context.Context
+	shutdownCancel context.CancelFunc
 }
 
 // CreateRouter initialize router.
 func (env *Env) CreateRouter() *gin.Engine {
+	// Initialize shutdown context if not set (for tests that create Env directly)
+	if env.shutdownCtx == nil {
+		env.shutdownCtx, env.shutdownCancel = context.WithCancel(context.Background())
+	}
+
 	docs.SwaggerInfo.Title = "Argo-Watcher API"
 	docs.SwaggerInfo.Version = version
 	docs.SwaggerInfo.Description = "A small tool that will help to improve deployment visibility"
@@ -266,10 +275,18 @@ func (env *Env) CreateRouter() *gin.Engine {
 		log.Fatal().Err(err).Msg("failed to resolve static files path")
 	}
 
+	// Resolve symlinks in the base path to ensure consistent path comparison
+	// This is important on macOS where /var is a symlink to /private/var
+	resolvedBasePath, err := filepath.EvalSymlinks(absStaticPath)
+	if err != nil {
+		// If symlink resolution fails (e.g., path doesn't exist yet), fall back to absolute path
+		resolvedBasePath = absStaticPath
+	}
+
 	// Create a safe file system with symlink protection
 	fs := safeFileSystem{
 		root:     http.Dir(absStaticPath),
-		basePath: absStaticPath,
+		basePath: resolvedBasePath,
 	}
 
 	router.NoRoute(env.createStaticFileHandler(fs, absStaticPath))
@@ -311,11 +328,21 @@ func tryServeStaticFile(c *gin.Context, fs safeFileSystem) bool {
 	return true
 }
 
-func (env *Env) StartRouter(router *gin.Engine) {
+// StartRouter creates and returns an HTTP server configured with the given router.
+// The caller is responsible for starting the server and handling graceful shutdown.
+func (env *Env) StartRouter(router *gin.Engine) *http.Server {
 	routerBind := fmt.Sprintf("%s:%s", env.config.Host, env.config.Port)
 	log.Debug().Msgf("Listening on %s", routerBind)
-	if err := router.Run(routerBind); err != nil {
-		panic(err)
+	return &http.Server{
+		Addr:    routerBind,
+		Handler: router,
+	}
+}
+
+// Shutdown gracefully shuts down the server and all WebSocket connections.
+func (env *Env) Shutdown() {
+	if env.shutdownCancel != nil {
+		env.shutdownCancel()
 	}
 }
 
@@ -717,14 +744,21 @@ func (env *Env) checkConnection(c *websocket.Conn) {
 	ticker := time.NewTicker(time.Second * 30)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		// we are not using c.Ping here, because it's not working as expected
-		// for some reason it's failing even if the connection is still alive
-		// if you know how to fix it, please open an issue or PR
-		if err := c.Write(context.Background(), websocket.MessageText, []byte("heartbeat")); err != nil {
-			_ = c.Close(websocket.StatusNormalClosure, "heartbeat failed")
+	for {
+		select {
+		case <-env.shutdownCtx.Done():
+			_ = c.Close(websocket.StatusGoingAway, "server shutdown")
 			removeWebSocketConnection(c)
 			return
+		case <-ticker.C:
+			// we are not using c.Ping here, because it's not working as expected
+			// for some reason it's failing even if the connection is still alive
+			// if you know how to fix it, please open an issue or PR
+			if err := c.Write(env.shutdownCtx, websocket.MessageText, []byte("heartbeat")); err != nil {
+				_ = c.Close(websocket.StatusNormalClosure, "heartbeat failed")
+				removeWebSocketConnection(c)
+				return
+			}
 		}
 	}
 }
@@ -738,10 +772,15 @@ func notifyWebSocketClients(message string) {
 	var wg sync.WaitGroup
 
 	// Copy connections slice under mutex to avoid race condition during iteration
-	connectionsMutex.Lock()
-	connsCopy := make([]*websocket.Conn, len(connections))
-	copy(connsCopy, connections)
-	connectionsMutex.Unlock()
+	// Also filter out closed connections
+	connectionsMutex.RLock()
+	connsCopy := make([]*websocket.Conn, 0, len(connections))
+	for _, c := range connections {
+		if !closedConns[c] {
+			connsCopy = append(connsCopy, c)
+		}
+	}
+	connectionsMutex.RUnlock()
 
 	for _, conn := range connsCopy {
 		wg.Add(1)
@@ -767,12 +806,18 @@ func removeWebSocketConnection(conn *websocket.Conn) {
 	connectionsMutex.Lock()
 	defer connectionsMutex.Unlock()
 
+	// Mark as closed first to prevent use-after-close during concurrent access
+	closedConns[conn] = true
+
 	for i := range connections {
 		if connections[i] == conn {
 			connections = append(connections[:i], connections[i+1:]...)
 			break
 		}
 	}
+
+	// Clean up closedConns entry to prevent memory leak
+	delete(closedConns, conn)
 }
 
 // NewEnv initializes a new Env instance.
@@ -781,11 +826,14 @@ func NewEnv(serverConfig *config.ServerConfig, argo *argocd.Argo, metrics *prome
 	var env *Env
 	var err error
 
+	shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
 	env = &Env{
-		config:  serverConfig,
-		argo:    argo,
-		metrics: metrics,
-		updater: updater,
+		config:         serverConfig,
+		argo:           argo,
+		metrics:        metrics,
+		updater:        updater,
+		shutdownCtx:    shutdownCtx,
+		shutdownCancel: shutdownCancel,
 	}
 
 	if env.lockdown, err = NewLockdown(serverConfig.LockdownSchedule); err != nil {

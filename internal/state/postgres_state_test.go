@@ -100,7 +100,8 @@ func TestPostgresState_GetTask(t *testing.T) {
 	inserted := env.addTask(t, sampleTask("Test"))
 
 	task, err := env.state.GetTask(inserted.Id)
-	assert.NoError(t, err)
+	require.NoError(t, err)
+	require.NotNil(t, task)
 	assert.Equal(t, inserted.Id, task.Id)
 	assert.Equal(t, models.StatusInProgressMessage, task.Status)
 }
@@ -113,7 +114,8 @@ func TestPostgresState_SetTaskStatus(t *testing.T) {
 	assert.NoError(t, err)
 
 	taskInfo, err := env.state.GetTask(inserted.Id)
-	assert.NoError(t, err)
+	require.NoError(t, err)
+	require.NotNil(t, taskInfo)
 	assert.Equal(t, models.StatusDeployedMessage, taskInfo.Status)
 	assert.Equal(t, "finished", taskInfo.StatusReason)
 }
@@ -140,7 +142,8 @@ func TestPostgresState_ProcessObsoleteTasks(t *testing.T) {
 	assert.Error(t, err)
 
 	task, err := env.state.GetTask(obsolete.Id)
-	assert.NoError(t, err)
+	require.NoError(t, err)
+	require.NotNil(t, task)
 	assert.Equal(t, models.StatusAborted, task.Status)
 }
 
