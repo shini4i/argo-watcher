@@ -203,6 +203,8 @@ type Env struct {
 	shutdownCh chan struct{}
 	// shutdownOnce ensures Shutdown() can be called multiple times safely.
 	shutdownOnce sync.Once
+	// connWg tracks active WebSocket connection goroutines for graceful shutdown.
+	connWg sync.WaitGroup
 }
 
 // CreateRouter initialize router.
@@ -343,13 +345,16 @@ func (env *Env) StartRouter(router *gin.Engine) *http.Server {
 }
 
 // Shutdown gracefully shuts down the server and all WebSocket connections.
-// This method is safe to call multiple times.
+// This method is safe to call multiple times. It blocks until all WebSocket
+// goroutines have finished.
 func (env *Env) Shutdown() {
 	if env.shutdownCh != nil {
 		env.shutdownOnce.Do(func() {
 			close(env.shutdownCh)
 		})
 	}
+	// Wait for all WebSocket connection goroutines to finish
+	env.connWg.Wait()
 }
 
 func (env *Env) corsConfig() cors.Config {
@@ -741,12 +746,16 @@ func (env *Env) handleWebSocketConnection(c *gin.Context) {
 	connections = append(connections, conn)
 	connectionsMutex.Unlock()
 
+	// Track the goroutine for graceful shutdown
+	env.connWg.Add(1)
 	go env.checkConnection(conn)
 }
 
 // checkConnection is a method for the Env struct that continuously checks the
 // health of a WebSocket connection by sending periodic "heartbeat" messages.
 func (env *Env) checkConnection(c *websocket.Conn) {
+	defer env.connWg.Done()
+
 	ticker := time.NewTicker(time.Second * 30)
 	defer ticker.Stop()
 
@@ -761,13 +770,13 @@ func (env *Env) checkConnection(c *websocket.Conn) {
 			// for some reason it's failing even if the connection is still alive
 			// if you know how to fix it, please open an issue or PR
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			err := c.Write(ctx, websocket.MessageText, []byte("heartbeat"))
-			cancel()
-			if err != nil {
+			if err := c.Write(ctx, websocket.MessageText, []byte("heartbeat")); err != nil {
+				cancel()
 				_ = c.Close(websocket.StatusNormalClosure, "heartbeat failed")
 				removeWebSocketConnection(c)
 				return
 			}
+			cancel()
 		}
 	}
 }
