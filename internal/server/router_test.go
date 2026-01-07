@@ -1363,3 +1363,543 @@ func TestPrometheusHandler(t *testing.T) {
 	// Should return a valid response (prometheus metrics)
 	assert.Equal(t, http.StatusOK, w.Code)
 }
+
+// mockTaskRepositoryWithHealth allows configuring health check response.
+type mockTaskRepositoryWithHealth struct {
+	mockTaskRepository
+	healthy   bool
+	taskError error
+}
+
+func (m *mockTaskRepositoryWithHealth) Check() bool {
+	return m.healthy
+}
+
+func (m *mockTaskRepositoryWithHealth) GetTask(id string) (*models.Task, error) {
+	if m.taskError != nil {
+		return nil, m.taskError
+	}
+	return &models.Task{
+		Id:           id,
+		App:          "test-app",
+		Author:       "test-author",
+		Project:      "test-project",
+		Status:       "deployed",
+		StatusReason: "",
+	}, nil
+}
+
+// TestHealthzEndpoint tests the healthz endpoint.
+func TestHealthzEndpoint(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("returns up when healthy", func(t *testing.T) {
+		argo := &argocd.Argo{}
+		argo.Init(&mockTaskRepositoryWithHealth{healthy: true}, &mockArgoApi{}, &mockMetrics{})
+
+		env := &Env{argo: argo}
+
+		router := gin.New()
+		router.GET("/healthz", env.healthz)
+
+		req, _ := http.NewRequest(http.MethodGet, "/healthz", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Contains(t, w.Body.String(), "up")
+	})
+
+	t.Run("returns down when unhealthy", func(t *testing.T) {
+		argo := &argocd.Argo{}
+		argo.Init(&mockTaskRepositoryWithHealth{healthy: false}, &mockArgoApi{}, &mockMetrics{})
+
+		env := &Env{argo: argo}
+
+		router := gin.New()
+		router.GET("/healthz", env.healthz)
+
+		req, _ := http.NewRequest(http.MethodGet, "/healthz", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+		assert.Contains(t, w.Body.String(), "down")
+	})
+}
+
+// TestGetConfigEndpoint tests the getConfig endpoint.
+func TestGetConfigEndpoint(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	serverConfig := &config.ServerConfig{
+		StateType:      "in-memory",
+		LogLevel:       "debug",
+		DevEnvironment: true,
+	}
+
+	env := &Env{config: serverConfig}
+
+	router := gin.New()
+	router.GET("/api/v1/config", env.getConfig)
+
+	req, _ := http.NewRequest(http.MethodGet, "/api/v1/config", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), "in-memory")
+	assert.Contains(t, w.Body.String(), "debug")
+	assert.Contains(t, w.Body.String(), "devEnvironment")
+}
+
+// TestGetTaskStatusEndpoint tests the getTaskStatus endpoint.
+func TestGetTaskStatusEndpoint(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("returns task when found", func(t *testing.T) {
+		argo := &argocd.Argo{}
+		argo.Init(&mockTaskRepositoryWithHealth{healthy: true}, &mockArgoApi{}, &mockMetrics{})
+
+		env := &Env{argo: argo}
+
+		router := gin.New()
+		router.GET("/api/v1/tasks/:id", env.getTaskStatus)
+
+		req, _ := http.NewRequest(http.MethodGet, "/api/v1/tasks/test-task-id", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Contains(t, w.Body.String(), "test-task-id")
+		assert.Contains(t, w.Body.String(), "test-app")
+	})
+
+	t.Run("returns error when task not found", func(t *testing.T) {
+		argo := &argocd.Argo{}
+		argo.Init(&mockTaskRepositoryWithHealth{
+			healthy:   true,
+			taskError: fmt.Errorf("task not found"),
+		}, &mockArgoApi{}, &mockMetrics{})
+
+		env := &Env{argo: argo}
+
+		router := gin.New()
+		router.GET("/api/v1/tasks/:id", env.getTaskStatus)
+
+		req, _ := http.NewRequest(http.MethodGet, "/api/v1/tasks/nonexistent", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Contains(t, w.Body.String(), "nonexistent")
+		assert.Contains(t, w.Body.String(), "task not found")
+	})
+}
+
+// TestValidateTokenWithStrategies tests the validateToken method.
+func TestValidateTokenWithStrategies(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("returns result from authenticator when no allowed strategy", func(t *testing.T) {
+		strategies := make(map[string]auth.AuthStrategy)
+		mockAuth := auth.NewAuthenticator(strategies)
+
+		env := &Env{
+			authenticator: mockAuth,
+			strategies:    strategies,
+		}
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request, _ = http.NewRequest(http.MethodPost, "/test", nil)
+
+		// With empty authenticator and no strategies, validation returns false
+		valid, err := env.validateToken(c, "")
+		assert.False(t, valid)
+		assert.NoError(t, err)
+	})
+
+	t.Run("skips non-matching strategy headers", func(t *testing.T) {
+		env := &Env{
+			strategies: make(map[string]auth.AuthStrategy),
+		}
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request, _ = http.NewRequest(http.MethodPost, "/test", nil)
+		c.Request.Header.Set("Authorization", "Bearer test-token")
+
+		// With no matching strategy, returns false
+		valid, err := env.validateAllowedStrategy(c, "Keycloak-Authorization")
+		assert.False(t, valid)
+		assert.NoError(t, err)
+	})
+}
+
+// mockAuthStrategy is a configurable mock for auth.AuthStrategy.
+type mockAuthStrategy struct {
+	valid bool
+	err   error
+}
+
+func (m *mockAuthStrategy) Validate(_ string) (bool, error) {
+	return m.valid, m.err
+}
+
+// mockTaskRepositoryForAddTask extends mockTaskRepositoryWithHealth with AddTask support.
+type mockTaskRepositoryForAddTask struct {
+	mockTaskRepositoryWithHealth
+	addTaskError error
+	addedTask    *models.Task
+}
+
+func (m *mockTaskRepositoryForAddTask) AddTask(task models.Task) (*models.Task, error) {
+	if m.addTaskError != nil {
+		return nil, m.addTaskError
+	}
+	task.Id = "generated-task-id"
+	m.addedTask = &task
+	return &task, nil
+}
+
+// TestAddTaskEndpoint tests the addTask endpoint.
+func TestAddTaskEndpoint(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("returns error for invalid JSON payload", func(t *testing.T) {
+		env := &Env{}
+
+		router := gin.New()
+		router.POST("/api/v1/tasks", env.addTask)
+
+		req, _ := http.NewRequest(http.MethodPost, "/api/v1/tasks", strings.NewReader("invalid json"))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusNotAcceptable, w.Code)
+		assert.Contains(t, w.Body.String(), "invalid payload")
+	})
+
+	t.Run("rejects task when lockdown is active", func(t *testing.T) {
+		lockdown, _ := NewLockdown("")
+		lockdown.SetLock()
+
+		env := &Env{
+			lockdown: lockdown,
+		}
+
+		router := gin.New()
+		router.POST("/api/v1/tasks", env.addTask)
+
+		taskJSON := `{"app": "test-app", "author": "test-author", "project": "test-project", "images": [{"image": "test", "tag": "v1"}]}`
+		req, _ := http.NewRequest(http.MethodPost, "/api/v1/tasks", strings.NewReader(taskJSON))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusNotAcceptable, w.Code)
+		assert.Contains(t, w.Body.String(), "rejected")
+		assert.Contains(t, w.Body.String(), "lockdown is active")
+	})
+
+	t.Run("returns error when token validation fails", func(t *testing.T) {
+		lockdown, _ := NewLockdown("")
+		strategies := make(map[string]auth.AuthStrategy)
+		strategies["Authorization"] = &mockAuthStrategy{valid: false, err: fmt.Errorf("validation error")}
+
+		env := &Env{
+			lockdown:      lockdown,
+			strategies:    strategies,
+			authenticator: auth.NewAuthenticator(strategies),
+		}
+
+		router := gin.New()
+		router.POST("/api/v1/tasks", env.addTask)
+
+		taskJSON := `{"app": "test-app", "author": "test-author", "project": "test-project", "images": [{"image": "test", "tag": "v1"}]}`
+		req, _ := http.NewRequest(http.MethodPost, "/api/v1/tasks", strings.NewReader(taskJSON))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer test-token")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+
+	t.Run("returns error when argo.AddTask fails", func(t *testing.T) {
+		lockdown, _ := NewLockdown("")
+		strategies := make(map[string]auth.AuthStrategy)
+
+		argo := &argocd.Argo{}
+		argo.Init(&mockTaskRepositoryForAddTask{
+			mockTaskRepositoryWithHealth: mockTaskRepositoryWithHealth{healthy: true},
+			addTaskError:                 fmt.Errorf("argo unavailable"),
+		}, &mockArgoApi{}, &mockMetrics{})
+
+		env := &Env{
+			lockdown:      lockdown,
+			strategies:    strategies,
+			authenticator: auth.NewAuthenticator(strategies),
+			argo:          argo,
+		}
+
+		router := gin.New()
+		router.POST("/api/v1/tasks", env.addTask)
+
+		taskJSON := `{"app": "test-app", "author": "test-author", "project": "test-project", "images": [{"image": "test", "tag": "v1"}]}`
+		req, _ := http.NewRequest(http.MethodPost, "/api/v1/tasks", strings.NewReader(taskJSON))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+		assert.Contains(t, w.Body.String(), "down")
+	})
+
+}
+
+// TestSetDeployLockWithKeycloak tests SetDeployLock with Keycloak authentication.
+func TestSetDeployLockWithKeycloak(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("returns error when validation fails", func(t *testing.T) {
+		lockdown, _ := NewLockdown("")
+		strategies := make(map[string]auth.AuthStrategy)
+		strategies[keycloakHeader] = &mockAuthStrategy{valid: false, err: fmt.Errorf("keycloak error")}
+
+		env := &Env{
+			lockdown:   lockdown,
+			strategies: strategies,
+			config: &config.ServerConfig{
+				Keycloak: config.KeycloakConfig{Enabled: true},
+			},
+		}
+
+		router := gin.New()
+		router.POST("/api/v1/deploy-lock", env.SetDeployLock)
+
+		req, _ := http.NewRequest(http.MethodPost, "/api/v1/deploy-lock", nil)
+		req.Header.Set(keycloakHeader, "Bearer test-token")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
+		assert.Contains(t, w.Body.String(), "Validation process failed")
+	})
+
+	t.Run("returns unauthorized when token is invalid", func(t *testing.T) {
+		lockdown, _ := NewLockdown("")
+		strategies := make(map[string]auth.AuthStrategy)
+		strategies[keycloakHeader] = &mockAuthStrategy{valid: false, err: nil}
+
+		env := &Env{
+			lockdown:   lockdown,
+			strategies: strategies,
+			config: &config.ServerConfig{
+				Keycloak: config.KeycloakConfig{Enabled: true},
+			},
+		}
+
+		router := gin.New()
+		router.POST("/api/v1/deploy-lock", env.SetDeployLock)
+
+		req, _ := http.NewRequest(http.MethodPost, "/api/v1/deploy-lock", nil)
+		req.Header.Set(keycloakHeader, "Bearer invalid-token")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusUnauthorized, w.Code)
+		assert.Contains(t, w.Body.String(), "not authorized")
+	})
+
+	t.Run("sets lock when token is valid", func(t *testing.T) {
+		lockdown, _ := NewLockdown("")
+		strategies := make(map[string]auth.AuthStrategy)
+		strategies[keycloakHeader] = &mockAuthStrategy{valid: true, err: nil}
+
+		env := &Env{
+			lockdown:   lockdown,
+			strategies: strategies,
+			config: &config.ServerConfig{
+				Keycloak: config.KeycloakConfig{Enabled: true},
+			},
+		}
+
+		router := gin.New()
+		router.POST("/api/v1/deploy-lock", env.SetDeployLock)
+
+		req, _ := http.NewRequest(http.MethodPost, "/api/v1/deploy-lock", nil)
+		req.Header.Set(keycloakHeader, "Bearer valid-token")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Contains(t, w.Body.String(), "deploy lock is set")
+		assert.True(t, lockdown.IsLocked())
+	})
+}
+
+// TestReleaseDeployLockWithKeycloak tests ReleaseDeployLock with Keycloak authentication.
+func TestReleaseDeployLockWithKeycloak(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("returns error when validation fails", func(t *testing.T) {
+		lockdown, _ := NewLockdown("")
+		lockdown.SetLock()
+		strategies := make(map[string]auth.AuthStrategy)
+		strategies[keycloakHeader] = &mockAuthStrategy{valid: false, err: fmt.Errorf("keycloak error")}
+
+		env := &Env{
+			lockdown:   lockdown,
+			strategies: strategies,
+			config: &config.ServerConfig{
+				Keycloak: config.KeycloakConfig{Enabled: true},
+			},
+		}
+
+		router := gin.New()
+		router.DELETE("/api/v1/deploy-lock", env.ReleaseDeployLock)
+
+		req, _ := http.NewRequest(http.MethodDelete, "/api/v1/deploy-lock", nil)
+		req.Header.Set(keycloakHeader, "Bearer test-token")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
+		assert.Contains(t, w.Body.String(), "Validation process failed")
+	})
+
+	t.Run("returns unauthorized when token is invalid", func(t *testing.T) {
+		lockdown, _ := NewLockdown("")
+		lockdown.SetLock()
+		strategies := make(map[string]auth.AuthStrategy)
+		strategies[keycloakHeader] = &mockAuthStrategy{valid: false, err: nil}
+
+		env := &Env{
+			lockdown:   lockdown,
+			strategies: strategies,
+			config: &config.ServerConfig{
+				Keycloak: config.KeycloakConfig{Enabled: true},
+			},
+		}
+
+		router := gin.New()
+		router.DELETE("/api/v1/deploy-lock", env.ReleaseDeployLock)
+
+		req, _ := http.NewRequest(http.MethodDelete, "/api/v1/deploy-lock", nil)
+		req.Header.Set(keycloakHeader, "Bearer invalid-token")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusUnauthorized, w.Code)
+		assert.Contains(t, w.Body.String(), "not authorized")
+	})
+
+	t.Run("releases lock when token is valid", func(t *testing.T) {
+		lockdown, _ := NewLockdown("")
+		lockdown.SetLock()
+		strategies := make(map[string]auth.AuthStrategy)
+		strategies[keycloakHeader] = &mockAuthStrategy{valid: true, err: nil}
+
+		env := &Env{
+			lockdown:   lockdown,
+			strategies: strategies,
+			config: &config.ServerConfig{
+				Keycloak: config.KeycloakConfig{Enabled: true},
+			},
+		}
+
+		router := gin.New()
+		router.DELETE("/api/v1/deploy-lock", env.ReleaseDeployLock)
+
+		req, _ := http.NewRequest(http.MethodDelete, "/api/v1/deploy-lock", nil)
+		req.Header.Set(keycloakHeader, "Bearer valid-token")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Contains(t, w.Body.String(), "deploy lock is released")
+	})
+}
+
+// TestValidateAllowedStrategyFull tests validateAllowedStrategy with more scenarios.
+func TestValidateAllowedStrategyFull(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("validates successfully with matching strategy", func(t *testing.T) {
+		strategies := make(map[string]auth.AuthStrategy)
+		strategies[keycloakHeader] = &mockAuthStrategy{valid: true, err: nil}
+
+		env := &Env{
+			strategies: strategies,
+		}
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request, _ = http.NewRequest(http.MethodPost, "/test", nil)
+		c.Request.Header.Set(keycloakHeader, "Bearer valid-token")
+
+		valid, err := env.validateAllowedStrategy(c, keycloakHeader)
+		assert.True(t, valid)
+		assert.NoError(t, err)
+	})
+
+	t.Run("strips Bearer prefix from token", func(t *testing.T) {
+		strategies := make(map[string]auth.AuthStrategy)
+		strategies[keycloakHeader] = &mockAuthStrategy{valid: true, err: nil}
+
+		env := &Env{
+			strategies: strategies,
+		}
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request, _ = http.NewRequest(http.MethodPost, "/test", nil)
+		c.Request.Header.Set(keycloakHeader, "Bearer my-token")
+
+		valid, err := env.validateAllowedStrategy(c, keycloakHeader)
+		assert.True(t, valid)
+		assert.NoError(t, err)
+	})
+
+	t.Run("returns error from strategy validation", func(t *testing.T) {
+		expectedErr := fmt.Errorf("token expired")
+		strategies := make(map[string]auth.AuthStrategy)
+		strategies[keycloakHeader] = &mockAuthStrategy{valid: false, err: expectedErr}
+
+		env := &Env{
+			strategies: strategies,
+		}
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request, _ = http.NewRequest(http.MethodPost, "/test", nil)
+		c.Request.Header.Set(keycloakHeader, "Bearer expired-token")
+
+		valid, err := env.validateAllowedStrategy(c, keycloakHeader)
+		assert.False(t, valid)
+		assert.Equal(t, expectedErr, err)
+	})
+
+	t.Run("skips strategies with non-matching headers", func(t *testing.T) {
+		strategies := make(map[string]auth.AuthStrategy)
+		strategies["Authorization"] = &mockAuthStrategy{valid: true, err: nil}
+		strategies[keycloakHeader] = &mockAuthStrategy{valid: false, err: nil}
+
+		env := &Env{
+			strategies: strategies,
+		}
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request, _ = http.NewRequest(http.MethodPost, "/test", nil)
+		c.Request.Header.Set("Authorization", "Bearer token")
+
+		// Only keycloakHeader is allowed, so Authorization should be skipped
+		valid, err := env.validateAllowedStrategy(c, keycloakHeader)
+		assert.False(t, valid)
+		assert.NoError(t, err)
+	})
+}
