@@ -1,7 +1,13 @@
 package server
 
 import (
+	"context"
 	"fmt"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
@@ -101,9 +107,38 @@ func NewServer(serverConfig *config.ServerConfig, reg prometheus.Registerer) (*S
 	}, nil
 }
 
+// Run starts the HTTP server and handles graceful shutdown on SIGINT/SIGTERM.
 func (s *Server) Run() {
 	log.Info().Msg("Starting web server")
-	s.env.StartRouter(s.router)
+
+	srv := s.env.StartRouter(s.router)
+
+	// Start server in goroutine
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatal().Err(err).Msg("failed to start server")
+		}
+	}()
+
+	// Wait for interrupt signal
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Info().Msg("shutting down server...")
+
+	// Trigger WebSocket connection shutdown
+	s.env.Shutdown()
+
+	// Give outstanding requests 30 seconds to complete
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Error().Err(err).Msg("server forced to shutdown")
+	}
+
+	log.Info().Msg("server exited")
 }
 
 // initLogs initializes the logging configuration.

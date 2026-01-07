@@ -56,14 +56,16 @@ func (k *KeycloakAuthService) Validate(token string) (bool, error) {
 		}
 	}(resp.Body)
 
-	// Read and print the response body
+	// Read and parse the response body
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Error().Msgf("error reading response body: %v", err)
-	} else {
-		if err := json.Unmarshal(bodyBytes, &keycloakResponse); err != nil {
-			log.Error().Msgf("error unmarshalling response body: %v", err)
-		}
+		log.Error().Err(err).Msg("error reading response body")
+		return false, fmt.Errorf("error reading response body: %v", err)
+	}
+
+	if err := json.Unmarshal(bodyBytes, &keycloakResponse); err != nil {
+		log.Error().Err(err).Msg("error unmarshalling response body")
+		return false, fmt.Errorf("error unmarshalling response body: %v", err)
 	}
 
 	userPrivileged := k.allowedToRollback(keycloakResponse.Username, keycloakResponse.Groups)
