@@ -334,8 +334,9 @@ func (env *Env) StartRouter(router *gin.Engine) *http.Server {
 	routerBind := fmt.Sprintf("%s:%s", env.config.Host, env.config.Port)
 	log.Debug().Msgf("Listening on %s", routerBind)
 	return &http.Server{
-		Addr:    routerBind,
-		Handler: router,
+		Addr:              routerBind,
+		Handler:           router,
+		ReadHeaderTimeout: 10 * time.Second, // Prevent Slowloris attacks
 	}
 }
 

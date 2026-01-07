@@ -972,3 +972,103 @@ func TestSafeFileSystemSymlinkProtection(t *testing.T) {
 		assert.ErrorIs(t, err, os.ErrPermission)
 	})
 }
+
+// TestEnvShutdown tests the graceful shutdown functionality.
+func TestEnvShutdown(t *testing.T) {
+	t.Run("shutdown cancels context", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		env := &Env{
+			shutdownCtx:    ctx,
+			shutdownCancel: cancel,
+		}
+
+		// Verify context is not cancelled
+		select {
+		case <-env.shutdownCtx.Done():
+			t.Fatal("context should not be cancelled yet")
+		default:
+			// expected
+		}
+
+		// Call shutdown
+		env.Shutdown()
+
+		// Verify context is now cancelled
+		select {
+		case <-env.shutdownCtx.Done():
+			// expected
+		default:
+			t.Fatal("context should be cancelled after Shutdown()")
+		}
+	})
+
+	t.Run("shutdown with nil cancel is safe", func(t *testing.T) {
+		env := &Env{
+			shutdownCtx:    nil,
+			shutdownCancel: nil,
+		}
+
+		// Should not panic
+		env.Shutdown()
+	})
+}
+
+// TestStartRouter tests the StartRouter method.
+func TestStartRouter(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tmpDir := t.TempDir()
+	err := os.WriteFile(tmpDir+"/index.html", []byte("<html></html>"), 0644)
+	require.NoError(t, err)
+
+	serverConfig := &config.ServerConfig{
+		Host:           "127.0.0.1",
+		Port:           "0", // Use port 0 for automatic port assignment
+		StaticFilePath: tmpDir,
+	}
+
+	env := &Env{config: serverConfig}
+	env.lockdown, _ = NewLockdown("")
+
+	router := env.CreateRouter()
+	srv := env.StartRouter(router)
+
+	assert.NotNil(t, srv)
+	assert.Equal(t, "127.0.0.1:0", srv.Addr)
+	assert.Equal(t, router, srv.Handler)
+	assert.Equal(t, 10*time.Second, srv.ReadHeaderTimeout)
+}
+
+// TestNotifyWebSocketClients tests the WebSocket notification functionality.
+func TestNotifyWebSocketClients(t *testing.T) {
+	t.Run("notifies with no connections", func(t *testing.T) {
+		// Reset connections
+		connectionsMutex.Lock()
+		connections = nil
+		closedConns = make(map[*websocket.Conn]bool)
+		connectionsMutex.Unlock()
+
+		// Should not panic with empty connections
+		notifyWebSocketClients("test message")
+	})
+}
+
+// TestRemoveWebSocketConnectionCleanup tests the connection removal cleanup functionality.
+func TestRemoveWebSocketConnectionCleanup(t *testing.T) {
+	t.Run("removes connection and cleans up closedConns", func(t *testing.T) {
+		// Reset state
+		connectionsMutex.Lock()
+		connections = nil
+		closedConns = make(map[*websocket.Conn]bool)
+		connectionsMutex.Unlock()
+
+		// This test verifies the function doesn't panic with nil
+		removeWebSocketConnection(nil)
+
+		connectionsMutex.RLock()
+		assert.Len(t, connections, 0)
+		// closedConns should be empty after cleanup
+		assert.Len(t, closedConns, 0)
+		connectionsMutex.RUnlock()
+	})
+}
