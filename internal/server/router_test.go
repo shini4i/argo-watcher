@@ -1029,6 +1029,42 @@ func TestEnvShutdown(t *testing.T) {
 			t.Fatal("channel should be closed")
 		}
 	})
+
+	t.Run("shutdown waits for connWg", func(t *testing.T) {
+		shutdownCh := make(chan struct{})
+		env := &Env{
+			shutdownCh: shutdownCh,
+		}
+
+		// Simulate an active connection by incrementing the WaitGroup
+		env.connWg.Add(1)
+
+		// Start Shutdown in a goroutine and track when it completes
+		shutdownDone := make(chan struct{})
+		go func() {
+			env.Shutdown()
+			close(shutdownDone)
+		}()
+
+		// Verify Shutdown is blocked waiting for connWg
+		select {
+		case <-shutdownDone:
+			t.Fatal("Shutdown should be blocked waiting for connWg")
+		case <-time.After(100 * time.Millisecond):
+			// Expected - Shutdown is still waiting
+		}
+
+		// Now release the WaitGroup
+		env.connWg.Done()
+
+		// Shutdown should now complete
+		select {
+		case <-shutdownDone:
+			// Expected - Shutdown completed after connWg.Done()
+		case <-time.After(time.Second):
+			t.Fatal("Shutdown should have completed after connWg.Done()")
+		}
+	})
 }
 
 // TestStartRouter tests the StartRouter method.

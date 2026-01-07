@@ -347,7 +347,10 @@ func (env *Env) StartRouter(router *gin.Engine) *http.Server {
 
 // Shutdown gracefully shuts down the server and all WebSocket connections.
 // This method is safe to call multiple times. It blocks until all WebSocket
-// goroutines have finished or the shutdown timeout is reached.
+// goroutines have finished or the shutdown timeout is reached. If the timeout
+// is reached, some goroutines may still be running but should exit shortly as
+// they observe the closed shutdownCh. Any long-running WebSocket writes are
+// bounded by their own 5-second timeout in checkConnection.
 func (env *Env) Shutdown() {
 	if env.shutdownCh != nil {
 		env.shutdownOnce.Do(func() {
@@ -783,7 +786,7 @@ func (env *Env) checkConnection(c *websocket.Conn) {
 			// for some reason it's failing even if the connection is still alive
 			// if you know how to fix it, please open an issue or PR
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			if err := c.Write(ctx, websocket.MessageText, []byte("heartbeat")); err != nil {
+			if c.Write(ctx, websocket.MessageText, []byte("heartbeat")) != nil {
 				cancel()
 				_ = c.Close(websocket.StatusNormalClosure, "heartbeat failed")
 				removeWebSocketConnection(c)
@@ -820,7 +823,7 @@ func notifyWebSocketClients(message string) {
 			defer wg.Done()
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			if err := c.Write(ctx, websocket.MessageText, []byte(message)); err != nil {
+			if c.Write(ctx, websocket.MessageText, []byte(message)) != nil {
 				_ = c.Close(websocket.StatusNormalClosure, "write failed")
 				removeWebSocketConnection(c)
 			}
