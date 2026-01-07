@@ -1,6 +1,7 @@
 package server
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -280,25 +281,24 @@ func TestNewLockdown(t *testing.T) {
 // TestLockdown_ConcurrentAccess verifies that the lockdown struct is thread-safe.
 func TestLockdown_ConcurrentAccess(t *testing.T) {
 	l := &Lockdown{}
-	done := make(chan bool)
+	var wg sync.WaitGroup
 
 	// Multiple goroutines setting and releasing locks
 	for i := 0; i < 10; i++ {
+		wg.Add(1)
 		go func() {
+			defer wg.Done()
 			for j := 0; j < 100; j++ {
 				l.SetLock()
 				_ = l.IsLocked()
 				l.ReleaseLock()
 				_ = l.IsLocked()
 			}
-			done <- true
 		}()
 	}
 
 	// Wait for all goroutines to complete
-	for i := 0; i < 10; i++ {
-		<-done
-	}
+	wg.Wait()
 
 	// No race conditions should have occurred (test passes if no data race detected with -race flag)
 	assert.False(t, l.IsLocked())

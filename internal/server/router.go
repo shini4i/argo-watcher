@@ -198,16 +198,18 @@ type Env struct {
 	strategies map[string]auth.AuthStrategy
 	// authenticator orchestrates registered strategies
 	authenticator *auth.Authenticator
-	// shutdown context for graceful shutdown
-	shutdownCtx    context.Context
-	shutdownCancel context.CancelFunc
+	// shutdownCh signals graceful shutdown to all WebSocket goroutines.
+	// Using a channel instead of storing context.Context follows Go best practices.
+	shutdownCh chan struct{}
+	// shutdownOnce ensures Shutdown() can be called multiple times safely.
+	shutdownOnce sync.Once
 }
 
 // CreateRouter initialize router.
 func (env *Env) CreateRouter() *gin.Engine {
-	// Initialize shutdown context if not set (for tests that create Env directly)
-	if env.shutdownCtx == nil {
-		env.shutdownCtx, env.shutdownCancel = context.WithCancel(context.Background())
+	// Initialize shutdown channel if not set (for tests that create Env directly)
+	if env.shutdownCh == nil {
+		env.shutdownCh = make(chan struct{})
 	}
 
 	docs.SwaggerInfo.Title = "Argo-Watcher API"
@@ -341,9 +343,12 @@ func (env *Env) StartRouter(router *gin.Engine) *http.Server {
 }
 
 // Shutdown gracefully shuts down the server and all WebSocket connections.
+// This method is safe to call multiple times.
 func (env *Env) Shutdown() {
-	if env.shutdownCancel != nil {
-		env.shutdownCancel()
+	if env.shutdownCh != nil {
+		env.shutdownOnce.Do(func() {
+			close(env.shutdownCh)
+		})
 	}
 }
 
@@ -747,7 +752,7 @@ func (env *Env) checkConnection(c *websocket.Conn) {
 
 	for {
 		select {
-		case <-env.shutdownCtx.Done():
+		case <-env.shutdownCh:
 			_ = c.Close(websocket.StatusGoingAway, "server shutdown")
 			removeWebSocketConnection(c)
 			return
@@ -755,7 +760,10 @@ func (env *Env) checkConnection(c *websocket.Conn) {
 			// we are not using c.Ping here, because it's not working as expected
 			// for some reason it's failing even if the connection is still alive
 			// if you know how to fix it, please open an issue or PR
-			if err := c.Write(env.shutdownCtx, websocket.MessageText, []byte("heartbeat")); err != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			err := c.Write(ctx, websocket.MessageText, []byte("heartbeat"))
+			cancel()
+			if err != nil {
 				_ = c.Close(websocket.StatusNormalClosure, "heartbeat failed")
 				removeWebSocketConnection(c)
 				return
@@ -788,7 +796,9 @@ func notifyWebSocketClients(message string) {
 
 		go func(c *websocket.Conn, message string) {
 			defer wg.Done()
-			if err := c.Write(context.Background(), websocket.MessageText, []byte(message)); err != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := c.Write(ctx, websocket.MessageText, []byte(message)); err != nil {
 				_ = c.Close(websocket.StatusNormalClosure, "write failed")
 				removeWebSocketConnection(c)
 			}
@@ -827,14 +837,12 @@ func NewEnv(serverConfig *config.ServerConfig, argo *argocd.Argo, metrics *prome
 	var env *Env
 	var err error
 
-	shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
 	env = &Env{
-		config:         serverConfig,
-		argo:           argo,
-		metrics:        metrics,
-		updater:        updater,
-		shutdownCtx:    shutdownCtx,
-		shutdownCancel: shutdownCancel,
+		config:     serverConfig,
+		argo:       argo,
+		metrics:    metrics,
+		updater:    updater,
+		shutdownCh: make(chan struct{}),
 	}
 
 	if env.lockdown, err = NewLockdown(serverConfig.LockdownSchedule); err != nil {

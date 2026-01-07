@@ -975,17 +975,16 @@ func TestSafeFileSystemSymlinkProtection(t *testing.T) {
 
 // TestEnvShutdown tests the graceful shutdown functionality.
 func TestEnvShutdown(t *testing.T) {
-	t.Run("shutdown cancels context", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
+	t.Run("shutdown closes channel", func(t *testing.T) {
+		shutdownCh := make(chan struct{})
 		env := &Env{
-			shutdownCtx:    ctx,
-			shutdownCancel: cancel,
+			shutdownCh: shutdownCh,
 		}
 
-		// Verify context is not cancelled
+		// Verify channel is not closed
 		select {
-		case <-env.shutdownCtx.Done():
-			t.Fatal("context should not be cancelled yet")
+		case <-env.shutdownCh:
+			t.Fatal("channel should not be closed yet")
 		default:
 			// expected
 		}
@@ -993,23 +992,42 @@ func TestEnvShutdown(t *testing.T) {
 		// Call shutdown
 		env.Shutdown()
 
-		// Verify context is now cancelled
+		// Verify channel is now closed
 		select {
-		case <-env.shutdownCtx.Done():
-			// expected
+		case <-env.shutdownCh:
+			// expected - channel is closed
 		default:
-			t.Fatal("context should be cancelled after Shutdown()")
+			t.Fatal("channel should be closed after Shutdown()")
 		}
 	})
 
-	t.Run("shutdown with nil cancel is safe", func(t *testing.T) {
+	t.Run("shutdown with nil channel is safe", func(t *testing.T) {
 		env := &Env{
-			shutdownCtx:    nil,
-			shutdownCancel: nil,
+			shutdownCh: nil,
 		}
 
 		// Should not panic
 		env.Shutdown()
+	})
+
+	t.Run("shutdown can be called multiple times safely", func(t *testing.T) {
+		shutdownCh := make(chan struct{})
+		env := &Env{
+			shutdownCh: shutdownCh,
+		}
+
+		// Should not panic when called multiple times
+		env.Shutdown()
+		env.Shutdown()
+		env.Shutdown()
+
+		// Verify channel is closed
+		select {
+		case <-env.shutdownCh:
+			// expected - channel is closed
+		default:
+			t.Fatal("channel should be closed")
+		}
 	})
 }
 
@@ -1048,6 +1066,14 @@ func TestNotifyWebSocketClients(t *testing.T) {
 		closedConns = make(map[*websocket.Conn]bool)
 		connectionsMutex.Unlock()
 
+		// Cleanup to prevent test pollution
+		t.Cleanup(func() {
+			connectionsMutex.Lock()
+			connections = nil
+			closedConns = make(map[*websocket.Conn]bool)
+			connectionsMutex.Unlock()
+		})
+
 		// Should not panic with empty connections
 		notifyWebSocketClients("test message")
 	})
@@ -1068,6 +1094,35 @@ func TestRemoveWebSocketConnectionCleanup(t *testing.T) {
 		connectionsMutex.RLock()
 		assert.Len(t, connections, 0)
 		// closedConns should be empty after cleanup
+		assert.Len(t, closedConns, 0)
+		connectionsMutex.RUnlock()
+	})
+
+	t.Run("removes actual connection from slice", func(t *testing.T) {
+		// Reset state
+		connectionsMutex.Lock()
+		connections = nil
+		closedConns = make(map[*websocket.Conn]bool)
+		connectionsMutex.Unlock()
+
+		// Cleanup to prevent test pollution
+		t.Cleanup(func() {
+			connectionsMutex.Lock()
+			connections = nil
+			closedConns = make(map[*websocket.Conn]bool)
+			connectionsMutex.Unlock()
+		})
+
+		conn := &websocket.Conn{}
+		connectionsMutex.Lock()
+		connections = append(connections, conn)
+		connectionsMutex.Unlock()
+
+		removeWebSocketConnection(conn)
+
+		connectionsMutex.RLock()
+		assert.NotContains(t, connections, conn)
+		// Entry should be deleted after removal
 		assert.Len(t, closedConns, 0)
 		connectionsMutex.RUnlock()
 	})
