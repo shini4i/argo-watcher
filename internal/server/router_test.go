@@ -1126,4 +1126,240 @@ func TestRemoveWebSocketConnectionCleanup(t *testing.T) {
 		assert.Len(t, closedConns, 0)
 		connectionsMutex.RUnlock()
 	})
+
+	t.Run("removes connection from middle of slice", func(t *testing.T) {
+		// Reset state
+		connectionsMutex.Lock()
+		connections = nil
+		closedConns = make(map[*websocket.Conn]bool)
+		connectionsMutex.Unlock()
+
+		t.Cleanup(func() {
+			connectionsMutex.Lock()
+			connections = nil
+			closedConns = make(map[*websocket.Conn]bool)
+			connectionsMutex.Unlock()
+		})
+
+		conn1 := &websocket.Conn{}
+		conn2 := &websocket.Conn{}
+		conn3 := &websocket.Conn{}
+		connectionsMutex.Lock()
+		connections = append(connections, conn1, conn2, conn3)
+		connectionsMutex.Unlock()
+
+		// Remove middle connection
+		removeWebSocketConnection(conn2)
+
+		connectionsMutex.RLock()
+		assert.Len(t, connections, 2)
+		// Check by pointer address, not value (all zero-value Conns are equal by value)
+		foundConn1 := false
+		foundConn2 := false
+		foundConn3 := false
+		for _, c := range connections {
+			if c == conn1 {
+				foundConn1 = true
+			}
+			if c == conn2 {
+				foundConn2 = true
+			}
+			if c == conn3 {
+				foundConn3 = true
+			}
+		}
+		connectionsMutex.RUnlock()
+
+		assert.True(t, foundConn1, "conn1 should still be in the slice")
+		assert.False(t, foundConn2, "conn2 should have been removed")
+		assert.True(t, foundConn3, "conn3 should still be in the slice")
+	})
+}
+
+// TestNotifyWebSocketClientsFiltersClosedConnections tests that closed connections are filtered.
+func TestNotifyWebSocketClientsFiltersClosedConnections(t *testing.T) {
+	// Reset state
+	connectionsMutex.Lock()
+	connections = nil
+	closedConns = make(map[*websocket.Conn]bool)
+	connectionsMutex.Unlock()
+
+	t.Cleanup(func() {
+		connectionsMutex.Lock()
+		connections = nil
+		closedConns = make(map[*websocket.Conn]bool)
+		connectionsMutex.Unlock()
+	})
+
+	// Add a connection and mark it as closed
+	conn := &websocket.Conn{}
+	connectionsMutex.Lock()
+	connections = append(connections, conn)
+	closedConns[conn] = true
+	connectionsMutex.Unlock()
+
+	// Should not panic and should skip the closed connection
+	notifyWebSocketClients("test message")
+}
+
+// TestShutdownWaitsForConnections tests that Shutdown waits for active connections.
+func TestShutdownWaitsForConnections(t *testing.T) {
+	shutdownCh := make(chan struct{})
+	env := &Env{
+		shutdownCh: shutdownCh,
+	}
+
+	// Simulate an active connection by incrementing the WaitGroup
+	env.connWg.Add(1)
+
+	shutdownComplete := make(chan struct{})
+	go func() {
+		env.Shutdown()
+		close(shutdownComplete)
+	}()
+
+	// Verify shutdown is blocked (waiting for WaitGroup)
+	select {
+	case <-shutdownComplete:
+		t.Fatal("Shutdown should be blocked waiting for connections")
+	case <-time.After(100 * time.Millisecond):
+		// Expected - shutdown is blocked
+	}
+
+	// Simulate connection cleanup
+	env.connWg.Done()
+
+	// Now shutdown should complete
+	select {
+	case <-shutdownComplete:
+		// Expected
+	case <-time.After(time.Second):
+		t.Fatal("Shutdown should have completed after WaitGroup.Done()")
+	}
+}
+
+// TestConnWgTracking tests that connWg is properly incremented and decremented.
+func TestConnWgTracking(t *testing.T) {
+	env := &Env{
+		shutdownCh: make(chan struct{}),
+	}
+
+	// Simulate handleWebSocketConnection incrementing the WaitGroup
+	env.connWg.Add(1)
+
+	// Simulate checkConnection running in a goroutine
+	checkDone := make(chan struct{})
+	go func() {
+		defer env.connWg.Done()
+		// Simulate waiting for shutdown signal
+		<-env.shutdownCh
+		close(checkDone)
+	}()
+
+	// Verify the goroutine is running (WaitGroup has 1)
+	select {
+	case <-checkDone:
+		t.Fatal("goroutine should not have exited yet")
+	case <-time.After(50 * time.Millisecond):
+		// Expected - goroutine is waiting
+	}
+
+	// Trigger shutdown
+	shutdownComplete := make(chan struct{})
+	go func() {
+		env.Shutdown()
+		close(shutdownComplete)
+	}()
+
+	// The checkDone should close first (simulating goroutine exit)
+	select {
+	case <-checkDone:
+		// Expected
+	case <-time.After(time.Second):
+		t.Fatal("goroutine should have received shutdown signal")
+	}
+
+	// Then shutdown should complete
+	select {
+	case <-shutdownComplete:
+		// Expected
+	case <-time.After(time.Second):
+		t.Fatal("Shutdown should have completed")
+	}
+}
+
+// TestCreateRouterInitializesShutdownChannel tests that CreateRouter initializes the shutdown channel.
+func TestCreateRouterInitializesShutdownChannel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tmpDir := t.TempDir()
+	err := os.WriteFile(tmpDir+"/index.html", []byte("<html></html>"), 0644)
+	require.NoError(t, err)
+
+	serverConfig := &config.ServerConfig{
+		StaticFilePath: tmpDir,
+	}
+
+	// Create env without shutdown channel
+	env := &Env{
+		config:     serverConfig,
+		shutdownCh: nil,
+	}
+	env.lockdown, _ = NewLockdown("")
+
+	// CreateRouter should initialize the shutdown channel
+	_ = env.CreateRouter()
+
+	assert.NotNil(t, env.shutdownCh, "CreateRouter should initialize shutdownCh")
+}
+
+// TestValidatePathEdgeCases tests edge cases in path validation.
+func TestValidatePathEdgeCases(t *testing.T) {
+	// Create a temp directory with a specific structure
+	tmpDir := t.TempDir()
+
+	fs := safeFileSystem{
+		root:     http.Dir(tmpDir),
+		basePath: tmpDir,
+	}
+
+	t.Run("multiple slashes are cleaned", func(t *testing.T) {
+		cleanPath, err := fs.validatePath("///file.txt")
+		assert.NoError(t, err)
+		assert.Equal(t, "/file.txt", cleanPath)
+	})
+
+	t.Run("dot path is cleaned to root", func(t *testing.T) {
+		cleanPath, err := fs.validatePath("/.")
+		assert.NoError(t, err)
+		assert.Equal(t, "/", cleanPath)
+	})
+
+	t.Run("complex path with multiple dots is cleaned", func(t *testing.T) {
+		cleanPath, err := fs.validatePath("/a/b/./c/../d")
+		assert.NoError(t, err)
+		assert.Equal(t, "/a/b/d", cleanPath)
+	})
+}
+
+// TestPrometheusHandler tests the prometheus handler wrapper.
+func TestPrometheusHandler(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	handler := prometheusHandler()
+	assert.NotNil(t, handler)
+
+	// Create a test request
+	req, _ := http.NewRequest(http.MethodGet, "/metrics", nil)
+	w := httptest.NewRecorder()
+
+	// Create a gin context
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+
+	// Call the handler - should not panic
+	handler(c)
+
+	// Should return a valid response (prometheus metrics)
+	assert.Equal(t, http.StatusOK, w.Code)
 }

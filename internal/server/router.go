@@ -42,6 +42,7 @@ const (
 	deployLockEndpoint  = "/deploy-lock"
 	unauthorizedMessage = "You are not authorized to perform this action"
 	keycloakHeader      = "Keycloak-Authorization"
+	shutdownTimeout     = 10 * time.Second // Maximum time to wait for WebSocket goroutines during shutdown
 )
 
 // safeFileSystem wraps http.Dir with additional symlink protection.
@@ -346,15 +347,27 @@ func (env *Env) StartRouter(router *gin.Engine) *http.Server {
 
 // Shutdown gracefully shuts down the server and all WebSocket connections.
 // This method is safe to call multiple times. It blocks until all WebSocket
-// goroutines have finished.
+// goroutines have finished or the shutdown timeout is reached.
 func (env *Env) Shutdown() {
 	if env.shutdownCh != nil {
 		env.shutdownOnce.Do(func() {
 			close(env.shutdownCh)
 		})
 	}
-	// Wait for all WebSocket connection goroutines to finish
-	env.connWg.Wait()
+
+	// Wait for all WebSocket connection goroutines to finish with timeout
+	done := make(chan struct{})
+	go func() {
+		env.connWg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		log.Debug().Msg("All WebSocket connections closed gracefully")
+	case <-time.After(shutdownTimeout):
+		log.Warn().Msg("Shutdown timeout reached, some WebSocket goroutines may still be running")
+	}
 }
 
 func (env *Env) corsConfig() cors.Config {
