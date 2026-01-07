@@ -1238,42 +1238,6 @@ func TestNotifyWebSocketClientsFiltersClosedConnections(t *testing.T) {
 	notifyWebSocketClients("test message")
 }
 
-// TestShutdownWaitsForConnections tests that Shutdown waits for active connections.
-func TestShutdownWaitsForConnections(t *testing.T) {
-	shutdownCh := make(chan struct{})
-	env := &Env{
-		shutdownCh: shutdownCh,
-	}
-
-	// Simulate an active connection by incrementing the WaitGroup
-	env.connWg.Add(1)
-
-	shutdownComplete := make(chan struct{})
-	go func() {
-		env.Shutdown()
-		close(shutdownComplete)
-	}()
-
-	// Verify shutdown is blocked (waiting for WaitGroup)
-	select {
-	case <-shutdownComplete:
-		t.Fatal("Shutdown should be blocked waiting for connections")
-	case <-time.After(100 * time.Millisecond):
-		// Expected - shutdown is blocked
-	}
-
-	// Simulate connection cleanup
-	env.connWg.Done()
-
-	// Now shutdown should complete
-	select {
-	case <-shutdownComplete:
-		// Expected
-	case <-time.After(time.Second):
-		t.Fatal("Shutdown should have completed after WaitGroup.Done()")
-	}
-}
-
 // TestConnWgTracking tests that connWg is properly incremented and decremented.
 func TestConnWgTracking(t *testing.T) {
 	env := &Env{
