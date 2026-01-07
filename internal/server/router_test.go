@@ -1050,7 +1050,7 @@ func TestEnvShutdown(t *testing.T) {
 		select {
 		case <-shutdownDone:
 			t.Fatal("Shutdown should be blocked waiting for connWg")
-		case <-time.After(100 * time.Millisecond):
+		case <-time.After(300 * time.Millisecond):
 			// Expected - Shutdown is still waiting
 		}
 
@@ -1123,6 +1123,14 @@ func TestRemoveWebSocketConnectionCleanup(t *testing.T) {
 		connections = nil
 		closedConns = make(map[*websocket.Conn]bool)
 		connectionsMutex.Unlock()
+
+		// Cleanup to prevent test pollution
+		t.Cleanup(func() {
+			connectionsMutex.Lock()
+			connections = nil
+			closedConns = make(map[*websocket.Conn]bool)
+			connectionsMutex.Unlock()
+		})
 
 		// This test verifies the function doesn't panic with nil
 		removeWebSocketConnection(nil)
@@ -1491,7 +1499,7 @@ func TestGetTaskStatusEndpoint(t *testing.T) {
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
-		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, http.StatusNotFound, w.Code)
 		assert.Contains(t, w.Body.String(), "nonexistent")
 		assert.Contains(t, w.Body.String(), "task not found")
 	})
@@ -1821,6 +1829,7 @@ func TestReleaseDeployLockWithKeycloak(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, w.Code)
 		assert.Contains(t, w.Body.String(), "deploy lock is released")
+		assert.False(t, lockdown.IsLocked())
 	})
 }
 

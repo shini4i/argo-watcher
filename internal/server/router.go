@@ -531,13 +531,14 @@ func (env *Env) getState(c *gin.Context) {
 // @Tags backend
 // @Produce json
 // @Success 200 {object} models.TaskStatus
+// @Failure 404 {object} models.TaskStatus
 // @Router /api/v1/tasks/{id} [get]
 func (env *Env) getTaskStatus(c *gin.Context) {
 	id := c.Param("id")
 	task, err := env.argo.State.GetTask(id)
 
 	if err != nil {
-		c.JSON(http.StatusOK, models.TaskStatus{
+		c.JSON(http.StatusNotFound, models.TaskStatus{
 			Id:    id,
 			Error: err.Error(),
 		})
