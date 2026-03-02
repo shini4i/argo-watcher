@@ -170,7 +170,7 @@ func (state *PostgresState) ProcessObsoleteTasks(retryTimes uint) {
 			return errDesiredRetry
 		},
 		retry.DelayType(retry.FixedDelay),
-		retry.Delay(60*time.Minute),
+		retry.Delay(ObsoleteTaskCheckInterval),
 		retry.Attempts(retryTimes),
 	)
 

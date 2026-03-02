@@ -111,6 +111,15 @@ func (monitor *DeploymentMonitor) WaitRollout(task models.Task) (*models.Applica
 	return application, err
 }
 
+// ceilDivDuration returns the ceiling of d/unit as an int64, with a minimum of 1.
+func ceilDivDuration(d, unit time.Duration) int64 {
+	result := int64((d + unit - 1) / unit)
+	if result <= 0 {
+		return 1
+	}
+	return result
+}
+
 // configureRetryOptions derives retry attempts by preferring per-task overrides, then monitor defaults, and finally a legacy retry window aligned with the current retry delay.
 func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) []retry.Option {
 	retryOptions := append([]retry.Option{}, monitor.retryOptions...)
@@ -122,20 +131,13 @@ func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) []retr
 
 	retryOptions = append(retryOptions, retry.Delay(delay))
 
-	delaySeconds := int((delay + time.Second - 1) / time.Second)
-	if delaySeconds <= 0 {
-		delaySeconds = 1
-	}
-	delaySecondsInt64 := int64(delaySeconds)
+	delaySeconds := ceilDivDuration(delay, time.Second)
 
 	defaultAttempts := monitor.defaultAttempts
 	if defaultAttempts == 0 {
-		fallbackWindowSeconds := int64(legacyRetryIntervals) * int64((ArgoSyncRetryDelay+time.Second-1)/time.Second)
-		fallbackAttempts := fallbackWindowSeconds / delaySecondsInt64
-		if fallbackWindowSeconds%delaySecondsInt64 != 0 {
-			fallbackAttempts++
-		}
-		defaultAttempts = clampAttempts(fallbackAttempts)
+		// Legacy fallback: legacyRetryIntervals steps at ArgoSyncRetryDelay pace, scaled to the current delay.
+		fallbackWindowSeconds := int64(legacyRetryIntervals) * ceilDivDuration(ArgoSyncRetryDelay, time.Second)
+		defaultAttempts = uint(ceilDivDuration(time.Duration(fallbackWindowSeconds)*time.Second, time.Duration(delaySeconds)*time.Second))
 	}
 
 	if task.Timeout <= 0 {
@@ -143,8 +145,7 @@ func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) []retr
 		return append(retryOptions, retry.Attempts(defaultAttempts))
 	}
 
-	perTaskAttempts := int64(task.Timeout)/delaySecondsInt64 + 1
-	attempts := clampAttempts(perTaskAttempts)
+	attempts := uint(int64(task.Timeout)/delaySeconds + 1)
 
 	log.Debug().Str("id", task.Id).Msgf(
 		"Overriding task timeout to %ds with retry delay %s (~%d second step, %d attempts)",
@@ -155,21 +156,6 @@ func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) []retr
 	)
 
 	return append(retryOptions, retry.Attempts(attempts))
-}
-
-// clampAttempts normalizes the retry attempt count into a valid uint range while enforcing a minimum of one attempt.
-func clampAttempts(value int64) uint {
-	if value <= 0 {
-		return 1
-	}
-
-	uValue := uint64(value)
-	maxUint := ^uint(0)
-	if uValue > uint64(maxUint) {
-		return maxUint
-	}
-
-	return uint(uValue)
 }
 
 // ProcessDeploymentResult determines if the deployment was successful and updates the appropriate status and metrics.

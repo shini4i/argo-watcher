@@ -63,6 +63,30 @@ func (a *Authenticator) Validate(request *http.Request) (bool, error) {
 	return false, lastErr
 }
 
+// ValidateStrategy restricts validation to a single allowed strategy header.
+// Only the strategy registered under allowedHeader is considered; all other headers are skipped.
+func (a *Authenticator) ValidateStrategy(request *http.Request, allowedHeader string) (bool, error) {
+	if a == nil || request == nil {
+		return false, nil
+	}
+
+	strategy, ok := a.strategies[allowedHeader]
+	if !ok {
+		return false, nil
+	}
+
+	token := request.Header.Get(allowedHeader)
+	if token == "" {
+		return false, nil
+	}
+
+	if strings.HasPrefix(token, "Bearer ") {
+		token = strings.TrimPrefix(token, "Bearer ")
+	}
+
+	return strategy.Validate(token)
+}
+
 // Strategy returns a specific AuthStrategy by header key if it exists.
 func (a *Authenticator) Strategy(header string) (AuthStrategy, bool) {
 	if a == nil {

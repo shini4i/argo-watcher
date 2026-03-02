@@ -77,18 +77,19 @@ func (api *ArgoApi) Init(serverConfig *config.ServerConfig) error {
 	return nil
 }
 
-func (api *ArgoApi) GetUserInfo() (*models.Userinfo, error) {
-	apiUrl := fmt.Sprintf("%s/api/v1/session/userinfo", api.baseUrl.String())
-	req, err := api.requestFn("GET", apiUrl, nil)
+// doGet creates a GET request for the given URL, sets the JSON content-type header,
+// executes it, and returns the response body bytes along with the HTTP status code.
+func (api *ArgoApi) doGet(reqURL string) ([]byte, int, error) {
+	req, err := api.requestFn("GET", reqURL, nil)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	req.Header.Set("Content-Type", "application/json; charset=UTF-8")
 
 	resp, err := api.client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer func() {
 		if closeErr := resp.Body.Close(); closeErr != nil {
@@ -97,6 +98,17 @@ func (api *ArgoApi) GetUserInfo() (*models.Userinfo, error) {
 	}()
 
 	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return body, resp.StatusCode, nil
+}
+
+func (api *ArgoApi) GetUserInfo() (*models.Userinfo, error) {
+	apiUrl := fmt.Sprintf("%s/api/v1/session/userinfo", api.baseUrl.String())
+
+	body, _, err := api.doGet(apiUrl)
 	if err != nil {
 		return nil, err
 	}
@@ -111,38 +123,18 @@ func (api *ArgoApi) GetUserInfo() (*models.Userinfo, error) {
 
 func (api *ArgoApi) GetApplication(app string) (*models.Application, error) {
 	apiUrl := fmt.Sprintf("%s/api/v1/applications/%s", api.baseUrl.String(), url.PathEscape(app))
-	req, err := api.requestFn("GET", apiUrl, nil)
-	if err != nil {
-		log.Error().Msg(err.Error())
-		return nil, err
-	}
-
-	req.Header.Set("Content-Type", "application/json; charset=UTF-8")
 
 	if api.refreshApp {
-		q := req.URL.Query()
-		q.Add("refresh", "normal")
-		req.URL.RawQuery = q.Encode()
+		apiUrl += "?refresh=normal"
 	}
 
-	resp, err := api.client.Do(req)
+	body, statusCode, err := api.doGet(apiUrl)
 	if err != nil {
 		log.Error().Err(err).Msg("failed to execute request")
 		return nil, err
 	}
-	defer func() {
-		if closeErr := resp.Body.Close(); closeErr != nil {
-			log.Error().Err(closeErr).Msg("failed to close response body")
-		}
-	}()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		log.Error().Err(err).Msg("failed to read response body")
-		return nil, err
-	}
-
-	if resp.StatusCode != 200 {
+	if statusCode != http.StatusOK {
 		var argoErrorResponse models.ArgoApiErrorResponse
 		if err = json.Unmarshal(body, &argoErrorResponse); err != nil {
 			return nil, fmt.Errorf("could not parse json error response: %s", body)
