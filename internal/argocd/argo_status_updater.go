@@ -120,6 +120,19 @@ func ceilDivDuration(d, unit time.Duration) int64 {
 	return result
 }
 
+// safeIntToUint converts an int64 to uint with overflow protection, enforcing a minimum of 1.
+// On 32-bit platforms where uint is 32 bits, values exceeding math.MaxUint32 are clamped to max uint.
+func safeIntToUint(v int64) uint {
+	if v <= 0 {
+		return 1
+	}
+	maxUint := ^uint(0)
+	if uint64(v) > uint64(maxUint) {
+		return maxUint
+	}
+	return uint(v) // #nosec G115 -- overflow checked above
+}
+
 // configureRetryOptions derives retry attempts by preferring per-task overrides, then monitor defaults, and finally a legacy retry window aligned with the current retry delay.
 func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) []retry.Option {
 	retryOptions := append([]retry.Option{}, monitor.retryOptions...)
@@ -137,7 +150,7 @@ func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) []retr
 	if defaultAttempts == 0 {
 		// Legacy fallback: legacyRetryIntervals steps at ArgoSyncRetryDelay pace, scaled to the current delay.
 		fallbackWindowSeconds := int64(legacyRetryIntervals) * ceilDivDuration(ArgoSyncRetryDelay, time.Second)
-		defaultAttempts = uint(ceilDivDuration(time.Duration(fallbackWindowSeconds)*time.Second, time.Duration(delaySeconds)*time.Second))
+		defaultAttempts = safeIntToUint(ceilDivDuration(time.Duration(fallbackWindowSeconds)*time.Second, time.Duration(delaySeconds)*time.Second))
 	}
 
 	if task.Timeout <= 0 {
@@ -145,7 +158,7 @@ func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) []retr
 		return append(retryOptions, retry.Attempts(defaultAttempts))
 	}
 
-	attempts := uint(int64(task.Timeout)/delaySeconds + 1)
+	attempts := safeIntToUint(int64(task.Timeout)/delaySeconds + 1)
 
 	log.Debug().Str("id", task.Id).Msgf(
 		"Overriding task timeout to %ds with retry delay %s (~%d second step, %d attempts)",

@@ -1080,6 +1080,28 @@ func TestCeilDivDuration(t *testing.T) {
 	}
 }
 
+func TestSafeIntToUint(t *testing.T) {
+	testCases := []struct {
+		name     string
+		input    int64
+		expected uint
+	}{
+		{name: "positive value", input: 42, expected: 42},
+		{name: "zero returns 1", input: 0, expected: 1},
+		{name: "negative returns 1", input: -5, expected: 1},
+		{name: "one stays one", input: 1, expected: 1},
+		{name: "large value fits", input: 1000000, expected: 1000000},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			result := safeIntToUint(tc.input)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
+
 func TestDeploymentMonitor_configureRetryOptions(t *testing.T) {
 	countAttempts := func(options []retry.Option) int {
 		attempts := 0
