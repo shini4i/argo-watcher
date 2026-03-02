@@ -1069,6 +1069,18 @@ func TestCeilDivDuration(t *testing.T) {
 			unit:     time.Second,
 			expected: 2,
 		},
+		{
+			name:     "zero unit returns 1",
+			d:        30 * time.Second,
+			unit:     0,
+			expected: 1,
+		},
+		{
+			name:     "negative unit returns 1",
+			d:        30 * time.Second,
+			unit:     -5 * time.Second,
+			expected: 1,
+		},
 	}
 
 	for _, tc := range testCases {

@@ -112,7 +112,11 @@ func (monitor *DeploymentMonitor) WaitRollout(task models.Task) (*models.Applica
 }
 
 // ceilDivDuration returns the ceiling of d/unit as an int64, with a minimum of 1.
+// A non-positive unit is treated as invalid and returns 1 to avoid division by zero.
 func ceilDivDuration(d, unit time.Duration) int64 {
+	if unit <= 0 {
+		return 1
+	}
 	result := int64((d + unit - 1) / unit)
 	if result <= 0 {
 		return 1
