@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strings"
+	"time"
 
 	"github.com/rs/zerolog/log"
 )
@@ -22,15 +24,43 @@ type KeycloakAuthService struct {
 	ClientId         string
 	PrivilegedGroups []string
 	client           *http.Client
+	userinfoURL      string
 }
 
-// Init is used to initialize KeycloakAuthService with Keycloak URL, realm and client ID
-func (k *KeycloakAuthService) Init(url, realm, clientId string, privilegedGroups []string) {
-	k.Url = url
+// Init initializes KeycloakAuthService with Keycloak URL, realm and client ID.
+// It validates the base URL and pre-builds the userinfo endpoint URL to prevent SSRF via tainted input.
+func (k *KeycloakAuthService) Init(keycloakURL, realm, clientId string, privilegedGroups []string) error {
+	baseURL, err := url.Parse(keycloakURL)
+	if err != nil {
+		return fmt.Errorf("invalid keycloak URL: %w", err)
+	}
+
+	if baseURL.Scheme != "http" && baseURL.Scheme != "https" {
+		return fmt.Errorf("invalid keycloak URL scheme: %s (must be http or https)", baseURL.Scheme)
+	}
+
+	if baseURL.Host == "" {
+		return fmt.Errorf("invalid keycloak URL: missing host")
+	}
+
+	if baseURL.RawQuery != "" || baseURL.ForceQuery || baseURL.Fragment != "" {
+		return fmt.Errorf("invalid keycloak URL: query and fragment are not allowed")
+	}
+
+	userinfoURL := fmt.Sprintf(
+		"%s/realms/%s/protocol/openid-connect/userinfo",
+		strings.TrimRight(baseURL.String(), "/"),
+		url.PathEscape(realm),
+	)
+
+	k.Url = keycloakURL
 	k.Realm = realm
 	k.ClientId = clientId
 	k.PrivilegedGroups = privilegedGroups
-	k.client = &http.Client{}
+	k.userinfoURL = userinfoURL
+	k.client = &http.Client{Timeout: 10 * time.Second}
+
+	return nil
 }
 
 // Validate implements quite simple token validation approach
@@ -39,13 +69,13 @@ func (k *KeycloakAuthService) Init(url, realm, clientId string, privilegedGroups
 func (k *KeycloakAuthService) Validate(token string) (bool, error) {
 	var keycloakResponse KeycloakResponse
 
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/realms/%s/protocol/openid-connect/userinfo", k.Url, url.PathEscape(k.Realm)), nil)
+	req, err := http.NewRequest("GET", k.userinfoURL, nil) // #nosec G704 - URL is validated in Init()
 	if err != nil {
 		return false, fmt.Errorf("error creating request: %v", err)
 	}
 	req.Header.Add("Authorization", "Bearer "+token)
 
-	resp, err := k.client.Do(req)
+	resp, err := k.client.Do(req) // #nosec G704 - URL is validated in Init()
 	if err != nil {
 		return false, fmt.Errorf("error on response: %v", err)
 	}

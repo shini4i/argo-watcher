@@ -880,7 +880,11 @@ func NewEnv(serverConfig *config.ServerConfig, argo *argocd.Argo, metrics *prome
 	}
 
 	if env.config.Keycloak.Enabled {
-		env.strategies[keycloakHeader] = auth.NewKeycloakAuthService(env.config)
+		keycloakService, keycloakErr := auth.NewKeycloakAuthService(env.config)
+		if keycloakErr != nil {
+			return nil, fmt.Errorf("failed to initialize keycloak auth: %w", keycloakErr)
+		}
+		env.strategies[keycloakHeader] = keycloakService
 	}
 
 	if env.config.JWTSecret != "" {
