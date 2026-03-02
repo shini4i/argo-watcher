@@ -9,20 +9,41 @@ import (
 )
 
 // TestKeycloakAuthService_Init verifies that the Keycloak auth service is properly initialized
-// with URL, realm, client ID and HTTP client.
+// with URL, realm, client ID, HTTP client and pre-built userinfo URL.
 func TestKeycloakAuthService_Init(t *testing.T) {
-	service := &KeycloakAuthService{}
+	t.Run("should initialize with valid URL", func(t *testing.T) {
+		service := &KeycloakAuthService{}
 
-	url := "http://localhost:8080/auth"
-	realm := "test"
-	clientId := "test"
+		keycloakURL := "http://localhost:8080/auth"
+		realm := "test"
+		clientId := "test"
 
-	service.Init(url, realm, clientId, []string{})
+		err := service.Init(keycloakURL, realm, clientId, []string{})
 
-	assert.Equal(t, url, service.Url)
-	assert.Equal(t, realm, service.Realm)
-	assert.Equal(t, clientId, service.ClientId)
-	assert.IsType(t, &http.Client{}, service.client)
+		assert.NoError(t, err)
+		assert.Equal(t, keycloakURL, service.Url)
+		assert.Equal(t, realm, service.Realm)
+		assert.Equal(t, clientId, service.ClientId)
+		assert.IsType(t, &http.Client{}, service.client)
+		assert.Equal(t, "http://localhost:8080/auth/realms/test/protocol/openid-connect/userinfo", service.userinfoURL)
+	})
+
+	t.Run("should return error for invalid URL scheme", func(t *testing.T) {
+		service := &KeycloakAuthService{}
+
+		err := service.Init("ftp://localhost:8080", "test", "test", []string{})
+
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid keycloak URL scheme")
+	})
+
+	t.Run("should return error for missing host", func(t *testing.T) {
+		service := &KeycloakAuthService{}
+
+		err := service.Init("", "test", "test", []string{})
+
+		assert.Error(t, err)
+	})
 }
 
 // TestKeycloakAuthService_Validate tests token validation scenarios including
@@ -41,13 +62,10 @@ func TestKeycloakAuthService_Validate(t *testing.T) {
 		}))
 		defer server.Close()
 
-		service := &KeycloakAuthService{
-			Url:              server.URL,
-			Realm:            "my/realm", // realm with slash
-			ClientId:         "test",
-			PrivilegedGroups: []string{"group1"},
-			client:           server.Client(),
-		}
+		service := &KeycloakAuthService{}
+		err := service.Init(server.URL, "my/realm", "test", []string{"group1"})
+		assert.NoError(t, err)
+		service.client = server.Client()
 
 		ok, err := service.Validate("test")
 
@@ -66,13 +84,10 @@ func TestKeycloakAuthService_Validate(t *testing.T) {
 		}))
 		defer server.Close()
 
-		service := &KeycloakAuthService{
-			Url:              server.URL,
-			Realm:            "test",
-			ClientId:         "test",
-			PrivilegedGroups: []string{"group1"},
-			client:           server.Client(),
-		}
+		service := &KeycloakAuthService{}
+		err := service.Init(server.URL, "test", "test", []string{"group1"})
+		assert.NoError(t, err)
+		service.client = server.Client()
 
 		ok, err := service.Validate("test")
 
@@ -91,13 +106,10 @@ func TestKeycloakAuthService_Validate(t *testing.T) {
 		}))
 		defer server.Close()
 
-		service := &KeycloakAuthService{
-			Url:              server.URL,
-			Realm:            "test",
-			ClientId:         "test",
-			PrivilegedGroups: []string{"group1"},
-			client:           server.Client(),
-		}
+		service := &KeycloakAuthService{}
+		err := service.Init(server.URL, "test", "test", []string{"group1"})
+		assert.NoError(t, err)
+		service.client = server.Client()
 
 		ok, err := service.Validate("test")
 
@@ -116,12 +128,10 @@ func TestKeycloakAuthService_Validate(t *testing.T) {
 		}))
 		defer server.Close()
 
-		service := &KeycloakAuthService{
-			Url:      server.URL,
-			Realm:    "test",
-			ClientId: "test",
-			client:   server.Client(),
-		}
+		service := &KeycloakAuthService{}
+		err := service.Init(server.URL, "test", "test", []string{})
+		assert.NoError(t, err)
+		service.client = server.Client()
 
 		ok, err := service.Validate("test")
 
@@ -139,13 +149,10 @@ func TestKeycloakAuthService_Validate(t *testing.T) {
 		}))
 		defer server.Close()
 
-		service := &KeycloakAuthService{
-			Url:              server.URL,
-			Realm:            "test",
-			ClientId:         "test",
-			PrivilegedGroups: []string{"group1"},
-			client:           server.Client(),
-		}
+		service := &KeycloakAuthService{}
+		err := service.Init(server.URL, "test", "test", []string{"group1"})
+		assert.NoError(t, err)
+		service.client = server.Client()
 
 		ok, err := service.Validate("test")
 
@@ -155,13 +162,9 @@ func TestKeycloakAuthService_Validate(t *testing.T) {
 	})
 
 	t.Run("should return error if server is unreachable", func(t *testing.T) {
-		service := &KeycloakAuthService{
-			Url:              "http://127.0.0.1:1", // privileged port that tests cannot bind to
-			Realm:            "test",
-			ClientId:         "test",
-			PrivilegedGroups: []string{"group1"},
-			client:           &http.Client{},
-		}
+		service := &KeycloakAuthService{}
+		err := service.Init("http://127.0.0.1:1", "test", "test", []string{"group1"})
+		assert.NoError(t, err)
 
 		ok, err := service.Validate("test")
 

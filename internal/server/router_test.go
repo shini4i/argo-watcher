@@ -205,7 +205,10 @@ func TestNewEnv(t *testing.T) {
 		Port:        "8080",
 		DeployToken: "deployToken",
 		Keycloak: config.KeycloakConfig{
-			Enabled: true,
+			Enabled:  true,
+			Url:      "http://localhost:8080",
+			Realm:    "test",
+			ClientId: "test",
 		},
 		JWTSecret: "jwtSecret",
 	}
@@ -222,14 +225,38 @@ func TestNewEnv(t *testing.T) {
 	assert.Equal(t, env.metrics, metrics)
 	assert.Equal(t, env.updater, updater)
 
+	expectedKeycloak, keycloakErr := auth.NewKeycloakAuthService(serverConfig)
+	assert.NoError(t, keycloakErr)
+
 	expectedStrategies := map[string]auth.AuthStrategy{
 		"ARGO_WATCHER_DEPLOY_TOKEN": auth.NewDeployTokenAuthService(serverConfig.DeployToken),
 		"Authorization":             auth.NewJWTAuthService(serverConfig.JWTSecret),
-		keycloakHeader:              auth.NewKeycloakAuthService(serverConfig),
+		keycloakHeader:              expectedKeycloak,
 	}
 
 	assert.Equal(t, expectedStrategies, env.strategies)
 	assert.NotNil(t, env.authenticator)
+}
+
+// TestNewEnvInvalidKeycloakURL verifies that NewEnv returns an error when Keycloak is
+// enabled but the URL is invalid.
+func TestNewEnvInvalidKeycloakURL(t *testing.T) {
+	serverConfig := &config.ServerConfig{
+		Host:        "localhost",
+		Port:        "8080",
+		DeployToken: "deployToken",
+		Keycloak: config.KeycloakConfig{
+			Enabled: true,
+			Url:     "ftp://invalid:8080",
+			Realm:   "test",
+		},
+	}
+
+	env, err := NewEnv(serverConfig, &argocd.Argo{}, &prometheus.Metrics{}, &argocd.ArgoStatusUpdater{})
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to initialize keycloak auth")
+	assert.Nil(t, env)
 }
 
 // TestGetStateInvalidQueryParams verifies that the getState handler gracefully handles

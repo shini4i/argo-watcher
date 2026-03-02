@@ -22,15 +22,33 @@ type KeycloakAuthService struct {
 	ClientId         string
 	PrivilegedGroups []string
 	client           *http.Client
+	userinfoURL      string
 }
 
-// Init is used to initialize KeycloakAuthService with Keycloak URL, realm and client ID
-func (k *KeycloakAuthService) Init(url, realm, clientId string, privilegedGroups []string) {
-	k.Url = url
+// Init initializes KeycloakAuthService with Keycloak URL, realm and client ID.
+// It validates and pre-builds the userinfo endpoint URL to prevent SSRF via tainted input.
+func (k *KeycloakAuthService) Init(keycloakURL, realm, clientId string, privilegedGroups []string) error {
+	parsedURL, err := url.Parse(fmt.Sprintf("%s/realms/%s/protocol/openid-connect/userinfo", keycloakURL, url.PathEscape(realm)))
+	if err != nil {
+		return fmt.Errorf("invalid keycloak URL: %w", err)
+	}
+
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		return fmt.Errorf("invalid keycloak URL scheme: %s (must be http or https)", parsedURL.Scheme)
+	}
+
+	if parsedURL.Host == "" {
+		return fmt.Errorf("invalid keycloak URL: missing host")
+	}
+
+	k.Url = keycloakURL
 	k.Realm = realm
 	k.ClientId = clientId
 	k.PrivilegedGroups = privilegedGroups
+	k.userinfoURL = parsedURL.String()
 	k.client = &http.Client{}
+
+	return nil
 }
 
 // Validate implements quite simple token validation approach
@@ -39,7 +57,7 @@ func (k *KeycloakAuthService) Init(url, realm, clientId string, privilegedGroups
 func (k *KeycloakAuthService) Validate(token string) (bool, error) {
 	var keycloakResponse KeycloakResponse
 
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/realms/%s/protocol/openid-connect/userinfo", k.Url, url.PathEscape(k.Realm)), nil)
+	req, err := http.NewRequest("GET", k.userinfoURL, nil) // #nosec G704 - URL is validated in Init()
 	if err != nil {
 		return false, fmt.Errorf("error creating request: %v", err)
 	}

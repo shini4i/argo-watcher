@@ -10,21 +10,38 @@ import (
 )
 
 func TestNewKeycloakAuthService(t *testing.T) {
-	conf := &config.ServerConfig{
-		Keycloak: config.KeycloakConfig{
-			Url:              "http://localhost:8080",
-			Realm:            "master",
-			ClientId:         "test",
-			PrivilegedGroups: []string{"group1", "group2"},
-		},
-	}
+	t.Run("should initialize with valid config", func(t *testing.T) {
+		conf := &config.ServerConfig{
+			Keycloak: config.KeycloakConfig{
+				Url:              "http://localhost:8080",
+				Realm:            "master",
+				ClientId:         "test",
+				PrivilegedGroups: []string{"group1", "group2"},
+			},
+		}
 
-	keycloakAuthService := NewKeycloakAuthService(conf)
+		keycloakAuthService, err := NewKeycloakAuthService(conf)
 
-	assert.Equal(t, keycloakAuthService.Url, conf.Keycloak.Url)
-	assert.Equal(t, keycloakAuthService.Realm, conf.Keycloak.Realm)
-	assert.Equal(t, keycloakAuthService.ClientId, conf.Keycloak.ClientId)
-	assert.Equal(t, keycloakAuthService.PrivilegedGroups, conf.Keycloak.PrivilegedGroups)
+		assert.NoError(t, err)
+		assert.Equal(t, keycloakAuthService.Url, conf.Keycloak.Url)
+		assert.Equal(t, keycloakAuthService.Realm, conf.Keycloak.Realm)
+		assert.Equal(t, keycloakAuthService.ClientId, conf.Keycloak.ClientId)
+		assert.Equal(t, keycloakAuthService.PrivilegedGroups, conf.Keycloak.PrivilegedGroups)
+	})
+
+	t.Run("should return error for invalid URL", func(t *testing.T) {
+		conf := &config.ServerConfig{
+			Keycloak: config.KeycloakConfig{
+				Url:   "://invalid",
+				Realm: "master",
+			},
+		}
+
+		keycloakAuthService, err := NewKeycloakAuthService(conf)
+
+		assert.Error(t, err)
+		assert.Nil(t, keycloakAuthService)
+	})
 }
 
 func TestNewJWTAuthService(t *testing.T) {

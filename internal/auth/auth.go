@@ -73,16 +73,18 @@ func (a *Authenticator) Strategy(header string) (AuthStrategy, bool) {
 }
 
 // NewKeycloakAuthService initializes a new Keycloak authentication service using the given server config.
-// It takes a ServerConfig pointer as input and returns a pointer to a KeycloakAuthService.
-func NewKeycloakAuthService(config *config.ServerConfig) *KeycloakAuthService {
+// It validates the Keycloak URL and returns an error if it is malformed.
+func NewKeycloakAuthService(config *config.ServerConfig) (*KeycloakAuthService, error) {
 	keycloakAuthService := &KeycloakAuthService{}
-	keycloakAuthService.Init(
+	if err := keycloakAuthService.Init(
 		config.Keycloak.Url,
 		config.Keycloak.Realm,
 		config.Keycloak.ClientId,
 		config.Keycloak.PrivilegedGroups,
-	)
-	return keycloakAuthService
+	); err != nil {
+		return nil, err
+	}
+	return keycloakAuthService, nil
 }
 
 // NewDeployTokenAuthService initializes a new deploy token authentication service.
