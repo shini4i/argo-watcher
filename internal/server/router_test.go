@@ -887,23 +887,27 @@ func TestSafeFileSystem(t *testing.T) {
 	err = os.WriteFile(filepath.Join(tmpDir, "subdir", "nested.txt"), []byte("nested"), 0644)
 	require.NoError(t, err)
 
+	// Resolve symlinks to ensure consistent path comparison (important on macOS)
+	resolvedBase, err := filepath.EvalSymlinks(tmpDir)
+	require.NoError(t, err)
+
 	fs := safeFileSystem{
 		root:     http.Dir(tmpDir),
-		basePath: tmpDir,
+		basePath: resolvedBase,
 	}
 
 	t.Run("valid path opens file", func(t *testing.T) {
 		f, err := fs.Open("/file.txt")
-		assert.NoError(t, err)
-		assert.NotNil(t, f)
-		f.Close()
+		require.NoError(t, err)
+		require.NotNil(t, f)
+		defer f.Close()
 	})
 
 	t.Run("nested valid path opens file", func(t *testing.T) {
 		f, err := fs.Open("/subdir/nested.txt")
-		assert.NoError(t, err)
-		assert.NotNil(t, f)
-		f.Close()
+		require.NoError(t, err)
+		require.NotNil(t, f)
+		defer f.Close()
 	})
 
 	t.Run("path traversal attack returns error", func(t *testing.T) {
@@ -923,19 +927,19 @@ func TestSafeFileSystem(t *testing.T) {
 
 	t.Run("clean path with redundant components works", func(t *testing.T) {
 		f, err := fs.Open("/./subdir/../file.txt")
-		assert.NoError(t, err)
-		assert.NotNil(t, f)
-		f.Close()
+		require.NoError(t, err)
+		require.NotNil(t, f)
+		defer f.Close()
 	})
 
 	t.Run("open root directory", func(t *testing.T) {
 		f, err := fs.Open("/")
-		assert.NoError(t, err)
-		assert.NotNil(t, f)
+		require.NoError(t, err)
+		require.NotNil(t, f)
+		defer f.Close()
 		stat, err := f.Stat()
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.True(t, stat.IsDir())
-		f.Close()
 	})
 }
 
@@ -953,14 +957,958 @@ func TestSafeFileSystemSymlinkProtection(t *testing.T) {
 	err = os.Symlink(outsideDir, symlinkPath)
 	require.NoError(t, err)
 
+	// Resolve symlinks to ensure consistent path comparison (important on macOS)
+	resolvedBase, err := filepath.EvalSymlinks(tmpDir)
+	require.NoError(t, err)
+
 	fs := safeFileSystem{
 		root:     http.Dir(tmpDir),
-		basePath: tmpDir,
+		basePath: resolvedBase,
 	}
 
 	t.Run("symlink escaping directory is blocked", func(t *testing.T) {
 		_, err := fs.Open("/escape/secret.txt")
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, os.ErrPermission)
+	})
+}
+
+// TestEnvShutdown tests the graceful shutdown functionality.
+func TestEnvShutdown(t *testing.T) {
+	t.Run("shutdown closes channel", func(t *testing.T) {
+		shutdownCh := make(chan struct{})
+		env := &Env{
+			shutdownCh: shutdownCh,
+		}
+
+		// Verify channel is not closed
+		select {
+		case <-env.shutdownCh:
+			t.Fatal("channel should not be closed yet")
+		default:
+			// expected
+		}
+
+		// Call shutdown
+		env.Shutdown()
+
+		// Verify channel is now closed
+		select {
+		case <-env.shutdownCh:
+			// expected - channel is closed
+		default:
+			t.Fatal("channel should be closed after Shutdown()")
+		}
+	})
+
+	t.Run("shutdown with nil channel is safe", func(t *testing.T) {
+		env := &Env{
+			shutdownCh: nil,
+		}
+
+		// Should not panic
+		env.Shutdown()
+	})
+
+	t.Run("shutdown can be called multiple times safely", func(t *testing.T) {
+		shutdownCh := make(chan struct{})
+		env := &Env{
+			shutdownCh: shutdownCh,
+		}
+
+		// Should not panic when called multiple times
+		env.Shutdown()
+		env.Shutdown()
+		env.Shutdown()
+
+		// Verify channel is closed
+		select {
+		case <-env.shutdownCh:
+			// expected - channel is closed
+		default:
+			t.Fatal("channel should be closed")
+		}
+	})
+
+	t.Run("shutdown waits for connWg", func(t *testing.T) {
+		shutdownCh := make(chan struct{})
+		env := &Env{
+			shutdownCh: shutdownCh,
+		}
+
+		// Simulate an active connection by incrementing the WaitGroup
+		env.connWg.Add(1)
+
+		// Start Shutdown in a goroutine and track when it completes
+		shutdownDone := make(chan struct{})
+		go func() {
+			env.Shutdown()
+			close(shutdownDone)
+		}()
+
+		// Verify Shutdown is blocked waiting for connWg
+		select {
+		case <-shutdownDone:
+			t.Fatal("Shutdown should be blocked waiting for connWg")
+		case <-time.After(300 * time.Millisecond):
+			// Expected - Shutdown is still waiting
+		}
+
+		// Now release the WaitGroup
+		env.connWg.Done()
+
+		// Shutdown should now complete
+		select {
+		case <-shutdownDone:
+			// Expected - Shutdown completed after connWg.Done()
+		case <-time.After(time.Second):
+			t.Fatal("Shutdown should have completed after connWg.Done()")
+		}
+	})
+}
+
+// TestStartRouter tests the StartRouter method.
+func TestStartRouter(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tmpDir := t.TempDir()
+	err := os.WriteFile(tmpDir+"/index.html", []byte("<html></html>"), 0644)
+	require.NoError(t, err)
+
+	serverConfig := &config.ServerConfig{
+		Host:           "127.0.0.1",
+		Port:           "0", // Use port 0 for automatic port assignment
+		StaticFilePath: tmpDir,
+	}
+
+	env := &Env{config: serverConfig}
+	env.lockdown, _ = NewLockdown("")
+
+	router := env.CreateRouter()
+	srv := env.StartRouter(router)
+
+	assert.NotNil(t, srv)
+	assert.Equal(t, "127.0.0.1:0", srv.Addr)
+	assert.Equal(t, router, srv.Handler)
+	assert.Equal(t, 10*time.Second, srv.ReadHeaderTimeout)
+}
+
+// TestNotifyWebSocketClients tests the WebSocket notification functionality.
+func TestNotifyWebSocketClients(t *testing.T) {
+	t.Run("notifies with no connections", func(t *testing.T) {
+		// Reset connections
+		connectionsMutex.Lock()
+		connections = nil
+		closedConns = make(map[*websocket.Conn]bool)
+		connectionsMutex.Unlock()
+
+		// Cleanup to prevent test pollution
+		t.Cleanup(func() {
+			connectionsMutex.Lock()
+			connections = nil
+			closedConns = make(map[*websocket.Conn]bool)
+			connectionsMutex.Unlock()
+		})
+
+		// Should not panic with empty connections
+		notifyWebSocketClients("test message")
+	})
+}
+
+// TestRemoveWebSocketConnectionCleanup tests the connection removal cleanup functionality.
+func TestRemoveWebSocketConnectionCleanup(t *testing.T) {
+	t.Run("removes connection and cleans up closedConns", func(t *testing.T) {
+		// Reset state
+		connectionsMutex.Lock()
+		connections = nil
+		closedConns = make(map[*websocket.Conn]bool)
+		connectionsMutex.Unlock()
+
+		// Cleanup to prevent test pollution
+		t.Cleanup(func() {
+			connectionsMutex.Lock()
+			connections = nil
+			closedConns = make(map[*websocket.Conn]bool)
+			connectionsMutex.Unlock()
+		})
+
+		// This test verifies the function doesn't panic with nil
+		removeWebSocketConnection(nil)
+
+		connectionsMutex.RLock()
+		assert.Len(t, connections, 0)
+		// closedConns should be empty after cleanup
+		assert.Len(t, closedConns, 0)
+		connectionsMutex.RUnlock()
+	})
+
+	t.Run("removes actual connection from slice", func(t *testing.T) {
+		// Reset state
+		connectionsMutex.Lock()
+		connections = nil
+		closedConns = make(map[*websocket.Conn]bool)
+		connectionsMutex.Unlock()
+
+		// Cleanup to prevent test pollution
+		t.Cleanup(func() {
+			connectionsMutex.Lock()
+			connections = nil
+			closedConns = make(map[*websocket.Conn]bool)
+			connectionsMutex.Unlock()
+		})
+
+		conn := &websocket.Conn{}
+		connectionsMutex.Lock()
+		connections = append(connections, conn)
+		connectionsMutex.Unlock()
+
+		removeWebSocketConnection(conn)
+
+		connectionsMutex.RLock()
+		assert.NotContains(t, connections, conn)
+		// Entry should be deleted after removal
+		assert.Len(t, closedConns, 0)
+		connectionsMutex.RUnlock()
+	})
+
+	t.Run("removes connection from middle of slice", func(t *testing.T) {
+		// Reset state
+		connectionsMutex.Lock()
+		connections = nil
+		closedConns = make(map[*websocket.Conn]bool)
+		connectionsMutex.Unlock()
+
+		t.Cleanup(func() {
+			connectionsMutex.Lock()
+			connections = nil
+			closedConns = make(map[*websocket.Conn]bool)
+			connectionsMutex.Unlock()
+		})
+
+		conn1 := &websocket.Conn{}
+		conn2 := &websocket.Conn{}
+		conn3 := &websocket.Conn{}
+		connectionsMutex.Lock()
+		connections = append(connections, conn1, conn2, conn3)
+		connectionsMutex.Unlock()
+
+		// Remove middle connection
+		removeWebSocketConnection(conn2)
+
+		connectionsMutex.RLock()
+		assert.Len(t, connections, 2)
+		// Check by pointer address, not value (all zero-value Conns are equal by value)
+		foundConn1 := false
+		foundConn2 := false
+		foundConn3 := false
+		for _, c := range connections {
+			if c == conn1 {
+				foundConn1 = true
+			}
+			if c == conn2 {
+				foundConn2 = true
+			}
+			if c == conn3 {
+				foundConn3 = true
+			}
+		}
+		connectionsMutex.RUnlock()
+
+		assert.True(t, foundConn1, "conn1 should still be in the slice")
+		assert.False(t, foundConn2, "conn2 should have been removed")
+		assert.True(t, foundConn3, "conn3 should still be in the slice")
+	})
+}
+
+// TestNotifyWebSocketClientsFiltersClosedConnections tests that closed connections are filtered.
+func TestNotifyWebSocketClientsFiltersClosedConnections(t *testing.T) {
+	// Reset state
+	connectionsMutex.Lock()
+	connections = nil
+	closedConns = make(map[*websocket.Conn]bool)
+	connectionsMutex.Unlock()
+
+	t.Cleanup(func() {
+		connectionsMutex.Lock()
+		connections = nil
+		closedConns = make(map[*websocket.Conn]bool)
+		connectionsMutex.Unlock()
+	})
+
+	// Add a connection and mark it as closed
+	conn := &websocket.Conn{}
+	connectionsMutex.Lock()
+	connections = append(connections, conn)
+	closedConns[conn] = true
+	connectionsMutex.Unlock()
+
+	// Should not panic and should skip the closed connection
+	notifyWebSocketClients("test message")
+}
+
+// TestConnWgTracking tests that connWg is properly incremented and decremented.
+func TestConnWgTracking(t *testing.T) {
+	env := &Env{
+		shutdownCh: make(chan struct{}),
+	}
+
+	// Simulate handleWebSocketConnection incrementing the WaitGroup
+	env.connWg.Add(1)
+
+	// Simulate checkConnection running in a goroutine
+	checkDone := make(chan struct{})
+	go func() {
+		defer env.connWg.Done()
+		// Simulate waiting for shutdown signal
+		<-env.shutdownCh
+		close(checkDone)
+	}()
+
+	// Verify the goroutine is running (WaitGroup has 1)
+	select {
+	case <-checkDone:
+		t.Fatal("goroutine should not have exited yet")
+	case <-time.After(50 * time.Millisecond):
+		// Expected - goroutine is waiting
+	}
+
+	// Trigger shutdown
+	shutdownComplete := make(chan struct{})
+	go func() {
+		env.Shutdown()
+		close(shutdownComplete)
+	}()
+
+	// The checkDone should close first (simulating goroutine exit)
+	select {
+	case <-checkDone:
+		// Expected
+	case <-time.After(time.Second):
+		t.Fatal("goroutine should have received shutdown signal")
+	}
+
+	// Then shutdown should complete
+	select {
+	case <-shutdownComplete:
+		// Expected
+	case <-time.After(time.Second):
+		t.Fatal("Shutdown should have completed")
+	}
+}
+
+// TestCreateRouterInitializesShutdownChannel tests that CreateRouter initializes the shutdown channel.
+func TestCreateRouterInitializesShutdownChannel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tmpDir := t.TempDir()
+	err := os.WriteFile(tmpDir+"/index.html", []byte("<html></html>"), 0644)
+	require.NoError(t, err)
+
+	serverConfig := &config.ServerConfig{
+		StaticFilePath: tmpDir,
+	}
+
+	// Create env without shutdown channel
+	env := &Env{
+		config:     serverConfig,
+		shutdownCh: nil,
+	}
+	env.lockdown, _ = NewLockdown("")
+
+	// CreateRouter should initialize the shutdown channel
+	_ = env.CreateRouter()
+
+	assert.NotNil(t, env.shutdownCh, "CreateRouter should initialize shutdownCh")
+}
+
+// TestValidatePathEdgeCases tests edge cases in path validation.
+func TestValidatePathEdgeCases(t *testing.T) {
+	// Create a temp directory with a specific structure
+	tmpDir := t.TempDir()
+
+	fs := safeFileSystem{
+		root:     http.Dir(tmpDir),
+		basePath: tmpDir,
+	}
+
+	t.Run("multiple slashes are cleaned", func(t *testing.T) {
+		cleanPath, err := fs.validatePath("///file.txt")
+		assert.NoError(t, err)
+		assert.Equal(t, "/file.txt", cleanPath)
+	})
+
+	t.Run("dot path is cleaned to root", func(t *testing.T) {
+		cleanPath, err := fs.validatePath("/.")
+		assert.NoError(t, err)
+		assert.Equal(t, "/", cleanPath)
+	})
+
+	t.Run("complex path with multiple dots is cleaned", func(t *testing.T) {
+		cleanPath, err := fs.validatePath("/a/b/./c/../d")
+		assert.NoError(t, err)
+		assert.Equal(t, "/a/b/d", cleanPath)
+	})
+}
+
+// TestPrometheusHandler tests the prometheus handler wrapper.
+func TestPrometheusHandler(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	handler := prometheusHandler()
+	assert.NotNil(t, handler)
+
+	// Create a test request
+	req, _ := http.NewRequest(http.MethodGet, "/metrics", nil)
+	w := httptest.NewRecorder()
+
+	// Create a gin context
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+
+	// Call the handler - should not panic
+	handler(c)
+
+	// Should return a valid response (prometheus metrics)
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+// mockTaskRepositoryWithHealth allows configuring health check response.
+type mockTaskRepositoryWithHealth struct {
+	mockTaskRepository
+	healthy   bool
+	taskError error
+}
+
+func (m *mockTaskRepositoryWithHealth) Check() bool {
+	return m.healthy
+}
+
+func (m *mockTaskRepositoryWithHealth) GetTask(id string) (*models.Task, error) {
+	if m.taskError != nil {
+		return nil, m.taskError
+	}
+	return &models.Task{
+		Id:           id,
+		App:          "test-app",
+		Author:       "test-author",
+		Project:      "test-project",
+		Status:       "deployed",
+		StatusReason: "",
+	}, nil
+}
+
+// TestHealthzEndpoint tests the healthz endpoint.
+func TestHealthzEndpoint(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("returns up when healthy", func(t *testing.T) {
+		argo := &argocd.Argo{}
+		argo.Init(&mockTaskRepositoryWithHealth{healthy: true}, &mockArgoApi{}, &mockMetrics{})
+
+		env := &Env{argo: argo}
+
+		router := gin.New()
+		router.GET("/healthz", env.healthz)
+
+		req, _ := http.NewRequest(http.MethodGet, "/healthz", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Contains(t, w.Body.String(), "up")
+	})
+
+	t.Run("returns down when unhealthy", func(t *testing.T) {
+		argo := &argocd.Argo{}
+		argo.Init(&mockTaskRepositoryWithHealth{healthy: false}, &mockArgoApi{}, &mockMetrics{})
+
+		env := &Env{argo: argo}
+
+		router := gin.New()
+		router.GET("/healthz", env.healthz)
+
+		req, _ := http.NewRequest(http.MethodGet, "/healthz", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+		assert.Contains(t, w.Body.String(), "down")
+	})
+}
+
+// TestGetConfigEndpoint tests the getConfig endpoint.
+func TestGetConfigEndpoint(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	serverConfig := &config.ServerConfig{
+		StateType:      "in-memory",
+		LogLevel:       "debug",
+		DevEnvironment: true,
+	}
+
+	env := &Env{config: serverConfig}
+
+	router := gin.New()
+	router.GET("/api/v1/config", env.getConfig)
+
+	req, _ := http.NewRequest(http.MethodGet, "/api/v1/config", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), "in-memory")
+	assert.Contains(t, w.Body.String(), "debug")
+	assert.Contains(t, w.Body.String(), "devEnvironment")
+}
+
+// TestGetTaskStatusEndpoint tests the getTaskStatus endpoint.
+func TestGetTaskStatusEndpoint(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("returns task when found", func(t *testing.T) {
+		argo := &argocd.Argo{}
+		argo.Init(&mockTaskRepositoryWithHealth{healthy: true}, &mockArgoApi{}, &mockMetrics{})
+
+		env := &Env{argo: argo}
+
+		router := gin.New()
+		router.GET("/api/v1/tasks/:id", env.getTaskStatus)
+
+		req, _ := http.NewRequest(http.MethodGet, "/api/v1/tasks/test-task-id", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Contains(t, w.Body.String(), "test-task-id")
+		assert.Contains(t, w.Body.String(), "test-app")
+	})
+
+	t.Run("returns error when task not found", func(t *testing.T) {
+		argo := &argocd.Argo{}
+		argo.Init(&mockTaskRepositoryWithHealth{
+			healthy:   true,
+			taskError: fmt.Errorf("task not found"),
+		}, &mockArgoApi{}, &mockMetrics{})
+
+		env := &Env{argo: argo}
+
+		router := gin.New()
+		router.GET("/api/v1/tasks/:id", env.getTaskStatus)
+
+		req, _ := http.NewRequest(http.MethodGet, "/api/v1/tasks/nonexistent", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusNotFound, w.Code)
+		assert.Contains(t, w.Body.String(), "nonexistent")
+		assert.Contains(t, w.Body.String(), "task not found")
+	})
+}
+
+// TestValidateTokenWithStrategies tests the validateToken method.
+func TestValidateTokenWithStrategies(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("returns result from authenticator when no allowed strategy", func(t *testing.T) {
+		strategies := make(map[string]auth.AuthStrategy)
+		mockAuth := auth.NewAuthenticator(strategies)
+
+		env := &Env{
+			authenticator: mockAuth,
+			strategies:    strategies,
+		}
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request, _ = http.NewRequest(http.MethodPost, "/test", nil)
+
+		// With empty authenticator and no strategies, validation returns false
+		valid, err := env.validateToken(c, "")
+		assert.False(t, valid)
+		assert.NoError(t, err)
+	})
+
+	t.Run("skips non-matching strategy headers", func(t *testing.T) {
+		env := &Env{
+			strategies: make(map[string]auth.AuthStrategy),
+		}
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request, _ = http.NewRequest(http.MethodPost, "/test", nil)
+		c.Request.Header.Set("Authorization", "Bearer test-token")
+
+		// With no matching strategy, returns false
+		valid, err := env.validateAllowedStrategy(c, "Keycloak-Authorization")
+		assert.False(t, valid)
+		assert.NoError(t, err)
+	})
+}
+
+// mockAuthStrategy is a configurable mock for auth.AuthStrategy.
+type mockAuthStrategy struct {
+	valid bool
+	err   error
+}
+
+func (m *mockAuthStrategy) Validate(_ string) (bool, error) {
+	return m.valid, m.err
+}
+
+// mockTaskRepositoryForAddTask extends mockTaskRepositoryWithHealth with AddTask support.
+type mockTaskRepositoryForAddTask struct {
+	mockTaskRepositoryWithHealth
+	addTaskError error
+	addedTask    *models.Task
+}
+
+func (m *mockTaskRepositoryForAddTask) AddTask(task models.Task) (*models.Task, error) {
+	if m.addTaskError != nil {
+		return nil, m.addTaskError
+	}
+	task.Id = "generated-task-id"
+	m.addedTask = &task
+	return &task, nil
+}
+
+// TestAddTaskEndpoint tests the addTask endpoint.
+func TestAddTaskEndpoint(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("returns error for invalid JSON payload", func(t *testing.T) {
+		env := &Env{}
+
+		router := gin.New()
+		router.POST("/api/v1/tasks", env.addTask)
+
+		req, _ := http.NewRequest(http.MethodPost, "/api/v1/tasks", strings.NewReader("invalid json"))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusNotAcceptable, w.Code)
+		assert.Contains(t, w.Body.String(), "invalid payload")
+	})
+
+	t.Run("rejects task when lockdown is active", func(t *testing.T) {
+		lockdown, _ := NewLockdown("")
+		lockdown.SetLock()
+
+		env := &Env{
+			lockdown: lockdown,
+		}
+
+		router := gin.New()
+		router.POST("/api/v1/tasks", env.addTask)
+
+		taskJSON := `{"app": "test-app", "author": "test-author", "project": "test-project", "images": [{"image": "test", "tag": "v1"}]}`
+		req, _ := http.NewRequest(http.MethodPost, "/api/v1/tasks", strings.NewReader(taskJSON))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusNotAcceptable, w.Code)
+		assert.Contains(t, w.Body.String(), "rejected")
+		assert.Contains(t, w.Body.String(), "lockdown is active")
+	})
+
+	t.Run("returns error when token validation fails", func(t *testing.T) {
+		lockdown, _ := NewLockdown("")
+		strategies := make(map[string]auth.AuthStrategy)
+		strategies["Authorization"] = &mockAuthStrategy{valid: false, err: fmt.Errorf("validation error")}
+
+		env := &Env{
+			lockdown:      lockdown,
+			strategies:    strategies,
+			authenticator: auth.NewAuthenticator(strategies),
+		}
+
+		router := gin.New()
+		router.POST("/api/v1/tasks", env.addTask)
+
+		taskJSON := `{"app": "test-app", "author": "test-author", "project": "test-project", "images": [{"image": "test", "tag": "v1"}]}`
+		req, _ := http.NewRequest(http.MethodPost, "/api/v1/tasks", strings.NewReader(taskJSON))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer test-token")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+
+	t.Run("returns error when argo.AddTask fails", func(t *testing.T) {
+		lockdown, _ := NewLockdown("")
+		strategies := make(map[string]auth.AuthStrategy)
+
+		argo := &argocd.Argo{}
+		argo.Init(&mockTaskRepositoryForAddTask{
+			mockTaskRepositoryWithHealth: mockTaskRepositoryWithHealth{healthy: true},
+			addTaskError:                 fmt.Errorf("argo unavailable"),
+		}, &mockArgoApi{}, &mockMetrics{})
+
+		env := &Env{
+			lockdown:      lockdown,
+			strategies:    strategies,
+			authenticator: auth.NewAuthenticator(strategies),
+			argo:          argo,
+		}
+
+		router := gin.New()
+		router.POST("/api/v1/tasks", env.addTask)
+
+		taskJSON := `{"app": "test-app", "author": "test-author", "project": "test-project", "images": [{"image": "test", "tag": "v1"}]}`
+		req, _ := http.NewRequest(http.MethodPost, "/api/v1/tasks", strings.NewReader(taskJSON))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+		assert.Contains(t, w.Body.String(), "down")
+	})
+
+}
+
+// TestSetDeployLockWithKeycloak tests SetDeployLock with Keycloak authentication.
+func TestSetDeployLockWithKeycloak(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("returns error when validation fails", func(t *testing.T) {
+		lockdown, _ := NewLockdown("")
+		strategies := make(map[string]auth.AuthStrategy)
+		strategies[keycloakHeader] = &mockAuthStrategy{valid: false, err: fmt.Errorf("keycloak error")}
+
+		env := &Env{
+			lockdown:   lockdown,
+			strategies: strategies,
+			config: &config.ServerConfig{
+				Keycloak: config.KeycloakConfig{Enabled: true},
+			},
+		}
+
+		router := gin.New()
+		router.POST("/api/v1/deploy-lock", env.SetDeployLock)
+
+		req, _ := http.NewRequest(http.MethodPost, "/api/v1/deploy-lock", nil)
+		req.Header.Set(keycloakHeader, "Bearer test-token")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
+		assert.Contains(t, w.Body.String(), "Validation process failed")
+	})
+
+	t.Run("returns unauthorized when token is invalid", func(t *testing.T) {
+		lockdown, _ := NewLockdown("")
+		strategies := make(map[string]auth.AuthStrategy)
+		strategies[keycloakHeader] = &mockAuthStrategy{valid: false, err: nil}
+
+		env := &Env{
+			lockdown:   lockdown,
+			strategies: strategies,
+			config: &config.ServerConfig{
+				Keycloak: config.KeycloakConfig{Enabled: true},
+			},
+		}
+
+		router := gin.New()
+		router.POST("/api/v1/deploy-lock", env.SetDeployLock)
+
+		req, _ := http.NewRequest(http.MethodPost, "/api/v1/deploy-lock", nil)
+		req.Header.Set(keycloakHeader, "Bearer invalid-token")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusUnauthorized, w.Code)
+		assert.Contains(t, w.Body.String(), "not authorized")
+	})
+
+	t.Run("sets lock when token is valid", func(t *testing.T) {
+		lockdown, _ := NewLockdown("")
+		strategies := make(map[string]auth.AuthStrategy)
+		strategies[keycloakHeader] = &mockAuthStrategy{valid: true, err: nil}
+
+		env := &Env{
+			lockdown:   lockdown,
+			strategies: strategies,
+			config: &config.ServerConfig{
+				Keycloak: config.KeycloakConfig{Enabled: true},
+			},
+		}
+
+		router := gin.New()
+		router.POST("/api/v1/deploy-lock", env.SetDeployLock)
+
+		req, _ := http.NewRequest(http.MethodPost, "/api/v1/deploy-lock", nil)
+		req.Header.Set(keycloakHeader, "Bearer valid-token")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Contains(t, w.Body.String(), "deploy lock is set")
+		assert.True(t, lockdown.IsLocked())
+	})
+}
+
+// TestReleaseDeployLockWithKeycloak tests ReleaseDeployLock with Keycloak authentication.
+func TestReleaseDeployLockWithKeycloak(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("returns error when validation fails", func(t *testing.T) {
+		lockdown, _ := NewLockdown("")
+		lockdown.SetLock()
+		strategies := make(map[string]auth.AuthStrategy)
+		strategies[keycloakHeader] = &mockAuthStrategy{valid: false, err: fmt.Errorf("keycloak error")}
+
+		env := &Env{
+			lockdown:   lockdown,
+			strategies: strategies,
+			config: &config.ServerConfig{
+				Keycloak: config.KeycloakConfig{Enabled: true},
+			},
+		}
+
+		router := gin.New()
+		router.DELETE("/api/v1/deploy-lock", env.ReleaseDeployLock)
+
+		req, _ := http.NewRequest(http.MethodDelete, "/api/v1/deploy-lock", nil)
+		req.Header.Set(keycloakHeader, "Bearer test-token")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
+		assert.Contains(t, w.Body.String(), "Validation process failed")
+	})
+
+	t.Run("returns unauthorized when token is invalid", func(t *testing.T) {
+		lockdown, _ := NewLockdown("")
+		lockdown.SetLock()
+		strategies := make(map[string]auth.AuthStrategy)
+		strategies[keycloakHeader] = &mockAuthStrategy{valid: false, err: nil}
+
+		env := &Env{
+			lockdown:   lockdown,
+			strategies: strategies,
+			config: &config.ServerConfig{
+				Keycloak: config.KeycloakConfig{Enabled: true},
+			},
+		}
+
+		router := gin.New()
+		router.DELETE("/api/v1/deploy-lock", env.ReleaseDeployLock)
+
+		req, _ := http.NewRequest(http.MethodDelete, "/api/v1/deploy-lock", nil)
+		req.Header.Set(keycloakHeader, "Bearer invalid-token")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusUnauthorized, w.Code)
+		assert.Contains(t, w.Body.String(), "not authorized")
+	})
+
+	t.Run("releases lock when token is valid", func(t *testing.T) {
+		lockdown, _ := NewLockdown("")
+		lockdown.SetLock()
+		strategies := make(map[string]auth.AuthStrategy)
+		strategies[keycloakHeader] = &mockAuthStrategy{valid: true, err: nil}
+
+		env := &Env{
+			lockdown:   lockdown,
+			strategies: strategies,
+			config: &config.ServerConfig{
+				Keycloak: config.KeycloakConfig{Enabled: true},
+			},
+		}
+
+		router := gin.New()
+		router.DELETE("/api/v1/deploy-lock", env.ReleaseDeployLock)
+
+		req, _ := http.NewRequest(http.MethodDelete, "/api/v1/deploy-lock", nil)
+		req.Header.Set(keycloakHeader, "Bearer valid-token")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Contains(t, w.Body.String(), "deploy lock is released")
+		assert.False(t, lockdown.IsLocked())
+	})
+}
+
+// TestValidateAllowedStrategyFull tests validateAllowedStrategy with more scenarios.
+func TestValidateAllowedStrategyFull(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("validates successfully with matching strategy", func(t *testing.T) {
+		strategies := make(map[string]auth.AuthStrategy)
+		strategies[keycloakHeader] = &mockAuthStrategy{valid: true, err: nil}
+
+		env := &Env{
+			strategies: strategies,
+		}
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request, _ = http.NewRequest(http.MethodPost, "/test", nil)
+		c.Request.Header.Set(keycloakHeader, "Bearer valid-token")
+
+		valid, err := env.validateAllowedStrategy(c, keycloakHeader)
+		assert.True(t, valid)
+		assert.NoError(t, err)
+	})
+
+	t.Run("strips Bearer prefix from token", func(t *testing.T) {
+		strategies := make(map[string]auth.AuthStrategy)
+		strategies[keycloakHeader] = &mockAuthStrategy{valid: true, err: nil}
+
+		env := &Env{
+			strategies: strategies,
+		}
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request, _ = http.NewRequest(http.MethodPost, "/test", nil)
+		c.Request.Header.Set(keycloakHeader, "Bearer my-token")
+
+		valid, err := env.validateAllowedStrategy(c, keycloakHeader)
+		assert.True(t, valid)
+		assert.NoError(t, err)
+	})
+
+	t.Run("returns error from strategy validation", func(t *testing.T) {
+		expectedErr := fmt.Errorf("token expired")
+		strategies := make(map[string]auth.AuthStrategy)
+		strategies[keycloakHeader] = &mockAuthStrategy{valid: false, err: expectedErr}
+
+		env := &Env{
+			strategies: strategies,
+		}
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request, _ = http.NewRequest(http.MethodPost, "/test", nil)
+		c.Request.Header.Set(keycloakHeader, "Bearer expired-token")
+
+		valid, err := env.validateAllowedStrategy(c, keycloakHeader)
+		assert.False(t, valid)
+		assert.Equal(t, expectedErr, err)
+	})
+
+	t.Run("skips strategies with non-matching headers", func(t *testing.T) {
+		strategies := make(map[string]auth.AuthStrategy)
+		strategies["Authorization"] = &mockAuthStrategy{valid: true, err: nil}
+		strategies[keycloakHeader] = &mockAuthStrategy{valid: false, err: nil}
+
+		env := &Env{
+			strategies: strategies,
+		}
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request, _ = http.NewRequest(http.MethodPost, "/test", nil)
+		c.Request.Header.Set("Authorization", "Bearer token")
+
+		// Only keycloakHeader is allowed, so Authorization should be skipped
+		valid, err := env.validateAllowedStrategy(c, keycloakHeader)
+		assert.False(t, valid)
+		assert.NoError(t, err)
 	})
 }

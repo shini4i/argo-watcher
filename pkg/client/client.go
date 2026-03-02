@@ -81,12 +81,11 @@ func (watcher *Watcher) addTask(task models.Task, authMethod, token string) (str
 		return "", err
 	}
 
-	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
-			panic(err)
+	defer func() {
+		if err := response.Body.Close(); err != nil {
+			log.Printf("warning: failed to close response body: %v", err)
 		}
-	}(response.Body)
+	}()
 
 	responseBody, err := io.ReadAll(response.Body)
 	if err != nil {

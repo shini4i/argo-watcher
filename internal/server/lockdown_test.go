@@ -1,6 +1,7 @@
 package server
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -275,4 +276,48 @@ func TestNewLockdown(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestLockdown_ConcurrentAccess verifies that the lockdown struct is thread-safe.
+func TestLockdown_ConcurrentAccess(t *testing.T) {
+	l := &Lockdown{}
+	var wg sync.WaitGroup
+
+	// Multiple goroutines setting and releasing locks
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 100; j++ {
+				l.SetLock()
+				_ = l.IsLocked()
+				l.ReleaseLock()
+				_ = l.IsLocked()
+			}
+		}()
+	}
+
+	// Wait for all goroutines to complete
+	wg.Wait()
+
+	// No race conditions should have occurred (test passes if no data race detected with -race flag)
+	assert.False(t, l.IsLocked())
+}
+
+// TestLockdown_IsLockedInternal tests the internal lock checking logic.
+func TestLockdown_IsLockedInternal(t *testing.T) {
+	t.Run("returns true when ManualLock is set", func(t *testing.T) {
+		l := &Lockdown{ManualLock: true}
+		assert.True(t, l.IsLocked())
+	})
+
+	t.Run("returns false when OverrideMode is set without ManualLock", func(t *testing.T) {
+		l := &Lockdown{OverrideMode: true}
+		assert.False(t, l.IsLocked())
+	})
+
+	t.Run("ManualLock takes precedence over OverrideMode", func(t *testing.T) {
+		l := &Lockdown{ManualLock: true, OverrideMode: true}
+		assert.True(t, l.IsLocked())
+	})
 }

@@ -33,14 +33,16 @@ import (
 var version = "local"
 
 var (
-	connectionsMutex sync.Mutex
+	connectionsMutex sync.RWMutex
 	connections      []*websocket.Conn
+	closedConns      = make(map[*websocket.Conn]bool) // Track closed connections to prevent use-after-close
 )
 
 const (
 	deployLockEndpoint  = "/deploy-lock"
 	unauthorizedMessage = "You are not authorized to perform this action"
 	keycloakHeader      = "Keycloak-Authorization"
+	shutdownTimeout     = 10 * time.Second // Maximum time to wait for WebSocket goroutines during shutdown
 )
 
 // safeFileSystem wraps http.Dir with additional symlink protection.
@@ -197,10 +199,22 @@ type Env struct {
 	strategies map[string]auth.AuthStrategy
 	// authenticator orchestrates registered strategies
 	authenticator *auth.Authenticator
+	// shutdownCh signals graceful shutdown to all WebSocket goroutines.
+	// Using a channel instead of storing context.Context follows Go best practices.
+	shutdownCh chan struct{}
+	// shutdownOnce ensures Shutdown() can be called multiple times safely.
+	shutdownOnce sync.Once
+	// connWg tracks active WebSocket connection goroutines for graceful shutdown.
+	connWg sync.WaitGroup
 }
 
 // CreateRouter initialize router.
 func (env *Env) CreateRouter() *gin.Engine {
+	// Initialize shutdown channel if not set (for tests that create Env directly)
+	if env.shutdownCh == nil {
+		env.shutdownCh = make(chan struct{})
+	}
+
 	docs.SwaggerInfo.Title = "Argo-Watcher API"
 	docs.SwaggerInfo.Version = version
 	docs.SwaggerInfo.Description = "A small tool that will help to improve deployment visibility"
@@ -266,10 +280,18 @@ func (env *Env) CreateRouter() *gin.Engine {
 		log.Fatal().Err(err).Msg("failed to resolve static files path")
 	}
 
+	// Resolve symlinks in the base path to ensure consistent path comparison
+	// This is important on macOS where /var is a symlink to /private/var
+	resolvedBasePath, err := filepath.EvalSymlinks(absStaticPath)
+	if err != nil {
+		// If symlink resolution fails (e.g., path doesn't exist yet), fall back to absolute path
+		resolvedBasePath = absStaticPath
+	}
+
 	// Create a safe file system with symlink protection
 	fs := safeFileSystem{
 		root:     http.Dir(absStaticPath),
-		basePath: absStaticPath,
+		basePath: resolvedBasePath,
 	}
 
 	router.NoRoute(env.createStaticFileHandler(fs, absStaticPath))
@@ -311,11 +333,43 @@ func tryServeStaticFile(c *gin.Context, fs safeFileSystem) bool {
 	return true
 }
 
-func (env *Env) StartRouter(router *gin.Engine) {
+// StartRouter creates and returns an HTTP server configured with the given router.
+// The caller is responsible for starting the server and handling graceful shutdown.
+func (env *Env) StartRouter(router *gin.Engine) *http.Server {
 	routerBind := fmt.Sprintf("%s:%s", env.config.Host, env.config.Port)
 	log.Debug().Msgf("Listening on %s", routerBind)
-	if err := router.Run(routerBind); err != nil {
-		panic(err)
+	return &http.Server{
+		Addr:              routerBind,
+		Handler:           router,
+		ReadHeaderTimeout: 10 * time.Second, // Prevent Slowloris attacks
+	}
+}
+
+// Shutdown gracefully shuts down the server and all WebSocket connections.
+// This method is safe to call multiple times. It blocks until all WebSocket
+// goroutines have finished or the shutdown timeout is reached. If the timeout
+// is reached, some goroutines may still be running but should exit shortly as
+// they observe the closed shutdownCh. Any long-running WebSocket writes are
+// bounded by their own 5-second timeout in checkConnection.
+func (env *Env) Shutdown() {
+	if env.shutdownCh != nil {
+		env.shutdownOnce.Do(func() {
+			close(env.shutdownCh)
+		})
+	}
+
+	// Wait for all WebSocket connection goroutines to finish with timeout
+	done := make(chan struct{})
+	go func() {
+		env.connWg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		log.Debug().Msg("All WebSocket connections closed gracefully")
+	case <-time.After(shutdownTimeout):
+		log.Warn().Msg("Shutdown timeout reached, some WebSocket goroutines may still be running")
 	}
 }
 
@@ -477,13 +531,14 @@ func (env *Env) getState(c *gin.Context) {
 // @Tags backend
 // @Produce json
 // @Success 200 {object} models.TaskStatus
+// @Failure 404 {object} models.TaskStatus
 // @Router /api/v1/tasks/{id} [get]
 func (env *Env) getTaskStatus(c *gin.Context) {
 	id := c.Param("id")
 	task, err := env.argo.State.GetTask(id)
 
 	if err != nil {
-		c.JSON(http.StatusOK, models.TaskStatus{
+		c.JSON(http.StatusNotFound, models.TaskStatus{
 			Id:    id,
 			Error: err.Error(),
 		})
@@ -708,23 +763,37 @@ func (env *Env) handleWebSocketConnection(c *gin.Context) {
 	connections = append(connections, conn)
 	connectionsMutex.Unlock()
 
+	// Track the goroutine for graceful shutdown
+	env.connWg.Add(1)
 	go env.checkConnection(conn)
 }
 
 // checkConnection is a method for the Env struct that continuously checks the
 // health of a WebSocket connection by sending periodic "heartbeat" messages.
 func (env *Env) checkConnection(c *websocket.Conn) {
+	defer env.connWg.Done()
+
 	ticker := time.NewTicker(time.Second * 30)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		// we are not using c.Ping here, because it's not working as expected
-		// for some reason it's failing even if the connection is still alive
-		// if you know how to fix it, please open an issue or PR
-		if err := c.Write(context.Background(), websocket.MessageText, []byte("heartbeat")); err != nil {
-			_ = c.Close(websocket.StatusNormalClosure, "heartbeat failed")
+	for {
+		select {
+		case <-env.shutdownCh:
+			_ = c.Close(websocket.StatusGoingAway, "server shutdown")
 			removeWebSocketConnection(c)
 			return
+		case <-ticker.C:
+			// we are not using c.Ping here, because it's not working as expected
+			// for some reason it's failing even if the connection is still alive
+			// if you know how to fix it, please open an issue or PR
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			if c.Write(ctx, websocket.MessageText, []byte("heartbeat")) != nil {
+				cancel()
+				_ = c.Close(websocket.StatusNormalClosure, "heartbeat failed")
+				removeWebSocketConnection(c)
+				return
+			}
+			cancel()
 		}
 	}
 }
@@ -738,17 +807,24 @@ func notifyWebSocketClients(message string) {
 	var wg sync.WaitGroup
 
 	// Copy connections slice under mutex to avoid race condition during iteration
-	connectionsMutex.Lock()
-	connsCopy := make([]*websocket.Conn, len(connections))
-	copy(connsCopy, connections)
-	connectionsMutex.Unlock()
+	// Also filter out closed connections
+	connectionsMutex.RLock()
+	connsCopy := make([]*websocket.Conn, 0, len(connections))
+	for _, c := range connections {
+		if !closedConns[c] {
+			connsCopy = append(connsCopy, c)
+		}
+	}
+	connectionsMutex.RUnlock()
 
 	for _, conn := range connsCopy {
 		wg.Add(1)
 
 		go func(c *websocket.Conn, message string) {
 			defer wg.Done()
-			if err := c.Write(context.Background(), websocket.MessageText, []byte(message)); err != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if c.Write(ctx, websocket.MessageText, []byte(message)) != nil {
 				_ = c.Close(websocket.StatusNormalClosure, "write failed")
 				removeWebSocketConnection(c)
 			}
@@ -767,12 +843,18 @@ func removeWebSocketConnection(conn *websocket.Conn) {
 	connectionsMutex.Lock()
 	defer connectionsMutex.Unlock()
 
+	// Mark as closed first to prevent use-after-close during concurrent access
+	closedConns[conn] = true
+
 	for i := range connections {
 		if connections[i] == conn {
 			connections = append(connections[:i], connections[i+1:]...)
 			break
 		}
 	}
+
+	// Clean up closedConns entry to prevent memory leak
+	delete(closedConns, conn)
 }
 
 // NewEnv initializes a new Env instance.
@@ -782,10 +864,11 @@ func NewEnv(serverConfig *config.ServerConfig, argo *argocd.Argo, metrics *prome
 	var err error
 
 	env = &Env{
-		config:  serverConfig,
-		argo:    argo,
-		metrics: metrics,
-		updater: updater,
+		config:     serverConfig,
+		argo:       argo,
+		metrics:    metrics,
+		updater:    updater,
+		shutdownCh: make(chan struct{}),
 	}
 
 	if env.lockdown, err = NewLockdown(serverConfig.LockdownSchedule); err != nil {

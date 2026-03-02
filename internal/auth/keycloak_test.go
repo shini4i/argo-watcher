@@ -128,4 +128,45 @@ func TestKeycloakAuthService_Validate(t *testing.T) {
 		assert.Error(t, err)
 		assert.False(t, ok)
 	})
+
+	t.Run("should return error if response body is invalid JSON", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+			rw.WriteHeader(http.StatusOK)
+			_, err := rw.Write([]byte(`invalid json`))
+			if err != nil {
+				t.Error(err)
+			}
+		}))
+		defer server.Close()
+
+		service := &KeycloakAuthService{
+			Url:              server.URL,
+			Realm:            "test",
+			ClientId:         "test",
+			PrivilegedGroups: []string{"group1"},
+			client:           server.Client(),
+		}
+
+		ok, err := service.Validate("test")
+
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "error unmarshalling response body")
+		assert.False(t, ok)
+	})
+
+	t.Run("should return error if server is unreachable", func(t *testing.T) {
+		service := &KeycloakAuthService{
+			Url:              "http://127.0.0.1:1", // privileged port that tests cannot bind to
+			Realm:            "test",
+			ClientId:         "test",
+			PrivilegedGroups: []string{"group1"},
+			client:           &http.Client{},
+		}
+
+		ok, err := service.Validate("test")
+
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "error on response")
+		assert.False(t, ok)
+	})
 }

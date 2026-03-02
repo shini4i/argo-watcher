@@ -4,14 +4,16 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog/log"
 )
 
 type Lockdown struct {
-	ManualLock   bool // used to manually lock the system
-	OverrideMode bool // used to temporarily disable scheduled lockdowns
+	mu           sync.RWMutex // protects ManualLock and OverrideMode
+	ManualLock   bool         // used to manually lock the system
+	OverrideMode bool         // used to temporarily disable scheduled lockdowns
 	Schedules    []LockdownSchedule
 }
 
@@ -103,6 +105,14 @@ func (l *Lockdown) Parse(schedules string) error {
 // a manual lock is active or if the current time falls within a scheduled lockdown
 // and no override mode is active. Otherwise, it returns false.
 func (l *Lockdown) IsLocked() bool {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.isLockedInternal()
+}
+
+// isLockedInternal checks lock status without acquiring mutex.
+// Caller must hold at least a read lock.
+func (l *Lockdown) isLockedInternal() bool {
 	if l.ManualLock {
 		return true
 	}
@@ -126,6 +136,8 @@ func (l *Lockdown) IsLocked() bool {
 // No matter what the scheduled lockdown settings are, once this method is invoked,
 // the system is considered to be under lockdown until manually released.
 func (l *Lockdown) SetLock() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	l.ManualLock = true
 }
 
@@ -133,13 +145,20 @@ func (l *Lockdown) SetLock() {
 // it temporarily overrides it for the next 15 minutes. After that period,
 // if the scheduled lockdown is still in progress, the system re-locks.
 func (l *Lockdown) ReleaseLock() {
+	l.mu.Lock()
 	l.ManualLock = false
-
-	if l.IsLocked() {
+	isLocked := l.isLockedInternal()
+	if isLocked {
 		l.OverrideMode = true
+	}
+	l.mu.Unlock()
+
+	if isLocked {
 		go func() {
 			time.Sleep(15 * time.Minute)
+			l.mu.Lock()
 			l.OverrideMode = false
+			l.mu.Unlock()
 
 			// we need to re-notify clients that the lock is in action again
 			notifyWebSocketClients("locked")
