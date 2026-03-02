@@ -74,7 +74,7 @@ func (k *KeycloakAuthService) Validate(token string) (bool, error) {
 	}
 	req.Header.Add("Authorization", "Bearer "+token)
 
-	resp, err := k.client.Do(req)
+	resp, err := k.client.Do(req) // #nosec G704 - URL is validated in Init()
 	if err != nil {
 		return false, fmt.Errorf("error on response: %v", err)
 	}
