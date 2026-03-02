@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/rs/zerolog/log"
 )
@@ -42,7 +43,7 @@ func (k *KeycloakAuthService) Init(keycloakURL, realm, clientId string, privileg
 		return fmt.Errorf("invalid keycloak URL: missing host")
 	}
 
-	if baseURL.RawQuery != "" || baseURL.Fragment != "" {
+	if baseURL.RawQuery != "" || baseURL.ForceQuery || baseURL.Fragment != "" {
 		return fmt.Errorf("invalid keycloak URL: query and fragment are not allowed")
 	}
 
@@ -57,7 +58,7 @@ func (k *KeycloakAuthService) Init(keycloakURL, realm, clientId string, privileg
 	k.ClientId = clientId
 	k.PrivilegedGroups = privilegedGroups
 	k.userinfoURL = userinfoURL
-	k.client = &http.Client{}
+	k.client = &http.Client{Timeout: 10 * time.Second}
 
 	return nil
 }

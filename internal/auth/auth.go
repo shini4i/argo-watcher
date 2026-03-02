@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -73,8 +74,12 @@ func (a *Authenticator) Strategy(header string) (AuthStrategy, bool) {
 }
 
 // NewKeycloakAuthService initializes a new Keycloak authentication service using the given server config.
-// It validates the Keycloak URL and returns an error if it is malformed.
+// It validates the Keycloak URL and returns an error if the config is nil or the URL is malformed.
 func NewKeycloakAuthService(config *config.ServerConfig) (*KeycloakAuthService, error) {
+	if config == nil {
+		return nil, fmt.Errorf("server config must not be nil")
+	}
+
 	keycloakAuthService := &KeycloakAuthService{}
 	if err := keycloakAuthService.Init(
 		config.Keycloak.Url,

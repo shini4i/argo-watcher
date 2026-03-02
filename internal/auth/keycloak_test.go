@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -62,6 +63,24 @@ func TestKeycloakAuthService_Init(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "query and fragment are not allowed")
+	})
+
+	t.Run("should return error for URL with trailing question mark", func(t *testing.T) {
+		service := &KeycloakAuthService{}
+
+		err := service.Init("https://kc.example.com?", "test", "test", []string{})
+
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "query and fragment are not allowed")
+	})
+
+	t.Run("should set http client with timeout", func(t *testing.T) {
+		service := &KeycloakAuthService{}
+
+		err := service.Init("http://localhost:8080", "test", "test", []string{})
+
+		assert.NoError(t, err)
+		assert.Equal(t, 10*time.Second, service.client.Timeout)
 	})
 }
 

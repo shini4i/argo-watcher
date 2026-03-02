@@ -29,6 +29,14 @@ func TestNewKeycloakAuthService(t *testing.T) {
 		assert.Equal(t, keycloakAuthService.PrivilegedGroups, conf.Keycloak.PrivilegedGroups)
 	})
 
+	t.Run("should return error for nil config", func(t *testing.T) {
+		keycloakAuthService, err := NewKeycloakAuthService(nil)
+
+		assert.Error(t, err)
+		assert.Nil(t, keycloakAuthService)
+		assert.Contains(t, err.Error(), "server config must not be nil")
+	})
+
 	t.Run("should return error for invalid URL", func(t *testing.T) {
 		conf := &config.ServerConfig{
 			Keycloak: config.KeycloakConfig{
