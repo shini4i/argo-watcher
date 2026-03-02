@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strings"
 
 	"github.com/rs/zerolog/log"
 )
@@ -26,26 +27,36 @@ type KeycloakAuthService struct {
 }
 
 // Init initializes KeycloakAuthService with Keycloak URL, realm and client ID.
-// It validates and pre-builds the userinfo endpoint URL to prevent SSRF via tainted input.
+// It validates the base URL and pre-builds the userinfo endpoint URL to prevent SSRF via tainted input.
 func (k *KeycloakAuthService) Init(keycloakURL, realm, clientId string, privilegedGroups []string) error {
-	parsedURL, err := url.Parse(fmt.Sprintf("%s/realms/%s/protocol/openid-connect/userinfo", keycloakURL, url.PathEscape(realm)))
+	baseURL, err := url.Parse(keycloakURL)
 	if err != nil {
 		return fmt.Errorf("invalid keycloak URL: %w", err)
 	}
 
-	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
-		return fmt.Errorf("invalid keycloak URL scheme: %s (must be http or https)", parsedURL.Scheme)
+	if baseURL.Scheme != "http" && baseURL.Scheme != "https" {
+		return fmt.Errorf("invalid keycloak URL scheme: %s (must be http or https)", baseURL.Scheme)
 	}
 
-	if parsedURL.Host == "" {
+	if baseURL.Host == "" {
 		return fmt.Errorf("invalid keycloak URL: missing host")
 	}
+
+	if baseURL.RawQuery != "" || baseURL.Fragment != "" {
+		return fmt.Errorf("invalid keycloak URL: query and fragment are not allowed")
+	}
+
+	userinfoURL := fmt.Sprintf(
+		"%s/realms/%s/protocol/openid-connect/userinfo",
+		strings.TrimRight(baseURL.String(), "/"),
+		url.PathEscape(realm),
+	)
 
 	k.Url = keycloakURL
 	k.Realm = realm
 	k.ClientId = clientId
 	k.PrivilegedGroups = privilegedGroups
-	k.userinfoURL = parsedURL.String()
+	k.userinfoURL = userinfoURL
 	k.client = &http.Client{}
 
 	return nil

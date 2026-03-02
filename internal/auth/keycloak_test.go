@@ -40,9 +40,28 @@ func TestKeycloakAuthService_Init(t *testing.T) {
 	t.Run("should return error for missing host", func(t *testing.T) {
 		service := &KeycloakAuthService{}
 
-		err := service.Init("", "test", "test", []string{})
+		err := service.Init("http:///auth", "test", "test", []string{})
 
 		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "missing host")
+	})
+
+	t.Run("should return error for URL with query parameters", func(t *testing.T) {
+		service := &KeycloakAuthService{}
+
+		err := service.Init("https://kc.example.com?x=1", "test", "test", []string{})
+
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "query and fragment are not allowed")
+	})
+
+	t.Run("should return error for URL with fragment", func(t *testing.T) {
+		service := &KeycloakAuthService{}
+
+		err := service.Init("https://kc.example.com#frag", "test", "test", []string{})
+
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "query and fragment are not allowed")
 	})
 }
 
