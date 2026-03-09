@@ -153,8 +153,8 @@ func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) []retr
 	defaultAttempts := monitor.defaultAttempts
 	if defaultAttempts == 0 {
 		// Legacy fallback: legacyRetryIntervals steps at ArgoSyncRetryDelay pace, scaled to the current delay.
-		fallbackWindowSeconds := int64(legacyRetryIntervals) * ceilDivDuration(ArgoSyncRetryDelay, time.Second)
-		defaultAttempts = safeIntToUint(ceilDivDuration(time.Duration(fallbackWindowSeconds)*time.Second, time.Duration(delaySeconds)*time.Second))
+		fallbackWindow := time.Duration(legacyRetryIntervals) * ArgoSyncRetryDelay
+		defaultAttempts = safeIntToUint(ceilDivDuration(fallbackWindow, delay))
 	}
 
 	if task.Timeout <= 0 {

@@ -205,6 +205,20 @@ func TestAuthenticatorValidateStrategy(t *testing.T) {
 		assert.NoError(t, validateErr)
 	})
 
+	t.Run("returns false when token is only Bearer prefix", func(t *testing.T) {
+		authenticator := NewAuthenticator(map[string]AuthStrategy{
+			"Authorization": &stubStrategy{valid: true},
+		})
+
+		request, err := http.NewRequest(http.MethodGet, "http://example.com", http.NoBody)
+		assert.NoError(t, err)
+		request.Header.Set("Authorization", "Bearer ")
+
+		valid, validateErr := authenticator.ValidateStrategy(request, "Authorization")
+		assert.False(t, valid)
+		assert.NoError(t, validateErr)
+	})
+
 	t.Run("returns error from strategy", func(t *testing.T) {
 		expectedErr := errors.New("token expired")
 		authenticator := NewAuthenticator(map[string]AuthStrategy{
@@ -236,6 +250,20 @@ func TestAuthenticatorValidateStrategy(t *testing.T) {
 		assert.True(t, valid)
 		assert.NoError(t, validateErr)
 	})
+}
+
+func TestAuthenticatorValidateBearerOnlyPrefix(t *testing.T) {
+	authenticator := NewAuthenticator(map[string]AuthStrategy{
+		"Authorization": &stubStrategy{valid: true},
+	})
+
+	request, err := http.NewRequest(http.MethodGet, "http://example.com", http.NoBody)
+	assert.NoError(t, err)
+	request.Header.Set("Authorization", "Bearer ")
+
+	valid, validateErr := authenticator.Validate(request)
+	assert.False(t, valid)
+	assert.NoError(t, validateErr)
 }
 
 func TestNewAuthenticatorSkipsNilStrategies(t *testing.T) {

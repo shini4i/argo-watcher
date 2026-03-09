@@ -50,6 +50,9 @@ func (a *Authenticator) Validate(request *http.Request) (bool, error) {
 		if strings.HasPrefix(token, "Bearer ") {
 			token = strings.TrimPrefix(token, "Bearer ")
 		}
+		if token == "" {
+			continue
+		}
 
 		valid, err := strategy.Validate(token)
 		if valid {
@@ -82,6 +85,9 @@ func (a *Authenticator) ValidateStrategy(request *http.Request, allowedHeader st
 
 	if strings.HasPrefix(token, "Bearer ") {
 		token = strings.TrimPrefix(token, "Bearer ")
+	}
+	if token == "" {
+		return false, nil
 	}
 
 	return strategy.Validate(token)

@@ -108,9 +108,25 @@ func (api *ArgoApi) doGet(reqURL string) ([]byte, int, error) {
 func (api *ArgoApi) GetUserInfo() (*models.Userinfo, error) {
 	apiUrl := fmt.Sprintf("%s/api/v1/session/userinfo", api.baseUrl.String())
 
-	body, _, err := api.doGet(apiUrl)
+	body, statusCode, err := api.doGet(apiUrl)
 	if err != nil {
 		return nil, err
+	}
+
+	if statusCode != http.StatusOK {
+		var argoErrorResponse models.ArgoApiErrorResponse
+		if err = json.Unmarshal(body, &argoErrorResponse); err != nil {
+			return nil, fmt.Errorf("could not parse json error response: %s", body)
+		}
+
+		if argoErrorResponse.Message == "" {
+			return nil, fmt.Errorf(
+				"failed parsing argocd API response: %s",
+				bytes.NewBuffer(body).String(),
+			)
+		}
+
+		return nil, errors.New(argoErrorResponse.Message)
 	}
 
 	var userInfo models.Userinfo

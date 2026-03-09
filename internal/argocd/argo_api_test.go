@@ -129,12 +129,14 @@ func TestArgoApiGetUserInfoErrors(t *testing.T) {
 	require.NoError(t, err)
 
 	successJSON := []byte(`{"loggedIn":true,"username":"ok"}`)
+	errorJSON := []byte(`{"message":"permission denied"}`)
 
 	testCases := []struct {
 		name     string
 		api      *ArgoApi
 		setup    func(t *testing.T, api *ArgoApi)
 		wantErr  bool
+		wantMsg  string
 		wantUser *models.Userinfo
 	}{
 		{
@@ -206,6 +208,63 @@ func TestArgoApiGetUserInfoErrors(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "non200WithErrorMessage",
+			api: func() *ArgoApi {
+				a := NewArgoApi()
+				a.baseUrl = *baseURL
+				a.client = &http.Client{
+					Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+						return &http.Response{
+							StatusCode: http.StatusForbidden,
+							Body:       &stubBody{data: errorJSON},
+							Header:     make(http.Header),
+						}, nil
+					}),
+				}
+				return a
+			}(),
+			wantErr: true,
+			wantMsg: "permission denied",
+		},
+		{
+			name: "non200WithoutErrorMessage",
+			api: func() *ArgoApi {
+				a := NewArgoApi()
+				a.baseUrl = *baseURL
+				a.client = &http.Client{
+					Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+						return &http.Response{
+							StatusCode: http.StatusInternalServerError,
+							Body:       &stubBody{data: []byte(`{"message":""}`)},
+							Header:     make(http.Header),
+						}, nil
+					}),
+				}
+				return a
+			}(),
+			wantErr: true,
+			wantMsg: `failed parsing argocd API response: {"message":""}`,
+		},
+		{
+			name: "non200WithInvalidJSON",
+			api: func() *ArgoApi {
+				a := NewArgoApi()
+				a.baseUrl = *baseURL
+				a.client = &http.Client{
+					Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+						return &http.Response{
+							StatusCode: http.StatusBadGateway,
+							Body:       &stubBody{data: []byte(`not json`)},
+							Header:     make(http.Header),
+						}, nil
+					}),
+				}
+				return a
+			}(),
+			wantErr: true,
+			wantMsg: "could not parse json error response: not json",
+		},
+		{
 			name: "closeErrorLoggedButIgnored",
 			api: func() *ArgoApi {
 				a := NewArgoApi()
@@ -236,6 +295,9 @@ func TestArgoApiGetUserInfoErrors(t *testing.T) {
 			if tc.wantErr {
 				assert.Error(t, err)
 				assert.Nil(t, userInfo)
+				if tc.wantMsg != "" {
+					assert.EqualError(t, err, tc.wantMsg)
+				}
 			} else {
 				assert.NoError(t, err)
 				assert.Equal(t, tc.wantUser, userInfo)
