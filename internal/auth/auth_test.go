@@ -236,7 +236,7 @@ func TestAuthenticatorValidateStrategy(t *testing.T) {
 
 	t.Run("ignores other registered strategies", func(t *testing.T) {
 		authenticator := NewAuthenticator(map[string]AuthStrategy{
-			"Authorization":             &stubStrategy{expectedToken: "jwt-token", valid: true},
+			"Authorization":             &stubStrategy{expectedToken: "jwt-token", valid: false, err: errors.New("should not be called")},
 			"ARGO_WATCHER_DEPLOY_TOKEN": &stubStrategy{expectedToken: "deploy-token", valid: true},
 		})
 

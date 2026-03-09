@@ -1,7 +1,6 @@
 package argocd
 
 import (
-	"bytes"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
@@ -77,7 +76,7 @@ func (api *ArgoApi) Init(serverConfig *config.ServerConfig) error {
 	return nil
 }
 
-// doGet creates a GET request for the given URL, sets the JSON content-type header,
+// doGet creates a GET request for the given URL, sets the Accept header for JSON responses,
 // executes it, and returns the response body bytes along with the HTTP status code.
 func (api *ArgoApi) doGet(reqURL string) ([]byte, int, error) {
 	req, err := api.requestFn("GET", reqURL, nil)
@@ -85,7 +84,7 @@ func (api *ArgoApi) doGet(reqURL string) ([]byte, int, error) {
 		return nil, 0, err
 	}
 
-	req.Header.Set("Content-Type", "application/json; charset=UTF-8")
+	req.Header.Set("Accept", "application/json")
 
 	resp, err := api.client.Do(req)
 	if err != nil {
@@ -122,7 +121,7 @@ func (api *ArgoApi) GetUserInfo() (*models.Userinfo, error) {
 		if argoErrorResponse.Message == "" {
 			return nil, fmt.Errorf(
 				"failed parsing argocd API response: %s",
-				bytes.NewBuffer(body).String(),
+				string(body),
 			)
 		}
 
@@ -159,7 +158,7 @@ func (api *ArgoApi) GetApplication(app string) (*models.Application, error) {
 		if argoErrorResponse.Message == "" {
 			return nil, fmt.Errorf(
 				"failed parsing argocd API response: %s",
-				bytes.NewBuffer(body).String(),
+				string(body),
 			)
 		}
 

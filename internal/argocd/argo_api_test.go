@@ -106,6 +106,7 @@ func TestArgoApiGetUserInfoSuccess(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/v1/session/userinfo", r.URL.Path)
+		assert.Equal(t, "application/json", r.Header.Get("Accept"))
 		w.Header().Set("Content-Type", "application/json")
 		require.NoError(t, json.NewEncoder(w).Encode(expected))
 	}))
@@ -316,6 +317,7 @@ func TestArgoApiGetApplicationSuccess(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/v1/applications/demo", r.URL.Path)
+		assert.Equal(t, "application/json", r.Header.Get("Accept"))
 		assert.Empty(t, r.URL.Query().Get("refresh"))
 		w.Header().Set("Content-Type", "application/json")
 		require.NoError(t, json.NewEncoder(w).Encode(app))
