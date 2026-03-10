@@ -11,12 +11,6 @@ import (
 
 var errDesiredRetry = errors.New("desired retry error")
 
-// TaskState represents the application state layer that exposes task repositories.
-// It currently embeds the TaskRepository interface to provide task persistence operations.
-type TaskState interface {
-	TaskRepository
-}
-
 // TaskRepository defines the contract for task persistence.
 // Implementations are responsible for connecting to the underlying storage and
 // offering CRUD-like operations for deployment tasks.
@@ -33,9 +27,9 @@ type TaskRepository interface {
 // NewState creates a new task repository based on the provided server configuration.
 // It initializes the appropriate repository according to the StateType field and
 // ensures that the returned implementation is already connected to the storage backend.
-func NewState(serverConfig *config.ServerConfig) (TaskState, error) {
+func NewState(serverConfig *config.ServerConfig) (TaskRepository, error) {
 	log.Debug().Msg("Initializing argo-watcher state...")
-	var state TaskState
+	var state TaskRepository
 	switch name := serverConfig.StateType; name {
 	case "postgres":
 		log.Debug().Msg("Created postgres state..")

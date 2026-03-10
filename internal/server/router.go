@@ -269,7 +269,7 @@ func (env *Env) CreateRouter() *gin.Engine {
 
 	// Static file serving - use NoRoute to handle unmatched paths
 	// This prevents static middleware from interfering with API and WebSocket routes
-	staticFilesPath := env.config.ResolveStaticFilePath()
+	staticFilesPath := env.config.StaticFilePath
 	log.Debug().
 		Str("static_path", staticFilesPath).
 		Msg("serving frontend assets")
@@ -589,6 +589,34 @@ func (env *Env) getConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, env.config)
 }
 
+// requireKeycloakAuth validates the Keycloak token when Keycloak is enabled.
+// It returns true if validation passes (or Keycloak is disabled). When validation fails,
+// it writes the appropriate HTTP error response and returns false.
+func (env *Env) requireKeycloakAuth(c *gin.Context) bool {
+	if !env.config.Keycloak.Enabled {
+		return true
+	}
+
+	valid, err := env.validateToken(c, keycloakHeader)
+	if err != nil {
+		log.Error().Msgf("Error during validation: %s", err)
+		c.JSON(http.StatusInternalServerError, models.TaskStatus{
+			Status: "Validation process failed",
+		})
+		return false
+	}
+	if !valid {
+		log.Warn().Msgf("User tried to perform %s %s with either invalid token or auth method",
+			c.Request.Method, c.Request.URL)
+		c.JSON(http.StatusUnauthorized, models.TaskStatus{
+			Status: unauthorizedMessage,
+		})
+		return false
+	}
+
+	return true
+}
+
 // SetDeployLock godoc
 // @Summary Set deploy lock
 // @Description Set deploy lock
@@ -596,22 +624,8 @@ func (env *Env) getConfig(c *gin.Context) {
 // @Success 200 {string} string
 // @Router /api/v1/deploy-lock [post]
 func (env *Env) SetDeployLock(c *gin.Context) {
-	if env.config.Keycloak.Enabled {
-		valid, err := env.validateToken(c, keycloakHeader)
-		if err != nil {
-			log.Error().Msgf("Error during validation: %s", err)
-			c.JSON(http.StatusInternalServerError, models.TaskStatus{
-				Status: "Validation process failed",
-			})
-			return
-		}
-		if !valid {
-			log.Warn().Msg("User tried to set the lock with either invalid token or auth method")
-			c.JSON(http.StatusUnauthorized, models.TaskStatus{
-				Status: unauthorizedMessage,
-			})
-			return
-		}
+	if !env.requireKeycloakAuth(c) {
+		return
 	}
 
 	env.lockdown.SetLock()
@@ -630,22 +644,8 @@ func (env *Env) SetDeployLock(c *gin.Context) {
 // @Success 200 {string} string
 // @Router /api/v1/deploy-lock [delete]
 func (env *Env) ReleaseDeployLock(c *gin.Context) {
-	if env.config.Keycloak.Enabled {
-		valid, err := env.validateToken(c, keycloakHeader)
-		if err != nil {
-			log.Error().Msgf("Error during validation: %s", err)
-			c.JSON(http.StatusInternalServerError, models.TaskStatus{
-				Status: "Validation process failed",
-			})
-			return
-		}
-		if !valid {
-			log.Warn().Msg("User tried to release the lock with either invalid token or auth method")
-			c.JSON(http.StatusUnauthorized, models.TaskStatus{
-				Status: unauthorizedMessage,
-			})
-			return
-		}
+	if !env.requireKeycloakAuth(c) {
+		return
 	}
 
 	env.lockdown.ReleaseLock()
@@ -670,52 +670,13 @@ func (env *Env) isDeployLockSet(c *gin.Context) {
 // validateToken validates the incoming request using the configured authentication strategies.
 // When allowedAuthStrategy is empty, the validation delegates to the default authenticator,
 // which returns the last validation error when no strategies succeed. When allowedAuthStrategy
-// is provided, validation is restricted to that specific strategy header and the last error from
-// that strategy is returned if validation ultimately fails.
+// is provided, validation is restricted to that specific strategy header via the authenticator.
 func (env *Env) validateToken(c *gin.Context, allowedAuthStrategy string) (bool, error) {
 	if allowedAuthStrategy == "" {
 		return env.authenticator.Validate(c.Request)
 	}
 
-	return env.validateAllowedStrategy(c, allowedAuthStrategy)
-}
-
-// validateAllowedStrategy enforces validation against the single allowed authentication strategy header.
-// while keeping track of the last validation error produced by that strategy.
-func (env *Env) validateAllowedStrategy(c *gin.Context, allowedStrategyHeader string) (bool, error) {
-	var lastErr error
-
-	for header, strategy := range env.strategies {
-		token := c.GetHeader(header)
-		if token == "" {
-			continue
-		}
-
-		if header != allowedStrategyHeader {
-			log.Debug().Msgf("Authorization strategy %s is not allowed for [%s] %s endpoint",
-				header,
-				c.Request.Method,
-				c.Request.URL,
-			)
-			continue
-		}
-
-		log.Debug().Msgf("Using %s strategy for [%s] %s", header, c.Request.Method, c.Request.URL)
-
-		if strings.HasPrefix(token, "Bearer ") {
-			token = strings.TrimPrefix(token, "Bearer ")
-		}
-
-		valid, err := strategy.Validate(token)
-		if err != nil {
-			lastErr = err
-		}
-		if valid {
-			return true, nil
-		}
-	}
-
-	return false, lastErr
+	return env.authenticator.ValidateStrategy(c.Request, allowedAuthStrategy)
 }
 
 // handleWebSocketConnection accepts a WebSocket connection, adds it to a slice,

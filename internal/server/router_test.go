@@ -481,13 +481,6 @@ func TestWebSocketConnectionIntegration(t *testing.T) {
 	connections = nil
 	connectionsMutex.Unlock()
 
-	// Cleanup at end
-	t.Cleanup(func() {
-		connectionsMutex.Lock()
-		connections = nil
-		connectionsMutex.Unlock()
-	})
-
 	// Create a temporary directory for static files
 	tmpDir := t.TempDir()
 	err := os.WriteFile(tmpDir+"/index.html", []byte("<html></html>"), 0644)
@@ -505,12 +498,22 @@ func TestWebSocketConnectionIntegration(t *testing.T) {
 
 	// Use httptest.Server for real HTTP connection (supports hijacking)
 	server := httptest.NewServer(router)
-	defer server.Close()
+
+	// Cleanup: shut down the env (stops checkConnection goroutines), then the HTTP server, then reset connections.
+	t.Cleanup(func() {
+		env.Shutdown()
+		server.Close()
+		connectionsMutex.Lock()
+		connections = nil
+		connectionsMutex.Unlock()
+	})
 
 	// Convert http:// to ws://
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws"
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// Use a generous timeout — the WebSocket handshake through httptest can take several
+	// seconds under CI load, so 5s is too tight and causes flaky failures.
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
 	// Attempt WebSocket connection
@@ -1556,8 +1559,10 @@ func TestValidateTokenWithStrategies(t *testing.T) {
 	})
 
 	t.Run("skips non-matching strategy headers", func(t *testing.T) {
+		strategies := make(map[string]auth.AuthStrategy)
 		env := &Env{
-			strategies: make(map[string]auth.AuthStrategy),
+			strategies:    strategies,
+			authenticator: auth.NewAuthenticator(strategies),
 		}
 
 		w := httptest.NewRecorder()
@@ -1566,7 +1571,7 @@ func TestValidateTokenWithStrategies(t *testing.T) {
 		c.Request.Header.Set("Authorization", "Bearer test-token")
 
 		// With no matching strategy, returns false
-		valid, err := env.validateAllowedStrategy(c, "Keycloak-Authorization")
+		valid, err := env.validateToken(c, "Keycloak-Authorization")
 		assert.False(t, valid)
 		assert.NoError(t, err)
 	})
@@ -1705,8 +1710,9 @@ func TestSetDeployLockWithKeycloak(t *testing.T) {
 		strategies[keycloakHeader] = &mockAuthStrategy{valid: false, err: fmt.Errorf("keycloak error")}
 
 		env := &Env{
-			lockdown:   lockdown,
-			strategies: strategies,
+			lockdown:      lockdown,
+			strategies:    strategies,
+			authenticator: auth.NewAuthenticator(strategies),
 			config: &config.ServerConfig{
 				Keycloak: config.KeycloakConfig{Enabled: true},
 			},
@@ -1730,8 +1736,9 @@ func TestSetDeployLockWithKeycloak(t *testing.T) {
 		strategies[keycloakHeader] = &mockAuthStrategy{valid: false, err: nil}
 
 		env := &Env{
-			lockdown:   lockdown,
-			strategies: strategies,
+			lockdown:      lockdown,
+			strategies:    strategies,
+			authenticator: auth.NewAuthenticator(strategies),
 			config: &config.ServerConfig{
 				Keycloak: config.KeycloakConfig{Enabled: true},
 			},
@@ -1755,8 +1762,9 @@ func TestSetDeployLockWithKeycloak(t *testing.T) {
 		strategies[keycloakHeader] = &mockAuthStrategy{valid: true, err: nil}
 
 		env := &Env{
-			lockdown:   lockdown,
-			strategies: strategies,
+			lockdown:      lockdown,
+			strategies:    strategies,
+			authenticator: auth.NewAuthenticator(strategies),
 			config: &config.ServerConfig{
 				Keycloak: config.KeycloakConfig{Enabled: true},
 			},
@@ -1787,8 +1795,9 @@ func TestReleaseDeployLockWithKeycloak(t *testing.T) {
 		strategies[keycloakHeader] = &mockAuthStrategy{valid: false, err: fmt.Errorf("keycloak error")}
 
 		env := &Env{
-			lockdown:   lockdown,
-			strategies: strategies,
+			lockdown:      lockdown,
+			strategies:    strategies,
+			authenticator: auth.NewAuthenticator(strategies),
 			config: &config.ServerConfig{
 				Keycloak: config.KeycloakConfig{Enabled: true},
 			},
@@ -1813,8 +1822,9 @@ func TestReleaseDeployLockWithKeycloak(t *testing.T) {
 		strategies[keycloakHeader] = &mockAuthStrategy{valid: false, err: nil}
 
 		env := &Env{
-			lockdown:   lockdown,
-			strategies: strategies,
+			lockdown:      lockdown,
+			strategies:    strategies,
+			authenticator: auth.NewAuthenticator(strategies),
 			config: &config.ServerConfig{
 				Keycloak: config.KeycloakConfig{Enabled: true},
 			},
@@ -1839,8 +1849,9 @@ func TestReleaseDeployLockWithKeycloak(t *testing.T) {
 		strategies[keycloakHeader] = &mockAuthStrategy{valid: true, err: nil}
 
 		env := &Env{
-			lockdown:   lockdown,
-			strategies: strategies,
+			lockdown:      lockdown,
+			strategies:    strategies,
+			authenticator: auth.NewAuthenticator(strategies),
 			config: &config.ServerConfig{
 				Keycloak: config.KeycloakConfig{Enabled: true},
 			},
@@ -1860,8 +1871,8 @@ func TestReleaseDeployLockWithKeycloak(t *testing.T) {
 	})
 }
 
-// TestValidateAllowedStrategyFull tests validateAllowedStrategy with more scenarios.
-func TestValidateAllowedStrategyFull(t *testing.T) {
+// TestValidateTokenWithAllowedStrategy tests validateToken with an allowed strategy header.
+func TestValidateTokenWithAllowedStrategy(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	t.Run("validates successfully with matching strategy", func(t *testing.T) {
@@ -1869,7 +1880,8 @@ func TestValidateAllowedStrategyFull(t *testing.T) {
 		strategies[keycloakHeader] = &mockAuthStrategy{valid: true, err: nil}
 
 		env := &Env{
-			strategies: strategies,
+			strategies:    strategies,
+			authenticator: auth.NewAuthenticator(strategies),
 		}
 
 		w := httptest.NewRecorder()
@@ -1877,7 +1889,7 @@ func TestValidateAllowedStrategyFull(t *testing.T) {
 		c.Request, _ = http.NewRequest(http.MethodPost, "/test", nil)
 		c.Request.Header.Set(keycloakHeader, "Bearer valid-token")
 
-		valid, err := env.validateAllowedStrategy(c, keycloakHeader)
+		valid, err := env.validateToken(c, keycloakHeader)
 		assert.True(t, valid)
 		assert.NoError(t, err)
 	})
@@ -1887,7 +1899,8 @@ func TestValidateAllowedStrategyFull(t *testing.T) {
 		strategies[keycloakHeader] = &mockAuthStrategy{valid: true, err: nil}
 
 		env := &Env{
-			strategies: strategies,
+			strategies:    strategies,
+			authenticator: auth.NewAuthenticator(strategies),
 		}
 
 		w := httptest.NewRecorder()
@@ -1895,7 +1908,7 @@ func TestValidateAllowedStrategyFull(t *testing.T) {
 		c.Request, _ = http.NewRequest(http.MethodPost, "/test", nil)
 		c.Request.Header.Set(keycloakHeader, "Bearer my-token")
 
-		valid, err := env.validateAllowedStrategy(c, keycloakHeader)
+		valid, err := env.validateToken(c, keycloakHeader)
 		assert.True(t, valid)
 		assert.NoError(t, err)
 	})
@@ -1906,7 +1919,8 @@ func TestValidateAllowedStrategyFull(t *testing.T) {
 		strategies[keycloakHeader] = &mockAuthStrategy{valid: false, err: expectedErr}
 
 		env := &Env{
-			strategies: strategies,
+			strategies:    strategies,
+			authenticator: auth.NewAuthenticator(strategies),
 		}
 
 		w := httptest.NewRecorder()
@@ -1914,7 +1928,7 @@ func TestValidateAllowedStrategyFull(t *testing.T) {
 		c.Request, _ = http.NewRequest(http.MethodPost, "/test", nil)
 		c.Request.Header.Set(keycloakHeader, "Bearer expired-token")
 
-		valid, err := env.validateAllowedStrategy(c, keycloakHeader)
+		valid, err := env.validateToken(c, keycloakHeader)
 		assert.False(t, valid)
 		assert.Equal(t, expectedErr, err)
 	})
@@ -1925,7 +1939,8 @@ func TestValidateAllowedStrategyFull(t *testing.T) {
 		strategies[keycloakHeader] = &mockAuthStrategy{valid: false, err: nil}
 
 		env := &Env{
-			strategies: strategies,
+			strategies:    strategies,
+			authenticator: auth.NewAuthenticator(strategies),
 		}
 
 		w := httptest.NewRecorder()
@@ -1934,7 +1949,7 @@ func TestValidateAllowedStrategyFull(t *testing.T) {
 		c.Request.Header.Set("Authorization", "Bearer token")
 
 		// Only keycloakHeader is allowed, so Authorization should be skipped
-		valid, err := env.validateAllowedStrategy(c, keycloakHeader)
+		valid, err := env.validateToken(c, keycloakHeader)
 		assert.False(t, valid)
 		assert.NoError(t, err)
 	})

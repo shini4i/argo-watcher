@@ -33,6 +33,21 @@ func NewAuthenticator(strategies map[string]AuthStrategy) *Authenticator {
 	}
 }
 
+// parseAuthToken extracts and normalizes a token from the given request header.
+// It strips the "Bearer " prefix if present and returns an empty string for missing or empty tokens.
+func parseAuthToken(request *http.Request, header string) string {
+	token := request.Header.Get(header)
+	if token == "" {
+		return ""
+	}
+
+	if after, found := strings.CutPrefix(token, "Bearer "); found {
+		token = after
+	}
+
+	return token
+}
+
 // Validate walks through all registered strategies and validates any matching token on the request.
 func (a *Authenticator) Validate(request *http.Request) (bool, error) {
 	if a == nil || request == nil {
@@ -42,13 +57,9 @@ func (a *Authenticator) Validate(request *http.Request) (bool, error) {
 	var lastErr error
 
 	for header, strategy := range a.strategies {
-		token := request.Header.Get(header)
+		token := parseAuthToken(request, header)
 		if token == "" {
 			continue
-		}
-
-		if strings.HasPrefix(token, "Bearer ") {
-			token = strings.TrimPrefix(token, "Bearer ")
 		}
 
 		valid, err := strategy.Validate(token)
@@ -61,6 +72,26 @@ func (a *Authenticator) Validate(request *http.Request) (bool, error) {
 	}
 
 	return false, lastErr
+}
+
+// ValidateStrategy restricts validation to a single allowed strategy header.
+// Only the strategy registered under allowedHeader is considered; all other headers are skipped.
+func (a *Authenticator) ValidateStrategy(request *http.Request, allowedHeader string) (bool, error) {
+	if a == nil || request == nil {
+		return false, nil
+	}
+
+	strategy, ok := a.strategies[allowedHeader]
+	if !ok {
+		return false, nil
+	}
+
+	token := parseAuthToken(request, allowedHeader)
+	if token == "" {
+		return false, nil
+	}
+
+	return strategy.Validate(token)
 }
 
 // Strategy returns a specific AuthStrategy by header key if it exists.

@@ -76,9 +76,7 @@ func (state *InMemoryState) GetTasks(startTime float64, endTime float64, app str
 	var tasks []models.Task
 	for _, task := range state.tasks {
 		if task.Created >= startTime && task.Created <= endTime {
-			if app == "" {
-				tasks = append(tasks, task)
-			} else if app == task.App {
+			if app == "" || app == task.App {
 				tasks = append(tasks, task)
 			}
 		}

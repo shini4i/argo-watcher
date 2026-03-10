@@ -106,6 +106,7 @@ func TestArgoApiGetUserInfoSuccess(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/v1/session/userinfo", r.URL.Path)
+		assert.Equal(t, "application/json", r.Header.Get("Accept"))
 		w.Header().Set("Content-Type", "application/json")
 		require.NoError(t, json.NewEncoder(w).Encode(expected))
 	}))
@@ -129,12 +130,14 @@ func TestArgoApiGetUserInfoErrors(t *testing.T) {
 	require.NoError(t, err)
 
 	successJSON := []byte(`{"loggedIn":true,"username":"ok"}`)
+	errorJSON := []byte(`{"message":"permission denied"}`)
 
 	testCases := []struct {
 		name     string
 		api      *ArgoApi
 		setup    func(t *testing.T, api *ArgoApi)
 		wantErr  bool
+		wantMsg  string
 		wantUser *models.Userinfo
 	}{
 		{
@@ -206,6 +209,82 @@ func TestArgoApiGetUserInfoErrors(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "non200WithErrorMessage",
+			api: func() *ArgoApi {
+				a := NewArgoApi()
+				a.baseUrl = *baseURL
+				a.client = &http.Client{
+					Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+						return &http.Response{
+							StatusCode: http.StatusForbidden,
+							Body:       &stubBody{data: errorJSON},
+							Header:     make(http.Header),
+						}, nil
+					}),
+				}
+				return a
+			}(),
+			wantErr: true,
+			wantMsg: "permission denied",
+		},
+		{
+			name: "non200WithErrorFieldOnly",
+			api: func() *ArgoApi {
+				a := NewArgoApi()
+				a.baseUrl = *baseURL
+				a.client = &http.Client{
+					Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+						return &http.Response{
+							StatusCode: http.StatusUnauthorized,
+							Body:       &stubBody{data: []byte(`{"error":"token expired","code":16,"message":""}`)},
+							Header:     make(http.Header),
+						}, nil
+					}),
+				}
+				return a
+			}(),
+			wantErr: true,
+			wantMsg: "token expired",
+		},
+		{
+			name: "non200WithoutErrorMessage",
+			api: func() *ArgoApi {
+				a := NewArgoApi()
+				a.baseUrl = *baseURL
+				a.client = &http.Client{
+					Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+						return &http.Response{
+							StatusCode: http.StatusInternalServerError,
+							Body:       &stubBody{data: []byte(`{"message":""}`)},
+							Header:     make(http.Header),
+						}, nil
+					}),
+				}
+				return a
+			}(),
+			wantErr: true,
+			wantMsg: `failed parsing argocd API response: {"message":""}`,
+		},
+		{
+			name: "non200WithInvalidJSON",
+			api: func() *ArgoApi {
+				a := NewArgoApi()
+				a.baseUrl = *baseURL
+				a.client = &http.Client{
+					Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+						return &http.Response{
+							StatusCode: http.StatusBadGateway,
+							Body:       &stubBody{data: []byte(`not json`)},
+							Header:     make(http.Header),
+						}, nil
+					}),
+				}
+				return a
+			}(),
+			wantErr: true,
+			wantMsg: "could not parse json error response: not json",
+		},
+		{
 			name: "closeErrorLoggedButIgnored",
 			api: func() *ArgoApi {
 				a := NewArgoApi()
@@ -236,6 +315,9 @@ func TestArgoApiGetUserInfoErrors(t *testing.T) {
 			if tc.wantErr {
 				assert.Error(t, err)
 				assert.Nil(t, userInfo)
+				if tc.wantMsg != "" {
+					assert.EqualError(t, err, tc.wantMsg)
+				}
 			} else {
 				assert.NoError(t, err)
 				assert.Equal(t, tc.wantUser, userInfo)
@@ -254,6 +336,7 @@ func TestArgoApiGetApplicationSuccess(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/v1/applications/demo", r.URL.Path)
+		assert.Equal(t, "application/json", r.Header.Get("Accept"))
 		assert.Empty(t, r.URL.Query().Get("refresh"))
 		w.Header().Set("Content-Type", "application/json")
 		require.NoError(t, json.NewEncoder(w).Encode(app))
@@ -345,6 +428,7 @@ func TestArgoApiGetApplicationErrors(t *testing.T) {
 		api     *ArgoApi
 		setup   func(t *testing.T, api *ArgoApi)
 		wantErr bool
+		wantMsg string
 	}{
 		{
 			name: "requestCreationError",
@@ -431,6 +515,7 @@ func TestArgoApiGetApplicationErrors(t *testing.T) {
 				return a
 			}(),
 			wantErr: true,
+			wantMsg: "boom",
 		},
 		{
 			name: "non200WithInvalidJSON",
@@ -449,6 +534,25 @@ func TestArgoApiGetApplicationErrors(t *testing.T) {
 				return a
 			}(),
 			wantErr: true,
+		},
+		{
+			name: "non200WithErrorFieldOnly",
+			api: func() *ArgoApi {
+				a := NewArgoApi()
+				a.baseUrl = *baseURL
+				a.client = &http.Client{
+					Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+						return &http.Response{
+							StatusCode: http.StatusForbidden,
+							Body:       &stubBody{data: []byte(`{"error":"permission denied","code":7,"message":""}`)},
+							Header:     make(http.Header),
+						}, nil
+					}),
+				}
+				return a
+			}(),
+			wantErr: true,
+			wantMsg: "permission denied",
 		},
 		{
 			name: "non200WithEmptyMessage",
@@ -502,6 +606,9 @@ func TestArgoApiGetApplicationErrors(t *testing.T) {
 			if tc.wantErr {
 				assert.Error(t, err)
 				assert.Nil(t, app)
+				if tc.wantMsg != "" {
+					assert.EqualError(t, err, tc.wantMsg)
+				}
 			} else {
 				assert.NoError(t, err)
 				assert.NotNil(t, app)
