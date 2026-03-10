@@ -48,7 +48,7 @@ task docs
 
 This outputs `web/public/swagger/swagger.json`. During `task build-ui`, Vite copies Swagger UI assets from `swagger-ui-dist` alongside the spec into `web/dist/swagger/`.
 
-> Note: you need to regenerate the spec only when changing the API annotations
+> Note: regenerate the spec whenever API annotations, request/response models, or documented routes change — i.e. any change that affects the public API surface
 
 ## Back-End Development
 

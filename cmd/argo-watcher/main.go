@@ -11,6 +11,7 @@ import (
 )
 
 // @title Argo-Watcher API
+// @version 1.0
 // @description A small tool that will help to improve deployment visibility
 // @BasePath /
 func main() {

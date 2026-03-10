@@ -246,7 +246,20 @@ func (env *Env) CreateRouter() *gin.Engine {
 	// API routes
 	router.GET("/healthz", env.healthz)
 	router.GET("/metrics", prometheusHandler())
-	router.Static("/swagger", filepath.Join(env.config.StaticFilePath, "swagger"))
+	swaggerPath := filepath.Join(env.config.StaticFilePath, "swagger")
+	absSwaggerPath, err := filepath.Abs(swaggerPath)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to resolve swagger files path")
+	}
+	resolvedSwaggerPath, err := filepath.EvalSymlinks(absSwaggerPath)
+	if err != nil {
+		resolvedSwaggerPath = absSwaggerPath
+	}
+	swaggerFS := safeFileSystem{
+		root:     http.Dir(absSwaggerPath),
+		basePath: resolvedSwaggerPath,
+	}
+	router.StaticFS("/swagger", swaggerFS)
 
 	v1 := router.Group("/api/v1")
 	{
