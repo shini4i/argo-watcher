@@ -104,6 +104,25 @@ func (api *ArgoApi) doGet(reqURL string) ([]byte, int, error) {
 	return body, resp.StatusCode, nil
 }
 
+// parseArgoErrorResponse extracts an error from a non-200 ArgoCD API response body.
+// It checks the message field first, then the error field, and falls back to the raw body.
+func parseArgoErrorResponse(body []byte) error {
+	var argoErrorResponse models.ArgoApiErrorResponse
+	if err := json.Unmarshal(body, &argoErrorResponse); err != nil {
+		return fmt.Errorf("could not parse json error response: %s", body)
+	}
+
+	if argoErrorResponse.Message != "" {
+		return errors.New(argoErrorResponse.Message)
+	}
+
+	if argoErrorResponse.Error != "" {
+		return errors.New(argoErrorResponse.Error)
+	}
+
+	return fmt.Errorf("failed parsing argocd API response: %s", string(body))
+}
+
 func (api *ArgoApi) GetUserInfo() (*models.Userinfo, error) {
 	apiUrl := fmt.Sprintf("%s/api/v1/session/userinfo", api.baseUrl.String())
 
@@ -113,23 +132,7 @@ func (api *ArgoApi) GetUserInfo() (*models.Userinfo, error) {
 	}
 
 	if statusCode != http.StatusOK {
-		var argoErrorResponse models.ArgoApiErrorResponse
-		if err = json.Unmarshal(body, &argoErrorResponse); err != nil {
-			return nil, fmt.Errorf("could not parse json error response: %s", body)
-		}
-
-		if argoErrorResponse.Message != "" {
-			return nil, errors.New(argoErrorResponse.Message)
-		}
-
-		if argoErrorResponse.Error != "" {
-			return nil, errors.New(argoErrorResponse.Error)
-		}
-
-		return nil, fmt.Errorf(
-			"failed parsing argocd API response: %s",
-			string(body),
-		)
+		return nil, parseArgoErrorResponse(body)
 	}
 
 	var userInfo models.Userinfo
@@ -154,23 +157,7 @@ func (api *ArgoApi) GetApplication(app string) (*models.Application, error) {
 	}
 
 	if statusCode != http.StatusOK {
-		var argoErrorResponse models.ArgoApiErrorResponse
-		if err = json.Unmarshal(body, &argoErrorResponse); err != nil {
-			return nil, fmt.Errorf("could not parse json error response: %s", body)
-		}
-
-		if argoErrorResponse.Message != "" {
-			return nil, errors.New(argoErrorResponse.Message)
-		}
-
-		if argoErrorResponse.Error != "" {
-			return nil, errors.New(argoErrorResponse.Error)
-		}
-
-		return nil, fmt.Errorf(
-			"failed parsing argocd API response: %s",
-			string(body),
-		)
+		return nil, parseArgoErrorResponse(body)
 	}
 
 	var argoApp models.Application
