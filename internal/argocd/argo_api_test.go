@@ -714,3 +714,34 @@ func TestArgoApiDoGetNoRetryOnSuccess(t *testing.T) {
 	assert.Equal(t, successBody, body)
 	assert.Equal(t, int32(1), callCount.Load())
 }
+
+// TestArgoApiDoGetNoRetryOnNon2xx verifies that HTTP error responses (4xx/5xx)
+// are returned immediately without triggering retries, since they are valid API
+// responses — not transient transport errors.
+func TestArgoApiDoGetNoRetryOnNon2xx(t *testing.T) {
+	var callCount atomic.Int32
+	errorBody := []byte(`{"message":"internal server error"}`)
+
+	baseURL, err := url.Parse("https://example.com")
+	require.NoError(t, err)
+
+	api := NewArgoApi()
+	api.baseUrl = *baseURL
+	api.maxRetries = 3
+	api.client = &http.Client{
+		Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+			callCount.Add(1)
+			return &http.Response{
+				StatusCode: http.StatusInternalServerError,
+				Body:       &stubBody{data: errorBody},
+				Header:     make(http.Header),
+			}, nil
+		}),
+	}
+
+	body, statusCode, err := api.doGet("https://example.com/api/v1/test")
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusInternalServerError, statusCode)
+	assert.Equal(t, errorBody, body)
+	assert.Equal(t, int32(1), callCount.Load())
+}
