@@ -418,6 +418,26 @@ func TestStaticFileServing(t *testing.T) {
 		assert.Equal(t, http.StatusOK, w.Code)
 		assert.Equal(t, string(indexContent), w.Body.String())
 	})
+
+	t.Run("serves swagger static files", func(t *testing.T) {
+		swaggerDir := tmpDir + "/swagger"
+		err := os.MkdirAll(swaggerDir, 0755)
+		assert.NoError(t, err)
+
+		swaggerJSON := []byte(`{"swagger":"2.0","info":{"title":"Test"}}`)
+		err = os.WriteFile(swaggerDir+"/swagger.json", swaggerJSON, 0644)
+		assert.NoError(t, err)
+
+		// Re-create router to pick up the new swagger directory
+		router := env.CreateRouter()
+
+		req, _ := http.NewRequest(http.MethodGet, "/swagger/swagger.json", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Contains(t, w.Body.String(), `"swagger":"2.0"`)
+	})
 }
 
 func TestWebSocketInterceptor(t *testing.T) {

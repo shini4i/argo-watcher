@@ -33,17 +33,16 @@ tasks:
       - pkg/updater/mock/interfaces.go
 
   docs:
-    desc: Generate swagger docs
+    desc: Generate swagger spec
     dir: cmd/argo-watcher
     cmds:
-      - echo "===> Generating swagger docs"
-      - swag init --parseDependency --parseInternal
+      - echo "===> Generating swagger spec"
+      - swag init --parseDependency --parseInternal --dir ./,../../internal/server --outputTypes json -o ../../web/public/swagger
     sources:
-      - server/router.go
+      - main.go
+      - ../../internal/server/router.go
     generates:
-      - docs/docs.go
-      - docs/swagger.json
-      - docs/swagger.yaml
+      - ../../web/public/swagger/swagger.json
 
   test:
     desc: Run tests
@@ -117,7 +116,7 @@ tasks:
 
   build-ui:
     desc: Build the web UI bundle
-    deps: [install-web-dependencies]
+    deps: [install-web-dependencies, docs]
     dir: web
     cmds:
       - echo "===> Building React-admin UI"
