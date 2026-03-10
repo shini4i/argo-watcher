@@ -228,6 +228,25 @@ func TestArgoApiGetUserInfoErrors(t *testing.T) {
 			wantMsg: "permission denied",
 		},
 		{
+			name: "non200WithErrorFieldOnly",
+			api: func() *ArgoApi {
+				a := NewArgoApi()
+				a.baseUrl = *baseURL
+				a.client = &http.Client{
+					Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+						return &http.Response{
+							StatusCode: http.StatusUnauthorized,
+							Body:       &stubBody{data: []byte(`{"error":"token expired","code":16,"message":""}`)},
+							Header:     make(http.Header),
+						}, nil
+					}),
+				}
+				return a
+			}(),
+			wantErr: true,
+			wantMsg: "token expired",
+		},
+		{
 			name: "non200WithoutErrorMessage",
 			api: func() *ArgoApi {
 				a := NewArgoApi()
@@ -409,6 +428,7 @@ func TestArgoApiGetApplicationErrors(t *testing.T) {
 		api     *ArgoApi
 		setup   func(t *testing.T, api *ArgoApi)
 		wantErr bool
+		wantMsg string
 	}{
 		{
 			name: "requestCreationError",
@@ -495,6 +515,7 @@ func TestArgoApiGetApplicationErrors(t *testing.T) {
 				return a
 			}(),
 			wantErr: true,
+			wantMsg: "boom",
 		},
 		{
 			name: "non200WithInvalidJSON",
@@ -513,6 +534,25 @@ func TestArgoApiGetApplicationErrors(t *testing.T) {
 				return a
 			}(),
 			wantErr: true,
+		},
+		{
+			name: "non200WithErrorFieldOnly",
+			api: func() *ArgoApi {
+				a := NewArgoApi()
+				a.baseUrl = *baseURL
+				a.client = &http.Client{
+					Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+						return &http.Response{
+							StatusCode: http.StatusForbidden,
+							Body:       &stubBody{data: []byte(`{"error":"permission denied","code":7,"message":""}`)},
+							Header:     make(http.Header),
+						}, nil
+					}),
+				}
+				return a
+			}(),
+			wantErr: true,
+			wantMsg: "permission denied",
 		},
 		{
 			name: "non200WithEmptyMessage",
@@ -566,6 +606,9 @@ func TestArgoApiGetApplicationErrors(t *testing.T) {
 			if tc.wantErr {
 				assert.Error(t, err)
 				assert.Nil(t, app)
+				if tc.wantMsg != "" {
+					assert.EqualError(t, err, tc.wantMsg)
+				}
 			} else {
 				assert.NoError(t, err)
 				assert.NotNil(t, app)

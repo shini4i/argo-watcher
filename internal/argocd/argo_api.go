@@ -118,14 +118,18 @@ func (api *ArgoApi) GetUserInfo() (*models.Userinfo, error) {
 			return nil, fmt.Errorf("could not parse json error response: %s", body)
 		}
 
-		if argoErrorResponse.Message == "" {
-			return nil, fmt.Errorf(
-				"failed parsing argocd API response: %s",
-				string(body),
-			)
+		if argoErrorResponse.Message != "" {
+			return nil, errors.New(argoErrorResponse.Message)
 		}
 
-		return nil, errors.New(argoErrorResponse.Message)
+		if argoErrorResponse.Error != "" {
+			return nil, errors.New(argoErrorResponse.Error)
+		}
+
+		return nil, fmt.Errorf(
+			"failed parsing argocd API response: %s",
+			string(body),
+		)
 	}
 
 	var userInfo models.Userinfo
@@ -155,14 +159,18 @@ func (api *ArgoApi) GetApplication(app string) (*models.Application, error) {
 			return nil, fmt.Errorf("could not parse json error response: %s", body)
 		}
 
-		if argoErrorResponse.Message == "" {
-			return nil, fmt.Errorf(
-				"failed parsing argocd API response: %s",
-				string(body),
-			)
+		if argoErrorResponse.Message != "" {
+			return nil, errors.New(argoErrorResponse.Message)
 		}
 
-		return nil, errors.New(argoErrorResponse.Message)
+		if argoErrorResponse.Error != "" {
+			return nil, errors.New(argoErrorResponse.Error)
+		}
+
+		return nil, fmt.Errorf(
+			"failed parsing argocd API response: %s",
+			string(body),
+		)
 	}
 
 	var argoApp models.Application
