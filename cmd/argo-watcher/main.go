@@ -10,6 +10,9 @@ import (
 	"github.com/shini4i/argo-watcher/internal/server"
 )
 
+// @title Argo-Watcher API
+// @description A small tool that will help to improve deployment visibility
+// @BasePath /
 func main() {
 	migrateFlag := flag.Bool("migrate", false, "Run database migrations and exit.")
 	flag.Parse()

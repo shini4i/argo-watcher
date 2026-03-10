@@ -32,19 +32,23 @@ make mocks
 
 ### Swagger documentation
 
-To generate documentation dependencies, first install `swag` tool.
+Swagger UI is served as static files bundled through the frontend Vite toolchain. The `swag` CLI tool generates only the `swagger.json` spec — no Go packages from swaggo are linked into the binary.
+
+To generate the swagger spec, first install the `swag` tool:
 
 ```shell
 go install github.com/swaggo/swag/cmd/swag@latest
 ```
 
-Then run the swagger doc generation.
+Then run the spec generation:
 
 ```shell
-make docs
+task docs
 ```
 
-> Note: you need to run this only when you're changing the interfaces
+This outputs `web/public/swagger/swagger.json`. During `task build-ui`, Vite copies Swagger UI assets from `swagger-ui-dist` alongside the spec into `web/dist/swagger/`.
+
+> Note: you need to regenerate the spec only when changing the API annotations
 
 ## Back-End Development
 

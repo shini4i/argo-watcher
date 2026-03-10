@@ -21,13 +21,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog/log"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/docs"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
 	"github.com/shini4i/argo-watcher/internal/argocd"
 	"github.com/shini4i/argo-watcher/internal/auth"
 	"github.com/shini4i/argo-watcher/internal/models"
-	swaggerFiles "github.com/swaggo/files"
-	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
 var version = "local"
@@ -215,10 +212,6 @@ func (env *Env) CreateRouter() *gin.Engine {
 		env.shutdownCh = make(chan struct{})
 	}
 
-	docs.SwaggerInfo.Title = "Argo-Watcher API"
-	docs.SwaggerInfo.Version = version
-	docs.SwaggerInfo.Description = "A small tool that will help to improve deployment visibility"
-
 	gin.SetMode(gin.ReleaseMode)
 
 	router := gin.New()
@@ -253,7 +246,7 @@ func (env *Env) CreateRouter() *gin.Engine {
 	// API routes
 	router.GET("/healthz", env.healthz)
 	router.GET("/metrics", prometheusHandler())
-	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	router.Static("/swagger", filepath.Join(env.config.StaticFilePath, "swagger"))
 
 	v1 := router.Group("/api/v1")
 	{
