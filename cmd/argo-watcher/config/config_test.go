@@ -78,6 +78,55 @@ func TestServerConfig_GetRetryAttempts(t *testing.T) {
 	assert.Equal(t, uint(5), retryAttempts)
 }
 
+// TestNewServerConfig_ArgoApiRetriesDefault verifies that the ArgoApiRetries field
+// defaults to 3 when not explicitly set via environment variable.
+func TestNewServerConfig_ArgoApiRetriesDefault(t *testing.T) {
+	t.Setenv("ARGO_URL", "https://example.com")
+	t.Setenv("ARGO_TOKEN", "secret-token")
+	t.Setenv("STATE_TYPE", "postgres")
+
+	cfg, err := NewServerConfig()
+	assert.NoError(t, err)
+	assert.Equal(t, uint(3), cfg.ArgoApiRetries)
+}
+
+// TestNewServerConfig_ArgoApiRetriesCustom verifies that the ArgoApiRetries field
+// can be overridden via the ARGO_API_RETRIES environment variable.
+func TestNewServerConfig_ArgoApiRetriesCustom(t *testing.T) {
+	t.Setenv("ARGO_URL", "https://example.com")
+	t.Setenv("ARGO_TOKEN", "secret-token")
+	t.Setenv("STATE_TYPE", "postgres")
+	t.Setenv("ARGO_API_RETRIES", "5")
+
+	cfg, err := NewServerConfig()
+	assert.NoError(t, err)
+	assert.Equal(t, uint(5), cfg.ArgoApiRetries)
+}
+
+// TestNewServerConfig_ArgoApiRetriesZeroRejected verifies that setting ARGO_API_RETRIES=0
+// fails validation, since zero attempts would cause infinite retries with retry-go.
+func TestNewServerConfig_ArgoApiRetriesZeroRejected(t *testing.T) {
+	t.Setenv("ARGO_URL", "https://example.com")
+	t.Setenv("ARGO_TOKEN", "secret-token")
+	t.Setenv("STATE_TYPE", "postgres")
+	t.Setenv("ARGO_API_RETRIES", "0")
+
+	_, err := NewServerConfig()
+	assert.Error(t, err)
+}
+
+// TestNewServerConfig_ArgoApiRetriesTooHighRejected verifies that setting ARGO_API_RETRIES
+// above the maximum (10) fails validation.
+func TestNewServerConfig_ArgoApiRetriesTooHighRejected(t *testing.T) {
+	t.Setenv("ARGO_URL", "https://example.com")
+	t.Setenv("ARGO_TOKEN", "secret-token")
+	t.Setenv("STATE_TYPE", "postgres")
+	t.Setenv("ARGO_API_RETRIES", "11")
+
+	_, err := NewServerConfig()
+	assert.Error(t, err)
+}
+
 func TestServerConfig_JSONExcludesSensitiveFields(t *testing.T) {
 	databaseConfig := DatabaseConfig{}
 	// Create a ServerConfig instance with some dummy data
