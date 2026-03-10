@@ -55,6 +55,7 @@ type ServerConfig struct {
 	LockdownSchedule   string         `env:"LOCKDOWN_SCHEDULE" json:"lockdown_schedule,omitempty"`
 	Webhook            WebhookConfig  `json:"webhook,omitempty"`
 	DevEnvironment     bool           `env:"DEV_ENVIRONMENT" envDefault:"false" json:"devEnvironment"` // Whether a set of dev specific setting should be turned on, do not touch unless you know what you are doing
+	ArgoApiRetries     uint           `env:"ARGO_API_RETRIES" envDefault:"3" validate:"min=1,max=10" json:"argo_api_retries"` // Total attempts (including initial); passed to retry.Attempts()
 	RepoCachePath      string         `env:"REPO_CACHE_PATH" envDefault:"/data" json:"-"`
 }
 

@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"time"
 
+	retry "github.com/avast/retry-go/v4"
 	"github.com/rs/zerolog/log"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	"github.com/shini4i/argo-watcher/internal/models"
@@ -26,6 +27,7 @@ type ArgoApi struct {
 	baseUrl    url.URL
 	client     *http.Client
 	refreshApp bool
+	maxRetries uint
 	// requestFn allows injecting a custom HTTP request constructor for testing.
 	requestFn func(method, url string, body io.Reader) (*http.Request, error)
 	// cookieJarFn allows injecting a custom cookie jar factory for testing.
@@ -73,11 +75,18 @@ func (api *ArgoApi) Init(serverConfig *config.ServerConfig) error {
 	api.refreshApp = serverConfig.ArgoRefreshApp
 	log.Debug().Msgf("Refresh app set to: %t", api.refreshApp)
 
+	// configure retry attempts for transient transport errors
+	api.maxRetries = serverConfig.ArgoApiRetries
+	log.Debug().Msgf("Max API retries set to: %d", api.maxRetries)
+
 	return nil
 }
 
 // doGet creates a GET request for the given URL, sets the Accept header for JSON responses,
-// executes it, and returns the response body bytes along with the HTTP status code.
+// executes it with retry logic for transient transport errors, and returns the response body
+// bytes along with the HTTP status code. Only the HTTP round-trip is retried; request creation
+// and body reading errors are not retried. HTTP error responses (4xx, 5xx) are valid API
+// responses and are returned as-is without retry.
 func (api *ArgoApi) doGet(reqURL string) ([]byte, int, error) {
 	req, err := api.requestFn("GET", reqURL, nil)
 	if err != nil {
@@ -86,7 +95,27 @@ func (api *ArgoApi) doGet(reqURL string) ([]byte, int, error) {
 
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := api.client.Do(req)
+	// Safe to reuse across retries: GET request has no body that would be consumed.
+	var resp *http.Response
+	err = retry.Do(
+		func() error {
+			var doErr error
+			resp, doErr = api.client.Do(req)
+			return doErr
+		},
+		retry.Attempts(api.maxRetries),
+		retry.Delay(time.Second),
+		retry.MaxDelay(30*time.Second),
+		retry.DelayType(retry.BackOffDelay),
+		retry.LastErrorOnly(true),
+		retry.OnRetry(func(n uint, err error) {
+			log.Debug().
+				Err(err).
+				Uint("retry", n+1).
+				Str("url", reqURL).
+				Msg("retrying ArgoCD API request")
+		}),
+	)
 	if err != nil {
 		return nil, 0, err
 	}

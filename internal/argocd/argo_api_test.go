@@ -8,6 +8,7 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -65,6 +66,7 @@ func TestArgoApiInit(t *testing.T) {
 		ArgoApiTimeout: 42,
 		SkipTlsVerify:  true,
 		ArgoRefreshApp: true,
+		ArgoApiRetries: 5,
 	}
 
 	api := NewArgoApi()
@@ -84,6 +86,7 @@ func TestArgoApiInit(t *testing.T) {
 	require.NotNil(t, transport.TLSClientConfig)
 	assert.True(t, transport.TLSClientConfig.InsecureSkipVerify)
 	assert.True(t, api.refreshApp)
+	assert.Equal(t, uint(5), api.maxRetries)
 
 	t.Run("returnsErrorWhenCookieJarFails", func(t *testing.T) {
 		called := false
@@ -118,6 +121,7 @@ func TestArgoApiGetUserInfoSuccess(t *testing.T) {
 	api := NewArgoApi()
 	api.baseUrl = *parsedURL
 	api.client = server.Client()
+	api.maxRetries = 1
 	userInfo, err := api.GetUserInfo()
 	require.NoError(t, err)
 	assert.Equal(t, &expected, userInfo)
@@ -308,6 +312,7 @@ func TestArgoApiGetUserInfoErrors(t *testing.T) {
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
+			tc.api.maxRetries = 1
 			if tc.setup != nil {
 				tc.setup(t, tc.api)
 			}
@@ -349,6 +354,7 @@ func TestArgoApiGetApplicationSuccess(t *testing.T) {
 	api := NewArgoApi()
 	api.baseUrl = *parsedURL
 	api.client = server.Client()
+	api.maxRetries = 1
 	result, err := api.GetApplication("demo")
 	require.NoError(t, err)
 	assert.Equal(t, app.Status.Health.Status, result.Status.Health.Status)
@@ -385,6 +391,7 @@ func TestArgoApiGetApplicationEscapesAppName(t *testing.T) {
 			api := NewArgoApi()
 			api.baseUrl = *parsedURL
 			api.client = server.Client()
+			api.maxRetries = 1
 			_, err = api.GetApplication(tc.appName)
 			assert.NoError(t, err)
 		})
@@ -407,6 +414,7 @@ func TestArgoApiGetApplicationAddsRefreshQuery(t *testing.T) {
 	api := NewArgoApi()
 	api.baseUrl = *parsedURL
 	api.client = server.Client()
+	api.maxRetries = 1
 	api.refreshApp = true
 	_, err = api.GetApplication("demo")
 	assert.NoError(t, err)
@@ -599,6 +607,7 @@ func TestArgoApiGetApplicationErrors(t *testing.T) {
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
+			tc.api.maxRetries = 1
 			if tc.setup != nil {
 				tc.setup(t, tc.api)
 			}
@@ -615,4 +624,124 @@ func TestArgoApiGetApplicationErrors(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestArgoApiDoGetRetriesOnTransientError verifies that transient transport errors
+// trigger retries and succeed if a subsequent attempt works.
+func TestArgoApiDoGetRetriesOnTransientError(t *testing.T) {
+	var callCount atomic.Int32
+	successBody := []byte(`{"loggedIn":true,"username":"ok"}`)
+
+	baseURL, err := url.Parse("https://example.com")
+	require.NoError(t, err)
+
+	api := NewArgoApi()
+	api.baseUrl = *baseURL
+	api.maxRetries = 3
+	api.client = &http.Client{
+		Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+			n := callCount.Add(1)
+			if n < 3 {
+				return nil, errors.New("connection refused")
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       &stubBody{data: successBody},
+				Header:     make(http.Header),
+			}, nil
+		}),
+	}
+
+	body, statusCode, err := api.doGet("https://example.com/api/v1/session/userinfo")
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.JSONEq(t, string(successBody), string(body))
+	assert.Equal(t, int32(3), callCount.Load())
+}
+
+// TestArgoApiDoGetExhaustsRetries verifies that when all retry attempts fail,
+// the final error is returned.
+func TestArgoApiDoGetExhaustsRetries(t *testing.T) {
+	var callCount atomic.Int32
+
+	baseURL, err := url.Parse("https://example.com")
+	require.NoError(t, err)
+
+	api := NewArgoApi()
+	api.baseUrl = *baseURL
+	api.maxRetries = 3
+	api.client = &http.Client{
+		Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+			callCount.Add(1)
+			return nil, errors.New("persistent timeout")
+		}),
+	}
+
+	body, statusCode, err := api.doGet("https://example.com/api/v1/session/userinfo")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "persistent timeout")
+	assert.Nil(t, body)
+	assert.Equal(t, 0, statusCode)
+	assert.Equal(t, int32(3), callCount.Load())
+}
+
+// TestArgoApiDoGetNoRetryOnSuccess verifies that no unnecessary retries happen
+// when the first attempt succeeds.
+func TestArgoApiDoGetNoRetryOnSuccess(t *testing.T) {
+	var callCount atomic.Int32
+	successBody := []byte(`{"status":"ok"}`)
+
+	baseURL, err := url.Parse("https://example.com")
+	require.NoError(t, err)
+
+	api := NewArgoApi()
+	api.baseUrl = *baseURL
+	api.maxRetries = 3
+	api.client = &http.Client{
+		Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+			callCount.Add(1)
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       &stubBody{data: successBody},
+				Header:     make(http.Header),
+			}, nil
+		}),
+	}
+
+	body, statusCode, err := api.doGet("https://example.com/api/v1/test")
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.Equal(t, successBody, body)
+	assert.Equal(t, int32(1), callCount.Load())
+}
+
+// TestArgoApiDoGetNoRetryOnNon2xx verifies that HTTP error responses (4xx/5xx)
+// are returned immediately without triggering retries, since they are valid API
+// responses — not transient transport errors.
+func TestArgoApiDoGetNoRetryOnNon2xx(t *testing.T) {
+	var callCount atomic.Int32
+	errorBody := []byte(`{"message":"internal server error"}`)
+
+	baseURL, err := url.Parse("https://example.com")
+	require.NoError(t, err)
+
+	api := NewArgoApi()
+	api.baseUrl = *baseURL
+	api.maxRetries = 3
+	api.client = &http.Client{
+		Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+			callCount.Add(1)
+			return &http.Response{
+				StatusCode: http.StatusInternalServerError,
+				Body:       &stubBody{data: errorBody},
+				Header:     make(http.Header),
+			}, nil
+		}),
+	}
+
+	body, statusCode, err := api.doGet("https://example.com/api/v1/test")
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusInternalServerError, statusCode)
+	assert.Equal(t, errorBody, body)
+	assert.Equal(t, int32(1), callCount.Load())
 }
