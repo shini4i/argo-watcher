@@ -41,35 +41,33 @@ Argo Watcher introduces a control loop that monitors your Argo CD applications f
 Argo Watcher consists of three main components: the **Server**, the **Client**, and the **Web UI**.
 
 ```mermaid
-graph TD
-    subgraph "Your Environment"
-        CI_Pipeline[CI Pipeline]
-        Git_Repo[GitOps Repository]
-        Image_Registry[Image Registry]
+graph LR
+    subgraph CI["CI Pipeline"]
+        Build["Build & Push"]
+        Client["Argo Watcher Client"]
     end
 
-    subgraph "Argo Watcher"
-        Watcher_Server[Server]
-        Watcher_Client[Client]
-        Watcher_WebUI[Web UI]
-        Watcher_Updater[GitOps Updater]
+    subgraph AW["Argo Watcher"]
+        Server["Server"]
+        Updater["GitOps Updater"]
+        WebUI["Web UI"]
     end
 
-    subgraph "Argo CD"
-        ArgoCD_API[Argo CD API]
-        ArgoCD[Argo CD]
+    subgraph ACD["Argo CD"]
+        API["API"]
+        Controller["Controller"]
     end
 
-    CI_Pipeline -- "1. Build & Push" --> Image_Registry
-    CI_Pipeline -- "2. Run" --> Watcher_Client
-    Watcher_Client -- "3. Create Task" --> Watcher_Server
-    Watcher_Server -- "4. (Optional) Update Image Tag" --> Watcher_Updater
-    Watcher_Updater -- "5. Commit" --> Git_Repo
-    Watcher_Server -- "7. Monitor" --> ArgoCD_API
-    ArgoCD -- "6. Sync" --> Git_Repo
-    Watcher_Server -- "8. Stream Status" --> Watcher_WebUI
-    Watcher_Server -- "8. Report Status" --> Watcher_Client
-    Watcher_Client -- "9. Exit Code" --> CI_Pipeline
+    GitRepo["GitOps Repo"]
+
+    Build --> Client
+    Client -- "Create Task" --> Server
+    Server -. "Update Tag (optional)" .-> Updater
+    Updater -- "Commit" --> GitRepo
+    Controller -- "Sync" --> GitRepo
+    Server -- "Poll Status" --> API
+    Server -- "Stream" --> WebUI
+    Server -- "Report Result" --> Client
 ```
 
 ## How It Works
