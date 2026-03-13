@@ -39,15 +39,20 @@ All `Conditional` variables are required when `KEYCLOAK_ENABLED` is set to `true
 
 ### Helm Chart Values
 
-When deploying with the Helm chart, set the Keycloak configuration in `values.yaml`:
+When deploying with the Helm chart, set the Keycloak configuration via `extraEnvs` in `values.yaml`:
 
 ```yaml
-keycloak:
-  enabled: true
-  url: "https://keycloak.example.com"
-  realm: "your-realm"
-  clientId: "argo-watcher"
-  privilegedGroups: "platform-team,sre-team"
+extraEnvs:
+  - name: KEYCLOAK_ENABLED
+    value: "true"
+  - name: KEYCLOAK_URL
+    value: "https://keycloak.example.com"
+  - name: KEYCLOAK_REALM
+    value: "your-realm"
+  - name: KEYCLOAK_CLIENT_ID
+    value: "argo-watcher"
+  - name: KEYCLOAK_PRIVILEGED_GROUPS
+    value: "platform-team,sre-team"
 ```
 
 ## Privileged Groups

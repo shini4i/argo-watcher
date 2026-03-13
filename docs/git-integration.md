@@ -20,11 +20,10 @@ Before enabling the GitOps updater, you need to:
 3. **Update the Helm chart values** -- Add the updater configuration:
 
     ```yaml
-    argo:
-      updater:
-        sshSecretName: "argo-watcher-ssh"
-        commitAuthor: "Argo Watcher"
-        commitEmail: "argo-watcher@example.com"
+    updater:
+      sshSecretName: "argo-watcher-ssh"
+      commitAuthor: "Argo Watcher"
+      commitEmail: "argo-watcher@example.com"
     ```
 
 ## JWT Configuration
