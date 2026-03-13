@@ -1,178 +1,215 @@
----
-hide:
-- navigation
----
 # Development
+
+This guide covers setting up a local development environment for Argo Watcher.
 
 ## Prerequisites
 
-This project depends on various git hooks. ([pre-commit](https://pre-commit.com))
+- **Go 1.25+** (the project uses toolchain `go1.25.4`)
+- **Node.js 17.7.0+** and **npm 8.9.0+** (for frontend development)
+- **Docker** and **Docker Compose** (for running dependencies locally)
+- **[Task](https://taskfile.dev/)** (task runner, replaces Make)
+- **[pre-commit](https://pre-commit.com/)** (Git hooks for code quality)
 
-They can be installed by running:
+Install the Git hooks:
 
 ```bash
 pre-commit install
 ```
 
-To compile the project locally, you would also need to generate mocks (for testing) and swagger docs (for api documentation).
+Install Go tooling (mock generator, swagger, migration tool):
 
-### Mock classes
-
-To generate mock classes for unit tests, first install `gomock` tool.
-
-```shell
-go install go.uber.org/mock/mockgen@latest
+```bash
+task install-deps
 ```
 
-Then run the mock generation from interfaces.
+## Task Runner
 
-```shell
-make mocks
+The project uses [Task](https://taskfile.dev/) as a build and automation tool. All common development operations are defined in `Taskfile.yml`.
+
+### Available Tasks
+
+| Task                | Description                                              |
+|---------------------|----------------------------------------------------------|
+| `task install-deps` | Install Go development tools (swag, mockgen, migrate)    |
+| `task mocks`        | Generate mock interfaces for unit tests                  |
+| `task docs`         | Generate the Swagger JSON spec                           |
+| `task test`         | Run the full test suite (generates mocks and docs first) |
+| `task build`        | Build the Go binary                                      |
+| `task build-ui`     | Build the React frontend bundle                          |
+| `task lint-web`     | Lint the React frontend code                             |
+| `task test-web`     | Run React frontend unit tests                            |
+| `task bootstrap`    | Start all Docker Compose services                        |
+| `task teardown`     | Stop all Docker Compose services                         |
+
+Run any task with:
+
+```bash
+task <task-name>
 ```
 
-### Swagger documentation
+## Quick Start with Docker Compose
 
-Swagger UI is served as static files bundled through the frontend Vite toolchain. The `swag` CLI tool generates only the `swagger.json` spec — no Go packages from swaggo are linked into the binary.
+The fastest way to get a full development environment running:
 
-To generate the swagger spec, first install the `swag` tool:
-
-```shell
-go install github.com/swaggo/swag/cmd/swag@latest
+```bash
+task bootstrap
 ```
 
-Then run the spec generation:
+This starts PostgreSQL, runs database migrations, and prepares the backend and frontend services via Docker Compose.
 
-```shell
-task docs
+To stop everything:
+
+```bash
+task teardown
 ```
-
-This outputs `web/public/swagger/swagger.json`. During `task build-ui`, Vite copies Swagger UI assets from `swagger-ui-dist` alongside the spec into `web/dist/swagger/`.
-
-> Note: regenerate the spec whenever API annotations, request/response models, or documented routes change — i.e. any change that affects the public API surface
 
 ## Back-End Development
 
-> The information below is needed only if you don't want to use docker-compose for some reason.
+If you prefer to run services individually without Docker Compose, follow the steps below.
 
-To start developing argo-watcher you will need golang `1.21+`
+### Generate Mocks and Swagger Spec
 
-Start mock of the argo-cd server
+Before compiling or testing, generate the required mock classes and swagger spec:
 
-```shell
-# go to mock directory
+```bash
+task mocks
+task docs
+```
+
+### Start the Mock Argo CD Server
+
+The project includes a mock Argo CD server for local development:
+
+```bash
 cd cmd/mock
-# start the server
 go run .
 ```
 
-### Start the argo-watcher server (in-memory)
+This starts a mock server on port `8081` that simulates the Argo CD API.
 
-```shell
-# go to backend directory
+### Start Argo Watcher (In-Memory Mode)
+
+For development without a database:
+
+```bash
 cd cmd/argo-watcher
-# install dependencies
 go mod download
-# start argo-watcher (in-memory)
-LOG_LEVEL=debug LOG_FORMAT=text ARGO_URL=http://localhost:8081 ARGO_TOKEN=example STATE_TYPE=in-memory go run . -server
+LOG_LEVEL=debug ARGO_URL=http://localhost:8081 ARGO_TOKEN=example STATE_TYPE=in-memory go run .
 ```
 
-### Start the argo-watcher server (postgres)
+### Start Argo Watcher (PostgreSQL Mode)
 
-Start database
+Start the database and run migrations:
 
-```shell
-# start the database in a separate terminal window
-docker compose up postgres
+```bash
+docker compose up -d postgres migrations
 ```
 
-Run migrations
+Then start the server:
 
-```shell
-migrate -path file://db/migrations -database "postgresql://watcher:watcher@localhost:5432/watcher?sslmode=disable" up
-```
-
-Start server
-
-```shell
-# go to backend directory
+```bash
 cd cmd/argo-watcher
-# install dependencies
 go mod tidy
-# OR start argo-watcher (postgres)
-LOG_LEVEL=debug LOG_FORMAT=text ARGO_URL=http://localhost:8081 ARGO_TOKEN=example STATE_TYPE=postgres DB_USER=watcher DB_PASSWORD=watcher DB_NAME=watcher go run . -server
-```
-
-#### Logs in simple text
-
-```shell
-# add LOG_FORMAT=text for simple text logs
-LOG_LEVEL=debug LOG_FORMAT=text go run . -server
-```
-
-### Running the unit tests
-
-Use the following snippets to run argo-watcher unit tests
-
-```shell
-# go to backend directory
-cd cmd/argo-watcher
-# run all tests
-go test -v
-# run single test suite
-go test -v -run TestArgoStatusUpdaterCheck
+LOG_LEVEL=debug \
+  ARGO_URL=http://localhost:8081 \
+  ARGO_TOKEN=example \
+  STATE_TYPE=postgres \
+  DB_USER=watcher \
+  DB_PASSWORD=watcher \
+  DB_NAME=watcher \
+  go run .
 ```
 
 ## Front-End Development
 
-To start developing front-end you will need
-
-1. NodeJS version 17.7.0+
-2. NPM (comes with NodeJS) 8.9.0+
-
-```shell
-# go into web directory
+```bash
 cd web
-# install dependencies
 npm install
-# start web development server
 npm start
 ```
 
-The browser will open on http://localhost:3000
+The development server opens at [http://localhost:3000](http://localhost:3000).
 
-## Requests examples
+## Running Tests
 
-### Add a task
+### Full Test Suite
 
-Post request:
-
-```bash
-curl --header "Content-Type: application/json" \
-     --request POST \
-     --data '{"app":"test-app","author":"name","project":"example","images":[{"image":"example", "tag":"v1.8.0"}]}' \
-     http://localhost:8080/api/v1/tasks
-```
-
-Example response:
+Run all backend tests (this also generates mocks and swagger docs automatically):
 
 ```bash
-{"status":"accepted","id":"be8c42c0-a645-11ec-8ea5-f2c4bb72758a"}
+task test
 ```
 
-### Get task details
-
-The ID provided in response for POST request should be provided to get task status:
+### Backend Unit Tests Only
 
 ```bash
-curl http://localhost:8080/api/v1/tasks/be8c42c0-a645-11ec-8ea5-f2c4bb72758a
+cd cmd/argo-watcher
+go test -v ./...
 ```
 
-Example response:
+To run a specific test suite:
 
 ```bash
-{"status":"in progress"}
+go test -v -run TestArgoStatusUpdaterCheck ./...
 ```
 
-## Swagger
+### Frontend Tests
 
-A swagger documentation can be accessed via http://localhost:8080/swagger/index.html
+```bash
+task test-web
+```
+
+### Frontend Linting
+
+```bash
+task lint-web
+```
+
+## Swagger Documentation
+
+The Swagger spec is generated from Go annotations in the source code using [swag](https://github.com/swaggo/swag).
+
+To regenerate the spec:
+
+```bash
+task docs
+```
+
+This outputs `web/public/swagger/swagger.json`. During `task build-ui`, Vite copies the Swagger UI assets alongside the spec into `web/dist/swagger/`.
+
+!!! note
+    Regenerate the spec whenever API annotations, request/response models, or documented routes change.
+
+Once the server is running, the Swagger UI is accessible at:
+
+```text
+http://localhost:8080/swagger/index.html
+```
+
+For a summary of available API endpoints, see the [API Reference](api.md) page.
+
+## Project Structure
+
+```text
+cmd/
+  argo-watcher/     # Main server binary
+  client/           # CLI client binary
+  mock/             # Mock Argo CD server for development
+db/
+  migrations/       # PostgreSQL migration files
+docs/               # MkDocs documentation source
+internal/
+  argocd/           # Argo CD API client
+  auth/             # Authentication (JWT, deploy token)
+  helpers/          # Shared utility functions
+  lock/             # Deployment lock logic
+  migrate/          # Database migration runner
+  models/           # Data models
+  notifications/    # Webhook notification sender
+  server/           # HTTP server and routes
+  state/            # State management (in-memory and PostgreSQL)
+pkg/
+  client/           # CLI client logic
+  updater/          # GitOps updater logic
+web/                # React/TypeScript frontend
+```

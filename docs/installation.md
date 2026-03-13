@@ -1,35 +1,64 @@
----
-hide:
-- navigation
----
 # Installation
+
+This guide covers deploying the Argo Watcher server in Kubernetes and integrating the client into your CI/CD pipeline.
+
+## Prerequisites
+
+Before installing Argo Watcher, ensure you have the following:
+
+- A running **Kubernetes cluster** with [Argo CD](https://argo-cd.readthedocs.io/) installed
+- **Helm 3** installed on your local machine
+- An **Argo CD API token** for the Argo Watcher service account (see [Argo CD API token](#argo-cd-api-token) below)
+- *(Optional)* A **PostgreSQL** database for persistent task storage
+
+### Argo CD API Token
+
+Argo Watcher needs an API token to communicate with Argo CD. While using the admin user works, it is recommended to create a dedicated service account with minimal permissions.
+
+Add the following to your Argo CD `argocd-rbac-cm` ConfigMap:
+
+```yaml
+policy.csv: |
+  p, role:watcher, applications, get, */*, allow
+  p, role:watcher, applications, sync, */*, allow
+  g, watcher, role:watcher
+```
+
+Then create the `watcher` account and generate a token using the Argo CD CLI:
+
+```bash
+argocd account generate-token --account watcher
+```
 
 ## Server Installation
 
-Argo Watcher Server is intended to be run in Kubernetes environment.
+Argo Watcher server is designed to run in a Kubernetes environment. You can deploy it using the official [Helm chart](https://artifacthub.io/packages/helm/shini4i/argo-watcher).
 
-You can deploy the server using our dedicated [helm chart](https://artifacthub.io/packages/helm/shini4i/argo-watcher).
+### Helm Chart
 
-Helm chart values configurations example:
+Add the Helm repository and install the chart:
+
+```bash
+helm repo add shini4i https://shini4i.github.io/helm-charts
+helm repo update
+helm install argo-watcher shini4i/argo-watcher -f values.yaml
+```
+
+Below is an example `values.yaml` configuration:
 
 ```yaml
-# credentials to access ArgoCD
+# Credentials for accessing Argo CD
 argo:
   url: https://argocd.argocd.svc.cluster.local
-  # although using admin user is not a problem, we recommend creating a separate user for Argo Watcher
-  # policy.csv example:
-  # p, role:watcher, applications, get, */*, allow
-  # p, role:watcher, applications, sync, */*, allow
-  # g, watcher, role:watcher
-  # secret with ARGO_TOKEN key and optional ARGO_WATCHER_DEPLOY_TOKEN (should match ARGO_WATCHER_DEPLOY_TOKEN on client side)
+  # Secret containing the ARGO_TOKEN key
+  # Optionally include ARGO_WATCHER_DEPLOY_TOKEN (must match the client-side value)
   secretName: "argo-watcher"
-  # the following values are required only if you want to use Argo Watcher to manage deployments
+  # Required only if using the built-in GitOps updater
   updater:
-    # A secret containing ssh key that would be used to interact with git repositories
     sshSecretName: "ssh-secret"
 
-# credentials to access postgresql and store deployment monitoring tasks
-# can be omitted if persistence is not required (state will be stored in memory)
+# PostgreSQL configuration for persistent task storage
+# Omit this section to use in-memory storage (non-HA, data lost on restart)
 postgres:
   enabled: true
   host: argo-watcher-postgresql.argo-watcher-postgresql.svc.cluster.local
@@ -37,7 +66,7 @@ postgres:
   user: argo-watcher
   secretName: "argo-watcher-postgresql"
 
-# configurations to access Argo Watcher Server API and UI
+# Ingress configuration for the API and Web UI
 ingress:
   enabled: true
   hosts:
@@ -51,67 +80,134 @@ ingress:
         - argo-watcher.example.com
 ```
 
-Argo Watcher Server supports the following environment variables
+### Environment Variables
 
-| Variable              | Description                                                          | Default   | Mandatory   |
-|-----------------------|----------------------------------------------------------------------|-----------|-------------|
-| ARGO_URL              | ArgoCD URL                                                           |           | Yes         |
-| ARGO_TOKEN            | ArgoCD API token                                                     |           | Yes         |
-| ARGO_API_TIMEOUT      | Timeout for ArgoCD API calls. Defaults to 60 seconds                 | 60        | No          |
-| ARGO_TIMEOUT          | Time that Argo Watcher is allowed to wait for deployment.            | 0         | No          |
-| ARGO_REFRESH_APP      | Refresh application during status check                              | true      | No          |
-| DOCKER_IMAGES_PROXY   | Define registry proxy url for image checks                           |           | No          |
-| STATE_TYPE            | Accepts "in-memory" (non-HA option) and "postgres" (HA option).      |           | Yes         |
-| STATIC_FILES_PATH     | Path to the UI website of Argo Watcher                               | static    | No          |
-| SKIP_TLS_VERIFY       | Skip SSL verification during API calls                               | false     | No          |
-| LOG_LEVEL             | Severity for logging (trace,debug,info,warn,error,fatal, panic)      | info      | No          |
-| LOG_FORMAT            | json (used for production by default) or text (used for development) | json      | No          |
-| HOST                  | Host for Argo Watcher server.                                        | 0.0.0.0   | No          |
-| PORT                  | Port for Argo Watcher server.                                        | 8080      | No          |
-| DB_HOST               | Database host (Required for STATE_TYPE=postgres)                     | localhost | Conditional |
-| DB_PORT               | Database port (Required for STATE_TYPE=postgres)                     | 5432      | Conditional |
-| DB_NAME               | Database name (Required for STATE_TYPE=postgres)                     |           | Conditional |
-| DB_USER               | Database username(Required for STATE_TYPE=postgres)                  |           | Conditional |
-| DB_PASSWORD           | Database password (Required for STATE_TYPE=postgres)                 |           | Conditional |
-| SSH_KEY_PATH          | Path to ssh key that would be used to interact with git repositories |           | Conditional |
-| SSH_KEY_PASS          | Password for ssh key                                                 |           | No          |
-| SSH_COMMIT_USER       | Git user name for commit                                             |           | No          |
-| SSH_COMMIT_EMAIL      | Git user email for commit                                            |           | No          |
-| COMMIT_MESSAGE_FORMAT | Template string for commit message                                   |           | No          |
+The Argo Watcher server supports the following environment variables. When using the Helm chart, most of these are set through chart values automatically.
 
-## Client setup
+#### Core Settings
 
-The client is designed to run on Kubernetes runners. We have
-a [dedicated docker image](https://ghcr.io/shini4i/argo-watcher-client) for Argo Watcher Client CI/CD jobs.
+| Variable            | Description                                                     | Default     | Required    |
+|---------------------|-----------------------------------------------------------------|-------------|-------------|
+| `ARGO_URL`          | Argo CD server URL                                              |             | Yes         |
+| `ARGO_TOKEN`        | Argo CD API token                                               |             | Yes         |
+| `ARGO_API_TIMEOUT`    | Timeout for Argo CD API calls, in seconds                       | `60`        | No          |
+| `DEPLOYMENT_TIMEOUT`  | Maximum time (in seconds) to wait for a deployment to complete  | `900`       | No          |
+| `ARGO_REFRESH_APP`    | Refresh the application during status checks                    | `true`      | No          |
+| `ARGO_API_RETRIES`    | Total retry attempts for Argo CD API calls (1-10)               | `3`         | No          |
+| `ACCEPT_SUSPENDED_APP`| Accept "Suspended" health status as valid                       | `false`     | No          |
+| `STATE_TYPE`          | Storage backend: `in-memory` (non-HA) or `postgres` (HA)       |             | Yes         |
 
-### Running on GitLab CI/CD
+#### Server Settings
 
-Example deployment setup for running with GitLab CI/CD (
-reference: https://docs.gitlab.com/ee/ci/docker/using_kaniko.html)
+| Variable            | Description                                                     | Default     | Required    |
+|---------------------|-----------------------------------------------------------------|-------------|-------------|
+| `HOST`              | Host address for the Argo Watcher server                        | `0.0.0.0`  | No          |
+| `PORT`              | Port for the Argo Watcher server                                | `8080`      | No          |
+| `STATIC_FILES_PATH` | Path to the Web UI static files                                 | `static`    | No          |
+| `SKIP_TLS_VERIFY`     | Skip TLS certificate verification for API calls                 | `false`     | No          |
+| `DOCKER_IMAGES_PROXY` | Registry proxy URL for image existence checks                   |             | No          |
+| `ARGO_URL_ALIAS`      | URL alias for generating externally visible Argo CD app links   |             | No          |
+
+#### Logging
+
+| Variable     | Description                                                            | Default | Required |
+|--------------|------------------------------------------------------------------------|---------|----------|
+| `LOG_LEVEL`  | Log verbosity level (`debug`, `info`, `warn`, `error`)                | `info`  | No       |
+
+#### Database Settings
+
+These variables are required when `STATE_TYPE` is set to `postgres`.
+
+| Variable      | Description       | Default     | Required      |
+|---------------|-------------------|-------------|---------------|
+| `DB_HOST`     | Database host     |             | Conditional   |
+| `DB_PORT`     | Database port     |             | Conditional   |
+| `DB_NAME`     | Database name     |             | Conditional   |
+| `DB_USER`     | Database username |             | Conditional   |
+| `DB_PASSWORD` | Database password |             | Conditional   |
+| `DB_SSL_MODE` | PostgreSQL SSL mode | `disable` | No            |
+| `DB_TIMEZONE` | Database timezone | `UTC`       | No            |
+
+#### Git Integration Settings
+
+These variables are required when using the built-in GitOps updater. See the [Git Integration](git-integration.md) guide for full details.
+
+| Variable              | Description                                             | Default | Required    |
+|-----------------------|---------------------------------------------------------|---------|-------------|
+| `SSH_KEY_PATH`        | Path to the SSH key for Git repository access           |         | Conditional |
+| `SSH_KEY_PASS`        | Passphrase for the SSH key                              |         | No          |
+| `SSH_COMMIT_USER`     | Git commit author name                                  | `argo-watcher` | No          |
+| `SSH_COMMIT_MAIL`     | Git commit author email                                 | `argo-watcher@example.com` | No          |
+| `COMMIT_MESSAGE_FORMAT` | Go template string for commit messages                |         | No          |
+
+### Database Setup
+
+When using PostgreSQL for persistent storage (`STATE_TYPE=postgres`), the database must be initialized before starting the server.
+
+#### Using the Helm Chart
+
+If you deploy PostgreSQL alongside Argo Watcher using the Helm chart, migrations are applied automatically via an init container.
+
+#### Manual Migration
+
+If you manage your database separately, run the migrations using the [golang-migrate](https://github.com/golang-migrate/migrate) tool:
+
+```bash
+migrate -path db/migrations \
+  -database "postgresql://<user>:<password>@<host>:<port>/<dbname>?sslmode=disable" up
+```
+
+!!! tip
+    The project includes a Docker Compose setup with automatic migrations for local development. See the [Development](development.md) guide for details.
+
+## Client Setup
+
+The Argo Watcher client is a lightweight CLI tool that communicates with the Argo Watcher server. It is distributed as a Docker image at [`ghcr.io/shini4i/argo-watcher-client`](https://ghcr.io/shini4i/argo-watcher-client).
+
+### Client Environment Variables
+
+| Variable                    | Description                                                                                       | Required |
+|-----------------------------|---------------------------------------------------------------------------------------------------|----------|
+| `ARGO_WATCHER_URL`          | URL of the Argo Watcher server instance                                                          | Yes      |
+| `ARGO_APP`                  | Name of the Argo CD application to monitor                                                       | Yes      |
+| `COMMIT_AUTHOR`             | Person who triggered the deployment                                                              | Yes      |
+| `PROJECT_NAME`              | Identifier for the business project (not the Argo CD project)                                    | Yes      |
+| `IMAGES`                    | Comma-separated list of image names expected to contain the specified tag                        | Yes      |
+| `IMAGE_TAG`                 | Image tag expected to be deployed                                                                | Yes      |
+| `ARGO_WATCHER_DEPLOY_TOKEN` | Deploy token for Git image override (required when using the built-in GitOps updater)            | No       |
+| `BEARER_TOKEN`              | JWT token for authentication (prefix with `Bearer `, e.g. `Bearer <token>`)                     | No       |
+| `TIMEOUT`                   | HTTP request timeout (e.g. `60s`, `2m`)                                                         | No       |
+| `TASK_TIMEOUT`              | Maximum time (in seconds) to wait for a task to complete                                        | No       |
+| `RETRY_INTERVAL`            | Interval between status polling attempts (e.g. `15s`, `1m`)                                    | No       |
+| `EXPECTED_DEPLOY_TIME`      | Expected deployment duration; affects polling behavior (e.g. `15m`, `30m`)                     | No       |
+| `DEBUG`                     | Enable verbose debug output                                                                      | No       |
+
+### GitLab CI/CD
+
+Below is a complete GitLab CI/CD example that builds an image with Kaniko and monitors the deployment with Argo Watcher.
 
 ```yaml
-# we have only deployment stage
 stages:
   - deploy
 
-# build new image
+# Build a new Docker image
 build:
   stage: deploy
   image:
     name: gcr.io/kaniko-project/executor:v1.9.0-debug
-    entrypoint: [ "" ]
+    entrypoint: [""]
   script:
     - /kaniko/executor
       --context "${CI_PROJECT_DIR}"
       --dockerfile "${CI_PROJECT_DIR}/Dockerfile"
       --destination "${CI_REGISTRY_IMAGE}:${CI_COMMIT_TAG}"
-  # build only on main
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
-# deployment monitoring with Argo Watcher
+# Monitor deployment with Argo Watcher
 watch:
-  image: ghcr.io/shini4i/argo-watcher:<VERSION>
+  stage: deploy
+  image: ghcr.io/shini4i/argo-watcher-client:<VERSION>
   variables:
     ARGO_WATCHER_URL: https://argo-watcher.example.com
     ARGO_APP: example
@@ -119,26 +215,77 @@ watch:
     PROJECT_NAME: $CI_PROJECT_PATH
     IMAGES: $CI_REGISTRY_IMAGE
     IMAGE_TAG: $CI_COMMIT_TAG
-    DEBUG: 1
+    DEBUG: "1"
   script:
-    - /argo-watcher -client
-  # run after we build the image
-  needs: [ build ]
-  # wait only on main and only when build was successfull
+    - /client
+  needs: [build]
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
       when: success
 ```
 
-Argo Watcher Client supports the following environment variables
+!!! warning
+    Replace `<VERSION>` with a specific Argo Watcher release tag (e.g., `v0.8.0`). Avoid using `latest` in production.
 
-| Variable                  | Description                                                                                                               | Mandatory |
-|---------------------------|---------------------------------------------------------------------------------------------------------------------------|-----------|
-| ARGO_WATCHER_URL          | The url of argo-watcher instance                                                                                          | Yes       |
-| ARGO_APP                  | The name of argo app to check for images rollout                                                                          | Yes       |
-| COMMIT_AUTHOR             | The person who made commit/triggered pipeline                                                                             | Yes       |
-| PROJECT_NAME              | An identificator of the business project (not related to argo project)                                                    | Yes       |
-| IMAGES                    | A list of images (separated by ",") that should contain specific tag                                                      | Yes       |
-| IMAGE_TAG                 | An image tag that is expected to be rolled out                                                                            | Yes       |
-| ARGO_WATCHER_DEPLOY_TOKEN | A token to enable git image override (required when argo watcher is managing deployments instead of argocd image updater) | No        |
-| DEBUG                     | Print various debug information                                                                                           | No        |
+### GitHub Actions
+
+Below is an equivalent example for GitHub Actions.
+
+```yaml
+name: Deploy and Monitor
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build and push Docker image
+        # Your preferred Docker build step here
+        run: |
+          docker build -t ${{ vars.REGISTRY_IMAGE }}:${{ github.sha }} .
+          docker push ${{ vars.REGISTRY_IMAGE }}:${{ github.sha }}
+
+      - name: Monitor deployment
+        run: |
+          docker run --rm \
+            -e ARGO_WATCHER_URL=https://argo-watcher.example.com \
+            -e ARGO_APP=example \
+            -e COMMIT_AUTHOR="${{ github.actor }}" \
+            -e PROJECT_NAME="${{ github.repository }}" \
+            -e IMAGES="${{ vars.REGISTRY_IMAGE }}" \
+            -e IMAGE_TAG="${{ github.sha }}" \
+            -e DEBUG=1 \
+            ghcr.io/shini4i/argo-watcher-client:<VERSION>
+```
+
+## Troubleshooting
+
+### Server does not start
+
+- Verify that `ARGO_URL` and `ARGO_TOKEN` are set correctly and that the server can reach the Argo CD API.
+- If using `STATE_TYPE=postgres`, ensure the database is accessible and migrations have been applied.
+- Check the server logs by setting `LOG_LEVEL=debug` for verbose output.
+
+### Client exits with a non-zero code
+
+- Confirm that the `ARGO_WATCHER_URL` is reachable from the CI runner.
+- Check that the `ARGO_APP` name matches an application registered in Argo CD.
+- Verify that the `IMAGES` and `IMAGE_TAG` values correspond to the image that was actually built and pushed.
+- If using the built-in GitOps updater, ensure `ARGO_WATCHER_DEPLOY_TOKEN` or `BEARER_TOKEN` is set.
+
+### Deployment times out
+
+- The default `DEPLOYMENT_TIMEOUT` is `900` seconds (15 minutes). Increase the value to accommodate longer rollouts.
+- Verify that Argo CD can detect and sync the updated image tag. Check the Argo CD UI for sync errors.
+- If using the built-in GitOps updater, ensure the SSH key has write access to the target repository.
+
+### Web UI is not accessible
+
+- Confirm that the Ingress resource is configured correctly and the TLS certificate is valid.
+- Verify that `STATIC_FILES_PATH` points to the correct directory containing the built UI assets.

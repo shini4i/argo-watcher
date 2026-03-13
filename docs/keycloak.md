@@ -1,34 +1,62 @@
----
-hide:
-- navigation
----
-# Keycloak integration
+# Keycloak Integration
 
-## General information
+Argo Watcher supports [Keycloak](https://www.keycloak.org/) for user authentication and role-based access control. When enabled, all users must authenticate through Keycloak before accessing the Web UI or performing privileged operations.
 
-As a prerequisites, we need to have a fully configured realm. Keycloak configuration itself is out of scope of this documentation.
+## How It Works
 
-The main requirement is the content of the token. We expect the token to contain `groups` field.
-Argo-Watcher will compare it with the pre-configured priveleged groups to understand who should see a redeploy button.
+When Keycloak integration is enabled:
 
-## Argo-Watcher
+1. Users are redirected to the Keycloak login page before they can view any tasks in the Web UI.
+2. The user's token is validated by the Argo Watcher backend at a configurable interval.
+3. Users who belong to one of the configured **privileged groups** see a **Redeploy** button on the task details page and can manage the [deployment lock](git-integration.md#deployment-locking).
 
-The following environment variables are required to enable Keycloak integration:
+## Prerequisites
 
-- `KEYCLOAK_ENABLED` - if Keycloak integration should be enabled
-- `KEYCLOAK_URL` - the url of Keycloak instance
-- `KEYCLOAK_REALM` - the name of the realm
-- `KEYCLOAK_CLIENT_ID` - the name of the client
-- `KEYCLOAK_TOKEN_VALIDATION_INTERVAL` - the interval in nanoseconds to validate the token (default: 10000)
-- `KEYCLOAK_PRIVILEGED_GROUPS` - the comma-separated list of groups that should see the redeploy button
+You need a fully configured Keycloak realm with a client application set up for Argo Watcher. Keycloak realm configuration is outside the scope of this guide -- refer to the [Keycloak documentation](https://www.keycloak.org/documentation) for setup instructions.
 
-The usage is quite simple, with enabled Keycloak integration, Argo-Watcher will force all users to login with Keycloak before they can see any tasks.
+The key requirement is that the Keycloak token must include a `groups` claim. Argo Watcher uses this claim to determine group membership for privilege checks.
 
-Additionally, if the user is in the group listed in `KEYCLOAK_PRIVILEGED_GROUPS`, Argo-Watcher will show the redeploy button on the task details page.
+!!! tip
+    In Keycloak, you can add a `groups` claim to your client's token by creating a **Group Membership** protocol mapper in the client configuration. Set the **Token Claim Name** to `groups`.
 
-## Roadmap
+## Configuration
 
-Currently, we have a very limited configuration options for Keycloak integration. Eventually, we plan to implement the following features:
+The following environment variables control the Keycloak integration:
 
--  [x] Keycloak token validation on the backend side, to remove the necessity to pass the deploy token in the UI
--  [ ] Add RBAC support to restrict redeploy support on a per-application basis
+| Variable                             | Description                                              | Default | Required    |
+|--------------------------------------|----------------------------------------------------------|---------|-------------|
+| `KEYCLOAK_ENABLED`                   | Enable Keycloak authentication                           | `false` | No          |
+| `KEYCLOAK_URL`                       | URL of the Keycloak instance                             |         | Conditional |
+| `KEYCLOAK_REALM`                     | Name of the Keycloak realm                               |         | Conditional |
+| `KEYCLOAK_CLIENT_ID`                 | Client ID registered in Keycloak                         |         | Conditional |
+| `KEYCLOAK_TOKEN_VALIDATION_INTERVAL` | Interval (in milliseconds) between token validations     | `10000` | No          |
+| `KEYCLOAK_PRIVILEGED_GROUPS`         | Comma-separated list of groups with elevated permissions  |         | Conditional |
+
+!!! note
+    The `KEYCLOAK_TOKEN_VALIDATION_INTERVAL` value is in milliseconds. The default of `10000` means token validity is checked every 10 seconds. Verify that this value is appropriate for your environment.
+
+All `Conditional` variables are required when `KEYCLOAK_ENABLED` is set to `true`.
+
+### Helm Chart Values
+
+When deploying with the Helm chart, set the Keycloak configuration in `values.yaml`:
+
+```yaml
+keycloak:
+  enabled: true
+  url: "https://keycloak.example.com"
+  realm: "your-realm"
+  clientId: "argo-watcher"
+  privilegedGroups: "platform-team,sre-team"
+```
+
+## Privileged Groups
+
+Users in privileged groups receive additional capabilities in the Web UI:
+
+- **Redeploy button** -- Visible on the task details page, allowing privileged users to trigger a redeployment.
+- **Deployment lock management** -- Privileged users can enable or disable the [deployment lock](git-integration.md#deployment-locking) via the Web UI.
+
+## Future Improvements
+
+- [ ] RBAC support to restrict redeployment on a per-application basis
