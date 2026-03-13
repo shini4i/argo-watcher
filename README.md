@@ -28,47 +28,46 @@ Argo Watcher introduces a control loop that monitors your Argo CD applications f
 
 ## Key Features
 
-*   **Deployment Tracking**: Monitors Argo CD applications and reports on their health and sync status.
-*   **CI Integration**: A lightweight client that can be integrated into any CI/CD pipeline to wait for a successful deployment.
-*   **Real-time Web UI**: A comprehensive dashboard to visualize deployment status, history, and application state.
-*   **Built-in GitOps Updater**: An optional, standalone service to update image tags in your GitOps repository, as an alternative to the Argo CD Image Updater.
-*   **Notifications**: Send deployment status notifications to webhooks.
-*   **Authentication**: Supports JWT and Keycloak for secure access to the server and UI.
+- **Deployment Tracking**: Monitors Argo CD applications and reports on their health and sync status.
+- **CI Integration**: A lightweight client that can be integrated into any CI/CD pipeline to wait for a successful deployment.
+- **Real-time Web UI**: A comprehensive dashboard to visualize deployment status, history, and application state.
+- **Built-in GitOps Updater**: An optional, standalone service to update image tags in your GitOps repository, as an alternative to the Argo CD Image Updater.
+- **Deployment Locking**: Schedule maintenance windows or manually lock deployments to prevent unintended changes.
+- **Notifications**: Send deployment status notifications to webhooks.
+- **Authentication**: Supports JWT and Keycloak for secure access to the server and UI.
 
 ## Architecture
 
 Argo Watcher consists of three main components: the **Server**, the **Client**, and the **Web UI**.
 
 ```mermaid
-graph TD
-    subgraph "Your Environment"
-        CI_Pipeline[CI Pipeline]
-        Git_Repo[GitOps Repository]
-        Image_Registry[Image Registry]
+graph LR
+    subgraph CI["CI Pipeline"]
+        Build["Build & Push"]
+        Client["Argo Watcher Client"]
     end
 
-    subgraph "Argo Watcher"
-        Watcher_Server[Server]
-        Watcher_Client[Client]
-        Watcher_WebUI[Web UI]
-        Watcher_Updater[GitOps Updater]
+    subgraph AW["Argo Watcher"]
+        Server["Server"]
+        Updater["GitOps Updater"]
+        WebUI["Web UI"]
     end
 
-    subgraph "Argo CD"
-        ArgoCD_API[Argo CD API]
-        ArgoCD[Argo CD]
+    subgraph ACD["Argo CD"]
+        API["API"]
+        Controller["Controller"]
     end
 
-    CI_Pipeline -- "1. Build & Push" --> Image_Registry
-    CI_Pipeline -- "2. Run" --> Watcher_Client
-    Watcher_Client -- "3. Create Task" --> Watcher_Server
-    Watcher_Server -- "4. (Optional) Update Image Tag" --> Watcher_Updater
-    Watcher_Updater -- "5. Commit" --> Git_Repo
-    Watcher_Server -- "7. Monitor" --> ArgoCD_API
-    ArgoCD -- "6. Sync" --> Git_Repo
-    Watcher_Server -- "8. Stream Status" --> Watcher_WebUI
-    Watcher_Server -- "8. Report Status" --> Watcher_Client
-    Watcher_Client -- "9. Exit Code" --> CI_Pipeline
+    GitRepo["GitOps Repo"]
+
+    Build --> Client
+    Client -- "Create Task" --> Server
+    Server -. "Update Tag (optional)" .-> Updater
+    Updater -- "Commit" --> GitRepo
+    Controller -- "Sync" --> GitRepo
+    Server -- "Poll Status" --> API
+    Server -- "Stream" --> WebUI
+    Server -- "Report Result" --> Client
 ```
 
 ## How It Works
@@ -80,6 +79,17 @@ graph TD
 5.  **Track & Report**: The Argo Watcher server continuously polls the Argo CD API. As the deployment progresses, it streams status updates to the Web UI and reports the final status (e.g., `deployed`, `failed`) back to the client.
 6.  **Complete**: The client exits with a status code that reflects the deployment outcome, allowing your CI pipeline to proceed or fail accordingly.
 
+## Quick Start
+
+Deploy the Argo Watcher server using Helm:
+
+```bash
+helm repo add shini4i https://shini4i.github.io/helm-charts
+helm install argo-watcher shini4i/argo-watcher -f values.yaml
+```
+
+Then add the client (`ghcr.io/shini4i/argo-watcher-client`) to your CI pipeline to report deployments. See the [installation guide](https://argo-watcher.readthedocs.io/en/latest/installation/) for full configuration details.
+
 ## Documentation
 
 For more detailed information on configuration, API usage, and advanced features, please visit our documentation at [argo-watcher.readthedocs.io](https://argo-watcher.readthedocs.io).
@@ -87,3 +97,9 @@ For more detailed information on configuration, API usage, and advanced features
 ## Contributing
 
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
+
+See the [Development Guide](https://argo-watcher.readthedocs.io/en/latest/development/) for setting up a local environment and understanding the project structure.
+
+## License
+
+This project is licensed under the [Apache License 2.0](LICENSE).
