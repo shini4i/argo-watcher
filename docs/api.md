@@ -66,12 +66,27 @@ POST /api/v1/tasks
 
 **Response (406 Not Acceptable):**
 
-Returned when the task is rejected (e.g., deployment lock is active or validation fails).
+Returned when the task is rejected (e.g., deployment lock is active or invalid payload).
 
 ```json
 {
   "status": "rejected",
-  "reason": "deployment lock is active"
+  "error": "lockdown is active, deployments are not accepted"
+}
+```
+
+**Response (500 Internal Server Error):**
+
+Returned when token validation fails due to an internal error.
+
+**Response (503 Service Unavailable):**
+
+Returned when the server cannot process the task (e.g., Argo CD is unreachable).
+
+```json
+{
+  "status": "down",
+  "error": "error details"
 }
 ```
 
@@ -90,8 +105,8 @@ GET /api/v1/tasks
 | Parameter        | Type     | Required | Description                                      |
 |------------------|----------|----------|--------------------------------------------------|
 | `app`            | `string` | No       | Filter by application name                       |
-| `from_timestamp` | `int`    | Yes      | Start of time range (Unix timestamp)             |
-| `to_timestamp`   | `int`    | No       | End of time range (Unix timestamp)               |
+| `from_timestamp` | `number` | No       | Start of time range (Unix timestamp)             |
+| `to_timestamp`   | `number` | No       | End of time range (Unix timestamp, defaults to now) |
 | `limit`          | `int`    | No       | Maximum number of tasks to return                |
 | `offset`         | `int`    | No       | Number of tasks to skip (for pagination)         |
 

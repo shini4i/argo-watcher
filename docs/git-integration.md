@@ -38,8 +38,8 @@ JWT is the recommended authentication method for the GitOps updater. It provides
   "sub": "argo-watcher-client",
   "cluster": "prod",
   "allowed_apps": ["app1", "app2"],
-  "iat": 1738692070,
-  "exp": 1770228106
+  "iat": 1773352800,
+  "exp": 1804888800
 }
 ```
 

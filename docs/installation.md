@@ -200,7 +200,7 @@ build:
     - /kaniko/executor
       --context "${CI_PROJECT_DIR}"
       --dockerfile "${CI_PROJECT_DIR}/Dockerfile"
-      --destination "${CI_REGISTRY_IMAGE}:${CI_COMMIT_TAG}"
+      --destination "${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}"
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
@@ -214,7 +214,7 @@ watch:
     COMMIT_AUTHOR: $GITLAB_USER_EMAIL
     PROJECT_NAME: $CI_PROJECT_PATH
     IMAGES: $CI_REGISTRY_IMAGE
-    IMAGE_TAG: $CI_COMMIT_TAG
+    IMAGE_TAG: $CI_COMMIT_SHORT_SHA
     DEBUG: "1"
   script:
     - /client
