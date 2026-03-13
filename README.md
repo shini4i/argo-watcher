@@ -28,12 +28,13 @@ Argo Watcher introduces a control loop that monitors your Argo CD applications f
 
 ## Key Features
 
-*   **Deployment Tracking**: Monitors Argo CD applications and reports on their health and sync status.
-*   **CI Integration**: A lightweight client that can be integrated into any CI/CD pipeline to wait for a successful deployment.
-*   **Real-time Web UI**: A comprehensive dashboard to visualize deployment status, history, and application state.
-*   **Built-in GitOps Updater**: An optional, standalone service to update image tags in your GitOps repository, as an alternative to the Argo CD Image Updater.
-*   **Notifications**: Send deployment status notifications to webhooks.
-*   **Authentication**: Supports JWT and Keycloak for secure access to the server and UI.
+- **Deployment Tracking**: Monitors Argo CD applications and reports on their health and sync status.
+- **CI Integration**: A lightweight client that can be integrated into any CI/CD pipeline to wait for a successful deployment.
+- **Real-time Web UI**: A comprehensive dashboard to visualize deployment status, history, and application state.
+- **Built-in GitOps Updater**: An optional, standalone service to update image tags in your GitOps repository, as an alternative to the Argo CD Image Updater.
+- **Deployment Locking**: Schedule maintenance windows or manually lock deployments to prevent unintended changes.
+- **Notifications**: Send deployment status notifications to webhooks.
+- **Authentication**: Supports JWT and Keycloak for secure access to the server and UI.
 
 ## Architecture
 
@@ -80,6 +81,17 @@ graph TD
 5.  **Track & Report**: The Argo Watcher server continuously polls the Argo CD API. As the deployment progresses, it streams status updates to the Web UI and reports the final status (e.g., `deployed`, `failed`) back to the client.
 6.  **Complete**: The client exits with a status code that reflects the deployment outcome, allowing your CI pipeline to proceed or fail accordingly.
 
+## Quick Start
+
+Deploy the Argo Watcher server using Helm:
+
+```bash
+helm repo add shini4i https://shini4i.github.io/helm-charts
+helm install argo-watcher shini4i/argo-watcher -f values.yaml
+```
+
+Then add the client (`ghcr.io/shini4i/argo-watcher-client`) to your CI pipeline to report deployments. See the [installation guide](https://argo-watcher.readthedocs.io/en/latest/installation/) for full configuration details.
+
 ## Documentation
 
 For more detailed information on configuration, API usage, and advanced features, please visit our documentation at [argo-watcher.readthedocs.io](https://argo-watcher.readthedocs.io).
@@ -87,3 +99,9 @@ For more detailed information on configuration, API usage, and advanced features
 ## Contributing
 
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
+
+See the [Development Guide](https://argo-watcher.readthedocs.io/en/latest/development/) for setting up a local environment and understanding the project structure.
+
+## License
+
+This project is licensed under the [Apache License 2.0](LICENSE).
