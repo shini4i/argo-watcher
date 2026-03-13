@@ -42,16 +42,17 @@ JWT is the recommended authentication method for the GitOps updater. It provides
 }
 ```
 
-| Field          | Description                                                                 |
-|----------------|-----------------------------------------------------------------------------|
-| `sub`          | Token subject. Can be any value (e.g., service name or team identifier).   |
-| `cluster`      | Cluster identifier. Can be any value.                                       |
-| `allowed_apps` | List of Argo CD application names this token can deploy to. Use `"*"` to allow all applications. |
-| `iat`          | Issued-at timestamp (Unix epoch). Use `date +%s` to generate.             |
-| `exp`          | Expiration timestamp (Unix epoch). Set to a reasonable duration.           |
+| Field          | Validated | Description                                                                 |
+|----------------|-----------|-----------------------------------------------------------------------------|
+| `exp`          | Yes       | Expiration timestamp (Unix epoch). **Required.** Tokens without `exp` are rejected. |
+| `iat`          | Yes       | Issued-at timestamp (Unix epoch). Tokens with a future `iat` are rejected. Use `date +%s` to generate. |
+| `nbf`          | Yes       | Not-before timestamp (Unix epoch). Optional. Enforced by the underlying JWT library -- tokens used before this time are rejected. |
+| `sub`          | No        | Token subject. Informational only (e.g., service name or team identifier). Not validated by the server. |
+| `cluster`      | No        | Cluster identifier. Informational only. Not validated by the server.        |
+| `allowed_apps` | No        | List of Argo CD application names this token can deploy to. Use `"*"` to allow all applications. |
 
 !!! note
-    Application-level filtering based on `allowed_apps` is not yet implemented and is expected in a future release.
+    Application-level filtering based on `allowed_apps` is not yet implemented and is expected in a future release. The `sub` and `cluster` claims are reserved for future use.
 
 ### Generating a JWT Token
 
@@ -60,7 +61,7 @@ You can use [jwt-cli](https://github.com/mike-engel/jwt-cli) to generate tokens:
 ```bash
 jwt encode \
   --secret="YOUR_JWT_SECRET" \
-  '{"sub":"argo-watcher-client","cluster":"prod","allowed_apps":["app1"],"iat":1738692070,"exp":1770228106}'
+  '{"sub":"argo-watcher-client","cluster":"prod","allowed_apps":["app1"],"iat":1773352800,"exp":1804888800}'
 ```
 
 Replace `YOUR_JWT_SECRET` with the value stored in the `JWT_SECRET` key of your Kubernetes secret. Update the `iat` and `exp` timestamps as appropriate.
@@ -212,7 +213,7 @@ curl -X DELETE https://argo-watcher.example.com/api/v1/deploy-lock
 ```
 
 !!! note
-    Direct API access to the deploy lock endpoints is only available when Keycloak integration is disabled. With Keycloak enabled, use the Web UI instead.
+    When Keycloak integration is enabled, a valid Keycloak token (i.e., any authenticated user) is required to use the deploy lock API endpoints.
 
 #### Via Web UI
 
@@ -221,7 +222,7 @@ Click the **Argo Watcher** logo in the Web UI and toggle the **Lockdown Mode** s
 ![Deployment Lock UI](https://raw.githubusercontent.com/shini4i/assets/main/src/argo-watcher/deployment-lock.png)
 
 !!! note
-    When Keycloak integration is enabled, you must be a member of a [privileged group](keycloak.md) to manage the deployment lock.
+    When Keycloak integration is enabled, you must be authenticated to manage the deployment lock.
 
 ## Migrating from Argo CD Image Updater
 
