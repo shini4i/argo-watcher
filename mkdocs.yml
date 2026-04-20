@@ -1,7 +1,8 @@
-site_name: Argo-Watcher
-site_url: https://github.com/shini4i/argo-watcher
-site_description: Documentation for Argo-Watcher project
+site_name: Argo Watcher
+site_url: https://argo-watcher.readthedocs.io
+site_description: Documentation for Argo Watcher - a feedback loop for your GitOps workflow
 site_author: Vadim Gedz
+copyright: Copyright &copy; 2023 - 2026 Vadim Gedz
 
 repo_url: https://github.com/shini4i/argo-watcher
 repo_name: shini4i/argo-watcher
@@ -16,16 +17,34 @@ theme:
     - navigation.instant
     - navigation.instant.progress
     - navigation.tabs
+    - navigation.top
+    - navigation.sections
     - search.suggest
+    - search.highlight
     - content.code.copy
+    - content.tabs.link
+  palette:
+    - scheme: default
+      primary: deep purple
+      accent: deep purple
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: deep purple
+      accent: deep purple
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
 
 nav:
   - Home: 'index.md'
   - Installation: 'installation.md'
   - Git Integration: 'git-integration.md'
-  - Development: "development.md"
-  - Keycloak: "keycloak.md"
-  - Notifications: "notifications.md"
+  - API Reference: 'api.md'
+  - Notifications: 'notifications.md'
+  - Keycloak: 'keycloak.md'
+  - Development: 'development.md'
 
 markdown_extensions:
   - pymdownx.tasklist:
@@ -35,9 +54,18 @@ markdown_extensions:
         - name: mermaid
           class: mermaid
           format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
   - attr_list
   - md_in_html
   - admonition
+  - pymdownx.details
+  - tables
+  - toc:
+      permalink: true
 
 plugins:
   - search
