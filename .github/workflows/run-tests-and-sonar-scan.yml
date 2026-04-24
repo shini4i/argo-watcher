@@ -1,6 +1,4 @@
 name: Run unit tests
-permissions:
-  contents: read
 on:
   push:
     branches:
@@ -18,15 +16,17 @@ jobs:
   security_scan:
     name: Security scan
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5.6.0
         with:
           go-version-file: go.mod
 
       - name: Install Task
-        uses: arduino/setup-task@v2
+        uses: arduino/setup-task@24c5e13bce349197642746563945fcdf9355e8f4  # v2.0.0
 
       - name: Install environment dependencies
         run: task install-deps
@@ -35,13 +35,15 @@ jobs:
         run: task docs
 
       - name: Run Gosec Security Scanner
-        uses: securego/gosec@master
+        uses: securego/gosec@5e5517beec77b8228ba43ec8d7cc22d82ed31924  # v2.25.0
         with:
           args: ./...
 
   test:
     name: Test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     services:
       postgres:
@@ -57,16 +59,16 @@ jobs:
           - 5432:5432
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5.6.0
         with:
           go-version-file: go.mod
 
       - name: Install Task
-        uses: arduino/setup-task@v2
+        uses: arduino/setup-task@24c5e13bce349197642746563945fcdf9355e8f4  # v2.0.0
 
       - name: Install environment dependencies
         run: task install-deps
@@ -87,7 +89,7 @@ jobs:
         run: task test
 
       - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@aa56896cf108bd10b5eb883cd1d24196da57f695  # v5.5.4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage.out
@@ -95,11 +97,13 @@ jobs:
   frontend_test:
     name: Frontend Tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
         with:
           node-version: 20
           cache: npm
@@ -114,7 +118,7 @@ jobs:
         run: npm run test -- --coverage
 
       - name: Upload frontend coverage to Codecov
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@aa56896cf108bd10b5eb883cd1d24196da57f695  # v5.5.4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: web/coverage/lcov.info
