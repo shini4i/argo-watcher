@@ -1,8 +1,6 @@
 module github.com/shini4i/argo-watcher
 
-go 1.25.0
-
-toolchain go1.25.4
+go 1.25.9
 
 require (
 	github.com/avast/retry-go/v4 v4.7.0
