@@ -92,4 +92,12 @@ describe('StatusTabs', () => {
     expect(screen.getByText('7')).toBeInTheDocument();
     expect(screen.queryByText('3+')).toBeNull();
   });
+
+  it('does not suffix loading-state counts when data is undefined', () => {
+    useGetListMock.mockReturnValue({ data: undefined, total: 5000 });
+    render(<StatusTabs value={null} onChange={() => {}} />);
+    const counts = screen.getAllByText('0');
+    expect(counts.length).toBeGreaterThan(0);
+    expect(screen.queryByText('0+')).toBeNull();
+  });
 });

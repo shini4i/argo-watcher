@@ -56,8 +56,7 @@ const useTaskStatusCounts = (): StatusCountSnapshot => {
       if (!task.status) return;
       counts.set(task.status, (counts.get(task.status) ?? 0) + 1);
     });
-    const loaded = data?.length ?? 0;
-    const truncated = typeof total === 'number' && loaded < total;
+    const truncated = Array.isArray(data) && typeof total === 'number' && data.length < total;
     return { counts, truncated };
   }, [data, total]);
 };
