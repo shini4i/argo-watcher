@@ -48,8 +48,15 @@ const reducer = (state: TaskListState, action: Action): TaskListState => {
       next.delete(action.reason);
       return { ...state, pausedReasons: next };
     }
-    case 'setInterval':
-      return { ...state, intervalSec: action.intervalSec, lastRefetchedAt: Date.now() };
+    case 'setInterval': {
+      // Reject NaN/negative values from corrupted localStorage or callers; 0
+      // is the legitimate "Off" sentinel so the lower bound is inclusive.
+      const next = Number(action.intervalSec);
+      if (!Number.isFinite(next) || next < 0) {
+        return state;
+      }
+      return { ...state, intervalSec: next, lastRefetchedAt: Date.now() };
+    }
     case 'markRefetched':
       return { ...state, lastRefetchedAt: action.at ?? Date.now() };
     case 'setSearchQuery':
