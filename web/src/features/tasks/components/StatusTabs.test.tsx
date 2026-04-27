@@ -5,7 +5,7 @@ import { StatusTabs } from './StatusTabs';
 const useGetListMock = vi.fn();
 
 vi.mock('react-admin', () => ({
-  useListContext: () => ({ total: 412 }),
+  useListContext: () => ({ total: 412, filterValues: { app: 'demo' } }),
   useGetList: (...args: unknown[]) => useGetListMock(...args),
 }));
 
@@ -57,12 +57,13 @@ describe('StatusTabs', () => {
     expect(onChange).toHaveBeenCalledWith('in progress');
   });
 
-  it('issues a single useGetList query (no status filter) for all counts', () => {
+  it('issues a single useGetList query inheriting parent filters minus status', () => {
     render(<StatusTabs value={null} onChange={() => {}} />);
     expect(useGetListMock).toHaveBeenCalledTimes(1);
     const [resource, params] = useGetListMock.mock.calls[0];
     expect(resource).toBe('tasks');
-    expect(params.filter).toBeUndefined();
+    expect(params.filter).toEqual({ app: 'demo' });
+    expect(params.filter.status).toBeUndefined();
     expect(params.pagination).toEqual({ page: 1, perPage: 1000 });
   });
 

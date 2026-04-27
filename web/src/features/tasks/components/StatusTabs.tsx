@@ -43,10 +43,28 @@ interface StatusCountSnapshot {
   readonly truncated: boolean;
 }
 
+/**
+ * Strips the status entry from the parent list filter so per-status counts
+ * reflect every status (instead of only the currently selected pill) while
+ * still respecting the user's app/time-range filters.
+ */
+const dropStatusFilter = (filter: Record<string, unknown>): Record<string, unknown> => {
+  if (!('status' in filter)) return filter;
+  const { status: _status, ...rest } = filter;
+  return rest;
+};
+
 const useTaskStatusCounts = (): StatusCountSnapshot => {
+  const { filterValues } = useListContext<Task>();
+  // Re-issue the count query whenever the parent's non-status filters change so
+  // counts stay scoped to the same tasks the All pill reports via listTotal.
+  const filter = useMemo(
+    () => dropStatusFilter((filterValues ?? {}) as Record<string, unknown>),
+    [filterValues],
+  );
   const { data, total } = useGetList<Task>(
     'tasks',
-    { pagination: { page: 1, perPage: TASK_COUNT_PAGE_SIZE } },
+    { pagination: { page: 1, perPage: TASK_COUNT_PAGE_SIZE }, filter },
     STATUS_QUERY_OPTS,
   );
 
