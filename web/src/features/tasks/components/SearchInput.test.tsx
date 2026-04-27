@@ -129,5 +129,44 @@ describe('SearchInput', () => {
       await waitFor(() => expect(screen.queryByLabelText('Search tasks')).toBeNull());
       expect(screen.getByLabelText('Open search')).toBeInTheDocument();
     });
+
+    it('does not collapse when viewport crosses 1200px during focused keystroke (focus gate)', async () => {
+      renderWith('');
+      fireEvent.click(screen.getByLabelText('Open search'));
+
+      const input = await screen.findByLabelText('Search tasks');
+      act(() => {
+        (input as HTMLInputElement).focus();
+      });
+
+      fireEvent.change(input, { target: { value: 'checkout' } });
+      expect(screen.getByLabelText('Search tasks')).toBeInTheDocument();
+
+      act(() => {
+        setViewportWide(true);
+        window.dispatchEvent(new Event('resize'));
+      });
+
+      await waitFor(() => {
+        expect(screen.getByLabelText('Search tasks')).toBeInTheDocument();
+      });
+
+      act(() => {
+        setViewportWide(false);
+        window.dispatchEvent(new Event('resize'));
+      });
+
+      await waitFor(() => {
+        expect(screen.getByLabelText('Search tasks')).toBeInTheDocument();
+      });
+
+      act(() => {
+        (input as HTMLInputElement).blur();
+      });
+
+      fireEvent.change(input, { target: { value: '' } });
+
+      await waitFor(() => expect(screen.queryByLabelText('Search tasks')).toBeNull());
+    });
   });
 });
