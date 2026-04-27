@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Stack } from '@mui/material';
 import { useListContext } from 'react-admin';
 import {
@@ -95,8 +95,18 @@ export const RecentTasksToolbar = ({ storageKey = 'recentTasks' }: { storageKey?
     setSearchQuery('');
   }, [apply, setSearchQuery]);
 
-  // Expose handleClearAll to the Datagrid empty CTA via TaskListContext.
-  useEffect(() => registerClearAll(handleClearAll), [registerClearAll, handleClearAll]);
+  // `apply` re-identifies on every searchParams/filterValues change, so
+  // re-registering the handler each render would thrash the context ref and
+  // briefly leave Datagrid's "Clear filters" CTA pointing at null. Park the
+  // latest handler in a ref and register a stable indirector exactly once.
+  const clearAllHandlerRef = useRef(handleClearAll);
+  useEffect(() => {
+    clearAllHandlerRef.current = handleClearAll;
+  });
+  useEffect(
+    () => registerClearAll(() => clearAllHandlerRef.current()),
+    [registerClearAll],
+  );
 
   return (
     <Stack spacing={0.5} sx={{ width: '100%' }}>
@@ -113,7 +123,7 @@ export const RecentTasksToolbar = ({ storageKey = 'recentTasks' }: { storageKey?
             <SearchInput
               value={searchQuery}
               onChange={setSearchQuery}
-              placeholder="Search app, author, image"
+              placeholder="Filter loaded rows…"
             />
             <RefreshControl onRefresh={handleRefresh} />
           </>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Stack } from '@mui/material';
 import { useListContext } from 'react-admin';
 import type { Task } from '../../../data/types';
@@ -91,7 +91,17 @@ export const HistoryFilters = () => {
     apply({ app: '', start: null, end: null });
   }, [apply]);
 
-  useEffect(() => registerClearAll(handleClearAll), [registerClearAll, handleClearAll]);
+  // `apply` re-identifies on every searchParams/filterValues change; park the
+  // handler in a ref and register a stable indirector once so the Datagrid
+  // "Clear filters" CTA does not race a transient null ref.
+  const clearAllHandlerRef = useRef(handleClearAll);
+  useEffect(() => {
+    clearAllHandlerRef.current = handleClearAll;
+  });
+  useEffect(
+    () => registerClearAll(() => clearAllHandlerRef.current()),
+    [registerClearAll],
+  );
 
   return (
     <Stack spacing={0.5} sx={{ width: '100%' }}>
