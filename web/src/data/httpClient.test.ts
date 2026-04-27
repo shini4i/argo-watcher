@@ -115,6 +115,19 @@ describe('httpClient', () => {
     await expect(httpClient('/status')).rejects.toThrow('Failed to parse server response');
   });
 
+  it('does not throw on 2xx responses that carry an error field', async () => {
+    mockFetch.mockResolvedValue(
+      new Response(JSON.stringify({ status: 'degraded', error: 'argocd is unavailable' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    const response = await httpClient<{ status: string; error: string }>('/status');
+    expect(response.status).toBe(200);
+    expect(response.data).toEqual({ status: 'degraded', error: 'argocd is unavailable' });
+  });
+
   it('prefers descriptive fields when building HttpErrors', async () => {
     mockFetch.mockResolvedValueOnce(
       new Response(JSON.stringify({ status: 'custom-status' }), {

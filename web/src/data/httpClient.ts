@@ -128,10 +128,6 @@ export const httpClient = async <T>(path: string, options: HttpClientOptions = {
     throw buildHttpError(response.status, data, response.statusText);
   }
 
-  if (data && typeof data === 'object' && 'error' in data && data.error) {
-    throw buildHttpError(response.status, data, response.statusText);
-  }
-
   return {
     data,
     status: response.status,

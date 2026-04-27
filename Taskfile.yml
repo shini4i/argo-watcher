@@ -75,7 +75,7 @@ tasks:
       CGO_ENABLED: 0
     cmds:
       - echo "===> Building the project"
-      - go build -ldflags="-s -w -X github.com/shini4i/argo-watcher/cmd/argo-watcher/server.version=local" -o argo-watcher ./cmd/argo-watcher
+      - go build -ldflags="-s -w -X github.com/shini4i/argo-watcher/internal/server.version=local" -o argo-watcher ./cmd/argo-watcher
       - echo "===> Done"
     sources:
       - cmd/argo-watcher/**/*.go
