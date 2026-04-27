@@ -31,7 +31,7 @@ describe('dataProvider', () => {
     vi.useRealTimers();
   });
 
-  it('falls back to total=0 when the backend omits it (empty result)', async () => {
+  it('falls back to total=0 when the backend omits it', async () => {
     // Go's `omitempty` drops Total=0 from the wire — coalescing to 0 keeps
     // react-admin from rendering "page 2 of nothing" on an empty result set.
     const fetch = mockFetch().mockResolvedValue(

@@ -55,8 +55,8 @@ const selectListWindow = (params: GetListParams) => {
   const toCandidate = filter.end ?? filter.to;
 
   return {
-    from: fromCandidate ? toUnixSeconds(fromCandidate, defaultFrom) : defaultFrom,
-    to: toCandidate ? toUnixSeconds(toCandidate, nowSeconds) : undefined,
+    from: fromCandidate != null ? toUnixSeconds(fromCandidate, defaultFrom) : defaultFrom,
+    to: toCandidate != null ? toUnixSeconds(toCandidate, nowSeconds) : undefined,
     app: filter.app,
     status: filter.status,
   };
