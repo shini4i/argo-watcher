@@ -105,7 +105,7 @@ GET /api/v1/tasks
 | Parameter        | Type     | Required | Description                                      |
 |------------------|----------|----------|--------------------------------------------------|
 | `app`            | `string` | No       | Filter by application name                       |
-| `status`         | `string` | No       | Filter by task status. Accepted values: `accepted`, `in progress`, `deployed`, `failed`, `app not found`, `aborted`, `timed out`. Returns `400` on any other value. |
+| `status`         | `string` | No       | Filter by task status. Accepted values: `accepted`, `in progress`, `deployed`, `failed`, `app not found`, `aborted`, `argocd is unavailable`, `cannot connect to database`, `failed to login to argocd`. Returns `400` on any other value. |
 | `from_timestamp` | `number` | No       | Start of time range (Unix timestamp)             |
 | `to_timestamp`   | `number` | No       | End of time range (Unix timestamp, defaults to now) |
 | `limit`          | `int`    | No       | Maximum number of tasks to return. Clamped to 1–1000; values ≤ 0 or > 1000 default to 1000. |
@@ -149,7 +149,7 @@ GET /api/v1/tasks/{id}
 }
 ```
 
-Possible status values: `accepted`, `in progress`, `deployed`, `failed`, `app not found`, `timed out`.
+Possible status values: `accepted`, `in progress`, `deployed`, `failed`, `app not found`, `aborted`, `argocd is unavailable`, `cannot connect to database`, `failed to login to argocd`.
 
 **Response (404 Not Found):**
 
