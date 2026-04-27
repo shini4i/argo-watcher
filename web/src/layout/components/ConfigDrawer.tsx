@@ -44,7 +44,11 @@ export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
   const privilegedGroups: readonly string[] =
     (permissions as { privilegedGroups?: string[] })?.privilegedGroups ?? [];
   const privileged = hasPrivilegedAccess(groups, privilegedGroups);
-  const canToggleLock = keycloakEnabled ? privileged : true;
+  // Default-deny while keycloakEnabled is unknown (null = config still loading)
+  // so a non-privileged user cannot toggle the lock during the brief startup
+  // window before the /api/v1/config request resolves.
+  const canToggleLock =
+    keycloakEnabled === false || (keycloakEnabled === true && privileged);
 
   /** Toggles the deploy lock via the REST API and surfaces user feedback. */
   const handleDeployLockToggle = useCallback(async () => {

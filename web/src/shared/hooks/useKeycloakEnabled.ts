@@ -8,10 +8,13 @@ interface ServerConfigResponse {
 }
 
 /**
- * Fetches server configuration to determine whether Keycloak authentication is enabled.
+ * Fetches server configuration to determine whether Keycloak authentication
+ * is enabled. Returns `null` while the request is in flight so callers can
+ * gate privileged actions conservatively (treating "unknown" as "denied")
+ * instead of allowing a brief permissive window before the response lands.
  */
-export const useKeycloakEnabled = () => {
-  const [enabled, setEnabled] = useState<boolean>(false);
+export const useKeycloakEnabled = (): boolean | null => {
+  const [enabled, setEnabled] = useState<boolean | null>(null);
 
   useEffect(() => {
     let subscribed = true;
