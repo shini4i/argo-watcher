@@ -8,7 +8,7 @@ const {
   PaginationMock,
   TaskListLayoutMock,
   HistoryFiltersMock,
-  NoTasksPlaceholderMock,
+  EmptyStateMock,
   TasksDatagridMock,
 } = vi.hoisted(() => {
   const layoutCallsInternal: Array<Record<string, unknown>> = [];
@@ -23,8 +23,8 @@ const {
   };
 
   const filters = () => <div data-testid="history-filters" />;
-  const placeholder = (props: Record<string, unknown>) => (
-    <div data-testid="history-placeholder" {...props} />
+  const emptyState = (props: Record<string, unknown>) => (
+    <div data-testid="history-empty-state" {...props} />
   );
   const datagrid = () => <div data-testid="history-datagrid" />;
 
@@ -33,7 +33,7 @@ const {
     PaginationMock: pagination,
     TaskListLayoutMock: taskListLayout,
     HistoryFiltersMock: filters,
-    NoTasksPlaceholderMock: placeholder,
+    EmptyStateMock: emptyState,
     TasksDatagridMock: datagrid,
   };
 });
@@ -50,8 +50,8 @@ vi.mock('./components/HistoryFilters', () => ({
   HistoryFilters: HistoryFiltersMock,
 }));
 
-vi.mock('./components/NoTasksPlaceholder', () => ({
-  NoTasksPlaceholder: NoTasksPlaceholderMock,
+vi.mock('./components/EmptyState', () => ({
+  EmptyState: EmptyStateMock,
 }));
 
 vi.mock('./components/TasksDatagrid', () => ({
@@ -91,6 +91,8 @@ describe('HistoryTasksList', () => {
     expect(headerNodes).toHaveLength(1);
 
     const emptyComponent = props.emptyComponent;
+    expect(emptyComponent.type).toBe(EmptyStateMock);
+    expect(emptyComponent.props.icon).toBe('filter');
     expect(emptyComponent.props.title).toBe('No history yet');
     expect(emptyComponent.props.description).toMatch(/Adjust filters/);
 

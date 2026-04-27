@@ -3,7 +3,7 @@ import { describeTaskStatus, type TaskStatusPresentation } from './statusPresent
 
 type StatusExpectation = Pick<
   TaskStatusPresentation,
-  'label' | 'chipColor' | 'timelineDotColor' | 'reasonSeverity'
+  'label' | 'displayLabel' | 'chipColor' | 'timelineDotColor' | 'reasonSeverity'
 >;
 
 interface StatusCase {
@@ -14,20 +14,39 @@ interface StatusCase {
 const statusCases: StatusCase[] = [
   {
     status: null,
-    expected: { label: 'Unknown', chipColor: 'default', timelineDotColor: 'default', reasonSeverity: 'info' },
+    expected: {
+      label: 'Unknown',
+      displayLabel: 'Unknown',
+      chipColor: 'default',
+      timelineDotColor: 'default',
+      reasonSeverity: 'info',
+    },
   },
   {
     status: 'deployed',
-    expected: { label: 'Deployed', chipColor: 'success', timelineDotColor: 'success', reasonSeverity: 'success' },
+    expected: {
+      label: 'Deployed',
+      displayLabel: 'Deployed',
+      chipColor: 'success',
+      timelineDotColor: 'success',
+      reasonSeverity: 'success',
+    },
   },
   {
     status: 'failed',
-    expected: { label: 'Failed', chipColor: 'error', timelineDotColor: 'error', reasonSeverity: 'error' },
+    expected: {
+      label: 'Failed',
+      displayLabel: 'Failed',
+      chipColor: 'error',
+      timelineDotColor: 'error',
+      reasonSeverity: 'error',
+    },
   },
   {
     status: 'in progress',
     expected: {
       label: 'In Progress',
+      displayLabel: 'Running',
       chipColor: 'warning',
       timelineDotColor: 'warning',
       reasonSeverity: 'warning',
@@ -37,6 +56,7 @@ const statusCases: StatusCase[] = [
     status: 'app not found',
     expected: {
       label: 'App Not Found',
+      displayLabel: 'Not found',
       chipColor: 'default',
       timelineDotColor: 'info',
       reasonSeverity: 'info',
@@ -44,7 +64,13 @@ const statusCases: StatusCase[] = [
   },
   {
     status: 'custom',
-    expected: { label: 'custom', chipColor: 'default', timelineDotColor: 'default', reasonSeverity: 'info' },
+    expected: {
+      label: 'custom',
+      displayLabel: 'custom',
+      chipColor: 'default',
+      timelineDotColor: 'default',
+      reasonSeverity: 'info',
+    },
   },
 ];
 
@@ -53,10 +79,13 @@ describe('describeTaskStatus', () => {
     it(`maps status ${String(status)} to presentation metadata`, () => {
       const presentation = describeTaskStatus(status ?? undefined);
       expect(presentation.label).toBe(expected.label);
+      expect(presentation.displayLabel).toBe(expected.displayLabel);
       expect(presentation.chipColor).toBe(expected.chipColor);
       expect(presentation.timelineDotColor).toBe(expected.timelineDotColor);
       expect(presentation.reasonSeverity).toBe(expected.reasonSeverity);
       expect(presentation.icon).toBeTruthy();
+      expect(presentation.pillBg).toMatch(/^(rgba?\(|#)/);
+      expect(presentation.pillFg).toMatch(/^(rgba?\(|#)/);
     });
   }
 });

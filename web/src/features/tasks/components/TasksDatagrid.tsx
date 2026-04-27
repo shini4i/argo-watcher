@@ -1,10 +1,12 @@
-import { Button, Chip, Link, Stack, Typography } from '@mui/material';
+import { Button, Link, Stack, Typography } from '@mui/material';
 import { alpha, type SxProps, type Theme } from '@mui/material/styles';
 import { Datagrid, FunctionField, TextField, useRecordContext } from 'react-admin';
 import { Link as RouterLink } from 'react-router-dom';
 import type { Task } from '../../../data/types';
 import { formatDuration, formatRelativeTime, getBrowserWindow } from '../../../shared/utils';
-import { describeTaskStatus } from '../utils/statusPresentation';
+import { tokens } from '../../../theme/tokens';
+import { EmptyCell } from './EmptyCell';
+import { StatusPill } from './StatusPill';
 import { useEffect, useState } from 'react';
 import { useTimezone } from '../../../shared/providers/TimezoneProvider';
 
@@ -27,13 +29,23 @@ export const TasksDatagrid = () => {
       <TextField source="author" label="Author" />
       <FunctionField
         label="Status"
-        render={(record: Task) => <TaskStatusChip status={record.status} />}
+        render={(record: Task) => <StatusPill status={record.status} />}
       />
-      <FunctionField label="Created" render={(record: Task) => formatDate(record.created)} sortBy="created" />
-      <FunctionField label="Updated" render={(record: Task) => formatRelativeTime(record.updated)} />
+      <FunctionField
+        label="Created"
+        render={(record: Task) => formatDate(record.created)}
+        sortBy="created"
+        cellClassName="cell-time"
+      />
+      <FunctionField
+        label="Updated"
+        render={(record: Task) => formatRelativeTime(record.updated)}
+        cellClassName="cell-time"
+      />
       <FunctionField
         label="Duration"
         render={(record: Task) => <DurationField record={record} />}
+        cellClassName="cell-time"
       />
       <FunctionField
         label="Images"
@@ -43,6 +55,7 @@ export const TasksDatagrid = () => {
       <FunctionField
         label="Details"
         sortable={false}
+        cellClassName="cell-actions"
         render={(record: Task) => (
           <Button component={RouterLink} to={`/task/${record.id}`} size="small" variant="outlined">
             View
@@ -53,37 +66,46 @@ export const TasksDatagrid = () => {
   );
 };
 
-const datagridSx: SxProps<Theme> = theme => ({
-  '& .RaDatagrid-headerCell': {
-    textTransform: 'uppercase',
-    fontSize: 11,
-    letterSpacing: 0.8,
-    color: theme.palette.text.secondary,
-    borderBottom: `1px solid ${theme.palette.divider}`,
-  },
-  '& .RaDatagrid-row': {
-    borderBottom: `1px solid ${theme.palette.divider}`,
-    transition: theme.transitions.create('background-color', {
-      duration: theme.transitions.duration.shortest,
-    }),
-    '&:hover': {
+const datagridSx: SxProps<Theme> = theme => {
+  const headerBg = theme.palette.mode === 'dark' ? tokens.surface2Dark : tokens.surface2;
+  const rowHover = theme.palette.mode === 'dark' ? tokens.rowHoverDark : tokens.rowHoverLight;
+
+  return {
+    '& .RaDatagrid-headerCell': {
+      position: 'sticky',
+      top: 0,
+      zIndex: 1,
+      backgroundColor: headerBg,
+      textTransform: 'uppercase',
+      fontSize: 11,
+      letterSpacing: 0.8,
+      color: theme.palette.text.secondary,
+      borderBottom: `1px solid ${theme.palette.divider}`,
+    },
+    '& .RaDatagrid-row': {
+      borderBottom: `1px solid ${theme.palette.divider}`,
+      transition: theme.transitions.create('background-color', {
+        duration: theme.transitions.duration.shortest,
+      }),
+      '&:hover': {
+        backgroundColor: rowHover,
+      },
+    },
+    '& .RaDatagrid-cell': {
+      paddingTop: theme.spacing(1.25),
+      paddingBottom: theme.spacing(1.25),
+    },
+    '& .cell-time': {
+      fontVariantNumeric: 'tabular-nums',
+    },
+    '& .cell-actions': {
+      textAlign: 'right',
+    },
+    // Keep a soft hover wash even when MUI's default theme tries to override it.
+    '& .RaDatagrid-rowEven:hover, & .RaDatagrid-rowOdd:hover': {
       backgroundColor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.08 : 0.02),
     },
-  },
-  '& .RaDatagrid-cell': {
-    paddingTop: theme.spacing(1.25),
-    paddingBottom: theme.spacing(1.25),
-  },
-  '& .RaDatagrid-cell:last-of-type': {
-    textAlign: 'right',
-  },
-});
-
-const TaskStatusChip = ({ status }: { status?: string | null }) => {
-  const presentation = describeTaskStatus(status);
-  return (
-    <Chip size="small" label={presentation.label} color={presentation.chipColor} icon={presentation.icon} />
-  );
+  };
 };
 
 /**
@@ -125,7 +147,7 @@ const StatusReasonContent = ({ record }: { record?: Task | null }) => {
  */
 const ProjectReference = ({ project }: { project?: string | null }) => {
   if (!project) {
-    return <Typography variant="body2">—</Typography>;
+    return <EmptyCell />;
   }
 
   const isUrl = project.startsWith('http://') || project.startsWith('https://');
@@ -147,11 +169,11 @@ const ProjectReference = ({ project }: { project?: string | null }) => {
  */
 const ImagesList = ({ images }: { images: Task['images'] }) => {
   if (!images?.length) {
-    return <Typography variant="body2">—</Typography>;
+    return <EmptyCell />;
   }
 
   return (
-    <Stack spacing={0.25} sx={{ fontFamily: 'monospace' }}>
+    <Stack spacing={0.25} sx={{ fontFamily: tokens.fontMono }}>
       {images.map((image, index) => (
         <Typography key={`${image.image}:${image.tag}:${index}`} variant="body2" component="code">
           {image.image}:{image.tag}

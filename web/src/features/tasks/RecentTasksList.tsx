@@ -3,7 +3,7 @@ import { Pagination } from 'react-admin';
 import { TasksDatagrid } from './components/TasksDatagrid';
 import { RecentTasksToolbar } from './components/RecentTasksToolbar';
 import { TaskListLayout } from './components/TaskListLayout';
-import { NoTasksPlaceholder } from './components/NoTasksPlaceholder';
+import { EmptyState } from './components/EmptyState';
 
 const STORAGE_KEY_PER_PAGE = 'recentTasks.perPage';
 const DEFAULT_PER_PAGE = 25;
@@ -27,7 +27,8 @@ export const RecentTasksList = () => {
       defaultPerPage={DEFAULT_PER_PAGE}
       header={<RecentTasksToolbar storageKey="recentTasks.app" />}
       emptyComponent={
-        <NoTasksPlaceholder
+        <EmptyState
+          icon="inbox"
           title="No recent tasks so far…"
           description="Kick off a deployment and we’ll list it here automatically."
         />

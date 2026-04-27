@@ -3,7 +3,7 @@ import { Pagination } from 'react-admin';
 import { TasksDatagrid } from './components/TasksDatagrid';
 import { HistoryFilters } from './components/HistoryFilters';
 import { TaskListLayout } from './components/TaskListLayout';
-import { NoTasksPlaceholder } from './components/NoTasksPlaceholder';
+import { EmptyState } from './components/EmptyState';
 
 const STORAGE_KEY_PER_PAGE = 'historyTasks.perPage';
 
@@ -24,7 +24,8 @@ export const HistoryTasksList = () => {
       perPageStorageKey={STORAGE_KEY_PER_PAGE}
       header={[<HistoryFilters key="filters" />]}
       emptyComponent={
-        <NoTasksPlaceholder
+        <EmptyState
+          icon="filter"
           title="No history yet"
           description="Adjust filters or wait for past deployments to sync."
         />
