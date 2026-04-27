@@ -22,13 +22,13 @@ describe('RefreshControl', () => {
     expect(screen.getByText(/Live · 10s/)).toBeInTheDocument();
   });
 
-  it('fires onRefresh when the countdown reaches zero', () => {
+  it('fires onRefresh exactly once when the countdown reaches zero', () => {
     const onRefresh = vi.fn();
     renderWithProvider(<RefreshControl onRefresh={onRefresh} />, 2);
     act(() => {
       vi.advanceTimersByTime(2000);
     });
-    expect(onRefresh).toHaveBeenCalled();
+    expect(onRefresh).toHaveBeenCalledTimes(1);
   });
 
   it('shows "Paused" label when interval is Off', () => {
