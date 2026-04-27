@@ -105,7 +105,7 @@ const getList = async (params: GetListParams): Promise<GetListResult<Task>> => {
     console.warn(`Tasks endpoint reported a soft error: ${String(response.error).slice(0, 200)}`);
   }
 
-  return toRaListResult(response, params);
+  return toRaListResult(response);
 };
 
 /** Retrieves a single task detail, throwing when the backend reports an error. */
