@@ -31,14 +31,22 @@ const STATUS_QUERY_OPTS = {
 
 /**
  * Single `useGetList` call (no status filter) with a wide page so we can
- * group statuses client-side. Cached for 30 s like the previous per-tab
- * queries. The data reuses the same query key as long as no status filter
- * is set, so callers that already paged through `tasks` share the cache.
+ * group statuses client-side. Cached for 30 s. When the deployment has more
+ * tasks than `perPage`, `data.length < total` and the returned `truncated`
+ * flag tells the caller to append a "+" so the user knows the pill is a
+ * lower bound rather than an exact count.
  */
-const useTaskStatusCounts = (): Map<string, number> => {
-  const { data } = useGetList<Task>(
+const TASK_COUNT_PAGE_SIZE = 1000;
+
+interface StatusCountSnapshot {
+  readonly counts: Map<string, number>;
+  readonly truncated: boolean;
+}
+
+const useTaskStatusCounts = (): StatusCountSnapshot => {
+  const { data, total } = useGetList<Task>(
     'tasks',
-    { pagination: { page: 1, perPage: 1000 } },
+    { pagination: { page: 1, perPage: TASK_COUNT_PAGE_SIZE } },
     STATUS_QUERY_OPTS,
   );
 
@@ -48,9 +56,13 @@ const useTaskStatusCounts = (): Map<string, number> => {
       if (!task.status) return;
       counts.set(task.status, (counts.get(task.status) ?? 0) + 1);
     });
-    return counts;
-  }, [data]);
+    const loaded = data?.length ?? 0;
+    const truncated = typeof total === 'number' && loaded < total;
+    return { counts, truncated };
+  }, [data, total]);
 };
+
+const formatCount = (n: number, truncated: boolean) => (truncated ? `${n}+` : String(n));
 
 /**
  * Pill-tab row for filtering the recent list by status. The "All" total comes
@@ -60,7 +72,7 @@ const useTaskStatusCounts = (): Map<string, number> => {
 export const StatusTabs = ({ value, onChange }: StatusTabsProps) => {
   const theme = useTheme();
   const { total: listTotal = 0 } = useListContext<Task>();
-  const statusCounts = useTaskStatusCounts();
+  const { counts: statusCounts, truncated } = useTaskStatusCounts();
 
   const counts: Record<string, number> = {
     all: listTotal,
@@ -85,6 +97,10 @@ export const StatusTabs = ({ value, onChange }: StatusTabsProps) => {
       {TABS.map(tab => {
         const isActive = (value ?? null) === (tab.id ?? null);
         const count = counts[tab.id ?? 'all'] ?? 0;
+        // The "All" pill comes from useListContext.total which is exact for
+        // the visible page; only the status-grouped pills are subject to the
+        // perPage truncation, so don't suffix the All count with "+".
+        const showTruncation = tab.id !== null && truncated;
         return (
           <button
             type="button"
@@ -132,7 +148,7 @@ export const StatusTabs = ({ value, onChange }: StatusTabsProps) => {
                 color: isActive ? tokens.accent : 'inherit',
               }}
             >
-              {count}
+              {formatCount(count, showTruncation)}
             </Typography>
           </button>
         );

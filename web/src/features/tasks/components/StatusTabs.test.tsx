@@ -72,4 +72,24 @@ describe('StatusTabs', () => {
     const counts = screen.getAllByText('0');
     expect(counts.length).toBeGreaterThanOrEqual(2);
   });
+
+  it('appends "+" to status counts when the loaded page is truncated', () => {
+    useGetListMock.mockReturnValue({ data: sampleData, total: 5000 });
+    render(<StatusTabs value={null} onChange={() => {}} />);
+
+    // Status pills surface the lower-bound suffix; the All pill comes from
+    // useListContext.total and stays exact.
+    expect(screen.getByText('3+')).toBeInTheDocument(); // In progress
+    expect(screen.getByText('7+')).toBeInTheDocument(); // Failed
+    expect(screen.getByText('412')).toBeInTheDocument(); // All — no "+"
+    expect(screen.queryByText('412+')).toBeNull();
+  });
+
+  it('does not suffix counts when data.length matches total', () => {
+    useGetListMock.mockReturnValue({ data: sampleData, total: sampleData.length });
+    render(<StatusTabs value={null} onChange={() => {}} />);
+    expect(screen.getByText('3')).toBeInTheDocument();
+    expect(screen.getByText('7')).toBeInTheDocument();
+    expect(screen.queryByText('3+')).toBeNull();
+  });
 });

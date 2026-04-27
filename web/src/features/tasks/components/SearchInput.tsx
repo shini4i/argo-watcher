@@ -61,10 +61,13 @@ export const SearchInput = ({
 
   // Keep the expanded/collapsed state in sync with the viewport and the
   // active value. A non-empty value forces expansion so the query is always
-  // visible — collapsing it would hide the user's own input.
+  // visible — collapsing it would hide the user's own input. While the user
+  // is typing we leave `expanded` alone; otherwise backspacing the last char
+  // (value → '') would collapse the input mid-keystroke on narrow viewports.
   useEffect(() => {
+    if (focused) return;
     setExpanded(isWide || Boolean(value));
-  }, [isWide, value]);
+  }, [isWide, value, focused]);
 
   usePauseRefresh('search', pauseActive);
 

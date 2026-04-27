@@ -63,24 +63,14 @@ const selectListWindow = (params: GetListParams) => {
 };
 
 /**
- * Normalises backend task list responses into React-admin's list structure while
- * keeping pagination totals aligned with what the UI can actually display.
+ * Converts backend task list responses into React-admin's list structure.
+ * The backend always returns `total` for non-empty pages; when the result
+ * set is empty Go's `omitempty` drops the field, so we coalesce to 0.
  */
-/** Converts backend pagination metadata into the structure expected by React-admin. */
-const toRaListResult = (response: TasksResponse, params: GetListParams): GetListResult<Task> => {
-  const tasks = response.tasks ?? [];
-  const pagination = params.pagination ?? { page: 1, perPage: tasks.length || 0 };
-  const pageSize = pagination.perPage ?? tasks.length;
-  const offset = Math.max(0, (pagination.page - 1) * pageSize);
-
-  const total =
-    typeof response.total === 'number' ? response.total : Math.max(tasks.length, offset + tasks.length);
-
-  return {
-    data: tasks,
-    total,
-  };
-};
+const toRaListResult = (response: TasksResponse): GetListResult<Task> => ({
+  data: response.tasks ?? [],
+  total: response.total ?? 0,
+});
 
 /** Guards against consumers requesting unsupported resources via the data provider. */
 const ensureSupportedResource = (resource: string) => {
