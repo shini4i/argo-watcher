@@ -54,14 +54,20 @@ describe('ImagesCell', () => {
   it('stops propagation so row navigation does not fire when toggling', () => {
     const onRowClick = vi.fn();
     render(
-      <div onClick={onRowClick} onKeyDown={onRowClick} role="presentation">
-        <ImagesCell
-          images={[
-            { image: 'api', tag: 'v1' },
-            { image: 'worker', tag: 'v2' },
-          ]}
-        />
-      </div>,
+      <table>
+        <tbody>
+          <tr onClick={onRowClick}>
+            <td>
+              <ImagesCell
+                images={[
+                  { image: 'api', tag: 'v1' },
+                  { image: 'worker', tag: 'v2' },
+                ]}
+              />
+            </td>
+          </tr>
+        </tbody>
+      </table>,
     );
     fireEvent.click(screen.getByRole('button', { name: '+1 more' }));
     expect(onRowClick).not.toHaveBeenCalled();

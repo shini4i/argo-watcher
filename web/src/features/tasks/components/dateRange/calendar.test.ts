@@ -51,7 +51,7 @@ describe('calendar helpers', () => {
 
   it('flags today inside the grid', () => {
     const grid = buildMonthGrid(2026, 3, 'utc');
-    const todayCell = grid.find(cell => cell.date.toISOString().slice(0, 10) === '2026-04-27');
+    const todayCell = grid.find(cell => cell.date.toISOString().startsWith('2026-04-27'));
     expect(todayCell?.isToday).toBe(true);
   });
 

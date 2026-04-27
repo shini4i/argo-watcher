@@ -100,6 +100,12 @@ export const StatusTabs = ({ value, onChange }: StatusTabsProps) => {
         // the visible page; only the status-grouped pills are subject to the
         // perPage truncation, so don't suffix the All count with "+".
         const showTruncation = tab.id !== null && truncated;
+        const isDark = theme.palette.mode === 'dark';
+        const activeBg = isDark ? theme.palette.background.paper : tokens.surface;
+        const tabBg = isActive ? activeBg : 'transparent';
+        const activeCountBg = isDark ? tokens.accentSoftDark : tokens.accentSoft;
+        const idleCountBg = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)';
+        const countBg = isActive ? activeCountBg : idleCountBg;
         return (
           <button
             type="button"
@@ -118,11 +124,7 @@ export const StatusTabs = ({ value, onChange }: StatusTabsProps) => {
               fontFamily: tokens.fontSans,
               fontWeight: isActive ? 600 : 500,
               cursor: 'pointer',
-              backgroundColor: isActive
-                ? theme.palette.mode === 'dark'
-                  ? theme.palette.background.paper
-                  : tokens.surface
-                : 'transparent',
+              backgroundColor: tabBg,
               color: isActive ? theme.palette.text.primary : theme.palette.text.secondary,
               boxShadow: isActive ? '0 1px 2px rgba(15, 23, 42, 0.08)' : 'none',
               transition: 'background-color 150ms ease, color 150ms ease',
@@ -137,13 +139,7 @@ export const StatusTabs = ({ value, onChange }: StatusTabsProps) => {
                 lineHeight: 1,
                 padding: '1px 6px',
                 borderRadius: tokens.radiusPill,
-                backgroundColor: isActive
-                  ? theme.palette.mode === 'dark'
-                    ? tokens.accentSoftDark
-                    : tokens.accentSoft
-                  : theme.palette.mode === 'dark'
-                    ? 'rgba(255, 255, 255, 0.08)'
-                    : 'rgba(0, 0, 0, 0.04)',
+                backgroundColor: countBg,
                 color: isActive ? tokens.accent : 'inherit',
               }}
             >

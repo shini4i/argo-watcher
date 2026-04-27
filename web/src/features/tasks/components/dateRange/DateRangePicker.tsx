@@ -153,6 +153,8 @@ export const DateRangePicker = ({ value, onApply }: DateRangePickerProps) => {
   const span = isComplete && draft.start !== null && draft.end !== null
     ? dayCount(draft.start, draft.end)
     : 0;
+  const dayWord = span === 1 ? 'day' : 'days';
+  const spanLabel = span > 0 ? ` · ${span} ${dayWord} selected` : '';
 
   // formatDate merges over DEFAULT_DATE_FORMAT, which leaks day/hour/minute
   // into the header. Use Intl directly so we get just "April 2026".
@@ -222,11 +224,8 @@ export const DateRangePicker = ({ value, onApply }: DateRangePickerProps) => {
               const isDark = theme.palette.mode === 'dark';
               const activeBg = isDark ? tokens.accentSoftDark : tokens.accentSoft;
               const activeFg = isDark ? '#A5B4FC' : tokens.accent;
-              const hoverBg = isActive
-                ? activeBg
-                : isDark
-                  ? 'rgba(255,255,255,0.06)'
-                  : 'rgba(0,0,0,0.04)';
+              const idleHoverBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
+              const hoverBg = isActive ? activeBg : idleHoverBg;
               const showDivider = index === 4; // after Last 30 days, before This week
               return (
                 <Box key={preset.id}>
@@ -332,7 +331,7 @@ export const DateRangePicker = ({ value, onApply }: DateRangePickerProps) => {
         >
           <Typography variant="caption" sx={{ color: 'text.secondary' }}>
             {timezone === 'utc' ? 'UTC' : 'Local'}
-            {span > 0 ? ` · ${span} ${span === 1 ? 'day' : 'days'} selected` : ''}
+            {spanLabel}
           </Typography>
           <Stack direction="row" spacing={1}>
             <Button onClick={handleClose} size="small">
@@ -384,7 +383,8 @@ const CalendarCell = ({ label, isInMonth, isToday, isStart, isEnd, isInRange, on
   // In dark mode the in-range strip is a tinted accent, so primary text on it
   // already reads well; out-of-month cells need a lift from the default
   // text.disabled (slate-500) which gets lost on the dark surface.
-  let color = isInMonth ? theme.palette.text.primary : isDark ? '#94A3B8' : theme.palette.text.disabled;
+  const outOfMonthColor = isDark ? '#94A3B8' : theme.palette.text.disabled;
+  let color = isInMonth ? theme.palette.text.primary : outOfMonthColor;
   if (isEndpoint) color = '#FFFFFF';
 
   let borderRadius = '6px';
@@ -395,7 +395,7 @@ const CalendarCell = ({ label, isInMonth, isToday, isStart, isEnd, isInRange, on
   return (
     <ButtonBase
       role="gridcell"
-      aria-pressed={isEndpoint}
+      aria-selected={isEndpoint}
       onClick={onClick}
       sx={{
         height: 30,

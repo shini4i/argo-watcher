@@ -107,11 +107,8 @@ export const RefreshControl = ({ onRefresh, storageKey = 'recentTasks.refreshInt
   const muted = theme.palette.text.secondary;
   const dotColor = isOff ? muted : live;
   const labelColor = isOff ? muted : live;
-  const label = isOff
-    ? 'Paused'
-    : paused
-      ? `Live · ${remaining}s (paused)`
-      : `Live · ${remaining}s`;
+  const liveLabel = paused ? `Live · ${remaining}s (paused)` : `Live · ${remaining}s`;
+  const label = isOff ? 'Paused' : liveLabel;
 
   return (
     <Stack
