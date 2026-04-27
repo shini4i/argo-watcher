@@ -105,15 +105,24 @@ GET /api/v1/tasks
 | Parameter        | Type     | Required | Description                                      |
 |------------------|----------|----------|--------------------------------------------------|
 | `app`            | `string` | No       | Filter by application name                       |
+| `status`         | `string` | No       | Filter by task status. Accepted values: `accepted`, `in progress`, `deployed`, `failed`, `app not found`, `aborted`, `timed out`. Returns `400` on any other value. |
 | `from_timestamp` | `number` | No       | Start of time range (Unix timestamp)             |
 | `to_timestamp`   | `number` | No       | End of time range (Unix timestamp, defaults to now) |
-| `limit`          | `int`    | No       | Maximum number of tasks to return                |
+| `limit`          | `int`    | No       | Maximum number of tasks to return. Clamped to 1–1000; values ≤ 0 or > 1000 default to 1000. |
 | `offset`         | `int`    | No       | Number of tasks to skip (for pagination)         |
 
 **Example:**
 
 ```bash
 curl "https://argo-watcher.example.com/api/v1/tasks?from_timestamp=1648390029&limit=10"
+```
+
+**Response (400 Bad Request):**
+
+Returned when an unrecognized `status` value is supplied.
+
+```json
+{"error": "unsupported status filter"}
 ```
 
 ---
