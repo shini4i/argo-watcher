@@ -24,12 +24,12 @@ const DEFAULTS: RecentFiltersValues = { app: '', status: null };
 const SCHEMA: FilterStateSchema<RecentFiltersValues> = {
   app: {
     fromUrl: raw => normalizeApplicationFilterValue(raw),
-    toUrl: value => (value ? value : null),
+    toUrl: value => value || null,
     storage: true,
   },
   status: {
     fromUrl: raw => raw ?? null,
-    toUrl: value => (value ? value : null),
+    toUrl: value => value || null,
     storage: false,
   },
 };

@@ -21,7 +21,7 @@ const DEFAULTS: HistoryFiltersValues = { app: '', start: null, end: null };
 const SCHEMA: FilterStateSchema<HistoryFiltersValues> = {
   app: {
     fromUrl: raw => raw ?? '',
-    toUrl: value => (value ? value : null),
+    toUrl: value => value || null,
     storage: true,
   },
   start: {

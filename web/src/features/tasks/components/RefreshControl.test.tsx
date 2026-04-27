@@ -9,7 +9,7 @@ const renderWithProvider = (ui: React.ReactNode, intervalSec = 10) =>
 describe('RefreshControl', () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    window.localStorage.clear();
+    globalThis.localStorage.clear();
   });
 
   afterEach(() => {

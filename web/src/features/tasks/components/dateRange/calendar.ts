@@ -27,7 +27,7 @@ const mondayIndex = (date: Date, mode: TimezoneMode): number => {
 
 /** Returns a new Date set to 00:00:00.000 in the given timezone mode. */
 export const startOfDay = (input: Date, mode: TimezoneMode): Date => {
-  const date = new Date(input.getTime());
+  const date = new Date(input);
   if (mode === 'utc') {
     date.setUTCHours(0, 0, 0, 0);
   } else {
@@ -38,7 +38,7 @@ export const startOfDay = (input: Date, mode: TimezoneMode): Date => {
 
 /** Returns a new Date set to 23:59:59.000 in the given timezone mode. */
 export const endOfDay = (input: Date, mode: TimezoneMode): Date => {
-  const date = new Date(input.getTime());
+  const date = new Date(input);
   if (mode === 'utc') {
     date.setUTCHours(23, 59, 59, 0);
   } else {

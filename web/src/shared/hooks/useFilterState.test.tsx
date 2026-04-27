@@ -15,7 +15,7 @@ interface HistoryFilters extends Record<string, unknown> {
 const schema: FilterStateSchema<HistoryFilters> = {
   app: {
     fromUrl: raw => raw ?? '',
-    toUrl: value => (value ? value : null),
+    toUrl: value => value || null,
     storage: true,
   },
   start: {
@@ -215,12 +215,12 @@ describe('useFilterState', () => {
     const ephemeralSchema: FilterStateSchema<EphemeralFilters> = {
       app: {
         fromUrl: raw => raw ?? '',
-        toUrl: value => (value ? value : null),
+        toUrl: value => value || null,
         storage: true,
       },
       query: {
         fromUrl: raw => raw ?? '',
-        toUrl: value => (value ? value : null),
+        toUrl: value => value || null,
         storage: false,
       },
     };

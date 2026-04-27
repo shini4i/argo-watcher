@@ -125,8 +125,8 @@ export const DateRangePicker = ({ value, onApply }: DateRangePickerProps) => {
     [viewYear, viewMonth, timezone],
   );
 
-  const draftStartDate = draft.start !== null ? new Date(draft.start * 1000) : null;
-  const draftEndDate = draft.end !== null ? new Date(draft.end * 1000) : null;
+  const draftStartDate = draft.start === null ? null : new Date(draft.start * 1000);
+  const draftEndDate = draft.end === null ? null : new Date(draft.end * 1000);
 
   const goPrevMonth = () => {
     if (viewMonth === 0) {

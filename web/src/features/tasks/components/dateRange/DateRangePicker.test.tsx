@@ -75,8 +75,9 @@ describe('DateRangePicker', () => {
     const cells = within(grid).getAllByRole('gridcell');
     const cell27 = cells.find(c => c.textContent === '27' && !c.hasAttribute('disabled'));
     const cell20 = cells.find(c => c.textContent === '20' && !c.hasAttribute('disabled'));
-    fireEvent.click(cell27!);
-    fireEvent.click(cell20!);
+    if (!cell27 || !cell20) throw new Error('expected calendar cells not found');
+    fireEvent.click(cell27);
+    fireEvent.click(cell20);
 
     fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
     expect(onApply).toHaveBeenCalledWith({

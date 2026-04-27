@@ -44,8 +44,8 @@ export const SearchInput = ({
     if (draft === value) {
       return undefined;
     }
-    const handle = window.setTimeout(() => onChange(draft), debounceMs);
-    return () => window.clearTimeout(handle);
+    const handle = globalThis.setTimeout(() => onChange(draft), debounceMs);
+    return () => globalThis.clearTimeout(handle);
   }, [draft, debounceMs, onChange, value]);
 
   // Keep refresh paused while focused; release after a short grace period
@@ -55,8 +55,8 @@ export const SearchInput = ({
       setPauseActive(true);
       return undefined;
     }
-    const handle = window.setTimeout(() => setPauseActive(false), debounceMs + 100);
-    return () => window.clearTimeout(handle);
+    const handle = globalThis.setTimeout(() => setPauseActive(false), debounceMs + 100);
+    return () => globalThis.clearTimeout(handle);
   }, [focused, debounceMs]);
 
   // Keep the expanded/collapsed state in sync with the viewport and the

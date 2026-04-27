@@ -22,7 +22,7 @@ const renderWith = (value = '', debounceMs = 50) => {
 };
 
 const setViewportWide = (wide: boolean) => {
-  Object.defineProperty(window, 'matchMedia', {
+  Object.defineProperty(globalThis, 'matchMedia', {
     writable: true,
     configurable: true,
     value: (query: string) => ({
@@ -144,7 +144,7 @@ describe('SearchInput', () => {
 
       act(() => {
         setViewportWide(true);
-        window.dispatchEvent(new Event('resize'));
+        globalThis.dispatchEvent(new Event('resize'));
       });
 
       await waitFor(() => {
@@ -153,7 +153,7 @@ describe('SearchInput', () => {
 
       act(() => {
         setViewportWide(false);
-        window.dispatchEvent(new Event('resize'));
+        globalThis.dispatchEvent(new Event('resize'));
       });
 
       await waitFor(() => {
