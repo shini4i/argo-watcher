@@ -62,14 +62,25 @@ vi.mock('./StatusTabs', () => ({
   ),
 }));
 
+const taskListContextState = {
+  searchQuery: '',
+  setSearchQuery: vi.fn(),
+};
+
 vi.mock('./TaskListContext', () => ({
   TaskListProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   useTaskListContext: () => ({
-    state: { pausedReasons: new Set(), intervalSec: 30, lastRefetchedAt: 0 },
+    state: {
+      pausedReasons: new Set<string>(),
+      intervalSec: 30,
+      lastRefetchedAt: 0,
+      searchQuery: taskListContextState.searchQuery,
+    },
     pause: () => {},
     resume: () => {},
     setInterval: () => {},
     markRefetched: () => {},
+    setSearchQuery: taskListContextState.setSearchQuery,
   }),
 }));
 
@@ -111,6 +122,8 @@ describe('RecentTasksToolbar', () => {
   beforeEach(() => {
     capturedLocation = undefined;
     localStorage.clear();
+    taskListContextState.searchQuery = '';
+    taskListContextState.setSearchQuery.mockReset();
   });
 
   it('hydrates the application filter from URL on mount', async () => {
@@ -178,5 +191,26 @@ describe('RecentTasksToolbar', () => {
     await waitFor(() => {
       expect(setFilters).toHaveBeenCalledWith({}, {}, false);
     });
+  });
+
+  it('renders the search query as a removable chip and clears it on remove', () => {
+    taskListContextState.searchQuery = 'checkout';
+    renderToolbar('/tasks');
+
+    const removeButton = screen.getByRole('button', { name: /remove filter search checkout/i });
+    expect(screen.getByText(/search:/i)).toBeInTheDocument();
+    expect(screen.getByText('checkout')).toBeInTheDocument();
+
+    fireEvent.click(removeButton);
+    expect(taskListContextState.setSearchQuery).toHaveBeenCalledWith('');
+  });
+
+  it('clears the search query when "Clear all" is clicked', () => {
+    taskListContextState.searchQuery = 'alpha';
+    const { setFilters } = renderToolbar('/tasks?app=alpha');
+    setFilters.mockReset();
+
+    fireEvent.click(screen.getByRole('button', { name: /clear all/i }));
+    expect(taskListContextState.setSearchQuery).toHaveBeenCalledWith('');
   });
 });

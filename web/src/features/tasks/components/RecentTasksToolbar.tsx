@@ -81,10 +81,19 @@ export const RecentTasksToolbar = ({ storageKey = 'recentTasks' }: { storageKey?
       onRemove: () => apply({ ...values, app: '' }),
     });
   }
+  if (searchQuery) {
+    chips.push({
+      key: 'search',
+      labelPrefix: 'search',
+      labelValue: searchQuery,
+      onRemove: () => setSearchQuery(''),
+    });
+  }
 
   const handleClearAll = useCallback(() => {
     apply({ app: '', status: null });
-  }, [apply]);
+    setSearchQuery('');
+  }, [apply, setSearchQuery]);
 
   return (
     <Stack spacing={0.5} sx={{ width: '100%' }}>
