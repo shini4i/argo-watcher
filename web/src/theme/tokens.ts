@@ -9,7 +9,7 @@ export const tokens = {
   accent: '#5B7CFA',
   accentSoft: '#EEF2FF',
 
-  // status pill backgrounds/foregrounds
+  // status pill backgrounds/foregrounds (light mode)
   statusDeployedBg: '#E8F5E9',
   statusDeployedFg: '#2E7D32',
   statusFailedBg: '#FDECEA',
@@ -18,6 +18,19 @@ export const tokens = {
   statusRunningFg: '#ED6C02',
   statusInfoBg: 'rgba(0, 0, 0, 0.05)',
   statusInfoFg: '#5A6478',
+
+  // status pill backgrounds/foregrounds (dark mode — brighter fg, low-alpha tinted bg)
+  statusDeployedBgDark: 'rgba(46, 125, 50, 0.20)',
+  statusDeployedFgDark: '#81C784',
+  statusFailedBgDark: 'rgba(211, 47, 47, 0.22)',
+  statusFailedFgDark: '#EF5350',
+  statusRunningBgDark: 'rgba(237, 108, 2, 0.22)',
+  statusRunningFgDark: '#FFB74D',
+  statusInfoBgDark: 'rgba(255, 255, 255, 0.10)',
+  statusInfoFgDark: '#B0BEC5',
+
+  // accent-soft for chips/highlights (dark mode mirror)
+  accentSoftDark: 'rgba(91, 124, 250, 0.18)',
 
   // surfaces
   canvas: '#F6F7F9',

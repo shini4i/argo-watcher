@@ -1,156 +1,113 @@
-import { Button, Stack, TextField } from '@mui/material';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
+import { Stack } from '@mui/material';
 import { useListContext } from 'react-admin';
-import { useSearchParams } from 'react-router-dom';
 import type { Task } from '../../../data/types';
-import { ApplicationFilter, readInitialApplication } from './ApplicationFilter';
-import { getBrowserWindow } from '../../../shared/utils';
+import { useFilterState, type FilterStateSchema } from '../../../shared/hooks/useFilterState';
+import { ActiveFilterBar, type FilterChipDescriptor } from './ActiveFilterBar';
+import { ApplicationFilter } from './ApplicationFilter';
+import { DateRangePicker } from './dateRange/DateRangePicker';
+import { ListToolbar } from './ListToolbar';
+import { useTimezone } from '../../../shared/providers/TimezoneProvider';
 
-const STORAGE_KEY_APP = 'historyTasks.app';
+interface HistoryFiltersValues extends Record<string, unknown> {
+  app: string;
+  start: number | null;
+  end: number | null;
+}
 
-const toDateValue = (seconds?: number) => {
-  if (!seconds) {
-    return '';
-  }
-  return new Date(seconds * 1000).toISOString().slice(0, 10);
+const DEFAULTS: HistoryFiltersValues = { app: '', start: null, end: null };
+
+const SCHEMA: FilterStateSchema<HistoryFiltersValues> = {
+  app: {
+    fromUrl: raw => raw ?? '',
+    toUrl: value => (value ? value : null),
+    storage: true,
+  },
+  start: {
+    fromUrl: raw => (raw ? Number(raw) : null),
+    toUrl: value => (value === null ? null : String(value)),
+    urlKey: 'startDate',
+    storage: true,
+  },
+  end: {
+    fromUrl: raw => (raw ? Number(raw) : null),
+    toUrl: value => (value === null ? null : String(value)),
+    urlKey: 'endDate',
+    storage: true,
+  },
 };
 
-const startOfDaySeconds = (value: string) => Math.floor(new Date(`${value}T00:00:00Z`).getTime() / 1000);
-const endOfDaySeconds = (value: string) => Math.floor(new Date(`${value}T23:59:59Z`).getTime() / 1000);
+const STORAGE_KEY = 'historyTasks';
 
-/**
- * Date range and application filters for the history list, allowing app-only queries when no dates are specified.
- */
+const TRIGGER_FORMAT: Intl.DateTimeFormatOptions = { day: '2-digit', month: 'short', year: 'numeric' };
+
 /** Date range + application filters powering the history list. */
 export const HistoryFilters = () => {
-  const { filterValues = {}, setFilters, data } = useListContext<Task>();
+  const { data } = useListContext<Task>();
+  const { formatDate } = useTimezone();
   const records = useMemo(() => (Array.isArray(data) ? data : []), [data]);
-  const [searchParams, setSearchParams] = useSearchParams();
 
-  const [application, setApplication] = useState(() => searchParams.get('app') ?? readInitialApplication(STORAGE_KEY_APP));
-  const [start, setStart] = useState(() => searchParams.get('startDate') ?? toDateValue(filterValues.start as number | undefined));
-  const [end, setEnd] = useState(() => searchParams.get('endDate') ?? toDateValue(filterValues.end as number | undefined));
+  const { values, applied, apply } = useFilterState({
+    storageKey: STORAGE_KEY,
+    schema: SCHEMA,
+    defaults: DEFAULTS,
+  });
 
-  const syncSearchParams = useCallback(
-    (nextStart: string = '', nextEnd: string = '', nextApp: string = '') => {
-      const currentStart = searchParams.get('startDate') ?? '';
-      const currentEnd = searchParams.get('endDate') ?? '';
-      const currentApp = searchParams.get('app') ?? '';
-
-      if (currentStart === nextStart && currentEnd === nextEnd && currentApp === nextApp) {
-        return;
-      }
-
-      const mergedParams = new URLSearchParams(searchParams);
-
-      if (nextStart) {
-        mergedParams.set('startDate', nextStart);
-      } else {
-        mergedParams.delete('startDate');
-      }
-
-      if (nextEnd) {
-        mergedParams.set('endDate', nextEnd);
-      } else {
-        mergedParams.delete('endDate');
-      }
-
-      if (nextApp) {
-        mergedParams.set('app', nextApp);
-      } else {
-        mergedParams.delete('app');
-      }
-
-      setSearchParams(mergedParams, { replace: true });
+  const handleAppChange = useCallback(
+    (next: string) => {
+      apply({ ...values, app: next });
     },
-    [searchParams, setSearchParams],
+    [apply, values],
   );
 
-  const applyFilters = useCallback(() => {
-    if (!setFilters) {
-      return;
-    }
+  const handleRangeApply = useCallback(
+    (range: { start: number | null; end: number | null }) => {
+      apply({ ...values, start: range.start, end: range.end });
+    },
+    [apply, values],
+  );
 
-    const nextFilters: Record<string, unknown> = { ...filterValues };
+  const chips: FilterChipDescriptor[] = [];
+  if (applied.app) {
+    chips.push({
+      key: 'app',
+      labelPrefix: 'app',
+      labelValue: applied.app,
+      onRemove: () => apply({ ...values, app: '' }),
+    });
+  }
+  if (applied.start !== null && applied.end !== null) {
+    chips.push({
+      key: 'range',
+      labelPrefix: 'range',
+      labelValue: `${formatDate(applied.start, TRIGGER_FORMAT)} → ${formatDate(applied.end, TRIGGER_FORMAT)}`,
+      onRemove: () => apply({ ...values, start: null, end: null }),
+    });
+  }
 
-    if (start && end) {
-      nextFilters.start = startOfDaySeconds(start);
-      nextFilters.end = endOfDaySeconds(end);
-    } else {
-      delete nextFilters.start;
-      delete nextFilters.end;
-    }
-
-    const storage = getBrowserWindow()?.localStorage;
-
-    if (application) {
-      nextFilters.app = application;
-      storage?.setItem(STORAGE_KEY_APP, application);
-    } else {
-      delete nextFilters.app;
-      storage?.removeItem(STORAGE_KEY_APP);
-    }
-
-    setFilters(nextFilters, {}, false);
-    syncSearchParams(start, end, application);
-  }, [application, end, filterValues, setFilters, start, syncSearchParams]);
-
-  useEffect(() => {
-    applyFilters();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const normalizedStart = start ?? '';
-  const normalizedEnd = end ?? '';
-  const normalizedApplication = application ?? '';
-  const appliedStart =
-    searchParams.get('startDate') ?? toDateValue(filterValues.start as number | undefined);
-  const appliedEnd = searchParams.get('endDate') ?? toDateValue(filterValues.end as number | undefined);
-  const appliedApplication =
-    searchParams.get('app') ?? (typeof filterValues.app === 'string' ? (filterValues.app as string) : '');
-
-  const hasStart = Boolean(normalizedStart);
-  const hasEnd = Boolean(normalizedEnd);
-  const hasPartialDateRange = (hasStart && !hasEnd) || (!hasStart && hasEnd);
-  const hasChanges =
-    normalizedStart !== appliedStart ||
-    normalizedEnd !== appliedEnd ||
-    normalizedApplication !== appliedApplication;
-  const isApplyDisabled = hasPartialDateRange || !hasChanges;
+  const handleClearAll = useCallback(() => {
+    apply({ app: '', start: null, end: null });
+  }, [apply]);
 
   return (
-    <Stack
-      direction={{ xs: 'column', md: 'row' }}
-      spacing={{ xs: 1.5, md: 2 }}
-      alignItems={{ xs: 'flex-end', md: 'center' }}
-      justifyContent="flex-end"
-      sx={{ width: { xs: '100%', md: 'auto' } }}
-    >
-      <TextField
-        label="Start date"
-        type="date"
-        size="small"
-        InputLabelProps={{ shrink: true }}
-        value={start}
-        onChange={event => setStart(event.target.value)}
+    <Stack spacing={0.5} sx={{ width: '100%' }}>
+      <ListToolbar
+        left={
+          <DateRangePicker
+            value={{ start: applied.start, end: applied.end }}
+            onApply={handleRangeApply}
+          />
+        }
+        right={
+          <ApplicationFilter
+            storageKey={`${STORAGE_KEY}.app`}
+            records={records}
+            value={applied.app}
+            onChange={handleAppChange}
+          />
+        }
       />
-      <TextField
-        label="End date"
-        type="date"
-        size="small"
-        InputLabelProps={{ shrink: true }}
-        value={end}
-        onChange={event => setEnd(event.target.value)}
-      />
-      <ApplicationFilter
-        storageKey={STORAGE_KEY_APP}
-        records={records}
-        value={application}
-        onChange={setApplication}
-      />
-      <Button variant="contained" onClick={applyFilters} disabled={isApplyDisabled}>
-        Apply
-      </Button>
+      <ActiveFilterBar chips={chips} onClearAll={chips.length > 0 ? handleClearAll : undefined} />
     </Stack>
   );
 };

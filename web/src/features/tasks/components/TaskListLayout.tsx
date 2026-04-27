@@ -2,6 +2,7 @@ import { Children, isValidElement, type ReactNode } from 'react';
 import { Box, Stack } from '@mui/material';
 import { List, Pagination, type ListProps } from 'react-admin';
 import { PerPagePersistence, readPersistentPerPage } from '../../../shared/hooks/usePersistentPerPage';
+import { SearchFilteredView } from './SearchFilteredView';
 import { TaskListProvider } from './TaskListContext';
 
 interface TaskListLayoutProps {
@@ -82,7 +83,7 @@ export const TaskListLayout = ({
           <Box sx={{ width: '100%' }} />
         )}
       </Stack>
-      {children}
+      <SearchFilteredView>{children}</SearchFilteredView>
     </List>
     </TaskListProvider>
   );

@@ -111,7 +111,13 @@ export const StatusTabs = ({ value, onChange }: StatusTabsProps) => {
                 lineHeight: 1,
                 padding: '1px 6px',
                 borderRadius: tokens.radiusPill,
-                backgroundColor: isActive ? tokens.accentSoft : 'rgba(0, 0, 0, 0.04)',
+                backgroundColor: isActive
+                  ? theme.palette.mode === 'dark'
+                    ? tokens.accentSoftDark
+                    : tokens.accentSoft
+                  : theme.palette.mode === 'dark'
+                    ? 'rgba(255, 255, 255, 0.08)'
+                    : 'rgba(0, 0, 0, 0.04)',
                 color: isActive ? tokens.accent : 'inherit',
               }}
             >

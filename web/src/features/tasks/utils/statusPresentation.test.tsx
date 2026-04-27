@@ -86,6 +86,8 @@ describe('describeTaskStatus', () => {
       expect(presentation.icon).toBeTruthy();
       expect(presentation.pillBg).toMatch(/^(rgba?\(|#)/);
       expect(presentation.pillFg).toMatch(/^(rgba?\(|#)/);
+      expect(presentation.pillBgDark).toMatch(/^(rgba?\(|#)/);
+      expect(presentation.pillFgDark).toMatch(/^(rgba?\(|#)/);
     });
   }
 });

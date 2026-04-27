@@ -1,4 +1,5 @@
-import { Typography } from '@mui/material';
+import { useCallback } from 'react';
+import { Box, Typography } from '@mui/material';
 import { type SxProps, type Theme } from '@mui/material/styles';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { Datagrid, FunctionField, useRecordContext } from 'react-admin';
@@ -9,14 +10,24 @@ import { DurationField } from './DurationField';
 import { ImagesCell } from './ImagesCell';
 import { StatusPill } from './StatusPill';
 import { TimeCell } from './TimeCell';
+import { usePauseRefresh, useTaskListContext } from './TaskListContext';
 
 /**
  * Renders the shared task table used by both recent and history views.
  * Row click navigates to the task detail page; the auto-expand chevron in the
  * first column toggles the inline status-reason panel for rows that have one.
+ *
+ * The wrapping div emits `pause('hover')` reasons through TaskListContext so
+ * the toolbar's auto-refresh countdown freezes while the cursor is over the
+ * table body.
  */
 export const TasksDatagrid = () => {
+  const { pause, resume } = useTaskListContext();
+  const handleEnter = useCallback(() => pause('hover'), [pause]);
+  const handleLeave = useCallback(() => resume('hover'), [resume]);
+
   return (
+    <Box onMouseEnter={handleEnter} onMouseLeave={handleLeave}>
     <Datagrid
       rowClick={(id: string | number) => `/task/${id}`}
       bulkActionButtons={false}
@@ -84,6 +95,7 @@ export const TasksDatagrid = () => {
         render={() => <ChevronRightIcon fontSize="small" sx={{ color: 'text.disabled' }} />}
       />
     </Datagrid>
+    </Box>
   );
 };
 
@@ -142,6 +154,9 @@ const datagridSx: SxProps<Theme> = theme => {
 /** Expanded row rendering the detailed status reason for a task. */
 const StatusReasonPanel = () => {
   const record = useRecordContext<Task>();
+  // The panel mounts when a row expands and unmounts when it collapses, so a
+  // life-cycle bound pause('expand') exactly tracks the expanded state.
+  usePauseRefresh('expand');
   return <StatusReasonContent record={record} />;
 };
 
@@ -176,5 +191,6 @@ const StatusReasonContent = ({ record }: { record?: Task | null }) => {
  */
 export const __testing = {
   StatusReasonContent,
+  StatusReasonPanel,
   datagridSx,
 };

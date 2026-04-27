@@ -17,18 +17,49 @@ vi.mock('./ApplicationFilter', () => ({
     />
   ),
   readInitialApplication: () => '',
+  normalizeApplicationFilterValue: (value?: string | null) => {
+    if (typeof value !== 'string') return '';
+    const trimmed = value.trim();
+    if (!trimmed || trimmed.toLowerCase() === 'null') return '';
+    return value;
+  },
+}));
+
+interface DateRangePickerMockProps {
+  value: { start: number | null; end: number | null };
+  onApply: (next: { start: number | null; end: number | null }) => void;
+}
+
+vi.mock('./dateRange/DateRangePicker', () => ({
+  DateRangePicker: ({ value, onApply }: DateRangePickerMockProps) => (
+    <div data-testid="date-range">
+      <span data-testid="date-start">{value.start ?? ''}</span>
+      <span data-testid="date-end">{value.end ?? ''}</span>
+      <button
+        type="button"
+        onClick={() => onApply({ start: 1700000000, end: 1700100000 })}
+      >
+        choose-range
+      </button>
+      <button
+        type="button"
+        onClick={() => onApply({ start: null, end: null })}
+      >
+        clear-range
+      </button>
+    </div>
+  ),
+}));
+
+vi.mock('../../../shared/providers/TimezoneProvider', () => ({
+  useTimezone: () => ({
+    timezone: 'utc',
+    formatDate: (ts: number) => `ts-${ts}`,
+  }),
 }));
 
 const sampleTasks: Task[] = [
-  {
-    id: '1',
-    created: 1,
-    updated: 2,
-    app: 'alpha',
-    author: 'alice',
-    project: 'proj',
-    images: [],
-  },
+  { id: '1', created: 1, updated: 2, app: 'alpha', author: 'alice', project: 'proj', images: [] },
 ];
 
 let capturedLocation: Location | undefined;
@@ -59,118 +90,83 @@ const renderFilters = (initialEntry: string) => {
   return { setFilters, ...result };
 };
 
-const startSeconds = (value: string) => Math.floor(new Date(`${value}T00:00:00Z`).getTime() / 1000);
-const endSeconds = (value: string) => Math.floor(new Date(`${value}T23:59:59Z`).getTime() / 1000);
-
 describe('HistoryFilters', () => {
   beforeEach(() => {
     capturedLocation = undefined;
     localStorage.clear();
   });
 
-  it('applies date and application filters while keeping existing params', async () => {
-    const { setFilters } = renderFilters('/history?page=5&sort=created');
-    const startInput = screen.getByLabelText('Start date') as HTMLInputElement;
-    const endInput = screen.getByLabelText('End date') as HTMLInputElement;
-    const appInput = screen.getByTestId('app-filter') as HTMLInputElement;
-    const applyButton = screen.getByRole('button', { name: /apply/i });
+  it('hydrates filters from URL query parameters on mount', async () => {
+    const { setFilters } = renderFilters('/history?startDate=1700000000&endDate=1700100000&app=demo');
+    await waitFor(() => {
+      expect(setFilters).toHaveBeenCalledWith(
+        { app: 'demo', start: 1700000000, end: 1700100000 },
+        {},
+        false,
+      );
+    });
+  });
 
+  it('commits the application filter immediately and syncs URL params', async () => {
+    const { setFilters } = renderFilters('/history?page=2');
+    setFilters.mockReset();
+    const appInput = screen.getByTestId('app-filter') as HTMLInputElement;
+
+    fireEvent.change(appInput, { target: { value: 'alpha' } });
+
+    await waitFor(() => {
+      expect(setFilters).toHaveBeenCalledWith({ app: 'alpha' }, {}, false);
+    });
+    const params = new URLSearchParams(capturedLocation?.search ?? '');
+    expect(params.get('page')).toBe('2');
+    expect(params.get('app')).toBe('alpha');
+  });
+
+  it('commits a date range when the picker fires Apply', async () => {
+    const { setFilters } = renderFilters('/history');
     setFilters.mockReset();
 
-    fireEvent.change(startInput, { target: { value: '2024-02-10' } });
-    fireEvent.change(endInput, { target: { value: '2024-02-12' } });
-    fireEvent.change(appInput, { target: { value: 'alpha' } });
-    fireEvent.click(applyButton);
+    fireEvent.click(screen.getByRole('button', { name: 'choose-range' }));
 
     await waitFor(() => {
       expect(setFilters).toHaveBeenCalledWith(
-        { start: startSeconds('2024-02-10'), end: endSeconds('2024-02-12'), app: 'alpha' },
+        { start: 1700000000, end: 1700100000 },
         {},
         false,
       );
     });
-
-    await waitFor(() => {
-      const params = new URLSearchParams(capturedLocation?.search ?? '');
-      expect(params.get('page')).toBe('5');
-      expect(params.get('sort')).toBe('created');
-      expect(params.get('startDate')).toBe('2024-02-10');
-      expect(params.get('endDate')).toBe('2024-02-12');
-      expect(params.get('app')).toBe('alpha');
-    });
+    const params = new URLSearchParams(capturedLocation?.search ?? '');
+    expect(params.get('startDate')).toBe('1700000000');
+    expect(params.get('endDate')).toBe('1700100000');
   });
 
-  it('removes application filter from query string while keeping date and other params', async () => {
-    const { setFilters } = renderFilters('/history?page=2&startDate=2024-03-01&endDate=2024-03-05&app=beta');
-    const appInput = screen.getByTestId('app-filter') as HTMLInputElement;
-    const applyButton = screen.getByRole('button', { name: /apply/i });
+  it('shows active filter chips and clears the range when the chip is removed', async () => {
+    const { setFilters } = renderFilters('/history?startDate=1700000000&endDate=1700100000');
+    expect(await screen.findByText(/range:/i)).toBeInTheDocument();
 
-    // Ensure date inputs reflect initial query params to satisfy the apply button constraint.
-    const startInput = screen.getByLabelText('Start date') as HTMLInputElement;
-    const endInput = screen.getByLabelText('End date') as HTMLInputElement;
-
-    await waitFor(() => expect(appInput.value).toBe('beta'));
-
-    fireEvent.change(appInput, { target: { value: '' } });
-    await waitFor(() => expect(appInput.value).toBe(''));
-
-    setFilters.mockClear();
-    fireEvent.click(applyButton);
-
-    await waitFor(() => {
-      expect(setFilters).toHaveBeenCalledWith(
-        {
-          start: startSeconds(startInput.value),
-          end: endSeconds(endInput.value),
-        },
-        {},
-        false,
-      );
-    });
-
-    await waitFor(() => {
-      const params = new URLSearchParams(capturedLocation?.search ?? '');
-      expect(params.get('page')).toBe('2');
-      expect(params.get('startDate')).toBe('2024-03-01');
-      expect(params.get('endDate')).toBe('2024-03-05');
-      expect(params.has('app')).toBe(false);
-    });
-  });
-
-  it('enables the Apply button when only the application filter is provided', async () => {
-    const { setFilters } = renderFilters('/history');
-    const appInput = screen.getByTestId('app-filter') as HTMLInputElement;
-    const applyButton = screen.getByRole('button', { name: /apply/i });
-
-    expect(applyButton).toBeDisabled();
-
-    fireEvent.change(appInput, { target: { value: 'gamma' } });
-
-    await waitFor(() => expect(applyButton).toBeEnabled());
-
-    fireEvent.click(applyButton);
-
-    await waitFor(() => {
-      expect(setFilters).toHaveBeenCalledWith({ app: 'gamma' }, {}, false);
-    });
-  });
-
-  it('enables the Apply button when clearing an existing application filter without dates', async () => {
-    const { setFilters } = renderFilters('/history?app=delta');
-    const appInput = screen.getByTestId('app-filter') as HTMLInputElement;
-    const applyButton = screen.getByRole('button', { name: /apply/i });
-
-    await waitFor(() => expect(appInput.value).toBe('delta'));
-    expect(applyButton).toBeDisabled();
-
-    fireEvent.change(appInput, { target: { value: '' } });
-    await waitFor(() => expect(appInput.value).toBe(''));
-    await waitFor(() => expect(applyButton).toBeEnabled());
-
-    fireEvent.click(applyButton);
+    setFilters.mockReset();
+    fireEvent.click(screen.getByRole('button', { name: /Remove filter range/ }));
 
     await waitFor(() => {
       expect(setFilters).toHaveBeenCalledWith({}, {}, false);
     });
+    const params = new URLSearchParams(capturedLocation?.search ?? '');
+    expect(params.has('startDate')).toBe(false);
+    expect(params.has('endDate')).toBe(false);
+  });
+
+  it('Clear all wipes both the range and app filters', async () => {
+    const { setFilters } = renderFilters('/history?startDate=1700000000&endDate=1700100000&app=alpha');
+    setFilters.mockReset();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear all' }));
+
+    await waitFor(() => {
+      expect(setFilters).toHaveBeenCalledWith({}, {}, false);
+    });
+    const params = new URLSearchParams(capturedLocation?.search ?? '');
+    expect(params.has('app')).toBe(false);
+    expect(params.has('startDate')).toBe(false);
+    expect(params.has('endDate')).toBe(false);
   });
 });

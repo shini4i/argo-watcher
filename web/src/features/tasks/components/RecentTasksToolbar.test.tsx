@@ -18,28 +18,19 @@ vi.mock('./ApplicationFilter', () => ({
   ),
   readInitialApplication: () => '',
   normalizeApplicationFilterValue: (value?: string | null) => {
-    if (typeof value !== 'string') {
-      return '';
-    }
+    if (typeof value !== 'string') return '';
     const trimmed = value.trim();
-    if (!trimmed || trimmed.toLowerCase() === 'null') {
-      return '';
-    }
+    if (!trimmed || trimmed.toLowerCase() === 'null') return '';
     return value;
   },
 }));
 
-const refreshOnRefreshSpy = vi.fn();
-
 vi.mock('./RefreshControl', () => ({
-  RefreshControl: ({ onRefresh }: { onRefresh: () => void }) => {
-    refreshOnRefreshSpy();
-    return (
-      <button type="button" aria-label="refresh now" onClick={onRefresh}>
-        refresh
-      </button>
-    );
-  },
+  RefreshControl: ({ onRefresh }: { onRefresh: () => void }) => (
+    <button type="button" aria-label="refresh now" onClick={onRefresh}>
+      refresh
+    </button>
+  ),
 }));
 
 vi.mock('./SearchInput', () => ({
@@ -84,7 +75,6 @@ vi.mock('./TaskListContext', () => ({
 
 const sampleTasks: Task[] = [
   { id: '1', created: 1, updated: 2, app: 'alpha', author: 'alice', project: 'proj', images: [] },
-  { id: '2', created: 3, updated: 4, app: 'beta', author: 'bob', project: 'proj', images: [] },
 ];
 
 let capturedLocation: Location | undefined;
@@ -120,27 +110,31 @@ const renderToolbar = (initialEntry: string, filterValues: Record<string, unknow
 describe('RecentTasksToolbar', () => {
   beforeEach(() => {
     capturedLocation = undefined;
-    refreshOnRefreshSpy.mockClear();
     localStorage.clear();
   });
 
-  it('merges application filter changes with existing search params', async () => {
+  it('hydrates the application filter from URL on mount', async () => {
+    const { setFilters } = renderToolbar('/tasks?app=alpha');
+    await waitFor(() => {
+      expect(setFilters).toHaveBeenCalledWith({ app: 'alpha' }, {}, false);
+    });
+    expect((screen.getByTestId('app-filter') as HTMLInputElement).value).toBe('alpha');
+  });
+
+  it('commits app filter changes and merges with existing search params', async () => {
     const { setFilters } = renderToolbar('/tasks?page=2&sort=created');
-    const input = screen.getByTestId('app-filter') as HTMLInputElement;
     setFilters.mockReset();
+    const input = screen.getByTestId('app-filter') as HTMLInputElement;
 
     fireEvent.change(input, { target: { value: 'alpha' } });
 
     await waitFor(() => {
       expect(setFilters).toHaveBeenCalledWith({ app: 'alpha' }, {}, false);
     });
-
-    await waitFor(() => {
-      const params = new URLSearchParams(capturedLocation?.search ?? '');
-      expect(params.get('page')).toBe('2');
-      expect(params.get('sort')).toBe('created');
-      expect(params.get('app')).toBe('alpha');
-    });
+    const params = new URLSearchParams(capturedLocation?.search ?? '');
+    expect(params.get('page')).toBe('2');
+    expect(params.get('sort')).toBe('created');
+    expect(params.get('app')).toBe('alpha');
   });
 
   it('removes the app param while preserving other params when filter cleared', async () => {
@@ -149,21 +143,19 @@ describe('RecentTasksToolbar', () => {
 
     await waitFor(() => expect(input.value).toBe('beta'));
 
+    setFilters.mockReset();
     fireEvent.change(input, { target: { value: '' } });
-    await waitFor(() => expect(input.value).toBe(''));
 
     await waitFor(() => {
-      const params = new URLSearchParams(capturedLocation?.search ?? '');
-      expect(params.get('page')).toBe('3');
-      expect(params.get('perPage')).toBe('50');
-      expect(params.has('app')).toBe(false);
+      expect(setFilters).toHaveBeenCalledWith({}, {}, false);
     });
-
-    expect(setFilters).toHaveBeenCalledTimes(1);
-    expect(setFilters.mock.calls[0]).toEqual([{ app: 'beta' }, {}, false]);
+    const params = new URLSearchParams(capturedLocation?.search ?? '');
+    expect(params.get('page')).toBe('3');
+    expect(params.get('perPage')).toBe('50');
+    expect(params.has('app')).toBe(false);
   });
 
-  it('forwards manual refresh from RefreshControl to refetch', () => {
+  it('forwards manual refresh to refetch', () => {
     const { refetch } = renderToolbar('/');
     refetch.mockClear();
     fireEvent.click(screen.getByRole('button', { name: /refresh now/i }));
@@ -172,6 +164,7 @@ describe('RecentTasksToolbar', () => {
 
   it('writes filterValues.status when a status tab is selected', async () => {
     const { setFilters } = renderToolbar('/tasks');
+    setFilters.mockReset();
     fireEvent.click(screen.getByRole('button', { name: 'failed' }));
     await waitFor(() => {
       expect(setFilters).toHaveBeenCalledWith({ status: 'failed' }, {}, false);
@@ -179,7 +172,7 @@ describe('RecentTasksToolbar', () => {
   });
 
   it('removes filterValues.status when "all" is selected', async () => {
-    const { setFilters } = renderToolbar('/tasks', { status: 'failed' });
+    const { setFilters } = renderToolbar('/tasks?status=failed');
     setFilters.mockReset();
     fireEvent.click(screen.getByRole('button', { name: 'all' }));
     await waitFor(() => {

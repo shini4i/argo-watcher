@@ -12,18 +12,21 @@ export interface TaskListState {
   readonly pausedReasons: ReadonlySet<string>;
   readonly intervalSec: number;
   readonly lastRefetchedAt: number;
+  readonly searchQuery: string;
 }
 
 type Action =
   | { type: 'pause'; reason: string }
   | { type: 'resume'; reason: string }
   | { type: 'setInterval'; intervalSec: number }
-  | { type: 'markRefetched'; at?: number };
+  | { type: 'markRefetched'; at?: number }
+  | { type: 'setSearchQuery'; value: string };
 
 const initialState: TaskListState = {
   pausedReasons: new Set<string>(),
   intervalSec: 30,
   lastRefetchedAt: Date.now(),
+  searchQuery: '',
 };
 
 const reducer = (state: TaskListState, action: Action): TaskListState => {
@@ -48,6 +51,9 @@ const reducer = (state: TaskListState, action: Action): TaskListState => {
       return { ...state, intervalSec: action.intervalSec, lastRefetchedAt: Date.now() };
     case 'markRefetched':
       return { ...state, lastRefetchedAt: action.at ?? Date.now() };
+    case 'setSearchQuery':
+      if (state.searchQuery === action.value) return state;
+      return { ...state, searchQuery: action.value };
     default:
       return state;
   }
@@ -59,6 +65,7 @@ interface TaskListContextValue {
   readonly resume: (reason: string) => void;
   readonly setInterval: (intervalSec: number) => void;
   readonly markRefetched: () => void;
+  readonly setSearchQuery: (value: string) => void;
 }
 
 const TaskListContext = createContext<TaskListContextValue | undefined>(undefined);
@@ -85,10 +92,21 @@ export const TaskListProvider = ({ children, initialIntervalSec = 30 }: TaskList
     [],
   );
   const markRefetched = useCallback(() => dispatch({ type: 'markRefetched' }), []);
+  const setSearchQuery = useCallback(
+    (next: string) => dispatch({ type: 'setSearchQuery', value: next }),
+    [],
+  );
 
   const value = useMemo(
-    () => ({ state, pause, resume, setInterval: setIntervalSec, markRefetched }),
-    [state, pause, resume, setIntervalSec, markRefetched],
+    () => ({
+      state,
+      pause,
+      resume,
+      setInterval: setIntervalSec,
+      markRefetched,
+      setSearchQuery,
+    }),
+    [state, pause, resume, setIntervalSec, markRefetched, setSearchQuery],
   );
 
   return <TaskListContext.Provider value={value}>{children}</TaskListContext.Provider>;
@@ -100,6 +118,7 @@ const noopValue: TaskListContextValue = {
   resume: () => {},
   setInterval: () => {},
   markRefetched: () => {},
+  setSearchQuery: () => {},
 };
 
 /** Returns the task-list controller; safe to call without a provider. */

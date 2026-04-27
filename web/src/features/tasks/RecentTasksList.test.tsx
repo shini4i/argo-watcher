@@ -88,7 +88,7 @@ describe('RecentTasksList', () => {
 
     const headerNode = props.header;
     expect(headerNode.type).toBe(RecentTasksToolbarMock);
-    expect(headerNode.props.storageKey).toBe('recentTasks.app');
+    expect(headerNode.props.storageKey).toBe('recentTasks');
 
     const paginationElement = props.listProps.pagination!;
     expect(paginationElement.props.rowsPerPageOptions).toEqual([10, 25, 50, 100]);

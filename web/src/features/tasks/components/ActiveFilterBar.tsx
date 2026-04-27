@@ -17,6 +17,11 @@ interface ActiveFilterBarProps {
 
 const FilterChip = ({ chip }: { chip: FilterChipDescriptor }) => {
   const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
+  const bg = isDark ? tokens.accentSoftDark : tokens.accentSoft;
+  // The light-mode chip uses primary text on accent-soft. In dark mode, the
+  // tinted bg is dark, so primary (light) text on it reads correctly without
+  // any extra adjustments.
   return (
     <Stack
       direction="row"
@@ -27,7 +32,7 @@ const FilterChip = ({ chip }: { chip: FilterChipDescriptor }) => {
         px: 1.25,
         borderRadius: tokens.radiusPill,
         border: `1px solid ${theme.palette.divider}`,
-        backgroundColor: tokens.accentSoft,
+        backgroundColor: bg,
         color: theme.palette.text.primary,
         fontSize: 12,
       }}
@@ -49,7 +54,10 @@ const FilterChip = ({ chip }: { chip: FilterChipDescriptor }) => {
           height: 16,
           borderRadius: '50%',
           color: theme.palette.text.secondary,
-          '&:hover': { backgroundColor: 'rgba(0,0,0,0.06)', color: theme.palette.text.primary },
+          '&:hover': {
+            backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+            color: theme.palette.text.primary,
+          },
         }}
       >
         <CloseIcon sx={{ fontSize: 12 }} />

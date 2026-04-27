@@ -25,7 +25,7 @@ export const RecentTasksList = () => {
     <TaskListLayout
       perPageStorageKey={STORAGE_KEY_PER_PAGE}
       defaultPerPage={DEFAULT_PER_PAGE}
-      header={<RecentTasksToolbar storageKey="recentTasks.app" />}
+      header={<RecentTasksToolbar storageKey="recentTasks" />}
       emptyComponent={
         <EmptyState
           icon="inbox"

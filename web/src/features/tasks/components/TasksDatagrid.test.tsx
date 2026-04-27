@@ -1,8 +1,9 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { Task } from '../../../data/types';
 import { TasksDatagrid, __testing } from './TasksDatagrid';
+import { TaskListProvider, useTaskListContext } from './TaskListContext';
 
 const sampleRecord: Task = {
   id: 'task-1',
@@ -68,5 +69,57 @@ describe('TasksDatagrid', () => {
 
     rerender(<StatusReasonContent record={sampleRecord} />);
     expect(screen.getByText(sampleRecord.status_reason!)).toBeInTheDocument();
+  });
+
+  it('pauses auto-refresh while the cursor is over the table body', () => {
+    const Probe = () => {
+      const ctx = useTaskListContext();
+      return <span data-testid="reasons">{Array.from(ctx.state.pausedReasons).join(',')}</span>;
+    };
+    render(
+      <TaskListProvider>
+        <Probe />
+        <TasksDatagrid />
+      </TaskListProvider>,
+    );
+
+    const wrapper = screen.getByTestId('datagrid').parentElement!;
+    expect(screen.getByTestId('reasons').textContent).toBe('');
+
+    fireEvent.mouseEnter(wrapper);
+    expect(screen.getByTestId('reasons').textContent).toBe('hover');
+
+    fireEvent.mouseLeave(wrapper);
+    expect(screen.getByTestId('reasons').textContent).toBe('');
+  });
+
+  it('pauses auto-refresh while the status-reason panel is mounted', () => {
+    const { StatusReasonPanel } = __testing;
+    const Probe = () => {
+      const ctx = useTaskListContext();
+      return <span data-testid="reasons">{Array.from(ctx.state.pausedReasons).join(',')}</span>;
+    };
+
+    const { rerender } = render(
+      <TaskListProvider>
+        <Probe />
+      </TaskListProvider>,
+    );
+    expect(screen.getByTestId('reasons').textContent).toBe('');
+
+    rerender(
+      <TaskListProvider>
+        <Probe />
+        <StatusReasonPanel />
+      </TaskListProvider>,
+    );
+    expect(screen.getByTestId('reasons').textContent).toBe('expand');
+
+    rerender(
+      <TaskListProvider>
+        <Probe />
+      </TaskListProvider>,
+    );
+    expect(screen.getByTestId('reasons').textContent).toBe('');
   });
 });

@@ -16,6 +16,8 @@ export interface TaskStatusPresentation {
   readonly icon: ReactNode;
   readonly pillBg: string;
   readonly pillFg: string;
+  readonly pillBgDark: string;
+  readonly pillFgDark: string;
 }
 
 /** Fallback rendering instructions when a status is unknown or missing. */
@@ -28,6 +30,8 @@ const DEFAULT_PRESENTATION: TaskStatusPresentation = {
   icon: <ErrorOutlineIcon fontSize="small" />,
   pillBg: tokens.statusInfoBg,
   pillFg: tokens.statusInfoFg,
+  pillBgDark: tokens.statusInfoBgDark,
+  pillFgDark: tokens.statusInfoFgDark,
 };
 
 /** Describes how a task status should be rendered across chips, timelines, and alerts. */
@@ -47,6 +51,8 @@ export const describeTaskStatus = (status?: string | null): TaskStatusPresentati
         icon: <CheckCircleOutlineIcon fontSize="small" />,
         pillBg: tokens.statusDeployedBg,
         pillFg: tokens.statusDeployedFg,
+        pillBgDark: tokens.statusDeployedBgDark,
+        pillFgDark: tokens.statusDeployedFgDark,
       };
     case 'failed':
       return {
@@ -58,6 +64,8 @@ export const describeTaskStatus = (status?: string | null): TaskStatusPresentati
         icon: <CancelOutlinedIcon fontSize="small" />,
         pillBg: tokens.statusFailedBg,
         pillFg: tokens.statusFailedFg,
+        pillBgDark: tokens.statusFailedBgDark,
+        pillFgDark: tokens.statusFailedFgDark,
       };
     case 'in progress':
       return {
@@ -69,6 +77,8 @@ export const describeTaskStatus = (status?: string | null): TaskStatusPresentati
         icon: <CircularProgress size={12} thickness={6} color="inherit" />,
         pillBg: tokens.statusRunningBg,
         pillFg: tokens.statusRunningFg,
+        pillBgDark: tokens.statusRunningBgDark,
+        pillFgDark: tokens.statusRunningFgDark,
       };
     case 'app not found':
       return {
@@ -80,6 +90,8 @@ export const describeTaskStatus = (status?: string | null): TaskStatusPresentati
         icon: <ErrorOutlineIcon fontSize="small" />,
         pillBg: tokens.statusInfoBg,
         pillFg: tokens.statusInfoFg,
+        pillBgDark: tokens.statusInfoBgDark,
+        pillFgDark: tokens.statusInfoFgDark,
       };
     default:
       return {
@@ -91,6 +103,8 @@ export const describeTaskStatus = (status?: string | null): TaskStatusPresentati
         icon: <ErrorOutlineIcon fontSize="small" />,
         pillBg: tokens.statusInfoBg,
         pillFg: tokens.statusInfoFg,
+        pillBgDark: tokens.statusInfoBgDark,
+        pillFgDark: tokens.statusInfoFgDark,
       };
   }
 };
