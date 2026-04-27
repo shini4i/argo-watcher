@@ -369,7 +369,7 @@ func TestGetStateForwardsFilters(t *testing.T) {
 }
 
 // TestGetStateRejectsUnknownStatus verifies that getState returns 400 when
-// the `status` query param is not in models.AllowedTaskStatusFilters.
+// the `status` query param is not accepted by models.IsAllowedTaskStatus.
 func TestGetStateRejectsUnknownStatus(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

@@ -519,11 +519,9 @@ func (env *Env) getState(c *gin.Context) {
 	}
 	app := c.Query("app")
 	status := c.Query("status")
-	if status != "" {
-		if _, ok := models.AllowedTaskStatusFilters[status]; !ok {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported status filter"})
-			return
-		}
+	if status != "" && !models.IsAllowedTaskStatus(status) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported status filter"})
+		return
 	}
 
 	limit, err := strconv.Atoi(c.Query("limit"))
