@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { Box, Typography } from '@mui/material';
 import { type SxProps, type Theme } from '@mui/material/styles';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
@@ -26,6 +26,11 @@ export const TasksDatagrid = () => {
   const { pause, resume } = useTaskListContext();
   const handleEnter = useCallback(() => pause('hover'), [pause]);
   const handleLeave = useCallback(() => resume('hover'), [resume]);
+
+  // onMouseLeave is not guaranteed to fire if the component unmounts while the
+  // cursor is still over the table (e.g. row click → navigate). Always clear
+  // the hover pause on unmount so the auto-refresh timer never gets stuck.
+  useEffect(() => () => resume('hover'), [resume]);
 
   return (
     <Box onMouseEnter={handleEnter} onMouseLeave={handleLeave}>
