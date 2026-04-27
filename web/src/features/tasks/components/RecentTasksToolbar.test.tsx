@@ -81,6 +81,8 @@ vi.mock('./TaskListContext', () => ({
     setInterval: () => {},
     markRefetched: () => {},
     setSearchQuery: taskListContextState.setSearchQuery,
+    registerClearAll: () => () => {},
+    clearAll: () => {},
   }),
 }));
 

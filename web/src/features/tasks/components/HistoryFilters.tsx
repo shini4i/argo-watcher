@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { Stack } from '@mui/material';
 import { useListContext } from 'react-admin';
 import type { Task } from '../../../data/types';
@@ -7,6 +7,7 @@ import { ActiveFilterBar, type FilterChipDescriptor } from './ActiveFilterBar';
 import { ApplicationFilter } from './ApplicationFilter';
 import { DateRangePicker } from './dateRange/DateRangePicker';
 import { ListToolbar } from './ListToolbar';
+import { useTaskListContext } from './TaskListContext';
 import { useTimezone } from '../../../shared/providers/TimezoneProvider';
 
 interface HistoryFiltersValues extends Record<string, unknown> {
@@ -45,6 +46,7 @@ const TRIGGER_FORMAT: Intl.DateTimeFormatOptions = { day: '2-digit', month: 'sho
 export const HistoryFilters = () => {
   const { data } = useListContext<Task>();
   const { formatDate } = useTimezone();
+  const { registerClearAll } = useTaskListContext();
   const records = useMemo(() => (Array.isArray(data) ? data : []), [data]);
 
   const { values, applied, apply } = useFilterState({
@@ -88,6 +90,8 @@ export const HistoryFilters = () => {
   const handleClearAll = useCallback(() => {
     apply({ app: '', start: null, end: null });
   }, [apply]);
+
+  useEffect(() => registerClearAll(handleClearAll), [registerClearAll, handleClearAll]);
 
   return (
     <Stack spacing={0.5} sx={{ width: '100%' }}>

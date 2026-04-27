@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { Stack } from '@mui/material';
 import { useListContext } from 'react-admin';
 import {
@@ -45,7 +45,7 @@ export const RecentTasksToolbar = ({ storageKey = 'recentTasks' }: { storageKey?
     defaults: DEFAULTS,
   });
 
-  const { state: { searchQuery }, setSearchQuery } = useTaskListContext();
+  const { state: { searchQuery }, setSearchQuery, registerClearAll } = useTaskListContext();
 
   const handleApplicationChange = useCallback(
     (next: string) => {
@@ -94,6 +94,9 @@ export const RecentTasksToolbar = ({ storageKey = 'recentTasks' }: { storageKey?
     apply({ app: '', status: null });
     setSearchQuery('');
   }, [apply, setSearchQuery]);
+
+  // Expose handleClearAll to the Datagrid empty CTA via TaskListContext.
+  useEffect(() => registerClearAll(handleClearAll), [registerClearAll, handleClearAll]);
 
   return (
     <Stack spacing={0.5} sx={{ width: '100%' }}>

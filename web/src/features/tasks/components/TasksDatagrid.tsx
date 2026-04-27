@@ -2,11 +2,12 @@ import { useCallback } from 'react';
 import { Box, Typography } from '@mui/material';
 import { type SxProps, type Theme } from '@mui/material/styles';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
-import { Datagrid, FunctionField, useRecordContext } from 'react-admin';
+import { Datagrid, FunctionField, useListContext, useRecordContext } from 'react-admin';
 import type { Task } from '../../../data/types';
 import { tokens } from '../../../theme/tokens';
 import { AppCell } from './AppCell';
 import { DurationField } from './DurationField';
+import { EmptyState, EmptyStateCta } from './EmptyState';
 import { ImagesCell } from './ImagesCell';
 import { StatusPill } from './StatusPill';
 import { TimeCell } from './TimeCell';
@@ -34,6 +35,7 @@ export const TasksDatagrid = () => {
       expand={<StatusReasonPanel />}
       isRowExpandable={(record?: Task) => Boolean(record?.status_reason)}
       expandSingle
+      empty={<FilteredEmptyState />}
       sx={datagridSx}
     >
       <FunctionField
@@ -152,6 +154,40 @@ const datagridSx: SxProps<Theme> = theme => {
       paddingRight: theme.spacing(1.5),
     },
   };
+};
+
+/**
+ * Empty-state shown by the Datagrid when the loaded page returns zero rows
+ * but the user still has filters / search active. Wraps EmptyState with a
+ * "Clear filters" CTA that drains all three sinks (URL, storage, react-admin
+ * filterValues) via the page's registered clearAll handler — react-admin's
+ * default ListNoResults only resets filterValues, leaving the toolbar chips
+ * stuck.
+ */
+const FilteredEmptyState = () => {
+  const { filterValues } = useListContext();
+  const { state, clearAll } = useTaskListContext();
+  const hasFilters =
+    Object.keys(filterValues ?? {}).length > 0 || Boolean(state.searchQuery);
+
+  if (!hasFilters) {
+    return (
+      <EmptyState
+        icon="inbox"
+        title="No tasks to show"
+        description="Nothing matches the current view — try adjusting filters above."
+      />
+    );
+  }
+
+  return (
+    <EmptyState
+      icon="filter"
+      title="No tasks match the active filters"
+      description="Adjust the filters above or clear them to see every task again."
+      cta={<EmptyStateCta label="Clear filters" onClick={clearAll} />}
+    />
+  );
 };
 
 /** Expanded row rendering the detailed status reason for a task. */

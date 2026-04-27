@@ -5,6 +5,7 @@ import {
   useEffect,
   useMemo,
   useReducer,
+  useRef,
   type ReactNode,
 } from 'react';
 
@@ -66,6 +67,14 @@ interface TaskListContextValue {
   readonly setInterval: (intervalSec: number) => void;
   readonly markRefetched: () => void;
   readonly setSearchQuery: (value: string) => void;
+  /**
+   * Registers a "clear all filters" handler scoped to the surrounding
+   * page (Recent or History). Called from the empty-state CTA when the
+   * list returns no rows under active filters. Returns an unregister fn.
+   */
+  readonly registerClearAll: (handler: () => void) => () => void;
+  /** Invokes whichever clear-all handler the current page registered. */
+  readonly clearAll: () => void;
 }
 
 const TaskListContext = createContext<TaskListContextValue | undefined>(undefined);
@@ -97,6 +106,19 @@ export const TaskListProvider = ({ children, initialIntervalSec = 30 }: TaskList
     [],
   );
 
+  const clearAllRef = useRef<(() => void) | null>(null);
+  const registerClearAll = useCallback((handler: () => void) => {
+    clearAllRef.current = handler;
+    return () => {
+      if (clearAllRef.current === handler) {
+        clearAllRef.current = null;
+      }
+    };
+  }, []);
+  const clearAll = useCallback(() => {
+    clearAllRef.current?.();
+  }, []);
+
   const value = useMemo(
     () => ({
       state,
@@ -105,8 +127,10 @@ export const TaskListProvider = ({ children, initialIntervalSec = 30 }: TaskList
       setInterval: setIntervalSec,
       markRefetched,
       setSearchQuery,
+      registerClearAll,
+      clearAll,
     }),
-    [state, pause, resume, setIntervalSec, markRefetched, setSearchQuery],
+    [state, pause, resume, setIntervalSec, markRefetched, setSearchQuery, registerClearAll, clearAll],
   );
 
   return <TaskListContext.Provider value={value}>{children}</TaskListContext.Provider>;
@@ -119,6 +143,8 @@ const noopValue: TaskListContextValue = {
   setInterval: () => {},
   markRefetched: () => {},
   setSearchQuery: () => {},
+  registerClearAll: () => () => {},
+  clearAll: () => {},
 };
 
 /** Returns the task-list controller; safe to call without a provider. */
