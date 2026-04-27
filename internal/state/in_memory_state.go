@@ -53,6 +53,34 @@ func (state *InMemoryState) AddTask(task models.Task) (*models.Task, error) {
 	return &task, nil
 }
 
+// taskMatchesFilters reports whether a task falls within the time window
+// and matches the optional app/status filters (empty values are wildcards).
+func taskMatchesFilters(task models.Task, startTime, endTime float64, app, status string) bool {
+	if task.Created < startTime || task.Created > endTime {
+		return false
+	}
+	if app != "" && app != task.App {
+		return false
+	}
+	if status != "" && status != task.Status {
+		return false
+	}
+	return true
+}
+
+// paginate returns the [offset:offset+limit] slice of tasks, clamping to bounds.
+// A non-positive limit means "no upper bound" — return everything from offset onward.
+func paginate(tasks []models.Task, limit, offset int) []models.Task {
+	if offset >= len(tasks) {
+		return []models.Task{}
+	}
+	end := len(tasks)
+	if limit > 0 && offset+limit < end {
+		end = offset + limit
+	}
+	return tasks[offset:end]
+}
+
 // GetTasks retrieves tasks from the in-memory state based on the provided time range, app, and status filters.
 // Empty filter values (app == "" or status == "") are treated as wildcards.
 func (state *InMemoryState) GetTasks(startTime float64, endTime float64, app string, status string, limit int, offset int) ([]models.Task, int64) {
@@ -72,16 +100,9 @@ func (state *InMemoryState) GetTasks(startTime float64, endTime float64, app str
 
 	var tasks []models.Task
 	for _, task := range state.tasks {
-		if task.Created < startTime || task.Created > endTime {
-			continue
+		if taskMatchesFilters(task, startTime, endTime, app, status) {
+			tasks = append(tasks, task)
 		}
-		if app != "" && app != task.App {
-			continue
-		}
-		if status != "" && status != task.Status {
-			continue
-		}
-		tasks = append(tasks, task)
 	}
 
 	if len(tasks) == 0 {
@@ -92,18 +113,7 @@ func (state *InMemoryState) GetTasks(startTime float64, endTime float64, app str
 		return tasks[i].Created > tasks[j].Created
 	})
 
-	total := int64(len(tasks))
-
-	if offset >= len(tasks) {
-		return []models.Task{}, total
-	}
-
-	end := len(tasks)
-	if limit > 0 && offset+limit < end {
-		end = offset + limit
-	}
-
-	return tasks[offset:end], total
+	return paginate(tasks, limit, offset), int64(len(tasks))
 }
 
 // GetTask retrieves a task from the in-memory state based on the provided task ID.
