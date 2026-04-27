@@ -10,8 +10,11 @@ describe('EmptyState', () => {
   });
 
   it('omits description when not provided', () => {
-    render(<EmptyState title="Empty" />);
+    const { container } = render(<EmptyState title="Empty" />);
     expect(screen.getByText('Empty')).toBeInTheDocument();
+    // Description is rendered as Typography variant="body2" which becomes <p>;
+    // its absence guards against silently rendering an empty paragraph.
+    expect(container.querySelector('p')).toBeNull();
   });
 
   it('renders the supplied CTA', () => {
