@@ -69,7 +69,7 @@ export const DateRangePicker = ({ value, onApply }: DateRangePickerProps) => {
     if (anchor) {
       setDraft(value);
       setPickingStart(true);
-      const anchorDate = value.start ? new Date(value.start * 1000) : new Date();
+      const anchorDate = value.start != null ? new Date(value.start * 1000) : new Date();
       const focused = ymd(anchorDate, timezone);
       setViewYear(focused.year);
       setViewMonth(focused.month);
