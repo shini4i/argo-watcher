@@ -14,7 +14,6 @@ export interface CalendarDay {
 }
 
 const MS_PER_SECOND = 1000;
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /** Returns the user's "now" as seconds, regardless of timezone. */
 const nowSeconds = (): number => Math.floor(Date.now() / MS_PER_SECOND);
@@ -63,8 +62,20 @@ export const dateAt = (year: number, month: number, day: number, mode: TimezoneM
   return new Date(year, month, day, 0, 0, 0);
 };
 
-/** Subtracts `days` days from the given date, preserving the time-of-day. */
-export const addDays = (date: Date, days: number): Date => new Date(date.getTime() + days * MS_PER_DAY);
+/**
+ * Advances a date by `days` calendar days in the active timezone. Uses
+ * setDate / setUTCDate (rather than millisecond arithmetic) so DST
+ * transitions don't shift the wall-clock time by ±1 hour.
+ */
+export const addDays = (date: Date, days: number, mode: TimezoneMode): Date => {
+  const next = new Date(date);
+  if (mode === 'utc') {
+    next.setUTCDate(next.getUTCDate() + days);
+  } else {
+    next.setDate(next.getDate() + days);
+  }
+  return next;
+};
 
 /** Returns true when two dates resolve to the same day in `mode`. */
 export const isSameDay = (a: Date, b: Date, mode: TimezoneMode): boolean => {
@@ -77,11 +88,11 @@ export const isSameDay = (a: Date, b: Date, mode: TimezoneMode): boolean => {
 export const buildMonthGrid = (year: number, month: number, mode: TimezoneMode): CalendarDay[] => {
   const firstOfMonth = dateAt(year, month, 1, mode);
   const offset = mondayIndex(firstOfMonth, mode);
-  const start = addDays(firstOfMonth, -offset);
+  const start = addDays(firstOfMonth, -offset, mode);
   const today = new Date();
   const cells: CalendarDay[] = [];
   for (let i = 0; i < 42; i += 1) {
-    const date = addDays(start, i);
+    const date = addDays(start, i, mode);
     const inMonth = ymd(date, mode).month === month;
     cells.push({
       date,
@@ -107,7 +118,7 @@ const today = (mode: TimezoneMode): DateRangeValue => {
 };
 
 const yesterday = (mode: TimezoneMode): DateRangeValue => {
-  const ref = addDays(new Date(), -1);
+  const ref = addDays(new Date(), -1, mode);
   return { start: toSeconds(startOfDay(ref, mode)), end: toSeconds(endOfDay(ref, mode)) };
 };
 
@@ -119,7 +130,7 @@ const last24Hours = (): DateRangeValue => {
 const lastNDays = (n: number, mode: TimezoneMode): DateRangeValue => {
   const todayDate = startOfDay(new Date(), mode);
   return {
-    start: toSeconds(addDays(todayDate, -(n - 1))),
+    start: toSeconds(addDays(todayDate, -(n - 1), mode)),
     end: toSeconds(endOfDay(new Date(), mode)),
   };
 };
@@ -127,8 +138,8 @@ const lastNDays = (n: number, mode: TimezoneMode): DateRangeValue => {
 const thisWeek = (mode: TimezoneMode): DateRangeValue => {
   const now = new Date();
   const offset = mondayIndex(now, mode);
-  const monday = startOfDay(addDays(now, -offset), mode);
-  const sunday = endOfDay(addDays(monday, 6), mode);
+  const monday = startOfDay(addDays(now, -offset, mode), mode);
+  const sunday = endOfDay(addDays(monday, 6, mode), mode);
   return { start: toSeconds(monday), end: toSeconds(sunday) };
 };
 
@@ -136,7 +147,7 @@ const thisMonth = (mode: TimezoneMode): DateRangeValue => {
   const now = new Date();
   const { year, month } = ymd(now, mode);
   const first = dateAt(year, month, 1, mode);
-  const lastDayOfMonth = new Date(dateAt(year, month + 1, 1, mode).getTime() - MS_PER_DAY);
+  const lastDayOfMonth = addDays(dateAt(year, month + 1, 1, mode), -1, mode);
   return { start: toSeconds(first), end: toSeconds(endOfDay(lastDayOfMonth, mode)) };
 };
 
