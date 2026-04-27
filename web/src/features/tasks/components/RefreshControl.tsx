@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Box, IconButton, MenuItem, Select, Stack, Typography } from '@mui/material';
 import { keyframes, useTheme } from '@mui/material/styles';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -42,15 +42,20 @@ export const RefreshControl = ({ onRefresh, storageKey = 'recentTasks.refreshInt
 
   const [remaining, setRemaining] = useState(intervalSec);
 
-  // Hydrate the interval from localStorage on first mount.
+  // Hydrate the interval from localStorage exactly once. A ref guards re-runs
+  // so we can keep all closure values in deps (passing lint without disabling)
+  // while still committing to the "first mount, current props" semantics —
+  // re-hydrating mid-session would overwrite the user's manual selection.
+  const hydratedRef = useRef(false);
   useEffect(() => {
+    if (hydratedRef.current) return;
+    hydratedRef.current = true;
     const stored = readStoredInterval(storageKey, intervalSec);
     if (stored !== intervalSec) {
       setIntervalSec(stored);
       setRemaining(stored);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [storageKey, intervalSec, setIntervalSec]);
 
   // Persist interval changes.
   useEffect(() => {
@@ -62,7 +67,10 @@ export const RefreshControl = ({ onRefresh, storageKey = 'recentTasks.refreshInt
     setRemaining(intervalSec);
   }, [intervalSec, state.lastRefetchedAt]);
 
-  // Tick down once per second when not paused; fire onRefresh when reaching 0.
+  // Tick down once per second when not paused. The state-updater function
+  // intentionally has no side effects (firing onRefresh from inside the
+  // updater would run twice under StrictMode and is discouraged by React);
+  // the separate effect below watches `remaining === 0` to refetch.
   useEffect(() => {
     if (intervalSec === 0 || paused) {
       return undefined;
@@ -72,17 +80,21 @@ export const RefreshControl = ({ onRefresh, storageKey = 'recentTasks.refreshInt
       return undefined;
     }
     const id = browserWindow.setInterval(() => {
-      setRemaining(prev => {
-        if (prev <= 1) {
-          onRefresh();
-          markRefetched();
-          return intervalSec;
-        }
-        return prev - 1;
-      });
+      setRemaining(prev => prev - 1);
     }, 1000);
     return () => browserWindow.clearInterval(id);
-  }, [intervalSec, paused, onRefresh, markRefetched]);
+  }, [intervalSec, paused]);
+
+  // When the countdown crosses zero, fire the refresh. markRefetched then
+  // bumps state.lastRefetchedAt, which the reset effect picks up to seed
+  // remaining back to intervalSec — keeping refresh and reset paths uniform.
+  useEffect(() => {
+    if (remaining > 0 || intervalSec === 0 || paused) {
+      return;
+    }
+    onRefresh();
+    markRefetched();
+  }, [remaining, intervalSec, paused, onRefresh, markRefetched]);
 
   const handleManualRefresh = useCallback(() => {
     onRefresh();
