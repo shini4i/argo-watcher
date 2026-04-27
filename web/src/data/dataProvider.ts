@@ -58,6 +58,7 @@ const selectListWindow = (params: GetListParams) => {
     from: fromCandidate ? toUnixSeconds(fromCandidate, defaultFrom) : defaultFrom,
     to: toCandidate ? toUnixSeconds(toCandidate, nowSeconds) : undefined,
     app: filter.app,
+    status: filter.status,
   };
 };
 
@@ -99,6 +100,7 @@ const getList = async (params: GetListParams): Promise<GetListResult<Task>> => {
     from_timestamp: timeframe.from,
     to_timestamp: timeframe.to,
     app: timeframe.app,
+    status: timeframe.status,
     limit,
     offset,
   });

@@ -42,7 +42,14 @@ func (m *mockArgoApi) GetApplication(_ string) (*models.Application, error) {
 }
 
 // mockTaskRepository is a minimal mock for TaskRepository used in tests.
-type mockTaskRepository struct{}
+// Calls to GetTasks capture the last argument set so handler-level tests can
+// assert that query params are forwarded to the repository.
+type mockTaskRepository struct {
+	lastApp    string
+	lastStatus string
+	lastLimit  int
+	lastOffset int
+}
 
 func (m *mockTaskRepository) Connect(_ *config.ServerConfig) error {
 	return nil
@@ -52,7 +59,11 @@ func (m *mockTaskRepository) AddTask(task models.Task) (*models.Task, error) {
 	return &task, nil
 }
 
-func (m *mockTaskRepository) GetTasks(_, _ float64, _ string, _, _ int) ([]models.Task, int64) {
+func (m *mockTaskRepository) GetTasks(_, _ float64, app, status string, limit, offset int) ([]models.Task, int64) {
+	m.lastApp = app
+	m.lastStatus = status
+	m.lastLimit = limit
+	m.lastOffset = offset
 	return []models.Task{}, 0
 }
 
@@ -325,6 +336,35 @@ func TestGetStateInvalidQueryParams(t *testing.T) {
 			assert.Equal(t, http.StatusOK, w.Code)
 		})
 	}
+}
+
+// TestGetStateForwardsFilters verifies that getState forwards `app` and `status`
+// query parameters to the underlying TaskRepository.
+func TestGetStateForwardsFilters(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := &mockTaskRepository{}
+	argo := &argocd.Argo{}
+	argo.Init(repo, &mockArgoApi{}, &mockMetrics{})
+
+	env := &Env{argo: argo, config: &config.ServerConfig{}}
+
+	router := gin.Default()
+	router.GET("/api/v1/tasks", env.getState)
+
+	req, err := http.NewRequest(
+		http.MethodGet,
+		"/api/v1/tasks?from_timestamp=0&app=checkout-api&status=in+progress",
+		nil,
+	)
+	require.NoError(t, err)
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "checkout-api", repo.lastApp)
+	assert.Equal(t, "in progress", repo.lastStatus)
 }
 
 func TestStaticFileServing(t *testing.T) {

@@ -61,17 +61,18 @@ func (state *PostgresState) AddTask(task models.Task) (*models.Task, error) {
 	return &task, nil
 }
 
-// GetTasks retrieves a list of tasks from the PostgreSQL database based on the provided time range and optional app filter.
-// It returns the tasks as a slice of models.Task.
-// Tasks are filtered based on the time range (start time and end time) and, optionally, the app value.
-// The method handles converting timestamps and unmarshalling images from the database.
-func (state *PostgresState) GetTasks(startTime float64, endTime float64, app string, limit int, offset int) ([]models.Task, int64) {
+// GetTasks retrieves a list of tasks from the PostgreSQL database based on the provided time range, app, and status filters.
+// Empty filter values (app == "" or status == "") are treated as wildcards.
+func (state *PostgresState) GetTasks(startTime float64, endTime float64, app string, status string, limit int, offset int) ([]models.Task, int64) {
 	startTimeUTC := time.Unix(int64(startTime), 0).UTC()
 	endTimeUTC := time.Unix(int64(endTime), 0).UTC()
 
 	query := state.orm.Model(&state_models.TaskModel{}).Where("created > ?", startTimeUTC).Where("created <= ?", endTimeUTC)
 	if app != "" {
 		query = query.Where(`"tasks"."app" = ?`, app)
+	}
+	if status != "" {
+		query = query.Where(`"tasks"."status" = ?`, status)
 	}
 
 	countQuery := query.Session(&gorm.Session{})

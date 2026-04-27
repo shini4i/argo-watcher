@@ -492,6 +492,7 @@ func (env *Env) addTask(c *gin.Context) {
 // @Description Get all tasks that match the provided parameters
 // @Tags backend, frontend
 // @Param app query string false "App name"
+// @Param status query string false "Task status (e.g. 'in progress', 'failed', 'deployed')"
 // @Param from_timestamp query int true "From timestamp" default(1648390029)
 // @Param to_timestamp query int false "To timestamp"
 // @Param limit query int false "Maximum number of tasks to return"
@@ -511,6 +512,7 @@ func (env *Env) getState(c *gin.Context) {
 		endTime = float64(time.Now().Unix())
 	}
 	app := c.Query("app")
+	status := c.Query("status")
 
 	limit, err := strconv.Atoi(c.Query("limit"))
 	if err != nil && c.Query("limit") != "" {
@@ -527,7 +529,7 @@ func (env *Env) getState(c *gin.Context) {
 		offset = 0
 	}
 
-	c.JSON(http.StatusOK, env.argo.GetTasks(startTime, endTime, app, limit, offset))
+	c.JSON(http.StatusOK, env.argo.GetTasks(startTime, endTime, app, status, limit, offset))
 }
 
 // getTaskStatus godoc

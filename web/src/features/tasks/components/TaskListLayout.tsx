@@ -2,6 +2,7 @@ import { Children, isValidElement, type ReactNode } from 'react';
 import { Box, Stack } from '@mui/material';
 import { List, Pagination, type ListProps } from 'react-admin';
 import { PerPagePersistence, readPersistentPerPage } from '../../../shared/hooks/usePersistentPerPage';
+import { TaskListProvider } from './TaskListContext';
 
 interface TaskListLayoutProps {
   title?: string;
@@ -54,6 +55,7 @@ export const TaskListLayout = ({
     : [];
 
   return (
+    <TaskListProvider>
     <List
       title={title}
       resource={resource}
@@ -67,34 +69,21 @@ export const TaskListLayout = ({
     >
       <PerPagePersistence storageKey={perPageStorageKey} />
       <Stack sx={{ px: 2, py: 1, width: '100%' }} spacing={0.5}>
-        <Stack
-          direction={{ xs: 'column', md: 'row' }}
-          spacing={{ xs: 1.5, md: 2 }}
-          justifyContent="flex-end"
-          alignItems={{ xs: 'flex-end', md: 'center' }}
-        >
-          {headerContent.length > 0 ? (
-            headerContent.map(node => {
-              const boxKey = isValidElement(node) && node.key != null ? String(node.key) : undefined;
-              return (
-                <Box
-                  key={boxKey}
-                  sx={{
-                    display: 'flex',
-                    justifyContent: 'flex-end',
-                    width: { xs: '100%', md: 'auto' },
-                  }}
-                >
-                  {node}
-                </Box>
-              );
-            })
-          ) : (
-            <Box sx={{ width: '100%' }} />
-          )}
-        </Stack>
+        {headerContent.length > 0 ? (
+          headerContent.map(node => {
+            const boxKey = isValidElement(node) && node.key != null ? String(node.key) : undefined;
+            return (
+              <Box key={boxKey} sx={{ width: '100%' }}>
+                {node}
+              </Box>
+            );
+          })
+        ) : (
+          <Box sx={{ width: '100%' }} />
+        )}
       </Stack>
       {children}
     </List>
+    </TaskListProvider>
   );
 };

@@ -86,13 +86,21 @@ func TestPostgresState_GetTasks(t *testing.T) {
 	env.addTask(t, sampleTask("ObsoleteApp"))
 	end := float64(time.Now().Add(time.Hour).Unix())
 
-	tasks, total := env.state.GetTasks(start, end, "", 0, 0)
+	tasks, total := env.state.GetTasks(start, end, "", "", 0, 0)
 	assert.Len(t, tasks, 3)
 	assert.Equal(t, int64(3), total)
 
-	tasks, total = env.state.GetTasks(start, end, "Test", 0, 0)
+	tasks, total = env.state.GetTasks(start, end, "Test", "", 0, 0)
 	assert.Len(t, tasks, 1)
 	assert.Equal(t, int64(1), total)
+
+	tasks, total = env.state.GetTasks(start, end, "", models.StatusInProgressMessage, 0, 0)
+	assert.Len(t, tasks, 3)
+	assert.Equal(t, int64(3), total)
+
+	tasks, total = env.state.GetTasks(start, end, "", "deployed", 0, 0)
+	assert.Empty(t, tasks)
+	assert.Equal(t, int64(0), total)
 }
 
 func TestPostgresState_GetTask(t *testing.T) {

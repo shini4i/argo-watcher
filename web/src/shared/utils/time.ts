@@ -84,6 +84,38 @@ export const formatDuration = (seconds: number): string => {
   return pluralize(years, 'year');
 };
 
+/**
+ * Formats elapsed seconds in dense monospace form ("1m 04s", "2h 03m", "—").
+ * Used for table cells where vertical alignment matters; the legacy
+ * `formatDuration` is preserved for prose contexts (status reasons, detail
+ * pages) that read better as "2 minutes" rather than "2m 00s".
+ */
+export const formatDurationCompact = (seconds: number): string => {
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    return '—';
+  }
+
+  const total = Math.floor(seconds);
+  const pad = (value: number) => value.toString().padStart(2, '0');
+
+  if (total < 60) {
+    return `${total}s`;
+  }
+  if (total < 3600) {
+    const minutes = Math.floor(total / 60);
+    const remSeconds = total % 60;
+    return `${minutes}m ${pad(remSeconds)}s`;
+  }
+  if (total < 86400) {
+    const hours = Math.floor(total / 3600);
+    const remMinutes = Math.floor((total % 3600) / 60);
+    return `${hours}h ${pad(remMinutes)}m`;
+  }
+  const days = Math.floor(total / 86400);
+  const remHours = Math.floor((total % 86400) / 3600);
+  return `${days}d ${pad(remHours)}h`;
+};
+
 /** Formats timestamps as "X minutes ago" relative to now. */
 export const formatRelativeTime = (value: SupportedTimestamp) => {
   const date = toDate(value);

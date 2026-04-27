@@ -95,8 +95,8 @@ func (argo *Argo) AddTask(task models.Task) (*models.Task, error) {
 	return newTask, nil
 }
 
-// GetTasks retrieves tasks from the state within a given time range and optional pagination window.
-func (argo *Argo) GetTasks(startTime float64, endTime float64, app string, limit int, offset int) models.TasksResponse {
+// GetTasks retrieves tasks from the state within a given time range and optional app/status filters and pagination window.
+func (argo *Argo) GetTasks(startTime float64, endTime float64, app string, status string, limit int, offset int) models.TasksResponse {
 	if _, err := argo.Check(); err != nil {
 		return models.TasksResponse{
 			Tasks: []models.Task{},
@@ -104,7 +104,7 @@ func (argo *Argo) GetTasks(startTime float64, endTime float64, app string, limit
 		}
 	}
 
-	tasks, total := argo.State.GetTasks(startTime, endTime, app, limit, offset)
+	tasks, total := argo.State.GetTasks(startTime, endTime, app, status, limit, offset)
 
 	return models.TasksResponse{
 		Tasks: tasks,

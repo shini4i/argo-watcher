@@ -53,12 +53,9 @@ func (state *InMemoryState) AddTask(task models.Task) (*models.Task, error) {
 	return &task, nil
 }
 
-// GetTasks retrieves tasks from the in-memory state based on the provided time range and app filter.
-// It takes a start time, end time, and optional app filter.
-// If there are no tasks in the in-memory state, it returns an empty slice.
-// The method filters tasks within the time range and, optionally, by app.
-// If an app filter is provided, only matching tasks are included.
-func (state *InMemoryState) GetTasks(startTime float64, endTime float64, app string, limit int, offset int) ([]models.Task, int64) {
+// GetTasks retrieves tasks from the in-memory state based on the provided time range, app, and status filters.
+// Empty filter values (app == "" or status == "") are treated as wildcards.
+func (state *InMemoryState) GetTasks(startTime float64, endTime float64, app string, status string, limit int, offset int) ([]models.Task, int64) {
 	state.mu.RLock()
 	defer state.mu.RUnlock()
 
@@ -75,11 +72,16 @@ func (state *InMemoryState) GetTasks(startTime float64, endTime float64, app str
 
 	var tasks []models.Task
 	for _, task := range state.tasks {
-		if task.Created >= startTime && task.Created <= endTime {
-			if app == "" || app == task.App {
-				tasks = append(tasks, task)
-			}
+		if task.Created < startTime || task.Created > endTime {
+			continue
 		}
+		if app != "" && app != task.App {
+			continue
+		}
+		if status != "" && status != task.Status {
+			continue
+		}
+		tasks = append(tasks, task)
 	}
 
 	if len(tasks) == 0 {

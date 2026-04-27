@@ -294,12 +294,12 @@ func TestArgoGetTasks(t *testing.T) {
 		expectedTasks := []models.Task{
 			{Id: "task-1", App: "demo", Images: []models.Image{{Image: "example.com/app", Tag: "v1.0.0"}}},
 		}
-		state.EXPECT().GetTasks(start, end, "demo", 0, 0).Return(expectedTasks, int64(len(expectedTasks)))
+		state.EXPECT().GetTasks(start, end, "demo", "", 0, 0).Return(expectedTasks, int64(len(expectedTasks)))
 
 		argo := &Argo{}
 		argo.Init(state, api, metrics)
 
-		response := argo.GetTasks(start, end, "demo", 0, 0)
+		response := argo.GetTasks(start, end, "demo", "", 0, 0)
 
 		assert.Equal(t, expectedTasks, response.Tasks)
 		assert.Equal(t, int64(len(expectedTasks)), response.Total)
@@ -318,7 +318,7 @@ func TestArgoGetTasks(t *testing.T) {
 		argo := &Argo{}
 		argo.Init(state, api, metrics)
 
-		response := argo.GetTasks(0, 100, "demo", 0, 0)
+		response := argo.GetTasks(0, 100, "demo", "", 0, 0)
 
 		assert.Empty(t, response.Tasks)
 		assert.Equal(t, models.StatusConnectionUnavailable, response.Error)

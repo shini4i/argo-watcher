@@ -107,6 +107,23 @@ describe('dataProvider', () => {
     clearAccessToken();
   });
 
+  it('forwards the status filter to the backend query', async () => {
+    const fetch = mockFetch().mockResolvedValue(jsonResponse({ tasks: [], total: 0 }));
+    await dataProvider.getList('tasks', {
+      ...createListParams(),
+      filter: { status: 'in progress' },
+    });
+    const params = getQueryParams(fetch.mock.calls[0][0] as string);
+    expect(params.get('status')).toBe('in progress');
+  });
+
+  it('omits the status param when no status filter is set', async () => {
+    const fetch = mockFetch().mockResolvedValue(jsonResponse({ tasks: [], total: 0 }));
+    await dataProvider.getList('tasks', createListParams());
+    const params = getQueryParams(fetch.mock.calls[0][0] as string);
+    expect(params.has('status')).toBe(false);
+  });
+
   it('supports filtering by explicit start and end timestamps', async () => {
     const fetch = mockFetch().mockResolvedValue(
       jsonResponse({

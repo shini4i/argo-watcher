@@ -17,7 +17,7 @@ var errDesiredRetry = errors.New("desired retry error")
 type TaskRepository interface {
 	Connect(serverConfig *config.ServerConfig) error
 	AddTask(task models.Task) (*models.Task, error)
-	GetTasks(startTime float64, endTime float64, app string, limit int, offset int) ([]models.Task, int64)
+	GetTasks(startTime float64, endTime float64, app string, status string, limit int, offset int) ([]models.Task, int64)
 	GetTask(id string) (*models.Task, error)
 	SetTaskStatus(id string, status string, reason string) error
 	Check() bool
