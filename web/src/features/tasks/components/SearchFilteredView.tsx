@@ -19,28 +19,39 @@ interface SearchFilteredViewProps {
 }
 
 /**
- * Client-side search filter for the task table. Reads the active search query
- * from `TaskListContext`, narrows the current page's records to those whose
- * app / author / image substring matches, and re-publishes a filtered list
- * context for the children.
+ * Client-side filter for the task table. Reads the active search query
+ * from `TaskListContext`, narrows the *currently loaded page* to records
+ * whose app / author / image substring matches, and re-publishes a
+ * filtered list context for the children.
  *
- * When the query is empty this component is a no-op pass-through, so it's
- * safe to slot above any task list page.
+ * Important: this is intentionally a page-scoped filter, not a search
+ * across the entire backend. Callers (placeholder text, active-filter
+ * chip) should reflect that scope so users do not assume a global search.
+ *
+ * When the query is empty this component is a no-op pass-through, so it
+ * is safe to slot above any task list page.
  */
 export const SearchFilteredView = ({ children }: SearchFilteredViewProps) => {
   const ctx = useListContext<Task>();
   const { state } = useTaskListContext();
   const query = state.searchQuery.trim().toLowerCase();
+  const records = ctx.data;
 
-  const filteredCtx = useMemo(() => {
-    if (!query) return ctx;
-    const data = (ctx.data ?? []).filter(record => matchesQuery(record, query));
-    return { ...ctx, data, total: data.length };
-  }, [ctx, query]);
+  // react-admin produces a fresh context object reference every render, so
+  // memoise only on the primitives we actually read for filtering. The
+  // ctx spread below is cheap and stays correct across context updates.
+  const filteredData = useMemo(() => {
+    if (!query) return null;
+    return (records ?? []).filter(record => matchesQuery(record, query));
+  }, [records, query]);
 
-  if (!query) {
+  if (!query || !filteredData) {
     return <>{children}</>;
   }
 
-  return <ListContextProvider value={filteredCtx}>{children}</ListContextProvider>;
+  return (
+    <ListContextProvider value={{ ...ctx, data: filteredData, total: filteredData.length }}>
+      {children}
+    </ListContextProvider>
+  );
 };
