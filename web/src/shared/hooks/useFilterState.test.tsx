@@ -182,4 +182,65 @@ describe('useFilterState', () => {
     expect(result.current.isDirty).toBe(true);
   });
 
+  it('URL takes precedence over localStorage on mount', () => {
+    localStorage.setItem('history.app', 'fromStorage');
+    const wrapper = wrapperFactory({ initialEntry: '/?app=fromUrl' });
+
+    const { result } = renderHook(() => useFilterState({ storageKey: 'history', schema, defaults }), {
+      wrapper,
+    });
+
+    expect(result.current.values.app).toBe('fromUrl');
+    expect(result.current.applied.app).toBe('fromUrl');
+  });
+
+  it('falls back to defaults when neither URL nor storage have values', () => {
+    const wrapper = wrapperFactory({});
+
+    const { result } = renderHook(() => useFilterState({ storageKey: 'history', schema, defaults }), {
+      wrapper,
+    });
+
+    expect(result.current.values).toEqual(defaults);
+    expect(result.current.applied).toEqual(defaults);
+    expect(result.current.isDirty).toBe(false);
+  });
+
+  it('does not write to localStorage when schema field opts out (storage: false)', () => {
+    interface EphemeralFilters extends Record<string, unknown> {
+      app: string;
+      query: string;
+    }
+
+    const ephemeralSchema: FilterStateSchema<EphemeralFilters> = {
+      app: {
+        fromUrl: raw => raw ?? '',
+        toUrl: value => (value ? value : null),
+        storage: true,
+      },
+      query: {
+        fromUrl: raw => raw ?? '',
+        toUrl: value => (value ? value : null),
+        storage: false,
+      },
+    };
+    const ephemeralDefaults: EphemeralFilters = { app: '', query: '' };
+
+    const wrapper = wrapperFactory({});
+    const { result } = renderHook(
+      () =>
+        useFilterState({
+          storageKey: 'recent',
+          schema: ephemeralSchema,
+          defaults: ephemeralDefaults,
+        }),
+      { wrapper },
+    );
+
+    act(() => result.current.setMany({ app: 'demo', query: 'transient' }));
+    act(() => result.current.apply());
+
+    expect(localStorage.getItem('recent.app')).toBe('demo');
+    expect(localStorage.getItem('recent.query')).toBeNull();
+  });
 });
