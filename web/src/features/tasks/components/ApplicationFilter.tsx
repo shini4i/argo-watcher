@@ -1,7 +1,10 @@
-import { Autocomplete, TextField } from '@mui/material';
+import { Autocomplete, InputAdornment, TextField } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
+import FilterListIcon from '@mui/icons-material/FilterList';
 import { useEffect, useState } from 'react';
 import type { Task } from '../../../data/types';
 import { getBrowserWindow } from '../../../shared/utils';
+import { tokens } from '../../../theme/tokens';
 
 const DEFAULT_STORAGE_KEY = 'recentTasks.app';
 
@@ -37,6 +40,7 @@ export const ApplicationFilter = ({
   onChange: (next: string) => void;
   storageKey?: string;
 }) => {
+  const theme = useTheme();
   const [options, setOptions] = useState<string[]>([]);
 
   useEffect(() => {
@@ -63,7 +67,28 @@ export const ApplicationFilter = ({
         }
         onChange(next);
       }}
-      renderInput={params => <TextField {...params} label="Application" placeholder="Filter" />}
+      renderInput={params => (
+        <TextField
+          {...params}
+          placeholder="Filter by app"
+          aria-label="Filter by application"
+          InputProps={{
+            ...params.InputProps,
+            startAdornment: (
+              <InputAdornment position="start" sx={{ ml: 0.5 }}>
+                <FilterListIcon fontSize="small" sx={{ color: theme.palette.text.secondary }} />
+              </InputAdornment>
+            ),
+            sx: {
+              height: 34,
+              borderRadius: `${tokens.radiusMd}px`,
+              fontSize: 13.5,
+              py: '0 !important',
+            },
+          }}
+        />
+      )}
+      sx={{ minWidth: 220 }}
       clearOnBlur={false}
       freeSolo
     />
