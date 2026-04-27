@@ -36,6 +36,22 @@ export const tokens = {
   liveFg: '#2E7D32',
   liveFgDark: '#81C784',
 
+  // monogram swatches (AppCell) — picked by stable hash of the app name
+  monogramSwatches: [
+    { bg: '#EEF2FF', fg: '#5B7CFA' }, // blue
+    { bg: '#FFF4E5', fg: '#ED6C02' }, // amber
+    { bg: '#E8F5E9', fg: '#2E7D32' }, // green
+    { bg: '#FBEAFF', fg: '#7B1FA2' }, // purple
+    { bg: '#FDECEA', fg: '#D32F2F' }, // red
+  ],
+  monogramSwatchesDark: [
+    { bg: 'rgba(91, 124, 250, 0.20)', fg: '#A5B4FC' },
+    { bg: 'rgba(237, 108, 2, 0.22)', fg: '#FDBA74' },
+    { bg: 'rgba(46, 125, 50, 0.20)', fg: '#86EFAC' },
+    { bg: 'rgba(123, 31, 162, 0.22)', fg: '#D8B4FE' },
+    { bg: 'rgba(211, 47, 47, 0.22)', fg: '#FCA5A5' },
+  ],
+
   // surfaces
   canvas: '#F6F7F9',
   surface: '#FFFFFF',

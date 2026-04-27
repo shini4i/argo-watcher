@@ -1,4 +1,5 @@
 import { Box, Link, Stack, Typography } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { tokens } from '../../../theme/tokens';
 
@@ -6,14 +7,6 @@ interface AppCellProps {
   readonly app: string;
   readonly project?: string | null;
 }
-
-const SWATCHES: ReadonlyArray<{ readonly bg: string; readonly fg: string }> = [
-  { bg: '#EEF2FF', fg: '#5B7CFA' }, // blue
-  { bg: '#FFF4E5', fg: '#ED6C02' }, // amber
-  { bg: '#E8F5E9', fg: '#2E7D32' }, // green
-  { bg: '#FBEAFF', fg: '#7B1FA2' }, // purple
-  { bg: '#FDECEA', fg: '#D32F2F' }, // red
-];
 
 /** Stable hash → swatch index for a given app name. */
 const hashIndex = (name: string, modulo: number): number => {
@@ -66,8 +59,10 @@ export const describeProject = (project: string): ProjectLinkInfo => {
  * project is a URL.
  */
 export const AppCell = ({ app, project }: AppCellProps) => {
+  const theme = useTheme();
+  const swatches = theme.palette.mode === 'dark' ? tokens.monogramSwatchesDark : tokens.monogramSwatches;
   const monogram = deriveMonogram(app);
-  const swatch = SWATCHES[hashIndex(app, SWATCHES.length)];
+  const swatch = swatches[hashIndex(app, swatches.length)];
   const projectInfo = project ? describeProject(project) : null;
 
   return (
