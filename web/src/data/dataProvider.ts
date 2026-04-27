@@ -105,6 +105,14 @@ const getList = async (params: GetListParams): Promise<GetListResult<Task>> => {
 
   const { data } = await httpClient<TasksResponse>(`/api/v1/${RESOURCE_TASKS}${query}`);
   const response = data ?? { tasks: [], total: 0 };
+
+  // Backend returns HTTP 200 with a non-empty `error` field when ArgoCD is unreachable.
+  // Treat it as an empty result rather than rejecting, so the empty-state placeholder
+  // can render instead of leaving the Datagrid in its loading skeleton forever.
+  if (response.error) {
+    console.warn(`Tasks endpoint reported a soft error: ${String(response.error).slice(0, 200)}`);
+  }
+
   return toRaListResult(response, params);
 };
 

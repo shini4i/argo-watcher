@@ -154,7 +154,8 @@ describe('dataProvider', () => {
     expect(params.get('to_timestamp')).toBe(String(nowSeconds));
   });
 
-  it('throws HttpError when backend responds with error payload', async () => {
+  it('returns an empty list when backend reports a soft error alongside no tasks', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     mockFetch().mockResolvedValue(
       jsonResponse({
         tasks: [],
@@ -162,7 +163,35 @@ describe('dataProvider', () => {
       }),
     );
 
-    await expect(dataProvider.getList('tasks', createListParams())).rejects.toThrow(HttpError);
+    const result = await dataProvider.getList('tasks', createListParams());
+
+    expect(result.data).toEqual([]);
+    expect(result.total).toBe(0);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('argocd is unavailable'));
+
+    warnSpy.mockRestore();
+  });
+
+  it('still returns tasks when backend reports a soft error alongside results', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    mockFetch().mockResolvedValue(
+      jsonResponse({
+        tasks: [
+          { id: '1', created: 1, updated: 1, app: 'demo', author: 'alice', project: 'proj', images: [] },
+          { id: '2', created: 2, updated: 2, app: 'demo', author: 'bob', project: 'proj', images: [] },
+        ],
+        total: 2,
+        error: 'argocd is unavailable',
+      }),
+    );
+
+    const result = await dataProvider.getList('tasks', createListParams());
+
+    expect(result.data).toHaveLength(2);
+    expect(result.total).toBe(2);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('argocd is unavailable'));
+
+    warnSpy.mockRestore();
   });
 
   it('retrieves a single task status', async () => {
