@@ -50,8 +50,9 @@ interface StatusCountSnapshot {
  */
 const dropStatusFilter = (filter: Record<string, unknown>): Record<string, unknown> => {
   if (!('status' in filter)) return filter;
-  const { status: _status, ...rest } = filter;
-  return rest;
+  const next = { ...filter };
+  delete next.status;
+  return next;
 };
 
 const useTaskStatusCounts = (): StatusCountSnapshot => {
