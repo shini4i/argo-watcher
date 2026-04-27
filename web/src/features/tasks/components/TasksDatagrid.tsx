@@ -135,13 +135,16 @@ const datagridSx: SxProps<Theme> = theme => {
       }),
     },
     '& .cell-status': { width: 132 },
-    '& .cell-author': { width: 130 },
+    // Application is the only flexible column; cap it so wide viewports don't
+    // leave a huge gap between the app name and the next column.
+    '& .cell-app': { width: 'auto', minWidth: 240, maxWidth: 360 },
+    '& .cell-author': { width: 160 },
     '& .cell-time, & .cell-duration': {
-      width: 170,
+      width: 200,
       fontVariantNumeric: 'tabular-nums',
     },
-    '& .cell-duration': { width: 90 },
-    '& .cell-images': { width: 240 },
+    '& .cell-duration': { width: 110 },
+    '& .cell-images': { width: 280 },
     '& .cell-nav': {
       width: 56,
       textAlign: 'right',

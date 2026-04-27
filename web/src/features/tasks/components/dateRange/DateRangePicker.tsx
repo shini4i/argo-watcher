@@ -154,9 +154,15 @@ export const DateRangePicker = ({ value, onApply }: DateRangePickerProps) => {
     ? dayCount(draft.start, draft.end)
     : 0;
 
-  const monthHeader = formatDate(
-    Math.floor(dateAt(viewYear, viewMonth, 1, timezone).getTime() / 1000),
-    MONTH_FORMAT,
+  // formatDate merges over DEFAULT_DATE_FORMAT, which leaks day/hour/minute
+  // into the header. Use Intl directly so we get just "April 2026".
+  const monthHeader = useMemo(
+    () =>
+      new Intl.DateTimeFormat('en-GB', {
+        ...MONTH_FORMAT,
+        timeZone: timezone === 'utc' ? 'UTC' : undefined,
+      }).format(dateAt(viewYear, viewMonth, 1, timezone)),
+    [viewYear, viewMonth, timezone],
   );
 
   return (
@@ -213,6 +219,14 @@ export const DateRangePicker = ({ value, onApply }: DateRangePickerProps) => {
           >
             {PRESETS.map((preset, index) => {
               const isActive = matchedPreset === preset.id;
+              const isDark = theme.palette.mode === 'dark';
+              const activeBg = isDark ? tokens.accentSoftDark : tokens.accentSoft;
+              const activeFg = isDark ? '#A5B4FC' : tokens.accent;
+              const hoverBg = isActive
+                ? activeBg
+                : isDark
+                  ? 'rgba(255,255,255,0.06)'
+                  : 'rgba(0,0,0,0.04)';
               const showDivider = index === 4; // after Last 30 days, before This week
               return (
                 <Box key={preset.id}>
@@ -231,9 +245,9 @@ export const DateRangePicker = ({ value, onApply }: DateRangePickerProps) => {
                       fontSize: 12.5,
                       fontWeight: isActive ? 500 : 400,
                       textAlign: 'left',
-                      color: isActive ? tokens.accent : theme.palette.text.primary,
-                      backgroundColor: isActive ? tokens.accentSoft : 'transparent',
-                      '&:hover': { backgroundColor: isActive ? tokens.accentSoft : 'rgba(0,0,0,0.04)' },
+                      color: isActive ? activeFg : theme.palette.text.primary,
+                      backgroundColor: isActive ? activeBg : 'transparent',
+                      '&:hover': { backgroundColor: hoverBg },
                     }}
                   >
                     {preset.label}
@@ -354,17 +368,23 @@ interface CalendarCellProps {
 
 const CalendarCell = ({ label, isInMonth, isToday, isStart, isEnd, isInRange, onClick }: CalendarCellProps) => {
   const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
   const isEndpoint = isStart || isEnd;
   const middleOfRange = isInRange && !isEndpoint;
+
+  const rangeBg = isDark ? tokens.accentSoftDark : tokens.accentSoft;
 
   let background = 'transparent';
   if (isEndpoint) {
     background = tokens.accent;
   } else if (middleOfRange) {
-    background = tokens.accentSoft;
+    background = rangeBg;
   }
 
-  let color = isInMonth ? theme.palette.text.primary : theme.palette.text.disabled;
+  // In dark mode the in-range strip is a tinted accent, so primary text on it
+  // already reads well; out-of-month cells need a lift from the default
+  // text.disabled (slate-500) which gets lost on the dark surface.
+  let color = isInMonth ? theme.palette.text.primary : isDark ? '#94A3B8' : theme.palette.text.disabled;
   if (isEndpoint) color = '#FFFFFF';
 
   let borderRadius = '6px';
