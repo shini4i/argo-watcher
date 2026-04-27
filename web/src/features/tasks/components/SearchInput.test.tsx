@@ -6,7 +6,7 @@ import { TaskListProvider, useTaskListContext } from './TaskListContext';
 const PausedReasonsProbe = () => {
   const { state } = useTaskListContext();
   return (
-    <div data-testid="paused-reasons">{Array.from(state.pausedReasons).sort().join(',')}</div>
+    <div data-testid="paused-reasons">{Array.from(state.pausedReasons).sort((a, b) => a.localeCompare(b)).join(',')}</div>
   );
 };
 

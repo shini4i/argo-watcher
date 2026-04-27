@@ -54,7 +54,7 @@ describe('ImagesCell', () => {
   it('stops propagation so row navigation does not fire when toggling', () => {
     const onRowClick = vi.fn();
     render(
-      <div onClick={onRowClick}>
+      <div onClick={onRowClick} onKeyDown={onRowClick} role="presentation">
         <ImagesCell
           images={[
             { image: 'api', tag: 'v1' },
