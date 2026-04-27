@@ -91,10 +91,10 @@ export const RefreshControl = ({ onRefresh, storageKey = 'recentTasks.refreshInt
   }, [onRefresh, markRefetched, intervalSec]);
 
   const isOff = intervalSec === 0;
-  const success = theme.palette.success.main;
+  const live = theme.palette.mode === 'dark' ? tokens.liveFgDark : tokens.liveFg;
   const muted = theme.palette.text.secondary;
-  const dotColor = isOff ? muted : success;
-  const labelColor = isOff ? muted : success;
+  const dotColor = isOff ? muted : live;
+  const labelColor = isOff ? muted : live;
   const label = isOff
     ? 'Paused'
     : paused

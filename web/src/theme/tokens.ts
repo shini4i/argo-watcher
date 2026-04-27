@@ -32,6 +32,10 @@ export const tokens = {
   // accent-soft for chips/highlights (dark mode mirror)
   accentSoftDark: 'rgba(91, 124, 250, 0.18)',
 
+  // live indicator (refresh control dot + label) — mirrors deployed greens
+  liveFg: '#2E7D32',
+  liveFgDark: '#81C784',
+
   // surfaces
   canvas: '#F6F7F9',
   surface: '#FFFFFF',
