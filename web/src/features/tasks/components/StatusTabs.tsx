@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { Stack, Typography } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { useGetList, useListContext } from 'react-admin';
@@ -28,33 +29,43 @@ const STATUS_QUERY_OPTS = {
   refetchOnWindowFocus: false,
 } as const;
 
-const useStatusCount = (status?: string) => {
-  const result = useGetList<Task>(
+/**
+ * Single `useGetList` call (no status filter) with a wide page so we can
+ * group statuses client-side. Cached for 30 s like the previous per-tab
+ * queries. The data reuses the same query key as long as no status filter
+ * is set, so callers that already paged through `tasks` share the cache.
+ */
+const useTaskStatusCounts = (): Map<string, number> => {
+  const { data } = useGetList<Task>(
     'tasks',
-    {
-      pagination: { page: 1, perPage: 1 },
-      filter: status ? { status } : undefined,
-    },
+    { pagination: { page: 1, perPage: 1000 } },
     STATUS_QUERY_OPTS,
   );
-  return result.total ?? 0;
+
+  return useMemo(() => {
+    const counts = new Map<string, number>();
+    (data ?? []).forEach(task => {
+      if (!task.status) return;
+      counts.set(task.status, (counts.get(task.status) ?? 0) + 1);
+    });
+    return counts;
+  }, [data]);
 };
 
 /**
  * Pill-tab row for filtering the recent list by status. The "All" total comes
- * from the parent list context; per-status counts use lightweight parallel
- * `useGetList` calls cached for 30 s.
+ * from the parent list context; per-status counts come from one cached
+ * `useGetList` query that we group by status in memory.
  */
 export const StatusTabs = ({ value, onChange }: StatusTabsProps) => {
   const theme = useTheme();
   const { total: listTotal = 0 } = useListContext<Task>();
-  const inProgressCount = useStatusCount('in progress');
-  const failedCount = useStatusCount('failed');
+  const statusCounts = useTaskStatusCounts();
 
   const counts: Record<string, number> = {
     all: listTotal,
-    'in progress': inProgressCount,
-    failed: failedCount,
+    'in progress': statusCounts.get('in progress') ?? 0,
+    failed: statusCounts.get('failed') ?? 0,
   };
 
   return (
