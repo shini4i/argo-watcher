@@ -1,4 +1,4 @@
-import { render, screen, act, waitFor } from '@testing-library/react';
+import { render, screen, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HttpResponse } from '../../data/httpClient';
@@ -10,14 +10,9 @@ import { TimezoneProvider } from '../../shared/providers/TimezoneProvider';
 
 vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
 
-const httpClientMock = vi.fn();
 const notifyMock = vi.fn();
 const keycloakEnabledMock = vi.fn();
 const permissionsMock = vi.fn();
-
-vi.mock('../../data/httpClient', () => ({
-  httpClient: (...args: unknown[]) => httpClientMock(...args),
-}));
 
 vi.mock('../../features/deployLock/deployLockService', () => ({
   deployLockService: {
@@ -57,21 +52,9 @@ const renderDrawer = () =>
     </ThemeModeProvider>,
   );
 
-/** Retrieves the browser navigator shim used for clipboard operations in tests. */
-const getBrowserNavigator = (): Navigator => {
-  const browserWindow = globalThis.window;
-  if (!browserWindow) {
-    throw new Error('Browser window is required for ConfigDrawer tests.');
-  }
-  return browserWindow.navigator;
-};
-
 describe('ConfigDrawer', () => {
-  let clipboardWriteMock: ReturnType<typeof vi.fn>;
-
   beforeEach(() => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-    httpClientMock.mockReset();
     notifyMock.mockReset();
     vi.mocked(deployLockService.setLock).mockReset();
     vi.mocked(deployLockService.releaseLock).mockReset();
@@ -97,31 +80,6 @@ describe('ConfigDrawer', () => {
       status: 200,
       headers: {} as HttpResponse<unknown>['headers'],
     });
-    httpClientMock.mockResolvedValue({
-      data: { foo: 'bar' },
-      status: 200,
-      headers: {} as HttpResponse<unknown>['headers'],
-    });
-    clipboardWriteMock = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(getBrowserNavigator(), 'clipboard', {
-      value: { writeText: clipboardWriteMock },
-      configurable: true,
-    });
-  });
-
-  it('renders configuration values and copies JSON to clipboard', async () => {
-    renderDrawer();
-
-    await screen.findByText(/foo/i);
-
-    const user = userEvent.setup();
-    await act(async () => {
-      await user.click(screen.getByRole('button', { name: /copy configuration/i }));
-    });
-
-    await waitFor(() =>
-      expect(notifyMock).toHaveBeenCalledWith('Configuration copied to clipboard.', { type: 'info' }),
-    );
   });
 
   it('toggles theme mode', async () => {
@@ -158,31 +116,6 @@ describe('ConfigDrawer', () => {
     expect(deployLockService.setLock).toHaveBeenCalled();
   });
 
-  it('shows configuration fetch errors and notifies user', async () => {
-    httpClientMock.mockRejectedValueOnce(new Error('boom'));
-    renderDrawer();
-
-    await screen.findByText('boom');
-    expect(notifyMock).toHaveBeenCalledWith('boom', { type: 'warning' });
-  });
-
-  it('warns when clipboard API is unavailable during copy', async () => {
-    renderDrawer();
-    const user = userEvent.setup();
-
-    await screen.findByText(/foo/i);
-    const clipboard = getBrowserNavigator().clipboard as { writeText: () => Promise<unknown> };
-    const originalWrite = clipboard.writeText;
-    clipboard.writeText = () => Promise.reject(new Error('fail'));
-    await act(async () => {
-      await user.click(screen.getByRole('button', { name: /copy configuration/i }));
-    });
-
-    expect(notifyMock).toHaveBeenCalledWith('fail', { type: 'warning' });
-
-    clipboard.writeText = originalWrite;
-  });
-
   it('updates timezone preference when toggled', async () => {
     renderDrawer();
     const user = userEvent.setup();
@@ -206,5 +139,11 @@ describe('ConfigDrawer', () => {
 
     expect(deployLockService.releaseLock).toHaveBeenCalled();
     expect(notifyMock).toHaveBeenCalledWith('Deploy lock released.', { type: 'info' });
+  });
+
+  it('does not render the backend configuration section', () => {
+    renderDrawer();
+    expect(screen.queryByText(/Backend Configuration/i)).toBeNull();
+    expect(screen.queryByRole('button', { name: /copy configuration/i })).toBeNull();
   });
 });

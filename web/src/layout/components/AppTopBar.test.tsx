@@ -59,17 +59,11 @@ describe('AppTopBar', () => {
   });
 
   it('displays version and opens config drawer', async () => {
-    httpClientMock
-      .mockResolvedValueOnce({
-        data: '1.2.3',
-        status: 200,
-        headers: {} as HttpResponse<unknown>['headers'],
-      })
-      .mockResolvedValueOnce({
-        data: { foo: 'bar' },
-        status: 200,
-        headers: {} as HttpResponse<unknown>['headers'],
-      });
+    httpClientMock.mockResolvedValueOnce({
+      data: '1.2.3',
+      status: 200,
+      headers: {} as HttpResponse<unknown>['headers'],
+    });
 
     render(
       <ThemeModeProvider>
@@ -89,8 +83,7 @@ describe('AppTopBar', () => {
     });
 
     await waitFor(() => {
-      expect(httpClientMock).toHaveBeenCalledTimes(2);
+      expect(screen.getByLabelText(/Workspace configuration drawer/i)).toBeInTheDocument();
     });
-    await screen.findByText(/foo/i);
   });
 });
