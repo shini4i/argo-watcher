@@ -54,7 +54,7 @@ describe('ImagesCell', () => {
   it('stops propagation so row navigation does not fire when toggling', () => {
     const onRowClick = vi.fn();
     render(
-      <table>
+      <table role="presentation">
         <tbody>
           <tr onClick={onRowClick}>
             <td>
