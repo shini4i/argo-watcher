@@ -29,6 +29,12 @@ import (
 
 var version = "local"
 
+// maxTaskListLimit caps the page size accepted by GET /api/v1/tasks. The
+// underlying backends treat limit <= 0 as "no LIMIT clause", which would let
+// any caller drain the entire task table in a single request. The cap is
+// applied at the HTTP boundary so the data layer stays simple.
+const maxTaskListLimit = 1000
+
 var (
 	connectionsMutex sync.RWMutex
 	connections      []*websocket.Conn
@@ -495,7 +501,7 @@ func (env *Env) addTask(c *gin.Context) {
 // @Param status query string false "Task status (e.g. 'in progress', 'failed', 'deployed')"
 // @Param from_timestamp query int true "From timestamp" default(1648390029)
 // @Param to_timestamp query int false "To timestamp"
-// @Param limit query int false "Maximum number of tasks to return"
+// @Param limit query int false "Maximum number of tasks to return (1-1000, defaults to 1000)"
 // @Param offset query int false "Number of tasks to skip before returning results"
 // @Success 200 {object} models.TasksResponse
 // @Router /api/v1/tasks [get]
@@ -513,6 +519,12 @@ func (env *Env) getState(c *gin.Context) {
 	}
 	app := c.Query("app")
 	status := c.Query("status")
+	if status != "" {
+		if _, ok := models.AllowedTaskStatusFilters[status]; !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported status filter"})
+			return
+		}
+	}
 
 	limit, err := strconv.Atoi(c.Query("limit"))
 	if err != nil && c.Query("limit") != "" {
@@ -522,8 +534,8 @@ func (env *Env) getState(c *gin.Context) {
 	if err != nil && c.Query("offset") != "" {
 		log.Debug().Str("offset", c.Query("offset")).Msg("invalid offset, defaulting to 0")
 	}
-	if limit < 0 {
-		limit = 0
+	if limit <= 0 || limit > maxTaskListLimit {
+		limit = maxTaskListLimit
 	}
 	if offset < 0 {
 		offset = 0

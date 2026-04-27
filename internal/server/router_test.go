@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -365,6 +366,92 @@ func TestGetStateForwardsFilters(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, "checkout-api", repo.lastApp)
 	assert.Equal(t, "in progress", repo.lastStatus)
+}
+
+// TestGetStateRejectsUnknownStatus verifies that getState returns 400 when
+// the `status` query param is not in models.AllowedTaskStatusFilters.
+func TestGetStateRejectsUnknownStatus(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := &mockTaskRepository{}
+	argo := &argocd.Argo{}
+	argo.Init(repo, &mockArgoApi{}, &mockMetrics{})
+	env := &Env{argo: argo, config: &config.ServerConfig{}}
+
+	router := gin.Default()
+	router.GET("/api/v1/tasks", env.getState)
+
+	cases := []struct {
+		name     string
+		status   string
+		expected int
+	}{
+		{name: "unknown status rejected", status: "pending", expected: http.StatusBadRequest},
+		{name: "case-sensitive rejection", status: "In Progress", expected: http.StatusBadRequest},
+		{name: "empty status accepted", status: "", expected: http.StatusOK},
+		{name: "known status accepted", status: "in progress", expected: http.StatusOK},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			query := "?from_timestamp=0"
+			if tc.status != "" {
+				query += "&status=" + url.QueryEscape(tc.status)
+			}
+			req, err := http.NewRequest(http.MethodGet, "/api/v1/tasks"+query, nil)
+			require.NoError(t, err)
+
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+
+			assert.Equal(t, tc.expected, w.Code)
+		})
+	}
+}
+
+// TestGetStateClampsLimit verifies that getState bounds the limit query
+// param to maxTaskListLimit so callers cannot drain the entire task table
+// in a single request (the underlying repositories treat limit <= 0 as
+// "no LIMIT clause").
+func TestGetStateClampsLimit(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	cases := []struct {
+		name     string
+		query    string
+		expected int
+	}{
+		{name: "missing limit clamps to max", query: "", expected: maxTaskListLimit},
+		{name: "limit=0 clamps to max", query: "&limit=0", expected: maxTaskListLimit},
+		{name: "limit beyond cap clamps to max", query: "&limit=99999", expected: maxTaskListLimit},
+		{name: "negative limit clamps to max", query: "&limit=-5", expected: maxTaskListLimit},
+		{name: "limit within range passes through", query: "&limit=42", expected: 42},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &mockTaskRepository{}
+			argo := &argocd.Argo{}
+			argo.Init(repo, &mockArgoApi{}, &mockMetrics{})
+			env := &Env{argo: argo, config: &config.ServerConfig{}}
+
+			router := gin.Default()
+			router.GET("/api/v1/tasks", env.getState)
+
+			req, err := http.NewRequest(
+				http.MethodGet,
+				"/api/v1/tasks?from_timestamp=0"+tc.query,
+				nil,
+			)
+			require.NoError(t, err)
+
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+
+			assert.Equal(t, http.StatusOK, w.Code)
+			assert.Equal(t, tc.expected, repo.lastLimit)
+		})
+	}
 }
 
 func TestStaticFileServing(t *testing.T) {
