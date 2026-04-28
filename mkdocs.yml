@@ -57,6 +57,7 @@ nav:
   - Notifications: 'notifications.md'
   - Keycloak: 'keycloak.md'
   - Development: 'development.md'
+  - Style Guide: 'style.md'
 
 markdown_extensions:
   - pymdownx.tasklist:
