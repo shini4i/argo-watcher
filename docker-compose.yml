@@ -24,7 +24,7 @@ services:
       postgres:
         condition: service_healthy
   backend:
-    image: golang:1.24-alpine3.20
+    image: golang:1.25.9-alpine3.23
     volumes:
       - .:/app
     working_dir: /app
@@ -63,7 +63,7 @@ services:
     ports:
       - "3100:3100"
   mock:
-    image: golang:1.24-alpine3.20
+    image: golang:1.25.9-alpine3.23
     volumes:
       - .:/app
     working_dir: /app

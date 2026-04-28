@@ -1,117 +1,67 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { IconButton, MenuItem, Select, Stack } from '@mui/material';
-import RefreshIcon from '@mui/icons-material/Refresh';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { Stack } from '@mui/material';
 import { useListContext } from 'react-admin';
-import { useSearchParams } from 'react-router-dom';
-import { ApplicationFilter, normalizeApplicationFilterValue, readInitialApplication } from './ApplicationFilter';
+import {
+  ApplicationFilter,
+  normalizeApplicationFilterValue,
+} from './ApplicationFilter';
 import type { Task } from '../../../data/types';
-import { useAutoRefresh } from '../../../shared/hooks/useAutoRefresh';
-import { getBrowserWindow } from '../../../shared/utils';
+import { useFilterState, type FilterStateSchema } from '../../../shared/hooks/useFilterState';
+import { ActiveFilterBar, type FilterChipDescriptor } from './ActiveFilterBar';
+import { ListToolbar } from './ListToolbar';
+import { RefreshControl } from './RefreshControl';
+import { SearchInput } from './SearchInput';
+import { StatusTabs } from './StatusTabs';
+import { useTaskListContext } from './TaskListContext';
 
-const STORAGE_KEY_INTERVAL = 'recentTasks.refreshInterval';
-const DEFAULT_REFRESH = 30;
+interface RecentFiltersValues extends Record<string, unknown> {
+  app: string;
+  status: string | null;
+}
 
-const AUTO_REFRESH_OPTIONS: Array<{ label: string; seconds: number }> = [
-  { label: 'Off', seconds: 0 },
-  { label: '10s', seconds: 10 },
-  { label: '30s', seconds: 30 },
-  { label: '1m', seconds: 60 },
-  { label: '5m', seconds: 300 },
-];
+const DEFAULTS: RecentFiltersValues = { app: '', status: null };
 
-const readStoredRefreshInterval = () => {
-  const storage = getBrowserWindow()?.localStorage;
-  if (!storage) {
-    return DEFAULT_REFRESH;
-  }
-  const value = Number.parseInt(storage.getItem(STORAGE_KEY_INTERVAL) ?? '', 10);
-  return Number.isFinite(value) ? value : DEFAULT_REFRESH;
+const SCHEMA: FilterStateSchema<RecentFiltersValues> = {
+  app: {
+    fromUrl: raw => normalizeApplicationFilterValue(raw),
+    toUrl: value => value || null,
+    storage: true,
+  },
+  status: {
+    fromUrl: raw => raw ?? null,
+    toUrl: value => value || null,
+    storage: false,
+  },
 };
 
-/**
- * Action toolbar for the recent tasks list providing application filtering, manual refresh, and auto-refresh controls.
- */
-/** Toolbar with application filter, auto-refresh controls, and manual refresh for recent tasks. */
-export const RecentTasksToolbar = ({ storageKey = 'recentTasks.app' }: { storageKey?: string }) => {
-  const { data, filterValues = {}, setFilters, refetch } = useListContext<Task>();
+/** Toolbar with status tabs, application filter, search, and the refresh control. */
+export const RecentTasksToolbar = ({ storageKey = 'recentTasks' }: { storageKey?: string }) => {
+  const { data, refetch } = useListContext<Task>();
   const records = useMemo(() => (Array.isArray(data) ? data : []), [data]);
 
-  const [searchParams, setSearchParams] = useSearchParams();
-  const searchParamsKey = searchParams.toString();
-
-  const filterAppValue = typeof filterValues?.app === 'string' ? (filterValues.app as string) : '';
-  const normalizedFilterApplication = useMemo(
-    () => normalizeApplicationFilterValue(filterAppValue),
-    [filterAppValue],
-  );
-  const normalizedQueryApplication = useMemo(
-    () => normalizeApplicationFilterValue(searchParams.get('app')),
-    // Depend on the serialized search params so we only recompute when the string changes.
-    [searchParamsKey],
-  );
-
-  const [application, setApplication] = useState<string>(() => {
-    if (normalizedQueryApplication) {
-      return normalizedQueryApplication;
-    }
-    if (normalizedFilterApplication) {
-      return normalizedFilterApplication;
-    }
-    return readInitialApplication(storageKey);
+  const { values, applied, apply } = useFilterState<RecentFiltersValues>({
+    storageKey,
+    schema: SCHEMA,
+    defaults: DEFAULTS,
   });
-  const normalizedApplication = normalizeApplicationFilterValue(application);
-  const [refreshInterval, setRefreshInterval] = useState<number>(readStoredRefreshInterval);
 
-  useEffect(() => {
-    const hasFilterMismatch = filterAppValue !== normalizedApplication;
-    if (hasFilterMismatch && setFilters) {
-      const nextFilters: Record<string, unknown> = { ...filterValues };
-      if (normalizedApplication) {
-        nextFilters.app = normalizedApplication;
-      } else {
-        delete nextFilters.app;
-      }
-      setFilters(nextFilters, {}, false);
-    }
+  const { state: { searchQuery }, setSearchQuery, registerClearAll } = useTaskListContext();
 
-    if (normalizedQueryApplication !== normalizedApplication) {
-      const mergedParams = new URLSearchParams(searchParamsKey);
-      if (normalizedApplication) {
-        mergedParams.set('app', normalizedApplication);
-      } else {
-        mergedParams.delete('app');
-      }
-      setSearchParams(mergedParams, { replace: true });
-    }
-  }, [
-    filterAppValue,
-    filterValues,
-    normalizedApplication,
-    normalizedFilterApplication,
-    normalizedQueryApplication,
-    searchParamsKey,
-    setFilters,
-    setSearchParams,
-  ]);
+  const handleApplicationChange = useCallback(
+    (next: string) => {
+      apply({ ...values, app: normalizeApplicationFilterValue(next) });
+    },
+    [apply, values],
+  );
 
-  useEffect(() => {
-    const storage = getBrowserWindow()?.localStorage;
-    if (!storage) {
-      return;
-    }
+  const handleStatusChange = useCallback(
+    (next: string | null) => {
+      apply({ ...values, status: next });
+    },
+    [apply, values],
+  );
 
-    if (normalizedApplication) {
-      storage.setItem(storageKey, normalizedApplication);
-    } else {
-      storage.removeItem(storageKey);
-    }
-  }, [normalizedApplication, storageKey]);
-
-  useEffect(() => {
-    getBrowserWindow()?.localStorage?.setItem(STORAGE_KEY_INTERVAL, String(refreshInterval));
-  }, [refreshInterval]);
-
-  const triggerRefetch = useCallback(() => {
+  const handleRefresh = useCallback(() => {
     const result = refetch?.();
     if (result && typeof (result as Promise<unknown>).catch === 'function') {
       (result as Promise<unknown>).catch(error => {
@@ -122,47 +72,64 @@ export const RecentTasksToolbar = ({ storageKey = 'recentTasks.app' }: { storage
     }
   }, [refetch]);
 
-  useAutoRefresh(refreshInterval, triggerRefetch);
+  const chips: FilterChipDescriptor[] = [];
+  if (applied.app) {
+    chips.push({
+      key: 'app',
+      labelPrefix: 'app',
+      labelValue: applied.app,
+      onRemove: () => apply({ ...values, app: '' }),
+    });
+  }
+  if (searchQuery) {
+    chips.push({
+      key: 'search',
+      labelPrefix: 'search',
+      labelValue: searchQuery,
+      onRemove: () => setSearchQuery(''),
+    });
+  }
 
-  const handleApplicationChange = useCallback((next: string) => {
-    setApplication(normalizeApplicationFilterValue(next));
-  }, []);
+  const handleClearAll = useCallback(() => {
+    apply({ app: '', status: null });
+    setSearchQuery('');
+  }, [apply, setSearchQuery]);
 
-  const handleManualRefresh = useCallback(() => {
-    triggerRefetch();
-  }, [triggerRefetch]);
+  // `apply` re-identifies on every searchParams/filterValues change, so
+  // re-registering the handler each render would thrash the context ref and
+  // briefly leave Datagrid's "Clear filters" CTA pointing at null. Park the
+  // latest handler in a ref and register a stable indirector exactly once.
+  const clearAllHandlerRef = useRef(handleClearAll);
+  useEffect(() => {
+    clearAllHandlerRef.current = handleClearAll;
+  });
+  useEffect(
+    () => registerClearAll(() => clearAllHandlerRef.current()),
+    [registerClearAll],
+  );
 
   return (
-    <Stack
-      direction={{ xs: 'column', md: 'row' }}
-      spacing={{ xs: 1.5, md: 2 }}
-      alignItems={{ xs: 'flex-end', md: 'center' }}
-      justifyContent="flex-end"
-      sx={{ width: { xs: '100%', md: 'auto' } }}
-    >
-      <ApplicationFilter
-        storageKey={storageKey}
-        records={records}
-        value={application}
-        onChange={handleApplicationChange}
+    <Stack spacing={0.5} sx={{ width: '100%' }}>
+      <ListToolbar
+        left={<StatusTabs value={applied.status} onChange={handleStatusChange} />}
+        right={
+          <>
+            <ApplicationFilter
+              storageKey={`${storageKey}.app`}
+              records={records}
+              value={applied.app}
+              onChange={handleApplicationChange}
+            />
+            <SearchInput
+              value={searchQuery}
+              onChange={setSearchQuery}
+              placeholder="Filter loaded rows…"
+            />
+            <RefreshControl onRefresh={handleRefresh} />
+          </>
+        }
       />
-      <Stack direction="row" spacing={1} alignItems="center">
-        <Select
-          size="small"
-          value={refreshInterval}
-          onChange={event => setRefreshInterval(Number(event.target.value))}
-          aria-label="Auto-refresh interval"
-        >
-          {AUTO_REFRESH_OPTIONS.map(option => (
-            <MenuItem key={option.label} value={option.seconds}>
-              {option.label}
-            </MenuItem>
-          ))}
-        </Select>
-        <IconButton aria-label="Refresh now" size="small" color="primary" onClick={handleManualRefresh}>
-          <RefreshIcon fontSize="small" />
-        </IconButton>
-      </Stack>
+      <ActiveFilterBar chips={chips} onClearAll={chips.length > 0 ? handleClearAll : undefined} />
     </Stack>
   );
 };

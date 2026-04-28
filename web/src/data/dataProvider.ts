@@ -26,6 +26,21 @@ import type { Task, TaskListFilter, TasksResponse, TaskStatus } from './types';
 
 const RESOURCE_TASKS = 'tasks';
 
+// Mirrors the backend's allowedTaskStatusFilters (internal/models/constants.go).
+// Stale URL or localStorage values that don't match are dropped before we hit
+// the wire so they don't trigger a 400 from the validating handler.
+const ALLOWED_TASK_STATUSES: ReadonlySet<string> = new Set([
+  'app not found',
+  'in progress',
+  'failed',
+  'aborted',
+  'argocd is unavailable',
+  'cannot connect to database',
+  'failed to login to argocd',
+  'deployed',
+  'accepted',
+]);
+
 /** Normalizes various date/timestamp inputs to seconds since epoch. */
 const toUnixSeconds = (value: Date | string | number | undefined, fallback: number): number => {
   if (value === undefined || value === null) {
@@ -55,31 +70,22 @@ const selectListWindow = (params: GetListParams) => {
   const toCandidate = filter.end ?? filter.to;
 
   return {
-    from: fromCandidate ? toUnixSeconds(fromCandidate, defaultFrom) : defaultFrom,
-    to: toCandidate ? toUnixSeconds(toCandidate, nowSeconds) : undefined,
+    from: fromCandidate == null ? defaultFrom : toUnixSeconds(fromCandidate, defaultFrom),
+    to: toCandidate == null ? undefined : toUnixSeconds(toCandidate, nowSeconds),
     app: filter.app,
+    status: filter.status && ALLOWED_TASK_STATUSES.has(filter.status) ? filter.status : undefined,
   };
 };
 
 /**
- * Normalises backend task list responses into React-admin's list structure while
- * keeping pagination totals aligned with what the UI can actually display.
+ * Converts backend task list responses into React-admin's list structure.
+ * The backend always returns `total` for non-empty pages; when the result
+ * set is empty Go's `omitempty` drops the field, so we coalesce to 0.
  */
-/** Converts backend pagination metadata into the structure expected by React-admin. */
-const toRaListResult = (response: TasksResponse, params: GetListParams): GetListResult<Task> => {
-  const tasks = response.tasks ?? [];
-  const pagination = params.pagination ?? { page: 1, perPage: tasks.length || 0 };
-  const pageSize = pagination.perPage ?? tasks.length;
-  const offset = Math.max(0, (pagination.page - 1) * pageSize);
-
-  const total =
-    typeof response.total === 'number' ? response.total : Math.max(tasks.length, offset + tasks.length);
-
-  return {
-    data: tasks,
-    total,
-  };
-};
+const toRaListResult = (response: TasksResponse): GetListResult<Task> => ({
+  data: response.tasks ?? [],
+  total: response.total ?? 0,
+});
 
 /** Guards against consumers requesting unsupported resources via the data provider. */
 const ensureSupportedResource = (resource: string) => {
@@ -99,6 +105,7 @@ const getList = async (params: GetListParams): Promise<GetListResult<Task>> => {
     from_timestamp: timeframe.from,
     to_timestamp: timeframe.to,
     app: timeframe.app,
+    status: timeframe.status,
     limit,
     offset,
   });
@@ -113,7 +120,7 @@ const getList = async (params: GetListParams): Promise<GetListResult<Task>> => {
     console.warn(`Tasks endpoint reported a soft error: ${String(response.error).slice(0, 200)}`);
   }
 
-  return toRaListResult(response, params);
+  return toRaListResult(response);
 };
 
 /** Retrieves a single task detail, throwing when the backend reports an error. */

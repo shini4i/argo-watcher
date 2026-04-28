@@ -35,6 +35,11 @@ const {
 vi.mock('react-admin', () => ({
   List: ListMock,
   Pagination: PaginationMock,
+  // SearchFilteredView pulls useListContext + ListContextProvider through this
+  // mock; with the test's stubbed <List> not providing ListContext, we just
+  // hand back a passthrough that exposes empty data.
+  useListContext: () => ({ data: [] }),
+  ListContextProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
 const readPersistentPerPageMock = vi.fn();

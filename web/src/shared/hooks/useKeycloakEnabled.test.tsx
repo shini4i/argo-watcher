@@ -37,10 +37,12 @@ describe('useKeycloakEnabled', () => {
     await waitFor(() => expect(result.current).toBe(false));
   });
 
-  it('falls back to false when request fails', async () => {
+  it('stays null when the request fails so callers can default-deny', async () => {
     mockHttpClient.mockRejectedValue(new Error('network'));
 
     const { result } = renderHook(() => useKeycloakEnabled());
-    await waitFor(() => expect(result.current).toBe(false));
+    // Wait one tick so the catch handler has a chance to run.
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(result.current).toBeNull();
   });
 });

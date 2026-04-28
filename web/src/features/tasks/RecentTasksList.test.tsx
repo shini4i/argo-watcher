@@ -7,7 +7,7 @@ const {
   layoutCalls,
   TaskListLayoutMock,
   RecentTasksToolbarMock,
-  NoTasksPlaceholderMock,
+  EmptyStateMock,
   TasksDatagridMock,
   PaginationMock,
 } = vi.hoisted(() => {
@@ -22,8 +22,8 @@ const {
     <div data-testid="recent-toolbar" data-storage={storageKey} />
   );
 
-  const placeholder = (props: Record<string, unknown>) => (
-    <div data-testid="recent-placeholder" {...props} />
+  const emptyState = (props: Record<string, unknown>) => (
+    <div data-testid="recent-empty-state" {...props} />
   );
 
   const datagrid = () => <div data-testid="recent-datagrid" />;
@@ -36,7 +36,7 @@ const {
     layoutCalls: layoutCallsInternal,
     TaskListLayoutMock: taskListLayout,
     RecentTasksToolbarMock: toolbar,
-    NoTasksPlaceholderMock: placeholder,
+    EmptyStateMock: emptyState,
     TasksDatagridMock: datagrid,
     PaginationMock: pagination,
   };
@@ -54,8 +54,8 @@ vi.mock('./components/RecentTasksToolbar', () => ({
   RecentTasksToolbar: RecentTasksToolbarMock,
 }));
 
-vi.mock('./components/NoTasksPlaceholder', () => ({
-  NoTasksPlaceholder: NoTasksPlaceholderMock,
+vi.mock('./components/EmptyState', () => ({
+  EmptyState: EmptyStateMock,
 }));
 
 vi.mock('./components/TasksDatagrid', () => ({
@@ -88,13 +88,15 @@ describe('RecentTasksList', () => {
 
     const headerNode = props.header;
     expect(headerNode.type).toBe(RecentTasksToolbarMock);
-    expect(headerNode.props.storageKey).toBe('recentTasks.app');
+    expect(headerNode.props.storageKey).toBe('recentTasks');
 
     const paginationElement = props.listProps.pagination!;
     expect(paginationElement.props.rowsPerPageOptions).toEqual([10, 25, 50, 100]);
     expect(props.listProps.storeKey).toBe('recentTasks');
 
     const emptyComponent = props.emptyComponent;
+    expect(emptyComponent.type).toBe(EmptyStateMock);
+    expect(emptyComponent.props.icon).toBe('inbox');
     expect(emptyComponent.props.title).toMatch(/No recent tasks/i);
     expect(emptyComponent.props.description).toMatch(/Kick off a deployment/i);
 

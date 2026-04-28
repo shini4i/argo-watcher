@@ -1,39 +1,10 @@
-import { act, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { forwardRef } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { MemoryRouter } from 'react-router-dom';
+import { describe, expect, it, vi } from 'vitest';
 import type { Task } from '../../../data/types';
 import { TasksDatagrid, __testing } from './TasksDatagrid';
-
-const formatDurationMock = vi.fn((seconds: number) => `${seconds}s`);
-const formatRelativeTimeMock = vi.fn((value?: number | null) => `relative-${value}`);
-const getBrowserWindowMock = vi.fn(() => globalThis.window as Window);
-
-vi.mock('../../../shared/utils', async () => {
-  const actual = await vi.importActual<typeof import('../../../shared/utils')>('../../../shared/utils');
-  return {
-    ...actual,
-    formatDuration: (...args: [number]) => formatDurationMock(...args),
-    formatRelativeTime: (...args: [number | undefined]) => formatRelativeTimeMock(...args),
-    getBrowserWindow: () => getBrowserWindowMock(),
-  };
-});
-
-vi.mock('../utils/statusPresentation', () => ({
-  describeTaskStatus: vi.fn(() => ({
-    label: 'Healthy',
-    chipColor: 'success',
-    icon: <span data-testid="status-icon" />,
-  })),
-}));
-
-const formatDateMock = vi.fn((value: number) => `formatted-${value}`);
-
-vi.mock('../../../shared/providers/TimezoneProvider', () => ({
-  useTimezone: () => ({
-    formatDate: formatDateMock,
-  }),
-}));
+import { TaskListProvider, useTaskListContext } from './TaskListContext';
 
 const sampleRecord: Task = {
   id: 'task-1',
@@ -46,82 +17,50 @@ const sampleRecord: Task = {
     { image: 'app', tag: '1' },
     { image: 'worker', tag: '2' },
   ],
-  status: 'ok',
+  status: 'deployed',
   status_reason: 'all green',
 };
 
 const datagridPropsLog: Array<Record<string, unknown>> = [];
-
-vi.mock('react-router-dom', () => ({
-  Link: forwardRef<HTMLAnchorElement, { children: ReactNode }>((props, ref) => (
-    <a ref={ref} {...props}>
-      {props.children}
-    </a>
-  )),
-}));
 
 vi.mock('react-admin', () => ({
   Datagrid: (props: Record<string, unknown>) => {
     datagridPropsLog.push(props);
     return <div data-testid="datagrid">{props.children as ReactNode}</div>;
   },
-  TextField: ({ label }: { label: string }) => <div data-testid={`text-${label}`}>{label}</div>,
-  FunctionField: ({ label, render }: { label: string; render: (record: Task) => ReactNode }) => (
-    <div data-testid={`function-${label}`}>{render(sampleRecord)}</div>
+  FunctionField: ({ label, render, source }: { label?: string; source?: string; render: (record: Task) => ReactNode }) => (
+    <div data-testid={`function-${source ?? label}`}>{render(sampleRecord)}</div>
   ),
   useRecordContext: () => sampleRecord,
+  useListContext: () => ({ filterValues: {} }),
 }));
 
+const renderInRouter = (ui: ReactNode) =>
+  render(<MemoryRouter>{ui}</MemoryRouter>);
+
 describe('TasksDatagrid', () => {
-  beforeEach(() => {
+  it('configures Datagrid to expand on row click and treats rows with status_reason as expandable', () => {
     datagridPropsLog.length = 0;
-    formatDateMock.mockClear();
-    formatDurationMock.mockClear();
-    formatRelativeTimeMock.mockClear();
-    getBrowserWindowMock.mockReset();
-    getBrowserWindowMock.mockReturnValue(globalThis.window as Window);
-  });
+    renderInRouter(<TasksDatagrid />);
 
-  it('configures Datagrid and renders status chips, dates, and links', () => {
-    render(<TasksDatagrid />);
-
-    expect(screen.getByTestId('datagrid')).toBeInTheDocument();
     const props = datagridPropsLog.at(-1);
-    expect(props).toMatchObject({
-      rowClick: 'expand',
-      bulkActionButtons: false,
-    });
+    expect(props).toMatchObject({ bulkActionButtons: false, expandSingle: true, rowClick: 'expand' });
     expect(typeof props?.isRowExpandable).toBe('function');
-    expect(formatDateMock).toHaveBeenCalledWith(sampleRecord.created);
-    expect(formatRelativeTimeMock).toHaveBeenCalledWith(sampleRecord.updated);
-    expect(screen.getByTestId('status-icon')).toBeInTheDocument();
+    expect((props?.isRowExpandable as (record?: Task) => boolean)({ ...sampleRecord, status_reason: '' })).toBe(false);
+    expect((props?.isRowExpandable as (record?: Task) => boolean)(sampleRecord)).toBe(true);
   });
 
-  it('renders project references and images list variants', () => {
-    const { ProjectReference, ImagesList } = __testing;
-
-    const { rerender } = render(<ProjectReference project={null} />);
-    expect(screen.getByText('—')).toBeInTheDocument();
-
-    rerender(<ProjectReference project="service-api" />);
-    expect(screen.getByText('service-api')).toBeInTheDocument();
-
-    rerender(<ProjectReference project="https://github.com/org/repo/" />);
-    expect(screen.getByRole('link')).toHaveAttribute('href', 'https://github.com/org/repo/');
-
-    render(<ImagesList images={[]} />);
-    expect(screen.getByText('—')).toBeInTheDocument();
-
-    rerender(
-      <ImagesList
-        images={[
-          { image: 'api', tag: '1' },
-          { image: 'worker', tag: '2' },
-        ]}
-      />,
-    );
-    expect(screen.getByText('api:1')).toBeInTheDocument();
-    expect(screen.getByText('worker:2')).toBeInTheDocument();
+  it('renders all expected task columns in the new layout', () => {
+    renderInRouter(<TasksDatagrid />);
+    expect(screen.getByTestId('function-app')).toBeInTheDocument();
+    expect(screen.getByTestId('function-project')).toBeInTheDocument();
+    expect(screen.getByTestId('function-author')).toBeInTheDocument();
+    expect(screen.getByTestId('function-status')).toBeInTheDocument();
+    expect(screen.getByTestId('function-created')).toBeInTheDocument();
+    expect(screen.getByTestId('function-updated')).toBeInTheDocument();
+    expect(screen.getByTestId('function-duration')).toBeInTheDocument();
+    expect(screen.getByTestId('function-images')).toBeInTheDocument();
+    expect(screen.getByTestId('function-Details')).toBeInTheDocument();
   });
 
   it('renders status reason content based on record data', () => {
@@ -137,40 +76,111 @@ describe('TasksDatagrid', () => {
     expect(screen.getByText(sampleRecord.status_reason!)).toBeInTheDocument();
   });
 
-  it('computes live durations for in-progress tasks', async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2025-01-01T00:00:00Z'));
-    const { DurationField } = __testing;
-    const baseRecord: Task = {
-      ...sampleRecord,
-      status: 'in progress',
-      created: 100,
-      updated: null as unknown as number,
+  it('pauses auto-refresh while the cursor is over the table body', () => {
+    const Probe = () => {
+      const ctx = useTaskListContext();
+      return <span data-testid="reasons">{Array.from(ctx.state.pausedReasons).join(',')}</span>;
     };
-    const clearIntervalMock = vi.fn();
-    const intervalCallbacks: Array<() => void> = [];
-    getBrowserWindowMock
-      .mockReturnValueOnce({
-        setInterval: (cb: () => void) => {
-          intervalCallbacks.push(cb);
-          return 42 as unknown as number;
-        },
-        clearInterval: clearIntervalMock,
-      } as unknown as Window)
-      .mockReturnValue(globalThis.window as Window);
+    renderInRouter(
+      <TaskListProvider>
+        <Probe />
+        <TasksDatagrid />
+      </TaskListProvider>,
+    );
 
-    const { rerender } = render(<DurationField record={baseRecord} />);
-    expect(formatDurationMock).toHaveBeenCalledWith(expect.any(Number));
+    const wrapper = screen.getByTestId('datagrid').parentElement!;
+    expect(screen.getByTestId('reasons').textContent).toBe('');
 
-    vi.setSystemTime(new Date('2025-01-01T00:00:05Z'));
-    await act(async () => {
-      intervalCallbacks[0]?.();
+    fireEvent.mouseEnter(wrapper);
+    expect(screen.getByTestId('reasons').textContent).toBe('hover');
+
+    fireEvent.mouseLeave(wrapper);
+    expect(screen.getByTestId('reasons').textContent).toBe('');
+  });
+
+  it('pauses auto-refresh while the status-reason panel is mounted', () => {
+    const { StatusReasonPanel } = __testing;
+    const Probe = () => {
+      const ctx = useTaskListContext();
+      return <span data-testid="reasons">{Array.from(ctx.state.pausedReasons).join(',')}</span>;
+    };
+
+    const { rerender } = render(
+      <TaskListProvider>
+        <Probe />
+      </TaskListProvider>,
+    );
+    expect(screen.getByTestId('reasons').textContent).toBe('');
+
+    rerender(
+      <TaskListProvider>
+        <Probe />
+        <StatusReasonPanel />
+      </TaskListProvider>,
+    );
+    expect(screen.getByTestId('reasons').textContent).toBe('expand');
+
+    rerender(
+      <TaskListProvider>
+        <Probe />
+      </TaskListProvider>,
+    );
+    expect(screen.getByTestId('reasons').textContent).toBe('');
+  });
+
+  describe('ProjectCell', () => {
+    const { ProjectCell } = __testing;
+
+    it('renders an em-dash placeholder when project is empty', () => {
+      render(<ProjectCell project={null} />);
+      expect(screen.getByText('—')).toBeInTheDocument();
     });
-    expect(formatDurationMock).toHaveBeenCalledTimes(2);
 
-    rerender(<DurationField record={{ ...baseRecord, status: 'completed', updated: 150 }} />);
-    expect(formatDurationMock).toHaveBeenCalledWith(50);
-    expect(clearIntervalMock).toHaveBeenCalled();
-    vi.useRealTimers();
+    it('renders plain projects as monospace text', () => {
+      render(<ProjectCell project="infra/prod" />);
+      expect(screen.getByText('infra/prod')).toBeInTheDocument();
+      expect(screen.queryByRole('link')).toBeNull();
+    });
+
+    it('renders URL projects as external links and stops click propagation', () => {
+      const onRowClick = vi.fn();
+      render(
+        <button
+          type="button"
+          aria-label="parent row"
+          onClick={onRowClick}
+          onKeyDown={onRowClick}
+        >
+          <ProjectCell project="https://github.com/org/repo/" />
+        </button>,
+      );
+      const link = screen.getByRole('link');
+      expect(link).toHaveAttribute('href', 'https://github.com/org/repo/');
+      expect(link).toHaveAttribute('target', '_blank');
+      fireEvent.click(link);
+      expect(onRowClick).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('ViewButton', () => {
+    const { ViewButton } = __testing;
+
+    it('navigates to the task detail page and stops click propagation', () => {
+      const onRowClick = vi.fn();
+      renderInRouter(
+        <button
+          type="button"
+          aria-label="parent row"
+          onClick={onRowClick}
+          onKeyDown={onRowClick}
+        >
+          <ViewButton id="task-42" />
+        </button>,
+      );
+      const link = screen.getByRole('link', { name: /view/i });
+      expect(link).toHaveAttribute('href', '/task/task-42');
+      fireEvent.click(link);
+      expect(onRowClick).not.toHaveBeenCalled();
+    });
   });
 });

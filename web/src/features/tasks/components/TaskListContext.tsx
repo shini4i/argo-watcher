@@ -1,0 +1,176 @@
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  type ReactNode,
+} from 'react';
+
+export interface TaskListState {
+  readonly pausedReasons: ReadonlySet<string>;
+  readonly intervalSec: number;
+  readonly lastRefetchedAt: number;
+  readonly searchQuery: string;
+}
+
+type Action =
+  | { type: 'pause'; reason: string }
+  | { type: 'resume'; reason: string }
+  | { type: 'setInterval'; intervalSec: number }
+  | { type: 'markRefetched'; at?: number }
+  | { type: 'setSearchQuery'; value: string };
+
+const initialState: TaskListState = {
+  pausedReasons: new Set<string>(),
+  intervalSec: 30,
+  lastRefetchedAt: Date.now(),
+  searchQuery: '',
+};
+
+const reducer = (state: TaskListState, action: Action): TaskListState => {
+  switch (action.type) {
+    case 'pause': {
+      if (state.pausedReasons.has(action.reason)) {
+        return state;
+      }
+      const next = new Set(state.pausedReasons);
+      next.add(action.reason);
+      return { ...state, pausedReasons: next };
+    }
+    case 'resume': {
+      if (!state.pausedReasons.has(action.reason)) {
+        return state;
+      }
+      const next = new Set(state.pausedReasons);
+      next.delete(action.reason);
+      return { ...state, pausedReasons: next };
+    }
+    case 'setInterval': {
+      // Reject NaN/negative values from corrupted localStorage or callers; 0
+      // is the legitimate "Off" sentinel so the lower bound is inclusive.
+      const next = Number(action.intervalSec);
+      if (!Number.isFinite(next) || next < 0) {
+        return state;
+      }
+      return { ...state, intervalSec: next, lastRefetchedAt: Date.now() };
+    }
+    case 'markRefetched':
+      return { ...state, lastRefetchedAt: action.at ?? Date.now() };
+    case 'setSearchQuery':
+      if (state.searchQuery === action.value) return state;
+      return { ...state, searchQuery: action.value };
+    default:
+      return state;
+  }
+};
+
+interface TaskListContextValue {
+  readonly state: TaskListState;
+  readonly pause: (reason: string) => void;
+  readonly resume: (reason: string) => void;
+  readonly setInterval: (intervalSec: number) => void;
+  readonly markRefetched: () => void;
+  readonly setSearchQuery: (value: string) => void;
+  /**
+   * Registers a "clear all filters" handler scoped to the surrounding
+   * page (Recent or History). Called from the empty-state CTA when the
+   * list returns no rows under active filters. Returns an unregister fn.
+   */
+  readonly registerClearAll: (handler: () => void) => () => void;
+  /** Invokes whichever clear-all handler the current page registered. */
+  readonly clearAll: () => void;
+}
+
+const TaskListContext = createContext<TaskListContextValue | undefined>(undefined);
+
+interface TaskListProviderProps {
+  readonly children: ReactNode;
+  readonly initialIntervalSec?: number;
+}
+
+/**
+ * Provides shared state for the task list page so the toolbar (timer) and the
+ * table body (hover/expand) can coordinate auto-refresh pauses.
+ */
+export const TaskListProvider = ({ children, initialIntervalSec = 30 }: TaskListProviderProps) => {
+  const [state, dispatch] = useReducer(reducer, undefined, () => ({
+    ...initialState,
+    intervalSec: initialIntervalSec,
+  }));
+
+  const pause = useCallback((reason: string) => dispatch({ type: 'pause', reason }), []);
+  const resume = useCallback((reason: string) => dispatch({ type: 'resume', reason }), []);
+  const setIntervalSec = useCallback(
+    (intervalSec: number) => dispatch({ type: 'setInterval', intervalSec }),
+    [],
+  );
+  const markRefetched = useCallback(() => dispatch({ type: 'markRefetched' }), []);
+  const setSearchQuery = useCallback(
+    (next: string) => dispatch({ type: 'setSearchQuery', value: next }),
+    [],
+  );
+
+  const clearAllRef = useRef<(() => void) | null>(null);
+  const registerClearAll = useCallback((handler: () => void) => {
+    clearAllRef.current = handler;
+    return () => {
+      if (clearAllRef.current === handler) {
+        clearAllRef.current = null;
+      }
+    };
+  }, []);
+  const clearAll = useCallback(() => {
+    clearAllRef.current?.();
+  }, []);
+
+  const value = useMemo(
+    () => ({
+      state,
+      pause,
+      resume,
+      setInterval: setIntervalSec,
+      markRefetched,
+      setSearchQuery,
+      registerClearAll,
+      clearAll,
+    }),
+    [state, pause, resume, setIntervalSec, markRefetched, setSearchQuery, registerClearAll, clearAll],
+  );
+
+  return <TaskListContext.Provider value={value}>{children}</TaskListContext.Provider>;
+};
+
+const noopValue: TaskListContextValue = {
+  state: initialState,
+  pause: () => {},
+  resume: () => {},
+  setInterval: () => {},
+  markRefetched: () => {},
+  setSearchQuery: () => {},
+  registerClearAll: () => () => {},
+  clearAll: () => {},
+};
+
+/** Returns the task-list controller; safe to call without a provider. */
+export const useTaskListContext = (): TaskListContextValue => {
+  const ctx = useContext(TaskListContext);
+  return ctx ?? noopValue;
+};
+
+/**
+ * Pauses auto-refresh under a named reason for the lifetime of the calling
+ * component. Pass `active=false` to opt out conditionally.
+ */
+export const usePauseRefresh = (reason: string, active = true): void => {
+  const { pause, resume } = useTaskListContext();
+  useEffect(() => {
+    if (!active) {
+      return undefined;
+    }
+    pause(reason);
+    return () => resume(reason);
+  }, [reason, active, pause, resume]);
+};

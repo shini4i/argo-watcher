@@ -53,12 +53,39 @@ func (state *InMemoryState) AddTask(task models.Task) (*models.Task, error) {
 	return &task, nil
 }
 
-// GetTasks retrieves tasks from the in-memory state based on the provided time range and app filter.
-// It takes a start time, end time, and optional app filter.
-// If there are no tasks in the in-memory state, it returns an empty slice.
-// The method filters tasks within the time range and, optionally, by app.
-// If an app filter is provided, only matching tasks are included.
-func (state *InMemoryState) GetTasks(startTime float64, endTime float64, app string, limit int, offset int) ([]models.Task, int64) {
+// taskMatchesFilters reports whether a task falls within the time window
+// and matches the optional app/status filters (empty values are wildcards).
+// The lower bound is exclusive and the upper bound is inclusive to match the
+// Postgres query (`created > startTime AND created <= endTime`).
+func taskMatchesFilters(task models.Task, startTime, endTime float64, app, status string) bool {
+	if task.Created <= startTime || task.Created > endTime {
+		return false
+	}
+	if app != "" && app != task.App {
+		return false
+	}
+	if status != "" && status != task.Status {
+		return false
+	}
+	return true
+}
+
+// paginate returns the [offset:offset+limit] slice of tasks, clamping to bounds.
+// A non-positive limit means "no upper bound" — return everything from offset onward.
+func paginate(tasks []models.Task, limit, offset int) []models.Task {
+	if offset >= len(tasks) {
+		return []models.Task{}
+	}
+	end := len(tasks)
+	if limit > 0 && offset+limit < end {
+		end = offset + limit
+	}
+	return tasks[offset:end]
+}
+
+// GetTasks retrieves tasks from the in-memory state based on the provided time range, app, and status filters.
+// Empty filter values (app == "" or status == "") are treated as wildcards.
+func (state *InMemoryState) GetTasks(startTime float64, endTime float64, app string, status string, limit int, offset int) ([]models.Task, int64) {
 	state.mu.RLock()
 	defer state.mu.RUnlock()
 
@@ -75,10 +102,8 @@ func (state *InMemoryState) GetTasks(startTime float64, endTime float64, app str
 
 	var tasks []models.Task
 	for _, task := range state.tasks {
-		if task.Created >= startTime && task.Created <= endTime {
-			if app == "" || app == task.App {
-				tasks = append(tasks, task)
-			}
+		if taskMatchesFilters(task, startTime, endTime, app, status) {
+			tasks = append(tasks, task)
 		}
 	}
 
@@ -90,18 +115,7 @@ func (state *InMemoryState) GetTasks(startTime float64, endTime float64, app str
 		return tasks[i].Created > tasks[j].Created
 	})
 
-	total := int64(len(tasks))
-
-	if offset >= len(tasks) {
-		return []models.Task{}, total
-	}
-
-	end := len(tasks)
-	if limit > 0 && offset+limit < end {
-		end = offset + limit
-	}
-
-	return tasks[offset:end], total
+	return paginate(tasks, limit, offset), int64(len(tasks))
 }
 
 // GetTask retrieves a task from the in-memory state based on the provided task ID.

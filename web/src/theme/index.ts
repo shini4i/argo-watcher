@@ -1,5 +1,6 @@
 import type { PaletteMode, ThemeOptions } from '@mui/material';
 import { createTheme, lighten } from '@mui/material/styles';
+import { tokens } from './tokens';
 
 /**
  * Reuses the legacy UI branding tokens so both frontends stay visually aligned.
@@ -9,7 +10,7 @@ const getDesignTokens = (mode: PaletteMode): ThemeOptions => ({
   palette: {
     mode,
     primary: {
-      main: mode === 'light' ? '#2E3B55' : '#5b7cfa',
+      main: mode === 'light' ? tokens.ink : tokens.accent,
     },
     secondary: {
       main: '#ff9800',
@@ -17,21 +18,27 @@ const getDesignTokens = (mode: PaletteMode): ThemeOptions => ({
     ...(mode === 'dark'
       ? {
           background: {
-            default: '#0b1120',
-            paper: '#15213b',
+            default: tokens.canvasDark,
+            paper: tokens.surfaceDark,
           },
           text: {
-            primary: '#e2e8f0',
-            secondary: '#cbd5f5',
+            primary: tokens.textPrimaryDark,
+            secondary: tokens.textSecondaryDark,
+            disabled: tokens.textDisabledDark,
           },
-          divider: 'rgba(148, 163, 184, 0.38)',
+          divider: tokens.dividerDark,
         }
       : {
           background: {
-            default: '#ffffff',
-            paper: '#ffffff',
+            default: tokens.surface,
+            paper: tokens.surface,
           },
-          divider: 'rgba(46, 59, 85, 0.12)',
+          text: {
+            primary: tokens.textPrimary,
+            secondary: tokens.textSecondary,
+            disabled: tokens.textDisabled,
+          },
+          divider: tokens.divider,
         }),
     neutral: {
       main: 'gray',
@@ -41,13 +48,13 @@ const getDesignTokens = (mode: PaletteMode): ThemeOptions => ({
     },
   } as ThemeOptions['palette'],
   typography: {
-    fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
+    fontFamily: tokens.fontSans,
   },
   components: {
     MuiCssBaseline: {
       styleOverrides: {
         body: {
-          backgroundColor: mode === 'light' ? '#ffffff' : '#0b1120',
+          backgroundColor: mode === 'light' ? tokens.surface : tokens.canvasDark,
           transition: 'background-color 0.3s ease, color 0.3s ease',
         },
         '#root': {
@@ -99,3 +106,4 @@ export const lightTheme = createAppTheme('light');
 export const darkTheme = createAppTheme('dark');
 
 export { ThemeModeProvider, useThemeMode } from './ThemeModeProvider';
+export { tokens } from './tokens';

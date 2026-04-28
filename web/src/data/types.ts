@@ -38,6 +38,7 @@ export interface TaskListFilter {
   from?: Date | string | number;
   to?: Date | string | number;
   app?: string;
+  status?: string;
 }
 
 export interface TaskListResult {

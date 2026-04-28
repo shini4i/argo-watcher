@@ -28,7 +28,7 @@ vi.mock('../../../shared/utils', () => ({
 
 let lastAutocompleteProps: AutocompleteProps | undefined;
 
-const { AutocompleteMock, TextFieldMock } = vi.hoisted(() => {
+const { AutocompleteMock, TextFieldMock, InputAdornmentMock } = vi.hoisted(() => {
   const autocomplete = (props: AutocompleteProps) => {
     lastAutocompleteProps = props;
     return (
@@ -40,7 +40,7 @@ const { AutocompleteMock, TextFieldMock } = vi.hoisted(() => {
         <button type="button" onClick={() => props.onChange(null, '')}>
           clear
         </button>
-        {props.renderInput({ 'data-testid': 'text-field-props' })}
+        {props.renderInput({ InputProps: {}, 'data-testid': 'text-field-props' })}
       </div>
     );
   };
@@ -49,12 +49,23 @@ const { AutocompleteMock, TextFieldMock } = vi.hoisted(() => {
     <div data-testid="text-field" data-label={props.label} data-placeholder={props.placeholder} />
   );
 
-  return { AutocompleteMock: autocomplete, TextFieldMock: textField };
+  const inputAdornment = ({ children }: { children: React.ReactNode }) => <span>{children}</span>;
+
+  return { AutocompleteMock: autocomplete, TextFieldMock: textField, InputAdornmentMock: inputAdornment };
 });
 
 vi.mock('@mui/material', () => ({
   Autocomplete: AutocompleteMock,
   TextField: TextFieldMock,
+  InputAdornment: InputAdornmentMock,
+}));
+
+vi.mock('@mui/material/styles', () => ({
+  useTheme: () => ({ palette: { text: { secondary: '#888' } } }),
+}));
+
+vi.mock('@mui/icons-material/FilterList', () => ({
+  default: () => <span data-testid="filter-icon" />,
 }));
 
 let taskIdCounter = 0;
@@ -110,7 +121,7 @@ describe('ApplicationFilter', () => {
 
     expect(screen.getByTestId('options')).toHaveTextContent('api,frontend');
     const textField = screen.getByTestId('text-field');
-    expect(textField.dataset.label).toBe('Application');
+    expect(textField.dataset.placeholder).toBe('Filter by app');
   });
 
   it('persists selection changes and clears storage when emptied', () => {

@@ -31,7 +31,9 @@ describe('dataProvider', () => {
     vi.useRealTimers();
   });
 
-  it('infers total from pagination context when backend omits total', async () => {
+  it('falls back to total=0 when the backend omits it', async () => {
+    // Go's `omitempty` drops Total=0 from the wire — coalescing to 0 keeps
+    // react-admin from rendering "page 2 of nothing" on an empty result set.
     const fetch = mockFetch().mockResolvedValue(
       jsonResponse({
         tasks: [{ id: '1', created: 1, updated: 1, app: 'demo', author: 'alice', project: 'proj', images: [] }],
@@ -46,7 +48,7 @@ describe('dataProvider', () => {
     const url = fetch.mock.calls[0][0] as string;
     expect(url).toContain('limit=10');
     expect(url).toContain('offset=10');
-    expect(result.total).toBe(11);
+    expect(result.total).toBe(0);
     expect(result.data).toHaveLength(1);
   });
 
@@ -105,6 +107,33 @@ describe('dataProvider', () => {
     expect(init.headers).toMatchObject({ Authorization: 'Bearer token-123' });
 
     clearAccessToken();
+  });
+
+  it('forwards the status filter to the backend query', async () => {
+    const fetch = mockFetch().mockResolvedValue(jsonResponse({ tasks: [], total: 0 }));
+    await dataProvider.getList('tasks', {
+      ...createListParams(),
+      filter: { status: 'in progress' },
+    });
+    const params = getQueryParams(fetch.mock.calls[0][0] as string);
+    expect(params.get('status')).toBe('in progress');
+  });
+
+  it('omits the status param when no status filter is set', async () => {
+    const fetch = mockFetch().mockResolvedValue(jsonResponse({ tasks: [], total: 0 }));
+    await dataProvider.getList('tasks', createListParams());
+    const params = getQueryParams(fetch.mock.calls[0][0] as string);
+    expect(params.has('status')).toBe(false);
+  });
+
+  it('drops status values that are not in the backend allowlist', async () => {
+    const fetch = mockFetch().mockResolvedValue(jsonResponse({ tasks: [], total: 0 }));
+    await dataProvider.getList('tasks', {
+      ...createListParams(),
+      filter: { status: 'totally-bogus' },
+    });
+    const params = getQueryParams(fetch.mock.calls[0][0] as string);
+    expect(params.has('status')).toBe(false);
   });
 
   it('supports filtering by explicit start and end timestamps', async () => {

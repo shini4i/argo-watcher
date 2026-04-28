@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { formatDateTime, formatDuration, formatRelativeTime, relativeTimestamp } from './time';
+import {
+  formatDateTime,
+  formatDuration,
+  formatDurationCompact,
+  formatRelativeTime,
+  relativeTimestamp,
+} from './time';
 
 /** Verifies the shared time formatting helpers cover edge cases and timer lifecycle management. */
 
@@ -43,6 +49,19 @@ describe('time utilities', () => {
   it('returns placeholder for invalid duration', () => {
     expect(formatDuration(-10)).toBe('—');
     expect(formatDuration(Number.NaN)).toBe('—');
+  });
+
+  it('formats compact durations', () => {
+    expect(formatDurationCompact(0)).toBe('0s');
+    expect(formatDurationCompact(45)).toBe('45s');
+    expect(formatDurationCompact(64)).toBe('1m 04s');
+    expect(formatDurationCompact(3723)).toBe('1h 02m');
+    expect(formatDurationCompact(90061)).toBe('1d 01h');
+  });
+
+  it('returns placeholder for invalid compact duration', () => {
+    expect(formatDurationCompact(-1)).toBe('—');
+    expect(formatDurationCompact(Number.NaN)).toBe('—');
   });
 
   it('formats relative time strings', () => {
