@@ -17,6 +17,7 @@
           gotools
           gosec
           mockgen
+          go-swag
         ];
 
         preCommitTools = with pkgs; [
@@ -45,15 +46,49 @@
             pnpm
             corepack
           ]) ++ [ viteShim ];
+
+        docsPython = pkgs.python311.withPackages (ps: with ps; [
+          mkdocs
+          mkdocs-material
+          mkdocs-material-extensions
+          mkdocs-git-committers-plugin-2
+          mkdocs-git-revision-date-localized-plugin
+          mkdocs-glightbox
+          mkdocs-redirects
+          mkdocs-swagger-ui-tag
+          pymdown-extensions
+          pillow
+          cairosvg
+        ]);
+
+        docsToolchain = [ docsPython ] ++ (with pkgs; [
+          cairo
+          pango
+          libffi
+          freetype
+          libjpeg
+          libpng
+          zlib
+        ]);
       in
       {
         devShells.default = pkgs.mkShell {
-          packages = goToolchain ++ preCommitTools ++ frontendToolchain;
+          packages = goToolchain ++ preCommitTools ++ frontendToolchain ++ docsToolchain;
           shellHook = ''
             export GOPATH="$PWD/.go"
             export GOMODCACHE="$PWD/.gomod"
             mkdir -p "$GOPATH" "$GOMODCACHE"
             export GO111MODULE=on
+
+            export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath [
+              pkgs.cairo
+              pkgs.pango
+              pkgs.libffi
+              pkgs.freetype
+              pkgs.libjpeg
+              pkgs.libpng
+              pkgs.zlib
+            ]}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
           '';
         };
       }

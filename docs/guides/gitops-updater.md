@@ -7,7 +7,7 @@ Argo Watcher includes a built-in GitOps updater that commits image tag changes d
 
 ## Prerequisites
 
-This guide assumes you already have a working Argo Watcher installation. If not, complete the [Installation](installation.md) guide first.
+This guide assumes you already have a working Argo Watcher installation. If not, complete the [Installation](install.md) guide first.
 
 Before enabling the GitOps updater, you need to:
 
@@ -167,7 +167,7 @@ export ARGO_WATCHER_DEPLOY_TOKEN=your_deploy_token
 export BEARER_TOKEN="Bearer your_jwt_token"
 ```
 
-See the [Installation](installation.md#client-setup) guide for complete CI/CD pipeline examples.
+See the [Installation](install.md#client-setup) guide for complete CI/CD pipeline examples.
 
 !!! warning
     Argo Watcher uses the provided image tag value as-is, without validation. Ensure the tag is valid and corresponds to an image that exists in the registry.
