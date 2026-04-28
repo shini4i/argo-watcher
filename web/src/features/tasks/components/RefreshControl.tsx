@@ -24,9 +24,15 @@ interface RefreshControlProps {
   readonly storageKey?: string;
 }
 
+const ALLOWED_INTERVAL_SECONDS: ReadonlySet<number> = new Set(
+  REFRESH_OPTIONS.map(option => option.seconds),
+);
+
 const readStoredInterval = (storageKey: string, fallback: number) => {
   const value = Number.parseInt(getBrowserWindow()?.localStorage?.getItem(storageKey) ?? '', 10);
-  return Number.isFinite(value) ? value : fallback;
+  // Only honour values that match a presented option; an unsupported number
+  // would render an empty Select and break the countdown.
+  return Number.isFinite(value) && ALLOWED_INTERVAL_SECONDS.has(value) ? value : fallback;
 };
 
 /**

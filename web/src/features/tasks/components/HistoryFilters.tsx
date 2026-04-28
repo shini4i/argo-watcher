@@ -18,6 +18,12 @@ interface HistoryFiltersValues extends Record<string, unknown> {
 
 const DEFAULTS: HistoryFiltersValues = { app: '', start: null, end: null };
 
+const parseNumeric = (raw: string | null): number | null => {
+  if (!raw) return null;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
 const SCHEMA: FilterStateSchema<HistoryFiltersValues> = {
   app: {
     fromUrl: raw => raw ?? '',
@@ -25,13 +31,13 @@ const SCHEMA: FilterStateSchema<HistoryFiltersValues> = {
     storage: true,
   },
   start: {
-    fromUrl: raw => (raw ? Number(raw) : null),
+    fromUrl: parseNumeric,
     toUrl: value => (value === null ? null : String(value)),
     urlKey: 'startDate',
     storage: true,
   },
   end: {
-    fromUrl: raw => (raw ? Number(raw) : null),
+    fromUrl: parseNumeric,
     toUrl: value => (value === null ? null : String(value)),
     urlKey: 'endDate',
     storage: true,

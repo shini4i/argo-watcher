@@ -57,6 +57,16 @@ describe('RefreshControl', () => {
     expect(screen.getByText(/paused/i)).toBeInTheDocument();
   });
 
+  it('ignores an unsupported persisted interval and keeps the provided default', () => {
+    const onRefresh = vi.fn();
+    globalThis.localStorage.setItem('recentTasks.refreshInterval', '7777');
+    renderWithProvider(<RefreshControl onRefresh={onRefresh} />, 10);
+    // The hydration guard rejects the stale value, so the live countdown
+    // stays seeded from the provider's initialIntervalSec rather than
+    // falling into an empty-Select / NaN-countdown state.
+    expect(screen.getByText(/Live · 10s/)).toBeInTheDocument();
+  });
+
   it('manual refresh resets the countdown', () => {
     const onRefresh = vi.fn();
     renderWithProvider(<RefreshControl onRefresh={onRefresh} />, 5);
