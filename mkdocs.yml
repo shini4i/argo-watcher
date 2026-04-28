@@ -50,6 +50,7 @@ theme:
 
 nav:
   - Home: 'index.md'
+  - Concepts: 'concepts.md'
   - Installation: 'installation.md'
   - Git Integration: 'git-integration.md'
   - API Reference: 'api.md'
