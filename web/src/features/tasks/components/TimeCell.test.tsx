@@ -29,7 +29,7 @@ describe('TimeCell', () => {
     expect(screen.getByText('—')).toBeInTheDocument();
   });
 
-  it('renders the formatted date and relative line for current-year timestamps', () => {
+  it('renders the formatted date and relative line for current-year timestamps in "both" mode', () => {
     const ts = Math.floor(new Date('2026-04-27T14:12:08Z').getTime() / 1000);
     render(<TimeCell ts={ts} relative={ts} />);
 
@@ -43,10 +43,35 @@ describe('TimeCell', () => {
     expect(screen.getByText(`relative-${ts}`)).toBeInTheDocument();
   });
 
-  it('includes the year for non-current-year timestamps', () => {
+  it('includes the year for non-current-year timestamps in "both" mode', () => {
     const ts = Math.floor(new Date('2024-04-27T14:12:08Z').getTime() / 1000);
     render(<TimeCell ts={ts} relative={ts} />);
     const passed = formatDateMock.mock.calls[0][1] as Intl.DateTimeFormatOptions;
     expect(passed.year).toBe('numeric');
+  });
+
+  it('renders only the formatted date with year in "date" mode', () => {
+    const ts = Math.floor(new Date('2026-04-27T14:12:08Z').getTime() / 1000);
+    render(<TimeCell ts={ts} mode="date" />);
+
+    const passed = formatDateMock.mock.calls[0][1] as Intl.DateTimeFormatOptions;
+    expect(passed.year).toBe('numeric');
+    expect(passed.second).toBe('2-digit');
+    expect(screen.getByText('formatted')).toBeInTheDocument();
+    expect(screen.queryByText(`relative-${ts}`)).toBeNull();
+  });
+
+  it('renders only the relative line in "relative" mode', () => {
+    const ts = Math.floor(new Date('2026-04-27T14:12:08Z').getTime() / 1000);
+    render(<TimeCell ts={ts} mode="relative" />);
+
+    expect(formatDateMock).not.toHaveBeenCalled();
+    expect(screen.getByText(`relative-${ts}`)).toBeInTheDocument();
+  });
+
+  it('falls back to ts when relative is omitted in "relative" mode', () => {
+    const ts = Math.floor(new Date('2026-04-27T14:12:08Z').getTime() / 1000);
+    render(<TimeCell ts={ts} mode="relative" />);
+    expect(screen.getByText(`relative-${ts}`)).toBeInTheDocument();
   });
 });

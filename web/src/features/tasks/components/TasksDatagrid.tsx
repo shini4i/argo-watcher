@@ -1,12 +1,14 @@
 import { useCallback, useEffect } from 'react';
-import { Box, Typography } from '@mui/material';
+import { Box, Button, Link, Typography } from '@mui/material';
 import { type SxProps, type Theme } from '@mui/material/styles';
-import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { Datagrid, FunctionField, useListContext, useRecordContext } from 'react-admin';
+import { Link as RouterLink } from 'react-router-dom';
 import type { Task } from '../../../data/types';
 import { tokens } from '../../../theme/tokens';
-import { AppCell } from './AppCell';
+import { AppCell, describeProject } from './AppCell';
 import { DurationField } from './DurationField';
+import { EmptyCell } from './EmptyCell';
 import { EmptyState, EmptyStateCta } from './EmptyState';
 import { ImagesCell } from './ImagesCell';
 import { StatusPill } from './StatusPill';
@@ -15,8 +17,10 @@ import { usePauseRefresh, useTaskListContext } from './TaskListContext';
 
 /**
  * Renders the shared task table used by both recent and history views.
- * Row click navigates to the task detail page; the auto-expand chevron in the
- * first column toggles the inline status-reason panel for rows that have one.
+ * The auto-expand chevron in the first column toggles the inline status-reason
+ * panel for rows that have one; row clicks also trigger the same expand. The
+ * trailing "View" button is the explicit affordance for navigating to the task
+ * detail page so the row body remains a quiet expander.
  *
  * The wrapping div emits `pause('hover')` reasons through TaskListContext so
  * the toolbar's auto-refresh countdown freezes while the cursor is over the
@@ -35,7 +39,7 @@ export const TasksDatagrid = () => {
   return (
     <Box onMouseEnter={handleEnter} onMouseLeave={handleLeave}>
     <Datagrid
-      rowClick={(id: string | number) => `/task/${id}`}
+      rowClick="expand"
       bulkActionButtons={false}
       expand={<StatusReasonPanel />}
       isRowExpandable={(record?: Task) => Boolean(record?.status_reason)}
@@ -44,18 +48,18 @@ export const TasksDatagrid = () => {
       sx={datagridSx}
     >
       <FunctionField
-        source="status"
-        label="Status"
-        sortBy="status"
-        cellClassName="cell-status"
-        render={(record: Task) => <StatusPill status={record.status} />}
-      />
-      <FunctionField
         source="app"
         label="Application"
         sortBy="app"
         cellClassName="cell-app"
-        render={(record: Task) => <AppCell app={record.app} project={record.project} />}
+        render={(record: Task) => <AppCell app={record.app} />}
+      />
+      <FunctionField
+        source="project"
+        label="Project"
+        sortBy="project"
+        cellClassName="cell-project"
+        render={(record: Task) => <ProjectCell project={record.project} />}
       />
       <FunctionField
         source="author"
@@ -74,11 +78,25 @@ export const TasksDatagrid = () => {
         )}
       />
       <FunctionField
+        source="status"
+        label="Status"
+        sortBy="status"
+        cellClassName="cell-status"
+        render={(record: Task) => <StatusPill status={record.status} />}
+      />
+      <FunctionField
         source="created"
         label="Created"
         sortBy="created"
-        cellClassName="cell-time"
-        render={(record: Task) => <TimeCell ts={record.created} relative={record.updated ?? record.created} />}
+        cellClassName="cell-created"
+        render={(record: Task) => <TimeCell ts={record.created} mode="date" />}
+      />
+      <FunctionField
+        source="updated"
+        label="Updated"
+        sortBy="updated"
+        cellClassName="cell-updated"
+        render={(record: Task) => <TimeCell ts={record.updated ?? record.created} mode="relative" />}
       />
       <FunctionField
         source="duration"
@@ -95,11 +113,11 @@ export const TasksDatagrid = () => {
         render={(record: Task) => <ImagesCell images={record.images} />}
       />
       <FunctionField
-        source="__nav"
-        label=""
+        source="__view"
+        label="Details"
         sortable={false}
-        cellClassName="cell-nav"
-        render={() => <ChevronRightIcon fontSize="small" sx={{ color: 'text.disabled' }} />}
+        cellClassName="cell-view"
+        render={(record: Task) => <ViewButton id={record.id} />}
       />
     </Datagrid>
     </Box>
@@ -141,25 +159,94 @@ const datagridSx: SxProps<Theme> = theme => {
         duration: theme.transitions.duration.shortest,
       }),
     },
+    '& .cell-app': { width: 'auto', minWidth: 200, maxWidth: 280 },
+    '& .cell-project': { minWidth: 180, maxWidth: 280 },
+    '& .cell-author': { width: 200 },
     '& .cell-status': { width: 132 },
-    // Application is the only flexible column; cap it so wide viewports don't
-    // leave a huge gap between the app name and the next column.
-    '& .cell-app': { width: 'auto', minWidth: 240, maxWidth: 360 },
-    '& .cell-author': { width: 160 },
-    '& .cell-time, & .cell-duration': {
+    '& .cell-created': {
       width: 200,
       fontVariantNumeric: 'tabular-nums',
     },
-    '& .cell-duration': { width: 110 },
+    '& .cell-updated': {
+      width: 130,
+      fontVariantNumeric: 'tabular-nums',
+    },
+    '& .cell-duration': { width: 110, fontVariantNumeric: 'tabular-nums' },
     '& .cell-images': { width: 280 },
-    '& .cell-nav': {
-      width: 56,
+    '& .cell-view': {
+      width: 96,
       textAlign: 'right',
       paddingLeft: 0,
       paddingRight: theme.spacing(1.5),
     },
   };
 };
+
+/**
+ * Renders the project field. URLs become external links; plain strings render
+ * as muted monospace text. Click events stopPropagation so following the link
+ * does not also trigger the row's expand action.
+ */
+const ProjectCell = ({ project }: { project?: string | null }) => {
+  if (!project) {
+    return <EmptyCell />;
+  }
+  const info = describeProject(project);
+  if (info.isUrl && info.href) {
+    return (
+      <Link
+        href={info.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        underline="hover"
+        onClick={event => event.stopPropagation()}
+        sx={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 0.25,
+          fontFamily: tokens.fontMono,
+          fontSize: 12,
+          color: 'text.secondary',
+          maxWidth: '100%',
+        }}
+      >
+        <Box
+          component="span"
+          sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+        >
+          {info.label}
+        </Box>
+        <OpenInNewIcon sx={{ fontSize: 12 }} />
+      </Link>
+    );
+  }
+  return (
+    <Typography
+      variant="body2"
+      sx={{ fontFamily: tokens.fontMono, fontSize: 12, color: 'text.secondary' }}
+      noWrap
+      title={info.label}
+    >
+      {info.label}
+    </Typography>
+  );
+};
+
+/**
+ * Explicit "View" affordance in the trailing Details column. stopPropagation
+ * prevents the row-level expand from firing when the button is clicked.
+ */
+const ViewButton = ({ id }: { id: string }) => (
+  <Button
+    component={RouterLink}
+    to={`/task/${id}`}
+    size="small"
+    variant="outlined"
+    onClick={event => event.stopPropagation()}
+  >
+    View
+  </Button>
+);
 
 /**
  * Empty-state shown by the Datagrid when the loaded page returns zero rows
@@ -234,7 +321,9 @@ const StatusReasonContent = ({ record }: { record?: Task | null }) => {
  * Internal testing helpers used to verify formatted sub-components without rendering Datagrid context.
  */
 export const __testing = {
+  ProjectCell,
   StatusReasonContent,
   StatusReasonPanel,
+  ViewButton,
   datagridSx,
 };
