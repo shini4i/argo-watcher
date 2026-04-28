@@ -133,8 +133,10 @@ func (app *Application) GetRolloutMessage(status string, rolloutImages []string)
 	switch status {
 	// not all images were deployed to the application
 	case ArgoRolloutAppNotAvailable:
-		// define details
-		return fmt.Sprintf(
+		// Image-mismatch is the bare minimum we always show. We additionally append any actionable diagnostics
+		// already returned by ArgoCD (failed sync operation, failed hooks, unhealthy resources) so on-call users
+		// don't have to context-switch into the ArgoCD UI to find the root cause.
+		base := fmt.Sprintf(
 			"List of current images (last app check):\n"+
 				"\t%s\n\n"+
 				"List of expected images:\n"+
@@ -142,6 +144,10 @@ func (app *Application) GetRolloutMessage(status string, rolloutImages []string)
 			strings.Join(app.Status.Summary.Images, "\n\t"),
 			strings.Join(rolloutImages, "\n\t"),
 		)
+		if diag := app.buildNotAvailableDiagnostics(); diag != "" {
+			return base + "\n\n" + diag
+		}
+		return base
 	// application sync status wasn't valid
 	case ArgoRolloutAppNotSynced:
 		// display sync status and last sync message
@@ -175,6 +181,12 @@ func (app *Application) GetRolloutMessage(status string, rolloutImages []string)
 	)
 }
 
+// formatSyncResultResource renders a single sync-result resource line. Shared between full and filtered listings
+// so the user-facing failure-report format stays consistent if it ever changes.
+func formatSyncResultResource(r ApplicationOperationResource) string {
+	return fmt.Sprintf("%s(%s) %s %s with message %s", r.Kind, r.Name, r.HookType, r.HookPhase, r.Message)
+}
+
 // ListSyncResultResources returns a list of strings representing the sync result resources of the application.
 // Each string in the list contains information about the resource's kind, name, hook type, hook phase, and message.
 // The information is formatted as "{kind}({name}) {hookType} {hookPhase} with message {message}".
@@ -182,10 +194,19 @@ func (app *Application) GetRolloutMessage(status string, rolloutImages []string)
 func (app *Application) ListSyncResultResources() []string {
 	list := make([]string, len(app.Status.OperationState.SyncResult.Resources))
 	for index := range app.Status.OperationState.SyncResult.Resources {
-		resource := app.Status.OperationState.SyncResult.Resources[index]
-		list[index] = fmt.Sprintf("%s(%s) %s %s with message %s", resource.Kind, resource.Name, resource.HookType, resource.HookPhase, resource.Message)
+		list[index] = formatSyncResultResource(app.Status.OperationState.SyncResult.Resources[index])
 	}
 	return list
+}
+
+// formatHealthResource renders a single health-bearing resource line. Shared between full and filtered listings
+// so the user-facing failure-report format stays consistent if it ever changes.
+func formatHealthResource(r ApplicationResource) string {
+	line := fmt.Sprintf("%s(%s) %s", r.Kind, r.Name, r.Health.Status)
+	if r.Health.Message != "" {
+		line += " with message " + r.Health.Message
+	}
+	return line
 }
 
 // ListUnhealthyResources returns a list of strings representing the unhealthy resources of the application.
@@ -201,13 +222,82 @@ func (app *Application) ListUnhealthyResources() []string {
 		if resource.Health.Status == "" {
 			continue
 		}
-		message := fmt.Sprintf("%s(%s) %s", resource.Kind, resource.Name, resource.Health.Status)
-		if resource.Health.Message != "" {
-			message += " with message " + resource.Health.Message
-		}
-		list = append(list, message)
+		list = append(list, formatHealthResource(resource))
 	}
 	return list
+}
+
+// isTerminalFailurePhase reports whether the given ArgoCD phase value indicates a terminal failure. The same
+// predicate is applied to both Status.OperationState.Phase (OperationPhase) and SyncResult.Resources[].HookPhase
+// (HookPhase); upstream defines these as separate string enums that share the same value set.
+// "Running", "Succeeded", "Terminating", and the empty string are deliberately excluded.
+func isTerminalFailurePhase(phase string) bool {
+	return phase == "Failed" || phase == "Error"
+}
+
+// isProblemHealthStatus reports whether an ArgoCD resource HealthStatusCode indicates a problem worth surfacing
+// in the deployment failure report. "Healthy" and "Progressing" are excluded so they don't dilute the signal;
+// "Synced" appears in legacy fixtures and is treated as non-actionable.
+func isProblemHealthStatus(status string) bool {
+	switch status {
+	case "Degraded", "Missing", "Unknown", "Suspended":
+		return true
+	default:
+		return false
+	}
+}
+
+// listFailedSyncResultResources returns formatted lines for sync-result resources whose hook phase indicates failure.
+// Reuses the same one-line format as ListSyncResultResources via formatSyncResultResource.
+func (app *Application) listFailedSyncResultResources() []string {
+	var list []string
+	for index := range app.Status.OperationState.SyncResult.Resources {
+		resource := app.Status.OperationState.SyncResult.Resources[index]
+		if !isTerminalFailurePhase(resource.HookPhase) {
+			continue
+		}
+		list = append(list, formatSyncResultResource(resource))
+	}
+	return list
+}
+
+// listProblemResources returns formatted lines for resources whose health status indicates a problem.
+// Reuses formatHealthResource for output formatting; applies the stricter problem-only filter via isProblemHealthStatus.
+func (app *Application) listProblemResources() []string {
+	var list []string
+	for index := range app.Status.Resources {
+		resource := app.Status.Resources[index]
+		if !isProblemHealthStatus(resource.Health.Status) {
+			continue
+		}
+		list = append(list, formatHealthResource(resource))
+	}
+	return list
+}
+
+// buildNotAvailableDiagnostics builds the optional diagnostics suffix appended to the "not available" rollout
+// failure message. Each section is included only when it has content; the empty string is returned when no
+// diagnostics are available, preserving the legacy image-list-only output for that case.
+func (app *Application) buildNotAvailableDiagnostics() string {
+	var sections []string
+
+	if isTerminalFailurePhase(app.Status.OperationState.Phase) {
+		opSection := fmt.Sprintf("Sync operation phase: %s", app.Status.OperationState.Phase)
+		if msg := app.Status.OperationState.Message; msg != "" {
+			opSection += "\nSync operation message: " + msg
+		}
+		sections = append(sections, opSection)
+	}
+
+	if hooks := app.listFailedSyncResultResources(); len(hooks) > 0 {
+		sections = append(sections, "Failed hooks:\n\t"+strings.Join(hooks, "\n\t"))
+	}
+
+	if resources := app.listProblemResources(); len(resources) > 0 {
+		sections = append(sections, "Unhealthy resources:\n\t"+strings.Join(resources, "\n\t"))
+	}
+
+	return strings.Join(sections, "\n\n")
 }
 
 // IsManagedByWatcher checks if the application is managed by the watcher.
