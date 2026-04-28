@@ -17,10 +17,10 @@ import { usePauseRefresh, useTaskListContext } from './TaskListContext';
 
 /**
  * Renders the shared task table used by both recent and history views.
- * The auto-expand chevron in the first column toggles the inline status-reason
- * panel for rows that have one; row clicks also trigger the same expand. The
- * trailing "View" button is the explicit affordance for navigating to the task
- * detail page so the row body remains a quiet expander.
+ * The leading expand chevron and a row click both toggle the inline
+ * status-reason panel for rows that have one. The trailing "View" button is
+ * the explicit affordance for navigating to the task detail page so the row
+ * body remains a quiet expander.
  *
  * The wrapping div emits `pause('hover')` reasons through TaskListContext so
  * the toolbar's auto-refresh countdown freezes while the cursor is over the
@@ -32,8 +32,9 @@ export const TasksDatagrid = () => {
   const handleLeave = useCallback(() => resume('hover'), [resume]);
 
   // onMouseLeave is not guaranteed to fire if the component unmounts while the
-  // cursor is still over the table (e.g. row click → navigate). Always clear
-  // the hover pause on unmount so the auto-refresh timer never gets stuck.
+  // cursor is still over the table (e.g. filter change or page leave mid-hover).
+  // Always clear the hover pause on unmount so the auto-refresh timer never
+  // gets stuck.
   useEffect(() => () => resume('hover'), [resume]);
 
   return (
@@ -113,7 +114,6 @@ export const TasksDatagrid = () => {
         render={(record: Task) => <ImagesCell images={record.images} />}
       />
       <FunctionField
-        source="__view"
         label="Details"
         sortable={false}
         cellClassName="cell-view"
@@ -159,7 +159,7 @@ const datagridSx: SxProps<Theme> = theme => {
         duration: theme.transitions.duration.shortest,
       }),
     },
-    '& .cell-app': { width: 'auto', minWidth: 200, maxWidth: 280 },
+    '& .cell-app': { minWidth: 200, maxWidth: 280 },
     '& .cell-project': { minWidth: 180, maxWidth: 280 },
     '& .cell-author': { width: 200 },
     '& .cell-status': { width: 132 },
@@ -183,9 +183,9 @@ const datagridSx: SxProps<Theme> = theme => {
 };
 
 /**
- * Renders the project field. URLs become external links; plain strings render
- * as muted monospace text. Click events stopPropagation so following the link
- * does not also trigger the row's expand action.
+ * Renders the project field. URLs become external links (clicks stopPropagation
+ * so following the link does not also expand the row); plain strings render as
+ * muted monospace text and inherit the row's click-to-expand behavior.
  */
 const ProjectCell = ({ project }: { project?: string | null }) => {
   if (!project) {
@@ -239,7 +239,7 @@ const ProjectCell = ({ project }: { project?: string | null }) => {
 const ViewButton = ({ id }: { id: string }) => (
   <Button
     component={RouterLink}
-    to={`/task/${id}`}
+    to={`/task/${encodeURIComponent(id)}`}
     size="small"
     variant="outlined"
     onClick={event => event.stopPropagation()}

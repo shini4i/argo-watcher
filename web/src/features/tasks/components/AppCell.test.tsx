@@ -41,23 +41,9 @@ describe('describeProject', () => {
 });
 
 describe('AppCell', () => {
-  it('renders monogram and app name', () => {
-    render(<AppCell app="checkout-api" project="infra/prod" />);
+  it('renders the monogram and app name', () => {
+    render(<AppCell app="checkout-api" />);
     expect(screen.getByText('CA')).toBeInTheDocument();
     expect(screen.getByText('checkout-api')).toBeInTheDocument();
-    expect(screen.getByText('infra/prod')).toBeInTheDocument();
-  });
-
-  it('renders project URLs as external links', () => {
-    render(<AppCell app="api" project="https://github.com/org/repo/" />);
-    const link = screen.getByRole('link');
-    expect(link).toHaveAttribute('href', 'https://github.com/org/repo/');
-    expect(link).toHaveAttribute('target', '_blank');
-  });
-
-  it('skips the project line when none is provided', () => {
-    render(<AppCell app="api" project={null} />);
-    expect(screen.getByText('api')).toBeInTheDocument();
-    expect(screen.queryByRole('link')).toBeNull();
   });
 });

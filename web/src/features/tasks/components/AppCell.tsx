@@ -1,11 +1,9 @@
-import { Box, Link, Stack, Typography } from '@mui/material';
+import { Box, Stack, Typography } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { tokens } from '../../../theme/tokens';
 
 interface AppCellProps {
   readonly app: string;
-  readonly project?: string | null;
 }
 
 /** Stable hash → swatch index for a given app name. */
@@ -54,16 +52,13 @@ export const describeProject = (project: string): ProjectLinkInfo => {
 };
 
 /**
- * Renders an application cell with a colour-coded monogram, the app name,
- * and a secondary project line that becomes an external link when the
- * project is a URL.
+ * Renders an application cell with a colour-coded monogram and the app name.
  */
-export const AppCell = ({ app, project }: AppCellProps) => {
+export const AppCell = ({ app }: AppCellProps) => {
   const theme = useTheme();
   const swatches = theme.palette.mode === 'dark' ? tokens.monogramSwatchesDark : tokens.monogramSwatches;
   const monogram = deriveMonogram(app);
   const swatch = swatches[hashIndex(app, swatches.length)];
-  const projectInfo = project ? describeProject(project) : null;
 
   return (
     <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
@@ -86,54 +81,14 @@ export const AppCell = ({ app, project }: AppCellProps) => {
       >
         {monogram}
       </Box>
-      <Stack spacing={0.25} sx={{ minWidth: 0 }}>
-        <Typography
-          variant="body2"
-          sx={{ fontWeight: 500, fontSize: 13.5, lineHeight: 1.2 }}
-          noWrap
-          title={app}
-        >
-          {app}
-        </Typography>
-        {projectInfo &&
-          (projectInfo.isUrl && projectInfo.href ? (
-            <Link
-              href={projectInfo.href}
-              target="_blank"
-              rel="noopener noreferrer"
-              underline="hover"
-              onClick={event => event.stopPropagation()}
-              sx={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 0.25,
-                fontFamily: tokens.fontMono,
-                fontSize: 11,
-                color: 'text.secondary',
-                maxWidth: '100%',
-              }}
-            >
-              <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {projectInfo.label}
-              </Box>
-              <OpenInNewIcon sx={{ fontSize: 11 }} />
-            </Link>
-          ) : (
-            <Typography
-              variant="caption"
-              sx={{
-                fontFamily: tokens.fontMono,
-                fontSize: 11,
-                color: 'text.secondary',
-                lineHeight: 1.2,
-              }}
-              noWrap
-              title={projectInfo.label}
-            >
-              {projectInfo.label}
-            </Typography>
-          ))}
-      </Stack>
+      <Typography
+        variant="body2"
+        sx={{ fontWeight: 500, fontSize: 13.5, lineHeight: 1.2, minWidth: 0 }}
+        noWrap
+        title={app}
+      >
+        {app}
+      </Typography>
     </Stack>
   );
 };

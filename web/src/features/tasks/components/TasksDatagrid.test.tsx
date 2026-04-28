@@ -60,7 +60,7 @@ describe('TasksDatagrid', () => {
     expect(screen.getByTestId('function-updated')).toBeInTheDocument();
     expect(screen.getByTestId('function-duration')).toBeInTheDocument();
     expect(screen.getByTestId('function-images')).toBeInTheDocument();
-    expect(screen.getByTestId('function-__view')).toBeInTheDocument();
+    expect(screen.getByTestId('function-Details')).toBeInTheDocument();
   });
 
   it('renders status reason content based on record data', () => {
