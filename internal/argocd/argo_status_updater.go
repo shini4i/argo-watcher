@@ -25,6 +25,10 @@ const (
 	legacyRetryIntervals = 15
 )
 
+// errForceRetry is an internal sentinel used to keep retry-go polling while the rollout has not reached a final state.
+// It must never reach the user-visible task status — WaitRollout swallows it so the caller can report the actual rollout state instead.
+var errForceRetry = errors.New("force retry")
+
 // DeploymentMonitor encapsulates the logic for tracking ArgoCD application rollouts.
 type DeploymentMonitor struct {
 	argo             Argo
@@ -107,6 +111,12 @@ func (monitor *DeploymentMonitor) WaitRollout(task models.Task) (*models.Applica
 
 		return checkRolloutStatus(task, application, monitor.registryProxyUrl, monitor.acceptSuspended)
 	}, retryOptions...)
+
+	// Once the retry budget is exhausted while still polling, surface the last-fetched application instead of the
+	// internal sentinel so the caller can report the real rollout status (e.g. "not synced", "not healthy") to the user.
+	if errors.Is(err, errForceRetry) && application != nil {
+		err = nil
+	}
 
 	return application, err
 }
@@ -392,7 +402,7 @@ func checkRolloutStatus(task models.Task, application *models.Application, regis
 	default:
 		log.Debug().Str("id", task.Id).Msgf("Application status is not final. Status received \"%s\"", status)
 	}
-	return errors.New("force retry")
+	return errForceRetry
 }
 
 // determineFailureStatus converts API errors into appropriate status messages
