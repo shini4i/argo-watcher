@@ -265,7 +265,12 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
-		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage, "ArgoCD API Error: force retry")
+		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage,
+			"Application deployment failed. Rollout status is not available\n\n"+
+				"List of current images (last app check):\n"+
+				"\ttest-registry/ghcr.io/shini4i/argo-watcher:dev\n\n"+
+				"List of expected images:\n"+
+				"\tghcr.io/shini4i/argo-watcher:dev")
 
 		// run the rollout
 		updater.WaitForRollout(task)
@@ -396,7 +401,12 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
-		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage, "ArgoCD API Error: force retry")
+		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage,
+			"Application deployment failed. Rollout status is not available\n\n"+
+				"List of current images (last app check):\n"+
+				"\ttest-image:v0.0.1\n\n"+
+				"List of expected images:\n"+
+				"\tghcr.io/shini4i/argo-watcher:dev")
 
 		// run the rollout
 		updater.WaitForRollout(task)
@@ -441,7 +451,12 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
-		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage, "ArgoCD API Error: force retry")
+		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage,
+			"Application deployment failed. Rollout status is not synced\n\n"+
+				"App status \"NotWorking\"\n"+
+				"App message \"Not working test app\"\n"+
+				"Resources:\n"+
+				"\t")
 
 		// run the rollout
 		updater.WaitForRollout(task)
@@ -484,7 +499,12 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
-		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage, "ArgoCD API Error: force retry")
+		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage,
+			"Application deployment failed. Rollout status is not healthy\n\n"+
+				"App sync status \"Synced\"\n"+
+				"App health status \"NotHealthy\"\n"+
+				"Resources:\n"+
+				"\t")
 
 		// run the rollout
 		updater.WaitForRollout(task)
