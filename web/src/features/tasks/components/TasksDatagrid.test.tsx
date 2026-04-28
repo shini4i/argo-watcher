@@ -145,15 +145,14 @@ describe('TasksDatagrid', () => {
     it('renders URL projects as external links and stops click propagation', () => {
       const onRowClick = vi.fn();
       render(
-        <div
-          role="button"
-          tabIndex={0}
+        <button
+          type="button"
           aria-label="parent row"
           onClick={onRowClick}
           onKeyDown={onRowClick}
         >
           <ProjectCell project="https://github.com/org/repo/" />
-        </div>,
+        </button>,
       );
       const link = screen.getByRole('link');
       expect(link).toHaveAttribute('href', 'https://github.com/org/repo/');
@@ -169,19 +168,18 @@ describe('TasksDatagrid', () => {
     it('navigates to the task detail page and stops click propagation', () => {
       const onRowClick = vi.fn();
       renderInRouter(
-        <div
-          role="button"
-          tabIndex={0}
+        <button
+          type="button"
           aria-label="parent row"
           onClick={onRowClick}
           onKeyDown={onRowClick}
         >
           <ViewButton id="task-42" />
-        </div>,
+        </button>,
       );
-      const button = screen.getByRole('link', { name: /view/i });
-      expect(button).toHaveAttribute('href', '/task/task-42');
-      fireEvent.click(button);
+      const link = screen.getByRole('link', { name: /view/i });
+      expect(link).toHaveAttribute('href', '/task/task-42');
+      fireEvent.click(link);
       expect(onRowClick).not.toHaveBeenCalled();
     });
   });

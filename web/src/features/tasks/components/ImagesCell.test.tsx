@@ -54,9 +54,8 @@ describe('ImagesCell', () => {
   it('stops propagation so row navigation does not fire when toggling', () => {
     const onRowClick = vi.fn();
     render(
-      <div
-        role="button"
-        tabIndex={0}
+      <button
+        type="button"
         aria-label="parent row"
         onClick={onRowClick}
         onKeyDown={onRowClick}
@@ -67,7 +66,7 @@ describe('ImagesCell', () => {
             { image: 'worker', tag: 'v2' },
           ]}
         />
-      </div>,
+      </button>,
     );
     fireEvent.click(screen.getByRole('button', { name: '+1 more' }));
     expect(onRowClick).not.toHaveBeenCalled();
