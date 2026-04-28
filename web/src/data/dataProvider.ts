@@ -26,6 +26,21 @@ import type { Task, TaskListFilter, TasksResponse, TaskStatus } from './types';
 
 const RESOURCE_TASKS = 'tasks';
 
+// Mirrors the backend's allowedTaskStatusFilters (internal/models/constants.go).
+// Stale URL or localStorage values that don't match are dropped before we hit
+// the wire so they don't trigger a 400 from the validating handler.
+const ALLOWED_TASK_STATUSES: ReadonlySet<string> = new Set([
+  'app not found',
+  'in progress',
+  'failed',
+  'aborted',
+  'argocd is unavailable',
+  'cannot connect to database',
+  'failed to login to argocd',
+  'deployed',
+  'accepted',
+]);
+
 /** Normalizes various date/timestamp inputs to seconds since epoch. */
 const toUnixSeconds = (value: Date | string | number | undefined, fallback: number): number => {
   if (value === undefined || value === null) {
@@ -58,7 +73,7 @@ const selectListWindow = (params: GetListParams) => {
     from: fromCandidate == null ? defaultFrom : toUnixSeconds(fromCandidate, defaultFrom),
     to: toCandidate == null ? undefined : toUnixSeconds(toCandidate, nowSeconds),
     app: filter.app,
-    status: filter.status,
+    status: filter.status && ALLOWED_TASK_STATUSES.has(filter.status) ? filter.status : undefined,
   };
 };
 
