@@ -145,7 +145,13 @@ describe('TasksDatagrid', () => {
     it('renders URL projects as external links and stops click propagation', () => {
       const onRowClick = vi.fn();
       render(
-        <div onClick={onRowClick}>
+        <div
+          role="button"
+          tabIndex={0}
+          aria-label="parent row"
+          onClick={onRowClick}
+          onKeyDown={onRowClick}
+        >
           <ProjectCell project="https://github.com/org/repo/" />
         </div>,
       );
@@ -163,7 +169,13 @@ describe('TasksDatagrid', () => {
     it('navigates to the task detail page and stops click propagation', () => {
       const onRowClick = vi.fn();
       renderInRouter(
-        <div onClick={onRowClick}>
+        <div
+          role="button"
+          tabIndex={0}
+          aria-label="parent row"
+          onClick={onRowClick}
+          onKeyDown={onRowClick}
+        >
           <ViewButton id="task-42" />
         </div>,
       );
