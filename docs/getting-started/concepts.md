@@ -12,13 +12,11 @@ In a typical GitOps workflow, a CI pipeline builds an image, pushes it to a regi
 
 Argo Watcher introduces a control loop that monitors your Argo CD applications for health and sync status changes. It acts as a bridge, reporting the deployment's final state back to the CI pipeline. This provides a clear, synchronous result for an asynchronous process.
 
-## Architecture
+## Architecture: Server, Client, and Updater
 
-Argo Watcher consists of three main components:
+Argo Watcher is composed of three concerns. The **Server** is the long-running service that talks to Argo CD, persists task state, exposes the HTTP API, and serves the Web UI. The **Client** is a lightweight CLI that runs inside CI/CD pipelines — it creates a task, waits for the result, and exits with a status code that the pipeline can branch on. The **Updater** is an optional subsystem inside the server that commits image-tag changes to your GitOps repository, replacing Argo CD Image Updater for projects that prefer a single tool.
 
-- **Server** — Monitors Argo CD applications, manages tasks, stores state, and serves the Web UI.
-- **Client** — A lightweight CLI tool that integrates into CI/CD pipelines to create tasks and wait for results.
-- **Web UI** — A real-time dashboard to visualize deployment status, history, and application state.
+The Web UI is bundled with the server and gives operators a real-time view of every task as it transitions through its lifecycle.
 
 ## Task Lifecycle
 

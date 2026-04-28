@@ -84,6 +84,10 @@ markdown_extensions:
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.inlinehilite
+  - pymdownx.snippets:
+      base_path:
+        - docs/snippets
+      check_paths: true
   - attr_list
   - md_in_html
   - admonition
