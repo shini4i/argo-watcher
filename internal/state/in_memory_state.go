@@ -55,8 +55,10 @@ func (state *InMemoryState) AddTask(task models.Task) (*models.Task, error) {
 
 // taskMatchesFilters reports whether a task falls within the time window
 // and matches the optional app/status filters (empty values are wildcards).
+// The lower bound is exclusive and the upper bound is inclusive to match the
+// Postgres query (`created > startTime AND created <= endTime`).
 func taskMatchesFilters(task models.Task, startTime, endTime float64, app, status string) bool {
-	if task.Created < startTime || task.Created > endTime {
+	if task.Created <= startTime || task.Created > endTime {
 		return false
 	}
 	if app != "" && app != task.App {
