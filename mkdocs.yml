@@ -105,6 +105,7 @@ plugins:
       enable_creation_date: true
   - social
   - glightbox
+  - swagger-ui-tag
   - redirects:
       redirect_maps:
         installation.md: guides/install.md

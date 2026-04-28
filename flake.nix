@@ -17,6 +17,7 @@
           gotools
           gosec
           mockgen
+          go-swag
         ];
 
         preCommitTools = with pkgs; [
@@ -54,6 +55,7 @@
           mkdocs-git-revision-date-localized-plugin
           mkdocs-glightbox
           mkdocs-redirects
+          mkdocs-swagger-ui-tag
           pymdown-extensions
           pillow
           cairosvg
