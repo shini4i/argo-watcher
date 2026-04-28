@@ -161,6 +161,169 @@ func TestArgoRolloutMessage(t *testing.T) {
 			application.GetRolloutMessage(ArgoRolloutAppNotAvailable, images))
 	})
 
+	t.Run("Rollout message - ArgoRolloutAppNotAvailable with failed hook", func(t *testing.T) {
+		application := Application{}
+		application.Status.Summary.Images = []string{"app:v0.0.1"}
+		application.Status.OperationState.SyncResult.Resources = []ApplicationOperationResource{
+			{
+				HookPhase: "Failed",
+				HookType:  "PreSync",
+				Kind:      "Job",
+				Message:   "Job has reached the specified backoff limit",
+				Status:    "Synced",
+				SyncPhase: "PreSync",
+				Name:      "app-migrations",
+				Namespace: "app",
+			},
+		}
+		images := []string{"app:v0.0.2"}
+		assert.Equal(t,
+			"List of current images (last app check):\n\tapp:v0.0.1\n\n"+
+				"List of expected images:\n\tapp:v0.0.2\n\n"+
+				"Failed hooks:\n"+
+				"\tJob(app-migrations) PreSync Failed with message Job has reached the specified backoff limit",
+			application.GetRolloutMessage(ArgoRolloutAppNotAvailable, images))
+	})
+
+	t.Run("Rollout message - ArgoRolloutAppNotAvailable with unhealthy pod", func(t *testing.T) {
+		application := Application{}
+		application.Status.Summary.Images = []string{"app:v0.0.1"}
+		application.Status.Resources = []ApplicationResource{
+			{
+				Kind:      "Pod",
+				Name:      "app-pod",
+				Namespace: "app",
+				Health: struct {
+					Message string `json:"message"`
+					Status  string `json:"status"`
+				}{
+					Message: "Back-off restarting failed container",
+					Status:  "Degraded",
+				},
+			},
+		}
+		images := []string{"app:v0.0.2"}
+		assert.Equal(t,
+			"List of current images (last app check):\n\tapp:v0.0.1\n\n"+
+				"List of expected images:\n\tapp:v0.0.2\n\n"+
+				"Unhealthy resources:\n"+
+				"\tPod(app-pod) Degraded with message Back-off restarting failed container",
+			application.GetRolloutMessage(ArgoRolloutAppNotAvailable, images))
+	})
+
+	t.Run("Rollout message - ArgoRolloutAppNotAvailable with failed sync operation", func(t *testing.T) {
+		application := Application{}
+		application.Status.Summary.Images = []string{"app:v0.0.1"}
+		application.Status.OperationState.Phase = "Failed"
+		application.Status.OperationState.Message = "one or more synchronization tasks completed unsuccessfully"
+		images := []string{"app:v0.0.2"}
+		assert.Equal(t,
+			"List of current images (last app check):\n\tapp:v0.0.1\n\n"+
+				"List of expected images:\n\tapp:v0.0.2\n\n"+
+				"Sync operation phase: Failed\n"+
+				"Sync operation message: one or more synchronization tasks completed unsuccessfully",
+			application.GetRolloutMessage(ArgoRolloutAppNotAvailable, images))
+	})
+
+	t.Run("Rollout message - ArgoRolloutAppNotAvailable with combined diagnostics", func(t *testing.T) {
+		application := Application{}
+		application.Status.Summary.Images = []string{"app:v0.0.1"}
+		application.Status.OperationState.Phase = "Failed"
+		application.Status.OperationState.Message = "one or more synchronization tasks completed unsuccessfully"
+		application.Status.OperationState.SyncResult.Resources = []ApplicationOperationResource{
+			{
+				HookPhase: "Succeeded",
+				HookType:  "PreSync",
+				Kind:      "Pod",
+				Status:    "Synced",
+				SyncPhase: "PreSync",
+				Name:      "ok-hook",
+				Namespace: "app",
+			},
+			{
+				HookPhase: "Failed",
+				HookType:  "PreSync",
+				Kind:      "Job",
+				Message:   "Job has reached the specified backoff limit",
+				Status:    "Synced",
+				SyncPhase: "PreSync",
+				Name:      "app-migrations",
+				Namespace: "app",
+			},
+		}
+		application.Status.Resources = []ApplicationResource{
+			{
+				Kind:      "Pod",
+				Name:      "app-pod",
+				Namespace: "app",
+				Health: struct {
+					Message string `json:"message"`
+					Status  string `json:"status"`
+				}{
+					Message: "Back-off restarting failed container",
+					Status:  "Degraded",
+				},
+			},
+		}
+		images := []string{"app:v0.0.2"}
+		assert.Equal(t,
+			"List of current images (last app check):\n\tapp:v0.0.1\n\n"+
+				"List of expected images:\n\tapp:v0.0.2\n\n"+
+				"Sync operation phase: Failed\n"+
+				"Sync operation message: one or more synchronization tasks completed unsuccessfully\n\n"+
+				"Failed hooks:\n"+
+				"\tJob(app-migrations) PreSync Failed with message Job has reached the specified backoff limit\n\n"+
+				"Unhealthy resources:\n"+
+				"\tPod(app-pod) Degraded with message Back-off restarting failed container",
+			application.GetRolloutMessage(ArgoRolloutAppNotAvailable, images))
+	})
+
+	t.Run("Rollout message - ArgoRolloutAppNotAvailable filters out healthy/successful resources", func(t *testing.T) {
+		// Successful hooks, healthy/empty-status pods, and a non-failed sync operation phase must NOT appear in
+		// the failure report. We probe both `Running` (mid-rollout) and `Succeeded` (steady-state) op phases to
+		// pin the filter to {Failed, Error} only.
+		runCase := func(phase string) {
+			application := Application{}
+			application.Status.Summary.Images = []string{"app:v0.0.1"}
+			application.Status.OperationState.Phase = phase
+			application.Status.OperationState.Message = "irrelevant for this case"
+			application.Status.OperationState.SyncResult.Resources = []ApplicationOperationResource{
+				{HookPhase: "Succeeded", HookType: "PreSync", Kind: "Pod", Name: "ok", Namespace: "app"},
+			}
+			application.Status.Resources = []ApplicationResource{
+				{
+					Kind: "Pod", Name: "ok-pod", Namespace: "app",
+					Health: struct {
+						Message string `json:"message"`
+						Status  string `json:"status"`
+					}{Status: "Healthy"},
+				},
+				{
+					Kind: "Pod", Name: "progressing-pod", Namespace: "app",
+					Health: struct {
+						Message string `json:"message"`
+						Status  string `json:"status"`
+					}{Status: "Progressing"},
+				},
+				{
+					Kind: "Service", Name: "no-status-resource", Namespace: "app",
+					Health: struct {
+						Message string `json:"message"`
+						Status  string `json:"status"`
+					}{Status: ""},
+				},
+			}
+			images := []string{"app:v0.0.2"}
+			assert.Equal(t,
+				"List of current images (last app check):\n\tapp:v0.0.1\n\n"+
+					"List of expected images:\n\tapp:v0.0.2",
+				application.GetRolloutMessage(ArgoRolloutAppNotAvailable, images),
+				"phase=%q must produce the baseline image-only message", phase)
+		}
+		runCase("Running")
+		runCase("Succeeded")
+	})
+
 	t.Run("Rollout message - ArgoRolloutAppNotSynced", func(t *testing.T) {
 		// define application
 		application := Application{}
@@ -231,6 +394,65 @@ func TestArgoRolloutMessage(t *testing.T) {
 		images := []string{"ghcr.io/shini4i/argo-watcher:version2"}
 		assert.Equal(t, "received unexpected rollout status \"unexpected status\"", application.GetRolloutMessage("unexpected status", images))
 	})
+
+	t.Run("Rollout message - ArgoRolloutAppNotAvailable with failed sync operation and empty message", func(t *testing.T) {
+		// Pins the OperationState.Message == "" branch in buildNotAvailableDiagnostics: the "Sync operation message:"
+		// line must be omitted when ArgoCD provides only a phase.
+		application := Application{}
+		application.Status.Summary.Images = []string{"app:v0.0.1"}
+		application.Status.OperationState.Phase = "Error"
+		images := []string{"app:v0.0.2"}
+		assert.Equal(t,
+			"List of current images (last app check):\n\tapp:v0.0.1\n\n"+
+				"List of expected images:\n\tapp:v0.0.2\n\n"+
+				"Sync operation phase: Error",
+			application.GetRolloutMessage(ArgoRolloutAppNotAvailable, images))
+	})
+}
+
+func TestIsTerminalFailurePhase(t *testing.T) {
+	// Pins the {Failed, Error} predicate behaviourally. Without these, the rollout-message tests cover the predicate
+	// only structurally — narrowing the filter (e.g. dropping "Error") would not fail any other test.
+	tests := []struct {
+		phase string
+		want  bool
+	}{
+		{"Failed", true},
+		{"Error", true},
+		{"Running", false},
+		{"Succeeded", false},
+		{"Terminating", false},
+		{"", false},
+		{"unknown-phase", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.phase, func(t *testing.T) {
+			assert.Equal(t, tc.want, isTerminalFailurePhase(tc.phase))
+		})
+	}
+}
+
+func TestIsProblemHealthStatus(t *testing.T) {
+	// Pins the {Degraded, Missing, Unknown, Suspended} predicate behaviourally. Without these, the rollout-message
+	// tests cover only "Degraded" — silently narrowing the filter would not fail any other test.
+	tests := []struct {
+		status string
+		want   bool
+	}{
+		{"Degraded", true},
+		{"Missing", true},
+		{"Unknown", true},
+		{"Suspended", true},
+		{"Healthy", false},
+		{"Progressing", false},
+		{"", false},
+		{"Synced", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.status, func(t *testing.T) {
+			assert.Equal(t, tc.want, isProblemHealthStatus(tc.status))
+		})
+	}
 }
 
 func TestIsManagedByWatcher(t *testing.T) {
