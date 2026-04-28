@@ -49,12 +49,12 @@ export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
   // toggle the lock during the brief startup window or on a transient error.
   const canToggleLock =
     keycloakEnabled === false || (keycloakEnabled === true && privileged);
-  const lockHelperText =
-    keycloakEnabled === null
-      ? 'Checking permissions…'
-      : keycloakEnabled === true && !privileged
-        ? 'Deploy lock requires privileged access.'
-        : null;
+  let lockHelperText: string | null = null;
+  if (keycloakEnabled === null) {
+    lockHelperText = 'Checking permissions…';
+  } else if (keycloakEnabled === true && !privileged) {
+    lockHelperText = 'Deploy lock requires privileged access.';
+  }
 
   /** Toggles the deploy lock via the REST API and surfaces user feedback. */
   const handleDeployLockToggle = useCallback(async () => {
