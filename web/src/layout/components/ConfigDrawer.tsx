@@ -44,11 +44,17 @@ export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
   const privilegedGroups: readonly string[] =
     (permissions as { privilegedGroups?: string[] })?.privilegedGroups ?? [];
   const privileged = hasPrivilegedAccess(groups, privilegedGroups);
-  // Default-deny while keycloakEnabled is unknown (null = config still loading)
-  // so a non-privileged user cannot toggle the lock during the brief startup
-  // window before the /api/v1/config request resolves.
+  // Default-deny while keycloakEnabled is unknown (null = config still loading
+  // or the /api/v1/config request failed) so a non-privileged user cannot
+  // toggle the lock during the brief startup window or on a transient error.
   const canToggleLock =
     keycloakEnabled === false || (keycloakEnabled === true && privileged);
+  const lockHelperText =
+    keycloakEnabled === null
+      ? 'Checking permissions…'
+      : keycloakEnabled === true && !privileged
+        ? 'Deploy lock requires privileged access.'
+        : null;
 
   /** Toggles the deploy lock via the REST API and surfaces user feedback. */
   const handleDeployLockToggle = useCallback(async () => {
@@ -140,9 +146,9 @@ export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
                 inputProps={{ 'aria-label': 'Toggle deploy lock' }}
               />
             </Stack>
-            {!canToggleLock && (
+            {lockHelperText && (
               <Typography variant="body2" color="text.secondary">
-                Deploy lock requires privileged access.
+                {lockHelperText}
               </Typography>
             )}
           </Stack>

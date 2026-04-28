@@ -9,9 +9,9 @@ interface ServerConfigResponse {
 
 /**
  * Fetches server configuration to determine whether Keycloak authentication
- * is enabled. Returns `null` while the request is in flight so callers can
- * gate privileged actions conservatively (treating "unknown" as "denied")
- * instead of allowing a brief permissive window before the response lands.
+ * is enabled. Returns `null` while the request is in flight or when it fails
+ * so callers can gate privileged actions conservatively (treating "unknown"
+ * as "denied") instead of falling open if the /api/v1/config request errors.
  */
 export const useKeycloakEnabled = (): boolean | null => {
   const [enabled, setEnabled] = useState<boolean | null>(null);
@@ -26,9 +26,9 @@ export const useKeycloakEnabled = (): boolean | null => {
         }
       })
       .catch(() => {
-        if (subscribed) {
-          setEnabled(false);
-        }
+        // Leave enabled as null on failure — collapsing to false would let
+        // ConfigDrawer treat Keycloak as disabled and allow unauthenticated
+        // toggling of the deploy lock.
       });
 
     return () => {
