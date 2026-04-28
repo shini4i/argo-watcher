@@ -15,12 +15,12 @@ https://argo-watcher.example.com/api/v1
 
 ## Authentication
 
-If the [Git Integration](git-integration.md) is enabled, task creation requires one of the following:
+If the [Git Integration](../guides/gitops-updater.md) is enabled, task creation requires one of the following:
 
 - **Deploy token** -- Pass the `ARGO_WATCHER_DEPLOY_TOKEN` value as a query parameter or header.
 - **JWT token** -- Include a `Bearer` token in the `Authorization` header.
 
-If [Keycloak](keycloak.md) is enabled, additional endpoints (such as deploy lock) require a valid Keycloak session.
+If [Keycloak](../guides/keycloak.md) is enabled, additional endpoints (such as deploy lock) require a valid Keycloak session.
 
 ## Endpoints
 
@@ -212,7 +212,7 @@ GET /healthz
 
 ### Deploy Lock
 
-Manage the deployment lock. See [Deployment Locking](git-integration.md#deployment-locking) for details.
+Manage the deployment lock. See [Deployment Locking](../guides/gitops-updater.md#deployment-locking) for details.
 
 **Set lock:**
 
@@ -242,4 +242,4 @@ The Argo Watcher server bundles a Swagger UI that provides an interactive API ex
 https://argo-watcher.example.com/swagger/index.html
 ```
 
-The Swagger spec is auto-generated from Go source code annotations. See the [Development](development.md#swagger-documentation) guide for instructions on regenerating the spec.
+The Swagger spec is auto-generated from Go source code annotations. See the [Development](../contributing/development.md#swagger-documentation) guide for instructions on regenerating the spec.

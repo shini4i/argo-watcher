@@ -186,7 +186,7 @@ Once the server is running, the Swagger UI is accessible at:
 http://localhost:8080/swagger/index.html
 ```
 
-For a summary of available API endpoints, see the [API Reference](api.md) page.
+For a summary of available API endpoints, see the [API Reference](../reference/api.md) page.
 
 ## Project Structure
 

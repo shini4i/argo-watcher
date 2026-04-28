@@ -50,14 +50,26 @@ theme:
 
 nav:
   - Home: 'index.md'
-  - Concepts: 'concepts.md'
-  - Installation: 'installation.md'
-  - Git Integration: 'git-integration.md'
-  - API Reference: 'api.md'
-  - Notifications: 'notifications.md'
-  - Keycloak: 'keycloak.md'
-  - Development: 'development.md'
-  - Style Guide: 'style.md'
+  - Getting Started:
+    - Overview: 'getting-started/index.md'
+    - Quick Start: 'getting-started/quick-start.md'
+    - Concepts: 'getting-started/concepts.md'
+  - Guides:
+    - Overview: 'guides/index.md'
+    - Installation: 'guides/install.md'
+    - GitOps Updater: 'guides/gitops-updater.md'
+    - Notifications: 'guides/notifications.md'
+    - Keycloak: 'guides/keycloak.md'
+  - Reference:
+    - Overview: 'reference/index.md'
+    - API Reference: 'reference/api.md'
+  - Operations:
+    - Overview: 'operations/index.md'
+    - Troubleshooting: 'operations/troubleshooting.md'
+  - Contributing:
+    - Overview: 'contributing/index.md'
+    - Development: 'contributing/development.md'
+    - Style Guide: 'contributing/style.md'
 
 markdown_extensions:
   - pymdownx.tasklist:
@@ -89,3 +101,12 @@ plugins:
       enable_creation_date: true
   - social
   - glightbox
+  - redirects:
+      redirect_maps:
+        installation.md: guides/install.md
+        git-integration.md: guides/gitops-updater.md
+        notifications.md: guides/notifications.md
+        keycloak.md: guides/keycloak.md
+        api.md: reference/api.md
+        development.md: contributing/development.md
+        concepts.md: getting-started/concepts.md

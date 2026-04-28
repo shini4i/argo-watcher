@@ -48,13 +48,13 @@ graph LR
 
     Understand the problem, architecture, and key ideas.
 
-    [Learn the basics →](concepts.md)
+    [Learn the basics →](getting-started/concepts.md)
 
 - :material-api: **API Reference**
 
     Explore the REST API with interactive examples.
 
-    [Browse endpoints →](api.md)
+    [Browse endpoints →](reference/api.md)
 
 - :material-wrench-outline: **Operations**
 

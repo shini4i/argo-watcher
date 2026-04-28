@@ -121,11 +121,11 @@ These variables control authentication and optional features. See the linked gui
 
 | Variable                    | Description                                                                  | Default | Required    |
 |-----------------------------|------------------------------------------------------------------------------|---------|-------------|
-| `ARGO_WATCHER_DEPLOY_TOKEN` | Shared token for validating client requests. See [Git Integration](git-integration.md). |         | No          |
-| `JWT_SECRET`                | Secret key for signing and validating JWT tokens. See [Git Integration](git-integration.md#jwt-configuration). |         | No          |
+| `ARGO_WATCHER_DEPLOY_TOKEN` | Shared token for validating client requests. See [Git Integration](gitops-updater.md). |         | No          |
+| `JWT_SECRET`                | Secret key for signing and validating JWT tokens. See [Git Integration](gitops-updater.md#jwt-configuration). |         | No          |
 | `KEYCLOAK_ENABLED`          | Enable Keycloak authentication. See [Keycloak Integration](keycloak.md).     | `false` | No          |
 | `WEBHOOK_ENABLED`           | Enable webhook notifications. See [Notifications](notifications.md).         | `false` | No          |
-| `LOCKDOWN_SCHEDULE`         | Recurring deployment lock schedule. See [Deployment Locking](git-integration.md#deployment-locking). |         | No          |
+| `LOCKDOWN_SCHEDULE`         | Recurring deployment lock schedule. See [Deployment Locking](gitops-updater.md#deployment-locking). |         | No          |
 
 #### Database Settings
 
@@ -143,7 +143,7 @@ These variables are required when `STATE_TYPE` is set to `postgres`.
 
 #### Git Integration Settings
 
-These variables are required when using the built-in GitOps updater. See the [Git Integration](git-integration.md) guide for full details.
+These variables are required when using the built-in GitOps updater. See the [Git Integration](gitops-updater.md) guide for full details.
 
 | Variable              | Description                                             | Default | Required    |
 |-----------------------|---------------------------------------------------------|---------|-------------|
@@ -171,7 +171,7 @@ migrate -path db/migrations \
 ```
 
 !!! tip
-    The project includes a Docker Compose setup with automatic migrations for local development. See the [Development](development.md) guide for details.
+    The project includes a Docker Compose setup with automatic migrations for local development. See the [Development](../contributing/development.md) guide for details.
 
 ## Client Setup
 
