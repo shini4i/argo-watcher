@@ -83,75 +83,7 @@ ingress:
 
 ### Environment Variables
 
-The Argo Watcher server supports the following environment variables. When using the Helm chart, most of these are set through chart values automatically.
-
-#### Core Settings
-
-| Variable            | Description                                                     | Default     | Required    |
-|---------------------|-----------------------------------------------------------------|-------------|-------------|
-| `ARGO_URL`          | Argo CD server URL                                              |             | Yes         |
-| `ARGO_TOKEN`        | Argo CD API token                                               |             | Yes         |
-| `ARGO_API_TIMEOUT`    | Timeout for Argo CD API calls, in seconds                       | `60`        | No          |
-| `DEPLOYMENT_TIMEOUT`  | Maximum time (in seconds) to wait for a deployment to complete  | `900`       | No          |
-| `ARGO_REFRESH_APP`    | Refresh the application during status checks                    | `true`      | No          |
-| `ARGO_API_RETRIES`    | Total retry attempts for Argo CD API calls (1-10)               | `3`         | No          |
-| `ACCEPT_SUSPENDED_APP`| Accept "Suspended" health status as valid                       | `false`     | No          |
-| `STATE_TYPE`          | Storage backend: `in-memory` (non-HA) or `postgres` (HA)       |             | Yes         |
-
-#### Server Settings
-
-| Variable            | Description                                                     | Default     | Required    |
-|---------------------|-----------------------------------------------------------------|-------------|-------------|
-| `HOST`              | Host address for the Argo Watcher server                        | `0.0.0.0`  | No          |
-| `PORT`              | Port for the Argo Watcher server                                | `8080`      | No          |
-| `STATIC_FILES_PATH` | Path to the Web UI static files                                 | `static`    | No          |
-| `SKIP_TLS_VERIFY`     | Skip TLS certificate verification for API calls                 | `false`     | No          |
-| `DOCKER_IMAGES_PROXY` | Registry proxy URL for image existence checks                   |             | No          |
-| `ARGO_URL_ALIAS`      | URL alias for generating externally visible Argo CD app links   |             | No          |
-
-#### Logging
-
-| Variable     | Description                                                            | Default | Required |
-|--------------|------------------------------------------------------------------------|---------|----------|
-| `LOG_LEVEL`  | Log verbosity level (`debug`, `info`, `warn`, `error`)                | `info`  | No       |
-
-#### Authentication & Feature Flags
-
-These variables control authentication and optional features. See the linked guides for full configuration details.
-
-| Variable                    | Description                                                                  | Default | Required    |
-|-----------------------------|------------------------------------------------------------------------------|---------|-------------|
-| `ARGO_WATCHER_DEPLOY_TOKEN` | Shared token for validating client requests. See [Git Integration](gitops-updater.md). |         | No          |
-| `JWT_SECRET`                | Secret key for signing and validating JWT tokens. See [Git Integration](gitops-updater.md#jwt-configuration). |         | No          |
-| `KEYCLOAK_ENABLED`          | Enable Keycloak authentication. See [Keycloak Integration](keycloak.md).     | `false` | No          |
-| `WEBHOOK_ENABLED`           | Enable webhook notifications. See [Notifications](notifications.md).         | `false` | No          |
-| `LOCKDOWN_SCHEDULE`         | Recurring deployment lock schedule. See [Deployment Locking](gitops-updater.md#deployment-locking). |         | No          |
-
-#### Database Settings
-
-These variables are required when `STATE_TYPE` is set to `postgres`.
-
-| Variable      | Description       | Default     | Required      |
-|---------------|-------------------|-------------|---------------|
-| `DB_HOST`     | Database host     |             | Conditional   |
-| `DB_PORT`     | Database port     |             | Conditional   |
-| `DB_NAME`     | Database name     |             | Conditional   |
-| `DB_USER`     | Database username |             | Conditional   |
-| `DB_PASSWORD` | Database password |             | Conditional   |
-| `DB_SSL_MODE` | PostgreSQL SSL mode | `disable` | No            |
-| `DB_TIMEZONE` | Database timezone | `UTC`       | No            |
-
-#### Git Integration Settings
-
-These variables are required when using the built-in GitOps updater. See the [Git Integration](gitops-updater.md) guide for full details.
-
-| Variable              | Description                                             | Default | Required    |
-|-----------------------|---------------------------------------------------------|---------|-------------|
-| `SSH_KEY_PATH`        | Path to the SSH key for Git repository access           |         | Conditional |
-| `SSH_KEY_PASS`        | Passphrase for the SSH key                              |         | No          |
-| `SSH_COMMIT_USER`     | Git commit author name                                  | `argo-watcher` | No          |
-| `SSH_COMMIT_MAIL`     | Git commit author email                                 | `argo-watcher@example.com` | No          |
-| `COMMIT_MESSAGE_FORMAT` | Go template string for commit messages                |         | No          |
+All server environment variables are documented in the [Server Environment Variables](../reference/server-env.md) reference page. When using the Helm chart, most variables are set through chart values automatically.
 
 ### Database Setup
 
@@ -175,25 +107,9 @@ migrate -path db/migrations \
 
 ## Client Setup
 
-The Argo Watcher client is a lightweight CLI tool that communicates with the Argo Watcher server. It is distributed as a Docker image at [`ghcr.io/shini4i/argo-watcher-client`](https://ghcr.io/shini4i/argo-watcher-client).
+The Argo Watcher client is a lightweight CLI tool distributed as a Docker image at [`ghcr.io/shini4i/argo-watcher-client`](https://ghcr.io/shini4i/argo-watcher-client).
 
-### Client Environment Variables
-
-| Variable                    | Description                                                                                       | Required |
-|-----------------------------|---------------------------------------------------------------------------------------------------|----------|
-| `ARGO_WATCHER_URL`          | URL of the Argo Watcher server instance                                                          | Yes      |
-| `ARGO_APP`                  | Name of the Argo CD application to monitor                                                       | Yes      |
-| `COMMIT_AUTHOR`             | Person who triggered the deployment                                                              | Yes      |
-| `PROJECT_NAME`              | Identifier for the business project (not the Argo CD project)                                    | Yes      |
-| `IMAGES`                    | Comma-separated list of image names expected to contain the specified tag                        | Yes      |
-| `IMAGE_TAG`                 | Image tag expected to be deployed                                                                | Yes      |
-| `ARGO_WATCHER_DEPLOY_TOKEN` | Deploy token for Git image override (required when using the built-in GitOps updater)            | No       |
-| `BEARER_TOKEN`              | JWT token for authentication (prefix with `Bearer `, e.g. `Bearer <token>`)                     | No       |
-| `TIMEOUT`                   | HTTP request timeout (e.g. `60s`, `2m`)                                                         | No       |
-| `TASK_TIMEOUT`              | Maximum time (in seconds) to wait for a task to complete                                        | No       |
-| `RETRY_INTERVAL`            | Interval between status polling attempts (e.g. `15s`, `1m`)                                    | No       |
-| `EXPECTED_DEPLOY_TIME`      | Expected deployment duration; affects polling behavior (e.g. `15m`, `30m`)                     | No       |
-| `DEBUG`                     | Enable verbose debug output                                                                      | No       |
+All client environment variables are documented in the [Client Environment Variables](../reference/client-env.md) reference page.
 
 ### GitLab CI/CD
 
