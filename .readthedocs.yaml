@@ -4,6 +4,12 @@ build:
   os: ubuntu-22.04
   tools:
     python: "3.11"
+  apt_packages:
+    - libcairo2-dev
+    - libfreetype6-dev
+    - libffi-dev
+    - libjpeg-dev
+    - libpng-dev
 
 python:
   install:
