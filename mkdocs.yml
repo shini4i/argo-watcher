@@ -65,6 +65,8 @@ nav:
     - API Reference: 'reference/api.md'
   - Operations:
     - Overview: 'operations/index.md'
+    - Observability: 'operations/observability.md'
+    - Database: 'operations/database.md'
     - Troubleshooting: 'operations/troubleshooting.md'
   - Contributing:
     - Overview: 'contributing/index.md'

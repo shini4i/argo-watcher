@@ -1,5 +1,8 @@
 # Troubleshooting
 
+Each entry follows the same shape: **Symptom · Likely cause · How to verify · Fix.** When a symptom shows up in monitoring first, [Observability](observability.md) tells you which metric to look at; this page tells you what to do once you have.
+
+
 ## Server does not start
 
 **Symptom:** The Argo Watcher server pod fails to start or repeatedly crashes.
