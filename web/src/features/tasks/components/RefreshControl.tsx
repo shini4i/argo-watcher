@@ -28,8 +28,28 @@ const ALLOWED_INTERVAL_SECONDS: ReadonlySet<number> = new Set(
   REFRESH_OPTIONS.map(option => option.seconds),
 );
 
+// Some browsers (Safari private mode, Firefox with cookies blocked) throw
+// SecurityError on any localStorage access. Swallow those failures so the
+// countdown still hydrates from the provider default rather than crashing
+// the toolbar.
+const safeGetItem = (storageKey: string): string | null => {
+  try {
+    return getBrowserWindow()?.localStorage?.getItem(storageKey) ?? null;
+  } catch {
+    return null;
+  }
+};
+
+const safeSetItem = (storageKey: string, value: string): void => {
+  try {
+    getBrowserWindow()?.localStorage?.setItem(storageKey, value);
+  } catch {
+    // Ignore — same restricted-storage rationale as safeGetItem.
+  }
+};
+
 const readStoredInterval = (storageKey: string, fallback: number) => {
-  const value = Number.parseInt(getBrowserWindow()?.localStorage?.getItem(storageKey) ?? '', 10);
+  const value = Number.parseInt(safeGetItem(storageKey) ?? '', 10);
   // Only honour values that match a presented option; an unsupported number
   // would render an empty Select and break the countdown.
   return Number.isFinite(value) && ALLOWED_INTERVAL_SECONDS.has(value) ? value : fallback;
@@ -65,7 +85,7 @@ export const RefreshControl = ({ onRefresh, storageKey = 'recentTasks.refreshInt
 
   // Persist interval changes.
   useEffect(() => {
-    getBrowserWindow()?.localStorage?.setItem(storageKey, String(intervalSec));
+    safeSetItem(storageKey, String(intervalSec));
   }, [storageKey, intervalSec]);
 
   // Reset remaining when interval changes or after a refetch.
