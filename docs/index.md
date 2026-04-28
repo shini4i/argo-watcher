@@ -1,5 +1,8 @@
 # Argo Watcher
 
+!!! note "Documentation is a work in progress"
+    These docs are being actively reorganised and rewritten. Expect rough edges, occasional gaps, and the odd inaccuracy. If something looks wrong, please [open an issue](https://github.com/shini4i/argo-watcher/issues) or use the pencil icon at the top right of any page to suggest a fix.
+
 **A feedback loop for your GitOps workflow.**
 
 Argo Watcher bridges the gap between your CI pipeline and Argo CD, providing real-time status and visibility into your deployments. Stop guessing whether your deployment succeeded — Argo Watcher tells your pipeline exactly what happened.
