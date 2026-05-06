@@ -36,10 +36,50 @@ func (watcher *Watcher) getJSON(url string, v interface{}) error {
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("received non-200 status code: %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return serverErrorFromResponse(resp.StatusCode, body)
 	}
 
 	return json.NewDecoder(resp.Body).Decode(v)
+}
+
+// serverErrorFromResponse builds a human-readable error from an unsuccessful
+// HTTP response. It tries to decode the body as a TaskStatus to extract the
+// server's `error` field; failing that, it falls back to the raw body text.
+// For 401/403 it appends a hint about which env vars govern auth, since the
+// most common cause is a missing or wrong token on the client side.
+func serverErrorFromResponse(statusCode int, body []byte) error {
+	reason := serverReason(body)
+	if reason == "" {
+		return fmt.Errorf("argo-watcher returned status %d", statusCode)
+	}
+
+	if statusCode == http.StatusUnauthorized || statusCode == http.StatusForbidden {
+		return fmt.Errorf("argo-watcher returned status %d: %s "+
+			"(check ARGO_WATCHER_DEPLOY_TOKEN or BEARER_TOKEN)", statusCode, reason)
+	}
+	return fmt.Errorf("argo-watcher returned status %d: %s", statusCode, reason)
+}
+
+// serverReason extracts a useful message from the response body. Argo-watcher
+// returns errors as JSON with `error` and `status` fields (models.TaskStatus);
+// if neither is present we fall back to the raw body, which still beats the
+// status-code-only message we used to surface.
+func serverReason(body []byte) string {
+	body = []byte(strings.TrimSpace(string(body)))
+	if len(body) == 0 {
+		return ""
+	}
+	var ts models.TaskStatus
+	if err := json.Unmarshal(body, &ts); err == nil {
+		if ts.Error != "" {
+			return ts.Error
+		}
+		if ts.Status != "" {
+			return ts.Status
+		}
+	}
+	return string(body)
 }
 
 // getImagesList takes a list of image names and a tag,
