@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/go-playground/validator/v10"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -57,12 +58,50 @@ func TestNewServerConfig(t *testing.T) {
 func TestNewServerConfig_RequiredFieldsMissing(t *testing.T) {
 	t.Setenv("ARGO_URL", "https://example.com")
 
-	// Call the NewServerConfig function
 	cfg, err := NewServerConfig()
 
-	// Assert that an error is returned due to missing required fields
 	assert.Error(t, err)
 	assert.Nil(t, cfg)
+	// Assert the formatter is wired in: the message must use the grouped
+	// header, and ARGO_TOKEN (which this test never sets) must appear under
+	// it. STATE_TYPE is intentionally not asserted because the project's
+	// Taskfile sets STATE_TYPE=in-memory for `task test` runs.
+	assert.Contains(t, err.Error(), "missing required environment variables:")
+	assert.Contains(t, err.Error(), "ARGO_TOKEN")
+}
+
+// TestNewServerConfig_InvalidStateType_IsReadable verifies that the
+// validator error names the field, the constraint, and the offending value
+// — replacing the unreadable
+// "Key: 'ServerConfig.StateType' Error:Field validation for ... 'oneof' tag"
+// blob with something an operator can act on directly.
+func TestNewServerConfig_InvalidStateType_IsReadable(t *testing.T) {
+	t.Setenv("ARGO_URL", "https://example.com")
+	t.Setenv("ARGO_TOKEN", "secret-token")
+	t.Setenv("STATE_TYPE", "invalid")
+
+	_, err := NewServerConfig()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "StateType")
+	assert.Contains(t, err.Error(), "must be one of [postgres in-memory]")
+	assert.Contains(t, err.Error(), `"invalid"`)
+	// We no longer leak go-playground/validator's blob format.
+	assert.NotContains(t, err.Error(), "Key: 'ServerConfig.StateType'")
+}
+
+// TestNewServerConfig_InvalidArgoApiRetries_IsReadable verifies the same for
+// numeric range validation.
+func TestNewServerConfig_InvalidArgoApiRetries_IsReadable(t *testing.T) {
+	t.Setenv("ARGO_URL", "https://example.com")
+	t.Setenv("ARGO_TOKEN", "secret-token")
+	t.Setenv("STATE_TYPE", "postgres")
+	t.Setenv("ARGO_API_RETRIES", "11")
+
+	_, err := NewServerConfig()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "ArgoApiRetries")
+	assert.Contains(t, err.Error(), "must be <= 10")
+	assert.Contains(t, err.Error(), "got 11")
 }
 
 func TestServerConfig_GetRetryAttempts(t *testing.T) {
@@ -125,6 +164,23 @@ func TestNewServerConfig_ArgoApiRetriesTooHighRejected(t *testing.T) {
 
 	_, err := NewServerConfig()
 	assert.Error(t, err)
+}
+
+// TestPrettifyValidatorError_UnknownTagFallsBack guards the default branch in
+// describeValidatorFailure: any future validator tag (e.g. "url") that this
+// switch does not specialise must still produce a non-empty, field-naming
+// message instead of swallowing the validation failure.
+func TestPrettifyValidatorError_UnknownTagFallsBack(t *testing.T) {
+	type sample struct {
+		Field string `validate:"url"`
+	}
+	v := validator.New()
+	verr := v.Struct(sample{Field: "not-a-url"})
+	assert.Error(t, verr)
+
+	formatted := prettifyValidatorError(verr)
+	assert.Contains(t, formatted.Error(), "Field")
+	assert.Contains(t, formatted.Error(), "url validation failed")
 }
 
 func TestServerConfig_JSONExcludesSensitiveFields(t *testing.T) {

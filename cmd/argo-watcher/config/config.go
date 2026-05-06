@@ -1,12 +1,19 @@
 package config
 
 import (
+	"errors"
+	"fmt"
 	"net/url"
+	"sort"
 	"strings"
 
 	envConfig "github.com/caarlos0/env/v11"
 	"github.com/go-playground/validator/v10"
 )
+
+// validate is package-scoped because validator.New caches struct reflection
+// metadata; reusing one instance across calls avoids re-doing that work.
+var validate = validator.New()
 
 type KeycloakConfig struct {
 	Enabled                 bool     `env:"KEYCLOAK_ENABLED" json:"enabled"`
@@ -59,16 +66,15 @@ type ServerConfig struct {
 	RepoCachePath      string         `env:"REPO_CACHE_PATH" envDefault:"/data" json:"-"`
 }
 
-// NewServerConfig parses the server configuration from environment variables using the envconfig package.
-// It performs custom checks to ensure that the StateType is a valid value.
-// If the StateType is empty or not one of the allowed types ("postgres" or "in-memory"), it returns an error.
-// Otherwise, it returns the parsed server configuration and any error encountered during the parsing process.
+// NewServerConfig parses the server configuration from environment variables.
+// It validates that StateType is one of the allowed values. When parsing or
+// validation fails the returned error names every offending field with a
+// short description of the problem, so operators can fix the deployment in
+// one pass.
 func NewServerConfig() (*ServerConfig, error) {
-	var err error
-	var config ServerConfig
-
-	if config, err = envConfig.ParseAs[ServerConfig](); err != nil {
-		return nil, err
+	config, err := envConfig.ParseAs[ServerConfig]()
+	if err != nil {
+		return nil, prettifyEnvError(err, "invalid argo-watcher server configuration:")
 	}
 
 	// Trim whitespace from tokens to prevent issues with trailing newlines from env vars
@@ -76,13 +82,82 @@ func NewServerConfig() (*ServerConfig, error) {
 	config.DeployToken = strings.TrimSpace(config.DeployToken)
 	config.JWTSecret = strings.TrimSpace(config.JWTSecret)
 
-	validate := validator.New()
 	if err := validate.Struct(&config); err != nil {
-		return nil, err
+		return nil, prettifyValidatorError(err)
 	}
 
-	// return config
-	return &config, err
+	return &config, nil
+}
+
+// prettifyEnvError reformats github.com/caarlos0/env's semicolon-joined
+// AggregateError into a readable multi-line error. VarIsNotSetError entries
+// are listed under "missing required environment variables"; everything else
+// (parse errors, empty-var errors, etc.) goes under "invalid values".
+func prettifyEnvError(err error, leadIn string) error {
+	var agg envConfig.AggregateError
+	if !errors.As(err, &agg) {
+		return err
+	}
+
+	var missing, invalid []string
+	for _, e := range agg.Errors {
+		var notSet envConfig.VarIsNotSetError
+		if errors.As(e, &notSet) {
+			missing = append(missing, "  - "+notSet.Key)
+			continue
+		}
+		invalid = append(invalid, "  - "+e.Error())
+	}
+	sort.Strings(missing)
+	sort.Strings(invalid)
+
+	var sb strings.Builder
+	sb.WriteString(leadIn)
+	if len(missing) > 0 {
+		sb.WriteString("\nmissing required environment variables:\n")
+		sb.WriteString(strings.Join(missing, "\n"))
+	}
+	if len(invalid) > 0 {
+		sb.WriteString("\ninvalid values:\n")
+		sb.WriteString(strings.Join(invalid, "\n"))
+	}
+	return errors.New(sb.String())
+}
+
+// prettifyValidatorError reformats go-playground/validator's
+// `Key: 'ServerConfig.X' Error:Field validation for 'X' failed on the 'tag'`
+// blob into one-line-per-field readable output. The Go field name (e.g.
+// StateType) maps obviously to its env var (STATE_TYPE) for any operator;
+// no translation is attempted.
+func prettifyValidatorError(err error) error {
+	var ve validator.ValidationErrors
+	if !errors.As(err, &ve) {
+		return err
+	}
+
+	lines := make([]string, 0, len(ve))
+	for _, fe := range ve {
+		lines = append(lines, fmt.Sprintf("  - %s: %s", fe.Field(), describeValidatorFailure(fe)))
+	}
+	sort.Strings(lines)
+	return errors.New("invalid argo-watcher server configuration:\ninvalid values:\n" +
+		strings.Join(lines, "\n"))
+}
+
+// describeValidatorFailure renders a single validator error as a short human
+// phrase. Falls back to "<tag> validation failed" for tags this function
+// does not specialise.
+func describeValidatorFailure(fe validator.FieldError) string {
+	switch fe.Tag() {
+	case "oneof":
+		return fmt.Sprintf("must be one of [%s], got %q", fe.Param(), fe.Value())
+	case "min":
+		return fmt.Sprintf("must be >= %s, got %v", fe.Param(), fe.Value())
+	case "max":
+		return fmt.Sprintf("must be <= %s, got %v", fe.Param(), fe.Value())
+	default:
+		return fmt.Sprintf("%s validation failed (got %v)", fe.Tag(), fe.Value())
+	}
 }
 
 // GetRetryAttempts calculates the number of retry attempts based on the Deployment timeout value in the server configuration.
@@ -92,4 +167,3 @@ func NewServerConfig() (*ServerConfig, error) {
 func (config *ServerConfig) GetRetryAttempts() uint {
 	return config.DeploymentTimeout/15 + 1
 }
-
