@@ -9,6 +9,8 @@ import (
 
 	envConfig "github.com/caarlos0/env/v11"
 	"github.com/go-playground/validator/v10"
+
+	"github.com/shini4i/argo-watcher/internal/helpers"
 )
 
 // validate is package-scoped because validator.New caches struct reflection
@@ -74,7 +76,7 @@ type ServerConfig struct {
 func NewServerConfig() (*ServerConfig, error) {
 	config, err := envConfig.ParseAs[ServerConfig]()
 	if err != nil {
-		return nil, prettifyEnvError(err, "invalid argo-watcher server configuration:")
+		return nil, helpers.PrettifyEnvError(err, "invalid argo-watcher server configuration:")
 	}
 
 	// Trim whitespace from tokens to prevent issues with trailing newlines from env vars
@@ -87,41 +89,6 @@ func NewServerConfig() (*ServerConfig, error) {
 	}
 
 	return &config, nil
-}
-
-// prettifyEnvError reformats github.com/caarlos0/env's semicolon-joined
-// AggregateError into a readable multi-line error. VarIsNotSetError entries
-// are listed under "missing required environment variables"; everything else
-// (parse errors, empty-var errors, etc.) goes under "invalid values".
-func prettifyEnvError(err error, leadIn string) error {
-	var agg envConfig.AggregateError
-	if !errors.As(err, &agg) {
-		return err
-	}
-
-	var missing, invalid []string
-	for _, e := range agg.Errors {
-		var notSet envConfig.VarIsNotSetError
-		if errors.As(e, &notSet) {
-			missing = append(missing, "  - "+notSet.Key)
-			continue
-		}
-		invalid = append(invalid, "  - "+e.Error())
-	}
-	sort.Strings(missing)
-	sort.Strings(invalid)
-
-	var sb strings.Builder
-	sb.WriteString(leadIn)
-	if len(missing) > 0 {
-		sb.WriteString("\nmissing required environment variables:\n")
-		sb.WriteString(strings.Join(missing, "\n"))
-	}
-	if len(invalid) > 0 {
-		sb.WriteString("\ninvalid values:\n")
-		sb.WriteString(strings.Join(invalid, "\n"))
-	}
-	return errors.New(sb.String())
 }
 
 // prettifyValidatorError reformats go-playground/validator's
