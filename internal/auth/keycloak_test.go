@@ -195,7 +195,10 @@ func TestKeycloakAuthService_Validate(t *testing.T) {
 		ok, err := service.Validate("test")
 
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "error unmarshalling response body")
+		// Transport/parse failures are sanitized: details (URLs, body
+		// fragments) live in the server log only, never the client-facing
+		// error message.
+		assert.Equal(t, "token validation failed", err.Error())
 		assert.False(t, ok)
 	})
 
@@ -207,7 +210,7 @@ func TestKeycloakAuthService_Validate(t *testing.T) {
 		ok, err := service.Validate("test")
 
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "error on response")
+		assert.Equal(t, "token validation failed", err.Error())
 		assert.False(t, ok)
 	})
 }
