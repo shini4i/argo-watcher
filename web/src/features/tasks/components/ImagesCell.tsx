@@ -41,14 +41,15 @@ const ImageRow = ({ image }: ImageRowProps) => (
       sx={{
         display: 'inline-flex',
         alignItems: 'center',
-        height: 18,
-        padding: '0 6px',
+        padding: '2px 6px',
         borderRadius: tokens.radiusPill,
         backgroundColor: tokens.accentSoft,
         color: tokens.accent,
         fontFamily: tokens.fontMono,
         fontSize: 11,
+        lineHeight: 1.3,
         fontWeight: 500,
+        wordBreak: 'break-all',
       }}
     >
       {image.tag}
