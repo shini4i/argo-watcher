@@ -133,6 +133,17 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Install Task
+        uses: arduino/setup-task@24c5e13bce349197642746563945fcdf9355e8f4  # v2.0.0
+
+      - name: Install environment dependencies
+        run: task install-deps
+
+      - name: Generate mocks
+        # internal/models/argo_test.go imports pkg/updater/mock; the package
+        # must build cleanly before our integration tests can compile.
+        run: task mocks
+
       - name: Run integration tests
         # SSH_KEY_PATH and GIT_TIMEOUT are set per-test via t.Setenv inside
         # setupGitea / each test function; no workflow-level env needed here.
