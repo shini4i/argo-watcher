@@ -215,8 +215,8 @@ func TestIntegration_PushRaceRecovery_Concurrent(t *testing.T) {
 // The test wraps each operation in a deterministic outer timeout (10x GIT_TIMEOUT)
 // to verify that operations are bounded and do not hang indefinitely. The actual
 // GIT_TIMEOUT is much shorter (3s) and is internally enforced by the UpdateGitImageTag
-// context; the outer timeout ensures the outer timeout ensures we detect any regression
-// where the context is not properly threaded or ignored.
+// context; the outer timeout ensures we detect any regression where the context is not
+// properly threaded or ignored.
 func TestIntegration_GitTimeoutEnforcement_ReturnsWithinBudget(t *testing.T) {
 	waitForGitea(t, 60*time.Second)
 	env := setupGitea(t)
