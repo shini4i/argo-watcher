@@ -103,46 +103,53 @@ func TestIntegration_PushRaceRecovery_WithLatencyInjection(t *testing.T) {
 		toxiclient.Attributes{"latency": 300})
 	require.NoError(t, err)
 
-	handler := &countingHandler{}
+	// The race window is timing-sensitive: on a slow runner the competitor may
+	// push before A's fetch completes, leaving recovery unexercised. Retry the
+	// race-injection sequence up to maxAttempts times until PlainOpen is called
+	// >= 2 times (proving recovery re-entered Clone()).
+	const maxAttempts = 3
+	var lastOpens int32
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		handler := &countingHandler{}
+		aDone := make(chan error, 1)
+		go func() {
+			aDone <- newAppWithImages("test-app").UpdateGitImageTag(
+				newImageTask(),
+				&GitopsRepo{
+					RepoUrl:       env.ProxyRepoURL,
+					BranchName:    "master",
+					Path:          "apps",
+					RepoCachePath: t.TempDir(),
+				},
+				handler,
+			)
+		}()
 
-	aDone := make(chan error, 1)
-	go func() {
-		aDone <- newAppWithImages("test-app").UpdateGitImageTag(
-			newImageTask(),
-			&GitopsRepo{
-				RepoUrl:       env.ProxyRepoURL,
-				BranchName:    "master",
-				Path:          "apps",
-				RepoCachePath: t.TempDir(),
-			},
-			handler,
-		)
-	}()
+		// Wait long enough for A's initial fetch to land but not so long that A's
+		// push has already arrived at the server. With latency=300ms per byte, A's
+		// fetch typically completes around 1-2s; A's push starts immediately after
+		// and takes another 1-2s to reach the server.
+		time.Sleep(2500 * time.Millisecond)
+		competitorPush(t, env.DirectRepoURL, env.SSHKeyPath, fmt.Sprintf("race-injection-%d", attempt))
 
-	// Wait long enough for A's initial fetch to land but not so long that A's
-	// push has already arrived at the server. With latency=300ms per byte, A's
-	// fetch typically completes around 1-2s; A's push starts immediately after
-	// and takes another 1-2s to reach the server.
-	time.Sleep(2500 * time.Millisecond)
-	competitorPush(t, env.DirectRepoURL, env.SSHKeyPath, "race-injection")
+		select {
+		case err := <-aDone:
+			require.NoError(t, err, "UpdateGitImageTag should succeed after recovery (attempt %d)", attempt)
+		case <-time.After(90 * time.Second):
+			t.Fatalf("UpdateGitImageTag did not complete in 90s (attempt %d)", attempt)
+		}
 
-	select {
-	case err := <-aDone:
-		require.NoError(t, err, "UpdateGitImageTag should succeed after recovery")
-	case <-time.After(90 * time.Second):
-		t.Fatal("UpdateGitImageTag did not complete in 90s")
+		lastOpens = atomic.LoadInt32(&handler.openCount)
+		if lastOpens >= 2 {
+			t.Logf("attempt %d: race window fired and recovery executed (PlainOpen called %d times)", attempt, lastOpens)
+			return
+		}
+		t.Logf("attempt %d: race window did not fire (openCount=%d); retrying", attempt, lastOpens)
 	}
 
-	// Recovery path enters Clone() a second time. PlainOpen is the first
-	// handler call inside Clone(), so a count of >= 2 proves recovery fired.
-	// On a slow runner, the competitor may push before A's fetch completes,
-	// so A's first push succeeds with no error and recovery is not exercised.
-	opens := atomic.LoadInt32(&handler.openCount)
-	if opens >= 2 {
-		t.Logf("race window fired and recovery executed (PlainOpen called %d times)", opens)
-	} else {
-		t.Logf("race window did not fire on this run — competitor pushed after A's fetch; recovery not exercised (openCount=%d)", opens)
-	}
+	require.GreaterOrEqual(t, lastOpens, int32(2),
+		"recovery not observed after %d attempts: PlainOpen called %d times on final attempt",
+		maxAttempts, lastOpens)
 }
 
 // TestIntegration_PushRaceRecovery_Concurrent runs two writers concurrently
@@ -167,13 +174,17 @@ func TestIntegration_PushRaceRecovery_Concurrent(t *testing.T) {
 		wg        sync.WaitGroup
 		errs      = make([]error, N)
 		durations = make([]time.Duration, N)
-		started   = time.Now()
+		// startCh is a barrier that releases all writers simultaneously, ensuring
+		// they actually overlap and exercise the single-retry recovery path.
+		startCh = make(chan struct{})
+		started = time.Now()
 	)
 
 	for i := 0; i < N; i++ {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
+			<-startCh // wait for the barrier release
 			start := time.Now()
 			errs[idx] = newAppWithImages(fmt.Sprintf("app-%d", idx)).UpdateGitImageTag(
 				&Task{
@@ -191,6 +202,7 @@ func TestIntegration_PushRaceRecovery_Concurrent(t *testing.T) {
 			durations[idx] = time.Since(start)
 		}(i)
 	}
+	close(startCh) // release all writers at once
 	wg.Wait()
 	totalWall := time.Since(started)
 
@@ -286,8 +298,20 @@ func TestIntegration_GitTimeoutEnforcement_ReturnsWithinBudget(t *testing.T) {
 		bCh <- result{d, e}
 	}()
 
-	a := <-aCh
-	b := <-bCh
+	// Bound the wait on each goroutine to its ceiling so a hung goroutine fails
+	// the test fast instead of relying on the outer `go test -timeout` to kill
+	// the suite.
+	var a, b result
+	select {
+	case a = <-aCh:
+	case <-time.After(perTaskCeiling + 5*time.Second):
+		t.Fatalf("A did not return within %s — operation hung past SSH handshake timeout", perTaskCeiling)
+	}
+	select {
+	case b = <-bCh:
+	case <-time.After(2*perTaskCeiling + 5*time.Second):
+		t.Fatalf("B did not return within %s — lock not released or B hung indefinitely", 2*perTaskCeiling)
+	}
 
 	require.Error(t, a.err, "A should fail under the latency toxin")
 	require.Error(t, b.err, "B should fail once it acquires the lock")

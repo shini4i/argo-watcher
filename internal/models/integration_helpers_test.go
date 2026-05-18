@@ -88,6 +88,7 @@ func setupGitea(t *testing.T) *giteaEnv {
 	}
 	// /user/sign_up redirects on success; non-redirecting client avoids following into /dashboard.
 	cli := &http.Client{
+		Timeout:       10 * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse },
 	}
 	resp, err := cli.PostForm(giteaAPI+"/user/sign_up", signupForm)
@@ -128,7 +129,9 @@ func giteaAPIPost(t *testing.T, user, pass, path string, body map[string]any) {
 	t.Helper()
 	buf, err := json.Marshal(body)
 	require.NoError(t, err)
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, giteaAPI+path, strings.NewReader(string(buf)))
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, giteaAPI+path, strings.NewReader(string(buf)))
 	require.NoError(t, err)
 	req.SetBasicAuth(user, pass)
 	req.Header.Set("Content-Type", "application/json")

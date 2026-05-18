@@ -60,6 +60,7 @@ tasks:
 
   test-integration:
     desc: Run integration tests (requires docker; brings up gitea + toxiproxy). Must not be run concurrently.
+    deps: [mocks]
     cmds:
       - echo "===> Starting integration services"
       - docker compose --profile integration up -d --wait gitea toxiproxy
