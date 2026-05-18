@@ -59,7 +59,7 @@ tasks:
       - go test -v ./... -count=1 -coverprofile coverage.out
 
   test-integration:
-    desc: Run integration tests (requires docker; brings up gitea + toxiproxy)
+    desc: Run integration tests (requires docker; brings up gitea + toxiproxy). Must not be run concurrently.
     cmds:
       - echo "===> Starting integration services"
       - docker compose --profile integration up -d --wait gitea toxiproxy
