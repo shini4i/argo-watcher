@@ -48,7 +48,17 @@ func parseAuthToken(request *http.Request, header string) string {
 	return token
 }
 
-// Validate walks through all registered strategies and validates any matching token on the request.
+// Validate walks through all registered strategies and validates any matching
+// token on the request.
+//
+// Three return states callers must distinguish:
+//   - (true, nil)  — a valid token was found.
+//   - (false, nil) — no auth header was sent (or all matching headers were
+//     empty); no strategy was actually invoked. Callers should treat this
+//     as "authentication not provided", not "wrong token".
+//   - (false, err) — at least one strategy was invoked and rejected the
+//     token; err is the last strategy's reason and should be surfaced to
+//     the client so it can show something actionable.
 func (a *Authenticator) Validate(request *http.Request) (bool, error) {
 	if a == nil || request == nil {
 		return false, nil

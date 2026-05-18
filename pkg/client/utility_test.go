@@ -77,6 +77,27 @@ func TestGetJSON(t *testing.T) {
 	assert.Equal(t, "OK", resp.Message)
 }
 
+// TestGetJSON_NonOKResponseSurfacesBody verifies that when the server returns
+// a non-200 status, the client error includes whatever the server sent in the
+// response body — not just the status code. This is the difference between
+// "received non-200 status code: 401" (useless) and "received status 401:
+// deploy token is invalid" (actionable).
+func TestGetJSON_NonOKResponseSurfacesBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		rw.WriteHeader(http.StatusUnauthorized)
+		_, _ = rw.Write([]byte(`{"error":"deploy token is invalid"}`))
+	}))
+	defer server.Close()
+
+	watcher := NewWatcher(server.URL, false, 30*time.Second)
+	var dummy struct{}
+	err := watcher.getJSON(server.URL, &dummy)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "401")
+	assert.Contains(t, err.Error(), "deploy token is invalid")
+}
+
 func TestGetImagesList(t *testing.T) {
 	expectedList := []models.Image{
 		{

@@ -24,8 +24,8 @@ If [Keycloak](../guides/keycloak.md) is enabled, additional endpoints (such as d
 - All request and response bodies are JSON.
 - Successful task submissions return `202 Accepted` with the new task ID.
 - Validation failures return `406 Not Acceptable` with an `error` field describing the problem.
-- Authentication failures return `401 Unauthorized`.
-- Internal errors return `500 Internal Server Error`.
+- Authentication failures return `401 Unauthorized` with an `error` field describing whether no credentials were provided or the token was rejected.
+- Unexpected server-side problems return `500 Internal Server Error`.
 
 ## Endpoints
 

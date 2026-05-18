@@ -5,7 +5,6 @@ import (
 	"os"
 
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -94,8 +93,7 @@ func (watcher *Watcher) addTask(task models.Task, authMethod, token string) (str
 
 	// Check the HTTP status code for success
 	if response.StatusCode != http.StatusAccepted {
-		errMsg := fmt.Sprintf("Something went wrong on argo-watcher side. Got the following response code %d", response.StatusCode)
-		return "", errors.New(errMsg)
+		return "", serverErrorFromResponse(response.StatusCode, responseBody)
 	}
 
 	var accepted models.TaskStatus
