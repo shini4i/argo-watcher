@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:15.3
+    image: postgres:18.4
     restart: always
     environment:
       POSTGRES_USER: watcher
