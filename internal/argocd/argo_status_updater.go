@@ -17,6 +17,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/shini4i/argo-watcher/internal/lock"
 	"github.com/shini4i/argo-watcher/internal/models"
+	"github.com/shini4i/argo-watcher/pkg/updater"
 )
 
 const (
@@ -270,7 +271,7 @@ func (gitUpdater *GitUpdater) UpdateIfNeeded(app *models.Application, task model
 }
 
 func (gitUpdater *GitUpdater) updateGitRepo(app *models.Application, task *models.Task, gitopsRepo *models.GitopsRepo) error {
-	err := app.UpdateGitImageTag(task, gitopsRepo)
+	err := app.UpdateGitImageTag(task, gitopsRepo, updater.GitClient{})
 	if err != nil {
 		log.Error().Str("id", task.Id).Msgf("Failed to update git repo. Error: %s", err.Error())
 		return err
