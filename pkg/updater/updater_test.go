@@ -1,6 +1,7 @@
 package updater
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/shini4i/argo-watcher/pkg/updater/mock"
 	"github.com/stretchr/testify/assert"
@@ -41,6 +43,16 @@ func TestNewGitRepo(t *testing.T) {
 		assert.Error(t, err)
 		assert.Nil(t, repo)
 	})
+}
+
+func TestGitTimeoutAccessor(t *testing.T) {
+	t.Setenv("SSH_KEY_PATH", "/dev/null")
+	t.Setenv("GIT_TIMEOUT", "42s")
+
+	repo, err := NewGitRepo("u", "b", "p", "f", t.TempDir(), &GitClient{})
+	require.NoError(t, err)
+
+	assert.Equal(t, 42*time.Second, repo.GitTimeout())
 }
 
 func TestGetRepoCachePath(t *testing.T) {
@@ -119,8 +131,8 @@ func TestClone(t *testing.T) {
 
 	t.Run("Cache Not Exists", func(t *testing.T) {
 		mockHandler.EXPECT().PlainOpen(gomock.Any()).Return(nil, git.ErrRepositoryNotExists)
-		mockHandler.EXPECT().PlainClone(gomock.Any(), false, gomock.Any()).Return(nil, nil)
-		err := repo.Clone()
+		mockHandler.EXPECT().PlainClone(gomock.Any(), gomock.Any(), false, gomock.Any()).Return(nil, nil)
+		err := repo.Clone(context.Background())
 		assert.NoError(t, err)
 	})
 
@@ -129,8 +141,8 @@ func TestClone(t *testing.T) {
 		require.NoError(t, os.WriteFile(repo.localRepoPath, []byte("garbage"), 0600))
 
 		mockHandler.EXPECT().PlainOpen(gomock.Any()).Return(nil, errors.New("invalid repo"))
-		mockHandler.EXPECT().PlainClone(gomock.Any(), false, gomock.Any()).Return(nil, nil)
-		err := repo.Clone()
+		mockHandler.EXPECT().PlainClone(gomock.Any(), gomock.Any(), false, gomock.Any()).Return(nil, nil)
+		err := repo.Clone(context.Background())
 		assert.NoError(t, err)
 		_, err = os.Stat(repo.localRepoPath)
 		assert.True(t, os.IsNotExist(err), "Corrupted cache should have been removed")
@@ -145,31 +157,23 @@ func TestClone(t *testing.T) {
 
 		mockHandler.EXPECT().PlainOpen(gomock.Any()).Return(r, nil)
 
-		err = repo.Clone()
+		err = repo.Clone(context.Background())
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to fetch repo: repository not found")
 	})
-}
 
-func TestNukeAndReclone(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	mockHandler := mock.NewMockGitHandler(ctrl)
-	repo := newTestRepo(t, mockHandler)
-	repo.localRepoPath = repo.getRepoCachePath()
+	t.Run("AddSSHKey is not called when sshAuth already set", func(t *testing.T) {
+		// Simulate a second Clone call (e.g. race-recovery path) where the key
+		// was loaded during the first Clone.  AddSSHKey must NOT be called again.
+		repo.sshAuth = &ssh.PublicKeys{}
 
-	require.NoError(t, os.MkdirAll(repo.localRepoPath, 0755))
-	dummyFile := filepath.Join(repo.localRepoPath, "test.txt")
-	require.NoError(t, os.WriteFile(dummyFile, []byte("test"), 0644))
+		mockHandler.EXPECT().PlainOpen(gomock.Any()).Return(nil, git.ErrRepositoryNotExists)
+		mockHandler.EXPECT().PlainClone(gomock.Any(), gomock.Any(), false, gomock.Any()).Return(nil, nil)
+		// No AddSSHKey expectation — strict controller fails the test if it is called.
 
-	mockHandler.EXPECT().AddSSHKey(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
-	mockHandler.EXPECT().PlainOpen(gomock.Any()).Return(nil, git.ErrRepositoryNotExists)
-	mockHandler.EXPECT().PlainClone(gomock.Any(), false, gomock.Any()).Return(nil, nil)
-
-	err := repo.NukeAndReclone()
-	assert.NoError(t, err)
-
-	_, err = os.Stat(repo.localRepoPath)
-	assert.True(t, os.IsNotExist(err), "Cache directory should be removed")
+		assert.NoError(t, repo.Clone(context.Background()))
+		repo.sshAuth = nil // reset for any future subtests
+	})
 }
 
 // setupGitForTest is a helper to create a clean git environment for each sub-test.
@@ -221,7 +225,7 @@ func TestFullUpdateAppCycle(t *testing.T) {
 		newParams := &ArgoOverrideFile{}
 		newParams.Helm.Parameters = []ArgoParameterOverride{{Name: "image.tag", Value: "v2.0.0"}}
 
-		err := repo.UpdateApp("my-app", newParams, nil)
+		err := repo.UpdateApp(context.Background(), "my-app", newParams, nil)
 		require.NoError(t, err)
 
 		content, err := os.ReadFile(valuesFile)
@@ -247,19 +251,40 @@ func TestFullUpdateAppCycle(t *testing.T) {
 		// First, perform a successful change.
 		initialParams := &ArgoOverrideFile{}
 		initialParams.Helm.Parameters = []ArgoParameterOverride{{Name: "image.tag", Value: "v2.0.0"}}
-		err := repo.UpdateApp("my-app", initialParams, nil)
+		err := repo.UpdateApp(context.Background(), "my-app", initialParams, nil)
 		require.NoError(t, err)
 
 		// Now, try again with the same content.
 		headBefore, err := localRepo.Head()
 		require.NoError(t, err)
 
-		err = repo.UpdateApp("my-app", initialParams, nil)
+		err = repo.UpdateApp(context.Background(), "my-app", initialParams, nil)
 		require.NoError(t, err)
 
 		headAfter, err := localRepo.Head()
 		require.NoError(t, err)
 		assert.Equal(t, headBefore.Hash(), headAfter.Hash())
+	})
+
+	t.Run("Budget exhausted before push returns non-race error", func(t *testing.T) {
+		_, _, localRepo, _, localPath := setupGitForTest(t)
+
+		repo := newTestRepo(t, &GitClient{})
+		repo.localRepo = localRepo
+		repo.localRepoPath = localPath
+		appDir := filepath.Join(localPath, "apps")
+		require.NoError(t, os.Mkdir(appDir, 0755))
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel() // already expired before UpdateApp runs
+
+		newParams := &ArgoOverrideFile{}
+		newParams.Helm.Parameters = []ArgoParameterOverride{{Name: "image.tag", Value: "v2.0.0"}}
+
+		err := repo.UpdateApp(ctx, "my-app", newParams, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "budget exhausted before push")
+		assert.False(t, IsPushRaceError(err), "budget-exhausted error must not be misclassified as a push race")
 	})
 
 	t.Run("Failure - Push Fails due to Non-Fast-Forward", func(t *testing.T) {
@@ -297,7 +322,7 @@ func TestFullUpdateAppCycle(t *testing.T) {
 		newParams := &ArgoOverrideFile{}
 		newParams.Helm.Parameters = []ArgoParameterOverride{{Name: "image.tag", Value: "v3.0.0"}}
 
-		err = repo.UpdateApp("my-app", newParams, nil)
+		err = repo.UpdateApp(context.Background(), "my-app", newParams, nil)
 		assert.Error(t, err)
 		assert.True(t, IsPushRaceError(err), "expected a push race error, got: %v", err)
 	})
@@ -342,7 +367,7 @@ func TestCommitAndPush_WriteFileError(t *testing.T) {
 	fullPath := filepath.Join(localPath, "apps")
 	require.NoError(t, os.Mkdir(fullPath, 0755))
 
-	err = repo.commitAndPush(fullPath, "msg", &ArgoOverrideFile{})
+	err = repo.commitAndPush(context.Background(), fullPath, "msg", &ArgoOverrideFile{})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to write override file")
 }
@@ -365,7 +390,7 @@ func TestGitClient_Coverage(t *testing.T) {
 
 	// 3. Execute and cover PlainClone.
 	clonePath := t.TempDir()
-	_, err = client.PlainClone(clonePath, false, &git.CloneOptions{URL: sourcePath})
+	_, err = client.PlainClone(context.Background(), clonePath, false, &git.CloneOptions{URL: sourcePath})
 	require.NoError(t, err, "PlainClone method failed")
 
 	// 4. Execute and cover PlainOpen on the new clone.
@@ -391,7 +416,7 @@ func TestUpdateApp_ErrorHandling(t *testing.T) {
 		repo.gitConfig.CommitMessageFormat = "{{ .Invalid "
 		newParams := &ArgoOverrideFile{}
 
-		err := repo.UpdateApp("my-app", newParams, nil)
+		err := repo.UpdateApp(context.Background(), "my-app", newParams, nil)
 
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "template: commitMsg:1: unclosed action")
@@ -414,10 +439,10 @@ func TestCorruptedGitRepo_ErrorPaths(t *testing.T) {
 
 	mockHandler.EXPECT().AddSSHKey(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 	mockHandler.EXPECT().PlainOpen(gomock.Any()).Return(corruptRepo, nil)
-	mockHandler.EXPECT().PlainClone(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
+	mockHandler.EXPECT().PlainClone(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
 	// The clone should succeed because the corruption triggers a successful re-clone.
-	err = repo.Clone()
+	err = repo.Clone(context.Background())
 	assert.NoError(t, err)
 }
 

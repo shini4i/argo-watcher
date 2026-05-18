@@ -1,14 +1,24 @@
 package models
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"hash/fnv"
+	"io"
 	"os"
+	"path/filepath"
+	"strconv"
 	"testing"
+	"time"
 
+	gogit "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/shini4i/argo-watcher/pkg/updater"
 	updatrmock "github.com/shini4i/argo-watcher/pkg/updater/mock"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
 
@@ -460,6 +470,14 @@ func newImageTask() *Task {
 	}
 }
 
+// computeRepoCachePath replicates the deterministic hash used by GitRepo.getRepoCachePath
+// so tests can pre-create the cache directory at the path the code will actually use.
+func computeRepoCachePath(base, repoURL, branch string) string {
+	hasher := fnv.New64a()
+	_, _ = io.WriteString(hasher, fmt.Sprintf("%s-%s", repoURL, branch))
+	return filepath.Join(base, strconv.FormatUint(hasher.Sum64(), 16))
+}
+
 func TestUpdateGitImageTag(t *testing.T) {
 	t.Run("Returns nil when path is empty", func(t *testing.T) {
 		app := &Application{}
@@ -514,5 +532,111 @@ func TestUpdateGitImageTag(t *testing.T) {
 		)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "SSH key load failed")
+	})
+
+	t.Run("Network calls receive a bounded context within GIT_TIMEOUT", func(t *testing.T) {
+		t.Setenv("SSH_KEY_PATH", "/dev/null")
+		t.Setenv("GIT_TIMEOUT", "1s")
+
+		ctrl := gomock.NewController(t)
+		mockHandler := updatrmock.NewMockGitHandler(ctrl)
+		mockHandler.EXPECT().AddSSHKey(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
+		mockHandler.EXPECT().PlainOpen(gomock.Any()).Return(nil, gogit.ErrRepositoryNotExists)
+
+		var capturedCtx context.Context
+		mockHandler.EXPECT().
+			PlainClone(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(func(ctx context.Context, _ string, _ bool, _ *gogit.CloneOptions) (*gogit.Repository, error) {
+				capturedCtx = ctx
+				return nil, errors.New("clone failed")
+			})
+
+		_ = newAppWithImages("test-app").UpdateGitImageTag(
+			newImageTask(),
+			&GitopsRepo{RepoUrl: "git@github.com:test/repo.git", BranchName: "main", Path: "/some/path", RepoCachePath: t.TempDir()},
+			mockHandler,
+		)
+
+		require.NotNil(t, capturedCtx, "PlainClone must receive a context")
+		deadline, ok := capturedCtx.Deadline()
+		require.True(t, ok, "PlainClone context must carry a deadline")
+		remaining := time.Until(deadline)
+		assert.Greater(t, remaining, time.Duration(0), "deadline must not be already expired")
+		assert.LessOrEqual(t, remaining, 1*time.Second, "deadline must be within GIT_TIMEOUT (1s)")
+	})
+
+	t.Run("Recovery succeeds on push race", func(t *testing.T) {
+		t.Setenv("SSH_KEY_PATH", "/dev/null")
+		t.Setenv("GIT_TIMEOUT", "30s")
+
+		repoCachePath := t.TempDir()
+		const branchName = "master"
+		const repoURL = "git@example.com:test/recovery-race.git"
+
+		// 1. Create a bare remote with an initial empty commit.
+		remotePath := t.TempDir()
+		sourcePath := t.TempDir()
+		sourceRepo, err := gogit.PlainInit(sourcePath, false)
+		require.NoError(t, err)
+		sourceWt, err := sourceRepo.Worktree()
+		require.NoError(t, err)
+		// Commit the apps directory so it survives the hard reset during recovery.
+		require.NoError(t, os.MkdirAll(filepath.Join(sourcePath, "apps"), 0755))
+		require.NoError(t, os.WriteFile(filepath.Join(sourcePath, "apps", ".gitkeep"), nil, 0644))
+		_, err = sourceWt.Add("apps/.gitkeep")
+		require.NoError(t, err)
+		_, err = sourceWt.Commit("initial", &gogit.CommitOptions{
+			Author: &object.Signature{Name: "init", Email: "init@test.com", When: time.Now()},
+		})
+		require.NoError(t, err)
+		_, err = gogit.PlainClone(remotePath, true, &gogit.CloneOptions{URL: sourcePath})
+		require.NoError(t, err)
+
+		// 2. Clone into the exact path the code will use (local is at commit A).
+		localRepoPath := computeRepoCachePath(repoCachePath, repoURL, branchName)
+		localRepo, err := gogit.PlainClone(localRepoPath, false, &gogit.CloneOptions{
+			URL: remotePath, ReferenceName: "refs/heads/master", SingleBranch: true,
+		})
+		require.NoError(t, err)
+
+		// 3. Advance the remote to commit B so the first push (from A) will fail.
+		competitorPath := t.TempDir()
+		competitor, err := gogit.PlainClone(competitorPath, false, &gogit.CloneOptions{URL: remotePath})
+		require.NoError(t, err)
+		competitorWt, err := competitor.Worktree()
+		require.NoError(t, err)
+		_, err = competitorWt.Commit("competing commit", &gogit.CommitOptions{
+			Author:            &object.Signature{Name: "other", Email: "other@test.com", When: time.Now()},
+			AllowEmptyCommits: true,
+		})
+		require.NoError(t, err)
+		require.NoError(t, competitor.Push(&gogit.PushOptions{}))
+
+		// 4. Set up mock so the first Clone returns our stale localRepo (at commit A).
+		//    The recovery Clone uses PlainOpen to find it on disk at localRepoPath, then
+		//    FetchContext advances it to commit B, and the second UpdateApp succeeds.
+		ctrl := gomock.NewController(t)
+		mockHandler := updatrmock.NewMockGitHandler(ctrl)
+		mockHandler.EXPECT().AddSSHKey(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(nil, nil).AnyTimes()
+		first := mockHandler.EXPECT().PlainOpen(gomock.Any()).
+			Return(nil, gogit.ErrRepositoryNotExists)
+		mockHandler.EXPECT().PlainClone(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(localRepo, nil)
+		mockHandler.EXPECT().PlainOpen(gomock.Any()).
+			Return(localRepo, nil).After(first)
+
+		// 5. Run UpdateGitImageTag — should detect the push race, recover, and succeed.
+		err = newAppWithImages("test-app").UpdateGitImageTag(
+			newImageTask(),
+			&GitopsRepo{
+				RepoUrl:       repoURL,
+				BranchName:    branchName,
+				Path:          "apps",
+				RepoCachePath: repoCachePath,
+			},
+			mockHandler,
+		)
+		assert.NoError(t, err)
 	})
 }

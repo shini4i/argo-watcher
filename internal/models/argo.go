@@ -1,8 +1,10 @@
 package models
 
 import (
+	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/rs/zerolog/log"
 	"github.com/shini4i/argo-watcher/internal/helpers"
@@ -268,30 +270,53 @@ func (app *Application) UpdateGitImageTag(task *Task, gitopsRepo *GitopsRepo, gi
 		return nil
 	}
 
-	git, err := updater.NewGitRepo(gitopsRepo.RepoUrl, gitopsRepo.BranchName, gitopsRepo.Path, gitopsRepo.Filename, gitopsRepo.RepoCachePath, gitHandler)
+	repo, err := updater.NewGitRepo(gitopsRepo.RepoUrl, gitopsRepo.BranchName, gitopsRepo.Path, gitopsRepo.Filename, gitopsRepo.RepoCachePath, gitHandler)
 	if err != nil {
 		log.Error().Str("id", task.Id).Msgf("Failed to create git repo instance for %s: %s", gitopsRepo.RepoUrl, err)
 		return err
 	}
 
+	// Single total-budget context for the whole update flow (clone + push +
+	// optional race recovery). This bounds the per-repo lock-hold time so a
+	// stuck remote cannot stall the deployment queue for other tasks targeting
+	// the same repo.
+	ctx, cancel := context.WithTimeout(context.Background(), repo.GitTimeout())
+	defer cancel()
+
 	// Fast Path
-	if err := git.Clone(); err != nil {
+	if err := repo.Clone(ctx); err != nil {
 		log.Error().Str("id", task.Id).Msgf("Failed to clone/fetch git repository %s: %s", gitopsRepo.RepoUrl, err)
 		return err
 	}
 
-	if err := git.UpdateApp(app.Metadata.Name, releaseOverrides, task); err != nil {
+	if err := repo.UpdateApp(ctx, app.Metadata.Name, releaseOverrides, task); err != nil {
 		if updater.IsPushRaceError(err) {
 			// Recovery Path: another writer pushed between our fetch and push.
-			// Single retry is intentional — a second race is rare enough that
-			// the next scheduled invocation will handle it.
-			log.Warn().Err(err).Str("id", task.Id).Msg("Push race detected. Re-cloning repository and retrying.")
+			// Calling Clone() re-runs fetch + hard reset to the new remote tip,
+			// which intentionally discards the local in-progress commit — the
+			// next UpdateApp() rebuilds it from releaseOverrides on top of the
+			// new tip. Single retry is intentional — a second race is rare
+			// enough that the next scheduled invocation will handle it. The
+			// shared ctx keeps the recovery within the same total budget.
+			// If the budget is already exhausted, fail fast rather than issuing
+			// a doomed retry that will return ctx-expired errors anyway.
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return fmt.Errorf("budget exhausted before race recovery: %w", ctxErr)
+			}
+			remaining := time.Duration(0)
+			if deadline, ok := ctx.Deadline(); ok {
+				if r := time.Until(deadline); r > 0 {
+					remaining = r
+				}
+			}
+			log.Warn().Err(err).Str("id", task.Id).Stringer("budget_remaining", remaining).
+				Msg("Push race detected. Refreshing cache and retrying.")
 
-			if err := git.NukeAndReclone(); err != nil {
-				return fmt.Errorf("failed to nuke and re-clone: %w", err)
+			if err := repo.Clone(ctx); err != nil {
+				return fmt.Errorf("failed to refresh cache after race: %w", err)
 			}
 
-			if err := git.UpdateApp(app.Metadata.Name, releaseOverrides, task); err != nil {
+			if err := repo.UpdateApp(ctx, app.Metadata.Name, releaseOverrides, task); err != nil {
 				return fmt.Errorf("push retry after race recovery failed: %w", err)
 			}
 			return nil

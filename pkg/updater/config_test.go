@@ -1,7 +1,9 @@
 package updater
 
 import (
+	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -15,6 +17,7 @@ func TestNewGitConfig(t *testing.T) {
 		t.Setenv("SSH_COMMIT_USER", "test_user")
 		t.Setenv("SSH_COMMIT_MAIL", "test@email.com")
 		t.Setenv("COMMIT_MESSAGE_FORMAT", "test_format")
+		t.Setenv("GIT_TIMEOUT", "30s")
 
 		// Act: Call the function to be tested.
 		config, err := NewGitConfig()
@@ -28,18 +31,71 @@ func TestNewGitConfig(t *testing.T) {
 		assert.Equal(t, "test_user", config.SshCommitUser)
 		assert.Equal(t, "test@email.com", config.SshCommitMail)
 		assert.Equal(t, "test_format", config.CommitMessageFormat)
+		assert.Equal(t, 30*time.Second, config.GitTimeout)
+	})
+
+	t.Run("GitTimeout defaults to 3m", func(t *testing.T) {
+		t.Setenv("SSH_KEY_PATH", "/test/key")
+		// GIT_TIMEOUT intentionally unset — t.Setenv from sibling subtests is auto-cleared.
+
+		config, err := NewGitConfig()
+
+		require.NoError(t, err)
+		assert.Equal(t, 3*time.Minute, config.GitTimeout)
 	})
 
 	t.Run("Failure - Missing Required Env Var", func(t *testing.T) {
-		// Arrange: Intentionally do not set the required SSH_KEY_PATH.
-		// t.Setenv from the previous sub-test is automatically cleared.
+		// Force the var absent regardless of what the parent process has set.
+		t.Setenv("SSH_KEY_PATH", "")
+		os.Unsetenv("SSH_KEY_PATH") //nolint:errcheck
 
-		// Act: Call the function.
 		config, err := NewGitConfig()
 
 		// Assert: Verify that an error is returned and the config is nil.
 		require.Error(t, err)
 		assert.Nil(t, config)
 		assert.Contains(t, err.Error(), "required environment variable \"SSH_KEY_PATH\" is not set")
+	})
+
+	t.Run("Failure - Malformed GIT_TIMEOUT", func(t *testing.T) {
+		t.Setenv("SSH_KEY_PATH", "/test/key")
+		t.Setenv("SSH_KEY_PASS", "test_pass")
+		t.Setenv("SSH_COMMIT_USER", "test_user")
+		t.Setenv("SSH_COMMIT_MAIL", "test@email.com")
+		t.Setenv("GIT_TIMEOUT", "abc")
+
+		config, err := NewGitConfig()
+
+		require.Error(t, err)
+		assert.Nil(t, config)
+		assert.Contains(t, err.Error(), "duration")
+	})
+
+	t.Run("Failure - Zero GIT_TIMEOUT", func(t *testing.T) {
+		t.Setenv("SSH_KEY_PATH", "/test/key")
+		t.Setenv("SSH_KEY_PASS", "test_pass")
+		t.Setenv("SSH_COMMIT_USER", "test_user")
+		t.Setenv("SSH_COMMIT_MAIL", "test@email.com")
+		t.Setenv("GIT_TIMEOUT", "0s")
+
+		config, err := NewGitConfig()
+
+		require.Error(t, err)
+		assert.Nil(t, config)
+		assert.Contains(t, err.Error(), "GIT_TIMEOUT")
+	})
+
+	t.Run("Failure - Negative GIT_TIMEOUT", func(t *testing.T) {
+		t.Setenv("SSH_KEY_PATH", "/test/key")
+		t.Setenv("SSH_KEY_PASS", "test_pass")
+		t.Setenv("SSH_COMMIT_USER", "test_user")
+		t.Setenv("SSH_COMMIT_MAIL", "test@email.com")
+		t.Setenv("GIT_TIMEOUT", "-1s")
+
+		config, err := NewGitConfig()
+
+		require.Error(t, err)
+		assert.Nil(t, config)
+		assert.Contains(t, err.Error(), "GIT_TIMEOUT")
 	})
 }

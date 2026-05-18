@@ -6,6 +6,7 @@ package updater
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"hash/fnv"
@@ -86,13 +87,21 @@ func (repo *GitRepo) getRepoCachePath() string {
 //   - If opening fails (for any reason, including the directory not existing or being corrupt),
 //     the function assumes the cache is invalid. It safely removes the directory and then
 //     performs a fresh, single-branch clone from the remote.
-func (repo *GitRepo) Clone() error {
+//
+// The provided ctx bounds all network I/O; callers typically derive ctx from a
+// total-budget context for the whole update flow so that one stuck operation
+// cannot hold the per-repo lock past that budget.
+func (repo *GitRepo) Clone(ctx context.Context) error {
 	var err error
 
 	repo.localRepoPath = repo.getRepoCachePath()
 
-	if repo.sshAuth, err = repo.GitHandler.AddSSHKey("git", repo.gitConfig.SshKeyPath, repo.gitConfig.SshKeyPass); err != nil {
-		return err
+	// Only load the SSH key once per GitRepo lifetime; the key does not change
+	// between calls and re-reading it on the race-recovery Clone() wastes budget.
+	if repo.sshAuth == nil {
+		if repo.sshAuth, err = repo.GitHandler.AddSSHKey("git", repo.gitConfig.SshKeyPath, repo.gitConfig.SshKeyPass); err != nil {
+			return err
+		}
 	}
 
 	repo.localRepo, err = repo.GitHandler.PlainOpen(repo.localRepoPath)
@@ -113,8 +122,7 @@ func (repo *GitRepo) Clone() error {
 			}
 		}
 
-		// Perform the fresh clone.
-		repo.localRepo, err = repo.GitHandler.PlainClone(repo.localRepoPath, false, &git.CloneOptions{
+		repo.localRepo, err = repo.GitHandler.PlainClone(ctx, repo.localRepoPath, false, &git.CloneOptions{
 			URL:           repo.RepoURL,
 			ReferenceName: plumbing.ReferenceName("refs/heads/" + repo.BranchName),
 			SingleBranch:  true,
@@ -125,7 +133,7 @@ func (repo *GitRepo) Clone() error {
 
 	// If we get here, the cache is valid and has an 'origin' remote.
 	log.Debug().Msgf("Successfully opened cached repository at %s", repo.localRepoPath)
-	err = repo.localRepo.Fetch(&git.FetchOptions{
+	err = repo.localRepo.FetchContext(ctx, &git.FetchOptions{
 		RemoteName: "origin",
 		Auth:       repo.sshAuth,
 		Force:      true,
@@ -148,17 +156,6 @@ func (repo *GitRepo) Clone() error {
 		Commit: remoteRef.Hash(),
 		Mode:   git.HardReset,
 	})
-}
-
-// NukeAndReclone provides a recovery mechanism by completely deleting the local
-// cache directory and then re-cloning the repository from scratch. This is
-// typically called after a non-fast-forward push error.
-func (repo *GitRepo) NukeAndReclone() error {
-	log.Debug().Msgf("Nuking cache for %s at %s", repo.RepoURL, repo.localRepoPath)
-	if err := os.RemoveAll(repo.localRepoPath); err != nil {
-		return fmt.Errorf("failed to remove local cache directory: %w", err)
-	}
-	return repo.Clone()
 }
 
 // generateOverrideFileName determines the name of the override file. If a specific
@@ -197,8 +194,9 @@ func (repo *GitRepo) generateCommitMessage(appName string, tmplData any) (string
 
 // UpdateApp is the main entry point for updating an application's manifest file.
 // It orchestrates merging the new content with any existing override file,
-// and then handles the git commit and push operations.
-func (repo *GitRepo) UpdateApp(appName string, overrideContent *ArgoOverrideFile, tmplData any) error {
+// and then handles the git commit and push operations. The provided ctx bounds
+// the push.
+func (repo *GitRepo) UpdateApp(ctx context.Context, appName string, overrideContent *ArgoOverrideFile, tmplData any) error {
 	overrideFileName := repo.generateOverrideFileName(appName)
 	fullPath := filepath.Join(repo.localRepoPath, overrideFileName)
 
@@ -214,7 +212,7 @@ func (repo *GitRepo) UpdateApp(appName string, overrideContent *ArgoOverrideFile
 		return err
 	}
 
-	if err := repo.commitAndPush(fullPath, commitMsg, finalContent); err != nil {
+	if err := repo.commitAndPush(ctx, fullPath, commitMsg, finalContent); err != nil {
 		return err
 	}
 
@@ -248,8 +246,8 @@ func (repo *GitRepo) mergeOverrideFileContent(fullPath string, overrideContent *
 
 // commitAndPush handles the git workflow: writing changes, adding to stage,
 // committing, and pushing to the remote. If the working tree is clean after
-// writing the file, it skips the commit and push.
-func (repo *GitRepo) commitAndPush(fullPath, commitMsg string, overrideContent *ArgoOverrideFile) error {
+// writing the file, it skips the commit and push. ctx bounds the push.
+func (repo *GitRepo) commitAndPush(ctx context.Context, fullPath, commitMsg string, overrideContent *ArgoOverrideFile) error {
 	worktree, err := repo.localRepo.Worktree()
 	if err != nil {
 		return err
@@ -298,14 +296,22 @@ func (repo *GitRepo) commitAndPush(fullPath, commitMsg string, overrideContent *
 		return err
 	}
 
-	// Push the changes to the remote repository.
+	// Bail early if the budget is already exhausted — the push would fail with
+	// a low-level "context deadline exceeded" that could be mistaken for a
+	// push-race error, triggering a pointless recovery attempt.
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("budget exhausted before push: %w", err)
+	}
+
+	// Push the changes to the remote repository, bounded by the caller's ctx.
 	pushOpts := &git.PushOptions{
 		Auth:       repo.sshAuth,
 		RemoteName: "origin",
 	}
-	if err = repo.localRepo.Push(pushOpts); err != nil {
+	if err = repo.localRepo.PushContext(ctx, pushOpts); err != nil {
 		// The error is intentionally returned to be handled by the caller,
-		// which will trigger the recovery path (nuke and re-clone).
+		// which triggers the recovery path (re-Clone to refresh the cache to
+		// the new remote tip, then retry) for push-race errors.
 		return err
 	}
 
@@ -348,4 +354,11 @@ func NewGitRepo(repoURL, branchName, path, fileName, repoCachePath string, gitHa
 		GitHandler:    gitHandler,
 		repoCachePath: repoCachePath,
 	}, nil
+}
+
+// GitTimeout returns the total wall-clock budget for a single update flow,
+// so callers can build bounded contexts without seeing the rest of the
+// internal config (which holds credentials).
+func (repo *GitRepo) GitTimeout() time.Duration {
+	return repo.gitConfig.GitTimeout
 }
