@@ -73,7 +73,7 @@ func setupGitea(t *testing.T) *giteaEnv {
 	// shared Gitea instance.
 	stamp := time.Now().UnixNano()
 	user := fmt.Sprintf("u%d", stamp)
-	password := "Password123!"
+	password := "Password123!" // #nosec G101 — test credential for ephemeral Gitea container only
 	repoName := fmt.Sprintf("repo-%d", stamp)
 
 	signupForm := url.Values{
@@ -170,33 +170,25 @@ func (testGitHandler) AddSSHKey(user, path, passphrase string) (*gogitssh.Public
 	return auth, nil
 }
 
-// recordingGitHandler wraps testGitHandler and captures the first push-race
-// error seen, so the deterministic test can assert on the specific marker that
-// matched. Errors from non-push operations are not captured.
-type recordingGitHandler struct {
-	testGitHandler
-	// firstPushRaceErr is set on the first time IsPushRaceError(err) returns
-	// true for an error observed by the wrapped handler. Currently unused at the
-	// handler layer — push errors surface up through UpdateGitImageTag, so the
-	// recording is done at the test level (see push_race_integration_test.go).
-}
-
 // waitForGitea blocks until the Gitea HTTP healthcheck returns 200, or the test
 // fails after the timeout. Required because `go test` may start before the
 // service is fully ready under some compose-up timings.
 func waitForGitea(t *testing.T, timeout time.Duration) {
 	t.Helper()
+	cli := &http.Client{Timeout: 2 * time.Second}
 	deadline := time.Now().Add(timeout)
+	var lastStatus int
 	for {
-		resp, err := http.Get(giteaAPI + "/api/healthz")
+		resp, err := cli.Get(giteaAPI + "/api/healthz")
 		if err == nil {
+			lastStatus = resp.StatusCode
 			_ = resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
 				return
 			}
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("gitea not ready after %s (last err: %v)", timeout, err)
+			t.Fatalf("gitea not ready after %s (last status: %d)", timeout, lastStatus)
 		}
 		time.Sleep(500 * time.Millisecond)
 	}

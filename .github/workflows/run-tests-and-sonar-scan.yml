@@ -47,7 +47,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres
+        image: postgres:15.3
         env:
           POSTGRES_PASSWORD: postgres
         options: >-
@@ -117,6 +117,9 @@ jobs:
           - 3000:3000
           - 2222:22
 
+      # toxiproxy proxies SSH to gitea by service hostname. GH Actions places
+      # all services on a shared Docker bridge network with embedded DNS, so
+      # "gitea:22" resolves correctly between containers.
       toxiproxy:
         image: ghcr.io/shopify/toxiproxy:2.9.0
         ports:
@@ -135,13 +138,9 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Install Task
-        uses: arduino/setup-task@24c5e13bce349197642746563945fcdf9355e8f4  # v2.0.0
-
       - name: Run integration tests
-        env:
-          SSH_KEY_PATH: ${{ runner.temp }}/test_key
-          GIT_TIMEOUT: 60s
+        # SSH_KEY_PATH and GIT_TIMEOUT are set per-test via t.Setenv inside
+        # setupGitea / each test function; no workflow-level env needed here.
         run: go test -tags=integration -count=1 -timeout=5m ./internal/models/...
 
   frontend_test:
