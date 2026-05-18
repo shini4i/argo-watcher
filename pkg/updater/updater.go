@@ -363,10 +363,11 @@ func (repo *GitRepo) GitTimeout() time.Duration {
 	return repo.gitConfig.GitTimeout
 }
 
-// ExtraPushRaceMarkers returns the operator-supplied additional push-race
-// markers (already normalized to lowercase). Callers pass these into
-// IsPushRaceError so a newly-observed server wording can be handled via
-// EXTRA_PUSH_RACE_MARKERS without a binary rebuild.
-func (repo *GitRepo) ExtraPushRaceMarkers() []string {
-	return repo.gitConfig.ExtraPushRaceMarkers
+// IsPushRaceError reports whether err is a push-race error, consulting both
+// the built-in marker list and any operator-supplied extras from
+// EXTRA_PUSH_RACE_MARKERS. Use this on a constructed GitRepo so newly-observed
+// server wordings can be handled by config change instead of a binary rebuild.
+// The free-function updater.IsPushRaceError checks only the built-in list.
+func (repo *GitRepo) IsPushRaceError(err error) bool {
+	return matchPushRaceMarkers(err, repo.gitConfig.ExtraPushRaceMarkers)
 }

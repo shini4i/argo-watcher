@@ -55,6 +55,29 @@ func TestGitTimeoutAccessor(t *testing.T) {
 	assert.Equal(t, 42*time.Second, repo.GitTimeout())
 }
 
+func TestGitRepoIsPushRaceError(t *testing.T) {
+	t.Run("built-in marker matches without extras configured", func(t *testing.T) {
+		t.Setenv("SSH_KEY_PATH", "/dev/null")
+		repo, err := NewGitRepo("u", "b", "p", "f", t.TempDir(), &GitClient{})
+		require.NoError(t, err)
+
+		assert.True(t, repo.IsPushRaceError(errors.New("non-fast-forward update")))
+		assert.False(t, repo.IsPushRaceError(errors.New("connection refused")))
+	})
+
+	t.Run("operator-supplied extra marker is honored", func(t *testing.T) {
+		t.Setenv("SSH_KEY_PATH", "/dev/null")
+		t.Setenv("EXTRA_PUSH_RACE_MARKERS", "change conflicts")
+		repo, err := NewGitRepo("u", "b", "p", "f", t.TempDir(), &GitClient{})
+		require.NoError(t, err)
+
+		// New wording the built-in list doesn't know about — only matches via the extra.
+		assert.True(t, repo.IsPushRaceError(errors.New("gerrit: change conflicts with master")))
+		// Built-ins still work alongside the extra.
+		assert.True(t, repo.IsPushRaceError(errors.New("non-fast-forward update")))
+	})
+}
+
 func TestGetRepoCachePath(t *testing.T) {
 	repo := newTestRepo(t, nil)
 	path1 := repo.getRepoCachePath()
@@ -284,7 +307,7 @@ func TestFullUpdateAppCycle(t *testing.T) {
 		err := repo.UpdateApp(ctx, "my-app", newParams, nil)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "budget exhausted before push")
-		assert.False(t, IsPushRaceError(err, nil), "budget-exhausted error must not be misclassified as a push race")
+		assert.False(t, IsPushRaceError(err), "budget-exhausted error must not be misclassified as a push race")
 	})
 
 	t.Run("Failure - Push Fails due to Non-Fast-Forward", func(t *testing.T) {
@@ -324,7 +347,7 @@ func TestFullUpdateAppCycle(t *testing.T) {
 
 		err = repo.UpdateApp(context.Background(), "my-app", newParams, nil)
 		assert.Error(t, err)
-		assert.True(t, IsPushRaceError(err, nil), "expected a push race error, got: %v", err)
+		assert.True(t, IsPushRaceError(err), "expected a push race error, got: %v", err)
 	})
 }
 

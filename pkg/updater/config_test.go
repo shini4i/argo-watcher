@@ -129,4 +129,16 @@ func TestNewGitConfig(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, []string{"change conflicts"}, config.ExtraPushRaceMarkers)
 	})
+
+	t.Run("ExtraPushRaceMarkers - empty value yields empty slice", func(t *testing.T) {
+		t.Setenv("SSH_KEY_PATH", "/test/key")
+		// EXTRA_PUSH_RACE_MARKERS explicitly set to empty: caarlos0/env may
+		// produce a single empty entry, which normalizeMarkers must drop.
+		t.Setenv("EXTRA_PUSH_RACE_MARKERS", "")
+
+		config, err := NewGitConfig()
+
+		require.NoError(t, err)
+		assert.Empty(t, config.ExtraPushRaceMarkers)
+	})
 }

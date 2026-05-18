@@ -37,12 +37,16 @@ var pushRaceMarkers = []string{
 // the safe recovery is to refresh the cache via fetch + reset (Clone on an
 // existing cache), re-apply the change on top of the new tip, and retry the push.
 //
-// extra is an optional list of additional lowercased substrings supplied by
-// operators (via EXTRA_PUSH_RACE_MARKERS) to handle new server wordings without
-// rebuilding the binary. Extras extend the built-in list — they cannot replace
-// or disable it. Callers are expected to lowercase and trim entries before
-// passing them in (see NewGitConfig).
-func IsPushRaceError(err error, extra []string) bool {
+// This checks only the built-in marker list. To also consult operator-supplied
+// extras from EXTRA_PUSH_RACE_MARKERS, call (*GitRepo).IsPushRaceError instead.
+func IsPushRaceError(err error) bool {
+	return matchPushRaceMarkers(err, nil)
+}
+
+// matchPushRaceMarkers returns true when err's message contains any built-in
+// marker or any entry in extra. Callers must pass extras already lowercased
+// (see normalizeMarkers); the message is lowercased here.
+func matchPushRaceMarkers(err error, extra []string) bool {
 	if err == nil {
 		return false
 	}

@@ -290,7 +290,7 @@ func (app *Application) UpdateGitImageTag(task *Task, gitopsRepo *GitopsRepo, gi
 	}
 
 	if err := repo.UpdateApp(ctx, app.Metadata.Name, releaseOverrides, task); err != nil {
-		if updater.IsPushRaceError(err, repo.ExtraPushRaceMarkers()) {
+		if repo.IsPushRaceError(err) {
 			// Recovery Path: another writer pushed between our fetch and push.
 			// Calling Clone() re-runs fetch + hard reset to the new remote tip,
 			// which intentionally discards the local in-progress commit — the

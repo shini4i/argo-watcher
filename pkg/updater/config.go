@@ -47,7 +47,7 @@ func NewGitConfig() (*GitConfig, error) {
 // markers must be lowercased at load time. Empty entries (e.g. from a trailing
 // comma) would match every error, so they are filtered out.
 func normalizeMarkers(in []string) []string {
-	out := in[:0]
+	out := make([]string, 0, len(in))
 	for _, m := range in {
 		m = strings.ToLower(strings.TrimSpace(m))
 		if m == "" {
