@@ -36,12 +36,26 @@ var pushRaceMarkers = []string{
 // because the target ref advanced between our fetch and our push. When true,
 // the safe recovery is to refresh the cache via fetch + reset (Clone on an
 // existing cache), re-apply the change on top of the new tip, and retry the push.
-func IsPushRaceError(err error) bool {
+//
+// extra is an optional list of additional lowercased substrings supplied by
+// operators (via EXTRA_PUSH_RACE_MARKERS) to handle new server wordings without
+// rebuilding the binary. Extras extend the built-in list — they cannot replace
+// or disable it. Callers are expected to lowercase and trim entries before
+// passing them in (see NewGitConfig).
+func IsPushRaceError(err error, extra []string) bool {
 	if err == nil {
 		return false
 	}
 	msg := strings.ToLower(err.Error())
 	for _, marker := range pushRaceMarkers {
+		if strings.Contains(msg, marker) {
+			return true
+		}
+	}
+	for _, marker := range extra {
+		if marker == "" {
+			continue
+		}
 		if strings.Contains(msg, marker) {
 			return true
 		}

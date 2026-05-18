@@ -284,7 +284,7 @@ func TestFullUpdateAppCycle(t *testing.T) {
 		err := repo.UpdateApp(ctx, "my-app", newParams, nil)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "budget exhausted before push")
-		assert.False(t, IsPushRaceError(err), "budget-exhausted error must not be misclassified as a push race")
+		assert.False(t, IsPushRaceError(err, nil), "budget-exhausted error must not be misclassified as a push race")
 	})
 
 	t.Run("Failure - Push Fails due to Non-Fast-Forward", func(t *testing.T) {
@@ -324,7 +324,7 @@ func TestFullUpdateAppCycle(t *testing.T) {
 
 		err = repo.UpdateApp(context.Background(), "my-app", newParams, nil)
 		assert.Error(t, err)
-		assert.True(t, IsPushRaceError(err), "expected a push race error, got: %v", err)
+		assert.True(t, IsPushRaceError(err, nil), "expected a push race error, got: %v", err)
 	})
 }
 

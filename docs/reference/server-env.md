@@ -70,3 +70,4 @@ These variables are required when using the built-in GitOps updater. See the [Gi
 | `SSH_COMMIT_MAIL`     | Git commit author email                                 | `argo-watcher@example.com` | No          |
 | `COMMIT_MESSAGE_FORMAT` | Go template string for commit messages                |         | No          |
 | `GIT_TIMEOUT`         | Total wall-clock budget per task for the git update flow (clone + commit + push + race recovery). Accepts a Go duration string (e.g. `30s`, `5m`). Must be greater than zero. | `3m` | No |
+| `EXTRA_PUSH_RACE_MARKERS` | Comma-separated substrings appended to the built-in push-race detection list. Use to handle a newly-observed server wording without a binary rebuild — for example, `EXTRA_PUSH_RACE_MARKERS="change conflicts,server panic"`. Matched case-insensitively. Additive only; built-in markers cannot be disabled. |         | No          |

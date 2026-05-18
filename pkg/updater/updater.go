@@ -362,3 +362,11 @@ func NewGitRepo(repoURL, branchName, path, fileName, repoCachePath string, gitHa
 func (repo *GitRepo) GitTimeout() time.Duration {
 	return repo.gitConfig.GitTimeout
 }
+
+// ExtraPushRaceMarkers returns the operator-supplied additional push-race
+// markers (already normalized to lowercase). Callers pass these into
+// IsPushRaceError so a newly-observed server wording can be handled via
+// EXTRA_PUSH_RACE_MARKERS without a binary rebuild.
+func (repo *GitRepo) ExtraPushRaceMarkers() []string {
+	return repo.gitConfig.ExtraPushRaceMarkers
+}
