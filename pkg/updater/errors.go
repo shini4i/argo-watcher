@@ -15,7 +15,9 @@ import "strings"
 var pushRaceMarkers = []string{
 	// go-git, when talking to a go-git bare remote.
 	"non-fast-forward",
-	// Gitea / Forgejo receive-pack wording.
+	// GitLab (prod-confirmed) / Gitea / Forgejo receive-pack wording.
+	// Verbatim string observed in prod, surfaced via ArgoCD-prefixed failure UI:
+	//   "ArgoCD API Error: command error on refs/heads/master: incorrect old value provided"
 	"incorrect old value",
 	// GitHub / GitLab / vanilla git receive-pack wordings.
 	// "(fetch first)" matches the rejection line "! [rejected] main -> main (fetch first)"
@@ -24,6 +26,10 @@ var pushRaceMarkers = []string{
 	"(fetch first)",
 	// git receive-pack when two concurrent pushes race on the ref lock file.
 	"cannot lock ref",
+	// Gitea (observed in integration tests against gitea/gitea:1.22) when the
+	// internal hook rejects a non-fast-forward update:
+	//   "command error on refs/heads/master: failed to update ref"
+	"failed to update ref",
 }
 
 // IsPushRaceError reports whether err describes a push rejected by the remote
