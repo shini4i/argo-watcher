@@ -70,11 +70,15 @@ func setupGitea(t *testing.T) *giteaEnv {
 	require.NoError(t, os.WriteFile(keyPath, privKeyPEM, 0600))
 
 	// Unique per-test identifiers to avoid cross-test interference in the
-	// shared Gitea instance.
+	// shared Gitea instance. Generate a random password for each test run
+	// instead of hardcoding credentials.
 	stamp := time.Now().UnixNano()
 	user := fmt.Sprintf("u%d", stamp)
-	password := "Password123!" // #nosec G101 — test credential for ephemeral Gitea container only
 	repoName := fmt.Sprintf("repo-%d", stamp)
+	// Generate a random password: 16 random bytes encoded as hex.
+	randBytes := make([]byte, 16)
+	_, _ = rand.Read(randBytes)
+	password := fmt.Sprintf("pass_%x", randBytes)
 
 	signupForm := url.Values{
 		"user_name": {user},
