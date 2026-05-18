@@ -1,14 +1,18 @@
 package models
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
 	"testing"
+	"time"
 
+	gogit "github.com/go-git/go-git/v5"
 	"github.com/shini4i/argo-watcher/pkg/updater"
 	updatrmock "github.com/shini4i/argo-watcher/pkg/updater/mock"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
 
@@ -514,5 +518,34 @@ func TestUpdateGitImageTag(t *testing.T) {
 		)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "SSH key load failed")
+	})
+
+	t.Run("Network calls receive a bounded context within GIT_TIMEOUT", func(t *testing.T) {
+		t.Setenv("SSH_KEY_PATH", "/dev/null")
+		t.Setenv("GIT_TIMEOUT", "1s")
+
+		ctrl := gomock.NewController(t)
+		mockHandler := updatrmock.NewMockGitHandler(ctrl)
+		mockHandler.EXPECT().AddSSHKey(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
+		mockHandler.EXPECT().PlainOpen(gomock.Any()).Return(nil, gogit.ErrRepositoryNotExists)
+
+		var capturedCtx context.Context
+		mockHandler.EXPECT().
+			PlainClone(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(func(ctx context.Context, _ string, _ bool, _ *gogit.CloneOptions) (*gogit.Repository, error) {
+				capturedCtx = ctx
+				return nil, errors.New("clone failed")
+			})
+
+		_ = newAppWithImages("test-app").UpdateGitImageTag(
+			newImageTask(),
+			&GitopsRepo{RepoUrl: "git@github.com:test/repo.git", BranchName: "main", Path: "/some/path", RepoCachePath: t.TempDir()},
+			mockHandler,
+		)
+
+		require.NotNil(t, capturedCtx, "PlainClone must receive a context")
+		deadline, ok := capturedCtx.Deadline()
+		require.True(t, ok, "PlainClone context must carry a deadline")
+		assert.LessOrEqual(t, time.Until(deadline), 1*time.Second, "deadline must be within GIT_TIMEOUT (1s)")
 	})
 }

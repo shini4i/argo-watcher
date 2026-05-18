@@ -1,6 +1,7 @@
 package updater
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -20,16 +21,21 @@ var ErrSSHKeyNotFound = errors.New("SSH key file not found")
 // ErrSSHKeyEmpty is returned when the SSH key file is empty.
 var ErrSSHKeyEmpty = errors.New("SSH key file is empty")
 
+// GitHandler abstracts the small set of git operations the updater needs.
+// It exists primarily to enable testing — production code uses GitClient,
+// which delegates to go-git directly.
 type GitHandler interface {
-	PlainClone(path string, isBare bool, o *git.CloneOptions) (*git.Repository, error)
+	// PlainClone clones a repository into path. ctx bounds the network I/O so
+	// a hung remote cannot stall the caller indefinitely.
+	PlainClone(ctx context.Context, path string, isBare bool, o *git.CloneOptions) (*git.Repository, error)
 	PlainOpen(path string) (*git.Repository, error)
 	AddSSHKey(user, path, passphrase string) (*ssh.PublicKeys, error)
 }
 
 type GitClient struct{}
 
-func (GitClient) PlainClone(path string, isBare bool, o *git.CloneOptions) (*git.Repository, error) {
-	return git.PlainClone(path, isBare, o)
+func (GitClient) PlainClone(ctx context.Context, path string, isBare bool, o *git.CloneOptions) (*git.Repository, error) {
+	return git.PlainCloneContext(ctx, path, isBare, o)
 }
 
 func (GitClient) PlainOpen(path string) (*git.Repository, error) {

@@ -28,8 +28,8 @@ var pushRaceMarkers = []string{
 
 // IsPushRaceError reports whether err describes a push rejected by the remote
 // because the target ref advanced between our fetch and our push. When true,
-// the safe recovery is to discard the local cache, re-clone, re-apply the
-// change on top of the new tip, and retry the push.
+// the safe recovery is to refresh the cache via fetch + reset (Clone on an
+// existing cache), re-apply the change on top of the new tip, and retry the push.
 func IsPushRaceError(err error) bool {
 	if err == nil {
 		return false
