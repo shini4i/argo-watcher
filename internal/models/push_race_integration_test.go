@@ -16,7 +16,6 @@ import (
 
 	toxiclient "github.com/Shopify/toxiproxy/v2/client"
 	gogit "github.com/go-git/go-git/v5"
-	gogitconfig "github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	gogitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/shini4i/argo-watcher/internal/lock"
@@ -75,7 +74,7 @@ func competitorPush(t *testing.T, repoURL, sshKeyPath, marker string) {
 
 	require.NoError(t, repo.Push(&gogit.PushOptions{
 		Auth:     auth,
-		RefSpecs: []gogitconfig.RefSpec{"refs/heads/master:refs/heads/master"},
+		RefSpecs: []string{"refs/heads/master:refs/heads/master"},
 	}))
 }
 
