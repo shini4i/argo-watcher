@@ -69,4 +69,4 @@ These variables are required when using the built-in GitOps updater. See the [Gi
 | `SSH_COMMIT_USER`     | Git commit author name                                  | `argo-watcher` | No          |
 | `SSH_COMMIT_MAIL`     | Git commit author email                                 | `argo-watcher@example.com` | No          |
 | `COMMIT_MESSAGE_FORMAT` | Go template string for commit messages                |         | No          |
-| `GIT_TIMEOUT`         | Total wall-clock budget for the git update flow per task (clone + push + race recovery). Bounds the per-repo lock-hold time. Accepts a Go duration string (e.g. `30s`, `5m`). | `3m` | No |
+| `GIT_TIMEOUT`         | Total wall-clock budget per task for the git update flow (clone + commit + push + race recovery). Accepts a Go duration string (e.g. `30s`, `5m`). Must be greater than zero. | `3m` | No |

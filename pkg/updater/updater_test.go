@@ -11,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/shini4i/argo-watcher/pkg/updater/mock"
 	"github.com/stretchr/testify/assert"
@@ -44,16 +45,14 @@ func TestNewGitRepo(t *testing.T) {
 	})
 }
 
-func TestConfigAccessor(t *testing.T) {
+func TestGitTimeoutAccessor(t *testing.T) {
 	t.Setenv("SSH_KEY_PATH", "/dev/null")
 	t.Setenv("GIT_TIMEOUT", "42s")
 
-	repo, err := NewGitRepo("u", "b", "p", "f", t.TempDir(), nil)
+	repo, err := NewGitRepo("u", "b", "p", "f", t.TempDir(), &GitClient{})
 	require.NoError(t, err)
 
-	cfg := repo.Config()
-	require.NotNil(t, cfg)
-	assert.Equal(t, 42*time.Second, cfg.GitTimeout)
+	assert.Equal(t, 42*time.Second, repo.GitTimeout())
 }
 
 func TestGetRepoCachePath(t *testing.T) {
@@ -162,6 +161,19 @@ func TestClone(t *testing.T) {
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to fetch repo: repository not found")
 	})
+
+	t.Run("AddSSHKey is not called when sshAuth already set", func(t *testing.T) {
+		// Simulate a second Clone call (e.g. race-recovery path) where the key
+		// was loaded during the first Clone.  AddSSHKey must NOT be called again.
+		repo.sshAuth = &ssh.PublicKeys{}
+
+		mockHandler.EXPECT().PlainOpen(gomock.Any()).Return(nil, git.ErrRepositoryNotExists)
+		mockHandler.EXPECT().PlainClone(gomock.Any(), gomock.Any(), false, gomock.Any()).Return(nil, nil)
+		// No AddSSHKey expectation — strict controller fails the test if it is called.
+
+		assert.NoError(t, repo.Clone(context.Background()))
+		repo.sshAuth = nil // reset for any future subtests
+	})
 }
 
 // setupGitForTest is a helper to create a clean git environment for each sub-test.
@@ -252,6 +264,27 @@ func TestFullUpdateAppCycle(t *testing.T) {
 		headAfter, err := localRepo.Head()
 		require.NoError(t, err)
 		assert.Equal(t, headBefore.Hash(), headAfter.Hash())
+	})
+
+	t.Run("Budget exhausted before push returns non-race error", func(t *testing.T) {
+		_, _, localRepo, _, localPath := setupGitForTest(t)
+
+		repo := newTestRepo(t, &GitClient{})
+		repo.localRepo = localRepo
+		repo.localRepoPath = localPath
+		appDir := filepath.Join(localPath, "apps")
+		require.NoError(t, os.Mkdir(appDir, 0755))
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel() // already expired before UpdateApp runs
+
+		newParams := &ArgoOverrideFile{}
+		newParams.Helm.Parameters = []ArgoParameterOverride{{Name: "image.tag", Value: "v2.0.0"}}
+
+		err := repo.UpdateApp(ctx, "my-app", newParams, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "budget exhausted before push")
+		assert.False(t, IsPushRaceError(err), "budget-exhausted error must not be misclassified as a push race")
 	})
 
 	t.Run("Failure - Push Fails due to Non-Fast-Forward", func(t *testing.T) {

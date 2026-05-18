@@ -1,6 +1,7 @@
 package updater
 
 import (
+	"fmt"
 	"time"
 
 	envConfig "github.com/caarlos0/env/v11"
@@ -26,6 +27,9 @@ func NewGitConfig() (*GitConfig, error) {
 	var config GitConfig
 	if err := envConfig.Parse(&config); err != nil {
 		return nil, err
+	}
+	if config.GitTimeout <= 0 {
+		return nil, fmt.Errorf("GIT_TIMEOUT must be > 0, got %s", config.GitTimeout)
 	}
 	return &config, nil
 }

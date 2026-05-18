@@ -1,6 +1,7 @@
 package updater
 
 import (
+	"os"
 	"testing"
 	"time"
 
@@ -44,15 +45,57 @@ func TestNewGitConfig(t *testing.T) {
 	})
 
 	t.Run("Failure - Missing Required Env Var", func(t *testing.T) {
-		// Arrange: Intentionally do not set the required SSH_KEY_PATH.
-		// t.Setenv from the previous sub-test is automatically cleared.
+		// Force the var absent regardless of what the parent process has set.
+		t.Setenv("SSH_KEY_PATH", "")
+		os.Unsetenv("SSH_KEY_PATH") //nolint:errcheck
 
-		// Act: Call the function.
 		config, err := NewGitConfig()
 
 		// Assert: Verify that an error is returned and the config is nil.
 		require.Error(t, err)
 		assert.Nil(t, config)
 		assert.Contains(t, err.Error(), "required environment variable \"SSH_KEY_PATH\" is not set")
+	})
+
+	t.Run("Failure - Malformed GIT_TIMEOUT", func(t *testing.T) {
+		t.Setenv("SSH_KEY_PATH", "/test/key")
+		t.Setenv("SSH_KEY_PASS", "test_pass")
+		t.Setenv("SSH_COMMIT_USER", "test_user")
+		t.Setenv("SSH_COMMIT_MAIL", "test@email.com")
+		t.Setenv("GIT_TIMEOUT", "abc")
+
+		config, err := NewGitConfig()
+
+		require.Error(t, err)
+		assert.Nil(t, config)
+		assert.Contains(t, err.Error(), "duration")
+	})
+
+	t.Run("Failure - Zero GIT_TIMEOUT", func(t *testing.T) {
+		t.Setenv("SSH_KEY_PATH", "/test/key")
+		t.Setenv("SSH_KEY_PASS", "test_pass")
+		t.Setenv("SSH_COMMIT_USER", "test_user")
+		t.Setenv("SSH_COMMIT_MAIL", "test@email.com")
+		t.Setenv("GIT_TIMEOUT", "0s")
+
+		config, err := NewGitConfig()
+
+		require.Error(t, err)
+		assert.Nil(t, config)
+		assert.Contains(t, err.Error(), "GIT_TIMEOUT")
+	})
+
+	t.Run("Failure - Negative GIT_TIMEOUT", func(t *testing.T) {
+		t.Setenv("SSH_KEY_PATH", "/test/key")
+		t.Setenv("SSH_KEY_PASS", "test_pass")
+		t.Setenv("SSH_COMMIT_USER", "test_user")
+		t.Setenv("SSH_COMMIT_MAIL", "test@email.com")
+		t.Setenv("GIT_TIMEOUT", "-1s")
+
+		config, err := NewGitConfig()
+
+		require.Error(t, err)
+		assert.Nil(t, config)
+		assert.Contains(t, err.Error(), "GIT_TIMEOUT")
 	})
 }

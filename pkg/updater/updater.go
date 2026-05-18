@@ -96,8 +96,12 @@ func (repo *GitRepo) Clone(ctx context.Context) error {
 
 	repo.localRepoPath = repo.getRepoCachePath()
 
-	if repo.sshAuth, err = repo.GitHandler.AddSSHKey("git", repo.gitConfig.SshKeyPath, repo.gitConfig.SshKeyPass); err != nil {
-		return err
+	// Only load the SSH key once per GitRepo lifetime; the key does not change
+	// between calls and re-reading it on the race-recovery Clone() wastes budget.
+	if repo.sshAuth == nil {
+		if repo.sshAuth, err = repo.GitHandler.AddSSHKey("git", repo.gitConfig.SshKeyPath, repo.gitConfig.SshKeyPass); err != nil {
+			return err
+		}
 	}
 
 	repo.localRepo, err = repo.GitHandler.PlainOpen(repo.localRepoPath)
@@ -292,6 +296,13 @@ func (repo *GitRepo) commitAndPush(ctx context.Context, fullPath, commitMsg stri
 		return err
 	}
 
+	// Bail early if the budget is already exhausted — the push would fail with
+	// a low-level "context deadline exceeded" that could be mistaken for a
+	// push-race error, triggering a pointless recovery attempt.
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("budget exhausted before push: %w", err)
+	}
+
 	// Push the changes to the remote repository, bounded by the caller's ctx.
 	pushOpts := &git.PushOptions{
 		Auth:       repo.sshAuth,
@@ -345,9 +356,9 @@ func NewGitRepo(repoURL, branchName, path, fileName, repoCachePath string, gitHa
 	}, nil
 }
 
-// Config returns the git configuration loaded from the environment.
-// Exposed so callers can read runtime settings such as GitTimeout when
-// constructing bounded contexts.
-func (repo *GitRepo) Config() *GitConfig {
-	return repo.gitConfig
+// GitTimeout returns the total wall-clock budget for a single update flow,
+// so callers can build bounded contexts without seeing the rest of the
+// internal config (which holds credentials).
+func (repo *GitRepo) GitTimeout() time.Duration {
+	return repo.gitConfig.GitTimeout
 }

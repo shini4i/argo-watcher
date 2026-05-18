@@ -280,7 +280,7 @@ func (app *Application) UpdateGitImageTag(task *Task, gitopsRepo *GitopsRepo, gi
 	// optional race recovery). This bounds the per-repo lock-hold time so a
 	// stuck remote cannot stall the deployment queue for other tasks targeting
 	// the same repo.
-	ctx, cancel := context.WithTimeout(context.Background(), repo.Config().GitTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), repo.GitTimeout())
 	defer cancel()
 
 	// Fast Path
@@ -292,11 +292,12 @@ func (app *Application) UpdateGitImageTag(task *Task, gitopsRepo *GitopsRepo, gi
 	if err := repo.UpdateApp(ctx, app.Metadata.Name, releaseOverrides, task); err != nil {
 		if updater.IsPushRaceError(err) {
 			// Recovery Path: another writer pushed between our fetch and push.
-			// Calling Clone() re-runs fetch + hard reset to the new remote tip
-			// (pull semantics on an existing cache), which is sufficient for a
-			// race. Single retry is intentional — a second race is rare enough
-			// that the next scheduled invocation will handle it. The shared ctx
-			// keeps the recovery within the same total budget.
+			// Calling Clone() re-runs fetch + hard reset to the new remote tip,
+			// which intentionally discards the local in-progress commit — the
+			// next UpdateApp() rebuilds it from releaseOverrides on top of the
+			// new tip. Single retry is intentional — a second race is rare
+			// enough that the next scheduled invocation will handle it. The
+			// shared ctx keeps the recovery within the same total budget.
 			// If the budget is already exhausted, fail fast rather than issuing
 			// a doomed retry that will return ctx-expired errors anyway.
 			if ctxErr := ctx.Err(); ctxErr != nil {
