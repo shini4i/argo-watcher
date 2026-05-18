@@ -98,4 +98,47 @@ func TestNewGitConfig(t *testing.T) {
 		assert.Nil(t, config)
 		assert.Contains(t, err.Error(), "GIT_TIMEOUT")
 	})
+
+	t.Run("ExtraPushRaceMarkers - unset defaults to empty", func(t *testing.T) {
+		t.Setenv("SSH_KEY_PATH", "/test/key")
+
+		config, err := NewGitConfig()
+
+		require.NoError(t, err)
+		assert.Empty(t, config.ExtraPushRaceMarkers)
+	})
+
+	t.Run("ExtraPushRaceMarkers - normalized (lowercase, trimmed, empties dropped)", func(t *testing.T) {
+		t.Setenv("SSH_KEY_PATH", "/test/key")
+		// Mixed casing, leading/trailing whitespace, and a trailing comma that
+		// produces an empty entry — all must be normalized away.
+		t.Setenv("EXTRA_PUSH_RACE_MARKERS", "Foo,  BAR  ,,baz")
+
+		config, err := NewGitConfig()
+
+		require.NoError(t, err)
+		assert.Equal(t, []string{"foo", "bar", "baz"}, config.ExtraPushRaceMarkers)
+	})
+
+	t.Run("ExtraPushRaceMarkers - single value", func(t *testing.T) {
+		t.Setenv("SSH_KEY_PATH", "/test/key")
+		t.Setenv("EXTRA_PUSH_RACE_MARKERS", "change conflicts")
+
+		config, err := NewGitConfig()
+
+		require.NoError(t, err)
+		assert.Equal(t, []string{"change conflicts"}, config.ExtraPushRaceMarkers)
+	})
+
+	t.Run("ExtraPushRaceMarkers - empty value yields empty slice", func(t *testing.T) {
+		t.Setenv("SSH_KEY_PATH", "/test/key")
+		// EXTRA_PUSH_RACE_MARKERS explicitly set to empty: caarlos0/env may
+		// produce a single empty entry, which normalizeMarkers must drop.
+		t.Setenv("EXTRA_PUSH_RACE_MARKERS", "")
+
+		config, err := NewGitConfig()
+
+		require.NoError(t, err)
+		assert.Empty(t, config.ExtraPushRaceMarkers)
+	})
 }

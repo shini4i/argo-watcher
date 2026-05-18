@@ -61,6 +61,31 @@ func TestIsPushRaceError(t *testing.T) {
 	}
 }
 
+// TestMatchPushRaceMarkers_Extras covers the operator-supplied marker path used
+// by (*GitRepo).IsPushRaceError. The built-in cases are already covered above
+// (matchPushRaceMarkers with nil extras is the IsPushRaceError code path).
+func TestMatchPushRaceMarkers_Extras(t *testing.T) {
+	tests := []struct {
+		name  string
+		err   error
+		extra []string
+		want  bool
+	}{
+		{"extra marker matches", errors.New("gerrit: change conflicts with master"), []string{"change conflicts"}, true},
+		{"extra is additive — built-ins still match", errors.New("non-fast-forward update"), []string{"some unrelated marker"}, true},
+		{"empty extras behave like nil", errors.New("non-fast-forward update"), []string{}, true},
+		{"no match across built-ins or extras", errors.New("connection refused"), []string{"server panic"}, false},
+		{"extras are case-insensitive (caller normalizes)", errors.New("SERVER PANIC: refusing push"), []string{"server panic"}, true},
+		{"empty entries in extras are ignored", errors.New("connection refused"), []string{"", ""}, false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, matchPushRaceMarkers(tc.err, tc.extra))
+		})
+	}
+}
+
 func TestPushRaceMarkersNotEmpty(t *testing.T) {
 	assert.NotEmpty(t, pushRaceMarkers, "pushRaceMarkers must not be empty or IsPushRaceError will never trigger")
 }

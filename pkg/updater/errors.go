@@ -36,12 +36,31 @@ var pushRaceMarkers = []string{
 // because the target ref advanced between our fetch and our push. When true,
 // the safe recovery is to refresh the cache via fetch + reset (Clone on an
 // existing cache), re-apply the change on top of the new tip, and retry the push.
+//
+// This checks only the built-in marker list. If you have a *GitRepo, call
+// repo.IsPushRaceError instead to also include any EXTRA_PUSH_RACE_MARKERS
+// configured at startup.
 func IsPushRaceError(err error) bool {
+	return matchPushRaceMarkers(err, nil)
+}
+
+// matchPushRaceMarkers returns true when err's message contains any built-in
+// marker or any entry in extra. Callers must pass extras already lowercased
+// (see normalizeMarkers); the message is lowercased here.
+func matchPushRaceMarkers(err error, extra []string) bool {
 	if err == nil {
 		return false
 	}
 	msg := strings.ToLower(err.Error())
 	for _, marker := range pushRaceMarkers {
+		if strings.Contains(msg, marker) {
+			return true
+		}
+	}
+	for _, marker := range extra {
+		if marker == "" {
+			continue
+		}
 		if strings.Contains(msg, marker) {
 			return true
 		}
