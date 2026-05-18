@@ -15,7 +15,9 @@ import "strings"
 var pushRaceMarkers = []string{
 	// go-git, when talking to a go-git bare remote.
 	"non-fast-forward",
-	// Gitea / Forgejo receive-pack wording.
+	// GitLab (prod-confirmed) / Gitea / Forgejo receive-pack wording.
+	// Verbatim string observed in prod, surfaced via ArgoCD-prefixed failure UI:
+	//   "ArgoCD API Error: command error on refs/heads/master: incorrect old value provided"
 	"incorrect old value",
 	// GitHub / GitLab / vanilla git receive-pack wordings.
 	// "(fetch first)" matches the rejection line "! [rejected] main -> main (fetch first)"

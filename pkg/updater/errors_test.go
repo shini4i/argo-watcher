@@ -26,8 +26,10 @@ func TestIsPushRaceError(t *testing.T) {
 		// go-git's own wording when the remote rejects a non-FF push.
 		{"go-git non-fast-forward", errors.New("non-fast-forward update: refs/heads/main"), true},
 
-		// Wording reported by Gitea / Forgejo server-side receive hooks.
-		{"gitea incorrect old value", errors.New("command error on refs/heads/master: incorrect old value provided"), true},
+		// Verbatim string captured from argo-watcher's failure UI in the user's
+		// GitLab-backed prod (pre-recovery-fix). Pin it so a future cleanup that
+		// narrows pushRaceMarkers fails loudly.
+		{"gitlab prod-observed (verbatim)", errors.New("command error on refs/heads/master: incorrect old value provided"), true},
 
 		// Common receive-pack wordings from GitHub / GitLab / vanilla git.
 		{"stale info", errors.New("failed to push some refs: ! [rejected] main -> main (stale info)"), true},

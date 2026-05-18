@@ -70,3 +70,41 @@ services:
     command: go run ./cmd/mock
     ports:
       - "8081:8081"
+
+  # Integration-test backend. Brought up by `task test-integration`; not part of
+  # the default `docker compose up` because the dev stack does not need it.
+  gitea:
+    profiles: [integration]
+    image: gitea/gitea:1.22
+    environment:
+      GITEA__security__INSTALL_LOCK: "true"
+      GITEA__server__START_SSH_SERVER: "true"
+      GITEA__server__SSH_PORT: "22"
+      GITEA__service__DISABLE_REGISTRATION: "false"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    ports:
+      - "3000:3000"
+      - "2222:22"
+
+  # TCP proxy used by integration tests to deterministically inject latency on
+  # the SSH path between argo-watcher (under test) and Gitea, forcing a push
+  # race. Proxy definitions are created by test code via the admin API.
+  toxiproxy:
+    profiles: [integration]
+    image: ghcr.io/shopify/toxiproxy:2.9.0
+    command: -host=0.0.0.0
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8474/version"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    ports:
+      - "8474:8474"
+      - "12222:12222"
+    depends_on:
+      gitea:
+        condition: service_healthy

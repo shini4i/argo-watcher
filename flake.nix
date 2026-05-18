@@ -18,6 +18,7 @@
           gosec
           mockgen
           go-swag
+          toxiproxy
         ];
 
         preCommitTools = with pkgs; [
