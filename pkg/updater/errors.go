@@ -37,8 +37,9 @@ var pushRaceMarkers = []string{
 // the safe recovery is to refresh the cache via fetch + reset (Clone on an
 // existing cache), re-apply the change on top of the new tip, and retry the push.
 //
-// This checks only the built-in marker list. To also consult operator-supplied
-// extras from EXTRA_PUSH_RACE_MARKERS, call (*GitRepo).IsPushRaceError instead.
+// This checks only the built-in marker list. If you have a *GitRepo, call
+// repo.IsPushRaceError instead to also include any EXTRA_PUSH_RACE_MARKERS
+// configured at startup.
 func IsPushRaceError(err error) bool {
 	return matchPushRaceMarkers(err, nil)
 }
