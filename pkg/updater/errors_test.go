@@ -38,6 +38,10 @@ func TestIsPushRaceError(t *testing.T) {
 		// git receive-pack concurrent ref-lock collision.
 		{"cannot lock ref", errors.New("remote: error: cannot lock ref 'refs/heads/main': is at abc123 but expected def456"), true},
 
+		// Gitea wording for a non-fast-forward push, captured from the integration
+		// test suite running against gitea/gitea:1.22 under concurrent writers.
+		{"gitea failed to update ref", errors.New("command error on refs/heads/master: failed to update ref"), true},
+
 		// Capitalised variants (some transports uppercase the first word).
 		{"capitalised stale info", errors.New("Stale info: refs/heads/main"), true},
 		{"capitalised fetch first - rejection line", errors.New("! [rejected] main -> main (Fetch first)"), true},

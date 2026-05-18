@@ -26,6 +26,10 @@ var pushRaceMarkers = []string{
 	"(fetch first)",
 	// git receive-pack when two concurrent pushes race on the ref lock file.
 	"cannot lock ref",
+	// Gitea (observed in integration tests against gitea/gitea:1.22) when the
+	// internal hook rejects a non-fast-forward update:
+	//   "command error on refs/heads/master: failed to update ref"
+	"failed to update ref",
 }
 
 // IsPushRaceError reports whether err describes a push rejected by the remote
