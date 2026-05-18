@@ -250,7 +250,9 @@ func (app *Application) generateOverrideFileContent(annotations map[string]strin
 	return &overrideFileContent, nil
 }
 
-func (app *Application) UpdateGitImageTag(task *Task, gitopsRepo *GitopsRepo) error {
+// UpdateGitImageTag writes the new image tag for app into the GitOps repository.
+// gitHandler is injected to enable testing; production callers pass updater.GitClient{}.
+func (app *Application) UpdateGitImageTag(task *Task, gitopsRepo *GitopsRepo, gitHandler updater.GitHandler) error {
 	if gitopsRepo.Path == "" {
 		log.Warn().Str("id", task.Id).Msgf("No path found for app %s, unsupported Application configuration", app.Metadata.Name)
 		return nil
@@ -266,7 +268,7 @@ func (app *Application) UpdateGitImageTag(task *Task, gitopsRepo *GitopsRepo) er
 		return nil
 	}
 
-	git, err := updater.NewGitRepo(gitopsRepo.RepoUrl, gitopsRepo.BranchName, gitopsRepo.Path, gitopsRepo.Filename, gitopsRepo.RepoCachePath, updater.GitClient{})
+	git, err := updater.NewGitRepo(gitopsRepo.RepoUrl, gitopsRepo.BranchName, gitopsRepo.Path, gitopsRepo.Filename, gitopsRepo.RepoCachePath, gitHandler)
 	if err != nil {
 		log.Error().Str("id", task.Id).Msgf("Failed to create git repo instance for %s: %s", gitopsRepo.RepoUrl, err)
 		return err
@@ -279,16 +281,20 @@ func (app *Application) UpdateGitImageTag(task *Task, gitopsRepo *GitopsRepo) er
 	}
 
 	if err := git.UpdateApp(app.Metadata.Name, releaseOverrides, task); err != nil {
-		if strings.Contains(err.Error(), "non-fast-forward") {
-			// Recovery Path
-			log.Warn().Str("id", task.Id).Msg("Non-fast-forward update detected. Re-cloning repository and retrying.")
+		if updater.IsPushRaceError(err) {
+			// Recovery Path: another writer pushed between our fetch and push.
+			// Single retry is intentional — a second race is rare enough that
+			// the next scheduled invocation will handle it.
+			log.Warn().Err(err).Str("id", task.Id).Msg("Push race detected. Re-cloning repository and retrying.")
 
 			if err := git.NukeAndReclone(); err != nil {
 				return fmt.Errorf("failed to nuke and re-clone: %w", err)
 			}
 
-			// Re-apply changes and push again
-			return git.UpdateApp(app.Metadata.Name, releaseOverrides, task)
+			if err := git.UpdateApp(app.Metadata.Name, releaseOverrides, task); err != nil {
+				return fmt.Errorf("push retry after race recovery failed: %w", err)
+			}
+			return nil
 		}
 		// Other unrecoverable error
 		return err

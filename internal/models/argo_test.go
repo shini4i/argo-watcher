@@ -2,10 +2,14 @@ package models
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"testing"
 
+	"github.com/shini4i/argo-watcher/pkg/updater"
+	updatrmock "github.com/shini4i/argo-watcher/pkg/updater/mock"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 )
 
 func TestListSyncResultResources(t *testing.T) {
@@ -433,13 +437,36 @@ func TestIsFireAndForgetModeActive(t *testing.T) {
 	}
 }
 
+// newAppWithImages builds an Application with managed-image annotations for testing.
+func newAppWithImages(name string) *Application {
+	return &Application{
+		Metadata: ApplicationMetadata{
+			Name: name,
+			Annotations: map[string]string{
+				"argo-watcher/managed-images":     "app=myimage",
+				"argo-watcher/app.helm.image-tag": "image.tag",
+			},
+		},
+	}
+}
+
+// newImageTask builds a Task with a single image for testing.
+func newImageTask() *Task {
+	return &Task{
+		Id: "test-id",
+		Images: []Image{
+			{Image: "myimage", Tag: "v1.0.0"},
+		},
+	}
+}
+
 func TestUpdateGitImageTag(t *testing.T) {
 	t.Run("Returns nil when path is empty", func(t *testing.T) {
 		app := &Application{}
 		task := &Task{Id: "test-id"}
 		gitopsRepo := &GitopsRepo{Path: ""}
 
-		err := app.UpdateGitImageTag(task, gitopsRepo)
+		err := app.UpdateGitImageTag(task, gitopsRepo, nil)
 		assert.NoError(t, err)
 	})
 
@@ -453,43 +480,39 @@ func TestUpdateGitImageTag(t *testing.T) {
 		task := &Task{Id: "test-id"}
 		gitopsRepo := &GitopsRepo{Path: "/some/path"}
 
-		err := app.UpdateGitImageTag(task, gitopsRepo)
+		err := app.UpdateGitImageTag(task, gitopsRepo, nil)
 		assert.NoError(t, err)
 	})
 
-	t.Run("Returns error when NewGitRepo fails", func(t *testing.T) {
-		// Ensure SSH_KEY_PATH is not set so NewGitRepo fails
-		originalSSHKeyPath, wasSet := os.LookupEnv("SSH_KEY_PATH")
+	t.Run("Returns error when NewGitRepo fails (no SSH_KEY_PATH)", func(t *testing.T) {
+		t.Setenv("SSH_KEY_PATH", "")
+		// caarlos0/env treats empty-string the same as unset for required fields.
 		os.Unsetenv("SSH_KEY_PATH")
-		defer func() {
-			if wasSet {
-				os.Setenv("SSH_KEY_PATH", originalSSHKeyPath)
-			}
-		}()
 
-		app := &Application{
-			Metadata: ApplicationMetadata{
-				Name: "test-app",
-				Annotations: map[string]string{
-					"argo-watcher/managed-images":         "app=myimage",
-					"argo-watcher/app.helm.image-tag":     "image.tag",
-				},
-			},
-		}
-		task := &Task{
-			Id: "test-id",
-			Images: []Image{
-				{Image: "myimage", Tag: "v1.0.0"},
-			},
-		}
-		gitopsRepo := &GitopsRepo{
-			RepoUrl:    "git@github.com:test/repo.git",
-			BranchName: "main",
-			Path:       "/some/path",
-		}
-
-		err := app.UpdateGitImageTag(task, gitopsRepo)
+		err := newAppWithImages("test-app").UpdateGitImageTag(
+			newImageTask(),
+			&GitopsRepo{RepoUrl: "git@github.com:test/repo.git", BranchName: "main", Path: "/some/path"},
+			updater.GitClient{},
+		)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to load git config")
+	})
+
+	t.Run("Returns error when Clone fails", func(t *testing.T) {
+		t.Setenv("SSH_KEY_PATH", "/dev/null")
+
+		ctrl := gomock.NewController(t)
+		mockHandler := updatrmock.NewMockGitHandler(ctrl)
+		mockHandler.EXPECT().
+			AddSSHKey(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(nil, errors.New("SSH key load failed"))
+
+		err := newAppWithImages("test-app").UpdateGitImageTag(
+			newImageTask(),
+			&GitopsRepo{RepoUrl: "git@github.com:test/repo.git", BranchName: "main", Path: "/some/path", RepoCachePath: t.TempDir()},
+			mockHandler,
+		)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "SSH key load failed")
 	})
 }

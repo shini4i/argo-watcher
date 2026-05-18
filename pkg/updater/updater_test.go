@@ -299,7 +299,7 @@ func TestFullUpdateAppCycle(t *testing.T) {
 
 		err = repo.UpdateApp("my-app", newParams, nil)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "non-fast-forward update")
+		assert.True(t, IsPushRaceError(err), "expected a push race error, got: %v", err)
 	})
 }
 
