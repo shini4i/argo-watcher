@@ -62,7 +62,7 @@ tasks:
     desc: Run integration tests (requires docker; brings up gitea + toxiproxy)
     cmds:
       - echo "===> Starting integration services"
-      - docker compose --profile integration up -d --wait
+      - docker compose --profile integration up -d --wait gitea toxiproxy
       - defer: docker compose --profile integration down -v
       - echo "===> Running integration tests"
       - go test -v -tags=integration -count=1 -timeout=5m ./internal/models/...
