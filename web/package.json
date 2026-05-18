@@ -40,6 +40,7 @@
     "eslint-plugin-react": "^7.34.3",
     "eslint-plugin-react-hooks": "^4.6.2",
     "jsdom": "^24.0.0",
+    "postcss": "^8.5.10",
     "swagger-ui-dist": "^5.32.0",
     "typescript": "^5.5.4",
     "vite": "^7.3.2",
