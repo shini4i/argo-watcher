@@ -138,6 +138,7 @@ func giteaAPIPost(t *testing.T, user, pass, path string, body map[string]any) {
 // gitea:22. Returns the proxy handle so tests can add/remove toxins.
 func setupToxiproxy(t *testing.T) *toxiclient.Proxy {
 	t.Helper()
+	waitForToxiproxy(t, 30*time.Second)
 	cli := toxiclient.NewClient(toxiproxyAdmin)
 	// ResetState clears any stale proxies left by a previous test.
 	require.NoError(t, cli.ResetState())
@@ -145,6 +146,31 @@ func setupToxiproxy(t *testing.T) *toxiclient.Proxy {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = proxy.Delete() })
 	return proxy
+}
+
+// waitForToxiproxy polls the toxiproxy admin API until it responds with 200,
+// or the test fails after the timeout. Needed because the toxiproxy image is
+// distroless and cannot run a Docker healthcheck — readiness must be verified
+// from the test side.
+func waitForToxiproxy(t *testing.T, timeout time.Duration) {
+	t.Helper()
+	cli := &http.Client{Timeout: 2 * time.Second}
+	deadline := time.Now().Add(timeout)
+	var lastStatus int
+	for {
+		resp, err := cli.Get(toxiproxyAdmin + "/version")
+		if err == nil {
+			lastStatus = resp.StatusCode
+			_ = resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				return
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("toxiproxy not ready after %s (last status: %d)", timeout, lastStatus)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
 }
 
 // testGitHandler delegates real git operations to go-git but disables SSH

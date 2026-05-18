@@ -93,15 +93,12 @@ services:
   # TCP proxy used by integration tests to deterministically inject latency on
   # the SSH path between argo-watcher (under test) and Gitea, forcing a push
   # race. Proxy definitions are created by test code via the admin API.
+  # No health check: the toxiproxy image is distroless (no shell or wget),
+  # so docker-compose cannot run one. Test code polls the admin API instead.
   toxiproxy:
     profiles: [integration]
     image: ghcr.io/shopify/toxiproxy:2.9.0
     command: -host=0.0.0.0
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8474/version"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
     ports:
       - "8474:8474"
       - "12222:12222"

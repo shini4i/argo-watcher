@@ -120,16 +120,13 @@ jobs:
       # toxiproxy proxies SSH to gitea by service hostname. GH Actions places
       # all services on a shared Docker bridge network with embedded DNS, so
       # "gitea:22" resolves correctly between containers.
+      # No health check: the toxiproxy image is distroless (no shell or wget),
+      # so --health-cmd cannot run. Test code polls the admin API instead.
       toxiproxy:
         image: ghcr.io/shopify/toxiproxy:2.9.0
         ports:
           - 8474:8474
           - 12222:12222
-        options: >-
-          --health-cmd "wget -qO- http://localhost:8474/version || exit 1"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
