@@ -2,58 +2,90 @@ package updater
 
 import (
 	"fmt"
-	"strings"
+	"os"
 	"time"
 
 	envConfig "github.com/caarlos0/env/v11"
+	"github.com/rs/zerolog/log"
 )
 
 // GitConfig holds runtime configuration for the git updater, parsed from
 // environment variables on startup.
 type GitConfig struct {
-	SshKeyPath          string        `env:"SSH_KEY_PATH,required"`
-	SshKeyPass          string        `env:"SSH_KEY_PASS"`
-	SshCommitUser       string        `env:"SSH_COMMIT_USER" envDefault:"argo-watcher"`
-	SshCommitMail       string        `env:"SSH_COMMIT_MAIL" envDefault:"argo-watcher@example.com"`
-	CommitMessageFormat string        `env:"COMMIT_MESSAGE_FORMAT"`
-	// GitTimeout bounds the entire git update flow for a single task (clone +
-	// fetch + commit + push, including any race-recovery retry). It is a total
-	// wall-clock budget, not a per-operation timeout — this guarantees one task
-	// cannot hold the per-repo lock for longer than this duration, so the
-	// deployment queue cannot be wedged by a slow or hung remote.
-	GitTimeout time.Duration `env:"GIT_TIMEOUT" envDefault:"3m"`
-	// ExtraPushRaceMarkers are operator-supplied substrings appended to the
-	// built-in pushRaceMarkers list. Comma-separated in the env var; trimmed
-	// and lowercased at parse time so IsPushRaceError's case-insensitive
-	// substring match works without per-call normalization. Additive only —
-	// the built-in list cannot be replaced or disabled from configuration.
-	ExtraPushRaceMarkers []string `env:"EXTRA_PUSH_RACE_MARKERS" envSeparator:","`
+	SshKeyPath          string `env:"SSH_KEY_PATH,required"`
+	SshKeyPass          string `env:"SSH_KEY_PASS"`
+	SshCommitUser       string `env:"SSH_COMMIT_USER" envDefault:"argo-watcher"`
+	SshCommitMail       string `env:"SSH_COMMIT_MAIL" envDefault:"argo-watcher@example.com"`
+	CommitMessageFormat string `env:"COMMIT_MESSAGE_FORMAT"`
+	// GitOpTimeout bounds a single clone+update attempt. Per-attempt (not total)
+	// timeout is deliberate: it lets retries actually succeed when the first
+	// attempt times out on a slow remote. The worst-case wall clock for the full
+	// retry loop is GitOpTimeout * GitMaxAttempts plus (GitMaxAttempts-1) × 2s
+	// inter-attempt backoff.
+	GitOpTimeout time.Duration `env:"GIT_OP_TIMEOUT" envDefault:"90s"`
+	// GitMaxAttempts is the total number of attempts (initial + retries) the
+	// updater will make before giving up. On the final attempt the on-disk
+	// cache is invalidated and a fresh clone is performed, so a poisoned cache
+	// self-heals without operator intervention.
+	GitMaxAttempts uint `env:"GIT_MAX_ATTEMPTS" envDefault:"3"`
 }
 
+// NewGitConfig loads GitConfig from environment variables and applies the
+// backward-compat mapping for the deprecated GIT_TIMEOUT variable.
+//
+// When GIT_TIMEOUT is set and GIT_OP_TIMEOUT is not, the legacy value is
+// used directly as GIT_OP_TIMEOUT (1:1 mapping) so the original per-call
+// budget is preserved unchanged. A deprecation warning is logged in both
+// cases (mapped or ignored). New deployments should set GIT_OP_TIMEOUT and
+// GIT_MAX_ATTEMPTS directly.
 func NewGitConfig() (*GitConfig, error) {
 	var config GitConfig
 	if err := envConfig.Parse(&config); err != nil {
 		return nil, err
 	}
-	if config.GitTimeout <= 0 {
-		return nil, fmt.Errorf("GIT_TIMEOUT must be > 0, got %s", config.GitTimeout)
+
+	if err := applyLegacyGitTimeout(&config); err != nil {
+		return nil, err
 	}
-	config.ExtraPushRaceMarkers = normalizeMarkers(config.ExtraPushRaceMarkers)
+
+	if config.GitOpTimeout <= 0 {
+		return nil, fmt.Errorf("GIT_OP_TIMEOUT must be > 0, got %s", config.GitOpTimeout)
+	}
+	if config.GitMaxAttempts == 0 {
+		return nil, fmt.Errorf("GIT_MAX_ATTEMPTS must be > 0")
+	}
+
 	return &config, nil
 }
 
-// normalizeMarkers lowercases, trims, and drops empty entries from the input.
-// IsPushRaceError lowercases the error message but not the markers, so the
-// markers must be lowercased at load time. Empty entries (e.g. from a trailing
-// comma) would match every error, so they are filtered out.
-func normalizeMarkers(in []string) []string {
-	out := make([]string, 0, len(in))
-	for _, m := range in {
-		m = strings.ToLower(strings.TrimSpace(m))
-		if m == "" {
-			continue
-		}
-		out = append(out, m)
+// applyLegacyGitTimeout maps the deprecated GIT_TIMEOUT env var to GIT_OP_TIMEOUT
+// when the latter was not set explicitly. The mapping is 1:1 — GIT_TIMEOUT is used
+// directly as GIT_OP_TIMEOUT — to preserve the original per-call budget unchanged.
+// Retries are opt-in via GIT_MAX_ATTEMPTS; the old single-attempt wall clock is
+// preserved per attempt rather than divided across retries.
+func applyLegacyGitTimeout(config *GitConfig) error {
+	legacyRaw, legacySet := os.LookupEnv("GIT_TIMEOUT")
+	if !legacySet {
+		return nil
 	}
-	return out
+
+	legacy, err := time.ParseDuration(legacyRaw)
+	if err != nil {
+		return fmt.Errorf("GIT_TIMEOUT: invalid duration %q: %w", legacyRaw, err)
+	}
+	if legacy <= 0 {
+		return fmt.Errorf("GIT_TIMEOUT must be > 0, got %s", legacy)
+	}
+
+	if _, newSet := os.LookupEnv("GIT_OP_TIMEOUT"); newSet {
+		log.Warn().Msgf("GIT_TIMEOUT is deprecated and was ignored because GIT_OP_TIMEOUT is set. Remove GIT_TIMEOUT to silence this warning.")
+		return nil
+	}
+
+	log.Warn().Msgf(
+		"GIT_TIMEOUT is deprecated; using %s as GIT_OP_TIMEOUT directly. With GIT_MAX_ATTEMPTS=%d retries enabled, the worst-case total wall clock is %s. Set GIT_OP_TIMEOUT explicitly to silence this warning.",
+		legacy, config.GitMaxAttempts, legacy*time.Duration(config.GitMaxAttempts),
+	)
+	config.GitOpTimeout = legacy
+	return nil
 }

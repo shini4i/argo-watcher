@@ -3,6 +3,7 @@ package updater
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/shini4i/argo-watcher/pkg/updater/mock"
@@ -45,37 +47,95 @@ func TestNewGitRepo(t *testing.T) {
 	})
 }
 
-func TestGitTimeoutAccessor(t *testing.T) {
+func TestGitOpTimeoutAccessor(t *testing.T) {
 	t.Setenv("SSH_KEY_PATH", "/dev/null")
-	t.Setenv("GIT_TIMEOUT", "42s")
+	t.Setenv("GIT_OP_TIMEOUT", "42s")
 
 	repo, err := NewGitRepo("u", "b", "p", "f", t.TempDir(), &GitClient{})
 	require.NoError(t, err)
 
-	assert.Equal(t, 42*time.Second, repo.GitTimeout())
+	assert.Equal(t, 42*time.Second, repo.GitOpTimeout())
 }
 
-func TestGitRepoIsPushRaceError(t *testing.T) {
-	t.Run("built-in marker matches without extras configured", func(t *testing.T) {
+func TestGitMaxAttemptsAccessor(t *testing.T) {
+	t.Setenv("SSH_KEY_PATH", "/dev/null")
+	t.Setenv("GIT_MAX_ATTEMPTS", "7")
+
+	repo, err := NewGitRepo("u", "b", "p", "f", t.TempDir(), &GitClient{})
+	require.NoError(t, err)
+
+	assert.Equal(t, uint(7), repo.GitMaxAttempts())
+}
+
+func TestInvalidateCache(t *testing.T) {
+	t.Run("Removes cache directory and clears localRepo", func(t *testing.T) {
 		t.Setenv("SSH_KEY_PATH", "/dev/null")
-		repo, err := NewGitRepo("u", "b", "p", "f", t.TempDir(), &GitClient{})
+		cacheBase := t.TempDir()
+
+		repo, err := NewGitRepo("url", "branch", "path", "file", cacheBase, &GitClient{})
 		require.NoError(t, err)
 
-		assert.True(t, repo.IsPushRaceError(errors.New("non-fast-forward update")))
-		assert.False(t, repo.IsPushRaceError(errors.New("connection refused")))
+		// Pre-create the cache path so InvalidateCache has something to remove.
+		repo.localRepoPath = filepath.Join(cacheBase, "cached-repo")
+		require.NoError(t, os.MkdirAll(repo.localRepoPath, 0755))
+		marker := filepath.Join(repo.localRepoPath, "marker")
+		require.NoError(t, os.WriteFile(marker, []byte("x"), 0600))
+
+		require.NoError(t, repo.InvalidateCache())
+
+		_, err = os.Stat(repo.localRepoPath)
+		assert.True(t, os.IsNotExist(err), "cache directory must be removed")
+		assert.Nil(t, repo.localRepo, "localRepo handle must be cleared so next Clone re-resolves it")
 	})
 
-	t.Run("operator-supplied extra marker is honored", func(t *testing.T) {
+	t.Run("Does not error when cache directory does not exist", func(t *testing.T) {
 		t.Setenv("SSH_KEY_PATH", "/dev/null")
-		t.Setenv("EXTRA_PUSH_RACE_MARKERS", "change conflicts")
-		repo, err := NewGitRepo("u", "b", "p", "f", t.TempDir(), &GitClient{})
+
+		cacheBase := t.TempDir()
+		repo, err := NewGitRepo("url", "branch", "path", "file", cacheBase, &GitClient{})
 		require.NoError(t, err)
 
-		// New wording the built-in list doesn't know about — only matches via the extra.
-		assert.True(t, repo.IsPushRaceError(errors.New("gerrit: change conflicts with master")))
-		// Built-ins still work alongside the extra.
-		assert.True(t, repo.IsPushRaceError(errors.New("non-fast-forward update")))
+		// Path inside cacheBase but does not exist on disk — RemoveAll should succeed silently.
+		repo.localRepoPath = filepath.Join(cacheBase, "does-not-exist")
+		assert.NoError(t, repo.InvalidateCache())
 	})
+
+	t.Run("No-op when localRepoPath is empty", func(t *testing.T) {
+		t.Setenv("SSH_KEY_PATH", "/dev/null")
+
+		repo, err := NewGitRepo("url", "branch", "path", "file", t.TempDir(), &GitClient{})
+		require.NoError(t, err)
+
+		// localRepoPath is only set after the first Clone(); InvalidateCache before
+		// the first Clone must be a safe no-op.
+		repo.localRepoPath = ""
+		assert.NoError(t, repo.InvalidateCache())
+	})
+}
+
+func TestIsPermanent(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil is not permanent", nil, false},
+		{"SSH key not provided is permanent", ErrSSHKeyNotProvided, true},
+		{"SSH key not found is permanent", ErrSSHKeyNotFound, true},
+		{"SSH key empty is permanent", ErrSSHKeyEmpty, true},
+		{"wrapped SSH key not found is permanent", fmt.Errorf("clone: %w", ErrSSHKeyNotFound), true},
+		{"transport auth required is permanent", transport.ErrAuthenticationRequired, true},
+		{"transport auth failed is permanent", transport.ErrAuthorizationFailed, true},
+		{"wrapped transport auth failed is permanent", fmt.Errorf("push: %w", transport.ErrAuthorizationFailed), true},
+		{"network error is not permanent", errors.New("connection refused"), false},
+		{"push race error is not permanent", errors.New("non-fast-forward update"), false},
+		{"context deadline exceeded is retryable", context.DeadlineExceeded, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, IsPermanent(tc.err))
+		})
+	}
 }
 
 func TestGetRepoCachePath(t *testing.T) {
@@ -104,24 +164,20 @@ func TestGenerateCommitMessage(t *testing.T) {
 	tmplData := struct{ AppName string }{AppName: "test-app"}
 
 	repo.gitConfig.CommitMessageFormat = ""
-	msg, err := repo.generateCommitMessage("test-app", tmplData)
-	assert.NoError(t, err)
-	assert.Equal(t, "argo-watcher(test-app): update image tag", msg)
+	assert.Equal(t, "argo-watcher(test-app): update image tag", repo.generateCommitMessage("test-app", tmplData))
 
 	repo.gitConfig.CommitMessageFormat = "ci: bump {{ .AppName }}"
-	msg, err = repo.generateCommitMessage("test-app", tmplData)
-	assert.NoError(t, err)
-	assert.Equal(t, "ci: bump test-app", msg)
+	assert.Equal(t, "ci: bump test-app", repo.generateCommitMessage("test-app", tmplData))
 
+	// Template errors fall back to the default message silently (logged as warn)
+	// so a malformed COMMIT_MESSAGE_FORMAT never aborts a deployment update.
 	repo.gitConfig.CommitMessageFormat = "ci: bump {{ .AppName "
-	msg, err = repo.generateCommitMessage("test-app", tmplData)
-	assert.Error(t, err)
-	assert.Equal(t, "argo-watcher(test-app): update image tag", msg, "Should fallback to default on parse error")
+	assert.Equal(t, "argo-watcher(test-app): update image tag", repo.generateCommitMessage("test-app", tmplData),
+		"parse error should fall back to default")
 
 	repo.gitConfig.CommitMessageFormat = "ci: bump {{ .MissingKey }}"
-	msg, err = repo.generateCommitMessage("test-app", tmplData)
-	assert.Error(t, err)
-	assert.Equal(t, "argo-watcher(test-app): update image tag", msg, "Should fallback to default on execute error")
+	assert.Equal(t, "argo-watcher(test-app): update image tag", repo.generateCommitMessage("test-app", tmplData),
+		"execute error should fall back to default")
 }
 
 func TestMergeParameters(t *testing.T) {
@@ -307,7 +363,6 @@ func TestFullUpdateAppCycle(t *testing.T) {
 		err := repo.UpdateApp(ctx, "my-app", newParams, nil)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "budget exhausted before push")
-		assert.False(t, IsPushRaceError(err), "budget-exhausted error must not be misclassified as a push race")
 	})
 
 	t.Run("Failure - Push Fails due to Non-Fast-Forward", func(t *testing.T) {
@@ -346,8 +401,9 @@ func TestFullUpdateAppCycle(t *testing.T) {
 		newParams.Helm.Parameters = []ArgoParameterOverride{{Name: "image.tag", Value: "v3.0.0"}}
 
 		err = repo.UpdateApp(context.Background(), "my-app", newParams, nil)
+		// We no longer classify push errors — UpdateApp just surfaces whatever go-git
+		// returns. The retry loop in the caller decides whether to retry.
 		assert.Error(t, err)
-		assert.True(t, IsPushRaceError(err), "expected a push race error, got: %v", err)
 	})
 }
 
@@ -435,15 +491,60 @@ func TestUpdateApp_ErrorHandling(t *testing.T) {
 	repo.localRepo = localRepo
 	repo.localRepoPath = localPath
 
-	t.Run("Failure on generating commit message", func(t *testing.T) {
+	t.Run("Malformed commit message template uses default and does not abort update", func(t *testing.T) {
 		repo.gitConfig.CommitMessageFormat = "{{ .Invalid "
 		newParams := &ArgoOverrideFile{}
+		appDir := filepath.Join(localPath, "apps")
+		require.NoError(t, os.Mkdir(appDir, 0755))
 
+		// A bad template must NOT abort the update — it falls back to the default
+		// commit message and the write succeeds.
 		err := repo.UpdateApp(context.Background(), "my-app", newParams, nil)
-
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "template: commitMsg:1: unclosed action")
+		assert.NoError(t, err)
 	})
+}
+
+func TestAssertInsideRoot(t *testing.T) {
+	root := t.TempDir()
+
+	t.Run("Path inside root is accepted", func(t *testing.T) {
+		assert.NoError(t, assertInsideRoot(root, filepath.Join(root, "apps", "values.yaml")))
+	})
+
+	t.Run("Path traversal is rejected", func(t *testing.T) {
+		err := assertInsideRoot(root, filepath.Join(root, "..", "etc", "passwd"))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not inside repository root")
+	})
+
+	t.Run("Deeply nested traversal is rejected", func(t *testing.T) {
+		// Simulates FileName = "../../../../.ssh/authorized_keys"
+		escaped := filepath.Join(root, "apps", "..", "..", "..", "..", ".ssh", "authorized_keys")
+		err := assertInsideRoot(root, escaped)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not inside repository root")
+	})
+
+	t.Run("Root itself is rejected (not strictly inside)", func(t *testing.T) {
+		// The override file must be inside the root, not the root itself.
+		err := assertInsideRoot(root, root)
+		require.Error(t, err)
+	})
+}
+
+func TestInvalidateCache_PathEscapeGuard(t *testing.T) {
+	t.Setenv("SSH_KEY_PATH", "/dev/null")
+
+	cacheBase := t.TempDir()
+	repo, err := NewGitRepo("url", "branch", "path", "file", cacheBase, &GitClient{})
+	require.NoError(t, err)
+
+	// Simulate misuse: localRepoPath set to a path outside repoCachePath.
+	repo.localRepoPath = "/tmp/dangerous-removal-target"
+
+	err = repo.InvalidateCache()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "refusing to remove")
 }
 
 // TestCorruptedGitRepo_ErrorPaths covers failures on an invalid git repo.

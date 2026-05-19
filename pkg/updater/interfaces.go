@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	cryptossh "golang.org/x/crypto/ssh"
 )
@@ -20,6 +21,28 @@ var ErrSSHKeyNotFound = errors.New("SSH key file not found")
 
 // ErrSSHKeyEmpty is returned when the SSH key file is empty.
 var ErrSSHKeyEmpty = errors.New("SSH key file is empty")
+
+// IsPermanent reports whether err describes a failure that retrying cannot fix.
+//
+// Two classes are treated as permanent:
+//   - SSH key pre-flight validation errors (ErrSSHKeyNotProvided, ErrSSHKeyNotFound,
+//     ErrSSHKeyEmpty): the key is missing or unreadable on every attempt.
+//   - Git transport authentication errors (transport.ErrAuthenticationRequired,
+//     transport.ErrAuthorizationFailed): the server rejected our credentials and
+//     will continue to do so regardless of how many times we retry.
+//
+// Everything else — network errors, push races, transient git server failures,
+// per-attempt context deadlines — is retryable.
+func IsPermanent(err error) bool {
+	if err == nil {
+		return false
+	}
+	return errors.Is(err, ErrSSHKeyNotProvided) ||
+		errors.Is(err, ErrSSHKeyNotFound) ||
+		errors.Is(err, ErrSSHKeyEmpty) ||
+		errors.Is(err, transport.ErrAuthenticationRequired) ||
+		errors.Is(err, transport.ErrAuthorizationFailed)
+}
 
 // GitHandler abstracts the small set of git operations the updater needs.
 // It exists primarily to enable testing — production code uses GitClient,
