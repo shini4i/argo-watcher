@@ -82,9 +82,13 @@ func applyLegacyGitTimeout(config *GitConfig) error {
 		return nil
 	}
 
+	// #nosec G115 -- GitMaxAttempts is a small operator-configured retry count
+	// (default 3, validated > 0); its conversion to time.Duration is only used
+	// to format a warning-log message and crosses no security boundary.
+	worstCaseWallClock := legacy * time.Duration(config.GitMaxAttempts)
 	log.Warn().Msgf(
 		"GIT_TIMEOUT is deprecated; using %s as GIT_OP_TIMEOUT directly. With GIT_MAX_ATTEMPTS=%d retries enabled, the worst-case total wall clock is %s. Set GIT_OP_TIMEOUT explicitly to silence this warning.",
-		legacy, config.GitMaxAttempts, legacy*time.Duration(config.GitMaxAttempts),
+		legacy, config.GitMaxAttempts, worstCaseWallClock,
 	)
 	config.GitOpTimeout = legacy
 	return nil
