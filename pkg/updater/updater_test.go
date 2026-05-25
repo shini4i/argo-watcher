@@ -111,6 +111,24 @@ func TestInvalidateCache(t *testing.T) {
 		repo.localRepoPath = ""
 		assert.NoError(t, repo.InvalidateCache())
 	})
+
+	t.Run("Trailing separator on repoCachePath does not break removal", func(t *testing.T) {
+		t.Setenv("SSH_KEY_PATH", "/dev/null")
+		cacheBase := t.TempDir()
+
+		repo, err := NewGitRepo("url", "branch", "path", "file", cacheBase, &GitClient{})
+		require.NoError(t, err)
+
+		// Operator-supplied REPO_CACHE_PATH could legitimately have a trailing slash.
+		// A raw string-prefix check would build "<base>//" and falsely refuse to remove.
+		repo.repoCachePath = cacheBase + string(os.PathSeparator)
+		repo.localRepoPath = filepath.Join(cacheBase, "cached-repo")
+		require.NoError(t, os.MkdirAll(repo.localRepoPath, 0755))
+
+		require.NoError(t, repo.InvalidateCache())
+		_, err = os.Stat(repo.localRepoPath)
+		assert.True(t, os.IsNotExist(err), "cache directory must be removed")
+	})
 }
 
 func TestIsPermanent(t *testing.T) {
@@ -529,6 +547,20 @@ func TestAssertInsideRoot(t *testing.T) {
 		// The override file must be inside the root, not the root itself.
 		err := assertInsideRoot(root, root)
 		require.Error(t, err)
+	})
+
+	t.Run("Legitimate path whose first component starts with .. is accepted", func(t *testing.T) {
+		// filepath.Rel returns "..foo/file.yaml" here; a naive strings.HasPrefix(rel, "..")
+		// check would falsely flag it as an escape attempt. Only "..", ".."+separator, or
+		// ".." with deeper separator-segmented prefixes count as parent traversal.
+		assert.NoError(t, assertInsideRoot(root, filepath.Join(root, "..foo", "file.yaml")))
+	})
+
+	t.Run("Parent-directory escape (rel == \"..\") is rejected", func(t *testing.T) {
+		// The parent dir of root, after Clean, yields rel == ".." — must be rejected.
+		err := assertInsideRoot(root, filepath.Dir(root))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not inside repository root")
 	})
 }
 

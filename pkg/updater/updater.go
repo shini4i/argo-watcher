@@ -232,7 +232,10 @@ func assertInsideRoot(root, path string) error {
 	rel, err := filepath.Rel(root, path)
 	// rel == "." means path equals root exactly — the override file must live
 	// inside the root, not at the root itself.
-	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
+	// rel == ".." or rel beginning with ".."+separator indicates a parent-directory
+	// escape. A plain HasPrefix(rel, "..") would falsely flag legitimate paths whose
+	// first component happens to start with ".." (e.g. "..foo/file.yaml").
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return fmt.Errorf("path %q is not inside repository root %q", path, root)
 	}
 	return nil
@@ -412,8 +415,10 @@ func (repo *GitRepo) InvalidateCache() error {
 	// Guard against removing something outside the designated cache base. This
 	// should not happen in normal operation (localRepoPath is always set by
 	// getRepoCachePath under repoCachePath), but an explicit check prevents
-	// catastrophic damage if the struct is somehow misused.
-	if !strings.HasPrefix(repo.localRepoPath, repo.repoCachePath+string(os.PathSeparator)) {
+	// catastrophic damage if the struct is somehow misused. Use assertInsideRoot
+	// so a trailing separator on repoCachePath (operator-supplied via env var)
+	// does not produce a false rejection from naive string-prefix matching.
+	if err := assertInsideRoot(repo.repoCachePath, repo.localRepoPath); err != nil {
 		return fmt.Errorf("localRepoPath %q is not inside repoCachePath %q; refusing to remove", repo.localRepoPath, repo.repoCachePath)
 	}
 	return os.RemoveAll(repo.localRepoPath)
