@@ -2,6 +2,7 @@ package argocd
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -271,7 +272,10 @@ func (gitUpdater *GitUpdater) UpdateIfNeeded(app *models.Application, task model
 }
 
 func (gitUpdater *GitUpdater) updateGitRepo(app *models.Application, task *models.Task, gitopsRepo *models.GitopsRepo) error {
-	err := app.UpdateGitImageTag(task, gitopsRepo, updater.GitClient{})
+	// context.Background() is intentional: the call stack above this point
+	// does not carry a context. Propagating a cancellable context from
+	// WaitForRollout is a future improvement.
+	err := app.UpdateGitImageTag(context.Background(), task, gitopsRepo, updater.GitClient{})
 	if err != nil {
 		log.Error().Str("id", task.Id).Msgf("Failed to update git repo. Error: %s", err.Error())
 		return err

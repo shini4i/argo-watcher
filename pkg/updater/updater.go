@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"text/template"
 	"time"
 
@@ -169,27 +170,30 @@ func (repo *GitRepo) generateOverrideFileName(appName string) string {
 }
 
 // generateCommitMessage creates the commit message for the update. It uses a
-// user-configurable Go template if provided; otherwise, it falls back to a default format.
-func (repo *GitRepo) generateCommitMessage(appName string, tmplData any) (string, error) {
+// user-configurable Go template if provided; otherwise, it falls back to a
+// default format. Template errors (parse or execute) are logged and the default
+// message is used so a malformed COMMIT_MESSAGE_FORMAT does not abort the
+// deployment update — availability takes precedence over a custom commit message.
+func (repo *GitRepo) generateCommitMessage(appName string, tmplData any) string {
 	commitMsg := fmt.Sprintf("argo-watcher(%s): update image tag", appName)
 
 	if repo.gitConfig.CommitMessageFormat == "" {
-		return commitMsg, nil
+		return commitMsg
 	}
 
 	tmpl, err := template.New("commitMsg").Parse(repo.gitConfig.CommitMessageFormat)
 	if err != nil {
-		// Fallback to default message on template parse error.
-		return commitMsg, err
+		log.Warn().Err(err).Msg("COMMIT_MESSAGE_FORMAT parse error; using default commit message")
+		return commitMsg
 	}
 
 	var message bytes.Buffer
 	if err = tmpl.Execute(&message, tmplData); err != nil {
-		// Fallback to default message on template execute error.
-		return commitMsg, err
+		log.Warn().Err(err).Msg("COMMIT_MESSAGE_FORMAT execute error; using default commit message")
+		return commitMsg
 	}
 
-	return message.String(), nil
+	return message.String()
 }
 
 // UpdateApp is the main entry point for updating an application's manifest file.
@@ -200,10 +204,11 @@ func (repo *GitRepo) UpdateApp(ctx context.Context, appName string, overrideCont
 	overrideFileName := repo.generateOverrideFileName(appName)
 	fullPath := filepath.Join(repo.localRepoPath, overrideFileName)
 
-	commitMsg, err := repo.generateCommitMessage(appName, tmplData)
-	if err != nil {
+	if err := assertInsideRoot(repo.localRepoPath, fullPath); err != nil {
 		return err
 	}
+
+	commitMsg := repo.generateCommitMessage(appName, tmplData)
 
 	log.Debug().Msgf("Updating override file: %s", fullPath)
 
@@ -219,12 +224,29 @@ func (repo *GitRepo) UpdateApp(ctx context.Context, appName string, overrideCont
 	return nil
 }
 
+// assertInsideRoot returns an error when path is not within root. It protects
+// against path-traversal attacks where an operator-supplied annotation value
+// (write-back-path, write-back-filename) contains ".." segments that would
+// escape the cloned repository directory.
+func assertInsideRoot(root, path string) error {
+	rel, err := filepath.Rel(root, path)
+	// rel == "." means path equals root exactly — the override file must live
+	// inside the root, not at the root itself.
+	// rel == ".." or rel beginning with ".."+separator indicates a parent-directory
+	// escape. A plain HasPrefix(rel, "..") would falsely flag legitimate paths whose
+	// first component happens to start with ".." (e.g. "..foo/file.yaml").
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("path %q is not inside repository root %q", path, root)
+	}
+	return nil
+}
+
 // mergeOverrideFileContent reads an existing override file (if one exists) and
 // merges the new parameter overrides into it. If no file exists, it returns the
 // new content directly.
 func (repo *GitRepo) mergeOverrideFileContent(fullPath string, overrideContent *ArgoOverrideFile) (*ArgoOverrideFile, error) {
 	// If the file doesn't exist, there's nothing to merge.
-	existingContent, err := os.ReadFile(fullPath) // #nosec G304
+	existingContent, err := os.ReadFile(fullPath) // #nosec G304 -- path already validated by assertInsideRoot in UpdateApp
 	if err != nil {
 		if os.IsNotExist(err) {
 			return overrideContent, nil
@@ -296,22 +318,25 @@ func (repo *GitRepo) commitAndPush(ctx context.Context, fullPath, commitMsg stri
 		return err
 	}
 
-	// Bail early if the budget is already exhausted — the push would fail with
-	// a low-level "context deadline exceeded" that could be mistaken for a
-	// push-race error, triggering a pointless recovery attempt.
+	// Bail early if the budget is already exhausted — no point issuing a push
+	// that is guaranteed to fail with "context deadline exceeded".
+	// Note: the local commit created above becomes an orphan if we return here.
+	// That is intentional and safe: the next Clone call hard-resets to origin,
+	// discarding the orphan before the retry attempt builds a new commit on top
+	// of the refreshed tip.
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("budget exhausted before push: %w", err)
 	}
 
 	// Push the changes to the remote repository, bounded by the caller's ctx.
+	// Any error is returned as-is; the retry loop in the caller decides whether
+	// to retry. We deliberately do not classify push-race vs other failures here
+	// because the retry loop treats all transient errors uniformly.
 	pushOpts := &git.PushOptions{
 		Auth:       repo.sshAuth,
 		RemoteName: "origin",
 	}
 	if err = repo.localRepo.PushContext(ctx, pushOpts); err != nil {
-		// The error is intentionally returned to be handled by the caller,
-		// which triggers the recovery path (re-Clone to refresh the cache to
-		// the new remote tip, then retry) for push-race errors.
 		return err
 	}
 
@@ -356,18 +381,46 @@ func NewGitRepo(repoURL, branchName, path, fileName, repoCachePath string, gitHa
 	}, nil
 }
 
-// GitTimeout returns the total wall-clock budget for a single update flow,
-// so callers can build bounded contexts without seeing the rest of the
-// internal config (which holds credentials).
-func (repo *GitRepo) GitTimeout() time.Duration {
-	return repo.gitConfig.GitTimeout
+// GitOpTimeout returns the per-attempt wall-clock budget for one clone+update
+// cycle so callers can build bounded contexts without seeing credentials in
+// the rest of GitConfig. The full retry loop's worst-case wall clock is
+// GitOpTimeout * GitMaxAttempts.
+func (repo *GitRepo) GitOpTimeout() time.Duration {
+	return repo.gitConfig.GitOpTimeout
 }
 
-// IsPushRaceError reports whether err is a push-race error, consulting both
-// the built-in marker list and any operator-supplied extras from
-// EXTRA_PUSH_RACE_MARKERS. Use this on a constructed GitRepo so newly-observed
-// server wordings can be handled by config change instead of a binary rebuild.
-// The free-function updater.IsPushRaceError checks only the built-in list.
-func (repo *GitRepo) IsPushRaceError(err error) bool {
-	return matchPushRaceMarkers(err, repo.gitConfig.ExtraPushRaceMarkers)
+// GitMaxAttempts returns the total number of attempts the caller's retry loop
+// should make before giving up. The final attempt is expected to invalidate
+// the cache via InvalidateCache so a poisoned cache self-heals.
+func (repo *GitRepo) GitMaxAttempts() uint {
+	return repo.gitConfig.GitMaxAttempts
 }
+
+// InvalidateCache removes the on-disk cache for this repository and clears
+// the in-memory git handle. The next call to Clone will fall through to a
+// fresh PlainClone because PlainOpen will fail with ErrRepositoryNotExists.
+//
+// Intended use: called by the retry loop before its final attempt so a
+// poisoned cache (a partial commit left from a prior failure, a stale ref,
+// a mid-write filesystem state) cannot keep failing forever. Calling this
+// when localRepoPath is empty (i.e. before the first Clone) is a safe no-op.
+//
+// Note: sshAuth is NOT cleared because the SSH key file is not expected to
+// change during the lifetime of a GitRepo. A key rotation requires a restart.
+func (repo *GitRepo) InvalidateCache() error {
+	repo.localRepo = nil
+	if repo.localRepoPath == "" {
+		return nil
+	}
+	// Guard against removing something outside the designated cache base. This
+	// should not happen in normal operation (localRepoPath is always set by
+	// getRepoCachePath under repoCachePath), but an explicit check prevents
+	// catastrophic damage if the struct is somehow misused. Use assertInsideRoot
+	// so a trailing separator on repoCachePath (operator-supplied via env var)
+	// does not produce a false rejection from naive string-prefix matching.
+	if err := assertInsideRoot(repo.repoCachePath, repo.localRepoPath); err != nil {
+		return fmt.Errorf("localRepoPath %q is not inside repoCachePath %q; refusing to remove", repo.localRepoPath, repo.repoCachePath)
+	}
+	return os.RemoveAll(repo.localRepoPath)
+}
+
