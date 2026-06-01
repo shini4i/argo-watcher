@@ -26,8 +26,8 @@ import (
 
 // countingHandler wraps testGitHandler and counts PlainOpen calls.
 // PlainOpen is always the first call inside Clone(), so openCount >= 2 proves
-// that the recovery branch re-entered Clone() — once for the fast path and
-// once after the push-race retry.
+// that the retry loop re-entered Clone() — once for the fast path and once
+// after the push-race retry.
 type countingHandler struct {
 	testGitHandler
 	openCount int32
@@ -80,13 +80,13 @@ func competitorPush(t *testing.T, repoURL, sshKeyPath, marker string) {
 // TestIntegration_PushRaceRecovery_WithLatencyInjection uses toxiproxy upstream
 // latency to widen the window between goroutine A's fetch and its push, giving
 // a competitor writer (direct SSH, no proxy) time to land a commit. This
-// exercises the full recovery loop in UpdateGitImageTag under real Gitea
+// exercises the full retry loop in UpdateGitImageTag under real Gitea
 // push-race conditions.
 //
 // The race is probabilistic: a slow CI runner may cause A's fetch to exceed
 // the 2.5s sleep, so the competitor might push before A even fetches. When
-// that happens the test still passes (no error returned), but recovery is
-// not exercised. This is acceptable — flakiness in the other direction
+// that happens the test still passes (no error returned), but the retry path
+// is not exercised. This is acceptable — flakiness in the other direction
 // (spurious failure) is what matters for CI signal.
 func TestIntegration_PushRaceRecovery_WithLatencyInjection(t *testing.T) {
 	waitForGitea(t, 60*time.Second)
@@ -94,7 +94,7 @@ func TestIntegration_PushRaceRecovery_WithLatencyInjection(t *testing.T) {
 	proxy := setupToxiproxy(t)
 
 	t.Setenv("SSH_KEY_PATH", env.SSHKeyPath)
-	t.Setenv("GIT_TIMEOUT", "60s")
+	t.Setenv("GIT_OP_TIMEOUT", "60s")
 
 	// Apply upstream latency so every byte from client→server (handshake,
 	// fetch, push payload) is delayed. This widens the race window enough for
@@ -104,9 +104,9 @@ func TestIntegration_PushRaceRecovery_WithLatencyInjection(t *testing.T) {
 	require.NoError(t, err)
 
 	// The race window is timing-sensitive: on a slow runner the competitor may
-	// push before A's fetch completes, leaving recovery unexercised. Retry the
-	// race-injection sequence up to maxAttempts times until PlainOpen is called
-	// >= 2 times (proving recovery re-entered Clone()).
+	// push before A's fetch completes, leaving the retry path unexercised.
+	// Retry the race-injection sequence up to maxAttempts times until PlainOpen
+	// is called >= 2 times (proving the retry loop re-entered Clone()).
 	const maxAttempts = 3
 	var lastOpens int32
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
@@ -114,6 +114,7 @@ func TestIntegration_PushRaceRecovery_WithLatencyInjection(t *testing.T) {
 		aDone := make(chan error, 1)
 		go func() {
 			aDone <- newAppWithImages("test-app").UpdateGitImageTag(
+				context.Background(),
 				newImageTask(),
 				&GitopsRepo{
 					RepoUrl:       env.ProxyRepoURL,
@@ -141,14 +142,14 @@ func TestIntegration_PushRaceRecovery_WithLatencyInjection(t *testing.T) {
 
 		lastOpens = atomic.LoadInt32(&handler.openCount)
 		if lastOpens >= 2 {
-			t.Logf("attempt %d: race window fired and recovery executed (PlainOpen called %d times)", attempt, lastOpens)
+			t.Logf("attempt %d: race window fired and retry executed (PlainOpen called %d times)", attempt, lastOpens)
 			return
 		}
 		t.Logf("attempt %d: race window did not fire (openCount=%d); retrying", attempt, lastOpens)
 	}
 
 	require.GreaterOrEqual(t, lastOpens, int32(2),
-		"recovery not observed after %d attempts: PlainOpen called %d times on final attempt",
+		"retry not observed after %d attempts: PlainOpen called %d times on final attempt",
 		maxAttempts, lastOpens)
 }
 
@@ -156,17 +157,17 @@ func TestIntegration_PushRaceRecovery_WithLatencyInjection(t *testing.T) {
 // against the same repo with no shared locker, mimicking two argo-watcher
 // replicas that cannot coordinate. Each writer uses an independent cache
 // directory (per-instance TempDir), so whoever loses the push race must rely
-// entirely on UpdateGitImageTag's single-retry recovery to succeed.
+// entirely on UpdateGitImageTag's retry loop to succeed.
 //
-// N=2 is intentional: the production recovery path retries exactly once, which
-// is guaranteed to be enough for at most one concurrent pusher — both writers
-// cannot be in their recovery windows simultaneously.
+// N=2 with the default 3 attempts gives the slower writer two chances to
+// retry after losing the race — comfortably more than the single retry the
+// previous architecture afforded.
 func TestIntegration_PushRaceRecovery_Concurrent(t *testing.T) {
 	waitForGitea(t, 60*time.Second)
 	env := setupGitea(t)
 
 	t.Setenv("SSH_KEY_PATH", env.SSHKeyPath)
-	t.Setenv("GIT_TIMEOUT", "30s")
+	t.Setenv("GIT_OP_TIMEOUT", "30s")
 
 	const N = 2
 
@@ -187,6 +188,7 @@ func TestIntegration_PushRaceRecovery_Concurrent(t *testing.T) {
 			<-startCh // wait for the barrier release
 			start := time.Now()
 			errs[idx] = newAppWithImages(fmt.Sprintf("app-%d", idx)).UpdateGitImageTag(
+				context.Background(),
 				&Task{
 					Id:     fmt.Sprintf("task-%d", idx),
 					Images: []Image{{Image: "myimage", Tag: fmt.Sprintf("v%d", idx)}},
@@ -210,13 +212,16 @@ func TestIntegration_PushRaceRecovery_Concurrent(t *testing.T) {
 		assert.NoError(t, e, "goroutine %d failed", i)
 	}
 	for i, d := range durations {
-		// 2 × GIT_TIMEOUT covers one op + one recovery retry within budget.
-		assert.Less(t, d, 60*time.Second,
-			"goroutine %d took %s (exceeds 2× GIT_TIMEOUT, suggests stuck recovery)", i, d)
+		// Even with all 3 attempts firing, the per-task wall clock should stay
+		// well under 90s — typical case: 1-2 attempts × a few seconds each plus
+		// inter-attempt backoff. A goroutine that lingers beyond this points at
+		// either a stuck retry or a hung network call past GIT_OP_TIMEOUT.
+		assert.Less(t, d, 90*time.Second,
+			"goroutine %d took %s — retry loop or network call exceeded budget", i, d)
 	}
-	// Both writers + at most one recovery should complete well within 30s.
-	assert.Less(t, totalWall, 30*time.Second,
-		"total wall clock %s exceeds 30s", totalWall)
+	// Both writers + worst-case retries should complete within 90s wall clock.
+	assert.Less(t, totalWall, 90*time.Second,
+		"total wall clock %s exceeds 90s", totalWall)
 }
 
 // TestIntegration_GitTimeoutEnforcement_ReturnsWithinBudget verifies that
@@ -227,11 +232,16 @@ func TestIntegration_PushRaceRecovery_Concurrent(t *testing.T) {
 // Caveat about the budget: go-git's SSH transport does not propagate the
 // caller's context into the SSH library's handshake phase, so a stall during
 // the initial handshake is bounded by the SSH library's own timeout (~2 min)
-// rather than GIT_TIMEOUT. The bounded-context guarantee from e2ab9fe applies
-// to git-protocol operations after the SSH connection is established. Either
-// path is sufficient to prevent the queue-wedging regression; this test
+// rather than GIT_OP_TIMEOUT. The bounded-context guarantee from e2ab9fe
+// applies to git-protocol operations after the SSH connection is established.
+// Either path is sufficient to prevent the queue-wedging regression; this test
 // asserts the weaker but realistic guarantee that operations are bounded by
-// max(GIT_TIMEOUT, SSH handshake timeout) — not infinite.
+// max(GIT_OP_TIMEOUT, SSH handshake timeout) — not infinite.
+//
+// GIT_MAX_ATTEMPTS=1 is required: this test validates the per-task ceiling
+// for a single attempt. Letting the default 3 attempts run would multiply the
+// SSH handshake timeout by 3 and blow past perTaskCeiling, which is not the
+// behaviour we are guarding against here.
 func TestIntegration_GitTimeoutEnforcement_ReturnsWithinBudget(t *testing.T) {
 	waitForGitea(t, 60*time.Second)
 	env := setupGitea(t)
@@ -245,7 +255,8 @@ func TestIntegration_GitTimeoutEnforcement_ReturnsWithinBudget(t *testing.T) {
 	const perTaskCeiling = 150 * time.Second
 
 	t.Setenv("SSH_KEY_PATH", env.SSHKeyPath)
-	t.Setenv("GIT_TIMEOUT", budget.String())
+	t.Setenv("GIT_OP_TIMEOUT", budget.String())
+	t.Setenv("GIT_MAX_ATTEMPTS", "1")
 
 	// Heavy latency stalls every byte through the proxy. The SSH handshake
 	// will not survive — it eventually returns "handshake failed: EOF" via
@@ -268,6 +279,7 @@ func TestIntegration_GitTimeoutEnforcement_ReturnsWithinBudget(t *testing.T) {
 		start := time.Now()
 		outer := locker.WithLock(gitopsRepo.RepoUrl, func() error {
 			inner = newAppWithImages(fmt.Sprintf("app-%d", idx)).UpdateGitImageTag(
+				context.Background(),
 				&Task{Id: fmt.Sprintf("task-%d", idx), Images: []Image{{Image: "myimage", Tag: "v1"}}},
 				gitopsRepo,
 				testGitHandler{},
@@ -316,7 +328,7 @@ func TestIntegration_GitTimeoutEnforcement_ReturnsWithinBudget(t *testing.T) {
 	require.Error(t, a.err, "A should fail under the latency toxin")
 	require.Error(t, b.err, "B should fail once it acquires the lock")
 
-	// A is bounded by either the GIT_TIMEOUT context (if the stall hits
+	// A is bounded by either the GIT_OP_TIMEOUT context (if the stall hits
 	// post-handshake) or the SSH library's handshake timeout. Either is
 	// acceptable; the only failure mode is unbounded hang.
 	assert.Less(t, a.dur, perTaskCeiling,

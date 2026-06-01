@@ -484,7 +484,7 @@ func TestUpdateGitImageTag(t *testing.T) {
 		task := &Task{Id: "test-id"}
 		gitopsRepo := &GitopsRepo{Path: ""}
 
-		err := app.UpdateGitImageTag(task, gitopsRepo, nil)
+		err := app.UpdateGitImageTag(context.Background(), task, gitopsRepo, nil)
 		assert.NoError(t, err)
 	})
 
@@ -498,7 +498,7 @@ func TestUpdateGitImageTag(t *testing.T) {
 		task := &Task{Id: "test-id"}
 		gitopsRepo := &GitopsRepo{Path: "/some/path"}
 
-		err := app.UpdateGitImageTag(task, gitopsRepo, nil)
+		err := app.UpdateGitImageTag(context.Background(), task, gitopsRepo, nil)
 		assert.NoError(t, err)
 	})
 
@@ -508,6 +508,7 @@ func TestUpdateGitImageTag(t *testing.T) {
 		os.Unsetenv("SSH_KEY_PATH")
 
 		err := newAppWithImages("test-app").UpdateGitImageTag(
+			context.Background(),
 			newImageTask(),
 			&GitopsRepo{RepoUrl: "git@github.com:test/repo.git", BranchName: "main", Path: "/some/path"},
 			updater.GitClient{},
@@ -518,6 +519,11 @@ func TestUpdateGitImageTag(t *testing.T) {
 
 	t.Run("Returns error when Clone fails", func(t *testing.T) {
 		t.Setenv("SSH_KEY_PATH", "/dev/null")
+		// Single attempt — the SSH key load error here is an opaque string-wrapped
+		// error (not one of the sentinel ErrSSHKey* values), so IsPermanent does
+		// not short-circuit. We want to assert the error surfaces, not exercise
+		// the retry path.
+		t.Setenv("GIT_MAX_ATTEMPTS", "1")
 
 		ctrl := gomock.NewController(t)
 		mockHandler := updatrmock.NewMockGitHandler(ctrl)
@@ -526,6 +532,7 @@ func TestUpdateGitImageTag(t *testing.T) {
 			Return(nil, errors.New("SSH key load failed"))
 
 		err := newAppWithImages("test-app").UpdateGitImageTag(
+			context.Background(),
 			newImageTask(),
 			&GitopsRepo{RepoUrl: "git@github.com:test/repo.git", BranchName: "main", Path: "/some/path", RepoCachePath: t.TempDir()},
 			mockHandler,
@@ -534,9 +541,12 @@ func TestUpdateGitImageTag(t *testing.T) {
 		assert.Contains(t, err.Error(), "SSH key load failed")
 	})
 
-	t.Run("Network calls receive a bounded context within GIT_TIMEOUT", func(t *testing.T) {
+	t.Run("Network calls receive a bounded context within GIT_OP_TIMEOUT", func(t *testing.T) {
 		t.Setenv("SSH_KEY_PATH", "/dev/null")
-		t.Setenv("GIT_TIMEOUT", "1s")
+		t.Setenv("GIT_OP_TIMEOUT", "1s")
+		// Single attempt — this test only validates that the per-attempt deadline
+		// reaches the network layer, not the retry loop.
+		t.Setenv("GIT_MAX_ATTEMPTS", "1")
 
 		ctrl := gomock.NewController(t)
 		mockHandler := updatrmock.NewMockGitHandler(ctrl)
@@ -552,6 +562,7 @@ func TestUpdateGitImageTag(t *testing.T) {
 			})
 
 		_ = newAppWithImages("test-app").UpdateGitImageTag(
+			context.Background(),
 			newImageTask(),
 			&GitopsRepo{RepoUrl: "git@github.com:test/repo.git", BranchName: "main", Path: "/some/path", RepoCachePath: t.TempDir()},
 			mockHandler,
@@ -562,12 +573,14 @@ func TestUpdateGitImageTag(t *testing.T) {
 		require.True(t, ok, "PlainClone context must carry a deadline")
 		remaining := time.Until(deadline)
 		assert.Greater(t, remaining, time.Duration(0), "deadline must not be already expired")
-		assert.LessOrEqual(t, remaining, 1*time.Second, "deadline must be within GIT_TIMEOUT (1s)")
+		assert.LessOrEqual(t, remaining, 1*time.Second, "deadline must be within GIT_OP_TIMEOUT (1s)")
 	})
 
 	t.Run("Recovery succeeds on push race", func(t *testing.T) {
 		t.Setenv("SSH_KEY_PATH", "/dev/null")
-		t.Setenv("GIT_TIMEOUT", "30s")
+		t.Setenv("GIT_OP_TIMEOUT", "30s")
+		// Default 3 attempts is fine — attempt 1 fails on push race, attempt 2
+		// fetches the new tip and succeeds, attempt 3 never runs.
 
 		repoCachePath := t.TempDir()
 		const branchName = "master"
@@ -627,7 +640,12 @@ func TestUpdateGitImageTag(t *testing.T) {
 			Return(localRepo, nil).After(first)
 
 		// 5. Run UpdateGitImageTag — should detect the push race, recover, and succeed.
+		// Pin GIT_MAX_ATTEMPTS so mock expectations (2 PlainOpen calls) remain valid
+		// regardless of default changes: attempt 1 uses PlainClone, attempt 2 uses
+		// PlainOpen (cache hit), succeeds, loop exits.
+		t.Setenv("GIT_MAX_ATTEMPTS", "3")
 		err = newAppWithImages("test-app").UpdateGitImageTag(
+			context.Background(),
 			newImageTask(),
 			&GitopsRepo{
 				RepoUrl:       repoURL,
@@ -638,5 +656,223 @@ func TestUpdateGitImageTag(t *testing.T) {
 			mockHandler,
 		)
 		assert.NoError(t, err)
+	})
+
+	t.Run("Permanent SSH key error short-circuits retries", func(t *testing.T) {
+		// Use a nonexistent SSH key path so NewGitConfig succeeds (it only checks
+		// the var is set) but AddSSHKey inside Clone returns ErrSSHKeyNotFound,
+		// which IsPermanent recognises. Retry loop must NOT call AddSSHKey again.
+		t.Setenv("SSH_KEY_PATH", "/nonexistent/path/to/key")
+		t.Setenv("GIT_MAX_ATTEMPTS", "3")
+		t.Setenv("GIT_OP_TIMEOUT", "5s")
+
+		err := newAppWithImages("test-app").UpdateGitImageTag(
+			context.Background(),
+			newImageTask(),
+			&GitopsRepo{
+				RepoUrl:       "git@example.com:test/permanent-err.git",
+				BranchName:    "main",
+				Path:          "apps",
+				RepoCachePath: t.TempDir(),
+			},
+			updater.GitClient{},
+		)
+		require.Error(t, err)
+		// The wrapped error chain must contain the permanent sentinel so callers
+		// can distinguish "tried 3 times and gave up" from "fast-failed permanent".
+		assert.ErrorIs(t, err, updater.ErrSSHKeyNotFound)
+	})
+
+	t.Run("Retry exhausted returns aggregated error", func(t *testing.T) {
+		t.Setenv("SSH_KEY_PATH", "/dev/null")
+		t.Setenv("GIT_MAX_ATTEMPTS", "2")
+		t.Setenv("GIT_OP_TIMEOUT", "5s")
+
+		ctrl := gomock.NewController(t)
+		mockHandler := updatrmock.NewMockGitHandler(ctrl)
+		mockHandler.EXPECT().AddSSHKey(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(nil, nil).AnyTimes()
+		// Both attempts fail at the clone step. Default cache-miss path on each.
+		mockHandler.EXPECT().PlainOpen(gomock.Any()).
+			Return(nil, gogit.ErrRepositoryNotExists).Times(2)
+		mockHandler.EXPECT().PlainClone(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(nil, errors.New("upstream unreachable")).Times(2)
+
+		err := newAppWithImages("test-app").UpdateGitImageTag(
+			context.Background(),
+			newImageTask(),
+			&GitopsRepo{
+				RepoUrl:       "git@example.com:test/retry-exhausted.git",
+				BranchName:    "main",
+				Path:          "apps",
+				RepoCachePath: t.TempDir(),
+			},
+			mockHandler,
+		)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "git update failed after 2 attempts")
+		// Verify the original error is preserved through the wrap chain.
+		assert.Contains(t, err.Error(), "upstream unreachable")
+	})
+
+	t.Run("Final attempt invalidates the cache", func(t *testing.T) {
+		t.Setenv("SSH_KEY_PATH", "/dev/null")
+		t.Setenv("GIT_MAX_ATTEMPTS", "2")
+		t.Setenv("GIT_OP_TIMEOUT", "5s")
+
+		repoCachePath := t.TempDir()
+		const repoURL = "git@example.com:test/cache-bust.git"
+		const branchName = "main"
+		// Pre-seed the cache directory at the path the code will compute, with a
+		// marker file. The final attempt must remove this directory before
+		// re-running Clone.
+		expectedCachePath := computeRepoCachePath(repoCachePath, repoURL, branchName)
+		require.NoError(t, os.MkdirAll(expectedCachePath, 0755))
+		markerFile := filepath.Join(expectedCachePath, "marker")
+		require.NoError(t, os.WriteFile(markerFile, []byte("pre-existing"), 0600))
+
+		ctrl := gomock.NewController(t)
+		mockHandler := updatrmock.NewMockGitHandler(ctrl)
+		mockHandler.EXPECT().AddSSHKey(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(nil, nil).AnyTimes()
+		// We don't care which clone path each attempt takes — the cache is
+		// invalid (just a marker file, not a real repo), so PlainOpen will fail
+		// and PlainClone will be attempted. Both are stubbed to fail so the
+		// retry loop exhausts and we can verify the cache state after.
+		mockHandler.EXPECT().PlainOpen(gomock.Any()).
+			Return(nil, gogit.ErrRepositoryNotExists).AnyTimes()
+		var cachePathOnFinalCall string
+		mockHandler.EXPECT().PlainClone(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(func(_ context.Context, path string, _ bool, _ *gogit.CloneOptions) (*gogit.Repository, error) {
+				cachePathOnFinalCall = path
+				return nil, errors.New("clone always fails")
+			}).AnyTimes()
+
+		_ = newAppWithImages("test-app").UpdateGitImageTag(
+			context.Background(),
+			newImageTask(),
+			&GitopsRepo{
+				RepoUrl:       repoURL,
+				BranchName:    branchName,
+				Path:          "apps",
+				RepoCachePath: repoCachePath,
+			},
+			mockHandler,
+		)
+
+		// The marker file pre-seeded into the cache must be gone — the final
+		// attempt's InvalidateCache wiped the directory.
+		_, statErr := os.Stat(markerFile)
+		assert.True(t, os.IsNotExist(statErr), "InvalidateCache should have removed the cache directory and the marker file")
+		assert.Equal(t, expectedCachePath, cachePathOnFinalCall, "final PlainClone must target the same cache path the cache-bust removed")
+	})
+
+	t.Run("Cancelling parentCtx during backoff aborts retry loop", func(t *testing.T) {
+		// Validates the cancellable-sleep path in runGitUpdateWithRetry: a parent
+		// context cancellation must unblock the inter-attempt backoff
+		// immediately, rather than waiting the full 2s gitUpdateRetryBackoff
+		// before noticing. Without this, a graceful-shutdown signal would be
+		// delayed by up to (attempts-1) * backoff seconds.
+		t.Setenv("SSH_KEY_PATH", "/dev/null")
+		t.Setenv("GIT_MAX_ATTEMPTS", "3")
+		t.Setenv("GIT_OP_TIMEOUT", "5s")
+
+		ctrl := gomock.NewController(t)
+		mockHandler := updatrmock.NewMockGitHandler(ctrl)
+		mockHandler.EXPECT().AddSSHKey(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(nil, nil).AnyTimes()
+		mockHandler.EXPECT().PlainOpen(gomock.Any()).
+			Return(nil, gogit.ErrRepositoryNotExists).AnyTimes()
+		// First attempt's PlainClone fails fast with a retryable error and then
+		// cancels the parent context, so the retry loop's backoff select must
+		// observe parentCtx.Done() and bail out before the 2s timer fires.
+		ctx, cancel := context.WithCancel(context.Background())
+		mockHandler.EXPECT().
+			PlainClone(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(func(_ context.Context, _ string, _ bool, _ *gogit.CloneOptions) (*gogit.Repository, error) {
+				cancel()
+				return nil, errors.New("transient network error")
+			})
+
+		start := time.Now()
+		err := newAppWithImages("test-app").UpdateGitImageTag(
+			ctx,
+			newImageTask(),
+			&GitopsRepo{
+				RepoUrl:       "git@example.com:test/cancel-backoff.git",
+				BranchName:    "main",
+				Path:          "apps",
+				RepoCachePath: t.TempDir(),
+			},
+			mockHandler,
+		)
+		elapsed := time.Since(start)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "git update cancelled during backoff")
+		assert.ErrorIs(t, err, context.Canceled)
+		// gitUpdateRetryBackoff is 2s; cancellation must unblock the select well
+		// before the timer fires. 1s is a generous ceiling for a single mock call.
+		assert.Less(t, elapsed, 1*time.Second, "cancellation must abort the backoff sleep promptly")
+	})
+
+	t.Run("Per-attempt context inherits parent deadline", func(t *testing.T) {
+		// Validates that runGitUpdateAttempt derives its per-attempt context
+		// from parentCtx (via WithTimeout(parentCtx, opTimeout)) rather than
+		// from context.Background(). If parent had a shorter deadline than
+		// opTimeout, the per-attempt deadline must be the parent's — otherwise
+		// graceful shutdown / caller cancellation could be ignored.
+		t.Setenv("SSH_KEY_PATH", "/dev/null")
+		// Set opTimeout (10s) much larger than parent deadline (250ms) so the
+		// captured deadline must come from the parent, not opTimeout.
+		t.Setenv("GIT_OP_TIMEOUT", "10s")
+		t.Setenv("GIT_MAX_ATTEMPTS", "1")
+
+		ctrl := gomock.NewController(t)
+		mockHandler := updatrmock.NewMockGitHandler(ctrl)
+		mockHandler.EXPECT().AddSSHKey(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(nil, nil)
+		mockHandler.EXPECT().PlainOpen(gomock.Any()).
+			Return(nil, gogit.ErrRepositoryNotExists)
+
+		var capturedCtx context.Context
+		mockHandler.EXPECT().
+			PlainClone(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(func(ctx context.Context, _ string, _ bool, _ *gogit.CloneOptions) (*gogit.Repository, error) {
+				capturedCtx = ctx
+				return nil, errors.New("clone failed")
+			})
+
+		parentCtx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+		defer cancel()
+		parentDeadline, _ := parentCtx.Deadline()
+
+		_ = newAppWithImages("test-app").UpdateGitImageTag(
+			parentCtx,
+			newImageTask(),
+			&GitopsRepo{
+				RepoUrl:       "git@example.com:test/parent-deadline.git",
+				BranchName:    "main",
+				Path:          "apps",
+				RepoCachePath: t.TempDir(),
+			},
+			mockHandler,
+		)
+
+		require.NotNil(t, capturedCtx, "PlainClone must receive a context")
+		childDeadline, ok := capturedCtx.Deadline()
+		require.True(t, ok, "per-attempt context must carry a deadline")
+		// Child deadline must equal parent deadline (parent is earlier than
+		// opTimeout, so WithTimeout(parent, opTimeout) keeps the parent's).
+		// Using time.Until and a tight tolerance, NOT raw .Equal, because the
+		// runtime may normalise the deadline time slightly.
+		drift := childDeadline.Sub(parentDeadline)
+		assert.InDelta(t, 0, drift.Milliseconds(), 5,
+			"per-attempt deadline must be inherited from parentCtx, not derived from context.Background()+opTimeout")
+		// Sanity check: deadline must NOT be ~opTimeout (10s) away, which would
+		// prove the code wrongly used context.Background() as the base.
+		remaining := time.Until(childDeadline)
+		assert.Less(t, remaining, 1*time.Second,
+			"per-attempt deadline must reflect parent's 250ms budget, not opTimeout's 10s")
 	})
 }
