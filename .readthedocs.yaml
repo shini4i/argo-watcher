@@ -4,6 +4,17 @@ build:
   os: ubuntu-22.04
   tools:
     python: "3.11"
+    golang: "1.25"
+  apt_packages:
+    - libcairo2-dev
+    - libfreetype6-dev
+    - libffi-dev
+    - libjpeg-dev
+    - libpng-dev
+  jobs:
+    pre_build:
+      - go install github.com/swaggo/swag/cmd/swag@latest
+      - bash docs/scripts/build-swagger.sh
 
 python:
   install:

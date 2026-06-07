@@ -1,0 +1,11 @@
+{
+  "app": "demo-app",
+  "author": "you@example.com",
+  "project": "demo",
+  "images": [
+    {
+      "image": "ghcr.io/shini4i/example",
+      "tag": "v0.1.0"
+    }
+  ]
+}

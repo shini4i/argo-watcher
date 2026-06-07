@@ -8,7 +8,7 @@ When Keycloak integration is enabled:
 
 1. Users are redirected to the Keycloak login page before they can view any tasks in the Web UI.
 2. The user's token is validated by the Argo Watcher backend at a configurable interval.
-3. Users who belong to one of the configured **privileged groups** see a **Redeploy** button on the task details page and can manage the [deployment lock](git-integration.md#deployment-locking).
+3. Users who belong to one of the configured **privileged groups** see a **Redeploy** button on the task details page and can manage the [deployment lock](gitops-updater.md#deployment-locking).
 
 ## Prerequisites
 
@@ -60,7 +60,7 @@ extraEnvs:
 Users in privileged groups receive additional capabilities in the Web UI:
 
 - **Redeploy button** -- Visible on the task details page, allowing privileged users to trigger a redeployment.
-- **Deployment lock management** -- Privileged users can enable or disable the [deployment lock](git-integration.md#deployment-locking) via the Web UI.
+- **Deployment lock management** -- Privileged users can enable or disable the [deployment lock](gitops-updater.md#deployment-locking) via the Web UI.
 
 ## Future Improvements
 

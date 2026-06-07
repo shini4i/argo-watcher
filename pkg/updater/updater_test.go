@@ -1,7 +1,9 @@
 package updater
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -10,6 +12,8 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/shini4i/argo-watcher/pkg/updater/mock"
 	"github.com/stretchr/testify/assert"
@@ -43,6 +47,115 @@ func TestNewGitRepo(t *testing.T) {
 	})
 }
 
+func TestGitOpTimeoutAccessor(t *testing.T) {
+	t.Setenv("SSH_KEY_PATH", "/dev/null")
+	t.Setenv("GIT_OP_TIMEOUT", "42s")
+
+	repo, err := NewGitRepo("u", "b", "p", "f", t.TempDir(), &GitClient{})
+	require.NoError(t, err)
+
+	assert.Equal(t, 42*time.Second, repo.GitOpTimeout())
+}
+
+func TestGitMaxAttemptsAccessor(t *testing.T) {
+	t.Setenv("SSH_KEY_PATH", "/dev/null")
+	t.Setenv("GIT_MAX_ATTEMPTS", "7")
+
+	repo, err := NewGitRepo("u", "b", "p", "f", t.TempDir(), &GitClient{})
+	require.NoError(t, err)
+
+	assert.Equal(t, uint(7), repo.GitMaxAttempts())
+}
+
+func TestInvalidateCache(t *testing.T) {
+	t.Run("Removes cache directory and clears localRepo", func(t *testing.T) {
+		t.Setenv("SSH_KEY_PATH", "/dev/null")
+		cacheBase := t.TempDir()
+
+		repo, err := NewGitRepo("url", "branch", "path", "file", cacheBase, &GitClient{})
+		require.NoError(t, err)
+
+		// Pre-create the cache path so InvalidateCache has something to remove.
+		repo.localRepoPath = filepath.Join(cacheBase, "cached-repo")
+		require.NoError(t, os.MkdirAll(repo.localRepoPath, 0755))
+		marker := filepath.Join(repo.localRepoPath, "marker")
+		require.NoError(t, os.WriteFile(marker, []byte("x"), 0600))
+
+		require.NoError(t, repo.InvalidateCache())
+
+		_, err = os.Stat(repo.localRepoPath)
+		assert.True(t, os.IsNotExist(err), "cache directory must be removed")
+		assert.Nil(t, repo.localRepo, "localRepo handle must be cleared so next Clone re-resolves it")
+	})
+
+	t.Run("Does not error when cache directory does not exist", func(t *testing.T) {
+		t.Setenv("SSH_KEY_PATH", "/dev/null")
+
+		cacheBase := t.TempDir()
+		repo, err := NewGitRepo("url", "branch", "path", "file", cacheBase, &GitClient{})
+		require.NoError(t, err)
+
+		// Path inside cacheBase but does not exist on disk — RemoveAll should succeed silently.
+		repo.localRepoPath = filepath.Join(cacheBase, "does-not-exist")
+		assert.NoError(t, repo.InvalidateCache())
+	})
+
+	t.Run("No-op when localRepoPath is empty", func(t *testing.T) {
+		t.Setenv("SSH_KEY_PATH", "/dev/null")
+
+		repo, err := NewGitRepo("url", "branch", "path", "file", t.TempDir(), &GitClient{})
+		require.NoError(t, err)
+
+		// localRepoPath is only set after the first Clone(); InvalidateCache before
+		// the first Clone must be a safe no-op.
+		repo.localRepoPath = ""
+		assert.NoError(t, repo.InvalidateCache())
+	})
+
+	t.Run("Trailing separator on repoCachePath does not break removal", func(t *testing.T) {
+		t.Setenv("SSH_KEY_PATH", "/dev/null")
+		cacheBase := t.TempDir()
+
+		repo, err := NewGitRepo("url", "branch", "path", "file", cacheBase, &GitClient{})
+		require.NoError(t, err)
+
+		// Operator-supplied REPO_CACHE_PATH could legitimately have a trailing slash.
+		// A raw string-prefix check would build "<base>//" and falsely refuse to remove.
+		repo.repoCachePath = cacheBase + string(os.PathSeparator)
+		repo.localRepoPath = filepath.Join(cacheBase, "cached-repo")
+		require.NoError(t, os.MkdirAll(repo.localRepoPath, 0755))
+
+		require.NoError(t, repo.InvalidateCache())
+		_, err = os.Stat(repo.localRepoPath)
+		assert.True(t, os.IsNotExist(err), "cache directory must be removed")
+	})
+}
+
+func TestIsPermanent(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil is not permanent", nil, false},
+		{"SSH key not provided is permanent", ErrSSHKeyNotProvided, true},
+		{"SSH key not found is permanent", ErrSSHKeyNotFound, true},
+		{"SSH key empty is permanent", ErrSSHKeyEmpty, true},
+		{"wrapped SSH key not found is permanent", fmt.Errorf("clone: %w", ErrSSHKeyNotFound), true},
+		{"transport auth required is permanent", transport.ErrAuthenticationRequired, true},
+		{"transport auth failed is permanent", transport.ErrAuthorizationFailed, true},
+		{"wrapped transport auth failed is permanent", fmt.Errorf("push: %w", transport.ErrAuthorizationFailed), true},
+		{"network error is not permanent", errors.New("connection refused"), false},
+		{"push race error is not permanent", errors.New("non-fast-forward update"), false},
+		{"context deadline exceeded is retryable", context.DeadlineExceeded, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, IsPermanent(tc.err))
+		})
+	}
+}
+
 func TestGetRepoCachePath(t *testing.T) {
 	repo := newTestRepo(t, nil)
 	path1 := repo.getRepoCachePath()
@@ -69,24 +182,20 @@ func TestGenerateCommitMessage(t *testing.T) {
 	tmplData := struct{ AppName string }{AppName: "test-app"}
 
 	repo.gitConfig.CommitMessageFormat = ""
-	msg, err := repo.generateCommitMessage("test-app", tmplData)
-	assert.NoError(t, err)
-	assert.Equal(t, "argo-watcher(test-app): update image tag", msg)
+	assert.Equal(t, "argo-watcher(test-app): update image tag", repo.generateCommitMessage("test-app", tmplData))
 
 	repo.gitConfig.CommitMessageFormat = "ci: bump {{ .AppName }}"
-	msg, err = repo.generateCommitMessage("test-app", tmplData)
-	assert.NoError(t, err)
-	assert.Equal(t, "ci: bump test-app", msg)
+	assert.Equal(t, "ci: bump test-app", repo.generateCommitMessage("test-app", tmplData))
 
+	// Template errors fall back to the default message silently (logged as warn)
+	// so a malformed COMMIT_MESSAGE_FORMAT never aborts a deployment update.
 	repo.gitConfig.CommitMessageFormat = "ci: bump {{ .AppName "
-	msg, err = repo.generateCommitMessage("test-app", tmplData)
-	assert.Error(t, err)
-	assert.Equal(t, "argo-watcher(test-app): update image tag", msg, "Should fallback to default on parse error")
+	assert.Equal(t, "argo-watcher(test-app): update image tag", repo.generateCommitMessage("test-app", tmplData),
+		"parse error should fall back to default")
 
 	repo.gitConfig.CommitMessageFormat = "ci: bump {{ .MissingKey }}"
-	msg, err = repo.generateCommitMessage("test-app", tmplData)
-	assert.Error(t, err)
-	assert.Equal(t, "argo-watcher(test-app): update image tag", msg, "Should fallback to default on execute error")
+	assert.Equal(t, "argo-watcher(test-app): update image tag", repo.generateCommitMessage("test-app", tmplData),
+		"execute error should fall back to default")
 }
 
 func TestMergeParameters(t *testing.T) {
@@ -119,8 +228,8 @@ func TestClone(t *testing.T) {
 
 	t.Run("Cache Not Exists", func(t *testing.T) {
 		mockHandler.EXPECT().PlainOpen(gomock.Any()).Return(nil, git.ErrRepositoryNotExists)
-		mockHandler.EXPECT().PlainClone(gomock.Any(), false, gomock.Any()).Return(nil, nil)
-		err := repo.Clone()
+		mockHandler.EXPECT().PlainClone(gomock.Any(), gomock.Any(), false, gomock.Any()).Return(nil, nil)
+		err := repo.Clone(context.Background())
 		assert.NoError(t, err)
 	})
 
@@ -129,8 +238,8 @@ func TestClone(t *testing.T) {
 		require.NoError(t, os.WriteFile(repo.localRepoPath, []byte("garbage"), 0600))
 
 		mockHandler.EXPECT().PlainOpen(gomock.Any()).Return(nil, errors.New("invalid repo"))
-		mockHandler.EXPECT().PlainClone(gomock.Any(), false, gomock.Any()).Return(nil, nil)
-		err := repo.Clone()
+		mockHandler.EXPECT().PlainClone(gomock.Any(), gomock.Any(), false, gomock.Any()).Return(nil, nil)
+		err := repo.Clone(context.Background())
 		assert.NoError(t, err)
 		_, err = os.Stat(repo.localRepoPath)
 		assert.True(t, os.IsNotExist(err), "Corrupted cache should have been removed")
@@ -145,31 +254,23 @@ func TestClone(t *testing.T) {
 
 		mockHandler.EXPECT().PlainOpen(gomock.Any()).Return(r, nil)
 
-		err = repo.Clone()
+		err = repo.Clone(context.Background())
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to fetch repo: repository not found")
 	})
-}
 
-func TestNukeAndReclone(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	mockHandler := mock.NewMockGitHandler(ctrl)
-	repo := newTestRepo(t, mockHandler)
-	repo.localRepoPath = repo.getRepoCachePath()
+	t.Run("AddSSHKey is not called when sshAuth already set", func(t *testing.T) {
+		// Simulate a second Clone call (e.g. race-recovery path) where the key
+		// was loaded during the first Clone.  AddSSHKey must NOT be called again.
+		repo.sshAuth = &ssh.PublicKeys{}
 
-	require.NoError(t, os.MkdirAll(repo.localRepoPath, 0755))
-	dummyFile := filepath.Join(repo.localRepoPath, "test.txt")
-	require.NoError(t, os.WriteFile(dummyFile, []byte("test"), 0644))
+		mockHandler.EXPECT().PlainOpen(gomock.Any()).Return(nil, git.ErrRepositoryNotExists)
+		mockHandler.EXPECT().PlainClone(gomock.Any(), gomock.Any(), false, gomock.Any()).Return(nil, nil)
+		// No AddSSHKey expectation — strict controller fails the test if it is called.
 
-	mockHandler.EXPECT().AddSSHKey(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
-	mockHandler.EXPECT().PlainOpen(gomock.Any()).Return(nil, git.ErrRepositoryNotExists)
-	mockHandler.EXPECT().PlainClone(gomock.Any(), false, gomock.Any()).Return(nil, nil)
-
-	err := repo.NukeAndReclone()
-	assert.NoError(t, err)
-
-	_, err = os.Stat(repo.localRepoPath)
-	assert.True(t, os.IsNotExist(err), "Cache directory should be removed")
+		assert.NoError(t, repo.Clone(context.Background()))
+		repo.sshAuth = nil // reset for any future subtests
+	})
 }
 
 // setupGitForTest is a helper to create a clean git environment for each sub-test.
@@ -221,7 +322,7 @@ func TestFullUpdateAppCycle(t *testing.T) {
 		newParams := &ArgoOverrideFile{}
 		newParams.Helm.Parameters = []ArgoParameterOverride{{Name: "image.tag", Value: "v2.0.0"}}
 
-		err := repo.UpdateApp("my-app", newParams, nil)
+		err := repo.UpdateApp(context.Background(), "my-app", newParams, nil)
 		require.NoError(t, err)
 
 		content, err := os.ReadFile(valuesFile)
@@ -247,19 +348,39 @@ func TestFullUpdateAppCycle(t *testing.T) {
 		// First, perform a successful change.
 		initialParams := &ArgoOverrideFile{}
 		initialParams.Helm.Parameters = []ArgoParameterOverride{{Name: "image.tag", Value: "v2.0.0"}}
-		err := repo.UpdateApp("my-app", initialParams, nil)
+		err := repo.UpdateApp(context.Background(), "my-app", initialParams, nil)
 		require.NoError(t, err)
 
 		// Now, try again with the same content.
 		headBefore, err := localRepo.Head()
 		require.NoError(t, err)
 
-		err = repo.UpdateApp("my-app", initialParams, nil)
+		err = repo.UpdateApp(context.Background(), "my-app", initialParams, nil)
 		require.NoError(t, err)
 
 		headAfter, err := localRepo.Head()
 		require.NoError(t, err)
 		assert.Equal(t, headBefore.Hash(), headAfter.Hash())
+	})
+
+	t.Run("Budget exhausted before push returns non-race error", func(t *testing.T) {
+		_, _, localRepo, _, localPath := setupGitForTest(t)
+
+		repo := newTestRepo(t, &GitClient{})
+		repo.localRepo = localRepo
+		repo.localRepoPath = localPath
+		appDir := filepath.Join(localPath, "apps")
+		require.NoError(t, os.Mkdir(appDir, 0755))
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel() // already expired before UpdateApp runs
+
+		newParams := &ArgoOverrideFile{}
+		newParams.Helm.Parameters = []ArgoParameterOverride{{Name: "image.tag", Value: "v2.0.0"}}
+
+		err := repo.UpdateApp(ctx, "my-app", newParams, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "budget exhausted before push")
 	})
 
 	t.Run("Failure - Push Fails due to Non-Fast-Forward", func(t *testing.T) {
@@ -297,9 +418,10 @@ func TestFullUpdateAppCycle(t *testing.T) {
 		newParams := &ArgoOverrideFile{}
 		newParams.Helm.Parameters = []ArgoParameterOverride{{Name: "image.tag", Value: "v3.0.0"}}
 
-		err = repo.UpdateApp("my-app", newParams, nil)
+		err = repo.UpdateApp(context.Background(), "my-app", newParams, nil)
+		// We no longer classify push errors — UpdateApp just surfaces whatever go-git
+		// returns. The retry loop in the caller decides whether to retry.
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "non-fast-forward update")
 	})
 }
 
@@ -342,7 +464,7 @@ func TestCommitAndPush_WriteFileError(t *testing.T) {
 	fullPath := filepath.Join(localPath, "apps")
 	require.NoError(t, os.Mkdir(fullPath, 0755))
 
-	err = repo.commitAndPush(fullPath, "msg", &ArgoOverrideFile{})
+	err = repo.commitAndPush(context.Background(), fullPath, "msg", &ArgoOverrideFile{})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to write override file")
 }
@@ -365,7 +487,7 @@ func TestGitClient_Coverage(t *testing.T) {
 
 	// 3. Execute and cover PlainClone.
 	clonePath := t.TempDir()
-	_, err = client.PlainClone(clonePath, false, &git.CloneOptions{URL: sourcePath})
+	_, err = client.PlainClone(context.Background(), clonePath, false, &git.CloneOptions{URL: sourcePath})
 	require.NoError(t, err, "PlainClone method failed")
 
 	// 4. Execute and cover PlainOpen on the new clone.
@@ -387,15 +509,74 @@ func TestUpdateApp_ErrorHandling(t *testing.T) {
 	repo.localRepo = localRepo
 	repo.localRepoPath = localPath
 
-	t.Run("Failure on generating commit message", func(t *testing.T) {
+	t.Run("Malformed commit message template uses default and does not abort update", func(t *testing.T) {
 		repo.gitConfig.CommitMessageFormat = "{{ .Invalid "
 		newParams := &ArgoOverrideFile{}
+		appDir := filepath.Join(localPath, "apps")
+		require.NoError(t, os.Mkdir(appDir, 0755))
 
-		err := repo.UpdateApp("my-app", newParams, nil)
-
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "template: commitMsg:1: unclosed action")
+		// A bad template must NOT abort the update — it falls back to the default
+		// commit message and the write succeeds.
+		err := repo.UpdateApp(context.Background(), "my-app", newParams, nil)
+		assert.NoError(t, err)
 	})
+}
+
+func TestAssertInsideRoot(t *testing.T) {
+	root := t.TempDir()
+
+	t.Run("Path inside root is accepted", func(t *testing.T) {
+		assert.NoError(t, assertInsideRoot(root, filepath.Join(root, "apps", "values.yaml")))
+	})
+
+	t.Run("Path traversal is rejected", func(t *testing.T) {
+		err := assertInsideRoot(root, filepath.Join(root, "..", "etc", "passwd"))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not inside repository root")
+	})
+
+	t.Run("Deeply nested traversal is rejected", func(t *testing.T) {
+		// Simulates FileName = "../../../../.ssh/authorized_keys"
+		escaped := filepath.Join(root, "apps", "..", "..", "..", "..", ".ssh", "authorized_keys")
+		err := assertInsideRoot(root, escaped)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not inside repository root")
+	})
+
+	t.Run("Root itself is rejected (not strictly inside)", func(t *testing.T) {
+		// The override file must be inside the root, not the root itself.
+		err := assertInsideRoot(root, root)
+		require.Error(t, err)
+	})
+
+	t.Run("Legitimate path whose first component starts with .. is accepted", func(t *testing.T) {
+		// filepath.Rel returns "..foo/file.yaml" here; a naive strings.HasPrefix(rel, "..")
+		// check would falsely flag it as an escape attempt. Only "..", ".."+separator, or
+		// ".." with deeper separator-segmented prefixes count as parent traversal.
+		assert.NoError(t, assertInsideRoot(root, filepath.Join(root, "..foo", "file.yaml")))
+	})
+
+	t.Run("Parent-directory escape (rel == \"..\") is rejected", func(t *testing.T) {
+		// The parent dir of root, after Clean, yields rel == ".." — must be rejected.
+		err := assertInsideRoot(root, filepath.Dir(root))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not inside repository root")
+	})
+}
+
+func TestInvalidateCache_PathEscapeGuard(t *testing.T) {
+	t.Setenv("SSH_KEY_PATH", "/dev/null")
+
+	cacheBase := t.TempDir()
+	repo, err := NewGitRepo("url", "branch", "path", "file", cacheBase, &GitClient{})
+	require.NoError(t, err)
+
+	// Simulate misuse: localRepoPath set to a path outside repoCachePath.
+	repo.localRepoPath = "/tmp/dangerous-removal-target"
+
+	err = repo.InvalidateCache()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "refusing to remove")
 }
 
 // TestCorruptedGitRepo_ErrorPaths covers failures on an invalid git repo.
@@ -414,10 +595,10 @@ func TestCorruptedGitRepo_ErrorPaths(t *testing.T) {
 
 	mockHandler.EXPECT().AddSSHKey(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 	mockHandler.EXPECT().PlainOpen(gomock.Any()).Return(corruptRepo, nil)
-	mockHandler.EXPECT().PlainClone(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
+	mockHandler.EXPECT().PlainClone(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
 	// The clone should succeed because the corruption triggers a successful re-clone.
-	err = repo.Clone()
+	err = repo.Clone(context.Background())
 	assert.NoError(t, err)
 }
 

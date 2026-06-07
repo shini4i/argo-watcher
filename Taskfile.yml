@@ -58,6 +58,16 @@ tasks:
       - echo "===> Running tests"
       - go test -v ./... -count=1 -coverprofile coverage.out
 
+  test-integration:
+    desc: Run integration tests (requires docker; brings up gitea + toxiproxy). Must not be run concurrently.
+    deps: [mocks]
+    cmds:
+      - echo "===> Starting integration services"
+      - docker compose --profile integration up -d --wait gitea toxiproxy
+      - defer: docker compose --profile integration down -v
+      - echo "===> Running integration tests"
+      - go test -v -race -tags=integration -count=1 -timeout=5m ./internal/models/...
+
   start-test-services:
     desc: Start test services
     internal: true

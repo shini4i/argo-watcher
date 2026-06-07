@@ -47,7 +47,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres
+        image: postgres:18.4
         env:
           POSTGRES_PASSWORD: postgres
         options: >-
@@ -93,6 +93,61 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage.out
+
+  integration-tests:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    services:
+      gitea:
+        image: gitea/gitea:1.22
+        env:
+          GITEA__security__INSTALL_LOCK: "true"
+          GITEA__service__DISABLE_REGISTRATION: "false"
+        options: >-
+          --health-cmd "wget -qO- http://localhost:3000/api/healthz || exit 1"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 30
+        ports:
+          - 3000:3000
+          - 2222:22
+
+      # toxiproxy proxies SSH to gitea by service hostname. GH Actions places
+      # all services on a shared Docker bridge network with embedded DNS, so
+      # "gitea:22" resolves correctly between containers.
+      # No health check: the toxiproxy image is distroless (no shell or wget),
+      # so --health-cmd cannot run. Test code polls the admin API instead.
+      toxiproxy:
+        image: ghcr.io/shopify/toxiproxy:2.9.0
+        ports:
+          - 8474:8474
+          - 12222:12222
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5.6.0
+        with:
+          go-version-file: go.mod
+
+      - name: Install Task
+        uses: arduino/setup-task@24c5e13bce349197642746563945fcdf9355e8f4  # v2.0.0
+
+      - name: Install environment dependencies
+        run: task install-deps
+
+      - name: Generate mocks
+        # internal/models/argo_test.go imports pkg/updater/mock; the package
+        # must build cleanly before our integration tests can compile.
+        run: task mocks
+
+      - name: Run integration tests
+        # SSH_KEY_PATH and GIT_TIMEOUT are set per-test via t.Setenv inside
+        # setupGitea / each test function; no workflow-level env needed here.
+        run: go test -race -tags=integration -count=1 -timeout=5m ./internal/models/...
 
   frontend_test:
     name: Frontend Tests
