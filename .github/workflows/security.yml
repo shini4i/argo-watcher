@@ -194,13 +194,23 @@ jobs:
       - name: Nuclei passive sweep
         uses: projectdiscovery/nuclei-action@32a91c0da7be14c07b0ade6c14fa0f6e78d97c9c # v3.1.0
         with:
-          # -exclude-id drops findings that are intentional for argo-watcher,
-          # each kept here with its rationale (extend as findings are triaged):
-          #   prometheus-metrics — /metrics is an unauthenticated Prometheus
-          #     scrape target by design, secured at the network layer (e.g. a
-          #     NetworkPolicy), not in-app. Not a vulnerability for this service.
+          # Scope the sweep to argo-watcher's surface and keep the report
+          # signal-only:
+          #   -type http — only HTTP templates. Without it, nuclei's network
+          #     templates (ssh/smb/ikev2/...) ignore the :8080 in the URL, probe
+          #     standard ports on 127.0.0.1, and report the CI runner's OWN
+          #     services rather than the application.
+          #   -exclude-severity info — drop informational detections (technology
+          #     fingerprinting, missing-header/SRI notes). The gate is medium+,
+          #     and these added volume without actionable signal.
+          #   -exclude-id prometheus-metrics — /metrics is an unauthenticated
+          #     Prometheus scrape target by design (secured at the network layer,
+          #     not in-app), so its medium finding is not a vulnerability here.
+          #     Extend -exclude-id as further findings are triaged.
           args: >-
             -u http://127.0.0.1:8080 -no-color
+            -type http
+            -exclude-severity info
             -exclude-id prometheus-metrics
             -se ${{ github.workspace }}/nuclei-out/passive.sarif
             -jle ${{ github.workspace }}/nuclei-out/passive.jsonl
