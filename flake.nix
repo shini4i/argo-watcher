@@ -26,6 +26,16 @@
           git
         ];
 
+        # Security scanners, mirroring the CI security workflow so they can be
+        # run locally. gosec is already part of goToolchain. nuclei is
+        # intentionally absent — DAST runs only in CI against a live server.
+        securityTools = with pkgs; [
+          govulncheck
+          trivy
+          trufflehog
+          zizmor
+        ];
+
         viteShim = pkgs.writeShellApplication {
           name = "vite";
           runtimeInputs = [ pkgs.nodejs_20 ];
@@ -74,7 +84,7 @@
       in
       {
         devShells.default = pkgs.mkShell {
-          packages = goToolchain ++ preCommitTools ++ frontendToolchain ++ docsToolchain;
+          packages = goToolchain ++ preCommitTools ++ securityTools ++ frontendToolchain ++ docsToolchain;
           shellHook = ''
             export GOPATH="$PWD/.go"
             export GOMODCACHE="$PWD/.gomod"

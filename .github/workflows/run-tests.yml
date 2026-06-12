@@ -13,32 +13,7 @@ on:
       - 'web/**'
 
 jobs:
-  security_scan:
-    name: Security scan
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5.6.0
-        with:
-          go-version-file: go.mod
-
-      - name: Install Task
-        uses: arduino/setup-task@24c5e13bce349197642746563945fcdf9355e8f4  # v2.0.0
-
-      - name: Install environment dependencies
-        run: task install-deps
-
-      - name: Generate swagger docs
-        run: task docs
-
-      - name: Run Gosec Security Scanner
-        uses: securego/gosec@5e5517beec77b8228ba43ec8d7cc22d82ed31924  # v2.25.0
-        with:
-          args: ./...
-
+  # gosec and govulncheck moved to the dedicated security.yml workflow.
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -59,9 +34,10 @@ jobs:
           - 5432:5432
 
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5.6.0
         with:
@@ -127,7 +103,9 @@ jobs:
           - 12222:12222
 
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5.6.0
         with:
@@ -156,7 +134,9 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
         with:
@@ -178,3 +158,35 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: web/coverage/lcov.info
           flags: frontend
+
+  keycloak-e2e:
+    name: Keycloak auth e2e
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+
+      - name: Install Task
+        uses: arduino/setup-task@24c5e13bce349197642746563945fcdf9355e8f4 # v2.0.0
+
+      - name: Start Keycloak
+        # Imports test/keycloak on boot; the test polls the realm's OIDC
+        # discovery endpoint for readiness (waitForKeycloak), so no --wait needed.
+        run: docker compose --profile integration up -d keycloak
+
+      - name: Run Keycloak auth integration tests
+        # -run Keycloak keeps this job focused on the auth e2e; the server unit
+        # tests are already covered by the `test` job.
+        run: go test -race -tags=integration -count=1 -timeout=5m -run Keycloak ./internal/server/...
+
+      - name: Stop Keycloak
+        if: always()
+        run: docker compose --profile integration down -v
