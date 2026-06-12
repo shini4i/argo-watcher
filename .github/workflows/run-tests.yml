@@ -158,3 +158,35 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: web/coverage/lcov.info
           flags: frontend
+
+  keycloak-e2e:
+    name: Keycloak auth e2e
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+
+      - name: Install Task
+        uses: arduino/setup-task@24c5e13bce349197642746563945fcdf9355e8f4 # v2.0.0
+
+      - name: Start Keycloak
+        # Imports test/keycloak on boot; the test polls the realm's OIDC
+        # discovery endpoint for readiness (waitForKeycloak), so no --wait needed.
+        run: docker compose --profile integration up -d keycloak
+
+      - name: Run Keycloak auth integration tests
+        # -run Keycloak keeps this job focused on the auth e2e; the server unit
+        # tests are already covered by the `test` job.
+        run: go test -race -tags=integration -count=1 -timeout=5m -run Keycloak ./internal/server/...
+
+      - name: Stop Keycloak
+        if: always()
+        run: docker compose --profile integration down -v

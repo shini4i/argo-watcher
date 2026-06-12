@@ -1,0 +1,53 @@
+{
+  "realm": "argo-watcher-e2e",
+  "enabled": true,
+  "sslRequired": "none",
+  "groups": [
+    { "name": "privileged" }
+  ],
+  "clients": [
+    {
+      "clientId": "argo-watcher",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "full.path": "false",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "claim.name": "groups"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "priv-user",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        { "type": "password", "value": "priv-pass", "temporary": false }
+      ],
+      "groups": [ "/privileged" ]
+    },
+    {
+      "username": "regular-user",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        { "type": "password", "value": "regular-pass", "temporary": false }
+      ],
+      "groups": []
+    }
+  ]
+}

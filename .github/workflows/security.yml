@@ -135,6 +135,11 @@ jobs:
       - name: Install environment dependencies
         run: task install-deps
 
+      - name: Start Keycloak
+        # Needed only for the authenticated DAST pass; bring it up now so it
+        # boots while the UI/binary build. Torn down at the end of the job.
+        run: docker compose --profile integration up -d keycloak
+
       - name: Build UI and server binary
         # `task build` depends on `task docs`, which writes
         # web/public/swagger/swagger.json (reused as the DAST fuzz seed below).
@@ -155,6 +160,15 @@ jobs:
           PORT: "8080"
           STATIC_FILES_PATH: web/dist
           LOG_LEVEL: info
+          # Keycloak on, pointed at the compose container (host port 8090), so the
+          # auth-gated endpoints require a token. Token validation only happens
+          # when a request carries one, so the unauthenticated passes below are
+          # unaffected (gated endpoints simply return 401 to them).
+          KEYCLOAK_ENABLED: "true"
+          KEYCLOAK_URL: http://localhost:8090
+          KEYCLOAK_REALM: argo-watcher-e2e
+          KEYCLOAK_CLIENT_ID: argo-watcher
+          KEYCLOAK_PRIVILEGED_GROUPS: privileged
         # Backgrounded; the GitHub Actions job tears the process down on exit.
         run: ./argo-watcher &
 
@@ -227,6 +241,47 @@ jobs:
             -se ${{ github.workspace }}/nuclei-out/dast.sarif
             -jle ${{ github.workspace }}/nuclei-out/dast.jsonl
 
+      - name: Wait for Keycloak and prepare authenticated scan
+        # A missing token means Keycloak/the realm is broken — fail loudly here
+        # rather than silently scan without auth.
+        run: |
+          kc=http://localhost:8090
+          realm=argo-watcher-e2e
+          for _ in $(seq 1 60); do
+            if curl -fsS "$kc/realms/$realm/.well-known/openid-configuration" >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+          if ! curl -fsS "$kc/realms/$realm/.well-known/openid-configuration" >/dev/null 2>&1; then
+            echo "::error::Keycloak realm $realm not ready after 120s"
+            exit 1
+          fi
+          token=$(curl -fsS -X POST "$kc/realms/$realm/protocol/openid-connect/token" \
+            -d grant_type=password -d client_id=argo-watcher \
+            -d username=priv-user -d password=priv-pass | jq -r '.access_token // empty')
+          if [ -z "$token" ]; then
+            echo "::error::could not obtain a Keycloak token for the authenticated scan"
+            exit 1
+          fi
+          echo "::add-mask::$token"
+          # nuclei injects custom headers from its config file; carry the
+          # privileged token on every request so the gated endpoints are reached.
+          printf 'header:\n  - "Keycloak-Authorization: Bearer %s"\n' "$token" \
+            > "${{ github.workspace }}/nuclei-out/auth-config.yaml"
+
+      # Pass 3 - authenticated DAST: identical swagger-seeded fuzzing, but the
+      # config file carries a privileged Keycloak token so the auth-gated
+      # endpoints (deploy-lock, validated task creation) are actually exercised.
+      # Best-effort like pass 2; the medium+ gate stays authoritative.
+      - name: Nuclei authenticated API fuzzing (DAST)
+        continue-on-error: true
+        uses: projectdiscovery/nuclei-action@32a91c0da7be14c07b0ade6c14fa0f6e78d97c9c # v3.1.0
+        with:
+          config-path: ${{ github.workspace }}/nuclei-out/auth-config.yaml
+          args: >-
+            -l ${{ github.workspace }}/nuclei-out/spec.json -im swagger -sfv -dast -no-color
+            -se ${{ github.workspace }}/nuclei-out/authed.sarif
+            -jle ${{ github.workspace }}/nuclei-out/authed.jsonl
+
       - name: Gate on medium+ findings
         run: |
           shopt -s nullglob
@@ -256,3 +311,7 @@ jobs:
         with:
           sarif_file: nuclei-out
           category: nuclei-dast
+
+      - name: Stop Keycloak
+        if: always()
+        run: docker compose --profile integration down -v

@@ -36,7 +36,7 @@ The project uses [Task](https://taskfile.dev/) as a build and automation tool. A
 | `task mocks`        | Generate mock interfaces for unit tests                            |
 | `task docs`         | Generate the Swagger JSON spec                                     |
 | `task test`         | Run the full test suite (generates mocks and docs first)           |
-| `task test-integration` | Run integration tests against live Gitea + Toxiproxy (requires Docker) |
+| `task test-integration` | Run integration tests against live Gitea, Toxiproxy + Keycloak (requires Docker) |
 | `task build`        | Build the Go binary                                                 |
 | `task build-ui`     | Build the React frontend bundle                                    |
 | `task lint-web`     | Lint the React frontend code                                       |
@@ -158,13 +158,13 @@ go test -v -run TestArgoStatusUpdaterCheck ./...
 
 ### Integration Tests
 
-Integration tests exercise the GitOps updater against a real Gitea instance with TCP fault injection via Toxiproxy. Docker must be running before you start them.
+Integration tests exercise the GitOps updater against a real Gitea instance with TCP fault injection via Toxiproxy, and the Keycloak auth flow (privileged vs non-privileged access to the deploy lock) against a real Keycloak. Docker must be running before you start them.
 
 ```bash
 task test-integration
 ```
 
-This command brings up the `integration` Docker Compose profile (Gitea and Toxiproxy), runs the tests, then tears the stack down automatically. If the integration stack is already running from a previous session, run `docker compose --profile integration down -v` before re-running the task to avoid port conflicts.
+This command brings up the `integration` Docker Compose profile (Gitea, Toxiproxy, and Keycloak), runs the tests, then tears the stack down automatically. If the integration stack is already running from a previous session, run `docker compose --profile integration down -v` before re-running the task to avoid port conflicts.
 
 ### Frontend Tests
 

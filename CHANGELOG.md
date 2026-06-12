@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Workflow Audit` CI workflow running zizmor against the GitHub Actions
   definitions.
 - Local TruffleHog pre-commit hook so secrets never reach a commit.
+- Keycloak-based end-to-end auth tests: a real Keycloak (docker-compose
+  `integration` profile, imported from a test realm) verifies that only
+  privileged-group users can set or release the deploy lock.
+- A Keycloak-enabled nuclei DAST pass that fuzzes the authenticated API surface
+  with a privileged token.
 
 ### Changed
 
