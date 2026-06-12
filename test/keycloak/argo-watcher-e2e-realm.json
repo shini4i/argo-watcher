@@ -35,6 +35,10 @@
       "username": "priv-user",
       "enabled": true,
       "emailVerified": true,
+      "firstName": "Priv",
+      "lastName": "User",
+      "email": "priv-user@example.com",
+      "requiredActions": [],
       "credentials": [
         { "type": "password", "value": "priv-pass", "temporary": false }
       ],
@@ -44,6 +48,10 @@
       "username": "regular-user",
       "enabled": true,
       "emailVerified": true,
+      "firstName": "Regular",
+      "lastName": "User",
+      "email": "regular-user@example.com",
+      "requiredActions": [],
       "credentials": [
         { "type": "password", "value": "regular-pass", "temporary": false }
       ],
