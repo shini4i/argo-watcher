@@ -194,8 +194,14 @@ jobs:
       - name: Nuclei passive sweep
         uses: projectdiscovery/nuclei-action@32a91c0da7be14c07b0ade6c14fa0f6e78d97c9c # v3.1.0
         with:
+          # -exclude-id drops findings that are intentional for argo-watcher,
+          # each kept here with its rationale (extend as findings are triaged):
+          #   prometheus-metrics — /metrics is an unauthenticated Prometheus
+          #     scrape target by design, secured at the network layer (e.g. a
+          #     NetworkPolicy), not in-app. Not a vulnerability for this service.
           args: >-
             -u http://127.0.0.1:8080 -no-color
+            -exclude-id prometheus-metrics
             -se ${{ github.workspace }}/nuclei-out/passive.sarif
             -jle ${{ github.workspace }}/nuclei-out/passive.jsonl
 
