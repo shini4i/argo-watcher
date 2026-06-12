@@ -178,6 +178,11 @@ jobs:
         run: |
           mkdir -p nuclei-out
 
+          # install-only installs just the binary, and -disable-update-check
+          # suppresses the first-run auto-download, so the community templates
+          # must be fetched explicitly (cached across runs by the action).
+          nuclei -update-templates -disable-update-check
+
           # Pass 1 - passive template sweep: exposures, misconfiguration,
           # security headers, and technology-detected CVEs against the live
           # server (API + served frontend). A non-zero exit here is a real scan
