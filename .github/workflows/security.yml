@@ -256,7 +256,7 @@ jobs:
             exit 1
           fi
           token=$(curl -fsS -X POST "$kc/realms/$realm/protocol/openid-connect/token" \
-            -d grant_type=password -d client_id=argo-watcher \
+            -d grant_type=password -d client_id=argo-watcher -d scope=openid \
             -d username=priv-user -d password=priv-pass | jq -r '.access_token // empty')
           if [ -z "$token" ]; then
             echo "::error::could not obtain a Keycloak token for the authenticated scan"

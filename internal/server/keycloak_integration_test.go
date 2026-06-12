@@ -58,6 +58,10 @@ func keycloakToken(t *testing.T, username, password string) string {
 		"client_id":  {keycloakClientID},
 		"username":   {username},
 		"password":   {password},
+		// Keycloak 26's userinfo endpoint rejects tokens without the openid
+		// scope (403), so request it explicitly — the same scope a real OIDC
+		// login obtains. argo-watcher validates by calling userinfo.
+		"scope": {"openid"},
 	}
 
 	resp, err := http.PostForm(tokenURL, form) // #nosec G107 - fixed local test URL
