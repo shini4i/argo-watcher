@@ -73,7 +73,9 @@ jobs:
 
       - name: Scan dependencies
         # Scans go.mod and web/package-lock.json, so both backend and frontend
-        # dependencies are covered.
+        # dependencies are covered. The CI checkout is clean, so the in-repo Go
+        # module cache the flake devshell creates locally (.go/.gomod) is absent
+        # here — nothing to exclude.
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
@@ -81,10 +83,6 @@ jobs:
           scanners: vuln
           severity: HIGH,CRITICAL
           exit-code: '1'
-          # .gomod/.go are the GOPATH/module cache the flake devshell creates
-          # locally (gitignored, absent in CI). Excluded so a local `trivy fs`
-          # doesn't flag stale cached module versions.
-          skip-dirs: .gomod,.go
 
   trufflehog:
     name: TruffleHog (secret scan)
