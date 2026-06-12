@@ -101,7 +101,10 @@ jobs:
       - name: Scan for secrets
         uses: trufflesecurity/trufflehog@d411fff7b8879a62509f3fa98c07f247ac089a51 # v3.95.5
         with:
-          extra_args: --results=verified,unknown
+          # .trufflehog-exclude skips files holding intentional non-secrets
+          # (local dev credentials, SSH key fixtures). Keep it in sync with the
+          # pre-commit hook's exclude regex.
+          extra_args: --results=verified,unknown --exclude-paths .trufflehog-exclude
 
   # Dynamic application security testing: build the real shipped artifact (Go
   # binary + embedded web/dist UI), run it, and scan the live HTTP surface.

@@ -30,3 +30,9 @@ repos:
         name: TruffleHog secret scan
         entry: trufflehog filesystem --results=verified,unknown --fail
         language: system
+        # docker-compose.yml (local dev credentials) and updater_test.go (SSH
+        # key fixtures for unit tests) hold intentional non-secrets that
+        # TruffleHog flags as "unknown". Filesystem mode ignores --exclude-paths
+        # for explicitly-passed files, so skip them at the pre-commit layer.
+        # Keep this list in sync with .trufflehog-exclude (used by CI).
+        exclude: ^(docker-compose\.yml|pkg/updater/updater_test\.go)$
