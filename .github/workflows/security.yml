@@ -169,47 +169,46 @@ jobs:
           echo "argo-watcher did not become ready in time"
           exit 1
 
-      - name: Install Nuclei
+      - name: Prepare Nuclei inputs
+        run: |
+          mkdir -p "${{ github.workspace }}/nuclei-out"
+          # The swag-generated spec is Swagger 2.0 with no host/schemes; inject
+          # them so nuclei's OpenAPI input mode can resolve the target. (With
+          # -im, -u/-target must NOT be combined — the maintainers note it
+          # causes 400s — so the target lives in the spec instead.)
+          jq '.host = "127.0.0.1:8080" | .schemes = ["http"]' \
+            web/public/swagger/swagger.json > "${{ github.workspace }}/nuclei-out/spec.json"
+
+      # The nuclei-action (not install-only) installs nuclei AND downloads/caches
+      # the community templates, which is why scanning runs through the action
+      # rather than a bare binary. Output paths are absolute so they resolve
+      # regardless of the action's working directory.
+      #
+      # Pass 1 - passive template sweep (exposures, misconfiguration, security
+      # headers, technology-detected CVEs) against the live server: the API and
+      # the served frontend. nuclei exits 0 even with findings, so a failure here
+      # is a real scan error and should fail the job.
+      - name: Nuclei passive sweep
         uses: projectdiscovery/nuclei-action@32a91c0da7be14c07b0ade6c14fa0f6e78d97c9c # v3.1.0
         with:
-          install-only: true
+          args: >-
+            -u http://127.0.0.1:8080 -no-color
+            -se ${{ github.workspace }}/nuclei-out/passive.sarif
+            -jle ${{ github.workspace }}/nuclei-out/passive.jsonl
 
-      - name: Run Nuclei scans
-        run: |
-          mkdir -p nuclei-out
-
-          # install-only installs just the binary, and -disable-update-check
-          # suppresses the first-run auto-download, so the community templates
-          # must be fetched explicitly (cached across runs by the action).
-          nuclei -update-templates -disable-update-check
-
-          # Pass 1 - passive template sweep: exposures, misconfiguration,
-          # security headers, and technology-detected CVEs against the live
-          # server (API + served frontend). A non-zero exit here is a real scan
-          # error (e.g. target unreachable) and should fail the job; nuclei
-          # exits 0 even when it has findings.
-          nuclei -u http://127.0.0.1:8080 \
-            -disable-update-check -no-color \
-            -se nuclei-out/passive.sarif -jle nuclei-out/passive.jsonl
-
-          # Pass 2 - active DAST fuzzing seeded by the generated Swagger spec, so
-          # nuclei fuzzes argo-watcher's documented JSON API endpoints/params
-          # (SQLi/XSS/SSRF/cmd-injection) rather than guessing.
-          #
-          # With -im, nuclei reads the target from the spec itself; -u/-target
-          # MUST NOT be combined (the maintainers note it causes 400s). Our
-          # swag-generated spec is Swagger 2.0 with no host/schemes, so we inject
-          # them to make the spec self-contained. -sfv skips required-var
-          # validation for path/query params. Best-effort: a nuclei execution
-          # error (e.g. spec parsing) is surfaced as a warning but does not fail
-          # the job — findings still feed the gate below.
-          jq '.host = "127.0.0.1:8080" | .schemes = ["http"]' \
-            web/public/swagger/swagger.json > nuclei-out/spec.json
-          if ! nuclei -l nuclei-out/spec.json -im swagger -sfv -dast \
-              -disable-update-check -no-color \
-              -se nuclei-out/dast.sarif -jle nuclei-out/dast.jsonl; then
-            echo "::warning::Nuclei Swagger DAST pass exited non-zero (findings still evaluated)"
-          fi
+      # Pass 2 - active DAST fuzzing seeded by the generated Swagger spec, so
+      # nuclei fuzzes argo-watcher's documented JSON API endpoints/params
+      # (SQLi/XSS/SSRF/cmd-injection) rather than guessing. Best-effort: a nuclei
+      # execution error (e.g. spec parsing) must not fail the job — the gate
+      # below is the authoritative pass/fail, fed by whatever findings exist.
+      - name: Nuclei API fuzzing (DAST)
+        continue-on-error: true
+        uses: projectdiscovery/nuclei-action@32a91c0da7be14c07b0ade6c14fa0f6e78d97c9c # v3.1.0
+        with:
+          args: >-
+            -l ${{ github.workspace }}/nuclei-out/spec.json -im swagger -sfv -dast -no-color
+            -se ${{ github.workspace }}/nuclei-out/dast.sarif
+            -jle ${{ github.workspace }}/nuclei-out/dast.jsonl
 
       - name: Gate on medium+ findings
         run: |
