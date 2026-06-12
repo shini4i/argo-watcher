@@ -6,7 +6,7 @@
 
 Argo Watcher bridges the gap between your CI pipeline and Argo CD, providing real-time status and visibility into your deployments. No more "fire-and-forget" deployments.
 
-![GitHub Actions](https://img.shields.io/github/actions/workflow/status/shini4i/argo-watcher/run-tests-and-sonar-scan.yml?branch=main)
+![GitHub Actions](https://img.shields.io/github/actions/workflow/status/shini4i/argo-watcher/run-tests.yml?branch=main)
 ![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/shini4i/argo-watcher)
 ![GitHub release (latest by date)](https://img.shields.io/github/v/release/shini4i/argo-watcher)
 [![codecov](https://codecov.io/gh/shini4i/argo-watcher/graph/badge.svg?token=9JI19X0BIN)](https://codecov.io/gh/shini4i/argo-watcher)
@@ -99,6 +99,11 @@ For more detailed information on configuration, API usage, and advanced features
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
 
 See the [Development Guide](https://argo-watcher.readthedocs.io/en/latest/development/) for setting up a local environment and understanding the project structure.
+
+The pre-commit hooks include a [TruffleHog](https://github.com/trufflesecurity/trufflehog) secret scan that needs the `trufflehog` binary on `$PATH`.
+
+- **With Nix (recommended):** `nix develop` provides `trufflehog` and the other scanners (`gosec`, `govulncheck`, `trivy`, `zizmor`).
+- **Without Nix:** install `trufflehog` (and the other scanners) manually, then run `pre-commit install`.
 
 ## License
 

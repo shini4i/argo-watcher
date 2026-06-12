@@ -16,6 +16,8 @@ Install the Git hooks:
 pre-commit install
 ```
 
+One hook is a [TruffleHog](https://github.com/trufflesecurity/trufflehog) secret scan that needs the `trufflehog` binary on `$PATH`. `nix develop` provides it along with the other scanners used in CI (`gosec`, `govulncheck`, `trivy`, `zizmor`); without Nix, install `trufflehog` manually.
+
 Install Go tooling (mock generator, swagger, migration tool):
 
 ```bash

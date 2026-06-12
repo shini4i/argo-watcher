@@ -1,0 +1,38 @@
+name: Workflow Audit
+
+# zizmor only ever audits the workflow definitions, so it runs solely when a
+# workflow file changes. Path filters are workflow-level (not per-job), which
+# is why this lives in its own file rather than alongside the other scanners
+# in security.yml.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/**
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/**
+
+jobs:
+  zizmor:
+    name: Zizmor (GitHub Actions audit)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Audit workflows
+        uses: zizmorcore/zizmor-action@5f14fd08f7cf1cb1609c1e344975f152c7ee938d # v0.5.6
+        with:
+          # Gate on actionable findings (low and above); informational
+          # recommendations are surfaced locally without blocking CI.
+          min-severity: low
+          online-audits: false
+          advanced-security: false
+          inputs: .github/workflows/
