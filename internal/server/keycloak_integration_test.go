@@ -3,11 +3,13 @@
 package server
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,6 +20,30 @@ import (
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	"github.com/shini4i/argo-watcher/internal/auth"
 )
+
+// dumpAuthDiagnostics logs the access-token claims and the raw userinfo
+// response (status, WWW-Authenticate, body) so a Keycloak rejection is
+// diagnosable from CI logs without a live shell.
+func dumpAuthDiagnostics(t *testing.T, token string) {
+	t.Helper()
+	if parts := strings.Split(token, "."); len(parts) == 3 {
+		if payload, err := base64.RawURLEncoding.DecodeString(parts[1]); err == nil {
+			t.Logf("access token payload: %s", payload)
+		}
+	}
+	req, _ := http.NewRequest(http.MethodGet,
+		keycloakBaseURL+"/realms/"+keycloakRealm+"/protocol/openid-connect/userinfo", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Logf("userinfo request error: %v", err)
+		return
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, _ := io.ReadAll(resp.Body)
+	t.Logf("userinfo status=%d www-authenticate=%q body=%q",
+		resp.StatusCode, resp.Header.Get("WWW-Authenticate"), string(body))
+}
 
 // Keycloak coordinates for the docker-compose `integration` profile. The realm,
 // client, privileged group and users are provisioned from
@@ -157,6 +183,7 @@ func TestKeycloakDeployLockAuthz(t *testing.T) {
 
 	t.Run("privileged user may set and release the deploy lock", func(t *testing.T) {
 		token := keycloakToken(t, "priv-user", "priv-pass")
+		dumpAuthDiagnostics(t, token)
 		assert.Equal(t, http.StatusOK, callDeployLock(t, srv, http.MethodPost, token))
 		assert.Equal(t, http.StatusOK, callDeployLock(t, srv, http.MethodDelete, token))
 	})
