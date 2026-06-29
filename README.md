@@ -98,13 +98,6 @@ For more detailed information on configuration, API usage, and advanced features
 
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
 
-See the [Development Guide](https://argo-watcher.readthedocs.io/en/latest/development/) for setting up a local environment and understanding the project structure.
-
-The pre-commit hooks include a [TruffleHog](https://github.com/trufflesecurity/trufflehog) secret scan that needs the `trufflehog` binary on `$PATH`.
-
-- **With Nix (recommended):** `nix develop` provides `trufflehog` and the other scanners (`gosec`, `govulncheck`, `trivy`, `zizmor`).
-- **Without Nix:** install `trufflehog` (and the other scanners) manually, then run `pre-commit install`.
-
 ## License
 
 This project is licensed under the [Apache License 2.0](LICENSE).
