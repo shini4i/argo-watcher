@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Publish `llms.txt` and `llms-full.txt` on the documentation site, following
+  the [llmstxt.org](https://llmstxt.org/) standard, so AI agents can discover
+  and consume the docs.
+
 ## [0.10.5] - 2026-06-12
 
 ### Added

@@ -1,3 +1,9 @@
+---
+hide:
+  - navigation
+  - toc
+---
+
 # Argo Watcher
 
 !!! note "Documentation is a work in progress"
