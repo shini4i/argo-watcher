@@ -13,6 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the [llmstxt.org](https://llmstxt.org/) standard, so AI agents can discover
   and consume the docs.
 
+### Security
+
+- Update dependencies to clear all open Dependabot advisories. Backend: bump
+  `go-git` to 5.19.1 (malformed-object DoS, crafted-repo `.git` write, SSH
+  argument escaping) and `quic-go` to 0.60.0 (HTTP/3 QPACK memory exhaustion).
+  Frontend: bump `react-router` to 6.30.4 (protocol-relative open redirect),
+  pin `dompurify` to 3.4.11 (sanitization-bypass advisories), and bump `vite`
+  to 7.3.6 along with the transitive `esbuild`, `form-data`, `@babel/core`,
+  `js-yaml`, and `ws` packages.
+
 ## [0.10.5] - 2026-06-12
 
 ### Added
