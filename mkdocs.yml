@@ -120,3 +120,43 @@ plugins:
         api.md: reference/api.md
         development.md: contributing/development.md
         concepts.md: getting-started/concepts.md
+  # Generates /llms.txt (an index for AI agents, per https://llmstxt.org/) and
+  # /llms-full.txt (the full docs as a single Markdown file). Must run last so
+  # it sees the fully rendered pages produced by the plugins above.
+  - llmstxt:
+      # On Read the Docs, links must point at the versioned path
+      # (e.g. /en/latest/). READTHEDOCS_CANONICAL_URL is injected by the RTD
+      # build; the fallback keeps local `mkdocs build` working.
+      base_url: !ENV [READTHEDOCS_CANONICAL_URL, 'https://argo-watcher.readthedocs.io/en/latest/']
+      full_output: llms-full.txt
+      markdown_description: >-
+        Argo Watcher is a feedback loop for your GitOps workflow. It bridges the
+        gap between your CI pipeline and Argo CD, reporting real-time deployment
+        status back to the pipeline and optionally updating image tags in your
+        GitOps repository.
+      sections:
+        Getting Started:
+          - getting-started/index.md: Starting point for new users, linking to Quick Start and Concepts.
+          - getting-started/quick-start.md: Run a local instance in five minutes with Docker Compose.
+          - getting-started/concepts.md: The problem Argo Watcher solves, its architecture, and key terms.
+        Guides:
+          - guides/index.md: Index of task-oriented guides.
+          - guides/install.md: Installing the server and client.
+          - guides/gitops-updater.md: Configuring the GitOps Updater to commit image tag changes.
+          - guides/notifications.md: Sending deployment notifications.
+          - guides/keycloak.md: Securing the Web UI with Keycloak/OIDC.
+        Reference:
+          - reference/index.md: Index of technical reference material.
+          - reference/api.md: REST API endpoints, authentication, and examples.
+          - reference/server-env.md: Server environment variables.
+          - reference/client-env.md: Client environment variables.
+          - reference/annotations.md: Argo CD application annotations recognised by Argo Watcher.
+        Operations:
+          - operations/index.md: Index of operational guides.
+          - operations/observability.md: Prometheus metrics, suggested alerts, and Grafana panel queries.
+          - operations/database.md: Database backends and configuration.
+          - operations/troubleshooting.md: Diagnosing common problems.
+        Contributing:
+          - contributing/index.md: How to contribute.
+          - contributing/development.md: Setting up a development environment.
+          - contributing/style.md: Documentation and code style guide.
