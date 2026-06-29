@@ -16,3 +16,23 @@ repos:
       - id: go-fmt
       - id: go-mod-tidy
       - id: go-imports
+
+  # Secret scanning runs locally before a commit lands, so credentials never
+  # reach a commit or CI. filesystem mode scans the staged files pre-commit
+  # passes in (so no vendored/false-positive noise, and the about-to-be-
+  # committed content is actually scanned). Uses the trufflehog binary from
+  # the flake devshell (language: system), not the upstream hook's Go build;
+  # that nixpkgs binary already disables the self-updater, so --no-update must
+  # NOT be passed (it errors as a repeated flag).
+  - repo: local
+    hooks:
+      - id: trufflehog
+        name: TruffleHog secret scan
+        entry: trufflehog filesystem --results=verified,unknown --fail
+        language: system
+        # docker-compose.yml (local dev credentials) and updater_test.go (SSH
+        # key fixtures for unit tests) hold intentional non-secrets that
+        # TruffleHog flags as "unknown". Filesystem mode ignores --exclude-paths
+        # for explicitly-passed files, so skip them at the pre-commit layer.
+        # Keep this list in sync with .trufflehog-exclude (used by CI).
+        exclude: ^(docker-compose\.yml|pkg/updater/updater_test\.go)$

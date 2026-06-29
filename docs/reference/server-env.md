@@ -69,3 +69,6 @@ These variables are required when using the built-in GitOps updater. See the [Gi
 | `SSH_COMMIT_USER`     | Git commit author name                                  | `argo-watcher` | No          |
 | `SSH_COMMIT_MAIL`     | Git commit author email                                 | `argo-watcher@example.com` | No          |
 | `COMMIT_MESSAGE_FORMAT` | Go template string for commit messages                |         | No          |
+| `GIT_OP_TIMEOUT`      | Per-attempt wall-clock budget for one clone + update cycle. The worst-case total wall clock for the full retry loop is `GIT_OP_TIMEOUT × GIT_MAX_ATTEMPTS`. Accepts a Go duration string (e.g. `30s`, `2m`). Must be greater than zero. | `90s` | No |
+| `GIT_MAX_ATTEMPTS`    | Total attempts (initial + retries) before giving up on a git update. The final attempt invalidates the on-disk cache and performs a fresh clone, so a poisoned cache self-heals without operator intervention. Must be greater than zero. | `3` | No |
+| `GIT_TIMEOUT`         | **Deprecated.** Legacy per-call budget. When set and `GIT_OP_TIMEOUT` is unset, the value is used directly as `GIT_OP_TIMEOUT` (1:1 mapping, preserving the original per-call budget). Set `GIT_OP_TIMEOUT` explicitly to silence the deprecation warning. | — | No |

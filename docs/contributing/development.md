@@ -16,6 +16,8 @@ Install the Git hooks:
 pre-commit install
 ```
 
+One hook is a [TruffleHog](https://github.com/trufflesecurity/trufflehog) secret scan that needs the `trufflehog` binary on `$PATH`. `nix develop` provides it along with the other scanners used in CI (`gosec`, `govulncheck`, `trivy`, `zizmor`); without Nix, install `trufflehog` manually.
+
 Install Go tooling (mock generator, swagger, migration tool):
 
 ```bash
@@ -28,18 +30,19 @@ The project uses [Task](https://taskfile.dev/) as a build and automation tool. A
 
 ### Available Tasks
 
-| Task                | Description                                              |
-|---------------------|----------------------------------------------------------|
-| `task install-deps` | Install Go development tools (swag, mockgen, migrate)    |
-| `task mocks`        | Generate mock interfaces for unit tests                  |
-| `task docs`         | Generate the Swagger JSON spec                           |
-| `task test`         | Run the full test suite (generates mocks and docs first) |
-| `task build`        | Build the Go binary                                      |
-| `task build-ui`     | Build the React frontend bundle                          |
-| `task lint-web`     | Lint the React frontend code                             |
-| `task test-web`     | Run React frontend unit tests                            |
-| `task bootstrap`    | Start all Docker Compose services                        |
-| `task teardown`     | Stop all Docker Compose services                         |
+| Task                | Description                                                       |
+|---------------------|-------------------------------------------------------------------|
+| `task install-deps` | Install Go development tools (swag, mockgen, migrate)              |
+| `task mocks`        | Generate mock interfaces for unit tests                            |
+| `task docs`         | Generate the Swagger JSON spec                                     |
+| `task test`         | Run the full test suite (generates mocks and docs first)           |
+| `task test-integration` | Run integration tests against live Gitea, Toxiproxy + Keycloak (requires Docker) |
+| `task build`        | Build the Go binary                                                 |
+| `task build-ui`     | Build the React frontend bundle                                    |
+| `task lint-web`     | Lint the React frontend code                                       |
+| `task test-web`     | Run React frontend unit tests                                      |
+| `task bootstrap`    | Start all Docker Compose services                                  |
+| `task teardown`     | Stop all Docker Compose services                                   |
 
 Run any task with:
 
@@ -152,6 +155,16 @@ To run a specific test suite:
 ```bash
 go test -v -run TestArgoStatusUpdaterCheck ./...
 ```
+
+### Integration Tests
+
+Integration tests exercise the GitOps updater against a real Gitea instance with TCP fault injection via Toxiproxy, and the Keycloak auth flow (privileged vs non-privileged access to the deploy lock) against a real Keycloak. Docker must be running before you start them.
+
+```bash
+task test-integration
+```
+
+This command brings up the `integration` Docker Compose profile (Gitea, Toxiproxy, and Keycloak), runs the tests, then tears the stack down automatically. If the integration stack is already running from a previous session, run `docker compose --profile integration down -v` before re-running the task to avoid port conflicts.
 
 ### Frontend Tests
 

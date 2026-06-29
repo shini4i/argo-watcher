@@ -6,36 +6,43 @@ on:
       - v*.*.* # stable release, v0.0.1
       - v*.*.*-pre.* # pre-release, v0.0.1-pre.calendardate
 
-permissions:
-  contents: write
-  packages: write
-  id-token: write # needed for signing the images with GitHub OIDC Token
-
 jobs:
   release:
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write # needed to write releases
+      packages: write # needed to push container images to GHCR
+      id-token: write # needed for signing the images with GitHub OIDC Token
     steps:
       - name: Set up QEMU # required for multi architecture build - https://goreleaser.com/cookbooks/multi-platform-docker-images/?h=multi#other-things-to-pay-attention-to
-        uses: docker/setup-qemu-action@v2
+        uses: docker/setup-qemu-action@06116385d9baf250c9f4dcb4858b16962ea869c3 # v4.1.0
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           fetch-depth: 0 # required for changelog to work properly - https://github.com/goreleaser/goreleaser-action#usage
           submodules: true
+          # goreleaser authenticates via the GITHUB_TOKEN env var, not the
+          # checkout-persisted git credential, so we drop the on-disk token.
+          persist-credentials: false
 
       - name: Install NodeJS
-        uses: actions/setup-node@v4
+        # zizmor: ignore[cache-poisoning] no `cache:` input is set, so setup-node creates no cache to poison (v4.4.0)
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22'
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
+          # Release publishes signed artifacts. setup-go enables the build/module
+          # cache by default; disable it so a poisoned cache (e.g. from a
+          # PR-populated key) cannot inject content into a release.
+          cache: false
 
       - name: Install Task
-        uses: arduino/setup-task@v2
+        uses: arduino/setup-task@24c5e13bce349197642746563945fcdf9355e8f4 # v2.0.0
 
       - name: Install environment dependencies
         run: task install-deps
@@ -50,13 +57,17 @@ jobs:
         run: rm -rf web/node_modules
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@v3.4.0
+        # Pinned to the v3.x line on purpose: it installs cosign v2.x. The
+        # cosign-installer v4 line installs cosign v3+, which requires a
+        # `--bundle` arg for the `cosign sign-blob` call in .goreleaser.yaml —
+        # bumping the major would break checksum signing until that is reworked.
+        uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
 
       - name: Install Syft for SBOM Generation
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -71,7 +82,7 @@ jobs:
           echo "GORELEASER_PREVIOUS_TAG=$previous_stable_tag" >> $GITHUB_OUTPUT
 
       - name: Run GoReleaser for stable release
-        uses: goreleaser/goreleaser-action@v6
+        uses: goreleaser/goreleaser-action@5daf1e915a5f0af01ddbcd89a43b8061ff4f1a89 # v7.2.2
         if: (!contains(github.ref, 'pre'))
         with:
           version: "~> v2"
@@ -82,7 +93,7 @@ jobs:
           GORELEASER_PREVIOUS_TAG: ${{ steps.previous-stable-release-tag.outputs.GORELEASER_PREVIOUS_TAG }}
 
       - name: Run GoReleaser for pre-release
-        uses: goreleaser/goreleaser-action@v6
+        uses: goreleaser/goreleaser-action@5daf1e915a5f0af01ddbcd89a43b8061ff4f1a89 # v7.2.2
         if: contains(github.ref, 'pre')
         with:
           version: "~> v2"
@@ -92,7 +103,7 @@ jobs:
           GORELEASER_CURRENT_TAG: ${{ steps.changelog.outputs.RELEASE_TAG }}
 
       - name: Update helm chart
-        uses: shini4i/helm-charts-updater@v1
+        uses: shini4i/helm-charts-updater@v1 # zizmor: ignore[unpinned-uses] first-party shini4i action; policy permits semver tags
         if: startsWith(github.ref, 'refs/tags/v') && (!contains(github.ref, 'pre'))
         with:
           github_token: ${{ secrets.GH_TOKEN }}

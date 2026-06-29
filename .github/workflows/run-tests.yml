@@ -1,0 +1,192 @@
+name: Run unit tests
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '**/*.go'
+      - 'web/**'
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '**/*.go'
+      - 'web/**'
+
+jobs:
+  # gosec and govulncheck moved to the dedicated security.yml workflow.
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    services:
+      postgres:
+        image: postgres:18.4
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5.6.0
+        with:
+          go-version-file: go.mod
+
+      - name: Install Task
+        uses: arduino/setup-task@24c5e13bce349197642746563945fcdf9355e8f4  # v2.0.0
+
+      - name: Install environment dependencies
+        run: task install-deps
+
+      - name: Run database migrations
+        run: task ci-migrate
+
+      - name: Run tests
+        env:
+          DB_HOST: localhost
+          DB_USER: postgres
+          DB_NAME: postgres
+          DB_PASSWORD: postgres
+          DB_PORT: 5432
+          STATE_TYPE: in-memory
+          ARGO_URL: http://localhost:8081
+          POSTGRES_DSN: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+        run: task test
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@aa56896cf108bd10b5eb883cd1d24196da57f695  # v5.5.4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage.out
+
+  integration-tests:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    services:
+      gitea:
+        image: gitea/gitea:1.22
+        env:
+          GITEA__security__INSTALL_LOCK: "true"
+          GITEA__service__DISABLE_REGISTRATION: "false"
+        options: >-
+          --health-cmd "wget -qO- http://localhost:3000/api/healthz || exit 1"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 30
+        ports:
+          - 3000:3000
+          - 2222:22
+
+      # toxiproxy proxies SSH to gitea by service hostname. GH Actions places
+      # all services on a shared Docker bridge network with embedded DNS, so
+      # "gitea:22" resolves correctly between containers.
+      # No health check: the toxiproxy image is distroless (no shell or wget),
+      # so --health-cmd cannot run. Test code polls the admin API instead.
+      toxiproxy:
+        image: ghcr.io/shopify/toxiproxy:2.9.0
+        ports:
+          - 8474:8474
+          - 12222:12222
+
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5.6.0
+        with:
+          go-version-file: go.mod
+
+      - name: Install Task
+        uses: arduino/setup-task@24c5e13bce349197642746563945fcdf9355e8f4  # v2.0.0
+
+      - name: Install environment dependencies
+        run: task install-deps
+
+      - name: Generate mocks
+        # internal/models/argo_test.go imports pkg/updater/mock; the package
+        # must build cleanly before our integration tests can compile.
+        run: task mocks
+
+      - name: Run integration tests
+        # SSH_KEY_PATH and GIT_TIMEOUT are set per-test via t.Setenv inside
+        # setupGitea / each test function; no workflow-level env needed here.
+        run: go test -race -tags=integration -count=1 -timeout=5m ./internal/models/...
+
+  frontend_test:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Run frontend tests with coverage
+        working-directory: web
+        run: npm run test -- --coverage
+
+      - name: Upload frontend coverage to Codecov
+        uses: codecov/codecov-action@aa56896cf108bd10b5eb883cd1d24196da57f695  # v5.5.4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: web/coverage/lcov.info
+          flags: frontend
+
+  keycloak-e2e:
+    name: Keycloak auth e2e
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+
+      - name: Install Task
+        uses: arduino/setup-task@24c5e13bce349197642746563945fcdf9355e8f4 # v2.0.0
+
+      - name: Start Keycloak
+        # Imports test/keycloak on boot; the test polls the realm's OIDC
+        # discovery endpoint for readiness (waitForKeycloak), so no --wait needed.
+        run: docker compose --profile integration up -d keycloak
+
+      - name: Run Keycloak auth integration tests
+        # -run Keycloak keeps this job focused on the auth e2e; the server unit
+        # tests are already covered by the `test` job.
+        run: go test -race -tags=integration -count=1 -timeout=5m -run Keycloak ./internal/server/...
+
+      - name: Stop Keycloak
+        if: always()
+        run: docker compose --profile integration down -v

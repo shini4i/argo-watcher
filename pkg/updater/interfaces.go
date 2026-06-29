@@ -1,12 +1,14 @@
 package updater
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	cryptossh "golang.org/x/crypto/ssh"
 )
@@ -20,16 +22,43 @@ var ErrSSHKeyNotFound = errors.New("SSH key file not found")
 // ErrSSHKeyEmpty is returned when the SSH key file is empty.
 var ErrSSHKeyEmpty = errors.New("SSH key file is empty")
 
+// IsPermanent reports whether err describes a failure that retrying cannot fix.
+//
+// Two classes are treated as permanent:
+//   - SSH key pre-flight validation errors (ErrSSHKeyNotProvided, ErrSSHKeyNotFound,
+//     ErrSSHKeyEmpty): the key is missing or unreadable on every attempt.
+//   - Git transport authentication errors (transport.ErrAuthenticationRequired,
+//     transport.ErrAuthorizationFailed): the server rejected our credentials and
+//     will continue to do so regardless of how many times we retry.
+//
+// Everything else — network errors, push races, transient git server failures,
+// per-attempt context deadlines — is retryable.
+func IsPermanent(err error) bool {
+	if err == nil {
+		return false
+	}
+	return errors.Is(err, ErrSSHKeyNotProvided) ||
+		errors.Is(err, ErrSSHKeyNotFound) ||
+		errors.Is(err, ErrSSHKeyEmpty) ||
+		errors.Is(err, transport.ErrAuthenticationRequired) ||
+		errors.Is(err, transport.ErrAuthorizationFailed)
+}
+
+// GitHandler abstracts the small set of git operations the updater needs.
+// It exists primarily to enable testing — production code uses GitClient,
+// which delegates to go-git directly.
 type GitHandler interface {
-	PlainClone(path string, isBare bool, o *git.CloneOptions) (*git.Repository, error)
+	// PlainClone clones a repository into path. ctx bounds the network I/O so
+	// a hung remote cannot stall the caller indefinitely.
+	PlainClone(ctx context.Context, path string, isBare bool, o *git.CloneOptions) (*git.Repository, error)
 	PlainOpen(path string) (*git.Repository, error)
 	AddSSHKey(user, path, passphrase string) (*ssh.PublicKeys, error)
 }
 
 type GitClient struct{}
 
-func (GitClient) PlainClone(path string, isBare bool, o *git.CloneOptions) (*git.Repository, error) {
-	return git.PlainClone(path, isBare, o)
+func (GitClient) PlainClone(ctx context.Context, path string, isBare bool, o *git.CloneOptions) (*git.Repository, error) {
+	return git.PlainCloneContext(ctx, path, isBare, o)
 }
 
 func (GitClient) PlainOpen(path string) (*git.Repository, error) {
