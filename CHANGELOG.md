@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.7] - 2026-06-30
+
 ### Fixed
 
 - Fix a Keycloak redirect loop that appeared *after* a successful login, where
@@ -103,6 +105,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bumped the Go toolchain to `1.25.11`, resolving a `net/textproto` standard
   library vulnerability present in `go1.25.9`.
 
-[Unreleased]: https://github.com/shini4i/argo-watcher/compare/v0.10.6...HEAD
+[Unreleased]: https://github.com/shini4i/argo-watcher/compare/v0.10.7...HEAD
+[0.10.7]: https://github.com/shini4i/argo-watcher/compare/v0.10.6...v0.10.7
 [0.10.6]: https://github.com/shini4i/argo-watcher/compare/v0.10.5...v0.10.6
 [0.10.5]: https://github.com/shini4i/argo-watcher/compare/v0.10.4...v0.10.5
