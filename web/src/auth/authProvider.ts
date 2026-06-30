@@ -30,54 +30,6 @@ let userGroupsLoadedFromProfile = false;
 let lastSessionValidation = 0;
 
 const SESSION_REVALIDATION_INTERVAL_MS = 60_000;
-const SILENT_SSO_ASSET = 'silent-check-sso.html';
-
-/**
- * LocalStorage flag that records whether silent SSO is safe to execute.
- * Without this cache the app re-attempts the silent flow on every reload,
- * causing infinite login loops when Keycloak is missing the redirect URI.
- */
-const SILENT_SSO_DISABLED_KEY = 'argo-watcher:silent-sso-disabled';
-
-/**
- * Reads the persisted silent SSO preference from localStorage.
- * Returns true when the preference indicates silent SSO is disabled.
- */
-const readSilentSsoPreference = () => {
-  try {
-    const storage = getBrowserWindow()?.localStorage;
-    if (!storage) {
-      return false;
-    }
-    const disabled = storage.getItem(SILENT_SSO_DISABLED_KEY);
-    return disabled === 'true';
-  } catch (error) {
-    console.warn('[auth] Failed to read silent SSO preference, defaulting to enabled.', error);
-    return false;
-  }
-};
-
-/**
- * Persists the silent SSO preference to localStorage so it survives reloads.
- * When disabled is true the silent flow will be skipped on subsequent visits.
- */
-const persistSilentSsoPreference = (disabled: boolean) => {
-  try {
-    const storage = getBrowserWindow()?.localStorage;
-    if (!storage) {
-      return;
-    }
-    if (disabled) {
-      storage.setItem(SILENT_SSO_DISABLED_KEY, 'true');
-    } else {
-      storage.removeItem(SILENT_SSO_DISABLED_KEY);
-    }
-  } catch (error) {
-    console.warn('[auth] Failed to persist silent SSO preference, fallback logic still applies.', error);
-  }
-};
-
-let silentSsoSupported = !readSilentSsoPreference();
 
 type GroupSource = 'token' | 'profile';
 
@@ -154,21 +106,6 @@ const ensureSessionValidation = async (keycloak: KeycloakInstance) => {
 
   await ensureUserGroupsLoaded(keycloak, { forceReload: true, strict: true });
   lastSessionValidation = now;
-};
-
-/**
- * Builds an absolute URL to a static asset within the SPA using the Vite base URL.
- */
-const resolveAppUrl = (path: string) => {
-  const base = import.meta.env.BASE_URL ?? '/';
-  const normalizedBase = base.endsWith('/') ? base : `${base}/`;
-  const normalizedPath = path.startsWith('/') ? path.slice(1) : path;
-  const browserWindow = getBrowserWindow();
-  const origin = browserWindow?.location.origin;
-  if (!origin) {
-    return `${normalizedBase}${normalizedPath}`;
-  }
-  return new URL(normalizedPath, `${origin}${normalizedBase}`).toString();
 };
 
 /**
@@ -277,30 +214,21 @@ const scheduleTokenRefresh = (keycloak: KeycloakInstance) => {
   }, 60_000);
 };
 
-type InitMode = 'silent' | 'interactive';
-
 /**
- * Creates Keycloak init options for either the silent SSO or interactive flows.
+ * Creates the Keycloak init options for the login flow.
+ *
+ * Uses `login-required` so an unauthenticated user is sent to Keycloak through a
+ * top-level navigation, which carries the SSO session cookie. The previous
+ * `check-sso` flow probed the session inside a cross-site hidden iframe; modern
+ * browsers strip third-party cookies from such iframes, so Keycloak answered
+ * `login_required` even for users holding a valid session, which triggered an
+ * infinite redirect loop between the app and the Keycloak logout endpoint.
  */
-const buildInitOptions = (mode: InitMode): KeycloakInitOptions => {
-  switch (mode) {
-    case 'interactive':
-      return {
-        onLoad: 'login-required',
-        checkLoginIframe: false,
-        pkceMethod: 'S256',
-      };
-    case 'silent':
-    default:
-      return {
-        onLoad: 'check-sso',
-        checkLoginIframe: false,
-        pkceMethod: 'S256',
-        silentCheckSsoRedirectUri: resolveAppUrl(SILENT_SSO_ASSET),
-        silentCheckSsoFallback: false,
-      };
-  }
-};
+const buildInitOptions = (): KeycloakInitOptions => ({
+  onLoad: 'login-required',
+  checkLoginIframe: false,
+  pkceMethod: 'S256',
+});
 
 /**
  * Executes keycloak.init with the provided options and wires token persistence.
@@ -321,6 +249,13 @@ const runKeycloakInit = async (keycloak: KeycloakInstance, options: KeycloakInit
 
 /**
  * Central authentication path used by the authProvider to ensure the user session is valid.
+ *
+ * When no local token exists, this initializes Keycloak with `login-required`,
+ * which redirects an unauthenticated user to the Keycloak login page through a
+ * top-level navigation. It deliberately never rejects for an unauthenticated
+ * user: a rejected `checkAuth` makes React-admin call `authProvider.logout()`,
+ * which would terminate a still-valid Keycloak session and bounce the browser
+ * between the app and the logout endpoint.
  */
 const authenticate = async () => {
   const keycloak = await ensureKeycloakInstance();
@@ -341,31 +276,34 @@ const authenticate = async () => {
     return true;
   }
 
-  if (silentSsoSupported) {
-    try {
-      const authenticated = await runKeycloakInit(keycloak, buildInitOptions('silent'));
-      persistSilentSsoPreference(false);
-      return authenticated;
-    } catch (error) {
-      const silentRedirectUri = resolveAppUrl(SILENT_SSO_ASSET);
-      console.warn(
-        `[auth] Silent SSO failed, falling back to explicit login flow. Ensure the Keycloak client allows ${silentRedirectUri} (including any base path) in redirect URIs.`,
-        error,
-      );
-      silentSsoSupported = false;
-      persistSilentSsoPreference(true);
-      clearAccessToken();
-      clearUserGroupsCache();
-    }
-  }
-
+  let authenticated = false;
   try {
-    return await runKeycloakInit(keycloak, buildInitOptions('interactive'));
-  } catch (fallbackError) {
+    authenticated = await runKeycloakInit(keycloak, buildInitOptions());
+  } catch (error) {
+    console.warn('[auth] Keycloak initialization failed; redirecting to the login page.', error);
     clearAccessToken();
     clearUserGroupsCache();
-    throw new HttpError('Keycloak initialization failed', 500, { cause: fallbackError });
   }
+
+  if (authenticated) {
+    return true;
+  }
+
+  // Unauthenticated: hand off to Keycloak's login page through a top-level
+  // redirect. The navigation carries the SSO session cookie, so a user with an
+  // active session is bounced straight back with an authorization code without
+  // ever seeing a login form.
+  //
+  // A login() rejection must not propagate: an unauthenticated checkAuth that
+  // rejects makes React-admin call logout(), reintroducing the redirect loop
+  // through a different trigger. Swallow it and let the redirect (or the next
+  // checkAuth) drive recovery instead.
+  try {
+    await keycloak.login({ redirectUri: resolveRedirectUri() });
+  } catch (loginError) {
+    console.warn('[auth] Failed to initiate the Keycloak login redirect.', loginError);
+  }
+  return true;
 };
 
 /**
@@ -410,10 +348,11 @@ export const authProvider: AuthProvider = {
   },
 
   async checkAuth() {
-    const authenticated = await authenticate();
-    if (!authenticated) {
-      throw new HttpError('Authentication required', 401);
-    }
+    // authenticate() resolves for a valid or redirecting session and throws only
+    // for genuine failures (config errors, a revoked/disabled session). It never
+    // resolves "unauthenticated" — an unauthenticated user is redirected to the
+    // Keycloak login page instead — so there is no false case to guard here.
+    await authenticate();
   },
 
   async checkError(error) {
@@ -436,10 +375,7 @@ export const authProvider: AuthProvider = {
       return [];
     }
 
-    const authenticated = await authenticate();
-    if (!authenticated) {
-      throw new HttpError('Authentication required', 401);
-    }
+    await authenticate();
 
     await ensureUserGroupsLoaded(keycloak);
 
@@ -469,22 +405,8 @@ export const __testing = {
     serverConfig = null;
     clearRefreshInterval();
     keycloakInstance = null;
-    silentSsoSupported = !readSilentSsoPreference();
     clearAccessToken();
     clearUserGroupsCache();
-  },
-  /** Forces the provider to skip silent SSO attempts, used to simulate iframe failures. */
-  disableSilentSso() {
-    silentSsoSupported = false;
-    persistSilentSsoPreference(true);
-  },
-  /** Reloads the silent SSO preference from storage to emulate page reloads in tests. */
-  reloadSilentPreference() {
-    silentSsoSupported = !readSilentSsoPreference();
-  },
-  /** Returns the current silent SSO flag for white-box assertions. */
-  isSilentSsoEnabled() {
-    return silentSsoSupported;
   },
   /** Allows tests to seed cached user groups without hitting Keycloak. */
   setCachedUserGroups(groups: string[] | null) {
@@ -494,8 +416,6 @@ export const __testing = {
   getCachedUserGroups() {
     return cachedUserGroups ? [...cachedUserGroups] : null;
   },
-  /** Exposes app URL resolution so tests can cover browser-less environments. */
-  resolveAppUrl,
   /** Exposes redirect resolution for direct verification in tests. */
   resolveRedirectUri,
   /** Exposes the token refresh scheduler for deterministic timer testing. */
