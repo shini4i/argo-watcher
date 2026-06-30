@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fix a Keycloak redirect loop that appeared *after* a successful login, where
+  the browser bounced between the app and the Keycloak login page without ever
+  settling. The login callback is now processed during app startup, before the
+  router runs its initial redirect, so the authorization code is no longer
+  discarded. Keycloak-less deployments are unaffected and continue to render
+  immediately.
+
 ## [0.10.6] - 2026-06-30
 
 ### Added

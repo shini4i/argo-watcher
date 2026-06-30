@@ -12,7 +12,7 @@ React 18, React-admin 5, Material UI 5, Emotion, TypeScript, ESLint, and Vitest/
 
 | Path | Purpose |
 | ---- | ------- |
-| `src/main.tsx` | React entry point that wires React Router, shared providers, and the `App` component. |
+| `src/main.tsx` | React entry point that runs `bootstrapAuth()` to consume any Keycloak login callback before mounting, then wires React Router, shared providers, and the `App` component. |
 | `src/App.tsx` | Placeholder React-admin shell; extend this file with `<Admin>` resources as migration phases land. |
 | `src/auth/` | Authentication helpers. `authProvider.ts` talks to Keycloak + `/api/v1/config`, and `tokenStore.ts` persists bearer tokens. |
 | `src/data/` | HTTP layer and React-admin `dataProvider` implementation that targets `/api/v1/tasks` and related endpoints. |
@@ -79,7 +79,7 @@ Keycloak settings (URL, realm, client_id, privileged groups, token intervals) co
 
 - **HTTP client (`src/data/httpClient.ts`)** – wraps `fetch`, injects `Authorization`/`Keycloak-Authorization` headers from `tokenStore`, normalises errors into `HttpError`, and provides helpers such as `buildQueryString`.
 - **React-admin `dataProvider` (`src/data/dataProvider.ts`)** – currently implements the `tasks` resource (list/detail/create) and infers pagination totals when the backend omits them. Extend this file when exposing additional Argo watcher endpoints.
-- **Auth provider (`src/auth/authProvider.ts`)** – lazy-loads `/api/v1/config`, boots Keycloak when enabled using a top-level `login-required` redirect, periodically refreshes tokens, and exposes permissions (groups/privileged groups) to React-admin.
+- **Auth provider (`src/auth/authProvider.ts`)** – fetches `/api/v1/config` and, when Keycloak is enabled, initializes keycloak-js eagerly via `bootstrapAuth()` (called from `main.tsx` before React mounts) so the login callback (`#code=…` fragment) is consumed before the router's index redirect can strip it. `checkAuth`/`getPermissions` reuse the already-initialized instance; init runs exactly once. It uses a top-level `login-required` redirect, periodically refreshes tokens, and exposes permissions (groups/privileged groups) to React-admin. When Keycloak is disabled, `bootstrapAuth()` is a no-op and the app renders immediately.
 - **Keycloak toggle hook (`src/shared/hooks/useKeycloakEnabled.ts`)** – tiny helper for gating UI affordances when running without identity.
 - **Deploy lock service (`src/features/deployLock/deployLockService.ts`)** – shares lock state through REST endpoints plus the `/ws` channel. Automatic retries and subscriber management keep the UI in sync even if the socket drops.
 - **Global providers (`src/shared/providers/AppProviders.tsx`)** – wraps the app with the theme mode, timezone, and deploy-lock providers, plus a global banner that reflects lock status.
@@ -113,7 +113,7 @@ Keycloak settings (URL, realm, client_id, privileged groups, token intervals) co
 ## Troubleshooting
 
 - **Dev server cannot reach the API**: ensure `VITE_API_PROXY_TARGET` matches your backend host or export `VITE_API_BASE_URL` so the SPA calls the right origin.  
-- **Endless Keycloak redirects**: verify the backend Keycloak config lists the current app origin (including any base path) as a valid redirect URI for the client. The login flow uses a top-level redirect (`onLoad: 'login-required'`), so the redirect URI must be allow-listed there.  
+- **Endless Keycloak redirects**: verify the backend Keycloak config lists the current app origin (including any base path) as a valid redirect URI for the client. The login flow uses a top-level redirect (`onLoad: 'login-required'`), so the redirect URI must be allow-listed there. If the redirect URIs are correct and the loop only appears *after* a successful login, the callback fragment (`#code=…`) was stripped before keycloak-js could read it — this is why `bootstrapAuth()` must be awaited in `main.tsx` before React mounts; do not move Keycloak init back into the React tree.  
 - **WebSocket errors**: set `VITE_WS_BASE_URL` when proxying through TLS terminators that do not support upgrade requests, or confirm `/ws` is exposed by the Go server.  
 - **Timezones look wrong**: toggle the timezone via the user menu (wired to `TimezoneProvider`). The selection lives under `argo-watcher:timezone`.
 
