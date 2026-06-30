@@ -24,6 +24,7 @@ interface Permissions {
 let serverConfigPromise: Promise<ServerConfig> | null = null;
 let serverConfig: ServerConfig | null = null;
 let keycloakInstance: KeycloakInstance | null = null;
+let initPromise: Promise<boolean> | null = null;
 let refreshInterval: number | null = null;
 let cachedUserGroups: string[] | null = null;
 let userGroupsLoadedFromProfile = false;
@@ -248,6 +249,19 @@ const runKeycloakInit = async (keycloak: KeycloakInstance, options: KeycloakInit
 };
 
 /**
+ * Runs keycloak.init exactly once for the singleton instance and caches the result.
+ *
+ * keycloak-js forbids calling init() twice on one instance, and only the first
+ * init consumes the login callback (`#state=...&code=...`). The eager bootstrap
+ * and the later checkAuth/getPermissions paths both funnel through here, so the
+ * callback is processed once and the instance is never re-initialized.
+ */
+const ensureInitialized = (keycloak: KeycloakInstance): Promise<boolean> => {
+  initPromise ??= runKeycloakInit(keycloak, buildInitOptions());
+  return initPromise;
+};
+
+/**
  * Central authentication path used by the authProvider to ensure the user session is valid.
  *
  * When no local token exists, this initializes Keycloak with `login-required`,
@@ -278,7 +292,7 @@ const authenticate = async () => {
 
   let authenticated = false;
   try {
-    authenticated = await runKeycloakInit(keycloak, buildInitOptions());
+    authenticated = await ensureInitialized(keycloak);
   } catch (error) {
     console.warn('[auth] Keycloak initialization failed; redirecting to the login page.', error);
     clearAccessToken();
@@ -314,6 +328,30 @@ const resolvePermissions = (): Permissions => {
   const privilegedGroups = config?.privileged_groups ?? [];
   const groups = cachedUserGroups ?? keycloakInstance?.tokenParsed?.groups ?? [];
   return { groups, privilegedGroups };
+};
+
+/**
+ * Eagerly initializes authentication before the React tree is mounted.
+ *
+ * keycloak-js parses the login callback (the `#state=...&code=...` fragment) the
+ * first time init() runs. The SPA router performs its default index redirect
+ * (`/` -> `/tasks`) the moment it mounts, which strips that fragment. Running
+ * init lazily inside checkAuth therefore raced the router and lost the code,
+ * leaving Keycloak to redirect to login again -> an endless login loop.
+ * Initializing here, before render, consumes the callback while the fragment is
+ * still present.
+ *
+ * Keycloak is OPTIONAL: when SSO is disabled server-side, authenticate() returns
+ * without initializing Keycloak or redirecting, so keycloak-less deployments
+ * render exactly as before with no added delay. Bootstrap failures are swallowed
+ * so rendering is never blocked; checkAuth re-runs the same path on mount.
+ */
+export const bootstrapAuth = async (): Promise<void> => {
+  try {
+    await authenticate();
+  } catch (error) {
+    console.warn('[auth] Eager authentication bootstrap failed; deferring to checkAuth.', error);
+  }
 };
 
 /**
@@ -405,6 +443,7 @@ export const __testing = {
     serverConfig = null;
     clearRefreshInterval();
     keycloakInstance = null;
+    initPromise = null;
     clearAccessToken();
     clearUserGroupsCache();
   },

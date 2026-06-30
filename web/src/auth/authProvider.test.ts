@@ -512,4 +512,107 @@ describe('authProvider', () => {
     expect(keycloakMock.login).not.toHaveBeenCalled();
     expect(getAccessToken()).toBeNull();
   });
+
+  describe('bootstrapAuth', () => {
+    it('is a no-op when Keycloak is disabled (preserves keycloak-less mode)', async () => {
+      mockConfig({ keycloak: { enabled: false } });
+      const module = await import('./authProvider');
+
+      // keycloak-less deployments must render immediately: no init, no redirect.
+      await expect(module.bootstrapAuth()).resolves.toBeUndefined();
+      expect(keycloakMock.init).not.toHaveBeenCalled();
+      expect(keycloakMock.login).not.toHaveBeenCalled();
+    });
+
+    it('authenticates eagerly so checkAuth reuses the session without re-initializing', async () => {
+      mockConfig({
+        keycloak: {
+          enabled: true,
+          url: 'https://keycloak.example.com',
+          realm: 'demo',
+          client_id: 'argo',
+          privileged_groups: ['admins'],
+        },
+      });
+      keycloakMock.init.mockResolvedValue(true);
+      const module = await import('./authProvider');
+
+      // Eager init consumes the login callback before the router strips the URL
+      // fragment, persisting the token without ever bouncing to the login page.
+      await module.bootstrapAuth();
+      expect(keycloakMock.init).toHaveBeenCalledTimes(1);
+      expect(getAccessToken()).toBe('token');
+      expect(keycloakMock.login).not.toHaveBeenCalled();
+
+      // checkAuth now finds the persisted token and takes the cached-session path,
+      // so it never re-enters init. (The init-once guard for the unauthenticated
+      // path — where no token is set — is covered by the failed-bootstrap test below.)
+      await expect(module.authProvider.checkAuth({})).resolves.toBeUndefined();
+      expect(keycloakMock.init).toHaveBeenCalledTimes(1);
+    });
+
+    it('redirects to the Keycloak login page when the bootstrap finds no session', async () => {
+      mockConfig({
+        keycloak: {
+          enabled: true,
+          url: 'https://keycloak.example.com',
+          realm: 'demo',
+          client_id: 'argo',
+          privileged_groups: [],
+        },
+      });
+      keycloakMock.init.mockResolvedValueOnce(false);
+      const module = await import('./authProvider');
+
+      await expect(module.bootstrapAuth()).resolves.toBeUndefined();
+      expect(keycloakMock.login).toHaveBeenCalledWith(
+        expect.objectContaining({
+          redirectUri: `${ensureBrowserWindow().location.origin}/`,
+        }),
+      );
+    });
+
+    it('recovers via login on checkAuth after a failed bootstrap, without re-initializing', async () => {
+      mockConfig({
+        keycloak: {
+          enabled: true,
+          url: 'https://keycloak.example.com',
+          realm: 'demo',
+          client_id: 'argo',
+          privileged_groups: [],
+        },
+      });
+      keycloakMock.init.mockRejectedValueOnce(new Error('bootstrap init failure'));
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const module = await import('./authProvider');
+
+      // Bootstrap swallows the init error so rendering is never blocked.
+      await expect(module.bootstrapAuth()).resolves.toBeUndefined();
+      expect(keycloakMock.init).toHaveBeenCalledTimes(1);
+
+      // The cached rejection means checkAuth must NOT call init again (keycloak-js
+      // forbids a second init on one instance); it falls through to a login redirect.
+      // login() fires twice in total — once from the failed bootstrap, once from
+      // checkAuth — but both merely (re)issue the top-level redirect, never logout.
+      await expect(module.authProvider.checkAuth({})).resolves.toBeUndefined();
+      expect(keycloakMock.init).toHaveBeenCalledTimes(1);
+      expect(keycloakMock.login).toHaveBeenCalledTimes(2);
+      expect(keycloakMock.logout).not.toHaveBeenCalled();
+      warnSpy.mockRestore();
+    });
+
+    it('resolves (never throws) when the config endpoint is unreachable, so render still runs', async () => {
+      vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('network offline'));
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const module = await import('./authProvider');
+
+      // A down backend must not block the SPA from mounting.
+      await expect(module.bootstrapAuth()).resolves.toBeUndefined();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Eager authentication bootstrap failed'),
+        expect.any(Error),
+      );
+      warnSpy.mockRestore();
+    });
+  });
 });
