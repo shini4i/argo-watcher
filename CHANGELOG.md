@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the [llmstxt.org](https://llmstxt.org/) standard, so AI agents can discover
   and consume the docs.
 
+### Fixed
+
+- Fix an infinite redirect loop on Keycloak-protected instances where users who
+  already had a valid session were bounced between the app and the Keycloak
+  login/logout pages, and were sometimes silently logged out. The login flow now
+  authenticates through a top-level redirect (`login-required`) instead of a
+  cross-site silent iframe, whose third-party cookies modern browsers strip.
+
 ### Security
 
 - Update dependencies to clear all open Dependabot advisories. Backend: bump
