@@ -1791,10 +1791,13 @@ func TestAddTaskEndpoint(t *testing.T) {
 		assert.Contains(t, w.Body.String(), "lockdown is active")
 	})
 
-	t.Run("returns error when token validation fails", func(t *testing.T) {
+	t.Run("returns 401 with reason when token validation fails", func(t *testing.T) {
+		// A bad token is a client mistake, not a server failure — 401, not 500.
+		// The strategy's error must surface in the response body so the client
+		// can show the user something actionable (e.g. "deploy token is invalid").
 		lockdown, _ := NewLockdown("")
 		strategies := make(map[string]auth.AuthStrategy)
-		strategies["Authorization"] = &mockAuthStrategy{valid: false, err: fmt.Errorf("validation error")}
+		strategies["Authorization"] = &mockAuthStrategy{valid: false, err: fmt.Errorf("deploy token is invalid")}
 
 		env := &Env{
 			lockdown:      lockdown,
@@ -1812,8 +1815,10 @@ func TestAddTaskEndpoint(t *testing.T) {
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
-		assert.Equal(t, http.StatusInternalServerError, w.Code)
+		assert.Equal(t, http.StatusUnauthorized, w.Code)
+		assert.Contains(t, w.Body.String(), "deploy token is invalid")
 	})
+
 
 	t.Run("returns error when argo.AddTask fails", func(t *testing.T) {
 		lockdown, _ := NewLockdown("")
@@ -1851,36 +1856,13 @@ func TestAddTaskEndpoint(t *testing.T) {
 func TestSetDeployLockWithKeycloak(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	t.Run("returns error when validation fails", func(t *testing.T) {
+	t.Run("returns 401 with reason when token is invalid", func(t *testing.T) {
+		// Strategy returned (false, err) — auth attempted but failed.
+		// The 401 body should carry the strategy's reason so the client
+		// can distinguish "wrong token" from "expired token" etc.
 		lockdown, _ := NewLockdown("")
 		strategies := make(map[string]auth.AuthStrategy)
-		strategies[keycloakHeader] = &mockAuthStrategy{valid: false, err: fmt.Errorf("keycloak error")}
-
-		env := &Env{
-			lockdown:      lockdown,
-			strategies:    strategies,
-			authenticator: auth.NewAuthenticator(strategies),
-			config: &config.ServerConfig{
-				Keycloak: config.KeycloakConfig{Enabled: true},
-			},
-		}
-
-		router := gin.New()
-		router.POST("/api/v1/deploy-lock", env.SetDeployLock)
-
-		req, _ := http.NewRequest(http.MethodPost, "/api/v1/deploy-lock", nil)
-		req.Header.Set(keycloakHeader, "Bearer test-token")
-		w := httptest.NewRecorder()
-		router.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusInternalServerError, w.Code)
-		assert.Contains(t, w.Body.String(), "Validation process failed")
-	})
-
-	t.Run("returns unauthorized when token is invalid", func(t *testing.T) {
-		lockdown, _ := NewLockdown("")
-		strategies := make(map[string]auth.AuthStrategy)
-		strategies[keycloakHeader] = &mockAuthStrategy{valid: false, err: nil}
+		strategies[keycloakHeader] = &mockAuthStrategy{valid: false, err: fmt.Errorf("token expired")}
 
 		env := &Env{
 			lockdown:      lockdown,
@@ -1900,7 +1882,36 @@ func TestSetDeployLockWithKeycloak(t *testing.T) {
 		router.ServeHTTP(w, req)
 
 		assert.Equal(t, http.StatusUnauthorized, w.Code)
-		assert.Contains(t, w.Body.String(), "not authorized")
+		assert.Contains(t, w.Body.String(), "token expired")
+	})
+
+	t.Run("returns 401 indicating missing auth when header absent", func(t *testing.T) {
+		// No auth header at all — Authenticator returns (false, nil),
+		// distinct from invalid auth. The 401 body should hint that
+		// authentication is required, rather than implying a wrong token.
+		lockdown, _ := NewLockdown("")
+		strategies := make(map[string]auth.AuthStrategy)
+		strategies[keycloakHeader] = &mockAuthStrategy{valid: false, err: nil}
+
+		env := &Env{
+			lockdown:      lockdown,
+			strategies:    strategies,
+			authenticator: auth.NewAuthenticator(strategies),
+			config: &config.ServerConfig{
+				Keycloak: config.KeycloakConfig{Enabled: true},
+			},
+		}
+
+		router := gin.New()
+		router.POST("/api/v1/deploy-lock", env.SetDeployLock)
+
+		req, _ := http.NewRequest(http.MethodPost, "/api/v1/deploy-lock", nil)
+		// no auth header
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusUnauthorized, w.Code)
+		assert.Contains(t, strings.ToLower(w.Body.String()), "authentication required")
 	})
 
 	t.Run("sets lock when token is valid", func(t *testing.T) {
@@ -1935,38 +1946,13 @@ func TestSetDeployLockWithKeycloak(t *testing.T) {
 func TestReleaseDeployLockWithKeycloak(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	t.Run("returns error when validation fails", func(t *testing.T) {
+	t.Run("returns 401 with reason when token is invalid", func(t *testing.T) {
+		// Strategy returned (false, err): auth attempted but failed.
+		// The 401 body should carry the strategy's reason.
 		lockdown, _ := NewLockdown("")
 		lockdown.SetLock()
 		strategies := make(map[string]auth.AuthStrategy)
-		strategies[keycloakHeader] = &mockAuthStrategy{valid: false, err: fmt.Errorf("keycloak error")}
-
-		env := &Env{
-			lockdown:      lockdown,
-			strategies:    strategies,
-			authenticator: auth.NewAuthenticator(strategies),
-			config: &config.ServerConfig{
-				Keycloak: config.KeycloakConfig{Enabled: true},
-			},
-		}
-
-		router := gin.New()
-		router.DELETE("/api/v1/deploy-lock", env.ReleaseDeployLock)
-
-		req, _ := http.NewRequest(http.MethodDelete, "/api/v1/deploy-lock", nil)
-		req.Header.Set(keycloakHeader, "Bearer test-token")
-		w := httptest.NewRecorder()
-		router.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusInternalServerError, w.Code)
-		assert.Contains(t, w.Body.String(), "Validation process failed")
-	})
-
-	t.Run("returns unauthorized when token is invalid", func(t *testing.T) {
-		lockdown, _ := NewLockdown("")
-		lockdown.SetLock()
-		strategies := make(map[string]auth.AuthStrategy)
-		strategies[keycloakHeader] = &mockAuthStrategy{valid: false, err: nil}
+		strategies[keycloakHeader] = &mockAuthStrategy{valid: false, err: fmt.Errorf("token expired")}
 
 		env := &Env{
 			lockdown:      lockdown,
@@ -1986,7 +1972,7 @@ func TestReleaseDeployLockWithKeycloak(t *testing.T) {
 		router.ServeHTTP(w, req)
 
 		assert.Equal(t, http.StatusUnauthorized, w.Code)
-		assert.Contains(t, w.Body.String(), "not authorized")
+		assert.Contains(t, w.Body.String(), "token expired")
 	})
 
 	t.Run("releases lock when token is valid", func(t *testing.T) {

@@ -4,6 +4,8 @@ import (
 	"time"
 
 	envConfig "github.com/caarlos0/env/v11"
+
+	"github.com/shini4i/argo-watcher/internal/helpers"
 )
 
 type Config struct {
@@ -22,15 +24,14 @@ type Config struct {
 	Debug                  bool          `env:"DEBUG"`
 }
 
-// NewClientConfig parses the environment variables to fill a Config struct
-// and returns the new instance or an error.
+// NewClientConfig parses environment variables into a Config and returns the
+// new instance or an error. When parsing fails the returned error groups
+// missing required variables and invalid values under separate headers, so
+// the user can fix everything in one pass.
 func NewClientConfig() (*Config, error) {
-	var err error
-	var config Config
-
-	if config, err = envConfig.ParseAs[Config](); err != nil {
-		return nil, err
+	config, err := envConfig.ParseAs[Config]()
+	if err != nil {
+		return nil, helpers.PrettifyEnvError(err, "invalid argo-watcher client configuration:")
 	}
-
 	return &config, nil
 }
