@@ -7,11 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.7] - 2026-06-30
+
+### Fixed
+
+- Fix a Keycloak redirect loop that appeared *after* a successful login, where
+  the browser bounced between the app and the Keycloak login page without ever
+  settling. The login callback is now processed during app startup, before the
+  router runs its initial redirect, so the authorization code is no longer
+  discarded. Keycloak-less deployments are unaffected and continue to render
+  immediately.
+
+## [0.10.6] - 2026-06-30
+
 ### Added
 
 - Publish `llms.txt` and `llms-full.txt` on the documentation site, following
   the [llmstxt.org](https://llmstxt.org/) standard, so AI agents can discover
   and consume the docs.
+
+### Fixed
+
+- Fix an infinite redirect loop on Keycloak-protected instances where users who
+  already had a valid session were bounced between the app and the Keycloak
+  login/logout pages, and were sometimes silently logged out. The login flow now
+  authenticates through a top-level redirect (`login-required`) instead of a
+  cross-site silent iframe, whose third-party cookies modern browsers strip.
 
 ### Security
 
@@ -84,5 +105,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bumped the Go toolchain to `1.25.11`, resolving a `net/textproto` standard
   library vulnerability present in `go1.25.9`.
 
-[Unreleased]: https://github.com/shini4i/argo-watcher/compare/v0.10.5...HEAD
+[Unreleased]: https://github.com/shini4i/argo-watcher/compare/v0.10.7...HEAD
+[0.10.7]: https://github.com/shini4i/argo-watcher/compare/v0.10.6...v0.10.7
+[0.10.6]: https://github.com/shini4i/argo-watcher/compare/v0.10.5...v0.10.6
 [0.10.5]: https://github.com/shini4i/argo-watcher/compare/v0.10.4...v0.10.5

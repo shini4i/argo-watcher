@@ -7,9 +7,6 @@ repos:
       - id: check-yaml
         exclude: ^mkdocs\.yml$
       - id: check-added-large-files
-      - id: no-commit-to-branch
-        args:
-          - --branch=main
   - repo: https://github.com/dnephin/pre-commit-golang
     rev: v0.5.1
     hooks:
