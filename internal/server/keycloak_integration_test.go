@@ -148,9 +148,10 @@ func callDeployLock(t *testing.T, srv *httptest.Server, method, token string) in
 // round-trip and group-based authorization that the unit tests only mock.
 //
 // Status mapping reflects current server behavior (requireKeycloakAuth, router.go):
-// KeycloakAuthService.Validate returns an error on any failure except a missing
-// token, and requireKeycloakAuth maps a non-nil error to 500 and a clean
-// (false, nil) to 401. Hence a valid-but-unprivileged user yields 500, not 403.
+// every rejection — a strategy error (unprivileged user, garbage/expired token,
+// Keycloak unreachable) or a missing token — is mapped to 401. The error case
+// surfaces the strategy's sanitized reason; the missing-token case reports that
+// authentication is required.
 func TestKeycloakDeployLockAuthz(t *testing.T) {
 	waitForKeycloak(t)
 	srv := deployLockServer(t, newKeycloakEnv(t))
@@ -163,11 +164,11 @@ func TestKeycloakDeployLockAuthz(t *testing.T) {
 
 	t.Run("valid token for a non-privileged user is rejected", func(t *testing.T) {
 		token := keycloakToken(t, "regular-user", "regular-pass")
-		assert.Equal(t, http.StatusInternalServerError, callDeployLock(t, srv, http.MethodPost, token))
+		assert.Equal(t, http.StatusUnauthorized, callDeployLock(t, srv, http.MethodPost, token))
 	})
 
 	t.Run("garbage token is rejected", func(t *testing.T) {
-		assert.Equal(t, http.StatusInternalServerError, callDeployLock(t, srv, http.MethodPost, "not-a-real-token"))
+		assert.Equal(t, http.StatusUnauthorized, callDeployLock(t, srv, http.MethodPost, "not-a-real-token"))
 	})
 
 	t.Run("missing token is unauthorized", func(t *testing.T) {

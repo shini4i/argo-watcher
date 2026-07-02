@@ -20,5 +20,10 @@ func TestValidateDeployToken(t *testing.T) {
 		_, err := service.Validate("invalid_token")
 
 		assert.Error(t, err)
+		// The wording must reflect what actually happened: the strategy is
+		// only ever invoked with a non-empty token, so "missing or invalid"
+		// is misleading. Should clearly say the token is invalid.
+		assert.Contains(t, err.Error(), "invalid")
+		assert.NotContains(t, err.Error(), "missing")
 	})
 }

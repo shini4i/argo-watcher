@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Group and humanize server startup misconfiguration errors: missing required
+  and invalid environment variables are now reported together in a single
+  message listing every offending variable, so you can fix them all in one pass
+  instead of one restart at a time.
+- The CLI client now surfaces the server's response body on HTTP failures and,
+  on `401`/`403`, hints which token variables govern authentication
+  (`ARGO_WATCHER_DEPLOY_TOKEN` / `BEARER_TOKEN`), replacing the previous
+  status-code-only message.
+
+### Fixed
+
+- Reject invalid or unauthorized tokens with `401 Unauthorized` and an
+  actionable reason instead of `500 Internal Server Error`, and distinguish a
+  missing token from an invalid one in the `401` response.
+
 ## [0.10.7] - 2026-06-30
 
 ### Fixed

@@ -7,7 +7,10 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestNewClientConfig(t *testing.T) {
+// setValidClientEnv populates every required client env var with a valid value.
+// Tests can override individual vars to exercise specific failure modes.
+func setValidClientEnv(t *testing.T) {
+	t.Helper()
 	t.Setenv("ARGO_WATCHER_URL", "http://localhost:8080")
 	t.Setenv("IMAGES", "image1,image2")
 	t.Setenv("IMAGE_TAG", "v1.0.0")
@@ -17,37 +20,37 @@ func TestNewClientConfig(t *testing.T) {
 	t.Setenv("ARGO_WATCHER_DEPLOY_TOKEN", "test-token")
 	t.Setenv("TIMEOUT", "60s")
 	t.Setenv("DEBUG", "true")
+}
 
-	t.Run("Successfully generated", func(t *testing.T) {
-		// Call the function
-		config, err := NewClientConfig()
+func TestNewClientConfig_Success(t *testing.T) {
+	setValidClientEnv(t)
 
-		// Assert there was no error
-		assert.NoError(t, err)
+	config, err := NewClientConfig()
 
-		// Assert the config was correctly populated
-		assert.Equal(t, "http://localhost:8080", config.Url)
-		assert.Equal(t, []string{"image1", "image2"}, config.Images)
-		assert.Equal(t, "v1.0.0", config.Tag)
-		assert.Equal(t, "test-app", config.App)
-		assert.Equal(t, "John Doe", config.Author)
-		assert.Equal(t, "test-project", config.Project)
-		assert.Equal(t, "test-token", config.Token)
-		assert.Equal(t, 60*time.Second, config.Timeout)
-		assert.Equal(t, true, config.Debug)
-	})
+	assert.NoError(t, err)
+	assert.Equal(t, "http://localhost:8080", config.Url)
+	assert.Equal(t, []string{"image1", "image2"}, config.Images)
+	assert.Equal(t, "v1.0.0", config.Tag)
+	assert.Equal(t, "test-app", config.App)
+	assert.Equal(t, "John Doe", config.Author)
+	assert.Equal(t, "test-project", config.Project)
+	assert.Equal(t, "test-token", config.Token)
+	assert.Equal(t, 60*time.Second, config.Timeout)
+	assert.Equal(t, true, config.Debug)
+}
 
-	t.Run("Failed to generate", func(t *testing.T) {
-		// Set an invalid value for TIMEOUT
-		t.Setenv("TIMEOUT", "invalid")
+// TestNewClientConfig_InvalidDuration verifies that the formatter is wired
+// in: bad TIMEOUT surfaces under the "invalid values" header so the user
+// can spot the problem at a glance, instead of the env library's
+// semicolon-joined one-liner.
+func TestNewClientConfig_InvalidDuration(t *testing.T) {
+	setValidClientEnv(t)
+	t.Setenv("TIMEOUT", "invalid")
 
-		// Call the function
-		_, err := NewClientConfig()
+	_, err := NewClientConfig()
 
-		// Assert that an error was returned
-		assert.Error(t, err)
-
-		// Assert that the error is the expected one
-		assert.Equal(t, "env: parse error on field \"Timeout\" of type \"time.Duration\": unable to parse duration: time: invalid duration \"invalid\"", err.Error())
-	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid values:")
+	assert.Contains(t, err.Error(), "Timeout")
+	assert.Contains(t, err.Error(), `"invalid"`)
 }

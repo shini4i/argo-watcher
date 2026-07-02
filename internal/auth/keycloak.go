@@ -2,6 +2,7 @@ package auth
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -71,13 +72,17 @@ func (k *KeycloakAuthService) Validate(token string) (bool, error) {
 
 	req, err := http.NewRequest("GET", k.userinfoURL, nil) // #nosec G704 - URL is validated in Init()
 	if err != nil {
-		return false, fmt.Errorf("error creating request: %v", err)
+		// Transport/internal failure details (URLs, hostnames) stay in the
+		// server log; the public-facing error must not leak them.
+		log.Error().Err(err).Msg("keycloak: error creating userinfo request")
+		return false, errors.New("token validation failed")
 	}
 	req.Header.Add("Authorization", "Bearer "+token)
 
 	resp, err := k.client.Do(req) // #nosec G704 - URL is validated in Init()
 	if err != nil {
-		return false, fmt.Errorf("error on response: %v", err)
+		log.Error().Err(err).Msg("keycloak: userinfo request failed")
+		return false, errors.New("token validation failed")
 	}
 	defer func(Body io.ReadCloser) {
 		err := Body.Close()
@@ -89,13 +94,13 @@ func (k *KeycloakAuthService) Validate(token string) (bool, error) {
 	// Read and parse the response body
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Error().Err(err).Msg("error reading response body")
-		return false, fmt.Errorf("error reading response body: %v", err)
+		log.Error().Err(err).Msg("keycloak: error reading userinfo response body")
+		return false, errors.New("token validation failed")
 	}
 
 	if err := json.Unmarshal(bodyBytes, &keycloakResponse); err != nil {
-		log.Error().Err(err).Msg("error unmarshalling response body")
-		return false, fmt.Errorf("error unmarshalling response body: %v", err)
+		log.Error().Err(err).Msg("keycloak: error unmarshalling userinfo response")
+		return false, errors.New("token validation failed")
 	}
 
 	userPrivileged := k.allowedToRollback(keycloakResponse.Username, keycloakResponse.Groups)

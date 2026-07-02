@@ -108,6 +108,58 @@ func TestAddTaskServerError(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// TestAddTask_AuthFailureSurfacesServerReason verifies that when the server
+// rejects the task (e.g. 401 with `{"error":"deploy token is invalid"}`),
+// the client surfaces the server's reason and a hint about which env vars
+// govern auth, instead of the old opaque "response code 401".
+func TestAddTask_AuthFailureSurfacesServerReason(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		rw.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(rw).Encode(models.TaskStatus{
+			Status: "unauthorized",
+			Error:  "deploy token is invalid",
+		})
+	}))
+	defer server.Close()
+
+	watcher := NewWatcher(server.URL, false, 30*time.Second)
+	task := models.Task{
+		App: "test", Author: "x", Project: "y",
+		Images: []models.Image{{Tag: testVersion, Image: "example"}},
+	}
+
+	_, err := watcher.addTask(task, "DeployToken", "wrong")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "401")
+	assert.Contains(t, err.Error(), "deploy token is invalid")
+	// The client should hint at which env vars to check on auth failures.
+	assert.Contains(t, err.Error(), "ARGO_WATCHER_DEPLOY_TOKEN")
+}
+
+// TestAddTask_NonAuthFailureSurfacesServerReason verifies the same body-
+// surfacing behaviour for non-auth errors (e.g. 503 with a reason).
+func TestAddTask_NonAuthFailureSurfacesServerReason(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		rw.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(rw).Encode(models.TaskStatus{
+			Status: "down",
+			Error:  "argocd is unreachable",
+		})
+	}))
+	defer server.Close()
+
+	watcher := NewWatcher(server.URL, false, 30*time.Second)
+	task := models.Task{
+		App: "test", Author: "x", Project: "y",
+		Images: []models.Image{{Tag: testVersion, Image: "example"}},
+	}
+
+	_, err := watcher.addTask(task, "", "")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "503")
+	assert.Contains(t, err.Error(), "argocd is unreachable")
+}
+
 func init() {
 	mux.HandleFunc("/api/v1/tasks", addTaskHandler)
 	mux.HandleFunc("/api/v1/tasks/", getTaskStatusHandler)
