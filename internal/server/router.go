@@ -439,6 +439,7 @@ func (env *Env) getVersion(c *gin.Context) {
 // @Produce json
 // @Param task body models.Task true "Task"
 // @Success 202 {object} models.TaskStatus
+// @Failure 401 {object} models.TaskStatus
 // @Failure 406 {object} models.TaskStatus
 // @Router /api/v1/tasks [post]
 func (env *Env) addTask(c *gin.Context) {
@@ -466,8 +467,14 @@ func (env *Env) addTask(c *gin.Context) {
 
 	tokenValid, err := env.validateToken(c, "")
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, models.TaskStatus{})
-		log.Error().Msgf("Couldn't validate token. Got the following error: %s", err)
+		// A non-nil error means the strategy was invoked and rejected the
+		// token: a client mistake, not a server failure. Return 401 with
+		// the reason so the client can show something actionable.
+		log.Warn().Msgf("rejecting task: %s", err)
+		c.JSON(http.StatusUnauthorized, models.TaskStatus{
+			Status: unauthorizedMessage,
+			Error:  err.Error(),
+		})
 		return
 	}
 
@@ -608,31 +615,42 @@ func (env *Env) getConfig(c *gin.Context) {
 }
 
 // requireKeycloakAuth validates the Keycloak token when Keycloak is enabled.
-// It returns true if validation passes (or Keycloak is disabled). When validation fails,
-// it writes the appropriate HTTP error response and returns false.
+// It returns true if validation passes (or Keycloak is disabled). On failure
+// the response distinguishes:
+//   - 401 with "authentication required" when no auth header was sent.
+//   - 401 with the strategy's reason when the token was rejected.
+//
+// Strategy transport/parse failures (e.g. Keycloak unreachable) are also
+// returned as 401 with a sanitized "token validation failed" message; full
+// details land in the server log only.
 func (env *Env) requireKeycloakAuth(c *gin.Context) bool {
 	if !env.config.Keycloak.Enabled {
 		return true
 	}
 
 	valid, err := env.validateToken(c, keycloakHeader)
-	if err != nil {
-		log.Error().Msgf("Error during validation: %s", err)
-		c.JSON(http.StatusInternalServerError, models.TaskStatus{
-			Status: "Validation process failed",
-		})
-		return false
+	if valid {
+		return true
 	}
-	if !valid {
-		log.Warn().Msgf("User tried to perform %s %s with either invalid token or auth method",
-			c.Request.Method, c.Request.URL)
+
+	if err != nil {
+		// Strategy was invoked and rejected the token. Surface the reason.
+		log.Warn().Msgf("User tried %s %s with invalid token: %s",
+			c.Request.Method, c.Request.URL, err)
 		c.JSON(http.StatusUnauthorized, models.TaskStatus{
 			Status: unauthorizedMessage,
+			Error:  err.Error(),
 		})
 		return false
 	}
 
-	return true
+	// (false, nil): no auth header sent at all.
+	log.Warn().Msgf("User tried %s %s without authentication", c.Request.Method, c.Request.URL)
+	c.JSON(http.StatusUnauthorized, models.TaskStatus{
+		Status: unauthorizedMessage,
+		Error:  "authentication required (set " + keycloakHeader + " header)",
+	})
+	return false
 }
 
 // SetDeployLock godoc
@@ -640,6 +658,7 @@ func (env *Env) requireKeycloakAuth(c *gin.Context) bool {
 // @Description Set deploy lock
 // @Tags frontend
 // @Success 200 {string} string
+// @Failure 401 {object} models.TaskStatus
 // @Router /api/v1/deploy-lock [post]
 func (env *Env) SetDeployLock(c *gin.Context) {
 	if !env.requireKeycloakAuth(c) {
@@ -660,6 +679,7 @@ func (env *Env) SetDeployLock(c *gin.Context) {
 // @Description Release deploy lock
 // @Tags frontend
 // @Success 200 {string} string
+// @Failure 401 {object} models.TaskStatus
 // @Router /api/v1/deploy-lock [delete]
 func (env *Env) ReleaseDeployLock(c *gin.Context) {
 	if !env.requireKeycloakAuth(c) {

@@ -24,7 +24,7 @@ services:
       postgres:
         condition: service_healthy
   backend:
-    image: golang:1.25.9-alpine3.23
+    image: golang:1.25.11-alpine3.23
     volumes:
       - .:/app
     working_dir: /app
@@ -63,7 +63,7 @@ services:
     ports:
       - "3100:3100"
   mock:
-    image: golang:1.25.9-alpine3.23
+    image: golang:1.25.11-alpine3.23
     volumes:
       - .:/app
     working_dir: /app
@@ -103,3 +103,21 @@ services:
     depends_on:
       gitea:
         condition: service_healthy
+
+  # Keycloak for the auth e2e tests (Go integration tests + the Keycloak-enabled
+  # nuclei pass). start-dev imports test/keycloak on boot: realm argo-watcher-e2e
+  # with a client that emits a `groups` claim and privileged/regular test users.
+  # Mapped to host 8090 so it never collides with argo-watcher on 8080. No health
+  # check (the image lacks a usable shell tool, like toxiproxy); callers poll the
+  # realm's OIDC discovery endpoint for readiness instead.
+  keycloak:
+    profiles: [integration]
+    image: quay.io/keycloak/keycloak:26.6.3
+    command: start-dev --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+    volumes:
+      - ./test/keycloak/argo-watcher-e2e-realm.json:/opt/keycloak/data/import/argo-watcher-e2e-realm.json:ro
+    ports:
+      - "8090:8080"

@@ -2,6 +2,8 @@
 
 The Argo Watcher server supports the following environment variables. When using the Helm chart, most of these are set through chart values automatically.
 
+On startup, any missing required or invalid variables are reported together in a single error that lists every offending variable, so you can fix them all in one pass instead of one restart at a time.
+
 ## Core Settings
 
 | Variable            | Description                                                     | Default     | Required    |

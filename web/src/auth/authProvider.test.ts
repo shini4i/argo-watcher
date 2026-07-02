@@ -49,8 +49,6 @@ const mockConfig = (config: unknown) => {
   );
 };
 
-const SILENT_SSO_STORAGE_KEY = 'argo-watcher:silent-sso-disabled';
-
 /** Ensures a browser-like window object exists when tests require DOM APIs. */
 const ensureBrowserWindow = (): Window => {
   const browserWindow = globalThis.window;
@@ -84,7 +82,7 @@ describe('authProvider', () => {
     expect(identity.id).toBe('anonymous');
   });
 
-  it('rejects checkAuth when Keycloak init reports unauthenticated', async () => {
+  it('redirects to the Keycloak login page when unauthenticated, without logging out', async () => {
     mockConfig({
       keycloak: {
         enabled: true,
@@ -97,7 +95,98 @@ describe('authProvider', () => {
     keycloakMock.init.mockResolvedValueOnce(false);
 
     const provider = await loadAuthProvider();
-    await expect(provider.checkAuth({})).rejects.toBeInstanceOf(HttpError);
+
+    // checkAuth must NOT reject: a rejection makes react-admin call logout(),
+    // which would destroy a still-valid Keycloak session and loop.
+    await expect(provider.checkAuth({})).resolves.toBeUndefined();
+    expect(keycloakMock.init).toHaveBeenCalledWith(
+      expect.objectContaining({ onLoad: 'login-required' }),
+    );
+    expect(keycloakMock.login).toHaveBeenCalledWith(
+      expect.objectContaining({
+        redirectUri: `${ensureBrowserWindow().location.origin}/`,
+      }),
+    );
+    expect(keycloakMock.logout).not.toHaveBeenCalled();
+  });
+
+  it('never rejects checkAuth (nor logs out) when the login redirect fails', async () => {
+    mockConfig({
+      keycloak: {
+        enabled: true,
+        url: 'https://keycloak.example.com',
+        realm: 'demo',
+        client_id: 'argo',
+        privileged_groups: [],
+      },
+    });
+    keycloakMock.init.mockResolvedValueOnce(false);
+    keycloakMock.login.mockRejectedValueOnce(new Error('redirect blocked'));
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const provider = await loadAuthProvider();
+
+    // A login() failure must be swallowed: a rejected checkAuth triggers
+    // react-admin's logout(), which would reintroduce the redirect loop.
+    await expect(provider.checkAuth({})).resolves.toBeUndefined();
+    expect(keycloakMock.logout).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Failed to initiate the Keycloak login redirect'),
+      expect.any(Error),
+    );
+    warnSpy.mockRestore();
+  });
+
+  it('still resolves checkAuth when init throws AND the login redirect rejects', async () => {
+    mockConfig({
+      keycloak: {
+        enabled: true,
+        url: 'https://keycloak.example.com',
+        realm: 'demo',
+        client_id: 'argo',
+        privileged_groups: [],
+      },
+    });
+    keycloakMock.init.mockRejectedValueOnce(new Error('init failure'));
+    keycloakMock.login.mockRejectedValueOnce(new Error('redirect blocked'));
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const provider = await loadAuthProvider();
+
+    // Worst case for the loop-prevention invariant: both recovery mechanisms
+    // fail in one call. checkAuth must still resolve so react-admin never logs out.
+    await expect(provider.checkAuth({})).resolves.toBeUndefined();
+    expect(keycloakMock.logout).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Keycloak initialization failed'),
+      expect.any(Error),
+    );
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Failed to initiate the Keycloak login redirect'),
+      expect.any(Error),
+    );
+    warnSpy.mockRestore();
+  });
+
+  it('initializes with login-required rather than a cross-site silent iframe', async () => {
+    mockConfig({
+      keycloak: {
+        enabled: true,
+        url: 'https://keycloak.example.com',
+        realm: 'demo',
+        client_id: 'argo',
+        privileged_groups: [],
+      },
+    });
+    keycloakMock.init.mockResolvedValueOnce(true);
+
+    const provider = await loadAuthProvider();
+    await provider.checkAuth({});
+
+    const initOptions = keycloakMock.init.mock.calls[0]?.[0] ?? {};
+    expect(initOptions).toMatchObject({ onLoad: 'login-required', checkLoginIframe: false });
+    expect(initOptions).not.toHaveProperty('silentCheckSsoRedirectUri');
+    expect(keycloakMock.login).not.toHaveBeenCalled();
   });
 
   it('returns permissions when Keycloak authenticates successfully', async () => {
@@ -116,8 +205,7 @@ describe('authProvider', () => {
     await provider.checkAuth({});
     expect(keycloakMock.init).toHaveBeenCalledWith(
       expect.objectContaining({
-        silentCheckSsoRedirectUri: expect.stringContaining('silent-check-sso.html'),
-        silentCheckSsoFallback: false,
+        onLoad: 'login-required',
       }),
     );
     const permissions = (await provider.getPermissions()) as { groups: string[]; privilegedGroups: string[] };
@@ -200,7 +288,7 @@ describe('authProvider', () => {
     nowSpy.mockRestore();
   });
 
-  it('falls back to non-silent init when silent SSO fails', async () => {
+  it('redirects to login (without re-initializing) when Keycloak init fails', async () => {
     mockConfig({
       keycloak: {
         enabled: true,
@@ -211,29 +299,20 @@ describe('authProvider', () => {
       },
     });
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const silentError = new Error('silent failure');
-    keycloakMock.init.mockRejectedValueOnce(silentError);
-    keycloakMock.init.mockResolvedValueOnce(true);
+    const initError = new Error('init failure');
+    keycloakMock.init.mockRejectedValueOnce(initError);
 
     const provider = await loadAuthProvider();
-    await expect(provider.checkAuth({})).resolves.toBeUndefined();
 
-    expect(keycloakMock.init).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        silentCheckSsoRedirectUri: expect.stringContaining('silent-check-sso.html'),
-      }),
-    );
-    expect(keycloakMock.init).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        onLoad: 'login-required',
-      }),
-    );
-    expect(keycloakMock.init).toHaveBeenCalledTimes(2);
+    // A single init attempt (keycloak-js forbids a second init on one instance),
+    // then a top-level login redirect — never a rejection that triggers logout.
+    await expect(provider.checkAuth({})).resolves.toBeUndefined();
+    expect(keycloakMock.init).toHaveBeenCalledTimes(1);
+    expect(keycloakMock.login).toHaveBeenCalledTimes(1);
+    expect(keycloakMock.logout).not.toHaveBeenCalled();
     expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Silent SSO failed'),
-      silentError,
+      expect.stringContaining('Keycloak initialization failed'),
+      initError,
     );
     warnSpy.mockRestore();
   });
@@ -259,42 +338,6 @@ describe('authProvider', () => {
     expect(keycloakMock.init).not.toHaveBeenCalled();
   });
 
-  it('remembers silent SSO failures across reloads', async () => {
-    ensureBrowserWindow().localStorage.clear();
-    mockConfig({
-      keycloak: {
-        enabled: true,
-        url: 'https://keycloak.example.com',
-        realm: 'demo',
-        client_id: 'argo',
-        privileged_groups: [],
-      },
-    });
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const silentError = new Error('silent blocked');
-    keycloakMock.init.mockRejectedValueOnce(silentError);
-    keycloakMock.init.mockResolvedValue(true);
-
-    const provider = await loadAuthProvider();
-    await expect(provider.checkAuth({})).resolves.toBeUndefined();
-    expect(ensureBrowserWindow().localStorage.getItem(SILENT_SSO_STORAGE_KEY)).toBe('true');
-    warnSpy.mockRestore();
-
-    const module = await import('./authProvider');
-    module.__testing.reset();
-    module.__testing.reloadSilentPreference();
-    keycloakMock.init.mockClear();
-    keycloakMock.init.mockResolvedValueOnce(true);
-
-    await expect(provider.checkAuth({})).resolves.toBeUndefined();
-    expect(keycloakMock.init).toHaveBeenCalledTimes(1);
-    expect(keycloakMock.init).toHaveBeenCalledWith(
-      expect.objectContaining({
-        onLoad: 'login-required',
-      }),
-    );
-  });
-
   it('builds absolute redirect URIs during login', async () => {
     mockConfig({
       keycloak: {
@@ -315,78 +358,6 @@ describe('authProvider', () => {
       redirectUri: `${ensureBrowserWindow().location.origin}/history`,
     }),
   );
-  });
-
-  it('defaults silent SSO to enabled when localStorage is unavailable', async () => {
-    mockConfig({ keycloak: { enabled: false } });
-    const module = await import('./authProvider');
-    module.__testing.disableSilentSso();
-    const windowSpy = vi.spyOn(browserUtils, 'getBrowserWindow').mockReturnValue({} as Window);
-
-    module.__testing.reloadSilentPreference();
-
-    expect(module.__testing.isSilentSsoEnabled()).toBe(true);
-    windowSpy.mockRestore();
-  });
-
-  it('logs when reading the silent SSO preference fails', async () => {
-    mockConfig({ keycloak: { enabled: false } });
-    const module = await import('./authProvider');
-    module.__testing.disableSilentSso();
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const storageError = new Error('storage-failure');
-    const windowSpy = vi.spyOn(browserUtils, 'getBrowserWindow').mockImplementation(() => {
-      throw storageError;
-    });
-
-    module.__testing.reloadSilentPreference();
-
-    expect(module.__testing.isSilentSsoEnabled()).toBe(true);
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Failed to read silent SSO preference'),
-      storageError,
-    );
-    windowSpy.mockRestore();
-    warnSpy.mockRestore();
-  });
-
-  it('skips persisting silent SSO failures when storage is unavailable', async () => {
-    mockConfig({ keycloak: { enabled: false } });
-    const module = await import('./authProvider');
-    const windowSpy = vi.spyOn(browserUtils, 'getBrowserWindow').mockReturnValue({} as Window);
-
-    module.__testing.disableSilentSso();
-
-    expect(module.__testing.isSilentSsoEnabled()).toBe(false);
-    expect(ensureBrowserWindow().localStorage.getItem(SILENT_SSO_STORAGE_KEY)).toBeNull();
-    windowSpy.mockRestore();
-  });
-
-  it('warns when persisting the silent SSO preference throws', async () => {
-    mockConfig({ keycloak: { enabled: false } });
-    const module = await import('./authProvider');
-    const storageError = new Error('denied');
-    const storage = {
-      setItem: vi.fn(() => {
-        throw storageError;
-      }),
-      removeItem: vi.fn(() => {
-        throw storageError;
-      }),
-    } as unknown as Storage;
-    const windowSpy = vi.spyOn(browserUtils, 'getBrowserWindow').mockReturnValue({
-      localStorage: storage,
-    } as Window);
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
-    module.__testing.disableSilentSso();
-
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Failed to persist silent SSO preference'),
-      storageError,
-    );
-    windowSpy.mockRestore();
-    warnSpy.mockRestore();
   });
 
   it('returns cached groups without reloading the user profile', async () => {
@@ -437,15 +408,6 @@ describe('authProvider', () => {
       expect.any(Error),
     );
     warnSpy.mockRestore();
-  });
-
-  it('resolves app URLs when the browser origin is unavailable', async () => {
-    const module = await import('./authProvider');
-    const windowSpy = vi.spyOn(browserUtils, 'getBrowserWindow').mockReturnValue(undefined as unknown as Window);
-
-    expect(module.__testing.resolveAppUrl('/foo')).toBe('/foo');
-
-    windowSpy.mockRestore();
   });
 
   it('resolves redirect URIs when the browser origin is unavailable', async () => {
@@ -540,25 +502,6 @@ describe('authProvider', () => {
     module.__testing.reset();
   });
 
-  it('propagates interactive init failures after silent SSO is disabled', async () => {
-    mockConfig({
-      keycloak: {
-        enabled: true,
-        url: 'https://keycloak.example.com',
-        realm: 'demo',
-        client_id: 'argo',
-        privileged_groups: [],
-      },
-    });
-    const module = await import('./authProvider');
-    module.__testing.disableSilentSso();
-    const interactiveError = new Error('interactive failed');
-    keycloakMock.init.mockRejectedValueOnce(interactiveError);
-    const provider = await loadAuthProvider();
-
-    await expect(provider.checkAuth({})).rejects.toMatchObject({ status: 500 });
-  });
-
   it('short-circuits login when Keycloak is disabled', async () => {
     mockConfig({ keycloak: { enabled: false } });
     const provider = await loadAuthProvider();
@@ -568,5 +511,108 @@ describe('authProvider', () => {
 
     expect(keycloakMock.login).not.toHaveBeenCalled();
     expect(getAccessToken()).toBeNull();
+  });
+
+  describe('bootstrapAuth', () => {
+    it('is a no-op when Keycloak is disabled (preserves keycloak-less mode)', async () => {
+      mockConfig({ keycloak: { enabled: false } });
+      const module = await import('./authProvider');
+
+      // keycloak-less deployments must render immediately: no init, no redirect.
+      await expect(module.bootstrapAuth()).resolves.toBeUndefined();
+      expect(keycloakMock.init).not.toHaveBeenCalled();
+      expect(keycloakMock.login).not.toHaveBeenCalled();
+    });
+
+    it('authenticates eagerly so checkAuth reuses the session without re-initializing', async () => {
+      mockConfig({
+        keycloak: {
+          enabled: true,
+          url: 'https://keycloak.example.com',
+          realm: 'demo',
+          client_id: 'argo',
+          privileged_groups: ['admins'],
+        },
+      });
+      keycloakMock.init.mockResolvedValue(true);
+      const module = await import('./authProvider');
+
+      // Eager init consumes the login callback before the router strips the URL
+      // fragment, persisting the token without ever bouncing to the login page.
+      await module.bootstrapAuth();
+      expect(keycloakMock.init).toHaveBeenCalledTimes(1);
+      expect(getAccessToken()).toBe('token');
+      expect(keycloakMock.login).not.toHaveBeenCalled();
+
+      // checkAuth now finds the persisted token and takes the cached-session path,
+      // so it never re-enters init. (The init-once guard for the unauthenticated
+      // path — where no token is set — is covered by the failed-bootstrap test below.)
+      await expect(module.authProvider.checkAuth({})).resolves.toBeUndefined();
+      expect(keycloakMock.init).toHaveBeenCalledTimes(1);
+    });
+
+    it('redirects to the Keycloak login page when the bootstrap finds no session', async () => {
+      mockConfig({
+        keycloak: {
+          enabled: true,
+          url: 'https://keycloak.example.com',
+          realm: 'demo',
+          client_id: 'argo',
+          privileged_groups: [],
+        },
+      });
+      keycloakMock.init.mockResolvedValueOnce(false);
+      const module = await import('./authProvider');
+
+      await expect(module.bootstrapAuth()).resolves.toBeUndefined();
+      expect(keycloakMock.login).toHaveBeenCalledWith(
+        expect.objectContaining({
+          redirectUri: `${ensureBrowserWindow().location.origin}/`,
+        }),
+      );
+    });
+
+    it('recovers via login on checkAuth after a failed bootstrap, without re-initializing', async () => {
+      mockConfig({
+        keycloak: {
+          enabled: true,
+          url: 'https://keycloak.example.com',
+          realm: 'demo',
+          client_id: 'argo',
+          privileged_groups: [],
+        },
+      });
+      keycloakMock.init.mockRejectedValueOnce(new Error('bootstrap init failure'));
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const module = await import('./authProvider');
+
+      // Bootstrap swallows the init error so rendering is never blocked.
+      await expect(module.bootstrapAuth()).resolves.toBeUndefined();
+      expect(keycloakMock.init).toHaveBeenCalledTimes(1);
+
+      // The cached rejection means checkAuth must NOT call init again (keycloak-js
+      // forbids a second init on one instance); it falls through to a login redirect.
+      // login() fires twice in total — once from the failed bootstrap, once from
+      // checkAuth — but both merely (re)issue the top-level redirect, never logout.
+      await expect(module.authProvider.checkAuth({})).resolves.toBeUndefined();
+      expect(keycloakMock.init).toHaveBeenCalledTimes(1);
+      expect(keycloakMock.login).toHaveBeenCalledTimes(2);
+      expect(keycloakMock.logout).not.toHaveBeenCalled();
+      warnSpy.mockRestore();
+    });
+
+    it('resolves (never throws) when the config endpoint is unreachable, so render still runs', async () => {
+      vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('network offline'));
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const module = await import('./authProvider');
+
+      // A down backend must not block the SPA from mounting.
+      await expect(module.bootstrapAuth()).resolves.toBeUndefined();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Eager authentication bootstrap failed'),
+        expect.any(Error),
+      );
+      warnSpy.mockRestore();
+    });
   });
 });

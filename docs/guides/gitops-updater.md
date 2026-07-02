@@ -13,7 +13,7 @@ Before enabling the GitOps updater, you need to:
 
 1. **Create an authentication secret** (choose one approach):
     - **Deploy token** -- Generate an arbitrary string and add it to the Argo Watcher Kubernetes secret under the `ARGO_WATCHER_DEPLOY_TOKEN` key. This approach is planned for deprecation in v1.0.0.
-    - **JWT secret (recommended)** -- Generate a secret for signing JWT tokens and add it to the Argo Watcher Kubernetes secret under the `JWT_SECRET` key. See [JWT Configuration](#jwt-configuration) below.
+    - **JWT secret (recommended)** -- Generate a secret for signing JWT tokens (see [Generating the JWT Secret](#generating-the-jwt-secret)) and add it to the Argo Watcher Kubernetes secret under the `JWT_SECRET` key.
 
 2. **Create an SSH key secret** -- Generate an SSH key pair and store the private key in a Kubernetes secret. By default, Argo Watcher expects the key under the `sshPrivateKey` field, but this is configurable via the Helm chart.
 
@@ -29,6 +29,19 @@ Before enabling the GitOps updater, you need to:
 ## JWT Configuration
 
 JWT is the recommended authentication method for the GitOps updater. It provides fine-grained control over which applications a token can deploy to.
+
+### Generating the JWT Secret
+
+The `JWT_SECRET` is a symmetric key used to sign and verify tokens (HMAC). It is not generated for you -- you create it once and store it in the Argo Watcher Kubernetes secret under the `JWT_SECRET` key. The same secret is later used to sign tokens (see [Generating a JWT Token](#generating-a-jwt-token)).
+
+Generate a 256-bit random secret with `openssl`:
+
+```bash
+openssl rand -base64 32
+```
+
+!!! warning
+    Treat this value as a credential. Anyone who knows it can mint valid deployment tokens. Store it only in the Kubernetes secret, never commit it to Git, and rotate it if it is ever exposed.
 
 ### JWT Payload Structure
 
