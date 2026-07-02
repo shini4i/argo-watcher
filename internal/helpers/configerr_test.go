@@ -48,3 +48,22 @@ func TestPrettifyEnvError_GroupsMissingAndInvalid(t *testing.T) {
 	assert.Contains(t, msg, "Timeout")
 	assert.Contains(t, msg, `"nope"`)
 }
+
+func TestPrettifyEnvError_InvalidOnlyOmitsMissingHeader(t *testing.T) {
+	// All required vars are present, but one value fails to parse. The output
+	// must report the invalid value without emitting an empty "missing
+	// required environment variables:" header.
+	t.Setenv("SAMPLE_PRETTIFY_URL", "http://example.com")
+	t.Setenv("SAMPLE_PRETTIFY_NAME", "sample")
+	t.Setenv("SAMPLE_PRETTIFY_TIMEOUT", "nope")
+
+	_, parseErr := envConfig.ParseAs[sampleConfig]()
+	assert.Error(t, parseErr)
+
+	out := PrettifyEnvError(parseErr, "test config invalid:")
+	msg := out.Error()
+
+	assert.Contains(t, msg, "invalid values:")
+	assert.Contains(t, msg, "Timeout")
+	assert.NotContains(t, msg, "missing required environment variables:")
+}

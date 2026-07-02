@@ -98,6 +98,48 @@ func TestGetJSON_NonOKResponseSurfacesBody(t *testing.T) {
 	assert.Contains(t, err.Error(), "deploy token is invalid")
 }
 
+// TestServerErrorFromResponse exercises the branches of serverErrorFromResponse
+// directly: the empty-body fallback (status code only), the 401/403 auth hint,
+// and the raw-body fallback when the body is not TaskStatus JSON.
+func TestServerErrorFromResponse(t *testing.T) {
+	const authHint = "check ARGO_WATCHER_DEPLOY_TOKEN or BEARER_TOKEN"
+
+	t.Run("empty body falls back to status code only", func(t *testing.T) {
+		err := serverErrorFromResponse(http.StatusBadGateway, []byte("   "))
+
+		assert.Error(t, err)
+		assert.Equal(t, "argo-watcher returned status 502", err.Error())
+		assert.NotContains(t, err.Error(), ": ", "must not emit a trailing colon with an empty reason")
+	})
+
+	t.Run("401 appends the auth hint", func(t *testing.T) {
+		err := serverErrorFromResponse(http.StatusUnauthorized, []byte(`{"error":"deploy token is invalid"}`))
+
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "401")
+		assert.Contains(t, err.Error(), "deploy token is invalid")
+		assert.Contains(t, err.Error(), authHint)
+	})
+
+	t.Run("403 appends the auth hint", func(t *testing.T) {
+		err := serverErrorFromResponse(http.StatusForbidden, []byte(`{"error":"not a member of any privileged group"}`))
+
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "403")
+		assert.Contains(t, err.Error(), "not a member of any privileged group")
+		assert.Contains(t, err.Error(), authHint)
+	})
+
+	t.Run("non-auth status surfaces reason without the auth hint", func(t *testing.T) {
+		err := serverErrorFromResponse(http.StatusServiceUnavailable, []byte("gateway timeout"))
+
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "503")
+		assert.Contains(t, err.Error(), "gateway timeout")
+		assert.NotContains(t, err.Error(), authHint)
+	})
+}
+
 func TestGetImagesList(t *testing.T) {
 	expectedList := []models.Image{
 		{

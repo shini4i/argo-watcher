@@ -1819,7 +1819,6 @@ func TestAddTaskEndpoint(t *testing.T) {
 		assert.Contains(t, w.Body.String(), "deploy token is invalid")
 	})
 
-
 	t.Run("returns error when argo.AddTask fails", func(t *testing.T) {
 		lockdown, _ := NewLockdown("")
 		strategies := make(map[string]auth.AuthStrategy)
