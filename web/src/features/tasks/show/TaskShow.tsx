@@ -26,10 +26,11 @@ import {
 import { useCallback, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useGetIdentity, useGetOne, useNotify, usePermissions } from 'react-admin';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link as RouterLink, useNavigate, useParams } from 'react-router-dom';
 import type { TaskStatus } from '../../../data/types';
 import { formatDuration, formatRelativeTime } from '../../../shared/utils/time';
 import { describeTaskStatus } from '../utils/statusPresentation';
+import { RollbackIndicator } from '../components/RollbackIndicator';
 import { useDeployLockState } from '../../deployLock/useDeployLockState';
 import { useKeycloakEnabled } from '../../../shared/hooks/useKeycloakEnabled';
 import { getBrowserWindow, hasPrivilegedAccess } from '../../../shared/utils';
@@ -383,7 +384,12 @@ export const TaskShow = () => {
         <CardHeader
           title={`Task ${data.id?.slice(0, 8) ?? '—'}`}
           subheader="UTC"
-          action={<Chip label={descriptor.label} color={descriptor.chipColor} size="medium" icon={descriptor.icon} />}
+          action={
+            <Stack direction="row" spacing={1} alignItems="center">
+              <RollbackIndicator isRollback={data.is_rollback} />
+              <Chip label={descriptor.label} color={descriptor.chipColor} size="medium" icon={descriptor.icon} />
+            </Stack>
+          }
         />
         <CardContent>
           <Stack spacing={3}>
@@ -393,6 +399,20 @@ export const TaskShow = () => {
                   <InfoField label="Application" value={data.app ?? 'Unknown'} />
                   <InfoField label="Project" value={<ProjectReference project={data.project} />} />
                   <InfoField label="Author" value={data.author ?? '—'} />
+                  {data.is_rollback && (
+                    <InfoField
+                      label="Rollback of"
+                      value={
+                        data.rollback_target_id ? (
+                          <Link component={RouterLink} to={`/task/${data.rollback_target_id}`}>
+                            {data.rollback_target_id.slice(0, 8)}
+                          </Link>
+                        ) : (
+                          'A previously deployed version'
+                        )
+                      }
+                    />
+                  )}
                 </Stack>
               </Grid>
               <Grid item xs={12} md={6}>

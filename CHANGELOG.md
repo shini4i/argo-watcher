@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Detect and flag rollback deployments: when a task redeploys an image set that
+  ran earlier for the same application (returning to a previous version), it is
+  marked as a rollback. The task tables show a marker next to the status, and
+  the task detail page links to the earlier task the deployment rolls back to.
+- Expose `IsRollback` and `RollbackTargetId` as webhook notification template
+  variables so alerts can highlight rollbacks.
+
 ### Changed
 
 - Group and humanize server startup misconfiguration errors: missing required

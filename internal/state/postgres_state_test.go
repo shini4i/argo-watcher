@@ -77,6 +77,33 @@ func TestPostgresState_AddTask(t *testing.T) {
 	assert.Equal(t, "Test", result.App)
 }
 
+func TestPostgresState_RollbackFieldsRoundTrip(t *testing.T) {
+	env := newPostgresTestEnv(t)
+
+	t.Run("rollback fields persist and are read back", func(t *testing.T) {
+		task := sampleTask("Rollback")
+		task.IsRollback = true
+		task.RollbackTargetId = "11111111-1111-4111-8111-111111111111"
+		inserted := env.addTask(t, task)
+
+		stored, err := env.state.GetTask(inserted.Id)
+		require.NoError(t, err)
+		require.NotNil(t, stored)
+		assert.True(t, stored.IsRollback)
+		assert.Equal(t, "11111111-1111-4111-8111-111111111111", stored.RollbackTargetId)
+	})
+
+	t.Run("defaults apply when rollback fields are unset", func(t *testing.T) {
+		inserted := env.addTask(t, sampleTask("NoRollback"))
+
+		stored, err := env.state.GetTask(inserted.Id)
+		require.NoError(t, err)
+		require.NotNil(t, stored)
+		assert.False(t, stored.IsRollback)
+		assert.Empty(t, stored.RollbackTargetId)
+	})
+}
+
 func TestPostgresState_GetTasks(t *testing.T) {
 	env := newPostgresTestEnv(t)
 
