@@ -13,6 +13,8 @@ export interface Task {
   images: Image[];
   status?: string;
   status_reason?: string;
+  is_rollback?: boolean;
+  rollback_target_id?: string;
 }
 
 export interface TasksResponse {
@@ -31,6 +33,8 @@ export interface TaskStatus {
   images?: Image[];
   status?: string;
   status_reason?: string;
+  is_rollback?: boolean;
+  rollback_target_id?: string;
   error?: string;
 }
 

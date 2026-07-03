@@ -12,6 +12,7 @@ import { EmptyCell } from './EmptyCell';
 import { EmptyState, EmptyStateCta } from './EmptyState';
 import { ImagesCell } from './ImagesCell';
 import { StatusPill } from './StatusPill';
+import { RollbackIndicator } from './RollbackIndicator';
 import { TimeCell } from './TimeCell';
 import { usePauseRefresh, useTaskListContext } from './TaskListContext';
 
@@ -83,7 +84,12 @@ export const TasksDatagrid = () => {
         label="Status"
         sortBy="status"
         cellClassName="cell-status"
-        render={(record: Task) => <StatusPill status={record.status} />}
+        render={(record: Task) => (
+          <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
+            <StatusPill status={record.status} />
+            <RollbackIndicator isRollback={record.is_rollback} />
+          </Box>
+        )}
       />
       <FunctionField
         source="created"
@@ -162,7 +168,7 @@ const datagridSx: SxProps<Theme> = theme => {
     '& .cell-app': { minWidth: 200, maxWidth: 280 },
     '& .cell-project': { minWidth: 180, maxWidth: 280 },
     '& .cell-author': { width: 200 },
-    '& .cell-status': { width: 132 },
+    '& .cell-status': { width: 156 },
     '& .cell-created': {
       width: 200,
       fontVariantNumeric: 'tabular-nums',

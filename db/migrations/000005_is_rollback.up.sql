@@ -1,0 +1,2 @@
+ALTER TABLE tasks ADD COLUMN is_rollback BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE tasks ADD COLUMN rollback_target_id TEXT NOT NULL DEFAULT '';

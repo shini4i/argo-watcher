@@ -113,6 +113,46 @@ describe('TaskShow', () => {
     expect(screen.getByRole('button', { name: /Refresh/i })).toBeInTheDocument();
   });
 
+  describe('rollback details', () => {
+    it('does not render the rollback field for a regular deployment', async () => {
+      mockUseGetOne.mockReturnValue({
+        data: buildTask({ is_rollback: false }),
+        isLoading: false,
+        isError: false,
+        refetch: vi.fn(),
+      });
+
+      await renderWithRouter('/task/task-1');
+      expect(screen.queryByText(/Rollback of/i)).not.toBeInTheDocument();
+    });
+
+    it('links to the rollback target task when the id is present', async () => {
+      mockUseGetOne.mockReturnValue({
+        data: buildTask({ is_rollback: true, rollback_target_id: 'abcdef12-3456-4789-8abc-def012345678' }),
+        isLoading: false,
+        isError: false,
+        refetch: vi.fn(),
+      });
+
+      await renderWithRouter('/task/task-1');
+      expect(screen.getByText(/Rollback of/i)).toBeInTheDocument();
+      const link = screen.getByRole('link', { name: 'abcdef12' });
+      expect(link).toHaveAttribute('href', '/task/abcdef12-3456-4789-8abc-def012345678');
+    });
+
+    it('shows fallback text when the rollback target id is missing', async () => {
+      mockUseGetOne.mockReturnValue({
+        data: buildTask({ is_rollback: true, rollback_target_id: '' }),
+        isLoading: false,
+        isError: false,
+        refetch: vi.fn(),
+      });
+
+      await renderWithRouter('/task/task-1');
+      expect(screen.getByText('A previously deployed version')).toBeInTheDocument();
+    });
+  });
+
   it('shows loading indicator while fetching data', async () => {
     mockUseGetOne.mockReturnValue({
       data: undefined,

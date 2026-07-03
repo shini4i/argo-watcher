@@ -35,6 +35,8 @@ The `WEBHOOK_FORMAT` value is a [Go template](https://pkg.go.dev/text/template) 
 | `Project` | `string`  | Business project identifier               | `"Demo"`         |
 | `Images`  | `[]Image` | List of images being deployed (see below) |                  |
 | `Status`  | `string`  | Current deployment status                 | `"deployed"`     |
+| `IsRollback` | `bool` | `true` when the deployment returns to a previously deployed version | `true` |
+| `RollbackTargetId` | `string` | ID of the earlier task this deployment rolls back to (empty when not a rollback) | `"be8c42c0-..."` |
 
 ### The Image Object
 
@@ -90,4 +92,12 @@ Produces:
 
 ```bash
 WEBHOOK_FORMAT='{"text": "Deployment of *{{.App}}* by {{.Author}}: {{.Status}}"}'
+```
+
+### Highlighting Rollbacks
+
+Use `IsRollback` to call out deployments that return to a previously deployed version:
+
+```bash
+WEBHOOK_FORMAT='{"text": "{{if .IsRollback}}:rewind: ROLLBACK of {{else}}Deployment of {{end}}*{{.App}}* by {{.Author}}: {{.Status}}"}'
 ```
