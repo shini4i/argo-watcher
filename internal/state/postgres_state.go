@@ -41,11 +41,13 @@ func (state *PostgresState) Connect(serverConfig *config.ServerConfig) error {
 // The method executes an INSERT query to add a new record with the task details, including the current UTC time.
 func (state *PostgresState) AddTask(task models.Task) (*models.Task, error) {
 	ormTask := state_models.TaskModel{
-		Images:          datatypes.NewJSONSlice(task.Images),
-		Status:          models.StatusInProgressMessage,
-		ApplicationName: sql.NullString{String: task.App, Valid: true},
-		Author:          sql.NullString{String: task.Author, Valid: true},
-		Project:         sql.NullString{String: task.Project, Valid: true},
+		Images:           datatypes.NewJSONSlice(task.Images),
+		Status:           models.StatusInProgressMessage,
+		ApplicationName:  sql.NullString{String: task.App, Valid: true},
+		Author:           sql.NullString{String: task.Author, Valid: true},
+		Project:          sql.NullString{String: task.Project, Valid: true},
+		IsRollback:       task.IsRollback,
+		RollbackTargetId: task.RollbackTargetId,
 	}
 
 	if err := state.orm.Create(&ormTask).Error; err != nil {

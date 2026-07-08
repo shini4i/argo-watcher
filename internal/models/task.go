@@ -16,18 +16,22 @@ type SavedAppStatus struct {
 }
 
 type Task struct {
-	Id             string         `json:"id,omitempty"`
-	Created        float64        `json:"created,omitempty"`
-	Updated        float64        `json:"updated,omitempty"`
-	App            string         `json:"app" binding:"required" example:"argo-watcher"`
-	Author         string         `json:"author" binding:"required" example:"John Doe"`
-	Project        string         `json:"project" binding:"required" example:"Demo"`
-	Images         []Image        `json:"images" binding:"required"`
-	Status         string         `json:"status,omitempty"`
-	StatusReason   string         `json:"status_reason,omitempty"`
-	Validated      bool           `json:"validated,omitempty"`
-	Timeout        int            `json:"timeout,omitempty"`
-	SavedAppStatus SavedAppStatus `json:"-"`
+	Id           string  `json:"id,omitempty"`
+	Created      float64 `json:"created,omitempty"`
+	Updated      float64 `json:"updated,omitempty"`
+	App          string  `json:"app" binding:"required" example:"argo-watcher"`
+	Author       string  `json:"author" binding:"required" example:"John Doe"`
+	Project      string  `json:"project" binding:"required" example:"Demo"`
+	Images       []Image `json:"images" binding:"required"`
+	Status       string  `json:"status,omitempty"`
+	StatusReason string  `json:"status_reason,omitempty"`
+	Validated    bool    `json:"validated,omitempty"`
+	Timeout      int     `json:"timeout,omitempty"`
+	IsRollback   bool    `json:"is_rollback,omitempty"`
+	// RollbackTargetId is the ID of the most recent earlier task whose image set
+	// this deployment returns to. Empty when the deployment is not a rollback.
+	RollbackTargetId string         `json:"rollback_target_id,omitempty"`
+	SavedAppStatus   SavedAppStatus `json:"-"`
 }
 
 // ListImages returns a list of strings representing the images of the task.
