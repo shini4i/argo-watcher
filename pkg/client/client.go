@@ -23,18 +23,29 @@ var (
 	clientConfig *Config
 )
 
+const (
+	// maxTransientRetries is how many times a GET request is retried after a
+	// transient failure (network error or 5xx) before giving up. Deployments
+	// can poll for many minutes, so a single blip must not abort the process.
+	maxTransientRetries = 3
+	// defaultRetryDelay is the fixed backoff between transient retries.
+	defaultRetryDelay = 2 * time.Second
+)
+
 type Watcher struct {
-	baseUrl   string
-	client    *http.Client
-	debugMode bool
+	baseUrl    string
+	client     *http.Client
+	debugMode  bool
+	retryDelay time.Duration
 }
 
 // NewWatcher creates a new Watcher instance with the given base URL, timeout, and debug mode.
 func NewWatcher(baseUrl string, debugMode bool, timeout time.Duration) *Watcher {
 	return &Watcher{
-		baseUrl:   baseUrl,
-		client:    &http.Client{Timeout: timeout},
-		debugMode: debugMode,
+		baseUrl:    baseUrl,
+		client:     &http.Client{Timeout: timeout},
+		debugMode:  debugMode,
+		retryDelay: defaultRetryDelay,
 	}
 }
 

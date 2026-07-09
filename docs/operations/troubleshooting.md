@@ -40,6 +40,8 @@ Each entry follows the same shape: **Symptom · Likely cause · How to verify ·
 - Verify the app name: `argocd app get <ARGO_APP>`.
 - Check the image that was pushed to the registry.
 
+> **Note:** While polling for deployment status, the client automatically retries transient failures (network errors or `5xx` responses) up to 3 times with a 2-second backoff, so a single blip is not fatal. A non-zero exit here means the failure persisted past those retries or was terminal (`4xx`, invalid token).
+
 **Fix:**
 1. Ensure `ARGO_WATCHER_URL` is accessible from the CI environment (check firewall rules and DNS).
 2. Verify the application name in `ARGO_APP` matches Argo CD exactly (case-sensitive).

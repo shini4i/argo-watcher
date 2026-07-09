@@ -24,3 +24,7 @@ The Argo Watcher client is a lightweight CLI tool distributed as a Docker image 
 | `RETRY_INTERVAL`            | Interval between status polling attempts (e.g. `15s`, `1m`)                                    |
 | `EXPECTED_DEPLOY_TIME`      | Expected deployment duration; affects polling behavior (e.g. `15m`, `30m`)                     |
 | `DEBUG`                     | Enable verbose debug output                                                                      |
+
+## Retry Behavior
+
+While polling for deployment status, the client automatically retries transient failures (network errors or `5xx` responses from the server) up to 3 times with a fixed 2-second delay before giving up. This retry count and delay are not configurable. Terminal failures (`4xx` responses, invalid tokens, malformed responses) fail immediately, and task submission (the initial `POST`) is not retried.

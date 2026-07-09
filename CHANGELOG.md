@@ -29,6 +29,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Retry transient failures (network errors or `5xx` responses) up to 3 times
+  with a 2-second backoff while the CLI client polls the server for deployment
+  status, instead of aborting the pipeline on the first blip. Terminal failures
+  (`4xx`, invalid tokens, malformed responses) still fail fast, and task
+  submission is not retried (#217).
 - Enforce the deployment timeout (`DEPLOYMENT_TIMEOUT` / per-task timeout) as a
   real wall-clock deadline instead of a fixed number of status-check attempts.
   When the Argo CD API responded slowly, a rollout could previously run well
