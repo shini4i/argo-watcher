@@ -38,7 +38,7 @@ func (m *mockArgoApi) GetUserInfo() (*models.Userinfo, error) {
 	return &models.Userinfo{LoggedIn: true, Username: "test"}, nil
 }
 
-func (m *mockArgoApi) GetApplication(_ string) (*models.Application, error) {
+func (m *mockArgoApi) GetApplication(_ context.Context, _ string) (*models.Application, error) {
 	return &models.Application{}, nil
 }
 
