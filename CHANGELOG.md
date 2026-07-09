@@ -29,6 +29,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Enforce the deployment timeout (`DEPLOYMENT_TIMEOUT` / per-task timeout) as a
+  real wall-clock deadline instead of a fixed number of status-check attempts.
+  When the Argo CD API responded slowly, a rollout could previously run well
+  past its configured timeout; the deadline now also cancels in-flight Argo CD
+  API calls, so a deployment can no longer overrun the configured duration
+  (#304).
 - Reject invalid or unauthorized tokens with `401 Unauthorized` and an
   actionable reason instead of `500 Internal Server Error`, and distinguish a
   missing token from an invalid one in the `401` response.

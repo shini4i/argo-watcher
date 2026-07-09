@@ -1,6 +1,7 @@
 package argocd
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
@@ -20,7 +21,7 @@ import (
 type ArgoApiInterface interface {
 	Init(serverConfig *config.ServerConfig) error
 	GetUserInfo() (*models.Userinfo, error)
-	GetApplication(app string) (*models.Application, error)
+	GetApplication(ctx context.Context, app string) (*models.Application, error)
 }
 
 type ArgoApi struct {
@@ -87,12 +88,18 @@ func (api *ArgoApi) Init(serverConfig *config.ServerConfig) error {
 // bytes along with the HTTP status code. Only the HTTP round-trip is retried; request creation
 // and body reading errors are not retried. HTTP error responses (4xx, 5xx) are valid API
 // responses and are returned as-is without retry.
-func (api *ArgoApi) doGet(reqURL string) ([]byte, int, error) {
+//
+// The supplied context bounds both the in-flight HTTP round-trip and the retry/backoff loop:
+// once it is cancelled or its deadline is exceeded, any pending request is aborted and no
+// further attempts are made, so a slow ArgoCD cannot stretch a single call past the caller's
+// deadline.
+func (api *ArgoApi) doGet(ctx context.Context, reqURL string) ([]byte, int, error) {
 	req, err := api.requestFn("GET", reqURL, nil)
 	if err != nil {
 		return nil, 0, err
 	}
 
+	req = req.WithContext(ctx)
 	req.Header.Set("Accept", "application/json")
 
 	// Safe to reuse across retries: GET request has no body that would be consumed.
@@ -103,6 +110,7 @@ func (api *ArgoApi) doGet(reqURL string) ([]byte, int, error) {
 			resp, doErr = api.client.Do(req)
 			return doErr
 		},
+		retry.Context(ctx),
 		retry.Attempts(api.maxRetries),
 		retry.Delay(time.Second),
 		retry.MaxDelay(30*time.Second),
@@ -155,7 +163,7 @@ func parseArgoErrorResponse(body []byte) error {
 func (api *ArgoApi) GetUserInfo() (*models.Userinfo, error) {
 	apiUrl := fmt.Sprintf("%s/api/v1/session/userinfo", api.baseUrl.String())
 
-	body, statusCode, err := api.doGet(apiUrl)
+	body, statusCode, err := api.doGet(context.Background(), apiUrl)
 	if err != nil {
 		return nil, err
 	}
@@ -172,14 +180,16 @@ func (api *ArgoApi) GetUserInfo() (*models.Userinfo, error) {
 	return &userInfo, nil
 }
 
-func (api *ArgoApi) GetApplication(app string) (*models.Application, error) {
+// GetApplication fetches the named ArgoCD application. The context bounds the request and its
+// retry loop so a caller polling under a deadline is never blocked past that deadline.
+func (api *ArgoApi) GetApplication(ctx context.Context, app string) (*models.Application, error) {
 	apiUrl := fmt.Sprintf("%s/api/v1/applications/%s", api.baseUrl.String(), url.PathEscape(app))
 
 	if api.refreshApp {
 		apiUrl += "?refresh=normal"
 	}
 
-	body, statusCode, err := api.doGet(apiUrl)
+	body, statusCode, err := api.doGet(ctx, apiUrl)
 	if err != nil {
 		log.Error().Err(err).Msg("failed to execute request")
 		return nil, err

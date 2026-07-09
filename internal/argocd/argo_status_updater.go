@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -68,9 +69,10 @@ func (monitor *DeploymentMonitor) EndTracking() {
 	monitor.argo.metrics.RemoveInProgressTask()
 }
 
-// FetchApplication retrieves the ArgoCD application by name.
-func (monitor *DeploymentMonitor) FetchApplication(appName string) (*models.Application, error) {
-	return monitor.argo.api.GetApplication(appName)
+// FetchApplication retrieves the ArgoCD application by name. The context bounds the underlying
+// API call so callers polling under a deadline are not blocked past it.
+func (monitor *DeploymentMonitor) FetchApplication(ctx context.Context, appName string) (*models.Application, error) {
+	return monitor.argo.api.GetApplication(ctx, appName)
 }
 
 // StoreInitialAppStatus caches the initial rollout status for comparison during monitoring.
@@ -92,35 +94,67 @@ func (monitor *DeploymentMonitor) StoreInitialAppStatus(task *models.Task, appli
 }
 
 // WaitRollout polls the application status until it reaches a final state or times out.
+//
+// The timeout is enforced as a wall-clock deadline, not merely as a fixed number of poll
+// attempts: a context deadline bounds the whole loop (and, through FetchApplication, each
+// individual API call). This prevents the deployment from running far past its configured
+// timeout when ArgoCD responds slowly — the failure mode reported in issue #304.
 func (monitor *DeploymentMonitor) WaitRollout(task models.Task) (*models.Application, error) {
+	// application holds the most recent successfully-fetched state. It is deliberately assigned only
+	// inside the success branch so that a fetch aborted by the deadline (which returns a nil application)
+	// cannot clobber the last-known-good status we want to report on timeout.
 	var application *models.Application
-	var err error
 
-	retryOptions := monitor.configureRetryOptions(task)
-	log.Debug().Str("id", task.Id).Msg("Waiting for rollout")
+	retryOptions, deadline := monitor.configureRetryOptions(task)
 
-	err = retry.Do(func() error {
-		application, err = monitor.FetchApplication(task.App)
-		if err != nil {
-			return handleApplicationFetchError(task, err)
+	ctx, cancel := context.WithTimeout(context.Background(), deadline)
+	defer cancel()
+	retryOptions = append(retryOptions, retry.Context(ctx))
+
+	log.Debug().Str("id", task.Id).Dur("deadline", deadline).Msg("Waiting for rollout")
+
+	err := retry.Do(func() error {
+		app, fetchErr := monitor.FetchApplication(ctx, task.App)
+		if fetchErr != nil {
+			return handleApplicationFetchError(task, fetchErr)
 		}
+		application = app
 
 		// Early return for fire and forget mode
-		if application.IsFireAndForgetModeActive() {
+		if app.IsFireAndForgetModeActive() {
 			log.Debug().Str("id", task.Id).Msg("Fire and forget mode is active, skipping checks...")
 			return nil
 		}
 
-		return checkRolloutStatus(task, application, monitor.registryProxyUrl, monitor.acceptSuspended)
+		return checkRolloutStatus(task, app, monitor.registryProxyUrl, monitor.acceptSuspended)
 	}, retryOptions...)
 
-	// Once the retry budget is exhausted while still polling, surface the last-fetched application instead of the
-	// internal sentinel so the caller can report the real rollout status (e.g. "not synced", "not healthy") to the user.
-	if errors.Is(err, errForceRetry) && application != nil {
+	// Once the retry budget or the wall-clock deadline is exhausted while still polling, surface the
+	// last successfully-fetched application instead of the internal sentinel or the context error, so
+	// the caller can report the real rollout status (e.g. "not synced", "not healthy") to the user.
+	// If no fetch ever succeeded (application is nil), the error is returned so the caller can classify
+	// the underlying failure (e.g. connection refused -> aborted).
+	if application != nil && (errors.Is(err, errForceRetry) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)) {
 		err = nil
 	}
 
 	return application, err
+}
+
+// mulDurationSaturating returns count*unit, clamped to math.MaxInt64 to avoid the uint->int64
+// overflow that a very large (client-supplied) attempt count could otherwise wrap into a negative
+// duration. A non-positive unit or zero count yields 0.
+func mulDurationSaturating(count uint, unit time.Duration) time.Duration {
+	if unit <= 0 || count == 0 {
+		return 0
+	}
+	// unit > 0 is guaranteed above, so the quotient is a non-negative int64 that fits in uint64.
+	maxCount := uint64(math.MaxInt64 / int64(unit)) // #nosec G115 -- non-negative quotient
+	if uint64(count) > maxCount {
+		return time.Duration(math.MaxInt64)
+	}
+	// The guard above proves count fits in a positive int64, so this conversion cannot overflow.
+	return time.Duration(count) * unit // #nosec G115 -- count bounded by check above
 }
 
 // ceilDivDuration returns the ceiling of d/unit as an int64, with a minimum of 1.
@@ -150,7 +184,12 @@ func safeIntToUint(v int64) uint {
 }
 
 // configureRetryOptions derives retry attempts by preferring per-task overrides, then monitor defaults, and finally a legacy retry window aligned with the current retry delay.
-func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) []retry.Option {
+//
+// Alongside the retry options it returns the wall-clock deadline for the whole polling loop,
+// computed as attempts*delay. The attempt count still caps the number of polls, while the
+// deadline caps the elapsed time so that slow API responses cannot stretch the loop past the
+// intended timeout (see WaitRollout).
+func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) ([]retry.Option, time.Duration) {
 	retryOptions := append([]retry.Option{}, monitor.retryOptions...)
 
 	delay := monitor.retryDelay
@@ -171,7 +210,7 @@ func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) []retr
 
 	if task.Timeout <= 0 {
 		log.Debug().Str("id", task.Id).Msgf("Task timeout is non-positive, defaulting to %d attempts", defaultAttempts)
-		return append(retryOptions, retry.Attempts(defaultAttempts))
+		return append(retryOptions, retry.Attempts(defaultAttempts)), mulDurationSaturating(defaultAttempts, delay)
 	}
 
 	attempts := safeIntToUint(int64(task.Timeout)/delaySeconds + 1)
@@ -184,7 +223,7 @@ func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) []retr
 		attempts,
 	)
 
-	return append(retryOptions, retry.Attempts(attempts))
+	return append(retryOptions, retry.Attempts(attempts)), mulDurationSaturating(attempts, delay)
 }
 
 // ProcessDeploymentResult determines if the deployment was successful and updates the appropriate status and metrics.
@@ -360,8 +399,9 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 // waitForApplicationDeployment coordinates the deployment monitoring process
 // It checks initial status, updates the git repo if needed, and waits for rollout
 func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task) (*models.Application, error) {
-	// Fetch initial app state
-	app, err := updater.monitor.FetchApplication(task.App)
+	// Fetch initial app state. This single call happens before the timed polling loop, so it is
+	// bounded only by the HTTP client's per-request timeout rather than the rollout deadline.
+	app, err := updater.monitor.FetchApplication(context.Background(), task.App)
 	if err != nil {
 		return nil, err
 	}

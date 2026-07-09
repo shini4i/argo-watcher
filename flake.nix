@@ -38,7 +38,7 @@
 
         viteShim = pkgs.writeShellApplication {
           name = "vite";
-          runtimeInputs = [ pkgs.nodejs_20 ];
+          runtimeInputs = [ pkgs.nodejs_24 ];
           text = ''
             set -euo pipefail
             if [ -x "$PWD/node_modules/.bin/vite" ]; then
@@ -53,45 +53,18 @@
 
         frontendToolchain =
           (with pkgs; [
-            nodejs_20
+            nodejs_24
             pnpm
             corepack
           ]) ++ [ viteShim ];
 
-        # mkdocs-llmstxt and its dependency chain (mdformat-tables, mdformat)
-        # are not packaged for python311 in nixpkgs, so we build them from PyPI
-        # sdists to keep the dev shell's `mkdocs build`/`serve` in sync with
-        # docs/requirements.txt. mdformat is pinned to 0.7.22 — the same version
-        # pip resolves on Read the Docs, since mdformat-tables caps mdformat
-        # <0.8.0 (nixpkgs only ships mdformat 1.0.0, which is disabled on 3.11).
-        py = pkgs.python311Packages;
-
-        mdformat-0_7 = py.buildPythonPackage rec {
-          pname = "mdformat";
-          version = "0.7.22";
-          pyproject = true;
-          src = pkgs.fetchPypi {
-            inherit pname version;
-            hash = "sha256-7vhPqPIz0xYnNGg8KopiIiJ6IpuSBocuYTlljZmsseo=";
-          };
-          build-system = [ py.setuptools ];
-          dependencies = [ py.markdown-it-py ];
-          pythonImportsCheck = [ "mdformat" ];
-        };
-
-        mdformat-tables = py.buildPythonPackage rec {
-          pname = "mdformat-tables";
-          version = "1.0.0";
-          pyproject = true;
-          src = pkgs.fetchPypi {
-            pname = "mdformat_tables";
-            inherit version;
-            hash = "sha256-pX2xrBfEoSXaeU70VTmQS7ipWS6AVX1SXh8WnJbaosg=";
-          };
-          build-system = [ py.flit-core ];
-          dependencies = [ mdformat-0_7 py.wcwidth ];
-          pythonImportsCheck = [ "mdformat_tables" ];
-        };
+        # mkdocs-llmstxt is not packaged in nixpkgs, so we build it from its PyPI
+        # sdist to keep the dev shell's `mkdocs build`/`serve` in sync with
+        # docs/requirements.txt. Everything it needs — mkdocs, mdformat 1.0.0 and
+        # mdformat-gfm (the successor to the archived mdformat-tables) — now ships
+        # in nixpkgs for the default python3 interpreter, so no other custom sdist
+        # builds are required.
+        py = pkgs.python3Packages;
 
         mkdocs-llmstxt = py.buildPythonPackage rec {
           pname = "mkdocs-llmstxt";
@@ -107,13 +80,16 @@
             py.mkdocs
             py.beautifulsoup4
             py.markdownify
-            mdformat-0_7
-            mdformat-tables
+            py.mdformat
+            py.mdformat-gfm
           ];
+          # mdformat-gfm supersedes the archived mdformat-tables and already provides
+          # the "tables" extension mkdocs-llmstxt requests, so strip the stale pin.
+          pythonRemoveDeps = [ "mdformat-tables" ];
           pythonImportsCheck = [ "mkdocs_llmstxt" ];
         };
 
-        docsPython = pkgs.python311.withPackages (ps: (with ps; [
+        docsPython = pkgs.python3.withPackages (ps: (with ps; [
           mkdocs
           mkdocs-material
           mkdocs-material-extensions

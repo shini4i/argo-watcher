@@ -1,8 +1,10 @@
 package argocd
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 	"testing"
@@ -121,7 +123,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		application.Status.Health.Status = "Healthy"
 
 		// mock calls
-		apiMock.EXPECT().GetApplication(task.App).Return(&application, nil).MinTimes(2).MaxTimes(3)
+		apiMock.EXPECT().GetApplication(gomock.Any(), task.App).Return(&application, nil).MinTimes(2).MaxTimes(3)
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().ResetFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
@@ -172,8 +174,8 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		healthyApp.Status.Health.Status = "Healthy"
 
 		// mock calls
-		apiMock.EXPECT().GetApplication(task.App).Return(&unhealthyApp, nil).MinTimes(1).MaxTimes(2)
-		apiMock.EXPECT().GetApplication(task.App).Return(&healthyApp, nil).Times(1)
+		apiMock.EXPECT().GetApplication(gomock.Any(), task.App).Return(&unhealthyApp, nil).MinTimes(1).MaxTimes(2)
+		apiMock.EXPECT().GetApplication(gomock.Any(), task.App).Return(&healthyApp, nil).Times(1)
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().ResetFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
@@ -216,7 +218,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		application.Status.Health.Status = "Healthy"
 
 		// mock calls
-		apiMock.EXPECT().GetApplication(task.App).Return(&application, nil).MinTimes(2).MaxTimes(3)
+		apiMock.EXPECT().GetApplication(gomock.Any(), task.App).Return(&application, nil).MinTimes(2).MaxTimes(3)
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().ResetFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
@@ -261,7 +263,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		application.Status.Health.Status = "Healthy"
 
 		// mock calls
-		apiMock.EXPECT().GetApplication(task.App).Return(&application, nil).Times(3)
+		apiMock.EXPECT().GetApplication(gomock.Any(), task.App).Return(&application, nil).Times(3)
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
@@ -296,7 +298,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		}
 
 		// mock calls
-		apiMock.EXPECT().GetApplication(task.App).Return(nil, fmt.Errorf("applications.argoproj.io \"test-app\" not found"))
+		apiMock.EXPECT().GetApplication(gomock.Any(), task.App).Return(nil, fmt.Errorf("applications.argoproj.io \"test-app\" not found"))
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
@@ -326,7 +328,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		}
 
 		// mock calls
-		apiMock.EXPECT().GetApplication(task.App).Return(nil, fmt.Errorf(argoUnavailableErrorMessage))
+		apiMock.EXPECT().GetApplication(gomock.Any(), task.App).Return(nil, fmt.Errorf(argoUnavailableErrorMessage))
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
@@ -356,7 +358,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		}
 
 		// mock calls
-		apiMock.EXPECT().GetApplication(task.App).Return(nil, fmt.Errorf("unexpected failure"))
+		apiMock.EXPECT().GetApplication(gomock.Any(), task.App).Return(nil, fmt.Errorf("unexpected failure"))
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
@@ -397,7 +399,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		application.Status.Summary.Images = []string{"test-image:v0.0.1"}
 
 		// mock calls
-		apiMock.EXPECT().GetApplication(task.App).Return(&application, nil).Times(3)
+		apiMock.EXPECT().GetApplication(gomock.Any(), task.App).Return(&application, nil).Times(3)
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
@@ -447,7 +449,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		application.Status.OperationState.Message = "Not working test app"
 
 		// mock calls
-		apiMock.EXPECT().GetApplication(task.App).Return(&application, nil).Times(3)
+		apiMock.EXPECT().GetApplication(gomock.Any(), task.App).Return(&application, nil).Times(3)
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
@@ -495,7 +497,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		application.Status.Health.Status = "NotHealthy"
 
 		// mock calls
-		apiMock.EXPECT().GetApplication(task.App).Return(&application, nil).Times(3)
+		apiMock.EXPECT().GetApplication(gomock.Any(), task.App).Return(&application, nil).Times(3)
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
@@ -784,13 +786,13 @@ func TestArgoStatusUpdaterWaitForApplicationDeploymentErrors(t *testing.T) {
 	task := models.Task{App: "demo", Validated: true}
 
 	t.Run("failsWhenFetchFails", func(t *testing.T) {
-		api.EXPECT().GetApplication(task.App).Return(nil, errors.New("network")).Times(1)
+		api.EXPECT().GetApplication(gomock.Any(), task.App).Return(nil, errors.New("network")).Times(1)
 		_, err := updater.waitForApplicationDeployment(task)
 		assert.Error(t, err)
 	})
 
 	t.Run("failsWhenApplicationNil", func(t *testing.T) {
-		api.EXPECT().GetApplication(task.App).Return(nil, nil).Times(1)
+		api.EXPECT().GetApplication(gomock.Any(), task.App).Return(nil, nil).Times(1)
 		_, err := updater.waitForApplicationDeployment(task)
 		assert.Error(t, err)
 	})
@@ -799,7 +801,7 @@ func TestArgoStatusUpdaterWaitForApplicationDeploymentErrors(t *testing.T) {
 		app := &models.Application{}
 		app.Metadata.Annotations = map[string]string{"argo-watcher/managed": "true"}
 		app.Spec.Source.RepoURL = ""
-		api.EXPECT().GetApplication(task.App).Return(app, nil).Times(1)
+		api.EXPECT().GetApplication(gomock.Any(), task.App).Return(app, nil).Times(1)
 
 		_, err := updater.waitForApplicationDeployment(task)
 		assert.Error(t, err)
@@ -823,7 +825,7 @@ func TestDeploymentMonitorWaitRollout(t *testing.T) {
 	t.Run("handlesFireAndForget", func(t *testing.T) {
 		app := &models.Application{}
 		app.Metadata.Annotations = map[string]string{"argo-watcher/fire-and-forget": "true"}
-		api.EXPECT().GetApplication(task.App).Return(app, nil).Times(1)
+		api.EXPECT().GetApplication(gomock.Any(), task.App).Return(app, nil).Times(1)
 
 		received, err := monitor.WaitRollout(task)
 		require.NoError(t, err)
@@ -832,12 +834,120 @@ func TestDeploymentMonitorWaitRollout(t *testing.T) {
 
 	t.Run("wrapsApplicationFetchErrors", func(t *testing.T) {
 		errNotFound := fmt.Errorf("applications.argoproj.io %q not found", task.App)
-		api.EXPECT().GetApplication(task.App).Return(nil, errNotFound).Times(1)
+		api.EXPECT().GetApplication(gomock.Any(), task.App).Return(nil, errNotFound).Times(1)
 
 		_, err := monitor.WaitRollout(task)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), errNotFound.Error())
 	})
+}
+
+// TestDeploymentMonitorWaitRolloutRespectsDeadline verifies that WaitRollout stops at its
+// wall-clock deadline instead of exhausting the full attempt budget when the ArgoCD API
+// responds slowly. This is the regression guard for issue #304: with the attempt budget alone,
+// slow polls would let a rollout run far past its configured timeout.
+func TestDeploymentMonitorWaitRolloutRespectsDeadline(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	api := mock.NewMockArgoApiInterface(ctrl)
+	monitor := NewDeploymentMonitor(
+		Argo{api: api},
+		"",
+		[]retry.Option{retry.DelayType(retry.FixedDelay), retry.LastErrorOnly(true)},
+		false,
+		time.Millisecond,
+	)
+
+	// Timeout 20 with a ~1s-rounded step yields 21 attempts and a 21ms deadline. Each poll sleeps
+	// far longer than the deadline, so the loop must abort after the first poll, not after 21.
+	task := models.Task{Id: "test-id", App: "demo", Timeout: 20}
+
+	// A perpetually non-final application keeps checkRolloutStatus returning the force-retry sentinel.
+	app := &models.Application{}
+	app.Status.Sync.Status = "OutOfSync"
+	app.Status.Health.Status = "Progressing"
+
+	api.EXPECT().GetApplication(gomock.Any(), task.App).DoAndReturn(
+		func(_ context.Context, _ string) (*models.Application, error) {
+			time.Sleep(40 * time.Millisecond)
+			return app, nil
+		}).MinTimes(1).MaxTimes(3)
+
+	start := time.Now()
+	received, err := monitor.WaitRollout(task)
+	elapsed := time.Since(start)
+
+	require.NoError(t, err, "deadline expiry while polling must be swallowed so the caller reports the real status")
+	assert.Equal(t, app, received)
+	assert.Less(t, elapsed, 300*time.Millisecond, "loop must honor the wall-clock deadline, not run all 21 attempts")
+}
+
+// TestDeploymentMonitorWaitRolloutReportsLastGoodStatusOnDeadline verifies that when the deadline
+// fires while a poll is in flight (the realistic slow-ArgoCD case for issue #304), WaitRollout still
+// returns the last successfully-fetched application — so ProcessDeploymentResult reports the real
+// rollout status rather than a raw "context deadline exceeded" error.
+func TestDeploymentMonitorWaitRolloutReportsLastGoodStatusOnDeadline(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	api := mock.NewMockArgoApiInterface(ctrl)
+	monitor := NewDeploymentMonitor(
+		Argo{api: api},
+		"",
+		[]retry.Option{retry.DelayType(retry.FixedDelay), retry.LastErrorOnly(true)},
+		false,
+		time.Millisecond,
+	)
+	task := models.Task{Id: "test-id", App: "demo", Timeout: 1}
+
+	goodApp := &models.Application{}
+	goodApp.Status.Sync.Status = "OutOfSync"
+	goodApp.Status.Health.Status = "Progressing"
+
+	firstDone := false
+	api.EXPECT().GetApplication(gomock.Any(), task.App).DoAndReturn(
+		func(ctx context.Context, _ string) (*models.Application, error) {
+			if !firstDone {
+				firstDone = true
+				return goodApp, nil
+			}
+			// Subsequent poll is still in flight when the deadline fires: it is cancelled and
+			// returns a nil application, exactly as the real HTTP layer would.
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}).MinTimes(2).MaxTimes(3)
+
+	received, err := monitor.WaitRollout(task)
+	require.NoError(t, err)
+	assert.Equal(t, goodApp, received, "should report the last successfully-fetched application, not nil")
+}
+
+// TestDeploymentMonitorWaitRolloutSurfacesErrorWhenNoFetchSucceeds verifies that when ArgoCD is
+// unreachable for the entire window, WaitRollout surfaces the underlying fetch error (not a swallowed
+// nil) so the caller can classify it — e.g. "connect: connection refused" -> aborted.
+func TestDeploymentMonitorWaitRolloutSurfacesErrorWhenNoFetchSucceeds(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	api := mock.NewMockArgoApiInterface(ctrl)
+	monitor := NewDeploymentMonitor(
+		Argo{api: api},
+		"",
+		[]retry.Option{retry.DelayType(retry.FixedDelay), retry.LastErrorOnly(true)},
+		false,
+		time.Millisecond,
+	)
+	task := models.Task{Id: "test-id", App: "demo", Timeout: 1}
+
+	api.EXPECT().GetApplication(gomock.Any(), task.App).
+		Return(nil, errors.New(argoUnavailableErrorMessage)).MinTimes(1)
+
+	received, err := monitor.WaitRollout(task)
+	require.Error(t, err)
+	assert.Nil(t, received)
+	assert.Contains(t, err.Error(), argoUnavailableErrorMessage,
+		"the underlying cause must survive so determineFailureStatus can classify it")
 }
 
 func TestHandleApplicationFetchError(t *testing.T) {
@@ -1034,6 +1144,30 @@ func TestArgoStatusUpdater_handleArgoAPIFailure(t *testing.T) {
 	})
 }
 
+func TestMulDurationSaturating(t *testing.T) {
+	testCases := []struct {
+		name     string
+		count    uint
+		unit     time.Duration
+		expected time.Duration
+	}{
+		{name: "normal", count: 3, unit: 15 * time.Second, expected: 45 * time.Second},
+		{name: "zeroCount", count: 0, unit: time.Second, expected: 0},
+		{name: "zeroUnit", count: 5, unit: 0, expected: 0},
+		{name: "negativeUnit", count: 5, unit: -time.Second, expected: 0},
+		{name: "overflowClampsToMaxInt64", count: math.MaxUint32, unit: time.Hour, expected: time.Duration(math.MaxInt64)},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			got := mulDurationSaturating(tc.count, tc.unit)
+			assert.Equal(t, tc.expected, got)
+			assert.GreaterOrEqual(t, got, time.Duration(0), "deadline must never be negative")
+		})
+	}
+}
+
 func TestCeilDivDuration(t *testing.T) {
 	testCases := []struct {
 		name     string
@@ -1214,9 +1348,17 @@ func TestDeploymentMonitor_configureRetryOptions(t *testing.T) {
 				false,
 				tc.retryDelay,
 			)
-			options := monitor.configureRetryOptions(models.Task{Id: "test-id", Timeout: tc.timeout})
+			options, deadline := monitor.configureRetryOptions(models.Task{Id: "test-id", Timeout: tc.timeout})
 			attempts := countAttempts(options)
 			assert.Equal(t, tc.expectedAttempts, attempts)
+
+			// The deadline must match attempts*delay so the wall-clock cap and the attempt cap
+			// describe the same budget (delay falls back to ArgoSyncRetryDelay when non-positive).
+			delay := tc.retryDelay
+			if delay <= 0 {
+				delay = ArgoSyncRetryDelay
+			}
+			assert.Equal(t, time.Duration(tc.expectedAttempts)*delay, deadline)
 		})
 	}
 
@@ -1233,8 +1375,9 @@ func TestDeploymentMonitor_configureRetryOptions(t *testing.T) {
 		)
 		monitor.defaultAttempts = 5
 
-		options := monitor.configureRetryOptions(models.Task{Id: "test-id", Timeout: 0})
+		options, deadline := monitor.configureRetryOptions(models.Task{Id: "test-id", Timeout: 0})
 		attempts := countAttempts(options)
 		assert.Equal(t, 5, attempts, "Should use the configured defaultAttempts when timeout is zero")
+		assert.Equal(t, 5*ArgoSyncRetryDelay, deadline, "Default-attempts deadline should be attempts*delay")
 	})
 }

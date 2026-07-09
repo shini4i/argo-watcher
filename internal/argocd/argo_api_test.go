@@ -1,6 +1,7 @@
 package argocd
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -355,7 +356,7 @@ func TestArgoApiGetApplicationSuccess(t *testing.T) {
 	api.baseUrl = *parsedURL
 	api.client = server.Client()
 	api.maxRetries = 1
-	result, err := api.GetApplication("demo")
+	result, err := api.GetApplication(context.Background(), "demo")
 	require.NoError(t, err)
 	assert.Equal(t, app.Status.Health.Status, result.Status.Health.Status)
 	assert.Equal(t, app.Status.Sync.Status, result.Status.Sync.Status)
@@ -392,7 +393,7 @@ func TestArgoApiGetApplicationEscapesAppName(t *testing.T) {
 			api.baseUrl = *parsedURL
 			api.client = server.Client()
 			api.maxRetries = 1
-			_, err = api.GetApplication(tc.appName)
+			_, err = api.GetApplication(context.Background(), tc.appName)
 			assert.NoError(t, err)
 		})
 	}
@@ -416,7 +417,7 @@ func TestArgoApiGetApplicationAddsRefreshQuery(t *testing.T) {
 	api.client = server.Client()
 	api.maxRetries = 1
 	api.refreshApp = true
-	_, err = api.GetApplication("demo")
+	_, err = api.GetApplication(context.Background(), "demo")
 	assert.NoError(t, err)
 }
 
@@ -611,7 +612,7 @@ func TestArgoApiGetApplicationErrors(t *testing.T) {
 			if tc.setup != nil {
 				tc.setup(t, tc.api)
 			}
-			app, err := tc.api.GetApplication("demo")
+			app, err := tc.api.GetApplication(context.Background(), "demo")
 			if tc.wantErr {
 				assert.Error(t, err)
 				assert.Nil(t, app)
@@ -652,7 +653,7 @@ func TestArgoApiDoGetRetriesOnTransientError(t *testing.T) {
 		}),
 	}
 
-	body, statusCode, err := api.doGet("https://example.com/api/v1/session/userinfo")
+	body, statusCode, err := api.doGet(context.Background(), "https://example.com/api/v1/session/userinfo")
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, statusCode)
 	assert.JSONEq(t, string(successBody), string(body))
@@ -677,7 +678,7 @@ func TestArgoApiDoGetExhaustsRetries(t *testing.T) {
 		}),
 	}
 
-	body, statusCode, err := api.doGet("https://example.com/api/v1/session/userinfo")
+	body, statusCode, err := api.doGet(context.Background(), "https://example.com/api/v1/session/userinfo")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "persistent timeout")
 	assert.Nil(t, body)
@@ -708,11 +709,73 @@ func TestArgoApiDoGetNoRetryOnSuccess(t *testing.T) {
 		}),
 	}
 
-	body, statusCode, err := api.doGet("https://example.com/api/v1/test")
+	body, statusCode, err := api.doGet(context.Background(), "https://example.com/api/v1/test")
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, statusCode)
 	assert.Equal(t, successBody, body)
 	assert.Equal(t, int32(1), callCount.Load())
+}
+
+// TestArgoApiDoGetHonorsContextCancellation verifies that a cancelled context stops the retry
+// loop after the in-flight attempt instead of exhausting maxRetries with backoff. This is what
+// lets the rollout deadline bound each individual API call (issue #304).
+func TestArgoApiDoGetHonorsContextCancellation(t *testing.T) {
+	var callCount atomic.Int32
+
+	baseURL, err := url.Parse("https://example.com")
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	api := NewArgoApi()
+	api.baseUrl = *baseURL
+	api.maxRetries = 5
+	api.client = &http.Client{
+		Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+			callCount.Add(1)
+			// Simulate the caller's deadline firing while the request is in flight.
+			cancel()
+			return nil, errors.New("transient")
+		}),
+	}
+
+	start := time.Now()
+	_, _, err = api.doGet(ctx, "https://example.com/api/v1/test")
+	elapsed := time.Since(start)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Equal(t, int32(1), callCount.Load(), "cancellation must stop retries after the in-flight attempt")
+	assert.Less(t, elapsed, time.Second, "must not wait out the retry backoff after cancellation")
+}
+
+// TestArgoApiDoGetNoRequestWhenContextAlreadyDone verifies that a context already past its deadline
+// before the first attempt short-circuits doGet with no HTTP round-trip. This is the state a nearly
+// expired rollout deadline produces on its final poll.
+func TestArgoApiDoGetNoRequestWhenContextAlreadyDone(t *testing.T) {
+	var callCount atomic.Int32
+
+	baseURL, err := url.Parse("https://example.com")
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // already done before doGet runs
+
+	api := NewArgoApi()
+	api.baseUrl = *baseURL
+	api.maxRetries = 5
+	api.client = &http.Client{
+		Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+			callCount.Add(1)
+			return &http.Response{StatusCode: http.StatusOK, Body: &stubBody{data: []byte(`{}`)}, Header: make(http.Header)}, nil
+		}),
+	}
+
+	_, _, err = api.doGet(ctx, "https://example.com/api/v1/test")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Equal(t, int32(0), callCount.Load(), "an already-cancelled context must skip the HTTP round-trip entirely")
 }
 
 // TestArgoApiDoGetNoRetryOnNon2xx verifies that HTTP error responses (4xx/5xx)
@@ -739,7 +802,7 @@ func TestArgoApiDoGetNoRetryOnNon2xx(t *testing.T) {
 		}),
 	}
 
-	body, statusCode, err := api.doGet("https://example.com/api/v1/test")
+	body, statusCode, err := api.doGet(context.Background(), "https://example.com/api/v1/test")
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusInternalServerError, statusCode)
 	assert.Equal(t, errorBody, body)
