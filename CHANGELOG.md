@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The CLI client now treats any unrecognized deployment status as terminal and
+  exits with an error instead of polling in a tight loop. **Upgrade CLI clients
+  to this version**: older clients do not understand the new `cancelled` status
+  and will busy-loop against the server if one of their deployments is superseded
+  (#353).
 - Group and humanize server startup misconfiguration errors: missing required
   and invalid environment variables are now reported together in a single
   message listing every offending variable, so you can fix them all in one pass

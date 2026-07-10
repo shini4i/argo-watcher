@@ -24,6 +24,7 @@ var (
 	appNotFoundId       = "be8c42c0-a645-11ec-8ea5-f2c4bb72758c"
 	argocdUnavailableId = "be8c42c0-a645-11ec-8ea5-f2c4bb72758d"
 	cancelledTaskId     = "be8c42c0-a645-11ec-8ea5-f2c4bb72758e"
+	unhandledStatusId   = "be8c42c0-a645-11ec-8ea5-f2c4bb72758f"
 )
 
 func addTaskHandler(w http.ResponseWriter, r *http.Request) {
@@ -75,6 +76,8 @@ func getTaskStatusHandler(w http.ResponseWriter, r *http.Request) {
 		status = models.StatusFailedMessage
 	case cancelledTaskId:
 		status = models.StatusCancelledMessage
+	case unhandledStatusId:
+		status = models.StatusAborted
 	}
 
 	if err := json.NewEncoder(w).Encode(models.TaskStatus{
@@ -327,6 +330,11 @@ func TestWaitForDeployment(t *testing.T) {
 			name:          "Cancelled deployment",
 			taskId:        cancelledTaskId,
 			expectedError: "The deployment was cancelled because a newer deployment superseded it.",
+		},
+		{
+			name:          "Unhandled status exits instead of busy-looping",
+			taskId:        unhandledStatusId,
+			expectedError: "Received unexpected deployment status",
 		},
 	}
 
