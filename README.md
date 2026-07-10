@@ -10,7 +10,6 @@ Argo Watcher bridges the gap between your CI pipeline and Argo CD, providing rea
 ![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/shini4i/argo-watcher)
 ![GitHub release (latest by date)](https://img.shields.io/github/v/release/shini4i/argo-watcher)
 [![codecov](https://codecov.io/gh/shini4i/argo-watcher/graph/badge.svg?token=9JI19X0BIN)](https://codecov.io/gh/shini4i/argo-watcher)
-[![Go Report Card](https://goreportcard.com/badge/github.com/shini4i/argo-watcher)](https://goreportcard.com/report/github.com/shini4i/argo-watcher)
 [![Documentation Status](https://readthedocs.org/projects/argo-watcher/badge/?version=latest)](https://argo-watcher.readthedocs.io/en/latest/?badge=latest)
 ![GitHub](https://img.shields.io/github/license/shini4i/argo-watcher)
 
