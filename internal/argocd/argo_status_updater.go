@@ -127,6 +127,10 @@ func (monitor *DeploymentMonitor) WaitRollout(task models.Task) (*models.Applica
 
 	err := retry.Do(func() error {
 		// Stop before hitting ArgoCD if a newer deployment superseded this task.
+		// The check is per-iteration: a cancellation that lands mid-iteration is
+		// caught on the next poll, and if this iteration reaches a final state
+		// first, its terminal status wins over "cancelled". That last-writer race
+		// is accepted (issue #353) to avoid a status-conditional write.
 		if monitor.taskSuperseded(task.Id) {
 			return retry.Unrecoverable(errTaskSuperseded)
 		}
