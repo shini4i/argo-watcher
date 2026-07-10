@@ -3,17 +3,172 @@ package client
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/shini4i/argo-watcher/internal/models"
 	"github.com/stretchr/testify/assert"
 )
+
+// newTestWatcher builds a Watcher pointing at the given URL with retries enabled
+// but a zero backoff, so retry-path tests run instantly.
+func newTestWatcher(url string) *Watcher {
+	watcher := NewWatcher(url, false, 30*time.Second)
+	watcher.retryDelay = 0
+	return watcher
+}
+
+// flakyTransport fails the first `failures` round-trips with a network error,
+// then delegates to fallback. It counts every attempt so tests can assert how
+// many requests actually left the client.
+type flakyTransport struct {
+	failures int32
+	calls    int32
+	fallback http.RoundTripper
+}
+
+func (f *flakyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	n := atomic.AddInt32(&f.calls, 1)
+	if n <= f.failures {
+		return nil, &net.OpError{Op: "dial", Err: errors.New("connection refused")}
+	}
+	return f.fallback.RoundTrip(req)
+}
+
+// TestGetJSON_RetriesOn5xxThenSucceeds verifies a transient 5xx is retried and
+// the eventual 200 is decoded, rather than aborting the whole process.
+func TestGetJSON_RetriesOn5xxThenSucceeds(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		if calls.Add(1) <= 2 {
+			rw.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = rw.Write([]byte(`{"error":"temporarily unavailable"}`))
+			return
+		}
+		_, _ = rw.Write([]byte(`{"message":"OK"}`))
+	}))
+	defer server.Close()
+
+	watcher := newTestWatcher(server.URL)
+	var resp struct {
+		Message string `json:"message"`
+	}
+	err := watcher.getJSON(server.URL, &resp)
+
+	assert.NoError(t, err)
+	assert.Equal(t, "OK", resp.Message)
+	assert.Equal(t, int32(3), calls.Load(), "two 503s then a 200 should be three requests")
+}
+
+// TestGetJSON_RetriesNetworkErrorThenSucceeds verifies a transport-level failure
+// (connection refused/reset, DNS, timeout) is retried.
+func TestGetJSON_RetriesNetworkErrorThenSucceeds(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		_, _ = rw.Write([]byte(`{"message":"OK"}`))
+	}))
+	defer server.Close()
+
+	transport := &flakyTransport{failures: 2, fallback: server.Client().Transport}
+	watcher := newTestWatcher(server.URL)
+	watcher.client.Transport = transport
+
+	var resp struct {
+		Message string `json:"message"`
+	}
+	err := watcher.getJSON(server.URL, &resp)
+
+	assert.NoError(t, err)
+	assert.Equal(t, "OK", resp.Message)
+	assert.Equal(t, int32(3), atomic.LoadInt32(&transport.calls), "two dial failures then success should be three attempts")
+}
+
+// TestGetJSON_ExhaustsRetriesOnPersistent5xx verifies retries are bounded and
+// the final error surfaces the server status.
+func TestGetJSON_ExhaustsRetriesOnPersistent5xx(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		calls.Add(1)
+		rw.WriteHeader(http.StatusBadGateway)
+		_, _ = rw.Write([]byte(`{"error":"bad gateway"}`))
+	}))
+	defer server.Close()
+
+	watcher := newTestWatcher(server.URL)
+	var dummy struct{}
+	err := watcher.getJSON(server.URL, &dummy)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "502")
+	assert.Equal(t, int32(maxTransientRetries+1), calls.Load(), "should try once then retry maxTransientRetries times")
+}
+
+// TestGetJSON_DoesNotRetryMalformedBody verifies a 200 response with an
+// unparseable body is terminal: retrying an unchanging bad payload never
+// succeeds, so it must fail on the first attempt.
+func TestGetJSON_DoesNotRetryMalformedBody(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		calls.Add(1)
+		_, _ = rw.Write([]byte(`{`))
+	}))
+	defer server.Close()
+
+	watcher := newTestWatcher(server.URL)
+	var dummy struct{}
+	err := watcher.getJSON(server.URL, &dummy)
+
+	assert.Error(t, err)
+	assert.Equal(t, int32(1), calls.Load(), "a malformed 200 body must not be retried")
+}
+
+// TestGetJSON_ExhaustsRetriesOnNetworkError verifies a persistent transport-level
+// failure is retried up to the bound and then surfaces the underlying error.
+func TestGetJSON_ExhaustsRetriesOnNetworkError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		_, _ = rw.Write([]byte(`{"message":"OK"}`))
+	}))
+	defer server.Close()
+
+	// Fail every attempt so the retry budget is exhausted.
+	transport := &flakyTransport{failures: maxTransientRetries + 1, fallback: server.Client().Transport}
+	watcher := newTestWatcher(server.URL)
+	watcher.client.Transport = transport
+
+	var dummy struct{}
+	err := watcher.getJSON(server.URL, &dummy)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "connection refused")
+	assert.Equal(t, int32(maxTransientRetries+1), atomic.LoadInt32(&transport.calls), "should try once then retry maxTransientRetries times")
+}
+
+// TestGetJSON_DoesNotRetryTerminalError verifies a 4xx (auth failure) fails fast
+// without wasting retries — retrying a rejected token never succeeds.
+func TestGetJSON_DoesNotRetryTerminalError(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		calls.Add(1)
+		rw.WriteHeader(http.StatusUnauthorized)
+		_, _ = rw.Write([]byte(`{"error":"deploy token is invalid"}`))
+	}))
+	defer server.Close()
+
+	watcher := newTestWatcher(server.URL)
+	var dummy struct{}
+	err := watcher.getJSON(server.URL, &dummy)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "401")
+	assert.Equal(t, int32(1), calls.Load(), "a terminal 4xx must not be retried")
+}
 
 func TestDoRequest(t *testing.T) {
 	// Test case 1: The server returns a 200 OK status code
@@ -375,9 +530,10 @@ func TestGenerateAppUrl(t *testing.T) {
 	})
 
 	t.Run("ErrorScenario", func(t *testing.T) {
-		// Create a new Watcher instance with an invalid URL
+		// Create a new Watcher instance with an invalid URL. A dial failure is
+		// transient, so use the zero-backoff test watcher to skip retry sleeps.
 		invalidURL := "http://invalid-url"
-		watcher := NewWatcher(invalidURL, false, 30*time.Second)
+		watcher := newTestWatcher(invalidURL)
 
 		// Create a Task for testing
 		task := models.Task{

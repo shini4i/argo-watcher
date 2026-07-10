@@ -177,6 +177,9 @@ func TestNewWatcher(t *testing.T) {
 	assert.Equal(t, baseUrl, watcher.baseUrl)
 	assert.Equal(t, debugMode, watcher.debugMode)
 	assert.NotNil(t, watcher.client)
+	// The retry backoff must default to a non-zero value, otherwise a persistent
+	// outage would spin through all retries with no pause (see issue #217).
+	assert.Equal(t, defaultRetryDelay, watcher.retryDelay)
 }
 
 func TestAddTask(t *testing.T) {

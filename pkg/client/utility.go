@@ -2,14 +2,27 @@ package client
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/shini4i/argo-watcher/internal/models"
 )
+
+// transientError wraps a failure that is safe to retry: a network-level error
+// (connection refused/reset, DNS, timeout) or a 5xx response from argo-watcher.
+// Terminal failures (4xx, malformed 200 bodies) are returned unwrapped so the
+// retry loop stops immediately.
+type transientError struct {
+	err error
+}
+
+func (e transientError) Error() string { return e.err.Error() }
+func (e transientError) Unwrap() error { return e.err }
 
 // doRequest creates a new HTTP request and sends it using the watcher's client,
 // returning the response or an error.
@@ -21,12 +34,38 @@ func (watcher *Watcher) doRequest(method, url string, body io.Reader) (*http.Res
 	return watcher.client.Do(req)
 }
 
-// getJSON sends a GET request to a provided URL,
-// parses the JSON response and stores it in the value pointed by v.
+// getJSON sends a GET request to a provided URL, parses the JSON response and
+// stores it in the value pointed by v. Transient failures (network errors or
+// 5xx responses) are retried up to maxTransientRetries times with a fixed
+// backoff, so a temporary networking problem does not abort a long-running
+// deployment poll. Terminal failures (4xx, malformed responses) are returned
+// immediately — retrying them never succeeds.
 func (watcher *Watcher) getJSON(url string, v interface{}) error {
+	for attempt := 0; ; attempt++ {
+		err := watcher.getJSONOnce(url, v)
+		if err == nil {
+			return nil
+		}
+
+		var te transientError
+		if !errors.As(err, &te) || attempt >= maxTransientRetries {
+			return err
+		}
+
+		log.Printf("transient error talking to argo-watcher (attempt %d/%d): %v; retrying in %s",
+			attempt+1, maxTransientRetries, err, watcher.retryDelay)
+		time.Sleep(watcher.retryDelay)
+	}
+}
+
+// getJSONOnce performs a single GET request and decodes the JSON response into
+// v. It classifies failures as transient (retryable) or terminal by wrapping
+// the former in transientError.
+func (watcher *Watcher) getJSONOnce(url string, v interface{}) error {
 	resp, err := watcher.doRequest(http.MethodGet, url, nil)
 	if err != nil {
-		return err
+		// Network-level failure: connection refused/reset, DNS, timeout.
+		return transientError{err}
 	}
 
 	defer func() {
@@ -37,7 +76,12 @@ func (watcher *Watcher) getJSON(url string, v interface{}) error {
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return serverErrorFromResponse(resp.StatusCode, body)
+		serverErr := serverErrorFromResponse(resp.StatusCode, body)
+		if resp.StatusCode >= http.StatusInternalServerError {
+			// 5xx: the server is up but temporarily unavailable (e.g. restarting).
+			return transientError{serverErr}
+		}
+		return serverErr
 	}
 
 	return json.NewDecoder(resp.Body).Decode(v)
