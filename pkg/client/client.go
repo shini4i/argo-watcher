@@ -152,6 +152,8 @@ func (watcher *Watcher) waitForDeployment(id, appName, version string) error {
 		switch taskInfo.Status {
 		case models.StatusFailedMessage:
 			return fmt.Errorf("The deployment has failed, please check logs.\n%s", taskInfo.StatusReason)
+		case models.StatusCancelledMessage:
+			return fmt.Errorf("The deployment was cancelled because a newer deployment superseded it.\n%s", taskInfo.StatusReason)
 		case models.StatusInProgressMessage:
 			if !isDeploymentOverTime(retryCount, clientConfig.RetryInterval, clientConfig.ExpectedDeploymentTime) {
 				log.Println("Application deployment is in progress...")
@@ -167,6 +169,11 @@ func (watcher *Watcher) waitForDeployment(id, appName, version string) error {
 		case models.StatusDeployedMessage:
 			log.Printf("The deployment of %s version is done.", version)
 			return nil
+		default:
+			// Treat any status this client does not recognize (e.g. one added by a
+			// newer server) as terminal. Without this the loop would re-poll with no
+			// delay on an unknown status, hammering the server and never returning.
+			return fmt.Errorf("Received unexpected deployment status %q from the server; the client may be out of date.\n%s", taskInfo.Status, taskInfo.StatusReason)
 		}
 	}
 }

@@ -213,6 +213,7 @@ func TestArgoAddTask(t *testing.T) {
 		// mock calls to add task
 		stateError := fmt.Errorf("database error")
 		state.EXPECT().GetTasks(gomock.Any(), gomock.Any(), "test-app", models.StatusDeployedMessage, gomock.Any(), gomock.Any()).Return([]models.Task{}, int64(0))
+		state.EXPECT().CancelInProgressTasks("test-app", gomock.Any()).Return(int64(0), nil)
 		state.EXPECT().AddTask(gomock.Any()).Return(nil, stateError)
 
 		// argo manager
@@ -261,9 +262,14 @@ func TestArgoAddTask(t *testing.T) {
 			},
 		}
 
-		// mock calls to add task
+		// mock calls to add task. In-progress deployments for the app MUST be
+		// cancelled before the new task is persisted; otherwise the new task would
+		// match the cancel filter and cancel itself. gomock.InOrder locks that.
 		state.EXPECT().GetTasks(gomock.Any(), gomock.Any(), "test-app", models.StatusDeployedMessage, gomock.Any(), gomock.Any()).Return([]models.Task{}, int64(0))
-		state.EXPECT().AddTask(gomock.Any()).Return(&newTask, nil)
+		gomock.InOrder(
+			state.EXPECT().CancelInProgressTasks("test-app", supersededTaskReason).Return(int64(0), nil),
+			state.EXPECT().AddTask(gomock.Any()).Return(&newTask, nil),
+		)
 
 		// argo manager
 		argo := &Argo{}
@@ -275,6 +281,34 @@ func TestArgoAddTask(t *testing.T) {
 		assert.NotNil(t, newTaskReturned)
 		uuidRegexp := regexp.MustCompile("^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-4[a-fA-F0-9]{3}-[8|9|aA|bB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}$")
 		assert.Regexp(t, uuidRegexp, newTaskReturned.Id, "Must match Regexp for uuid v4")
+	})
+
+	t.Run("Argo - Cancel failure does not block new deployment", func(t *testing.T) {
+		// mocks
+		api := mock.NewMockArgoApiInterface(ctrl)
+		metrics := mock.NewMockMetricsInterface(ctrl)
+		state := mock.NewMockTaskRepository(ctrl)
+
+		state.EXPECT().Check().Return(true)
+		api.EXPECT().GetUserInfo().Return(&models.Userinfo{LoggedIn: true}, nil)
+		metrics.EXPECT().SetArgoUnavailable(false)
+		metrics.EXPECT().AddProcessedDeployment("test-app")
+
+		task := models.Task{App: "test-app", Images: []models.Image{{Tag: taskImageTag}}}
+		newTask := models.Task{Id: uuid.NewString(), App: "test-app", Images: []models.Image{{Tag: taskImageTag}}}
+
+		// Cancelling prior in-progress tasks is best-effort: a failure here must not
+		// block the new deployment from being persisted.
+		state.EXPECT().GetTasks(gomock.Any(), gomock.Any(), "test-app", models.StatusDeployedMessage, gomock.Any(), gomock.Any()).Return([]models.Task{}, int64(0))
+		state.EXPECT().CancelInProgressTasks("test-app", supersededTaskReason).Return(int64(0), fmt.Errorf("cancel failed"))
+		state.EXPECT().AddTask(gomock.Any()).Return(&newTask, nil)
+
+		argo := &Argo{}
+		argo.Init(state, api, metrics)
+		newTaskReturned, err := argo.AddTask(task)
+
+		assert.NoError(t, err, "a best-effort cancel failure must not fail the new deployment")
+		assert.NotNil(t, newTaskReturned)
 	})
 
 	t.Run("Argo - Rollback fields are computed and persisted", func(t *testing.T) {
@@ -296,6 +330,7 @@ func TestArgoAddTask(t *testing.T) {
 
 		// Capture the task actually handed to the repository.
 		var captured models.Task
+		state.EXPECT().CancelInProgressTasks("test-app", gomock.Any()).Return(int64(0), nil)
 		state.EXPECT().AddTask(gomock.Any()).DoAndReturn(func(task models.Task) (*models.Task, error) {
 			captured = task
 			task.Id = uuid.NewString()
@@ -328,6 +363,7 @@ func TestArgoAddTask(t *testing.T) {
 		state.EXPECT().GetTasks(gomock.Any(), gomock.Any(), "test-app", models.StatusDeployedMessage, gomock.Any(), gomock.Any()).Return(deployed, int64(len(deployed)))
 
 		var captured models.Task
+		state.EXPECT().CancelInProgressTasks("test-app", gomock.Any()).Return(int64(0), nil)
 		state.EXPECT().AddTask(gomock.Any()).DoAndReturn(func(task models.Task) (*models.Task, error) {
 			captured = task
 			task.Id = uuid.NewString()

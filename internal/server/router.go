@@ -505,7 +505,7 @@ func (env *Env) addTask(c *gin.Context) {
 // @Description Get all tasks that match the provided parameters
 // @Tags backend, frontend
 // @Param app query string false "App name"
-// @Param status query string false "Task status (e.g. 'in progress', 'failed', 'deployed')"
+// @Param status query string false "Task status (e.g. 'in progress', 'failed', 'deployed', 'cancelled')"
 // @Param from_timestamp query int true "From timestamp" default(1648390029)
 // @Param to_timestamp query int false "To timestamp"
 // @Param limit query int false "Maximum number of tasks to return (1-1000, defaults to 1000)"

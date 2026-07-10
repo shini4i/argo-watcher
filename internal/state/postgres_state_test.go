@@ -155,6 +155,32 @@ func TestPostgresState_SetTaskStatus(t *testing.T) {
 	assert.Equal(t, "finished", taskInfo.StatusReason)
 }
 
+func TestPostgresState_CancelInProgressTasks(t *testing.T) {
+	env := newPostgresTestEnv(t)
+
+	inProgress := env.addTask(t, sampleTask("app-a"))
+	otherApp := env.addTask(t, sampleTask("app-b"))
+	finished := env.addTask(t, sampleTask("app-a"))
+	require.NoError(t, env.state.SetTaskStatus(finished.Id, models.StatusDeployedMessage, ""))
+
+	count, err := env.state.CancelInProgressTasks("app-a", "superseded")
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), count, "only the in-progress app-a task should be cancelled")
+
+	got, err := env.state.GetTask(inProgress.Id)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusCancelledMessage, got.Status)
+	assert.Equal(t, "superseded", got.StatusReason)
+
+	gotOther, err := env.state.GetTask(otherApp.Id)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusInProgressMessage, gotOther.Status)
+
+	gotFinished, err := env.state.GetTask(finished.Id)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusDeployedMessage, gotFinished.Status)
+}
+
 func TestPostgresState_ProcessObsoleteTasks(t *testing.T) {
 	env := newPostgresTestEnv(t)
 

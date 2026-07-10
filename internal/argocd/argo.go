@@ -31,6 +31,9 @@ const (
 	ArgoAPIErrorTemplate = "ArgoCD API Error: %s"
 	// argoUnavailableErrorMessage is the specific error message for a refused connection.
 	argoUnavailableErrorMessage = "connect: connection refused"
+	// supersededTaskReason is the status reason stored on a deployment that was
+	// cancelled because a newer deployment for the same app superseded it.
+	supersededTaskReason = "superseded by a newer deployment for the same application"
 )
 
 // Argo is the primary controller for watcher operations.
@@ -90,6 +93,17 @@ func (argo *Argo) AddTask(task models.Task) (*models.Task, error) {
 	// action) can never influence the stored result.
 	task.RollbackTargetId = argo.detectRollback(task)
 	task.IsRollback = task.RollbackTargetId != ""
+
+	// Supersede any in-flight deployment for this app before starting a new one, so
+	// the watcher stops polling ArgoCD for a rollout nobody is waiting on anymore
+	// (issue #353). This runs against the shared state, so in an HA setup it also
+	// cancels rollouts being watched by other replicas. Best-effort: a failure here
+	// must not block the new deployment.
+	if cancelled, err := argo.State.CancelInProgressTasks(task.App, supersededTaskReason); err != nil {
+		log.Warn().Str("app", task.App).Msgf("Failed to cancel in-progress deployments for the app: %s", err)
+	} else if cancelled > 0 {
+		log.Info().Str("app", task.App).Msgf("Cancelled %d in-progress deployment(s) superseded by the new task", cancelled)
+	}
 
 	newTask, err := argo.State.AddTask(task)
 	if err != nil {

@@ -119,6 +119,16 @@ describe('dataProvider', () => {
     expect(params.get('status')).toBe('in progress');
   });
 
+  it('forwards the cancelled status filter to the backend query', async () => {
+    const fetch = mockFetch().mockResolvedValue(jsonResponse({ tasks: [], total: 0 }));
+    await dataProvider.getList('tasks', {
+      ...createListParams(),
+      filter: { status: 'cancelled' },
+    });
+    const params = getQueryParams(fetch.mock.calls[0][0] as string);
+    expect(params.get('status')).toBe('cancelled');
+  });
+
   it('omits the status param when no status filter is set', async () => {
     const fetch = mockFetch().mockResolvedValue(jsonResponse({ tasks: [], total: 0 }));
     await dataProvider.getList('tasks', createListParams());

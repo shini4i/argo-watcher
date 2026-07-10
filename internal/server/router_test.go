@@ -76,6 +76,10 @@ func (m *mockTaskRepository) SetTaskStatus(_, _, _ string) error {
 	return nil
 }
 
+func (m *mockTaskRepository) CancelInProgressTasks(_, _ string) (int64, error) {
+	return 0, nil
+}
+
 func (m *mockTaskRepository) Check() bool {
 	return true
 }

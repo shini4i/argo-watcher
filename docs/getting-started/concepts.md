@@ -26,6 +26,7 @@ A task in Argo Watcher moves through the following states:
 2. **In Progress** — Image detected in Argo CD, deployment is syncing or running.
 3. **Deployed** — Deployment succeeded; application is healthy and synced.
 4. **Failed** — Deployment failed due to health/sync issues or timeout.
+5. **Cancelled** — Superseded by a newer deployment for the same application before reaching a final state; polling stops. Unlike Failed, a cancelled task is not counted as a deployment failure.
 
 ## Deployment Locking
 

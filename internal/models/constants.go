@@ -10,6 +10,11 @@ const (
 	StatusArgoCDFailedLogin        = "failed to login to argocd"
 	StatusDeployedMessage          = "deployed"
 	StatusAccepted                 = "accepted"
+	// StatusCancelledMessage marks a deployment that was superseded by a newer
+	// deployment for the same application before it reached a final state. The
+	// watcher stops polling ArgoCD for the superseded task to avoid wasting API
+	// calls on a rollout nobody is waiting for anymore.
+	StatusCancelledMessage = "cancelled"
 )
 
 // allowedTaskStatusFilters lists every status string the /api/v1/tasks
@@ -29,6 +34,7 @@ var allowedTaskStatusFilters = map[string]struct{}{
 	StatusArgoCDFailedLogin:        {},
 	StatusDeployedMessage:          {},
 	StatusAccepted:                 {},
+	StatusCancelledMessage:         {},
 }
 
 // IsAllowedTaskStatus reports whether the given status string is accepted

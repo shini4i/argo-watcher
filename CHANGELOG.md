@@ -15,9 +15,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the task detail page links to the earlier task the deployment rolls back to.
 - Expose `IsRollback` and `RollbackTargetId` as webhook notification template
   variables so alerts can highlight rollbacks.
+- Cancel superseded deployments: when a new deployment for an application is
+  triggered while a previous one is still in progress, the older deployment is
+  cancelled and marked with the new `cancelled` status instead of continuing to
+  poll Argo CD until it times out. The CLI client reports the cancellation and
+  the status is filterable in the Web UI (#353).
 
 ### Changed
 
+- The CLI client now treats any unrecognized deployment status as terminal and
+  exits with an error instead of polling in a tight loop. **Upgrade CLI clients
+  to this version**: older clients do not understand the new `cancelled` status
+  and will busy-loop against the server if one of their deployments is superseded
+  (#353).
 - Group and humanize server startup misconfiguration errors: missing required
   and invalid environment variables are now reported together in a single
   message listing every offending variable, so you can fix them all in one pass

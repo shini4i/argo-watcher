@@ -20,6 +20,12 @@ type TaskRepository interface {
 	GetTasks(startTime float64, endTime float64, app string, status string, limit int, offset int) ([]models.Task, int64)
 	GetTask(id string) (*models.Task, error)
 	SetTaskStatus(id string, status string, reason string) error
+	// CancelInProgressTasks marks every in-progress task for the given app as
+	// cancelled and returns how many were affected. It is used to supersede an
+	// older deployment when a newer one for the same app arrives (issue #353).
+	// Operating on the shared state makes the cancellation visible to every
+	// replica, not just the one handling the new deployment.
+	CancelInProgressTasks(app, reason string) (int64, error)
 	Check() bool
 	ProcessObsoleteTasks(retryTimes uint)
 }

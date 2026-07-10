@@ -207,6 +207,42 @@ func TestInMemoryState_SetTaskStatus_NotFound(t *testing.T) {
 	assert.Equal(t, "task not found", err.Error())
 }
 
+// TestInMemoryState_CancelInProgressTasks verifies that only the in-progress
+// tasks for the target app are switched to cancelled, and that already-finished
+// tasks and tasks for other apps are left untouched.
+func TestInMemoryState_CancelInProgressTasks(t *testing.T) {
+	state := InMemoryState{}
+
+	inProgress, err := state.AddTask(createTestTask("app-a"))
+	require.NoError(t, err)
+
+	otherApp, err := state.AddTask(createTestTask("app-b"))
+	require.NoError(t, err)
+
+	finished, err := state.AddTask(createTestTask("app-a"))
+	require.NoError(t, err)
+	require.NoError(t, state.SetTaskStatus(finished.Id, models.StatusDeployedMessage, ""))
+
+	count, err := state.CancelInProgressTasks("app-a", "superseded")
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), count, "only the in-progress app-a task should be cancelled")
+
+	got, err := state.GetTask(inProgress.Id)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusCancelledMessage, got.Status)
+	assert.Equal(t, "superseded", got.StatusReason)
+
+	// A different app is untouched.
+	gotOther, err := state.GetTask(otherApp.Id)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusInProgressMessage, gotOther.Status)
+
+	// An already-deployed task is untouched.
+	gotFinished, err := state.GetTask(finished.Id)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusDeployedMessage, gotFinished.Status)
+}
+
 // TestInMemoryState_ProcessObsoleteTasks verifies that stale in-progress tasks
 // are marked as aborted after the threshold period.
 func TestInMemoryState_ProcessObsoleteTasks(t *testing.T) {

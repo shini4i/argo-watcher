@@ -63,6 +63,16 @@ const statusCases: StatusCase[] = [
     },
   },
   {
+    status: 'cancelled',
+    expected: {
+      label: 'Cancelled',
+      displayLabel: 'Cancelled',
+      chipColor: 'default',
+      timelineDotColor: 'default',
+      reasonSeverity: 'info',
+    },
+  },
+  {
     status: 'custom',
     expected: {
       label: 'custom',
