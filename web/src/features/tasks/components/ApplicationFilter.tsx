@@ -72,18 +72,21 @@ export const ApplicationFilter = ({
           {...params}
           placeholder="Filter by app"
           aria-label="Filter by application"
-          InputProps={{
-            ...params.InputProps,
-            startAdornment: (
-              <InputAdornment position="start" sx={{ ml: 0.5 }}>
-                <FilterListIcon fontSize="small" sx={{ color: theme.palette.text.secondary }} />
-              </InputAdornment>
-            ),
-            sx: {
-              height: 34,
-              borderRadius: `${tokens.radiusMd}px`,
-              fontSize: 13.5,
-              py: '0 !important',
+          slotProps={{
+            ...params.slotProps,
+            input: {
+              ...params.slotProps.input,
+              startAdornment: (
+                <InputAdornment position="start" sx={{ ml: 0.5 }}>
+                  <FilterListIcon fontSize="small" sx={{ color: theme.palette.text.secondary }} />
+                </InputAdornment>
+              ),
+              sx: {
+                height: 34,
+                borderRadius: `${tokens.radiusMd}px`,
+                fontSize: 13.5,
+                py: '0 !important',
+              },
             },
           }}
         />

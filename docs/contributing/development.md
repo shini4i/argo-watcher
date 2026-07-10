@@ -4,8 +4,8 @@ This guide covers setting up a local development environment for Argo Watcher.
 
 ## Prerequisites
 
-- **Go 1.25+**
-- **Node.js 20+** (for frontend development)
+- **Go 1.26+**
+- **Node.js 24+** (for frontend development; `nix develop` provides it)
 - **Docker** and **Docker Compose** (for running dependencies locally)
 - **[Task](https://taskfile.dev/)** (task runner, replaces Make)
 - **[pre-commit](https://pre-commit.com/)** (Git hooks for code quality)
