@@ -25,7 +25,7 @@ type TaskRepository interface {
 	// older deployment when a newer one for the same app arrives (issue #353).
 	// Operating on the shared state makes the cancellation visible to every
 	// replica, not just the one handling the new deployment.
-	CancelInProgressTasks(app string, reason string) (int64, error)
+	CancelInProgressTasks(app, reason string) (int64, error)
 	Check() bool
 	ProcessObsoleteTasks(retryTimes uint)
 }

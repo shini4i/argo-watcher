@@ -156,7 +156,7 @@ func (state *InMemoryState) SetTaskStatus(id string, status string, reason strin
 // CancelInProgressTasks marks every in-progress task for the given app as
 // cancelled and returns how many were updated. It is used to supersede an older
 // deployment when a newer one for the same app is triggered.
-func (state *InMemoryState) CancelInProgressTasks(app string, reason string) (int64, error) {
+func (state *InMemoryState) CancelInProgressTasks(app, reason string) (int64, error) {
 	state.mu.Lock()
 	defer state.mu.Unlock()
 

@@ -19,6 +19,9 @@ import (
 	"github.com/shini4i/argo-watcher/internal/state/state_models"
 )
 
+// whereStatusEquals is the GORM condition matching a task by its status column.
+const whereStatusEquals = "status = ?"
+
 type PostgresState struct {
 	orm *gorm.DB
 }
@@ -143,10 +146,10 @@ func (state *PostgresState) SetTaskStatus(id string, status string, reason strin
 // CancelInProgressTasks marks every in-progress task for the given app as
 // cancelled in a single atomic UPDATE and returns how many rows were affected.
 // It supersedes older deployments when a newer one for the same app arrives.
-func (state *PostgresState) CancelInProgressTasks(app string, reason string) (int64, error) {
+func (state *PostgresState) CancelInProgressTasks(app, reason string) (int64, error) {
 	result := state.orm.Model(&state_models.TaskModel{}).
 		Where(`"tasks"."app" = ?`, app).
-		Where("status = ?", models.StatusInProgressMessage).
+		Where(whereStatusEquals, models.StatusInProgressMessage).
 		Updates(state_models.TaskModel{
 			Status:       models.StatusCancelledMessage,
 			StatusReason: sql.NullString{String: reason, Valid: true},
@@ -207,12 +210,12 @@ func (state *PostgresState) doProcessPostgresObsoleteTasks() error {
 	log.Debug().Msg("Removing obsolete tasks...")
 
 	log.Debug().Msg("Removing app not found tasks older than 1 hour from the database...")
-	if err := state.orm.Where("status = ?", models.StatusAppNotFoundMessage).Where("created < now() - interval '1 hour'").Delete(&state_models.TaskModel{}).Error; err != nil {
+	if err := state.orm.Where(whereStatusEquals, models.StatusAppNotFoundMessage).Where("created < now() - interval '1 hour'").Delete(&state_models.TaskModel{}).Error; err != nil {
 		return err
 	}
 
 	log.Debug().Msg("Marking in progress tasks older than 1 hour as aborted...")
-	if err := state.orm.Where("status = ?", models.StatusInProgressMessage).Where("created < now() - interval '1 hour'").Updates(&state_models.TaskModel{Status: models.StatusAborted}).Error; err != nil {
+	if err := state.orm.Where(whereStatusEquals, models.StatusInProgressMessage).Where("created < now() - interval '1 hour'").Updates(&state_models.TaskModel{Status: models.StatusAborted}).Error; err != nil {
 		return err
 	}
 
