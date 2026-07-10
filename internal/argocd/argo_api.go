@@ -53,8 +53,11 @@ func (api *ArgoApi) Init(serverConfig *config.ServerConfig) error {
 	if err != nil {
 		return err
 	}
-	// prepare cookie token
-	cookie := &http.Cookie{
+	// prepare cookie token. This is an outbound request cookie sent to the
+	// ArgoCD API through the client's cookie jar, not a Set-Cookie response to a
+	// browser, so G124's Secure/HttpOnly/SameSite attributes do not apply — they
+	// are browser-storage directives the Go HTTP client ignores when sending.
+	cookie := &http.Cookie{ // #nosec G124
 		Name:  "argocd.token",
 		Value: serverConfig.ArgoToken,
 	}
