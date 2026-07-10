@@ -153,6 +153,26 @@ func (state *InMemoryState) SetTaskStatus(id string, status string, reason strin
 	return errors.New("task not found")
 }
 
+// CancelInProgressTasks marks every in-progress task for the given app as
+// cancelled and returns how many were updated. It is used to supersede an older
+// deployment when a newer one for the same app is triggered.
+func (state *InMemoryState) CancelInProgressTasks(app string, reason string) (int64, error) {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+
+	var count int64
+	now := float64(time.Now().Unix())
+	for idx := range state.tasks {
+		if state.tasks[idx].App == app && state.tasks[idx].Status == models.StatusInProgressMessage {
+			state.tasks[idx].Status = models.StatusCancelledMessage
+			state.tasks[idx].StatusReason = reason
+			state.tasks[idx].Updated = now
+			count++
+		}
+	}
+	return count, nil
+}
+
 // Check is a placeholder method that implements the Check() bool interface.
 // It always returns true and does not perform any actual state checking.
 // This method exists to fulfill the TaskRepository interface requirement and has no functional value.

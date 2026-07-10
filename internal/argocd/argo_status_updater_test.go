@@ -51,8 +51,28 @@ func (s failingStrategy) Send(models.Task) error {
 	return s.err
 }
 
+// capturingStrategy records every task passed to a notifier so tests can assert
+// on the status reported in the outgoing notification.
+type capturingStrategy struct {
+	sent []models.Task
+}
+
+func (s *capturingStrategy) Send(task models.Task) error {
+	s.sent = append(s.sent, task)
+	return nil
+}
+
 func zeroDelay(_ uint, _ error, _ *retry.Config) time.Duration {
 	return 0
+}
+
+// notSupersededState returns a TaskRepository mock whose GetTask always reports an
+// in-progress task, so the poll loop's supersession check never fires. Use it when
+// a test exercises rollout polling but is not about cancellation.
+func notSupersededState(ctrl *gomock.Controller) *mock.MockTaskRepository {
+	state := mock.NewMockTaskRepository(ctrl)
+	state.EXPECT().GetTask(gomock.Any()).Return(&models.Task{Status: models.StatusInProgressMessage}, nil).AnyTimes()
+	return state
 }
 
 func newUpdaterTestConfig(locker lock.Locker) ArgoStatusUpdaterConfig {
@@ -97,6 +117,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		// argo manager
 		argo := &Argo{}
 		argo.Init(stateMock, apiMock, metricsMock)
+		stateMock.EXPECT().GetTask(gomock.Any()).Return(&models.Task{Status: models.StatusInProgressMessage}, nil).AnyTimes()
 
 		// argo updater
 		cfg := newUpdaterTestConfig(mockLocker)
@@ -142,6 +163,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		// argo manager
 		argo := &Argo{}
 		argo.Init(stateMock, apiMock, metricsMock)
+		stateMock.EXPECT().GetTask(gomock.Any()).Return(&models.Task{Status: models.StatusInProgressMessage}, nil).AnyTimes()
 
 		// argo updater
 		cfg := newUpdaterTestConfig(mockLocker)
@@ -194,6 +216,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		// argo manager
 		argo := &Argo{}
 		argo.Init(stateMock, apiMock, metricsMock)
+		stateMock.EXPECT().GetTask(gomock.Any()).Return(&models.Task{Status: models.StatusInProgressMessage}, nil).AnyTimes()
 
 		// argo updater
 		updater := initTestUpdater(t, newUpdaterTestConfig(mockLocker), argo)
@@ -237,6 +260,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		// argo manager
 		argo := &Argo{}
 		argo.Init(stateMock, apiMock, metricsMock)
+		stateMock.EXPECT().GetTask(gomock.Any()).Return(&models.Task{Status: models.StatusInProgressMessage}, nil).AnyTimes()
 
 		// argo updater
 		cfg := newUpdaterTestConfig(mockLocker)
@@ -287,6 +311,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		// argo manager
 		argo := &Argo{}
 		argo.Init(stateMock, apiMock, metricsMock)
+		stateMock.EXPECT().GetTask(gomock.Any()).Return(&models.Task{Status: models.StatusInProgressMessage}, nil).AnyTimes()
 
 		// argo updater
 		updater := initTestUpdater(t, newUpdaterTestConfig(mockLocker), argo)
@@ -317,6 +342,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		// argo manager
 		argo := &Argo{}
 		argo.Init(stateMock, apiMock, metricsMock)
+		stateMock.EXPECT().GetTask(gomock.Any()).Return(&models.Task{Status: models.StatusInProgressMessage}, nil).AnyTimes()
 
 		// argo updater
 		updater := initTestUpdater(t, newUpdaterTestConfig(mockLocker), argo)
@@ -347,6 +373,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		// argo manager
 		argo := &Argo{}
 		argo.Init(stateMock, apiMock, metricsMock)
+		stateMock.EXPECT().GetTask(gomock.Any()).Return(&models.Task{Status: models.StatusInProgressMessage}, nil).AnyTimes()
 
 		// argo updater
 		updater := initTestUpdater(t, newUpdaterTestConfig(mockLocker), argo)
@@ -377,6 +404,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		// argo manager
 		argo := &Argo{}
 		argo.Init(stateMock, apiMock, metricsMock)
+		stateMock.EXPECT().GetTask(gomock.Any()).Return(&models.Task{Status: models.StatusInProgressMessage}, nil).AnyTimes()
 
 		// argo updater
 		updater := initTestUpdater(t, newUpdaterTestConfig(mockLocker), argo)
@@ -423,6 +451,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		// argo manager
 		argo := &Argo{}
 		argo.Init(stateMock, apiMock, metricsMock)
+		stateMock.EXPECT().GetTask(gomock.Any()).Return(&models.Task{Status: models.StatusInProgressMessage}, nil).AnyTimes()
 
 		// argo updater
 		updater := initTestUpdater(t, newUpdaterTestConfig(mockLocker), argo)
@@ -473,6 +502,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		// argo manager
 		argo := &Argo{}
 		argo.Init(stateMock, apiMock, metricsMock)
+		stateMock.EXPECT().GetTask(gomock.Any()).Return(&models.Task{Status: models.StatusInProgressMessage}, nil).AnyTimes()
 
 		// argo updater
 		updater := initTestUpdater(t, newUpdaterTestConfig(mockLocker), argo)
@@ -776,6 +806,7 @@ func TestArgoStatusUpdaterWaitForApplicationDeploymentErrors(t *testing.T) {
 
 	argo := &Argo{}
 	argo.Init(state, api, metrics)
+	state.EXPECT().GetTask(gomock.Any()).Return(&models.Task{Status: models.StatusInProgressMessage}, nil).AnyTimes()
 
 	cfg := newUpdaterTestConfig(locker)
 	cfg.RegistryProxyURL = ""
@@ -814,7 +845,7 @@ func TestDeploymentMonitorWaitRollout(t *testing.T) {
 
 	api := mock.NewMockArgoApiInterface(ctrl)
 	monitor := NewDeploymentMonitor(
-		Argo{api: api},
+		Argo{api: api, State: notSupersededState(ctrl)},
 		"",
 		[]retry.Option{retry.DelayType(zeroDelay), retry.LastErrorOnly(true)},
 		false,
@@ -852,7 +883,7 @@ func TestDeploymentMonitorWaitRolloutRespectsDeadline(t *testing.T) {
 
 	api := mock.NewMockArgoApiInterface(ctrl)
 	monitor := NewDeploymentMonitor(
-		Argo{api: api},
+		Argo{api: api, State: notSupersededState(ctrl)},
 		"",
 		[]retry.Option{retry.DelayType(retry.FixedDelay), retry.LastErrorOnly(true)},
 		false,
@@ -893,7 +924,7 @@ func TestDeploymentMonitorWaitRolloutReportsLastGoodStatusOnDeadline(t *testing.
 
 	api := mock.NewMockArgoApiInterface(ctrl)
 	monitor := NewDeploymentMonitor(
-		Argo{api: api},
+		Argo{api: api, State: notSupersededState(ctrl)},
 		"",
 		[]retry.Option{retry.DelayType(retry.FixedDelay), retry.LastErrorOnly(true)},
 		false,
@@ -932,7 +963,7 @@ func TestDeploymentMonitorWaitRolloutSurfacesErrorWhenNoFetchSucceeds(t *testing
 
 	api := mock.NewMockArgoApiInterface(ctrl)
 	monitor := NewDeploymentMonitor(
-		Argo{api: api},
+		Argo{api: api, State: notSupersededState(ctrl)},
 		"",
 		[]retry.Option{retry.DelayType(retry.FixedDelay), retry.LastErrorOnly(true)},
 		false,
@@ -948,6 +979,136 @@ func TestDeploymentMonitorWaitRolloutSurfacesErrorWhenNoFetchSucceeds(t *testing
 	assert.Nil(t, received)
 	assert.Contains(t, err.Error(), argoUnavailableErrorMessage,
 		"the underlying cause must survive so determineFailureStatus can classify it")
+}
+
+// TestArgoStatusUpdaterStopsWhenSuperseded verifies that once a newer deployment
+// has marked the task "cancelled" in the shared state, the poll loop stops before
+// making any ArgoCD call and does not overwrite the cancelled status. Because the
+// signal travels through the shared state, this is exactly how cross-replica
+// supersession works in an HA setup.
+func TestArgoStatusUpdaterStopsWhenSuperseded(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	apiMock := mock.NewMockArgoApiInterface(ctrl)
+	metricsMock := mock.NewMockMetricsInterface(ctrl)
+	stateMock := mock.NewMockTaskRepository(ctrl)
+
+	argo := &Argo{}
+	argo.Init(stateMock, apiMock, metricsMock)
+
+	updater := initTestUpdater(t, newUpdaterTestConfig(lock.NewInMemoryLocker()), argo)
+	capture := &capturingStrategy{}
+	updater.notifier = notifications.NewNotifier(capture)
+
+	task := models.Task{
+		Id:      "old-id",
+		App:     "test-app",
+		Timeout: 15,
+		Images:  []models.Image{{Image: "ghcr.io/shini4i/argo-watcher", Tag: "dev"}},
+	}
+
+	// The task is already cancelled in the shared state (a newer deployment, maybe
+	// on another replica, set it). The poller must observe this and stop.
+	stateMock.EXPECT().GetTask(task.Id).Return(&models.Task{Id: task.Id, Status: models.StatusCancelledMessage}, nil).AnyTimes()
+
+	metricsMock.EXPECT().AddInProgressTask()
+	metricsMock.EXPECT().RemoveInProgressTask()
+	// No ArgoCD call and no status write: the poller bails immediately, leaving the
+	// "cancelled" status the newer deployment already wrote untouched. Any
+	// GetApplication or SetTaskStatus call would be unexpected and fail the test.
+
+	updater.WaitForRollout(task)
+
+	// The final outgoing notification must report the cancelled status.
+	require.NotEmpty(t, capture.sent)
+	assert.Equal(t, models.StatusCancelledMessage, capture.sent[len(capture.sent)-1].Status)
+}
+
+// TestArgoStatusUpdaterStopsMidPollWhenSuperseded verifies that a task cancelled
+// while a rollout is already polling is detected on the next poll iteration: the
+// loop stops and the terminal status is not overwritten.
+func TestArgoStatusUpdaterStopsMidPollWhenSuperseded(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	apiMock := mock.NewMockArgoApiInterface(ctrl)
+	metricsMock := mock.NewMockMetricsInterface(ctrl)
+	stateMock := mock.NewMockTaskRepository(ctrl)
+
+	argo := &Argo{}
+	argo.Init(stateMock, apiMock, metricsMock)
+
+	updater := initTestUpdater(t, newUpdaterTestConfig(lock.NewInMemoryLocker()), argo)
+
+	task := models.Task{
+		Id:      "old-id",
+		App:     "test-app",
+		Timeout: 15,
+		Images:  []models.Image{{Image: "ghcr.io/shini4i/argo-watcher", Tag: "dev"}},
+	}
+
+	// Not-final app so the loop would keep polling if not cancelled.
+	application := models.Application{}
+	application.Status.Summary.Images = []string{"test-registry/ghcr.io/shini4i/argo-watcher:dev"}
+	application.Status.Sync.Status = "OutOfSync"
+	application.Status.Health.Status = "Progressing"
+	apiMock.EXPECT().GetApplication(gomock.Any(), task.App).Return(&application, nil).AnyTimes()
+
+	// First status read (initial supersession check) reports in-progress; the next
+	// read — at the top of the first poll iteration — reports cancelled.
+	gomock.InOrder(
+		stateMock.EXPECT().GetTask(task.Id).Return(&models.Task{Id: task.Id, Status: models.StatusInProgressMessage}, nil),
+		stateMock.EXPECT().GetTask(task.Id).Return(&models.Task{Id: task.Id, Status: models.StatusCancelledMessage}, nil).AnyTimes(),
+	)
+
+	metricsMock.EXPECT().AddInProgressTask()
+	metricsMock.EXPECT().RemoveInProgressTask()
+	// No SetTaskStatus and no failed-deployment metric: a superseded rollout is not
+	// a failure and its status must not be overwritten.
+
+	updater.WaitForRollout(task)
+}
+
+// TestArgoStatusUpdaterProceedsWhenStatusReadFails verifies that a transient
+// failure to read the task status (the supersession check) does not abort an
+// otherwise healthy rollout: taskSuperseded returns false on a read error, so the
+// deployment proceeds to its normal terminal result.
+func TestArgoStatusUpdaterProceedsWhenStatusReadFails(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	apiMock := mock.NewMockArgoApiInterface(ctrl)
+	metricsMock := mock.NewMockMetricsInterface(ctrl)
+	stateMock := mock.NewMockTaskRepository(ctrl)
+
+	argo := &Argo{}
+	argo.Init(stateMock, apiMock, metricsMock)
+
+	updater := initTestUpdater(t, newUpdaterTestConfig(lock.NewInMemoryLocker()), argo)
+
+	task := models.Task{
+		Id:      "test-id",
+		App:     "test-app",
+		Timeout: 15,
+		Images:  []models.Image{{Image: "ghcr.io/shini4i/argo-watcher", Tag: "dev"}},
+	}
+
+	application := models.Application{}
+	application.Status.Summary.Images = []string{"test-registry/ghcr.io/shini4i/argo-watcher:dev"}
+	application.Status.Sync.Status = "Synced"
+	application.Status.Health.Status = "Healthy"
+
+	// Every supersession check fails to read the status; the rollout must carry on.
+	stateMock.EXPECT().GetTask(task.Id).Return(nil, errors.New("db unavailable")).AnyTimes()
+	apiMock.EXPECT().GetApplication(gomock.Any(), task.App).Return(&application, nil).MinTimes(1)
+	metricsMock.EXPECT().AddInProgressTask()
+	metricsMock.EXPECT().ResetFailedDeployment(task.App)
+	metricsMock.EXPECT().RemoveInProgressTask()
+	// Proceeds to a normal deployed result rather than stopping as superseded.
+	stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
+
+	updater.WaitForRollout(task)
 }
 
 func TestHandleApplicationFetchError(t *testing.T) {
@@ -1045,6 +1206,7 @@ func TestArgoStatusUpdater_processDeploymentResult(t *testing.T) {
 
 	argo := &Argo{}
 	argo.Init(stateMock, apiMock, metricsMock)
+	stateMock.EXPECT().GetTask(gomock.Any()).Return(&models.Task{Status: models.StatusInProgressMessage}, nil).AnyTimes()
 
 	updater := initTestUpdater(t, newUpdaterTestConfig(mockLocker), argo)
 
@@ -1130,6 +1292,7 @@ func TestArgoStatusUpdater_handleArgoAPIFailure(t *testing.T) {
 
 	argo := &Argo{}
 	argo.Init(stateMock, apiMock, metricsMock)
+	stateMock.EXPECT().GetTask(gomock.Any()).Return(&models.Task{Status: models.StatusInProgressMessage}, nil).AnyTimes()
 
 	updater := initTestUpdater(t, newUpdaterTestConfig(mockLocker), argo)
 

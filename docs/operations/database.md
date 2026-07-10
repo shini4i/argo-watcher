@@ -12,7 +12,7 @@ There is a single table, `tasks`, that stores every deployment task and its stat
 | `created` | `timestamptz NOT NULL` | Indexed via `idx_tasks_created_app` (descending, with `app`). |
 | `updated` | `timestamptz NOT NULL` | Last status transition. |
 | `images` | `jsonb NOT NULL` | Image list submitted with the task. |
-| `status` | `varchar(20) NOT NULL` | One of: pending, in progress, deployed, failed. |
+| `status` | `varchar(20) NOT NULL` | A task status value defined in `internal/models/constants.go` (e.g. in progress, deployed, failed, cancelled, aborted, app not found). |
 | `status_reason` | `text` | Human-readable failure reason; empty on success. |
 | `is_rollback` | `boolean NOT NULL DEFAULT false` | `true` when this task's image set was previously deployed for the app. |
 | `rollback_target_id` | `text NOT NULL DEFAULT ''` | ID of the earlier task this deployment rolls back to; empty when not a rollback. |

@@ -23,6 +23,7 @@ var (
 	failedTaskId        = "be8c42c0-a645-11ec-8ea5-f2c4bb72758b"
 	appNotFoundId       = "be8c42c0-a645-11ec-8ea5-f2c4bb72758c"
 	argocdUnavailableId = "be8c42c0-a645-11ec-8ea5-f2c4bb72758d"
+	cancelledTaskId     = "be8c42c0-a645-11ec-8ea5-f2c4bb72758e"
 )
 
 func addTaskHandler(w http.ResponseWriter, r *http.Request) {
@@ -72,6 +73,8 @@ func getTaskStatusHandler(w http.ResponseWriter, r *http.Request) {
 		status = models.StatusArgoCDUnavailableMessage
 	case failedTaskId:
 		status = models.StatusFailedMessage
+	case cancelledTaskId:
+		status = models.StatusCancelledMessage
 	}
 
 	if err := json.NewEncoder(w).Encode(models.TaskStatus{
@@ -319,6 +322,11 @@ func TestWaitForDeployment(t *testing.T) {
 			name:          "ArgoCD unavailable",
 			taskId:        argocdUnavailableId,
 			expectedError: "ArgoCD is unavailable. Please investigate.",
+		},
+		{
+			name:          "Cancelled deployment",
+			taskId:        cancelledTaskId,
+			expectedError: "The deployment was cancelled because a newer deployment superseded it.",
 		},
 	}
 

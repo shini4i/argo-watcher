@@ -32,6 +32,12 @@ const (
 // It must never reach the user-visible task status — WaitRollout swallows it so the caller can report the actual rollout state instead.
 var errForceRetry = errors.New("force retry")
 
+// errTaskSuperseded is an internal sentinel returned by the poll loop when the task
+// has been marked cancelled in the shared state by a newer deployment for the same
+// app. Unlike errForceRetry it is not swallowed: WaitForRollout uses it to stop
+// without overwriting the "cancelled" status the newer deployment already wrote.
+var errTaskSuperseded = errors.New("task superseded by a newer deployment")
+
 // DeploymentMonitor encapsulates the logic for tracking ArgoCD application rollouts.
 type DeploymentMonitor struct {
 	argo             Argo
@@ -99,6 +105,12 @@ func (monitor *DeploymentMonitor) StoreInitialAppStatus(task *models.Task, appli
 // attempts: a context deadline bounds the whole loop (and, through FetchApplication, each
 // individual API call). This prevents the deployment from running far past its configured
 // timeout when ArgoCD responds slowly — the failure mode reported in issue #304.
+//
+// Before each poll it re-reads the task status from the shared state: if a newer
+// deployment for the same app has marked this task "cancelled" (issue #353), it
+// stops immediately so no further ArgoCD API calls are made. Because the check
+// goes through the shared state, this works across replicas in an HA setup — the
+// cancelling deployment may be handled by a different replica than this poller.
 func (monitor *DeploymentMonitor) WaitRollout(task models.Task) (*models.Application, error) {
 	// application holds the most recent successfully-fetched state. It is deliberately assigned only
 	// inside the success branch so that a fetch aborted by the deadline (which returns a nil application)
@@ -114,6 +126,11 @@ func (monitor *DeploymentMonitor) WaitRollout(task models.Task) (*models.Applica
 	log.Debug().Str("id", task.Id).Dur("deadline", deadline).Msg("Waiting for rollout")
 
 	err := retry.Do(func() error {
+		// Stop before hitting ArgoCD if a newer deployment superseded this task.
+		if monitor.taskSuperseded(task.Id) {
+			return retry.Unrecoverable(errTaskSuperseded)
+		}
+
 		app, fetchErr := monitor.FetchApplication(ctx, task.App)
 		if fetchErr != nil {
 			return handleApplicationFetchError(task, fetchErr)
@@ -238,6 +255,19 @@ func (monitor *DeploymentMonitor) ProcessDeploymentResult(task *models.Task, app
 	} else {
 		monitor.handleDeploymentFailure(task, status, application)
 	}
+}
+
+// taskSuperseded reports whether the task has been marked cancelled in the shared
+// state, i.e. a newer deployment for the same app has superseded it. A read error
+// is treated as "not superseded" so a transient state hiccup does not abort an
+// otherwise healthy rollout; the check runs again on the next poll.
+func (monitor *DeploymentMonitor) taskSuperseded(id string) bool {
+	current, err := monitor.argo.State.GetTask(id)
+	if err != nil {
+		log.Warn().Str("id", id).Msgf("Could not read task status to check for supersession: %s", err)
+		return false
+	}
+	return current.Status == models.StatusCancelledMessage
 }
 
 // HandleArgoAPIFailure processes API errors and updates task status accordingly.
@@ -373,7 +403,8 @@ func (updater *ArgoStatusUpdater) Init(argo Argo, cfg ArgoStatusUpdaterConfig) e
 }
 
 // WaitForRollout is the main entry point for tracking an application deployment
-// It monitors the application until it reaches a final state (deployed or failed)
+// It monitors the application until it reaches a final state (deployed or failed),
+// or stops early if a newer deployment for the same app supersedes it (issue #353).
 func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 	updater.monitor.BeginTracking()
 	defer updater.monitor.EndTracking()
@@ -384,10 +415,17 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 	// wait for application to get into deployed status or timeout
 	application, err := updater.waitForApplicationDeployment(task)
 
-	if err != nil {
+	switch {
+	case errors.Is(err, errTaskSuperseded):
+		// A newer deployment for the same app already marked this task "cancelled"
+		// in the shared state (possibly on another replica). Stop without writing a
+		// status so we do not overwrite it; reflect it locally for the notification.
+		log.Info().Str("id", task.Id).Msg("Deployment superseded by a newer deployment for the same app; stopping.")
+		task.Status = models.StatusCancelledMessage
+	case err != nil:
 		// handle application failure
 		updater.monitor.HandleArgoAPIFailure(task, err)
-	} else {
+	default:
 		// process deployment result
 		updater.monitor.ProcessDeploymentResult(&task, application)
 	}
@@ -397,8 +435,14 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 }
 
 // waitForApplicationDeployment coordinates the deployment monitoring process
-// It checks initial status, updates the git repo if needed, and waits for rollout
+// It checks initial status, updates the git repo if needed, and waits for rollout.
 func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task) (*models.Application, error) {
+	// Bail out before any ArgoCD call or git update if the task was already
+	// superseded by a newer deployment for the same app.
+	if updater.monitor.taskSuperseded(task.Id) {
+		return nil, errTaskSuperseded
+	}
+
 	// Fetch initial app state. This single call happens before the timed polling loop, so it is
 	// bounded only by the HTTP client's per-request timeout rather than the rollout deadline.
 	app, err := updater.monitor.FetchApplication(context.Background(), task.App)

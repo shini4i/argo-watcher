@@ -140,6 +140,23 @@ func (state *PostgresState) SetTaskStatus(id string, status string, reason strin
 	return nil
 }
 
+// CancelInProgressTasks marks every in-progress task for the given app as
+// cancelled in a single atomic UPDATE and returns how many rows were affected.
+// It supersedes older deployments when a newer one for the same app arrives.
+func (state *PostgresState) CancelInProgressTasks(app string, reason string) (int64, error) {
+	result := state.orm.Model(&state_models.TaskModel{}).
+		Where(`"tasks"."app" = ?`, app).
+		Where("status = ?", models.StatusInProgressMessage).
+		Updates(state_models.TaskModel{
+			Status:       models.StatusCancelledMessage,
+			StatusReason: sql.NullString{String: reason, Valid: true},
+		})
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	return result.RowsAffected, nil
+}
+
 // Check verifies the connection to the PostgreSQL database by executing a simple test query.
 // It returns true if the database connection is successful and the test query is executed without errors.
 // It returns false if there is an error in the database connection or the test query execution.

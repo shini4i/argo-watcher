@@ -80,6 +80,19 @@ export const describeTaskStatus = (status?: string | null): TaskStatusPresentati
         pillBgDark: tokens.statusRunningBgDark,
         pillFgDark: tokens.statusRunningFgDark,
       };
+    case 'cancelled':
+      return {
+        label: 'Cancelled',
+        displayLabel: 'Cancelled',
+        chipColor: 'default',
+        timelineDotColor: 'default',
+        reasonSeverity: 'info',
+        icon: <CancelOutlinedIcon fontSize="small" />,
+        pillBg: tokens.statusInfoBg,
+        pillFg: tokens.statusInfoFg,
+        pillBgDark: tokens.statusInfoBgDark,
+        pillFgDark: tokens.statusInfoFgDark,
+      };
     case 'app not found':
       return {
         label: 'App Not Found',

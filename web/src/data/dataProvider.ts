@@ -39,6 +39,7 @@ const ALLOWED_TASK_STATUSES: ReadonlySet<string> = new Set([
   'failed to login to argocd',
   'deployed',
   'accepted',
+  'cancelled',
 ]);
 
 /** Normalizes various date/timestamp inputs to seconds since epoch. */
