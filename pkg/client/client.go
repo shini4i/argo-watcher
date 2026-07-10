@@ -170,10 +170,9 @@ func (watcher *Watcher) waitForDeployment(id, appName, version string) error {
 			log.Printf("The deployment of %s version is done.", version)
 			return nil
 		default:
-			// Any status we do not explicitly handle (a server newer than this
-			// client, or a terminal state like "aborted") is treated as terminal.
-			// Without this the loop would spin with no delay on an unknown status,
-			// hammering the server and never returning.
+			// Treat any status this client does not recognize (e.g. one added by a
+			// newer server) as terminal. Without this the loop would re-poll with no
+			// delay on an unknown status, hammering the server and never returning.
 			return fmt.Errorf("Received unexpected deployment status %q from the server; the client may be out of date.\n%s", taskInfo.Status, taskInfo.StatusReason)
 		}
 	}
