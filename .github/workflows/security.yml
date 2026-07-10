@@ -44,6 +44,11 @@ jobs:
         id: gosec
         continue-on-error: true
         uses: securego/gosec@5e5517beec77b8228ba43ec8d7cc22d82ed31924 # v2.25.0
+        env:
+          # The gosec image bundles an older Go with GOTOOLCHAIN=local, so it
+          # refuses a go.mod that requires a newer patch (go 1.26.4). Allow it to
+          # fetch the toolchain named in go.mod instead of failing.
+          GOTOOLCHAIN: auto
         with:
           args: ./...
 
