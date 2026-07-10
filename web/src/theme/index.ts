@@ -41,7 +41,7 @@ const getDesignTokens = (mode: PaletteMode): ThemeOptions => ({
           divider: tokens.divider,
         }),
     neutral: {
-      main: 'gray',
+      main: '#808080',
     },
     reason_color: {
       main: lighten('#ff9800', 0.5),

@@ -46,8 +46,9 @@ describe('TasksDatagrid', () => {
     const props = datagridPropsLog.at(-1);
     expect(props).toMatchObject({ bulkActionButtons: false, expandSingle: true, rowClick: 'expand' });
     expect(typeof props?.isRowExpandable).toBe('function');
-    expect((props?.isRowExpandable as (record?: Task) => boolean)({ ...sampleRecord, status_reason: '' })).toBe(false);
-    expect((props?.isRowExpandable as (record?: Task) => boolean)(sampleRecord)).toBe(true);
+    const isRowExpandable = props?.isRowExpandable as (record?: Task) => boolean;
+    expect(isRowExpandable({ ...sampleRecord, status_reason: '' })).toBe(false);
+    expect(isRowExpandable(sampleRecord)).toBe(true);
   });
 
   it('renders all expected task columns in the new layout', () => {

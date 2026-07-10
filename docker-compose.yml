@@ -16,7 +16,7 @@ services:
     ports:
       - "5432:5432"
   migrations:
-    image: migrate/migrate:v4.17.0
+    image: migrate/migrate:v4.19.1
     command: -path=/migrations/ -database postgres://watcher:watcher@postgres:5432/watcher?sslmode=disable up
     volumes:
       - ./db/migrations:/migrations
@@ -24,7 +24,7 @@ services:
       postgres:
         condition: service_healthy
   backend:
-    image: golang:1.25.11-alpine3.23
+    image: golang:1.26.4-alpine3.24
     volumes:
       - .:/app
     working_dir: /app
@@ -48,7 +48,7 @@ services:
     ports:
       - "8080:8080"
   frontend:
-    image: node:22-alpine3.19
+    image: node:24-alpine3.24
     volumes:
       - ./web:/app
     working_dir: /app
@@ -63,7 +63,7 @@ services:
     ports:
       - "3100:3100"
   mock:
-    image: golang:1.25.11-alpine3.23
+    image: golang:1.26.4-alpine3.24
     volumes:
       - .:/app
     working_dir: /app
@@ -75,7 +75,7 @@ services:
   # the default `docker compose up` because the dev stack does not need it.
   gitea:
     profiles: [integration]
-    image: gitea/gitea:1.22
+    image: gitea/gitea:1.26
     environment:
       GITEA__security__INSTALL_LOCK: "true"
       GITEA__service__DISABLE_REGISTRATION: "false"
@@ -95,7 +95,7 @@ services:
   # so docker-compose cannot run one. Test code polls the admin API instead.
   toxiproxy:
     profiles: [integration]
-    image: ghcr.io/shopify/toxiproxy:2.9.0
+    image: ghcr.io/shopify/toxiproxy:2.12.0
     command: -host=0.0.0.0
     ports:
       - "8474:8474"
@@ -112,7 +112,7 @@ services:
   # realm's OIDC discovery endpoint for readiness instead.
   keycloak:
     profiles: [integration]
-    image: quay.io/keycloak/keycloak:26.6.3
+    image: quay.io/keycloak/keycloak:26.7.0
     command: start-dev --import-realm
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin

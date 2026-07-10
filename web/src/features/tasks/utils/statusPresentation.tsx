@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react';
 import type { AlertColor } from '@mui/material/Alert';
 import type { ChipProps } from '@mui/material/Chip';
-import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutlined';
 import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
-import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutlined';
 import CircularProgress from '@mui/material/CircularProgress';
 import { tokens } from '../../../theme/tokens';
 

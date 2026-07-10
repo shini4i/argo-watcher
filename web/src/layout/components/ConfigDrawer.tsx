@@ -84,7 +84,7 @@ export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
       anchor="right"
       open={open}
       onClose={onClose}
-      PaperProps={{ sx: { width: { xs: '100%', sm: 420 }, p: { xs: 2, sm: 3 } } }}
+      slotProps={{ paper: { sx: { width: { xs: '100%', sm: 420 }, p: { xs: 2, sm: 3 } } } }}
       aria-label="Workspace configuration drawer"
     >
       <Stack spacing={2} sx={{ height: '100%' }}>
@@ -143,7 +143,7 @@ export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
                 checked={deployLock}
                 onChange={handleDeployLockToggle}
                 disabled={!canToggleLock || lockUpdating}
-                inputProps={{ 'aria-label': 'Toggle deploy lock' }}
+                slotProps={{ input: { 'aria-label': 'Toggle deploy lock' } }}
               />
             </Stack>
             {lockHelperText && (

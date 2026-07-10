@@ -102,23 +102,25 @@ export const SearchInput = ({
       onChange={event => setDraft(event.target.value)}
       placeholder={placeholder}
       inputRef={inputRef}
-      inputProps={{
-        'aria-label': 'Search tasks',
-        onFocus: () => setFocused(true),
-        onBlur: () => {
-          setFocused(false);
-          if (!isWide && !draft) {
-            setExpanded(false);
-          }
+      slotProps={{
+        htmlInput: {
+          'aria-label': 'Search tasks',
+          onFocus: () => setFocused(true),
+          onBlur: () => {
+            setFocused(false);
+            if (!isWide && !draft) {
+              setExpanded(false);
+            }
+          },
         },
-      }}
-      InputProps={{
-        startAdornment: (
-          <InputAdornment position="start">
-            <SearchIcon fontSize="small" sx={{ color: theme.palette.text.secondary }} />
-          </InputAdornment>
-        ),
-        sx: { height: 34, borderRadius: `${tokens.radiusMd}px`, fontSize: 13.5 },
+        input: {
+          startAdornment: (
+            <InputAdornment position="start">
+              <SearchIcon fontSize="small" sx={{ color: theme.palette.text.secondary }} />
+            </InputAdornment>
+          ),
+          sx: { height: 34, borderRadius: `${tokens.radiusMd}px`, fontSize: 13.5 },
+        },
       }}
       sx={{ minWidth: 220 }}
     />

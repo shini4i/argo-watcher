@@ -40,7 +40,7 @@ const { AutocompleteMock, TextFieldMock, InputAdornmentMock } = vi.hoisted(() =>
         <button type="button" onClick={() => props.onChange(null, '')}>
           clear
         </button>
-        {props.renderInput({ InputProps: {}, 'data-testid': 'text-field-props' })}
+        {props.renderInput({ slotProps: { input: {} }, 'data-testid': 'text-field-props' })}
       </div>
     );
   };

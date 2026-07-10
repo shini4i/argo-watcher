@@ -99,19 +99,19 @@ describe('ConfigDrawer', () => {
     });
     renderDrawer();
 
-    await screen.findByRole('checkbox', { name: /toggle deploy lock/i });
-    const toggles = screen.getAllByRole('checkbox', { name: /toggle deploy lock/i });
+    await screen.findByRole('switch', { name: /toggle deploy lock/i });
+    const toggles = screen.getAllByRole('switch', { name: /toggle deploy lock/i });
     expect(toggles).toHaveLength(1);
     expect(toggles[0]).toBeDisabled();
   });
 
   it('calls deploy lock service when toggled', async () => {
     renderDrawer();
-    await screen.findByRole('checkbox', { name: /toggle deploy lock/i });
+    await screen.findByRole('switch', { name: /toggle deploy lock/i });
 
     const user = userEvent.setup();
     await act(async () => {
-      await user.click(screen.getByRole('checkbox', { name: /toggle deploy lock/i }));
+      await user.click(screen.getByRole('switch', { name: /toggle deploy lock/i }));
     });
     expect(deployLockService.setLock).toHaveBeenCalled();
   });
@@ -134,7 +134,7 @@ describe('ConfigDrawer', () => {
     renderDrawer();
     const user = userEvent.setup();
     await act(async () => {
-      await user.click(await screen.findByRole('checkbox', { name: /toggle deploy lock/i }));
+      await user.click(await screen.findByRole('switch', { name: /toggle deploy lock/i }));
     });
 
     expect(deployLockService.releaseLock).toHaveBeenCalled();
