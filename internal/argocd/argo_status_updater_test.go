@@ -1070,6 +1070,59 @@ func TestArgoStatusUpdaterStopsMidPollWhenSuperseded(t *testing.T) {
 	updater.WaitForRollout(task)
 }
 
+// TestArgoStatusUpdaterAppDisappearsMidRollout is the regression guard for issue #387:
+// the application exists at the initial check, then disappears (is deleted from ArgoCD)
+// while the rollout is still being polled. The rollout must not crash the process — it
+// runs in a goroutine, so a panic here would take down the whole server — and must abort
+// the task with a terminal "app not found" status instead of retrying indefinitely.
+func TestArgoStatusUpdaterAppDisappearsMidRollout(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	apiMock := mock.NewMockArgoApiInterface(ctrl)
+	metricsMock := mock.NewMockMetricsInterface(ctrl)
+	stateMock := mock.NewMockTaskRepository(ctrl)
+
+	argo := &Argo{}
+	argo.Init(stateMock, apiMock, metricsMock)
+	stateMock.EXPECT().GetTask(gomock.Any()).Return(&models.Task{Status: models.StatusInProgressMessage}, nil).AnyTimes()
+
+	updater := initTestUpdater(t, newUpdaterTestConfig(lock.NewInMemoryLocker()), argo)
+
+	task := models.Task{
+		Id:      "test-id",
+		App:     "test-app",
+		Timeout: 15,
+		Images:  []models.Image{{Image: "ghcr.io/shini4i/argo-watcher", Tag: "dev"}},
+	}
+
+	// Not-final app so the loop keeps polling past the initial check.
+	inProgress := models.Application{}
+	inProgress.Status.Summary.Images = []string{"ghcr.io/shini4i/argo-watcher:dev"}
+	inProgress.Status.Sync.Status = "Synced"
+	inProgress.Status.Health.Status = "Progressing"
+
+	notFound := fmt.Errorf("applications.argoproj.io %q not found", task.App)
+
+	gomock.InOrder(
+		// Initial check and first poll succeed: the app is present but still progressing.
+		apiMock.EXPECT().GetApplication(gomock.Any(), task.App).Return(&inProgress, nil).Times(2),
+		// The app is then deleted mid-rollout; every subsequent fetch reports not found.
+		apiMock.EXPECT().GetApplication(gomock.Any(), task.App).Return(nil, notFound).MinTimes(1),
+	)
+
+	metricsMock.EXPECT().AddInProgressTask()
+	metricsMock.EXPECT().RemoveInProgressTask()
+	metricsMock.EXPECT().AddFailedDeployment(task.App)
+	stateMock.EXPECT().SetTaskStatus(
+		task.Id,
+		models.StatusAppNotFoundMessage,
+		fmt.Sprintf(ArgoAPIErrorTemplate, notFound.Error()),
+	)
+
+	updater.WaitForRollout(task)
+}
+
 // TestArgoStatusUpdaterProceedsWhenStatusReadFails verifies that a transient
 // failure to read the task status (the supersession check) does not abort an
 // otherwise healthy rollout: taskSuperseded returns false on a read error, so the
