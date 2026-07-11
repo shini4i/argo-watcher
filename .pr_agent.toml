@@ -1,0 +1,69 @@
+# PR-Agent (Qodo Merge) repository configuration.
+#
+# Read from the repository's DEFAULT branch, so changes take effect on PRs
+# opened AFTER this file is merged to main — not on the PR that introduces it.
+#
+# Model routing (config.model / fallback_models) and the auto_* automation
+# flags stay in .github/workflows/pr-agent.yml: env/CLI settings take
+# precedence over this file, so duplicating them here would be shadowed and
+# misleading. This file only tunes review/suggestion behaviour.
+
+[pr_reviewer]
+# Default cap is 3, too low for a service with concurrency- and
+# security-sensitive paths (websocket registry, lockdown, git writeback).
+num_max_findings = 6
+# Surface leftover TODO/FIXME markers (the DB layer already carries a few).
+require_todo_scan = true
+# No external ticket system is wired up; the compliance pass only adds noise.
+require_ticket_analysis_review = false
+extra_instructions = """
+Project: argo-watcher — a Go 1.26 GitOps feedback-loop service (server + CLI
+client) with a React-admin web UI. Review against the ACTUAL stack in this
+repo, not generic Go idioms:
+
+Backend stack (do not suggest swapping these out):
+- HTTP router: gin (github.com/gin-gonic/gin). NOT chi/net-http.
+- Logging: zerolog (github.com/rs/zerolog), global logger. NOT slog.
+- ORM: gorm (gorm.io/gorm) + postgres driver; images stored as datatypes.JSONSlice.
+- Config: caarlos0/env/v11 + go-playground/validator/v10 struct tags.
+- Retries: avast/retry-go/v4. WebSocket: coder/websocket. JWT: golang-jwt/v5.
+
+Focus areas (highest value for this codebase):
+- Concurrency & data races. The global WebSocket connection registry in
+  internal/server/router.go (connections slice, closedConns map, connectionsMutex)
+  is the densest hot spot — flag any access to shared state without the right
+  lock, goroutines leaked on shutdown, or writes to a connection after close.
+  Also scrutinise deployment supersession/cancellation in
+  internal/argocd/argo_status_updater.go and lockdown mutex/goroutine handling
+  in internal/server/lockdown.go.
+- Security. Secret fields (ArgoToken, DeployToken, JWTSecret, DB DSN, webhook
+  token) MUST keep `json:"-"` so they never leak via GET /api/v1/config. Flag
+  any new secret field missing it. Watch for non-constant-time secret
+  comparisons, SSRF in outbound URLs (Keycloak/ArgoCD/webhook), and any
+  state-mutating handler (POST /tasks, deploy-lock) that skips auth/lockdown
+  checks. Preserve existing #nosec annotations and their justifications; a
+  removed suppression needs a stated reason.
+- Database layer. Repository methods currently lack context.Context — flag new
+  DB calls that hardcode context.Background() where a request context is
+  available, and check RowsAffected is honoured on UPDATE/DELETE. Do not let
+  errors be silently swallowed into empty results.
+- Tests. This project follows TDD with testify + go.uber.org/mock (mockgen).
+  New behaviour must ship with table-driven tests; flag mutated logic left
+  uncovered. Mocks are generated (task mocks) from interface sources — do not
+  suggest hand-editing files under */mock/.
+
+Keep feedback specific and actionable; skip stylistic nits already enforced by
+golangci-lint, gosec, and gofmt in CI.
+"""
+
+[pr_code_suggestions]
+# Only surface high-confidence suggestions so the on-demand /improve pass stays
+# signal-dense (auto_improve is intentionally off in the workflow).
+suggestions_score_threshold = 7
+extra_instructions = """
+- Suggest fixes that match this repo's stack: gin handlers, zerolog logging,
+  gorm queries, caarlos0/env config. Do not propose migrating frameworks.
+- Prefer correctness/concurrency/security fixes over cosmetic refactors.
+- For the React-admin frontend (web/), respect TypeScript 7 strict mode and the
+  oxlint ruleset; do not introduce ESLint-only assumptions.
+"""
