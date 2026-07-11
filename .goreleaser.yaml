@@ -64,7 +64,7 @@ dockers_v2:
       org.opencontainers.image.revision: "{{.FullCommit}}"
       org.opencontainers.image.version: "{{.Version}}"
       org.opencontainers.image.source: "{{.GitURL}}"
-      org.opencontainers.image.licenses: MIT
+      org.opencontainers.image.licenses: Apache-2.0
 
   # Client image
   - id: client
@@ -90,7 +90,7 @@ dockers_v2:
       org.opencontainers.image.revision: "{{.FullCommit}}"
       org.opencontainers.image.version: "{{.Version}}"
       org.opencontainers.image.source: "{{.GitURL}}"
-      org.opencontainers.image.licenses: MIT
+      org.opencontainers.image.licenses: Apache-2.0
 
 archives:
   - formats: ['tar.gz']
