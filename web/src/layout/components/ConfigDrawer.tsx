@@ -188,9 +188,6 @@ export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
           </Stack>
         </Stack>
 
-        <Box sx={{ textAlign: 'right' }}>
-          <Button onClick={onClose}>Close</Button>
-        </Box>
         <Box
           sx={{
             mt: 'auto',
