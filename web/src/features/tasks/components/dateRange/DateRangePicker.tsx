@@ -331,7 +331,6 @@ export const DateRangePicker = ({ value, onApply }: DateRangePickerProps) => {
             justifyContent: 'space-between',
             padding: 1.5,
             borderTop: `1px solid ${theme.palette.divider}`,
-
             backgroundColor:
               theme.palette.mode === 'dark' ? tokens.surface2Dark : tokens.surface2
           }}>
