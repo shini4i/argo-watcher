@@ -82,6 +82,7 @@ func NewServer(serverConfig *config.ServerConfig, reg prometheus.Registerer) (*S
 		RepoCachePath:    serverConfig.RepoCachePath,
 		AcceptSuspended:  serverConfig.AcceptSuspendedApp,
 		WebhookConfig:    &serverConfig.Webhook,
+		MattermostConfig: &serverConfig.Mattermost,
 		Locker:           locker,
 	})
 	if err != nil {

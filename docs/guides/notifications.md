@@ -101,3 +101,30 @@ Use `IsRollback` to call out deployments that return to a previously deployed ve
 ```bash
 WEBHOOK_FORMAT='{"text": "{{if .IsRollback}}:rewind: ROLLBACK of {{else}}Deployment of {{end}}*{{.App}}* by {{.Author}}: {{.Status}}"}'
 ```
+
+## Mattermost
+
+The generic webhook sends an independent message per event, which gets noisy. The Mattermost strategy uses the Mattermost REST API instead: the deployment start creates a root channel post, and the deployment result is posted as a **thread reply** to it, mentioning the task author (`@<Author>`).
+
+It requires a [bot account](https://docs.mattermost.com/integrations/cloud-bot-accounts.html) with access to the target channel; incoming webhooks cannot reply in threads.
+
+### Configuration
+
+| Variable                | Description                                                     | Default | Example                        |
+|-------------------------|-----------------------------------------------------------------|---------|--------------------------------|
+| `MATTERMOST_ENABLED`    | Enable Mattermost notifications                                 | `false` |                                |
+| `MATTERMOST_URL`        | Base URL of the Mattermost instance (without `/api/v4`)         |         | `https://mattermost.example.com` |
+| `MATTERMOST_TOKEN`      | Bot account access token                                        |         |                                |
+| `MATTERMOST_CHANNEL_ID` | Target channel id (26-character id, not the channel name)       |         | `qz3c4kx8w3nqir6nqz3c4kx8w3`   |
+| `MATTERMOST_FORMAT`     | Go template rendering the post message (markdown)               |         | see below                      |
+| `MATTERMOST_MENTION_AUTHOR` | Prepend `@<Author>` to every post to notify the deploy author | `false` | `true`                       |
+
+`MATTERMOST_FORMAT` uses the same template variables as `WEBHOOK_FORMAT`. The rendered text becomes the post `message`; branch on `{{.Status}}` to distinguish the start and result posts. With `MATTERMOST_MENTION_AUTHOR=true` the author mention is prepended automatically to every post, so the template does not need `{{.Author}}`. The mention only notifies when `Author` matches a Mattermost username.
+
+```bash
+MATTERMOST_FORMAT='{{if eq .Status "in progress"}}:rocket: Deploying **{{.App}}** {{range $i, $img := .Images}}{{if $i}}, {{end}}`{{$img.Tag}}`{{end}}{{else if eq .Status "deployed"}}:white_check_mark: **{{.App}}** deployed{{else}}:x: **{{.App}}**: {{.Status}}{{end}}'
+```
+
+Both strategies can be enabled at the same time; each enabled strategy receives every event.
+
+> **Note:** the mapping between the start post and its thread is kept in memory. If argo-watcher restarts mid-deployment (or runs with multiple replicas), the result is posted as a regular channel message instead of a thread reply.
