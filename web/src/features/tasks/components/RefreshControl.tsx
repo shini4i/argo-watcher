@@ -139,23 +139,25 @@ export const RefreshControl = ({ onRefresh, storageKey = 'recentTasks.refreshInt
   return (
     <Stack
       direction="row"
-      alignItems="center"
       role="group"
       aria-label="Refresh control"
       sx={{
+        alignItems: 'center',
         height: 34,
         borderRadius: `${tokens.radiusMd}px`,
         border: `1px solid ${theme.palette.divider}`,
         backgroundColor: theme.palette.background.paper,
-        overflow: 'hidden',
-      }}
-    >
+        overflow: 'hidden'
+      }}>
       <Stack
         direction="row"
-        alignItems="center"
         spacing={0.75}
-        sx={{ px: 1.25, height: '100%', minWidth: 110 }}
-      >
+        sx={{
+          alignItems: 'center',
+          px: 1.25,
+          height: '100%',
+          minWidth: 110
+        }}>
         <Box
           aria-hidden
           sx={{

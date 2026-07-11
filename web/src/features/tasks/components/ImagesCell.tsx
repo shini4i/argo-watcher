@@ -21,7 +21,13 @@ interface ImageRowProps {
 
 /** Single repo + tag-chip row, rendered identically for primary and expanded entries. */
 const ImageRow = ({ image }: ImageRowProps) => (
-  <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
+  <Stack
+    direction="row"
+    spacing={0.75}
+    sx={{
+      alignItems: 'center',
+      minWidth: 0
+    }}>
     <Typography
       component="span"
       sx={{

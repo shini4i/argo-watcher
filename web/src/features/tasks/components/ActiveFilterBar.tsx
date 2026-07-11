@@ -25,18 +25,17 @@ const FilterChip = ({ chip }: { chip: FilterChipDescriptor }) => {
   return (
     <Stack
       direction="row"
-      alignItems="center"
       spacing={0.5}
       sx={{
+        alignItems: 'center',
         height: 28,
         px: 1.25,
         borderRadius: tokens.radiusPill,
         border: `1px solid ${theme.palette.divider}`,
         backgroundColor: bg,
         color: theme.palette.text.primary,
-        fontSize: 12,
-      }}
-    >
+        fontSize: 12
+      }}>
       {chip.labelPrefix && (
         <Box component="span" sx={{ color: theme.palette.text.secondary, fontWeight: 500 }}>
           {chip.labelPrefix}:
@@ -78,10 +77,12 @@ export const ActiveFilterBar = ({ chips, onClearAll }: ActiveFilterBarProps) => 
     <Stack
       direction="row"
       spacing={1}
-      alignItems="center"
-      flexWrap="wrap"
-      sx={{ minHeight: 44, py: 0.5 }}
-    >
+      sx={{
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        minHeight: 44,
+        py: 0.5
+      }}>
       {chips.map(chip => (
         <FilterChip key={chip.key} chip={chip} />
       ))}
