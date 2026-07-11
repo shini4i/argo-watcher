@@ -38,7 +38,7 @@ func (m *mockArgoApi) GetUserInfo() (*models.Userinfo, error) {
 	return &models.Userinfo{LoggedIn: true, Username: "test"}, nil
 }
 
-func (m *mockArgoApi) GetApplication(_ context.Context, _ string) (*models.Application, error) {
+func (m *mockArgoApi) GetApplication(_ context.Context, _ string, _ bool) (*models.Application, error) {
 	return &models.Application{}, nil
 }
 
@@ -89,12 +89,13 @@ func (m *mockTaskRepository) ProcessObsoleteTasks(_ uint) {}
 // mockMetrics is a minimal mock for MetricsInterface used in tests.
 type mockMetrics struct{}
 
-func (m *mockMetrics) AddProcessedDeployment(_ string) {}
-func (m *mockMetrics) AddFailedDeployment(_ string)    {}
-func (m *mockMetrics) ResetFailedDeployment(_ string)  {}
-func (m *mockMetrics) SetArgoUnavailable(_ bool)       {}
-func (m *mockMetrics) AddInProgressTask()              {}
-func (m *mockMetrics) RemoveInProgressTask()           {}
+func (m *mockMetrics) AddProcessedDeployment(_ string)            {}
+func (m *mockMetrics) AddFailedDeployment(_ string)               {}
+func (m *mockMetrics) ResetFailedDeployment(_ string)             {}
+func (m *mockMetrics) SetArgoUnavailable(_ bool)                  {}
+func (m *mockMetrics) AddInProgressTask()                         {}
+func (m *mockMetrics) RemoveInProgressTask()                      {}
+func (m *mockMetrics) ObserveRefreshDuration(_ string, _ float64) {}
 
 func TestGetVersion(t *testing.T) {
 	gin.SetMode(gin.TestMode)

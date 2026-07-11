@@ -86,7 +86,6 @@ func TestArgoApiInit(t *testing.T) {
 	require.True(t, ok)
 	require.NotNil(t, transport.TLSClientConfig)
 	assert.True(t, transport.TLSClientConfig.InsecureSkipVerify)
-	assert.True(t, api.refreshApp)
 	assert.Equal(t, uint(5), api.maxRetries)
 
 	t.Run("returnsErrorWhenCookieJarFails", func(t *testing.T) {
@@ -356,7 +355,7 @@ func TestArgoApiGetApplicationSuccess(t *testing.T) {
 	api.baseUrl = *parsedURL
 	api.client = server.Client()
 	api.maxRetries = 1
-	result, err := api.GetApplication(context.Background(), "demo")
+	result, err := api.GetApplication(context.Background(), "demo", false)
 	require.NoError(t, err)
 	assert.Equal(t, app.Status.Health.Status, result.Status.Health.Status)
 	assert.Equal(t, app.Status.Sync.Status, result.Status.Sync.Status)
@@ -393,32 +392,44 @@ func TestArgoApiGetApplicationEscapesAppName(t *testing.T) {
 			api.baseUrl = *parsedURL
 			api.client = server.Client()
 			api.maxRetries = 1
-			_, err = api.GetApplication(context.Background(), tc.appName)
+			_, err = api.GetApplication(context.Background(), tc.appName, false)
 			assert.NoError(t, err)
 		})
 	}
 }
 
 // TestArgoApiGetApplicationAddsRefreshQuery verifies that the refresh query parameter
-// is added when refreshApp is enabled.
+// is added when refresh is requested, and omitted otherwise.
 func TestArgoApiGetApplicationAddsRefreshQuery(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "refresh=normal", r.URL.RawQuery)
-		w.Header().Set("Content-Type", "application/json")
-		require.NoError(t, json.NewEncoder(w).Encode(models.Application{}))
-	}))
-	defer server.Close()
+	tests := []struct {
+		name      string
+		refresh   bool
+		wantQuery string
+	}{
+		{name: "refresh requested", refresh: true, wantQuery: "refresh=normal"},
+		{name: "refresh not requested", refresh: false, wantQuery: ""},
+	}
 
-	parsedURL, err := url.Parse(server.URL)
-	require.NoError(t, err)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, tc.wantQuery, r.URL.RawQuery)
+				w.Header().Set("Content-Type", "application/json")
+				require.NoError(t, json.NewEncoder(w).Encode(models.Application{}))
+			}))
+			defer server.Close()
 
-	api := NewArgoApi()
-	api.baseUrl = *parsedURL
-	api.client = server.Client()
-	api.maxRetries = 1
-	api.refreshApp = true
-	_, err = api.GetApplication(context.Background(), "demo")
-	assert.NoError(t, err)
+			parsedURL, err := url.Parse(server.URL)
+			require.NoError(t, err)
+
+			api := NewArgoApi()
+			api.baseUrl = *parsedURL
+			api.client = server.Client()
+			api.maxRetries = 1
+			_, err = api.GetApplication(context.Background(), "demo", tc.refresh)
+			assert.NoError(t, err)
+		})
+	}
 }
 
 // TestArgoApiGetApplicationErrors verifies error handling for various failure scenarios
@@ -612,7 +623,7 @@ func TestArgoApiGetApplicationErrors(t *testing.T) {
 			if tc.setup != nil {
 				tc.setup(t, tc.api)
 			}
-			app, err := tc.api.GetApplication(context.Background(), "demo")
+			app, err := tc.api.GetApplication(context.Background(), "demo", false)
 			if tc.wantErr {
 				assert.Error(t, err)
 				assert.Nil(t, app)

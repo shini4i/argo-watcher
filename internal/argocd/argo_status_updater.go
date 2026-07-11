@@ -46,6 +46,9 @@ type DeploymentMonitor struct {
 	acceptSuspended  bool
 	retryDelay       time.Duration
 	defaultAttempts  uint
+	// refreshApp is the instance-wide default for requesting an ArgoCD refresh during status checks.
+	// A per-task Refresh override takes precedence (see resolveRefresh).
+	refreshApp bool
 }
 
 // GitUpdater encapsulates the logic required to update Git repositories watched by ArgoCD.
@@ -75,10 +78,31 @@ func (monitor *DeploymentMonitor) EndTracking() {
 	monitor.argo.metrics.RemoveInProgressTask()
 }
 
+// resolveRefresh reports whether this task's status check should request an ArgoCD refresh.
+// A per-task Refresh override wins over the instance-wide default; a nil override (field omitted
+// by the client) keeps the default, so old clients behave exactly as before (issue #334).
+func (monitor *DeploymentMonitor) resolveRefresh(task models.Task) bool {
+	if task.Refresh != nil {
+		return *task.Refresh
+	}
+	return monitor.refreshApp
+}
+
 // FetchApplication retrieves the ArgoCD application by name. The context bounds the underlying
 // API call so callers polling under a deadline are not blocked past it.
-func (monitor *DeploymentMonitor) FetchApplication(ctx context.Context, appName string) (*models.Application, error) {
-	return monitor.argo.api.GetApplication(ctx, appName)
+//
+// When a refresh is requested, the call is timed and its duration recorded (argocd_refresh_duration_seconds)
+// so slow or stuck refreshes are diagnosable. A stuck refresh is avoided operationally, not here: set the
+// per-task Refresh override (or ARGO_REFRESH_APP) to false for apps that never settle (issue #334).
+func (monitor *DeploymentMonitor) FetchApplication(ctx context.Context, appName string, refresh bool) (*models.Application, error) {
+	if !refresh {
+		return monitor.argo.api.GetApplication(ctx, appName, false)
+	}
+
+	start := time.Now()
+	app, err := monitor.argo.api.GetApplication(ctx, appName, true)
+	monitor.argo.metrics.ObserveRefreshDuration(appName, time.Since(start).Seconds())
+	return app, err
 }
 
 // StoreInitialAppStatus caches the initial rollout status for comparison during monitoring.
@@ -117,6 +141,7 @@ func (monitor *DeploymentMonitor) WaitRollout(task models.Task) (*models.Applica
 	// cannot clobber the last-known-good status we want to report on timeout.
 	var application *models.Application
 
+	refresh := monitor.resolveRefresh(task)
 	retryOptions, deadline := monitor.configureRetryOptions(task)
 
 	ctx, cancel := context.WithTimeout(context.Background(), deadline)
@@ -135,7 +160,7 @@ func (monitor *DeploymentMonitor) WaitRollout(task models.Task) (*models.Applica
 			return retry.Unrecoverable(errTaskSuperseded)
 		}
 
-		app, fetchErr := monitor.FetchApplication(ctx, task.App)
+		app, fetchErr := monitor.FetchApplication(ctx, task.App, refresh)
 		if fetchErr != nil {
 			return handleApplicationFetchError(task, fetchErr)
 		}
@@ -370,6 +395,7 @@ type ArgoStatusUpdaterConfig struct {
 	RegistryProxyURL string
 	RepoCachePath    string
 	AcceptSuspended  bool
+	RefreshApp       bool
 	WebhookConfig    *config.WebhookConfig
 	MattermostConfig *config.MattermostConfig
 	Locker           lock.Locker
@@ -388,6 +414,7 @@ func (updater *ArgoStatusUpdater) Init(argo Argo, cfg ArgoStatusUpdaterConfig) e
 
 	updater.monitor = NewDeploymentMonitor(argo, cfg.RegistryProxyURL, retryOptions, cfg.AcceptSuspended, cfg.RetryDelay)
 	updater.monitor.defaultAttempts = cfg.RetryAttempts
+	updater.monitor.refreshApp = cfg.RefreshApp
 	updater.gitUpdater = NewGitUpdater(cfg.Locker, cfg.RepoCachePath)
 
 	var strategies []notifications.NotificationStrategy
@@ -465,7 +492,7 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 
 	// Fetch initial app state. This single call happens before the timed polling loop, so it is
 	// bounded only by the HTTP client's per-request timeout rather than the rollout deadline.
-	app, err := updater.monitor.FetchApplication(context.Background(), task.App)
+	app, err := updater.monitor.FetchApplication(context.Background(), task.App, updater.monitor.resolveRefresh(task))
 	if err != nil {
 		return nil, err
 	}

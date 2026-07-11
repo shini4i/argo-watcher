@@ -28,6 +28,10 @@ type Task struct {
 	Validated    bool    `json:"validated,omitempty"`
 	Timeout      int     `json:"timeout,omitempty"`
 	IsRollback   bool    `json:"is_rollback,omitempty"`
+	// Refresh optionally overrides the instance-wide ARGO_REFRESH_APP setting for this task.
+	// A nil pointer (field omitted) keeps the instance default, so old clients are unaffected;
+	// an explicit true/false forces a refresh on or off for this deployment (issue #334).
+	Refresh *bool `json:"refresh,omitempty" example:"false"`
 	// RollbackTargetId is the ID of the most recent earlier task whose image set
 	// this deployment returns to. Empty when the deployment is not a rollback.
 	RollbackTargetId string         `json:"rollback_target_id,omitempty"`

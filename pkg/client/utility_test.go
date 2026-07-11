@@ -16,6 +16,7 @@ import (
 
 	"github.com/shini4i/argo-watcher/internal/models"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // newTestWatcher builds a Watcher pointing at the given URL with retries enabled
@@ -374,6 +375,37 @@ func TestCreateTask(t *testing.T) {
 
 		assert.Equal(t, expectedTask, task)
 		assert.Zero(t, task.Timeout)
+	})
+
+	t.Run("RefreshOverride", func(t *testing.T) {
+		refresh := false
+		config := &Config{
+			App:     "test-app",
+			Author:  "test-author",
+			Project: "test-project",
+			Images:  []string{"image1"},
+			Tag:     "test-tag",
+			Refresh: &refresh,
+		}
+
+		task := createTask(config)
+
+		require.NotNil(t, task.Refresh, "an explicit TASK_REFRESH must propagate to the task")
+		assert.False(t, *task.Refresh)
+	})
+
+	t.Run("RefreshUnset", func(t *testing.T) {
+		config := &Config{
+			App:     "test-app",
+			Author:  "test-author",
+			Project: "test-project",
+			Images:  []string{"image1"},
+			Tag:     "test-tag",
+		}
+
+		task := createTask(config)
+
+		assert.Nil(t, task.Refresh, "an omitted TASK_REFRESH must leave the server default in effect")
 	})
 }
 

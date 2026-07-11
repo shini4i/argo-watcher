@@ -149,6 +149,7 @@ func createTask(config *Config) models.Task {
 		Project: config.Project,
 		Images:  images,
 		Timeout: config.TaskTimeout,
+		Refresh: config.Refresh,
 	}
 }
 
