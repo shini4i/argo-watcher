@@ -19,6 +19,7 @@
           mockgen
           go-swag
           toxiproxy
+          goreleaser
         ];
 
         preCommitTools = with pkgs; [

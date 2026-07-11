@@ -17,6 +17,14 @@ jobs:
       - name: Set up QEMU # required for multi architecture build - https://goreleaser.com/cookbooks/multi-platform-docker-images/?h=multi#other-things-to-pay-attention-to
         uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
 
+      - name: Set up Docker Buildx # dockers_v2 pushes a multi-arch manifest, which needs the docker-container driver (the default docker driver can't)
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        with:
+          # Matches the setup-go `cache: false` policy below: this release
+          # publishes signed artifacts, so don't restore the buildx binary from
+          # a cache a PR run could have poisoned.
+          cache-binary: false
+
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:

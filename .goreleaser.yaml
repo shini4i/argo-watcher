@@ -32,93 +32,65 @@ builds:
       - amd64
       - arm64
 
-dockers:
+# dockers_v2 builds a multi-arch manifest per image in a single `docker buildx
+# build --push`, and attaches an SBOM to each. OCI metadata is set via
+# `annotations` (not `--label`) so it lands on the manifest index that GHCR
+# reads for multi-arch images.
+dockers_v2:
   # Server image
-  - image_templates:
-      - 'ghcr.io/shini4i/argo-watcher:{{ .Tag }}-amd64'
-    use: buildx
-    build_flag_templates:
-      - "--pull"
-      - "--platform=linux/amd64"
-      - "--label=org.opencontainers.image.created={{.Date}}"
-      - "--label=org.opencontainers.image.title=argo-watcher"
-      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
-      - "--label=org.opencontainers.image.version={{.Version}}"
-      - "--label=org.opencontainers.image.licenses=MIT"
-    goos: linux
-    goarch: amd64
-    dockerfile: Dockerfile.server
-    extra_files:
-      - web/dist
-      - db
+  - id: argo-watcher
     ids:
       - argo-watcher
-
-  - image_templates:
-      - 'ghcr.io/shini4i/argo-watcher:{{ .Tag }}-arm64'
-    use: buildx
-    build_flag_templates:
-      - "--pull"
-      - "--platform=linux/arm64"
-      - "--label=org.opencontainers.image.created={{.Date}}"
-      - "--label=org.opencontainers.image.title=argo-watcher"
-      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
-      - "--label=org.opencontainers.image.version={{.Version}}"
-      - "--label=org.opencontainers.image.licenses=MIT"
-    goos: linux
-    goarch: arm64
     dockerfile: Dockerfile.server
+    images:
+      - 'ghcr.io/shini4i/argo-watcher'
+    tags:
+      - '{{ .Tag }}'
+    platforms:
+      - linux/amd64
+      - linux/arm64
     extra_files:
       - web/dist
-      - db
-    ids:
-      - argo-watcher
+      - db/migrations
+    flags:
+      - "--pull"
+    # Attach an SBOM to the image. This is the dockers_v2 default, set
+    # explicitly since dockers_v2 is still experimental and defaults may shift.
+    sbom: "true"
+    annotations:
+      org.opencontainers.image.created: "{{.Date}}"
+      org.opencontainers.image.title: argo-watcher
+      org.opencontainers.image.description: "A feedback loop for your GitOps workflow, bridging CI pipelines and Argo CD."
+      org.opencontainers.image.revision: "{{.FullCommit}}"
+      org.opencontainers.image.version: "{{.Version}}"
+      org.opencontainers.image.source: "{{.GitURL}}"
+      org.opencontainers.image.licenses: MIT
 
   # Client image
-  - image_templates:
-      - 'ghcr.io/shini4i/argo-watcher-client:{{ .Tag }}-amd64'
-    use: buildx
-    build_flag_templates:
-      - "--pull"
-      - "--platform=linux/amd64"
-      - "--label=org.opencontainers.image.created={{.Date}}"
-      - "--label=org.opencontainers.image.title=argo-watcher-client"
-      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
-      - "--label=org.opencontainers.image.version={{.Version}}"
-      - "--label=org.opencontainers.image.licenses=MIT"
-    goos: linux
-    goarch: amd64
-    dockerfile: Dockerfile.client
+  - id: client
     ids:
       - client
-
-  - image_templates:
-      - 'ghcr.io/shini4i/argo-watcher-client:{{ .Tag }}-arm64'
-    use: buildx
-    build_flag_templates:
-      - "--pull"
-      - "--platform=linux/arm64"
-      - "--label=org.opencontainers.image.created={{.Date}}"
-      - "--label=org.opencontainers.image.title=argo-watcher-client"
-      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
-      - "--label=org.opencontainers.image.version={{.Version}}"
-      - "--label=org.opencontainers.image.licenses=MIT"
-    goos: linux
-    goarch: arm64
     dockerfile: Dockerfile.client
-    ids:
-      - client
-
-docker_manifests:
-  - name_template: 'ghcr.io/shini4i/argo-watcher:{{ .Tag }}'
-    image_templates:
-      - 'ghcr.io/shini4i/argo-watcher:{{ .Tag }}-amd64'
-      - 'ghcr.io/shini4i/argo-watcher:{{ .Tag }}-arm64'
-
-  - name_template: 'ghcr.io/shini4i/argo-watcher-client:{{ .Tag }}'
-    image_templates:
-      - 'ghcr.io/shini4i/argo-watcher-client:{{ .Tag }}-amd64'
-      - 'ghcr.io/shini4i/argo-watcher-client:{{ .Tag }}-arm64'
+    images:
+      - 'ghcr.io/shini4i/argo-watcher-client'
+    tags:
+      - '{{ .Tag }}'
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    flags:
+      - "--pull"
+    # Attach an SBOM to the image. This is the dockers_v2 default, set
+    # explicitly since dockers_v2 is still experimental and defaults may shift.
+    sbom: "true"
+    annotations:
+      org.opencontainers.image.created: "{{.Date}}"
+      org.opencontainers.image.title: argo-watcher-client
+      org.opencontainers.image.description: "CLI client for Argo Watcher, used from CI pipelines to track Argo CD rollouts."
+      org.opencontainers.image.revision: "{{.FullCommit}}"
+      org.opencontainers.image.version: "{{.Version}}"
+      org.opencontainers.image.source: "{{.GitURL}}"
+      org.opencontainers.image.licenses: MIT
 
 archives:
   - formats: ['tar.gz']
@@ -141,7 +113,9 @@ signs:
 
 docker_signs:
   - cmd: cosign
-    artifacts: manifests
+    # Empty string selects the images built by dockers_v2 (which publishes a
+    # multi-arch manifest per image, not separate `manifests` artifacts).
+    artifacts: ""
     args:
       - "sign"
       - "${artifact}@${digest}"
