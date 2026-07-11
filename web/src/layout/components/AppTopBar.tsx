@@ -109,10 +109,13 @@ export const AppTopBar = (props: AppBarProps) => {
         <Toolbar sx={{ minHeight: { xs: 56, md: 64 }, px: { xs: 1, md: 2 } }}>
           <Stack
             direction="row"
-            alignItems="center"
             spacing={1}
-            sx={{ width: '100%', flexWrap: { xs: 'wrap', md: 'nowrap' }, rowGap: { xs: 0.75, md: 0 } }}
-          >
+            sx={{
+              alignItems: 'center',
+              width: '100%',
+              flexWrap: { xs: 'wrap', md: 'nowrap' },
+              rowGap: { xs: 0.75, md: 0 }
+            }}>
             <IconButton
               size="small"
               color="inherit"
@@ -143,9 +146,12 @@ export const AppTopBar = (props: AppBarProps) => {
             <Stack
               direction="row"
               spacing={2}
-              alignItems="center"
-              sx={{ ml: { xs: 0, md: 2 }, flexGrow: 1, justifyContent: { xs: 'center', md: 'flex-start' } }}
-            >
+              sx={{
+                alignItems: 'center',
+                ml: { xs: 0, md: 2 },
+                flexGrow: 1,
+                justifyContent: { xs: 'center', md: 'flex-start' }
+              }}>
               {navigationButtons.map(button => {
                 const active = routeIsActive(location.pathname, button.to);
                 return (
@@ -164,7 +170,14 @@ export const AppTopBar = (props: AppBarProps) => {
               })}
             </Stack>
 
-            <Stack direction="row" spacing={2} alignItems="center" sx={{ flexWrap: 'wrap', rowGap: 0.5 }}>
+            <Stack
+              direction="row"
+              spacing={2}
+              sx={{
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                rowGap: 0.5
+              }}>
               <Chip
                 size="small"
                 color="secondary"
@@ -217,11 +230,15 @@ export const AppTopBar = (props: AppBarProps) => {
                   aria-label={`Open GitHub tag ${version}`}
                 >
                   <GitHubIcon sx={{ fontSize: '1.7em' }} />
-                  <Stack spacing={0.5} alignItems="flex-start">
+                  <Stack spacing={0.5} sx={{
+                    alignItems: 'flex-start'
+                  }}>
                     <Typography sx={{ fontSize: 14, lineHeight: 1 }}>
                       GitHub
                     </Typography>
-                    <Stack direction="row" alignItems="center" spacing={0.5}>
+                    <Stack direction="row" spacing={0.5} sx={{
+                      alignItems: 'center'
+                    }}>
                       <LocalOfferIcon sx={{ fontSize: 12 }} />
                       <Typography sx={{ fontSize: 11, lineHeight: 1 }}>
                         {version}

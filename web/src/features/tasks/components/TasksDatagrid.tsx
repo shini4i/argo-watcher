@@ -307,7 +307,7 @@ const StatusReasonContent = ({ record }: { record?: Task | null }) => {
 
   if (!record.status_reason) {
     return (
-      <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
+      <Typography variant="body2" sx={{ color: 'text.secondary', p: 2 }}>
         No additional status reason provided.
       </Typography>
     );

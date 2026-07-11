@@ -337,7 +337,9 @@ export const TaskShow = () => {
       <Card>
         <CardContent>
           <Typography variant="h6">Task not specified</Typography>
-          <Typography variant="body2" color="text.secondary">
+          <Typography variant="body2" sx={{
+            color: 'text.secondary'
+          }}>
             The requested task cannot be located because the identifier is missing from the URL.
           </Typography>
         </CardContent>
@@ -347,7 +349,12 @@ export const TaskShow = () => {
 
   if (isLoading) {
     return (
-      <Stack spacing={2} alignItems="center" sx={{ py: 6 }}>
+      <Stack
+        spacing={2}
+        sx={{
+          alignItems: 'center',
+          py: 6
+        }}>
         <CircularProgress />
         <Typography variant="body1">Loading task details…</Typography>
       </Stack>
@@ -359,7 +366,9 @@ export const TaskShow = () => {
       <Card>
         <CardContent>
           <Typography variant="h6">Task not found</Typography>
-          <Typography variant="body2" color="text.secondary">
+          <Typography variant="body2" sx={{
+            color: 'text.secondary'
+          }}>
             The task with identifier <strong>{id}</strong> could not be located.
           </Typography>
         </CardContent>
@@ -369,8 +378,12 @@ export const TaskShow = () => {
 
   return (
     <Stack spacing={3} sx={{ mt: { xs: 1.5, sm: 2 }, px: { xs: 1, md: 0 } }}>
-      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems="center">
-        <Stack direction="row" spacing={1} flexWrap="wrap">
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{
+        alignItems: 'center'
+      }}>
+        <Stack direction="row" spacing={1} sx={{
+          flexWrap: 'wrap'
+        }}>
           <Button onClick={handleBack} startIcon={<ArrowBackIcon />} variant="text">
             Back
           </Button>
@@ -379,13 +392,14 @@ export const TaskShow = () => {
           </Button>
         </Stack>
       </Stack>
-
       <Card elevation={3}>
         <CardHeader
           title={`Task ${data.id?.slice(0, 8) ?? '—'}`}
           subheader="UTC"
           action={
-            <Stack direction="row" spacing={1} alignItems="center">
+            <Stack direction="row" spacing={1} sx={{
+              alignItems: 'center'
+            }}>
               <RollbackIndicator isRollback={data.is_rollback} />
               <Chip label={descriptor.label} color={descriptor.chipColor} size="medium" icon={descriptor.icon} />
             </Stack>
@@ -394,7 +408,7 @@ export const TaskShow = () => {
         <CardContent>
           <Stack spacing={3}>
             <Grid container spacing={3}>
-              <Grid item xs={12} md={6}>
+              <Grid size={{ xs: 12, md: 6 }}>
                 <Stack spacing={1.5}>
                   <InfoField label="Application" value={data.app ?? 'Unknown'} />
                   <InfoField label="Project" value={<ProjectReference project={data.project} />} />
@@ -415,7 +429,7 @@ export const TaskShow = () => {
                   )}
                 </Stack>
               </Grid>
-              <Grid item xs={12} md={6}>
+              <Grid size={{ xs: 12, md: 6 }}>
                 <Stack spacing={1.5}>
                   <InfoField label="Task ID" value={data.id} />
                   <InfoField label="Created" value={formatDate(createdTimestamp ?? null)} />
@@ -427,7 +441,9 @@ export const TaskShow = () => {
                       ) : (
                         <Stack spacing={0.5}>
                           <Typography variant="body1">{formatDate(updatedTimestamp)}</Typography>
-                          <Typography variant="caption" color="text.secondary">
+                          <Typography variant="caption" sx={{
+                            color: 'text.secondary'
+                          }}>
                             {formatRelativeTime(updatedTimestamp)}
                           </Typography>
                         </Stack>
@@ -445,7 +461,9 @@ export const TaskShow = () => {
             {timelineEntries.length > 0 && (
               <Stack spacing={2}>
                 <Divider />
-                <Typography variant="subtitle2" color="text.secondary">
+                <Typography variant="subtitle2" sx={{
+                  color: 'text.secondary'
+                }}>
                   Timeline
                 </Typography>
                 <Stack spacing={2}>
@@ -463,7 +481,6 @@ export const TaskShow = () => {
           </Stack>
         </CardContent>
       </Card>
-
       <Card elevation={3}>
         <CardHeader title="Actions" />
         <CardContent>
@@ -505,7 +522,6 @@ export const TaskShow = () => {
           </Stack>
         </CardContent>
       </Card>
-
       {data.status_reason && (
         <Alert severity={descriptor.reasonSeverity}>
           <output aria-live="polite" style={{ display: 'block' }}>
@@ -515,7 +531,6 @@ export const TaskShow = () => {
           </output>
         </Alert>
       )}
-
       <Card>
         <CardContent>
           <Typography variant="h6" gutterBottom>
@@ -563,9 +578,12 @@ const InfoField = ({ label, value }: InfoFieldProps) => (
   <Box>
     <Typography
       variant="caption"
-      color="text.secondary"
-      sx={{ textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: 600 }}
-    >
+      sx={{
+        color: 'text.secondary',
+        textTransform: 'uppercase',
+        letterSpacing: 0.6,
+        fontWeight: 600
+      }}>
       {label}
     </Typography>
     {typeof value === 'string' || typeof value === 'number' ? (
@@ -623,10 +641,14 @@ const TimelineRow = ({
     </Box>
     <Stack spacing={0.25}>
       <Typography variant="subtitle2">{entry.label}</Typography>
-      <Typography variant="body2" color="text.secondary">
+      <Typography variant="body2" sx={{
+        color: 'text.secondary'
+      }}>
         {formattedTimestamp}
       </Typography>
-      <Typography variant="caption" color="text.secondary">
+      <Typography variant="caption" sx={{
+        color: 'text.secondary'
+      }}>
         {formatRelativeTime(entry.timestamp)}
       </Typography>
     </Stack>
@@ -644,7 +666,7 @@ const ImagesList = ({
   const list = images ?? [];
   if (!list.length) {
     return (
-      <Typography variant="body2" color="text.secondary">
+      <Typography variant="body2" sx={{ color: 'text.secondary' }}>
         No container images were reported for this task.
       </Typography>
     );
@@ -657,7 +679,9 @@ const ImagesList = ({
           key={`${image.image}:${image.tag}`}
           direction={{ xs: 'column', sm: 'row' }}
           spacing={1}
-          alignItems={{ xs: 'flex-start', sm: 'center' }}
+          sx={{
+            alignItems: { xs: 'flex-start', sm: 'center' }
+          }}
         >
           <Typography variant="body2" sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
             {image.image}
@@ -666,7 +690,9 @@ const ImagesList = ({
         </Stack>
       ))}
       {hasAdditional && (
-        <Typography variant="caption" color="text.secondary">
+        <Typography variant="caption" sx={{
+          color: 'text.secondary'
+        }}>
           Showing the first {MAX_IMAGES_RENDERED} images.
         </Typography>
       )}

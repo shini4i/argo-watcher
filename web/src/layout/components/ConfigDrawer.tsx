@@ -89,19 +89,35 @@ export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
     >
       <Stack spacing={2} sx={{ height: '100%' }}>
         <Stack spacing={2} sx={{ flexGrow: 1 }}>
-          <Stack direction="row" alignItems="center" justifyContent="space-between">
+          <Stack
+            direction="row"
+            sx={{
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
             <Typography variant="h6">Workspace Controls</Typography>
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant="body2" sx={{
+              color: 'text.secondary'
+            }}>
               v{version}
             </Typography>
           </Stack>
 
           <Stack spacing={1.5} component="section" aria-labelledby="drawer-appearance">
-            <Typography variant="subtitle2" color="text.secondary">
+            <Typography variant="subtitle2" sx={{
+              color: 'text.secondary'
+            }}>
               <span id="drawer-appearance">Appearance</span>
             </Typography>
-            <Stack direction="row" alignItems="center" justifyContent="space-between">
-              <Stack direction="row" spacing={1} alignItems="center">
+            <Stack
+              direction="row"
+              sx={{
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}>
+              <Stack direction="row" spacing={1} sx={{
+                alignItems: 'center'
+              }}>
                 {mode === 'light' ? <LightModeIcon fontSize="small" /> : <NightlightIcon fontSize="small" />}
                 <Typography variant="body2">Theme mode</Typography>
               </Stack>
@@ -109,8 +125,15 @@ export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
                 Switch to {mode === 'light' ? 'dark' : 'light'}
               </Button>
             </Stack>
-            <Stack direction="row" alignItems="center" justifyContent="space-between">
-              <Stack direction="row" spacing={1} alignItems="center">
+            <Stack
+              direction="row"
+              sx={{
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}>
+              <Stack direction="row" spacing={1} sx={{
+                alignItems: 'center'
+              }}>
                 <Typography variant="body2">Timezone</Typography>
               </Stack>
               <ToggleButtonGroup
@@ -129,11 +152,20 @@ export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
           <Divider />
 
           <Stack spacing={1.5} component="section" aria-labelledby="drawer-lock">
-            <Typography variant="subtitle2" color="text.secondary">
+            <Typography variant="subtitle2" sx={{
+              color: 'text.secondary'
+            }}>
               <span id="drawer-lock">Deploy Lock</span>
             </Typography>
-            <Stack direction="row" alignItems="center" justifyContent="space-between">
-              <Stack direction="row" spacing={1} alignItems="center">
+            <Stack
+              direction="row"
+              sx={{
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}>
+              <Stack direction="row" spacing={1} sx={{
+                alignItems: 'center'
+              }}>
                 {deployLock ? <LockIcon fontSize="small" /> : <LockOpenIcon fontSize="small" />}
                 <Typography variant="body2">
                   {deployLock ? 'Lock engaged' : 'Lock released'}
@@ -147,7 +179,9 @@ export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
               />
             </Stack>
             {lockHelperText && (
-              <Typography variant="body2" color="text.secondary">
+              <Typography variant="body2" sx={{
+                color: 'text.secondary'
+              }}>
                 {lockHelperText}
               </Typography>
             )}
@@ -165,7 +199,9 @@ export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
             textAlign: 'center',
           }}
         >
-          <Typography variant="caption" color="text.secondary">
+          <Typography variant="caption" sx={{
+            color: 'text.secondary'
+          }}>
             © 2022 - {new Date().getFullYear()} Vadim Gedz
           </Typography>
         </Box>

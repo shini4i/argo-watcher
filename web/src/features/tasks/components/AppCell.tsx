@@ -61,7 +61,13 @@ export const AppCell = ({ app }: AppCellProps) => {
   const swatch = swatches[hashIndex(app, swatches.length)];
 
   return (
-    <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
+    <Stack
+      direction="row"
+      spacing={1}
+      sx={{
+        alignItems: 'center',
+        minWidth: 0
+      }}>
       <Box
         aria-hidden
         sx={{

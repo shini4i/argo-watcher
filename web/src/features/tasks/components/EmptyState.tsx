@@ -32,11 +32,18 @@ export const EmptyState = ({ icon = 'inbox', title, description, cta }: EmptySta
       px: 3,
     }}
   >
-    <Stack spacing={1.5} alignItems="center" sx={{ maxWidth: 420 }}>
+    <Stack
+      spacing={1.5}
+      sx={{
+        alignItems: 'center',
+        maxWidth: 420
+      }}>
       {ICONS[icon]}
       <Typography variant="h6">{title}</Typography>
       {description && (
-        <Typography variant="body2" color="text.secondary">
+        <Typography variant="body2" sx={{
+          color: 'text.secondary'
+        }}>
           {description}
         </Typography>
       )}

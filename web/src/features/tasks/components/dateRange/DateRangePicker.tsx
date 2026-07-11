@@ -256,7 +256,13 @@ export const DateRangePicker = ({ value, onApply }: DateRangePickerProps) => {
             })}
           </Stack>
           <Stack sx={{ flex: 1, padding: 1.5 }}>
-            <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
+            <Stack
+              direction="row"
+              sx={{
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                mb: 1
+              }}>
               <IconButton size="small" onClick={goPrevMonth} aria-label="Previous month">
                 <ChevronLeftIcon fontSize="small" />
               </IconButton>
@@ -320,15 +326,15 @@ export const DateRangePicker = ({ value, onApply }: DateRangePickerProps) => {
         </Stack>
         <Stack
           direction="row"
-          alignItems="center"
-          justifyContent="space-between"
           sx={{
+            alignItems: 'center',
+            justifyContent: 'space-between',
             padding: 1.5,
             borderTop: `1px solid ${theme.palette.divider}`,
+
             backgroundColor:
-              theme.palette.mode === 'dark' ? tokens.surface2Dark : tokens.surface2,
-          }}
-        >
+              theme.palette.mode === 'dark' ? tokens.surface2Dark : tokens.surface2
+          }}>
           <Typography variant="caption" sx={{ color: 'text.secondary' }}>
             {timezone === 'utc' ? 'UTC' : 'Local'}
             {spanLabel}
