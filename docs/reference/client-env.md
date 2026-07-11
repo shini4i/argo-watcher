@@ -21,6 +21,7 @@ The Argo Watcher client is a lightweight CLI tool distributed as a Docker image 
 | `BEARER_TOKEN`              | JWT token for authentication (prefix with `Bearer `, e.g. `Bearer <token>`)                     |
 | `TIMEOUT`                   | HTTP request timeout (e.g. `60s`, `2m`)                                                         |
 | `TASK_TIMEOUT`              | Maximum time (in seconds) to wait for a task to complete                                        |
+| `TASK_REFRESH`              | Override the server's refresh setting for this deployment (`true`/`false`); unset keeps the server default |
 | `RETRY_INTERVAL`            | Interval between status polling attempts (e.g. `15s`, `1m`)                                    |
 | `EXPECTED_DEPLOY_TIME`      | Expected deployment duration; affects polling behavior (e.g. `15m`, `30m`)                     |
 | `DEBUG`                     | Enable verbose debug output                                                                      |

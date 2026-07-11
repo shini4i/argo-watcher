@@ -144,7 +144,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		application.Status.Health.Status = "Healthy"
 
 		// mock calls
-		apiMock.EXPECT().GetApplication(gomock.Any(), task.App).Return(&application, nil).MinTimes(2).MaxTimes(3)
+		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(&application, nil).MinTimes(2).MaxTimes(3)
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().ResetFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
@@ -196,8 +196,8 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		healthyApp.Status.Health.Status = "Healthy"
 
 		// mock calls
-		apiMock.EXPECT().GetApplication(gomock.Any(), task.App).Return(&unhealthyApp, nil).MinTimes(1).MaxTimes(2)
-		apiMock.EXPECT().GetApplication(gomock.Any(), task.App).Return(&healthyApp, nil).Times(1)
+		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(&unhealthyApp, nil).MinTimes(1).MaxTimes(2)
+		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(&healthyApp, nil).Times(1)
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().ResetFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
@@ -241,7 +241,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		application.Status.Health.Status = "Healthy"
 
 		// mock calls
-		apiMock.EXPECT().GetApplication(gomock.Any(), task.App).Return(&application, nil).MinTimes(2).MaxTimes(3)
+		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(&application, nil).MinTimes(2).MaxTimes(3)
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().ResetFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
@@ -287,7 +287,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		application.Status.Health.Status = "Healthy"
 
 		// mock calls
-		apiMock.EXPECT().GetApplication(gomock.Any(), task.App).Return(&application, nil).Times(3)
+		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(&application, nil).Times(3)
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
@@ -323,7 +323,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		}
 
 		// mock calls
-		apiMock.EXPECT().GetApplication(gomock.Any(), task.App).Return(nil, fmt.Errorf("applications.argoproj.io \"test-app\" not found"))
+		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(nil, fmt.Errorf("applications.argoproj.io \"test-app\" not found"))
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
@@ -354,7 +354,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		}
 
 		// mock calls
-		apiMock.EXPECT().GetApplication(gomock.Any(), task.App).Return(nil, fmt.Errorf(argoUnavailableErrorMessage))
+		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(nil, fmt.Errorf(argoUnavailableErrorMessage))
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
@@ -385,7 +385,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		}
 
 		// mock calls
-		apiMock.EXPECT().GetApplication(gomock.Any(), task.App).Return(nil, fmt.Errorf("unexpected failure"))
+		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(nil, fmt.Errorf("unexpected failure"))
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
@@ -427,7 +427,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		application.Status.Summary.Images = []string{"test-image:v0.0.1"}
 
 		// mock calls
-		apiMock.EXPECT().GetApplication(gomock.Any(), task.App).Return(&application, nil).Times(3)
+		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(&application, nil).Times(3)
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
@@ -478,7 +478,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		application.Status.OperationState.Message = "Not working test app"
 
 		// mock calls
-		apiMock.EXPECT().GetApplication(gomock.Any(), task.App).Return(&application, nil).Times(3)
+		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(&application, nil).Times(3)
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
@@ -527,7 +527,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		application.Status.Health.Status = "NotHealthy"
 
 		// mock calls
-		apiMock.EXPECT().GetApplication(gomock.Any(), task.App).Return(&application, nil).Times(3)
+		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(&application, nil).Times(3)
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
@@ -853,13 +853,13 @@ func TestArgoStatusUpdaterWaitForApplicationDeploymentErrors(t *testing.T) {
 	task := models.Task{App: "demo", Validated: true}
 
 	t.Run("failsWhenFetchFails", func(t *testing.T) {
-		api.EXPECT().GetApplication(gomock.Any(), task.App).Return(nil, errors.New("network")).Times(1)
+		api.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(nil, errors.New("network")).Times(1)
 		_, err := updater.waitForApplicationDeployment(task)
 		assert.Error(t, err)
 	})
 
 	t.Run("failsWhenApplicationNil", func(t *testing.T) {
-		api.EXPECT().GetApplication(gomock.Any(), task.App).Return(nil, nil).Times(1)
+		api.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(nil, nil).Times(1)
 		_, err := updater.waitForApplicationDeployment(task)
 		assert.Error(t, err)
 	})
@@ -868,7 +868,7 @@ func TestArgoStatusUpdaterWaitForApplicationDeploymentErrors(t *testing.T) {
 		app := &models.Application{}
 		app.Metadata.Annotations = map[string]string{"argo-watcher/managed": "true"}
 		app.Spec.Source.RepoURL = ""
-		api.EXPECT().GetApplication(gomock.Any(), task.App).Return(app, nil).Times(1)
+		api.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(app, nil).Times(1)
 
 		_, err := updater.waitForApplicationDeployment(task)
 		assert.Error(t, err)
@@ -892,7 +892,7 @@ func TestDeploymentMonitorWaitRollout(t *testing.T) {
 	t.Run("handlesFireAndForget", func(t *testing.T) {
 		app := &models.Application{}
 		app.Metadata.Annotations = map[string]string{"argo-watcher/fire-and-forget": "true"}
-		api.EXPECT().GetApplication(gomock.Any(), task.App).Return(app, nil).Times(1)
+		api.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(app, nil).Times(1)
 
 		received, err := monitor.WaitRollout(task)
 		require.NoError(t, err)
@@ -901,7 +901,7 @@ func TestDeploymentMonitorWaitRollout(t *testing.T) {
 
 	t.Run("wrapsApplicationFetchErrors", func(t *testing.T) {
 		errNotFound := fmt.Errorf("applications.argoproj.io %q not found", task.App)
-		api.EXPECT().GetApplication(gomock.Any(), task.App).Return(nil, errNotFound).Times(1)
+		api.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(nil, errNotFound).Times(1)
 
 		_, err := monitor.WaitRollout(task)
 		require.Error(t, err)
@@ -935,8 +935,8 @@ func TestDeploymentMonitorWaitRolloutRespectsDeadline(t *testing.T) {
 	app.Status.Sync.Status = "OutOfSync"
 	app.Status.Health.Status = "Progressing"
 
-	api.EXPECT().GetApplication(gomock.Any(), task.App).DoAndReturn(
-		func(_ context.Context, _ string) (*models.Application, error) {
+	api.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).DoAndReturn(
+		func(_ context.Context, _ string, _ bool) (*models.Application, error) {
 			time.Sleep(40 * time.Millisecond)
 			return app, nil
 		}).MinTimes(1).MaxTimes(3)
@@ -973,8 +973,8 @@ func TestDeploymentMonitorWaitRolloutReportsLastGoodStatusOnDeadline(t *testing.
 	goodApp.Status.Health.Status = "Progressing"
 
 	firstDone := false
-	api.EXPECT().GetApplication(gomock.Any(), task.App).DoAndReturn(
-		func(ctx context.Context, _ string) (*models.Application, error) {
+	api.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).DoAndReturn(
+		func(ctx context.Context, _ string, _ bool) (*models.Application, error) {
 			if !firstDone {
 				firstDone = true
 				return goodApp, nil
@@ -1007,7 +1007,7 @@ func TestDeploymentMonitorWaitRolloutSurfacesErrorWhenNoFetchSucceeds(t *testing
 	)
 	task := models.Task{Id: "test-id", App: "demo", Timeout: 1}
 
-	api.EXPECT().GetApplication(gomock.Any(), task.App).
+	api.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).
 		Return(nil, errors.New(argoUnavailableErrorMessage)).MinTimes(1)
 
 	received, err := monitor.WaitRollout(task)
@@ -1089,7 +1089,7 @@ func TestArgoStatusUpdaterStopsMidPollWhenSuperseded(t *testing.T) {
 	application.Status.Summary.Images = []string{"test-registry/ghcr.io/shini4i/argo-watcher:dev"}
 	application.Status.Sync.Status = "OutOfSync"
 	application.Status.Health.Status = "Progressing"
-	apiMock.EXPECT().GetApplication(gomock.Any(), task.App).Return(&application, nil).AnyTimes()
+	apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(&application, nil).AnyTimes()
 
 	// First status read (initial supersession check) reports in-progress; the next
 	// read — at the top of the first poll iteration — reports cancelled.
@@ -1142,9 +1142,9 @@ func TestArgoStatusUpdaterAppDisappearsMidRollout(t *testing.T) {
 
 	gomock.InOrder(
 		// Initial check and first poll succeed: the app is present but still progressing.
-		apiMock.EXPECT().GetApplication(gomock.Any(), task.App).Return(&inProgress, nil).Times(2),
+		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(&inProgress, nil).Times(2),
 		// The app is then deleted mid-rollout; every subsequent fetch reports not found.
-		apiMock.EXPECT().GetApplication(gomock.Any(), task.App).Return(nil, notFound).MinTimes(1),
+		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(nil, notFound).MinTimes(1),
 	)
 
 	metricsMock.EXPECT().AddInProgressTask()
@@ -1190,7 +1190,7 @@ func TestArgoStatusUpdaterProceedsWhenStatusReadFails(t *testing.T) {
 
 	// Every supersession check fails to read the status; the rollout must carry on.
 	stateMock.EXPECT().GetTask(task.Id).Return(nil, errors.New("db unavailable")).AnyTimes()
-	apiMock.EXPECT().GetApplication(gomock.Any(), task.App).Return(&application, nil).MinTimes(1)
+	apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(&application, nil).MinTimes(1)
 	metricsMock.EXPECT().AddInProgressTask()
 	metricsMock.EXPECT().ResetFailedDeployment(task.App)
 	metricsMock.EXPECT().RemoveInProgressTask()
@@ -1632,4 +1632,88 @@ func TestDeploymentMonitor_configureRetryOptions(t *testing.T) {
 		assert.Equal(t, 5, attempts, "Should use the configured defaultAttempts when timeout is zero")
 		assert.Equal(t, 5*ArgoSyncRetryDelay, deadline, "Default-attempts deadline should be attempts*delay")
 	})
+}
+
+func boolPtr(b bool) *bool { return &b }
+
+// TestDeploymentMonitorResolveRefresh verifies the per-task refresh override precedence (issue #334):
+// an explicit Refresh wins over the instance default, and a nil override (old clients) keeps the default.
+func TestDeploymentMonitorResolveRefresh(t *testing.T) {
+	tests := []struct {
+		name            string
+		instanceDefault bool
+		taskRefresh     *bool
+		want            bool
+	}{
+		{name: "nil override keeps instance default (true)", instanceDefault: true, taskRefresh: nil, want: true},
+		{name: "nil override keeps instance default (false)", instanceDefault: false, taskRefresh: nil, want: false},
+		{name: "explicit false overrides default true", instanceDefault: true, taskRefresh: boolPtr(false), want: false},
+		{name: "explicit true overrides default false", instanceDefault: false, taskRefresh: boolPtr(true), want: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			monitor := &DeploymentMonitor{refreshApp: tc.instanceDefault}
+			got := monitor.resolveRefresh(models.Task{Refresh: tc.taskRefresh})
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+// newFetchTestMonitor builds a monitor wired to mock API + metrics for FetchApplication tests.
+func newFetchTestMonitor(t *testing.T) (*DeploymentMonitor, *mock.MockArgoApiInterface, *mock.MockMetricsInterface) {
+	t.Helper()
+	ctrl := gomock.NewController(t)
+	t.Cleanup(ctrl.Finish)
+
+	api := mock.NewMockArgoApiInterface(ctrl)
+	metrics := mock.NewMockMetricsInterface(ctrl)
+	monitor := NewDeploymentMonitor(
+		Argo{api: api, metrics: metrics},
+		"",
+		[]retry.Option{retry.DelayType(retry.FixedDelay), retry.LastErrorOnly(true)},
+		false,
+		time.Millisecond,
+	)
+	return monitor, api, metrics
+}
+
+// TestDeploymentMonitorFetchApplicationRefreshRecordsDuration verifies that a refresh request is
+// forwarded with refresh=true and its duration recorded (argocd_refresh_duration_seconds), so slow or
+// stuck refreshes are diagnosable (issue #334). The API error is surfaced unchanged.
+func TestDeploymentMonitorFetchApplicationRefreshRecordsDuration(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		monitor, api, metrics := newFetchTestMonitor(t)
+		wantApp := &models.Application{}
+		api.EXPECT().GetApplication(gomock.Any(), "demo", true).Return(wantApp, nil)
+		metrics.EXPECT().ObserveRefreshDuration("demo", gomock.Any())
+
+		app, err := monitor.FetchApplication(context.Background(), "demo", true)
+		require.NoError(t, err)
+		assert.Same(t, wantApp, app)
+	})
+
+	t.Run("error is surfaced, duration still recorded", func(t *testing.T) {
+		monitor, api, metrics := newFetchTestMonitor(t)
+		api.EXPECT().GetApplication(gomock.Any(), "demo", true).Return(nil, errors.New("connection refused"))
+		metrics.EXPECT().ObserveRefreshDuration("demo", gomock.Any())
+
+		app, err := monitor.FetchApplication(context.Background(), "demo", true)
+		require.Error(t, err)
+		assert.Nil(t, app)
+		assert.Contains(t, err.Error(), "connection refused")
+	})
+}
+
+// TestDeploymentMonitorFetchApplicationNoRefresh verifies that when refresh is not requested, the call
+// is forwarded with refresh=false and no refresh duration is recorded.
+func TestDeploymentMonitorFetchApplicationNoRefresh(t *testing.T) {
+	monitor, api, _ := newFetchTestMonitor(t)
+	wantApp := &models.Application{}
+	// No ObserveRefreshDuration expectation: the mock controller fails the test if it is called.
+	api.EXPECT().GetApplication(gomock.Any(), "demo", false).Return(wantApp, nil)
+
+	app, err := monitor.FetchApplication(context.Background(), "demo", false)
+	require.NoError(t, err)
+	assert.Same(t, wantApp, app)
 }

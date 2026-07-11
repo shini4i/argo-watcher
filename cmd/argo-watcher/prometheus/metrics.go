@@ -13,6 +13,7 @@ type MetricsInterface interface {
 	SetArgoUnavailable(unavailable bool)
 	AddInProgressTask()
 	RemoveInProgressTask()
+	ObserveRefreshDuration(app string, seconds float64)
 }
 
 // Metrics contains all the prometheus collectors.
@@ -21,6 +22,7 @@ type Metrics struct {
 	ProcessedDeployments *prometheus.CounterVec
 	ArgocdUnavailable    prometheus.Gauge
 	InProgressTasks      prometheus.Gauge
+	RefreshDuration      *prometheus.HistogramVec
 }
 
 // NewMetrics creates and registers the metrics with the provided Registerer.
@@ -42,9 +44,14 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 			Name: "in_progress_tasks",
 			Help: "The number of tasks currently in progress.",
 		}),
+		RefreshDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "argocd_refresh_duration_seconds",
+			Help:    "Duration of ArgoCD application refresh requests, to surface slow or stuck refreshes.",
+			Buckets: prometheus.DefBuckets,
+		}, []string{"app"}),
 	}
 
-	reg.MustRegister(m.FailedDeployment, m.ProcessedDeployments, m.ArgocdUnavailable, m.InProgressTasks)
+	reg.MustRegister(m.FailedDeployment, m.ProcessedDeployments, m.ArgocdUnavailable, m.InProgressTasks, m.RefreshDuration)
 
 	return m
 }
@@ -81,4 +88,9 @@ func (m *Metrics) AddInProgressTask() {
 // RemoveInProgressTask decrements the InProgressTasks gauge.
 func (m *Metrics) RemoveInProgressTask() {
 	m.InProgressTasks.Dec()
+}
+
+// ObserveRefreshDuration records how long an ArgoCD refresh request took for the given app.
+func (m *Metrics) ObserveRefreshDuration(app string, seconds float64) {
+	m.RefreshDuration.WithLabelValues(app).Observe(seconds)
 }

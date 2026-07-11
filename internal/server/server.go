@@ -81,6 +81,7 @@ func NewServer(serverConfig *config.ServerConfig, reg prometheus.Registerer) (*S
 		RegistryProxyURL: serverConfig.RegistryProxyUrl,
 		RepoCachePath:    serverConfig.RepoCachePath,
 		AcceptSuspended:  serverConfig.AcceptSuspendedApp,
+		RefreshApp:       serverConfig.ArgoRefreshApp,
 		WebhookConfig:    &serverConfig.Webhook,
 		MattermostConfig: &serverConfig.Mattermost,
 		Locker:           locker,

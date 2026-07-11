@@ -21,13 +21,12 @@ import (
 type ArgoApiInterface interface {
 	Init(serverConfig *config.ServerConfig) error
 	GetUserInfo() (*models.Userinfo, error)
-	GetApplication(ctx context.Context, app string) (*models.Application, error)
+	GetApplication(ctx context.Context, app string, refresh bool) (*models.Application, error)
 }
 
 type ArgoApi struct {
 	baseUrl    url.URL
 	client     *http.Client
-	refreshApp bool
 	maxRetries uint
 	// requestFn allows injecting a custom HTTP request constructor for testing.
 	requestFn func(method, url string, body io.Reader) (*http.Request, error)
@@ -74,10 +73,6 @@ func (api *ArgoApi) Init(serverConfig *config.ServerConfig) error {
 	}
 
 	log.Debug().Msgf("Timeout for ArgoCD API calls set to: %s", api.client.Timeout)
-
-	// whether to refresh the app during status check
-	api.refreshApp = serverConfig.ArgoRefreshApp
-	log.Debug().Msgf("Refresh app set to: %t", api.refreshApp)
 
 	// configure retry attempts for transient transport errors
 	api.maxRetries = serverConfig.ArgoApiRetries
@@ -183,12 +178,13 @@ func (api *ArgoApi) GetUserInfo() (*models.Userinfo, error) {
 	return &userInfo, nil
 }
 
-// GetApplication fetches the named ArgoCD application. The context bounds the request and its
+// GetApplication fetches the named ArgoCD application. When refresh is true the request asks
+// ArgoCD to reconcile the app first (?refresh=normal). The context bounds the request and its
 // retry loop so a caller polling under a deadline is never blocked past that deadline.
-func (api *ArgoApi) GetApplication(ctx context.Context, app string) (*models.Application, error) {
+func (api *ArgoApi) GetApplication(ctx context.Context, app string, refresh bool) (*models.Application, error) {
 	apiUrl := fmt.Sprintf("%s/api/v1/applications/%s", api.baseUrl.String(), url.PathEscape(app))
 
-	if api.refreshApp {
+	if refresh {
 		apiUrl += "?refresh=normal"
 	}
 

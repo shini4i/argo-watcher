@@ -12,7 +12,7 @@ scrape_configs:
 
 ## Exposed metrics
 
-The server emits four metrics today, all defined in [`cmd/argo-watcher/prometheus/metrics.go`](https://github.com/shini4i/argo-watcher/blob/main/cmd/argo-watcher/prometheus/metrics.go).
+The server emits five metrics today, all defined in [`cmd/argo-watcher/prometheus/metrics.go`](https://github.com/shini4i/argo-watcher/blob/main/cmd/argo-watcher/prometheus/metrics.go).
 
 | Metric | Type | Labels | Description |
 |---|---|---|---|
@@ -20,6 +20,7 @@ The server emits four metrics today, all defined in [`cmd/argo-watcher/prometheu
 | `processed_deployments` | counter | `app` | Total deployments processed since server startup, per application. |
 | `argocd_unavailable` | gauge | (none) | `1` when Argo Watcher cannot reach the Argo CD API, `0` otherwise. |
 | `in_progress_tasks` | gauge | (none) | Number of tasks currently in progress (between submission and terminal state). |
+| `argocd_refresh_duration_seconds` | histogram | `app` | Duration of ArgoCD application refresh requests, to surface slow or stuck refreshes. Recorded only when the status check requests a refresh. |
 
 In addition, the standard Go runtime metrics from the Prometheus client library are exposed (`go_*`, `process_*`).
 
@@ -63,6 +64,19 @@ groups:
           description: |
             More than 50 tasks have been in progress for over 15 minutes.
             Check Argo CD sync performance and DEPLOYMENT_TIMEOUT.
+
+      - alert: ArgoWatcherSlowRefresh
+        expr: histogram_quantile(0.95, sum by (app, le) (rate(argocd_refresh_duration_seconds_bucket[10m]))) > 30
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.app }} ArgoCD refresh is slow"
+          description: |
+            The p95 ArgoCD refresh for this application exceeds 30s. A refresh that never
+            settles (e.g. an app with a constantly-reconciling CronJob) can stall the
+            deployment check — set the per-task refresh override (or ARGO_REFRESH_APP) to
+            false for such apps.
 ```
 
 ## Grafana panel queries
