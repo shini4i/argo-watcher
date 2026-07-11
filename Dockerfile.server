@@ -2,7 +2,11 @@ FROM gcr.io/distroless/static:nonroot
 
 WORKDIR /app
 
-COPY --chown=nonroot:nonroot argo-watcher /usr/local/bin/argo-watcher
+# TARGETPLATFORM is set by buildx; goreleaser dockers_v2 lays binaries out per
+# platform (e.g. linux/amd64/argo-watcher) in the build context.
+ARG TARGETPLATFORM
+
+COPY --chown=nonroot:nonroot $TARGETPLATFORM/argo-watcher /usr/local/bin/argo-watcher
 COPY --chown=nonroot:nonroot web/dist ./static
 COPY --chown=nonroot:nonroot db ./db
 

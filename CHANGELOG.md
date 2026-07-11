@@ -43,6 +43,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ends. Previously only manual lock/unlock pushed live updates, so a UI opened
   before a scheduled window started never showed the lockdown banner without a
   page refresh; connected clients are now notified within about a minute (#302).
+- Release images now publish a single multi-arch manifest tag
+  (`ghcr.io/shini4i/argo-watcher:<tag>` and the `-client` image) instead of
+  separate per-architecture `-amd64`/`-arm64` tags; pull the plain tag going
+  forward. Each published image now also ships an attached SBOM.
 
 ### Fixed
 

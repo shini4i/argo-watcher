@@ -1,6 +1,10 @@
 FROM alpine:3.24
 
-COPY client /client
+# TARGETPLATFORM is set by buildx; goreleaser dockers_v2 lays binaries out per
+# platform (e.g. linux/amd64/client) in the build context.
+ARG TARGETPLATFORM
+
+COPY $TARGETPLATFORM/client /client
 
 RUN addgroup -S argo-watcher && adduser -S argo-watcher -G argo-watcher
 USER argo-watcher
