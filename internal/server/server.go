@@ -113,6 +113,10 @@ func (s *Server) Run() {
 
 	srv := s.env.StartRouter(s.router)
 
+	// Notify clients about scheduled lockdown transitions they wouldn't
+	// otherwise learn about (scheduled state is evaluated lazily).
+	s.env.StartLockdownWatcher()
+
 	// Start server in goroutine
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

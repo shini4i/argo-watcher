@@ -1248,6 +1248,51 @@ func TestEnvShutdown(t *testing.T) {
 	})
 }
 
+// TestStartLockdownWatcher verifies the watcher goroutine lifecycle: it is a
+// no-op without schedules, and when schedules exist it is tracked by connWg and
+// stops when the shutdown channel is closed.
+func TestStartLockdownWatcher(t *testing.T) {
+	// waitTracked reports whether connWg reaches zero within the timeout.
+	waitTracked := func(env *Env, timeout time.Duration) bool {
+		done := make(chan struct{})
+		go func() {
+			env.connWg.Wait()
+			close(done)
+		}()
+		select {
+		case <-done:
+			return true
+		case <-time.After(timeout):
+			return false
+		}
+	}
+
+	t.Run("no-op when no schedules are configured", func(t *testing.T) {
+		env := &Env{shutdownCh: make(chan struct{})}
+		env.lockdown = &Lockdown{}
+
+		env.StartLockdownWatcher()
+
+		// No goroutine should have been started, so connWg is already at zero.
+		assert.True(t, waitTracked(env, 100*time.Millisecond), "no watcher goroutine expected without schedules")
+	})
+
+	t.Run("tracks the watcher and stops on shutdown", func(t *testing.T) {
+		env := &Env{shutdownCh: make(chan struct{})}
+		env.lockdown = &Lockdown{Schedules: []LockdownSchedule{
+			{StartDay: time.Monday, StartHour: 0, StartMin: 0, EndDay: time.Monday, EndHour: 1, EndMin: 0},
+		}}
+
+		env.StartLockdownWatcher()
+
+		// The watcher is running; connWg must not drain until shutdown.
+		assert.False(t, waitTracked(env, 100*time.Millisecond), "watcher should keep connWg non-zero before shutdown")
+
+		close(env.shutdownCh)
+		assert.True(t, waitTracked(env, time.Second), "watcher should exit after shutdown channel is closed")
+	})
+}
+
 // TestStartRouter tests the StartRouter method.
 func TestStartRouter(t *testing.T) {
 	gin.SetMode(gin.TestMode)
