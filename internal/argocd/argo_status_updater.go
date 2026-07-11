@@ -371,6 +371,7 @@ type ArgoStatusUpdaterConfig struct {
 	RepoCachePath    string
 	AcceptSuspended  bool
 	WebhookConfig    *config.WebhookConfig
+	MattermostConfig *config.MattermostConfig
 	Locker           lock.Locker
 }
 
@@ -389,20 +390,35 @@ func (updater *ArgoStatusUpdater) Init(argo Argo, cfg ArgoStatusUpdaterConfig) e
 	updater.monitor.defaultAttempts = cfg.RetryAttempts
 	updater.gitUpdater = NewGitUpdater(cfg.Locker, cfg.RepoCachePath)
 
-	if cfg.WebhookConfig == nil || !cfg.WebhookConfig.Enabled {
-		return nil
-	}
+	var strategies []notifications.NotificationStrategy
 
 	httpClient := &http.Client{
 		Timeout: 15 * time.Second,
 	}
 
-	webhookStrategy, err := notifications.NewWebhookStrategy(cfg.WebhookConfig, httpClient)
-	if err != nil {
-		return err
+	if cfg.WebhookConfig != nil && cfg.WebhookConfig.Enabled {
+		webhookStrategy, err := notifications.NewWebhookStrategy(cfg.WebhookConfig, httpClient)
+		if err != nil {
+			return err
+		}
+
+		strategies = append(strategies, webhookStrategy)
 	}
 
-	updater.notifier = notifications.NewNotifier(webhookStrategy)
+	if cfg.MattermostConfig != nil && cfg.MattermostConfig.Enabled {
+		mattermostStrategy, err := notifications.NewMattermostStrategy(cfg.MattermostConfig, httpClient)
+		if err != nil {
+			return err
+		}
+
+		strategies = append(strategies, mattermostStrategy)
+	}
+
+	if len(strategies) == 0 {
+		return nil
+	}
+
+	updater.notifier = notifications.NewNotifier(strategies...)
 	return nil
 }
 

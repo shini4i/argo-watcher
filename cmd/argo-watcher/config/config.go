@@ -42,30 +42,40 @@ type WebhookConfig struct {
 	AllowedResponseCodes []int  `env:"WEBHOOK_ALLOWED_RESPONSE_CODES" envDefault:"200" json:"allowed_response_codes,omitempty"`
 }
 
+type MattermostConfig struct {
+	Enabled       bool   `env:"MATTERMOST_ENABLED" envDefault:"false" json:"enabled"`
+	Url           string `env:"MATTERMOST_URL" json:"url,omitempty"` // base URL of the Mattermost instance, without /api/v4
+	Token         string `env:"MATTERMOST_TOKEN" json:"-"`           // bot access token
+	ChannelId     string `env:"MATTERMOST_CHANNEL_ID" json:"channel_id,omitempty"`
+	Format        string `env:"MATTERMOST_FORMAT" json:"format,omitempty"`                          // Go template rendering models.Task into the post markdown message
+	MentionAuthor bool   `env:"MATTERMOST_MENTION_AUTHOR" envDefault:"false" json:"mention_author"` // prepend @<Author> to every post
+}
+
 type ServerConfig struct {
-	ArgoUrl            url.URL        `env:"ARGO_URL,required" json:"argo_cd_url"`
-	ArgoUrlAlias       string         `env:"ARGO_URL_ALIAS" json:"argo_cd_url_alias,omitempty"` // Used to generate App Url. Can be omitted if ArgoUrl is reachable from outside.
-	ArgoToken          string         `env:"ARGO_TOKEN,required" json:"-"`
-	ArgoApiTimeout     int64          `env:"ARGO_API_TIMEOUT" envDefault:"60" json:"argo_api_timeout"`
-	AcceptSuspendedApp bool           `env:"ACCEPT_SUSPENDED_APP" envDefault:"false" json:"accept_suspended_app"` // If true, we will accept "Suspended" health status as valid
-	DeploymentTimeout  uint           `env:"DEPLOYMENT_TIMEOUT" envDefault:"900" json:"deployment_timeout"`
-	ArgoRefreshApp     bool           `env:"ARGO_REFRESH_APP" envDefault:"true" json:"argo_refresh_app"`
-	RegistryProxyUrl   string         `env:"DOCKER_IMAGES_PROXY" json:"registry_proxy_url,omitempty"`
-	StateType          string         `env:"STATE_TYPE,required" validate:"oneof=postgres in-memory" json:"state_type"`
-	StaticFilePath     string         `env:"STATIC_FILES_PATH" envDefault:"static" json:"-"`
-	SkipTlsVerify      bool           `env:"SKIP_TLS_VERIFY" envDefault:"false" json:"skip_tls_verify"`
-	LogLevel           string         `env:"LOG_LEVEL" envDefault:"info" json:"log_level"`
-	Host               string         `env:"HOST" envDefault:"0.0.0.0" json:"-"`
-	Port               string         `env:"PORT" envDefault:"8080" json:"-"`
-	DeployToken        string         `env:"ARGO_WATCHER_DEPLOY_TOKEN" json:"-"`
-	JWTSecret          string         `env:"JWT_SECRET" json:"-"`
-	Db                 DatabaseConfig `json:"-"`
-	Keycloak           KeycloakConfig `json:"keycloak,omitempty"`
-	LockdownSchedule   string         `env:"LOCKDOWN_SCHEDULE" json:"lockdown_schedule,omitempty"`
-	Webhook            WebhookConfig  `json:"webhook,omitempty"`
-	DevEnvironment     bool           `env:"DEV_ENVIRONMENT" envDefault:"false" json:"devEnvironment"` // Whether a set of dev specific setting should be turned on, do not touch unless you know what you are doing
-	ArgoApiRetries     uint           `env:"ARGO_API_RETRIES" envDefault:"3" validate:"min=1,max=10" json:"argo_api_retries"` // Total attempts (including initial); passed to retry.Attempts()
-	RepoCachePath      string         `env:"REPO_CACHE_PATH" envDefault:"/data" json:"-"`
+	ArgoUrl            url.URL          `env:"ARGO_URL,required" json:"argo_cd_url"`
+	ArgoUrlAlias       string           `env:"ARGO_URL_ALIAS" json:"argo_cd_url_alias,omitempty"` // Used to generate App Url. Can be omitted if ArgoUrl is reachable from outside.
+	ArgoToken          string           `env:"ARGO_TOKEN,required" json:"-"`
+	ArgoApiTimeout     int64            `env:"ARGO_API_TIMEOUT" envDefault:"60" json:"argo_api_timeout"`
+	AcceptSuspendedApp bool             `env:"ACCEPT_SUSPENDED_APP" envDefault:"false" json:"accept_suspended_app"` // If true, we will accept "Suspended" health status as valid
+	DeploymentTimeout  uint             `env:"DEPLOYMENT_TIMEOUT" envDefault:"900" json:"deployment_timeout"`
+	ArgoRefreshApp     bool             `env:"ARGO_REFRESH_APP" envDefault:"true" json:"argo_refresh_app"`
+	RegistryProxyUrl   string           `env:"DOCKER_IMAGES_PROXY" json:"registry_proxy_url,omitempty"`
+	StateType          string           `env:"STATE_TYPE,required" validate:"oneof=postgres in-memory" json:"state_type"`
+	StaticFilePath     string           `env:"STATIC_FILES_PATH" envDefault:"static" json:"-"`
+	SkipTlsVerify      bool             `env:"SKIP_TLS_VERIFY" envDefault:"false" json:"skip_tls_verify"`
+	LogLevel           string           `env:"LOG_LEVEL" envDefault:"info" json:"log_level"`
+	Host               string           `env:"HOST" envDefault:"0.0.0.0" json:"-"`
+	Port               string           `env:"PORT" envDefault:"8080" json:"-"`
+	DeployToken        string           `env:"ARGO_WATCHER_DEPLOY_TOKEN" json:"-"`
+	JWTSecret          string           `env:"JWT_SECRET" json:"-"`
+	Db                 DatabaseConfig   `json:"-"`
+	Keycloak           KeycloakConfig   `json:"keycloak,omitempty"`
+	LockdownSchedule   string           `env:"LOCKDOWN_SCHEDULE" json:"lockdown_schedule,omitempty"`
+	Webhook            WebhookConfig    `json:"webhook,omitempty"`
+	Mattermost         MattermostConfig `json:"mattermost,omitempty"`
+	DevEnvironment     bool             `env:"DEV_ENVIRONMENT" envDefault:"false" json:"devEnvironment"`                        // Whether a set of dev specific setting should be turned on, do not touch unless you know what you are doing
+	ArgoApiRetries     uint             `env:"ARGO_API_RETRIES" envDefault:"3" validate:"min=1,max=10" json:"argo_api_retries"` // Total attempts (including initial); passed to retry.Attempts()
+	RepoCachePath      string           `env:"REPO_CACHE_PATH" envDefault:"/data" json:"-"`
 }
 
 // NewServerConfig parses the server configuration from environment variables.
@@ -83,6 +93,7 @@ func NewServerConfig() (*ServerConfig, error) {
 	config.ArgoToken = strings.TrimSpace(config.ArgoToken)
 	config.DeployToken = strings.TrimSpace(config.DeployToken)
 	config.JWTSecret = strings.TrimSpace(config.JWTSecret)
+	config.Mattermost.Token = strings.TrimSpace(config.Mattermost.Token)
 
 	if err := validate.Struct(&config); err != nil {
 		return nil, prettifyValidatorError(err)

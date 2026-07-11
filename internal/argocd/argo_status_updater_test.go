@@ -785,6 +785,42 @@ func TestArgoStatusUpdaterInitWebhook(t *testing.T) {
 		require.NotNil(t, updater.notifier)
 	})
 
+	t.Run("configuresNotifierWhenMattermostEnabled", func(t *testing.T) {
+		updater := &ArgoStatusUpdater{}
+		cfg := &config.MattermostConfig{
+			Enabled:   true,
+			Url:       "http://mattermost.example.com",
+			Token:     "token",
+			ChannelId: "channel123",
+			Format:    `{{.App}}: {{.Status}}`,
+		}
+
+		err := updater.Init(Argo{}, ArgoStatusUpdaterConfig{
+			RetryAttempts:    1,
+			RetryDelay:       time.Second,
+			MattermostConfig: cfg,
+			Locker:           locker,
+		})
+		require.NoError(t, err)
+		require.NotNil(t, updater.notifier)
+	})
+
+	t.Run("returnsErrorOnMattermostSetupFailure", func(t *testing.T) {
+		updater := &ArgoStatusUpdater{}
+		cfg := &config.MattermostConfig{
+			Enabled: true,
+			Url:     "http://mattermost.example.com",
+		}
+
+		err := updater.Init(Argo{}, ArgoStatusUpdaterConfig{
+			RetryAttempts:    1,
+			RetryDelay:       time.Second,
+			MattermostConfig: cfg,
+			Locker:           locker,
+		})
+		assert.Error(t, err)
+	})
+
 	t.Run("returnsErrorWhenLockerMissing", func(t *testing.T) {
 		updater := &ArgoStatusUpdater{}
 		err := updater.Init(Argo{}, ArgoStatusUpdaterConfig{
