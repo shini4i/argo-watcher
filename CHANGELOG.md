@@ -39,6 +39,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Update backend and frontend dependencies to their latest releases. The bundled
   web UI now runs on React 19 and Material UI 9, and building from source
   requires Go 1.26.
+- Notify the Web UI when a scheduled lockdown window automatically begins or
+  ends. Previously only manual lock/unlock pushed live updates, so a UI opened
+  before a scheduled window started never showed the lockdown banner without a
+  page refresh; connected clients are now notified within about a minute (#302).
 
 ### Fixed
 

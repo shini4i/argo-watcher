@@ -357,6 +357,28 @@ func (env *Env) StartRouter(router *gin.Engine) *http.Server {
 	}
 }
 
+// lockdownPollInterval is how often the scheduled-lockdown watcher re-evaluates
+// the lock state to detect schedule boundary transitions. Schedules have
+// minute granularity, so a one-minute tick bounds the notification lag.
+const lockdownPollInterval = time.Minute
+
+// StartLockdownWatcher launches a background goroutine that notifies WebSocket
+// clients when a scheduled lockdown window automatically begins or ends. It is a
+// no-op when no schedules are configured, since manual set/release already
+// notify clients directly. The goroutine is tracked by connWg and stops when the
+// shutdown channel is closed.
+func (env *Env) StartLockdownWatcher() {
+	if len(env.lockdown.Schedules) == 0 {
+		return
+	}
+
+	env.connWg.Add(1)
+	go func() {
+		defer env.connWg.Done()
+		env.lockdown.WatchTransitions(env.shutdownCh, lockdownPollInterval, notifyWebSocketClients)
+	}()
+}
+
 // Shutdown gracefully shuts down the server and all WebSocket connections.
 // This method is safe to call multiple times. It blocks until all WebSocket
 // goroutines have finished or the shutdown timeout is reached. If the timeout

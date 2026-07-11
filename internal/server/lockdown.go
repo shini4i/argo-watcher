@@ -166,6 +166,38 @@ func (l *Lockdown) ReleaseLock() {
 	}
 }
 
+// WatchTransitions polls the lock state on the given interval and invokes notify
+// with "locked" or "unlocked" whenever the computed state changes. Scheduled
+// lockdowns are evaluated lazily by IsLocked, so this is the only mechanism that
+// informs clients when a schedule window automatically begins or ends. The
+// initial state is recorded without notifying, so only genuine transitions
+// produce a notification. It runs until stop is closed.
+func (l *Lockdown) WatchTransitions(stop <-chan struct{}, interval time.Duration, notify func(string)) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	last := l.IsLocked()
+
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+			current := l.IsLocked()
+			if current == last {
+				continue
+			}
+			last = current
+
+			if current {
+				notify("locked")
+			} else {
+				notify("unlocked")
+			}
+		}
+	}
+}
+
 // NewLockdown initializes a new Lockdown structure and parses the lockdown schedules
 // if provided. If the schedule parsing is successful, it returns the new Lockdown.
 // Otherwise, it returns an error.

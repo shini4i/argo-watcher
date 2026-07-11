@@ -304,6 +304,111 @@ func TestLockdown_ConcurrentAccess(t *testing.T) {
 	assert.False(t, l.IsLocked())
 }
 
+// TestLockdown_WatchTransitions verifies that the watcher notifies clients only
+// when the computed lock state actually changes, and that it stops on request.
+func TestLockdown_WatchTransitions(t *testing.T) {
+	// recv waits for a single message or fails the test on timeout.
+	recv := func(t *testing.T, msgs <-chan string) string {
+		t.Helper()
+		select {
+		case m := <-msgs:
+			return m
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for notification")
+			return ""
+		}
+	}
+
+	t.Run("notifies on lock state transitions", func(t *testing.T) {
+		l := &Lockdown{}
+		stop := make(chan struct{})
+		defer close(stop)
+
+		// Establish a locked baseline, then let the watcher record it before
+		// mutating state, so the transitions below are detected deterministically.
+		l.SetLock()
+
+		msgs := make(chan string, 4)
+		go l.WatchTransitions(stop, 5*time.Millisecond, func(m string) { msgs <- m })
+		time.Sleep(20 * time.Millisecond) // allow the watcher to capture its baseline
+
+		l.ReleaseLock()
+		assert.Equal(t, "unlocked", recv(t, msgs))
+
+		l.SetLock()
+		assert.Equal(t, "locked", recv(t, msgs))
+	})
+
+	t.Run("notifies on a schedule-derived transition", func(t *testing.T) {
+		// Build a schedule window spanning four minutes around now so IsLocked
+		// is true via the schedule (not ManualLock) at baseline. The wide margin
+		// keeps the window covering "now" across hour/day/week boundaries.
+		now := time.Now()
+		start := now.Add(-2 * time.Minute)
+		end := now.Add(2 * time.Minute)
+		l := &Lockdown{Schedules: []LockdownSchedule{{
+			StartDay:  start.Weekday(),
+			StartHour: start.Hour(),
+			StartMin:  start.Minute(),
+			EndDay:    end.Weekday(),
+			EndHour:   end.Hour(),
+			EndMin:    end.Minute(),
+		}}}
+		assert.True(t, l.IsLocked(), "schedule should lock the system at baseline")
+
+		stop := make(chan struct{})
+		defer close(stop)
+
+		msgs := make(chan string, 4)
+		go l.WatchTransitions(stop, 5*time.Millisecond, func(m string) { msgs <- m })
+		time.Sleep(20 * time.Millisecond) // allow the watcher to capture its locked baseline
+
+		// Enabling override mode makes isLockedInternal return false without
+		// touching ManualLock, simulating a scheduled window boundary.
+		l.mu.Lock()
+		l.OverrideMode = true
+		l.mu.Unlock()
+
+		assert.Equal(t, "unlocked", recv(t, msgs))
+	})
+
+	t.Run("does not notify without a transition", func(t *testing.T) {
+		l := &Lockdown{}
+		stop := make(chan struct{})
+		defer close(stop)
+
+		msgs := make(chan string, 1)
+		go l.WatchTransitions(stop, 5*time.Millisecond, func(m string) { msgs <- m })
+
+		select {
+		case m := <-msgs:
+			t.Fatalf("unexpected notification: %q", m)
+		case <-time.After(50 * time.Millisecond):
+			// no transition occurred, so no notification is expected
+		}
+	})
+
+	t.Run("stops when stop channel is closed", func(t *testing.T) {
+		l := &Lockdown{}
+		stop := make(chan struct{})
+		done := make(chan struct{})
+
+		go func() {
+			l.WatchTransitions(stop, 5*time.Millisecond, func(string) {})
+			close(done)
+		}()
+
+		close(stop)
+
+		select {
+		case <-done:
+			// returned as expected
+		case <-time.After(time.Second):
+			t.Fatal("WatchTransitions did not return after stop was closed")
+		}
+	})
+}
+
 // TestLockdown_IsLockedInternal tests the internal lock checking logic.
 func TestLockdown_IsLockedInternal(t *testing.T) {
 	t.Run("returns true when ManualLock is set", func(t *testing.T) {

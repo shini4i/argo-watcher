@@ -209,6 +209,8 @@ scheduledLockdown:
 
 In this example, deployments are blocked between Wednesday 20:00 and Thursday 08:00, and between Friday 20:00 and Monday 08:00.
 
+The Web UI lockdown banner updates automatically (within about a minute) when a scheduled window begins or ends — no page refresh is needed.
+
 ### Manual Lockdown
 
 #### Via API
