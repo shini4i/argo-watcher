@@ -11,6 +11,22 @@ import (
 
 var errDesiredRetry = errors.New("desired retry error")
 
+// imageNamesOverlap reports whether the two image slices share at least one
+// image name (the repository, ignoring the tag). It is used to decide whether a
+// new deployment supersedes an in-progress one for the same app.
+func imageNamesOverlap(a, b []models.Image) bool {
+	names := make(map[string]struct{}, len(a))
+	for _, img := range a {
+		names[img.Image] = struct{}{}
+	}
+	for _, img := range b {
+		if _, ok := names[img.Image]; ok {
+			return true
+		}
+	}
+	return false
+}
+
 // TaskRepository defines the contract for task persistence.
 // Implementations are responsible for connecting to the underlying storage and
 // offering CRUD-like operations for deployment tasks.
@@ -20,12 +36,15 @@ type TaskRepository interface {
 	GetTasks(startTime float64, endTime float64, app string, status string, limit int, offset int) ([]models.Task, int64)
 	GetTask(id string) (*models.Task, error)
 	SetTaskStatus(id string, status string, reason string) error
-	// CancelInProgressTasks marks every in-progress task for the given app as
-	// cancelled and returns how many were affected. It is used to supersede an
-	// older deployment when a newer one for the same app arrives (issue #353).
-	// Operating on the shared state makes the cancellation visible to every
-	// replica, not just the one handling the new deployment.
-	CancelInProgressTasks(app, reason string) (int64, error)
+	// CancelInProgressTasks marks in-progress tasks for the given app as
+	// cancelled and returns how many were affected. A task is only cancelled when
+	// it shares at least one image name with the supplied images, so independent
+	// per-image deployments of the same app do not cancel each other (issue #353).
+	// Tags are ignored on purpose: a newer tag of the same image must still
+	// supersede the older in-flight rollout. Operating on the shared state makes
+	// the cancellation visible to every replica, not just the one handling the new
+	// deployment.
+	CancelInProgressTasks(app string, images []models.Image, reason string) (int64, error)
 	Check() bool
 	ProcessObsoleteTasks(retryTimes uint)
 }

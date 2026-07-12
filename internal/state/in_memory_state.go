@@ -153,17 +153,20 @@ func (state *InMemoryState) SetTaskStatus(id string, status string, reason strin
 	return errors.New("task not found")
 }
 
-// CancelInProgressTasks marks every in-progress task for the given app as
-// cancelled and returns how many were updated. It is used to supersede an older
-// deployment when a newer one for the same app is triggered.
-func (state *InMemoryState) CancelInProgressTasks(app, reason string) (int64, error) {
+// CancelInProgressTasks marks in-progress tasks for the given app as cancelled
+// and returns how many were updated. A task is only cancelled when it shares at
+// least one image name with the supplied images (tags ignored), so independent
+// per-image deployments of the same app do not cancel each other.
+func (state *InMemoryState) CancelInProgressTasks(app string, images []models.Image, reason string) (int64, error) {
 	state.mu.Lock()
 	defer state.mu.Unlock()
 
 	var count int64
 	now := float64(time.Now().Unix())
 	for idx := range state.tasks {
-		if state.tasks[idx].App == app && state.tasks[idx].Status == models.StatusInProgressMessage {
+		if state.tasks[idx].App == app &&
+			state.tasks[idx].Status == models.StatusInProgressMessage &&
+			imageNamesOverlap(state.tasks[idx].Images, images) {
 			state.tasks[idx].Status = models.StatusCancelledMessage
 			state.tasks[idx].StatusReason = reason
 			state.tasks[idx].Updated = now

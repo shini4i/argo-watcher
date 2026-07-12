@@ -213,7 +213,7 @@ func TestArgoAddTask(t *testing.T) {
 		// mock calls to add task
 		stateError := fmt.Errorf("database error")
 		state.EXPECT().GetTasks(gomock.Any(), gomock.Any(), "test-app", models.StatusDeployedMessage, gomock.Any(), gomock.Any()).Return([]models.Task{}, int64(0))
-		state.EXPECT().CancelInProgressTasks("test-app", gomock.Any()).Return(int64(0), nil)
+		state.EXPECT().CancelInProgressTasks("test-app", gomock.Any(), gomock.Any()).Return(int64(0), nil)
 		state.EXPECT().AddTask(gomock.Any()).Return(nil, stateError)
 
 		// argo manager
@@ -267,7 +267,9 @@ func TestArgoAddTask(t *testing.T) {
 		// match the cancel filter and cancel itself. gomock.InOrder locks that.
 		state.EXPECT().GetTasks(gomock.Any(), gomock.Any(), "test-app", models.StatusDeployedMessage, gomock.Any(), gomock.Any()).Return([]models.Task{}, int64(0))
 		gomock.InOrder(
-			state.EXPECT().CancelInProgressTasks("test-app", supersededTaskReason).Return(int64(0), nil),
+			// The task's images MUST be forwarded to the cancel call so superseding
+			// is scoped to matching images, not the whole app.
+			state.EXPECT().CancelInProgressTasks("test-app", gomock.Eq(task.Images), supersededTaskReason).Return(int64(0), nil),
 			state.EXPECT().AddTask(gomock.Any()).Return(&newTask, nil),
 		)
 
@@ -300,7 +302,7 @@ func TestArgoAddTask(t *testing.T) {
 		// Cancelling prior in-progress tasks is best-effort: a failure here must not
 		// block the new deployment from being persisted.
 		state.EXPECT().GetTasks(gomock.Any(), gomock.Any(), "test-app", models.StatusDeployedMessage, gomock.Any(), gomock.Any()).Return([]models.Task{}, int64(0))
-		state.EXPECT().CancelInProgressTasks("test-app", supersededTaskReason).Return(int64(0), fmt.Errorf("cancel failed"))
+		state.EXPECT().CancelInProgressTasks("test-app", gomock.Any(), supersededTaskReason).Return(int64(0), fmt.Errorf("cancel failed"))
 		state.EXPECT().AddTask(gomock.Any()).Return(&newTask, nil)
 
 		argo := &Argo{}
@@ -330,7 +332,7 @@ func TestArgoAddTask(t *testing.T) {
 
 		// Capture the task actually handed to the repository.
 		var captured models.Task
-		state.EXPECT().CancelInProgressTasks("test-app", gomock.Any()).Return(int64(0), nil)
+		state.EXPECT().CancelInProgressTasks("test-app", gomock.Any(), gomock.Any()).Return(int64(0), nil)
 		state.EXPECT().AddTask(gomock.Any()).DoAndReturn(func(task models.Task) (*models.Task, error) {
 			captured = task
 			task.Id = uuid.NewString()
@@ -363,7 +365,7 @@ func TestArgoAddTask(t *testing.T) {
 		state.EXPECT().GetTasks(gomock.Any(), gomock.Any(), "test-app", models.StatusDeployedMessage, gomock.Any(), gomock.Any()).Return(deployed, int64(len(deployed)))
 
 		var captured models.Task
-		state.EXPECT().CancelInProgressTasks("test-app", gomock.Any()).Return(int64(0), nil)
+		state.EXPECT().CancelInProgressTasks("test-app", gomock.Any(), gomock.Any()).Return(int64(0), nil)
 		state.EXPECT().AddTask(gomock.Any()).DoAndReturn(func(task models.Task) (*models.Task, error) {
 			captured = task
 			task.Id = uuid.NewString()

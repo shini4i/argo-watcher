@@ -28,6 +28,38 @@ func createTestTask(app string) models.Task {
 	}
 }
 
+// taskWithImage returns an in-progress task for the given app deploying a single
+// named image, used to exercise image-aware cancellation.
+func taskWithImage(app, image string) models.Task {
+	task := createTestTask(app)
+	task.Images = []models.Image{{Image: image, Tag: "v0.0.1"}}
+	return task
+}
+
+// TestImageNamesOverlap locks the boundary contract of the overlap helper:
+// empty/nil inputs never match, tags are ignored, and a single shared image
+// name (even within larger disjoint sets) counts as an overlap.
+func TestImageNamesOverlap(t *testing.T) {
+	tests := []struct {
+		name string
+		a    []models.Image
+		b    []models.Image
+		want bool
+	}{
+		{"both nil", nil, nil, false},
+		{"first empty", nil, []models.Image{{Image: "image-a", Tag: "v1"}}, false},
+		{"second empty", []models.Image{{Image: "image-a", Tag: "v1"}}, nil, false},
+		{"fully disjoint", []models.Image{{Image: "image-a"}}, []models.Image{{Image: "image-b"}}, false},
+		{"same name different tags", []models.Image{{Image: "image-a", Tag: "v1"}}, []models.Image{{Image: "image-a", Tag: "v2"}}, true},
+		{"partial overlap in larger sets", []models.Image{{Image: "image-a"}, {Image: "image-b"}}, []models.Image{{Image: "image-b"}, {Image: "image-c"}}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, imageNamesOverlap(tt.a, tt.b))
+		})
+	}
+}
+
 // TestInMemoryState_AddTask verifies that tasks can be added to the in-memory state
 // and receive unique IDs.
 func TestInMemoryState_AddTask(t *testing.T) {
@@ -207,30 +239,42 @@ func TestInMemoryState_SetTaskStatus_NotFound(t *testing.T) {
 	assert.Equal(t, "task not found", err.Error())
 }
 
-// TestInMemoryState_CancelInProgressTasks verifies that only the in-progress
-// tasks for the target app are switched to cancelled, and that already-finished
-// tasks and tasks for other apps are left untouched.
+// TestInMemoryState_CancelInProgressTasks verifies that only in-progress tasks
+// for the target app that share an image name with the new deployment are
+// switched to cancelled, and that same-app-different-image tasks, already-
+// finished tasks, and tasks for other apps are left untouched.
 func TestInMemoryState_CancelInProgressTasks(t *testing.T) {
 	state := InMemoryState{}
 
-	inProgress, err := state.AddTask(createTestTask("app-a"))
+	inProgress, err := state.AddTask(taskWithImage("app-a", "image-a"))
 	require.NoError(t, err)
 
-	otherApp, err := state.AddTask(createTestTask("app-b"))
+	// Same app, but a different image deployed independently.
+	sameAppOtherImage, err := state.AddTask(taskWithImage("app-a", "image-b"))
 	require.NoError(t, err)
 
-	finished, err := state.AddTask(createTestTask("app-a"))
+	otherApp, err := state.AddTask(taskWithImage("app-b", "image-a"))
+	require.NoError(t, err)
+
+	finished, err := state.AddTask(taskWithImage("app-a", "image-a"))
 	require.NoError(t, err)
 	require.NoError(t, state.SetTaskStatus(finished.Id, models.StatusDeployedMessage, ""))
 
-	count, err := state.CancelInProgressTasks("app-a", "superseded")
+	// A new deployment of image-a for app-a supersedes only the in-progress
+	// image-a task.
+	count, err := state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-a", Tag: "v2"}}, "superseded")
 	require.NoError(t, err)
-	assert.Equal(t, int64(1), count, "only the in-progress app-a task should be cancelled")
+	assert.Equal(t, int64(1), count, "only the in-progress app-a task sharing image-a should be cancelled")
 
 	got, err := state.GetTask(inProgress.Id)
 	require.NoError(t, err)
 	assert.Equal(t, models.StatusCancelledMessage, got.Status)
 	assert.Equal(t, "superseded", got.StatusReason)
+
+	// Same app but a different image is untouched.
+	gotSameApp, err := state.GetTask(sameAppOtherImage.Id)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusInProgressMessage, gotSameApp.Status)
 
 	// A different app is untouched.
 	gotOther, err := state.GetTask(otherApp.Id)
@@ -241,6 +285,66 @@ func TestInMemoryState_CancelInProgressTasks(t *testing.T) {
 	gotFinished, err := state.GetTask(finished.Id)
 	require.NoError(t, err)
 	assert.Equal(t, models.StatusDeployedMessage, gotFinished.Status)
+}
+
+// TestInMemoryState_CancelInProgressTasks_MultiImageOverlap verifies the "any
+// shared image name" semantics: a multi-image in-progress task is cancelled when
+// the new deployment shares only one of its images, while a task sharing none is
+// left alone. This is what distinguishes overlap from set-equality matching.
+func TestInMemoryState_CancelInProgressTasks_MultiImageOverlap(t *testing.T) {
+	state := InMemoryState{}
+
+	overlapping := createTestTask("app-a")
+	overlapping.Images = []models.Image{{Image: "image-a", Tag: "v1"}, {Image: "image-b", Tag: "v1"}}
+	overlappingTask, err := state.AddTask(overlapping)
+	require.NoError(t, err)
+
+	disjoint := createTestTask("app-a")
+	disjoint.Images = []models.Image{{Image: "image-c", Tag: "v1"}, {Image: "image-d", Tag: "v1"}}
+	disjointTask, err := state.AddTask(disjoint)
+	require.NoError(t, err)
+
+	// New deployment shares only image-b with the first task and nothing with the second.
+	count, err := state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-b", Tag: "v2"}, {Image: "image-e", Tag: "v1"}}, "superseded")
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), count, "only the task sharing an image name should be cancelled")
+
+	gotOverlapping, err := state.GetTask(overlappingTask.Id)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusCancelledMessage, gotOverlapping.Status)
+
+	gotDisjoint, err := state.GetTask(disjointTask.Id)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusInProgressMessage, gotDisjoint.Status)
+}
+
+// TestInMemoryState_CancelInProgressTasks_Count verifies the returned count:
+// every matching in-progress task is cancelled (aggregation), and a deployment
+// that overlaps nothing in flight cancels nothing.
+func TestInMemoryState_CancelInProgressTasks_Count(t *testing.T) {
+	state := InMemoryState{}
+
+	first, err := state.AddTask(taskWithImage("app-a", "image-a"))
+	require.NoError(t, err)
+	second, err := state.AddTask(taskWithImage("app-a", "image-a"))
+	require.NoError(t, err)
+
+	// No overlap: nothing is cancelled and both tasks stay in progress.
+	count, err := state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-z", Tag: "v1"}}, "superseded")
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), count, "a deployment sharing no image should cancel nothing")
+
+	// Overlap: both in-progress tasks sharing image-a are cancelled.
+	count, err = state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-a", Tag: "v2"}}, "superseded")
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), count, "every matching in-progress task must be cancelled")
+
+	gotFirst, err := state.GetTask(first.Id)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusCancelledMessage, gotFirst.Status)
+	gotSecond, err := state.GetTask(second.Id)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusCancelledMessage, gotSecond.Status)
 }
 
 // TestInMemoryState_ProcessObsoleteTasks verifies that stale in-progress tasks
