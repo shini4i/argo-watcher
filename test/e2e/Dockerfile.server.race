@@ -8,7 +8,12 @@
 #   ships no libc or dynamic loader, so a race binary cannot run there. This
 #   image therefore uses a glibc-bearing distroless base instead.
 #
-# Build from the repo root so the Go module and web/dist / db assets are in
+# web/dist is a generated artifact and must exist in the build context before
+# this build. The `build-race-image` task runs `task build-ui` first (the same
+# frontend build the rest of the automation uses), exactly as the production
+# image pipeline does.
+#
+# Build from the repo root so the Go module and web/dist + db assets are in
 # context:
 #   docker build -f test/e2e/Dockerfile.server.race -t argo-watcher:race .
 

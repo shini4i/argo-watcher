@@ -67,9 +67,13 @@ tasks:
       - kind create cluster --name {{.CLUSTER}} --config kind-config.yaml
 
   build-race-image:
-    desc: "Build the -race image from the repo root"
+    desc: "Build the web UI and the -race image from the repo root"
     dir: ../..
     cmds:
+      # Reuse the canonical frontend build (same task the rest of the automation
+      # uses) so web/dist exists before the image build — it is a generated
+      # artifact, absent on a fresh checkout.
+      - task build-ui
       - docker build -f test/e2e/Dockerfile.server.race -t {{.RACE_IMAGE}} .
 
   load-race-image:
