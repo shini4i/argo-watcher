@@ -54,9 +54,9 @@ argo:
   # Optionally include ARGO_WATCHER_DEPLOY_TOKEN (must match the client-side value)
   secretName: "argo-watcher"
 
-  # Built-in GitOps updater configuration (optional)
-  updater:
-    sshSecretName: "ssh-secret"
+# Built-in GitOps updater configuration (optional)
+updater:
+  sshSecretName: "ssh-secret"
 
 # PostgreSQL configuration for persistent task storage
 # Omit or set enabled: false to use in-memory storage (non-HA, data lost on restart)
