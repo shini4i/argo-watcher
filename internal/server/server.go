@@ -3,16 +3,16 @@ package server
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	prom "github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
 	"github.com/shini4i/argo-watcher/internal/argocd"
@@ -67,10 +67,10 @@ func NewServer(serverConfig *config.ServerConfig, reg prometheus.Registerer) (*S
 			return nil, fmt.Errorf("could not get a valid DB connection from the postgres state")
 		}
 		locker = lock.NewPostgresLocker(db)
-		log.Info().Msg("Using Postgres advisory locks for distributed locking.")
+		slog.Info("Using Postgres advisory locks for distributed locking.")
 	} else {
 		locker = lock.NewInMemoryLocker()
-		log.Warn().Msg("Using in-memory lock. This is not suitable for HA setups.")
+		slog.Warn("Using in-memory lock. This is not suitable for HA setups.")
 	}
 
 	// initialize argo updater
@@ -111,7 +111,7 @@ func NewServer(serverConfig *config.ServerConfig, reg prometheus.Registerer) (*S
 
 // Run starts the HTTP server and handles graceful shutdown on SIGINT/SIGTERM.
 func (s *Server) Run() {
-	log.Info().Msg("Starting web server")
+	slog.Info("Starting web server")
 
 	srv := s.env.StartRouter(s.router)
 
@@ -122,7 +122,8 @@ func (s *Server) Run() {
 	// Start server in goroutine
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatal().Err(err).Msg("failed to start server")
+			slog.Error("failed to start server", "error", err)
+			os.Exit(1)
 		}
 	}()
 
@@ -131,7 +132,7 @@ func (s *Server) Run() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Info().Msg("shutting down server...")
+	slog.Info("shutting down server...")
 
 	// Trigger WebSocket connection shutdown
 	s.env.Shutdown()
@@ -141,18 +142,43 @@ func (s *Server) Run() {
 	defer cancel()
 
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Error().Err(err).Msg("server forced to shutdown")
+		slog.Error("server forced to shutdown", "error", err)
 	}
 
-	log.Info().Msg("server exited")
+	slog.Info("server exited")
 }
 
-// initLogs initializes the logging configuration.
+// logLevelVar holds the active log level for the default logger so initLogs can
+// adjust it at runtime.
+var logLevelVar = new(slog.LevelVar)
+
+// initLogs configures the global slog logger to emit JSON to stderr at the
+// level parsed from logLevel. An unparseable level is logged as a warning and
+// leaves the logger at its default (info) level.
 func initLogs(logLevel string) {
-	if lvl, err := zerolog.ParseLevel(logLevel); err != nil {
-		log.Warn().Msgf("Couldn't parse log level. Got the following error: %s", err)
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: logLevelVar})))
+	if lvl, err := parseLogLevel(logLevel); err != nil {
+		slog.Warn(fmt.Sprintf("Couldn't parse log level. Got the following error: %s", err))
 	} else {
-		zerolog.SetGlobalLevel(lvl)
-		log.Debug().Msgf("Configured log level: %s", lvl)
+		logLevelVar.Set(lvl)
+		slog.Debug(fmt.Sprintf("Configured log level: %s", lvl))
+	}
+}
+
+// parseLogLevel maps a textual log level to its slog equivalent. It accepts the
+// level names previously handled by zerolog (including the trace/fatal/panic
+// aliases) so existing LOG_LEVEL values keep working; unknown values error.
+func parseLogLevel(level string) (slog.Level, error) {
+	switch strings.ToLower(strings.TrimSpace(level)) {
+	case "trace", "debug":
+		return slog.LevelDebug, nil
+	case "", "info":
+		return slog.LevelInfo, nil
+	case "warn", "warning":
+		return slog.LevelWarn, nil
+	case "error", "fatal", "panic":
+		return slog.LevelError, nil
+	default:
+		return slog.LevelInfo, fmt.Errorf("unknown log level %q", level)
 	}
 }

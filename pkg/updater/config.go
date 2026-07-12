@@ -2,11 +2,11 @@ package updater
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"time"
 
 	envConfig "github.com/caarlos0/env/v11"
-	"github.com/rs/zerolog/log"
 )
 
 // GitConfig holds runtime configuration for the git updater, parsed from
@@ -86,7 +86,7 @@ func applyLegacyGitTimeout(config *GitConfig) error {
 	}
 
 	if _, newSet := os.LookupEnv("GIT_OP_TIMEOUT"); newSet {
-		log.Warn().Msgf("GIT_TIMEOUT is deprecated and was ignored because GIT_OP_TIMEOUT is set. Remove GIT_TIMEOUT to silence this warning.")
+		slog.Warn("GIT_TIMEOUT is deprecated and was ignored because GIT_OP_TIMEOUT is set. Remove GIT_TIMEOUT to silence this warning.")
 		return nil
 	}
 
@@ -94,10 +94,10 @@ func applyLegacyGitTimeout(config *GitConfig) error {
 	// (default 5, validated > 0); its conversion to time.Duration is only used
 	// to format a warning-log message and crosses no security boundary.
 	worstCaseWallClock := legacy * time.Duration(config.GitMaxAttempts)
-	log.Warn().Msgf(
+	slog.Warn(fmt.Sprintf(
 		"GIT_TIMEOUT is deprecated; using %s as GIT_OP_TIMEOUT directly. With GIT_MAX_ATTEMPTS=%d retries enabled, the worst-case total wall clock is %s. Set GIT_OP_TIMEOUT explicitly to silence this warning.",
 		legacy, config.GitMaxAttempts, worstCaseWallClock,
-	)
+	))
 	config.GitOpTimeout = legacy
 	return nil
 }

@@ -64,6 +64,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   application now aborts its write-back (re-checked before every attempt) rather
   than committing a stale image tag, so the larger retry budget cannot let an
   older deployment overwrite a newer one.
+- Switch server and mock logging from zerolog to Go's standard library
+  `log/slog`. Log output is still JSON on stderr, but level names are now
+  uppercase (e.g. `INFO`), the message field key is `msg` (previously
+  `message`), timestamps carry nanosecond precision, and durations are reported
+  in nanoseconds — update any log processing that keys on the old field names or
+  values. `LOG_LEVEL` still accepts `debug`/`info`/`warn`/`error` (default
+  `info`); the previously-accepted, undocumented `disabled` value is no longer
+  recognized and now falls back to `info`.
 
 ### Fixed
 

@@ -7,13 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
 	"text/template"
 	"time"
-
-	"github.com/rs/zerolog/log"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	"github.com/shini4i/argo-watcher/internal/models"
@@ -139,7 +138,7 @@ func (s *MattermostStrategy) createPost(post mattermostPostRequest) (string, err
 		return "", fmt.Errorf("failed to marshal mattermost post: %w", err)
 	}
 
-	log.Debug().Msgf("Sending mattermost post: %s", string(payload))
+	slog.Debug(fmt.Sprintf("Sending mattermost post: %s", string(payload)))
 
 	req, err := http.NewRequestWithContext(ctx, "POST", s.baseURL+"/api/v4/posts", bytes.NewReader(payload))
 	if err != nil {
@@ -155,7 +154,7 @@ func (s *MattermostStrategy) createPost(post mattermostPostRequest) (string, err
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			log.Warn().Err(err).Msg("Failed to close mattermost response body")
+			slog.Warn("Failed to close mattermost response body", "error", err)
 		}
 	}()
 
@@ -177,7 +176,7 @@ func (s *MattermostStrategy) createPost(post mattermostPostRequest) (string, err
 	}
 
 	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
-		log.Warn().Err(err).Msg("Failed to discard mattermost response body")
+		slog.Warn("Failed to discard mattermost response body", "error", err)
 	}
 
 	return created.Id, nil

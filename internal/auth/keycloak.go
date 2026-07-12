@@ -5,13 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"slices"
 	"strings"
 	"time"
-
-	"github.com/rs/zerolog/log"
 )
 
 type KeycloakResponse struct {
@@ -74,32 +73,32 @@ func (k *KeycloakAuthService) Validate(token string) (bool, error) {
 	if err != nil {
 		// Transport/internal failure details (URLs, hostnames) stay in the
 		// server log; the public-facing error must not leak them.
-		log.Error().Err(err).Msg("keycloak: error creating userinfo request")
+		slog.Error("keycloak: error creating userinfo request", "error", err)
 		return false, errors.New("token validation failed")
 	}
 	req.Header.Add("Authorization", "Bearer "+token)
 
 	resp, err := k.client.Do(req) // #nosec G704 - URL is validated in Init()
 	if err != nil {
-		log.Error().Err(err).Msg("keycloak: userinfo request failed")
+		slog.Error("keycloak: userinfo request failed", "error", err)
 		return false, errors.New("token validation failed")
 	}
 	defer func(Body io.ReadCloser) {
 		err := Body.Close()
 		if err != nil {
-			log.Error().Msgf("error closing response body: %v", err)
+			slog.Error(fmt.Sprintf("error closing response body: %v", err))
 		}
 	}(resp.Body)
 
 	// Read and parse the response body
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Error().Err(err).Msg("keycloak: error reading userinfo response body")
+		slog.Error("keycloak: error reading userinfo response body", "error", err)
 		return false, errors.New("token validation failed")
 	}
 
 	if err := json.Unmarshal(bodyBytes, &keycloakResponse); err != nil {
-		log.Error().Err(err).Msg("keycloak: error unmarshalling userinfo response")
+		slog.Error("keycloak: error unmarshalling userinfo response", "error", err)
 		return false, errors.New("token validation failed")
 	}
 
@@ -119,11 +118,11 @@ func (k *KeycloakAuthService) Validate(token string) (bool, error) {
 func (k *KeycloakAuthService) allowedToRollback(username string, groups []string) bool {
 	for _, group := range groups {
 		if slices.Contains(k.PrivilegedGroups, group) {
-			log.Debug().Msgf("%s is a member of the privileged group: %v", username, group)
+			slog.Debug(fmt.Sprintf("%s is a member of the privileged group: %v", username, group))
 			return true
 		}
 	}
 
-	log.Debug().Msgf("%s is not a member of any of the privileged groups: %v", username, k.PrivilegedGroups)
+	slog.Debug(fmt.Sprintf("%s is not a member of any of the privileged groups: %v", username, k.PrivilegedGroups))
 	return false
 }

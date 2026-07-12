@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"net/http"
 	"strings"
@@ -16,7 +17,6 @@ import (
 	"github.com/shini4i/argo-watcher/internal/helpers"
 
 	"github.com/avast/retry-go/v4"
-	"github.com/rs/zerolog/log"
 	"github.com/shini4i/argo-watcher/internal/lock"
 	"github.com/shini4i/argo-watcher/internal/models"
 	"github.com/shini4i/argo-watcher/pkg/updater"
@@ -148,7 +148,7 @@ func (monitor *DeploymentMonitor) WaitRollout(task models.Task) (*models.Applica
 	defer cancel()
 	retryOptions = append(retryOptions, retry.Context(ctx))
 
-	log.Debug().Str("id", task.Id).Dur("deadline", deadline).Msg("Waiting for rollout")
+	slog.Debug("Waiting for rollout", "id", task.Id, "deadline", deadline)
 
 	err := retry.Do(func() error {
 		// Stop before hitting ArgoCD if a newer deployment superseded this task.
@@ -168,7 +168,7 @@ func (monitor *DeploymentMonitor) WaitRollout(task models.Task) (*models.Applica
 
 		// Early return for fire and forget mode
 		if app.IsFireAndForgetModeActive() {
-			log.Debug().Str("id", task.Id).Msg("Fire and forget mode is active, skipping checks...")
+			slog.Debug("Fire and forget mode is active, skipping checks...", "id", task.Id)
 			return nil
 		}
 
@@ -255,19 +255,19 @@ func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) ([]ret
 	}
 
 	if task.Timeout <= 0 {
-		log.Debug().Str("id", task.Id).Msgf("Task timeout is non-positive, defaulting to %d attempts", defaultAttempts)
+		slog.Debug(fmt.Sprintf("Task timeout is non-positive, defaulting to %d attempts", defaultAttempts), "id", task.Id)
 		return append(retryOptions, retry.Attempts(defaultAttempts)), mulDurationSaturating(defaultAttempts, delay)
 	}
 
 	attempts := safeIntToUint(int64(task.Timeout)/delaySeconds + 1)
 
-	log.Debug().Str("id", task.Id).Msgf(
+	slog.Debug(fmt.Sprintf(
 		"Overriding task timeout to %ds with retry delay %s (~%d second step, %d attempts)",
 		task.Timeout,
 		delay,
 		delaySeconds,
 		attempts,
-	)
+	), "id", task.Id)
 
 	return append(retryOptions, retry.Attempts(attempts)), mulDurationSaturating(attempts, delay)
 }
@@ -293,7 +293,7 @@ func (monitor *DeploymentMonitor) ProcessDeploymentResult(task *models.Task, app
 func (monitor *DeploymentMonitor) taskSuperseded(id string) bool {
 	current, err := monitor.argo.State.GetTask(id)
 	if err != nil {
-		log.Warn().Str("id", id).Msgf("Could not read task status to check for supersession: %s", err)
+		slog.Warn(fmt.Sprintf("Could not read task status to check for supersession: %s", err), "id", id)
 		return false
 	}
 	return current.Status == models.StatusCancelledMessage
@@ -304,24 +304,24 @@ func (monitor *DeploymentMonitor) HandleArgoAPIFailure(task models.Task, err err
 	monitor.argo.metrics.AddFailedDeployment(task.App)
 	finalStatus := determineFailureStatus(task, err)
 	reason := fmt.Sprintf(ArgoAPIErrorTemplate, err.Error())
-	log.Warn().Str("id", task.Id).Msgf("Deployment failed with status \"%s\". Aborting with error: %s", finalStatus, reason)
+	slog.Warn(fmt.Sprintf("Deployment failed with status \"%s\". Aborting with error: %s", finalStatus, reason), "id", task.Id)
 
 	if err := monitor.argo.State.SetTaskStatus(task.Id, finalStatus, reason); err != nil {
-		log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, err)
+		slog.Error(fmt.Sprintf(failedToUpdateTaskStatusTemplate, err), "id", task.Id)
 	}
 }
 
 func (monitor *DeploymentMonitor) handleDeploymentSuccess(task *models.Task) {
-	log.Info().Str("id", task.Id).Msg("App is running on the expected version.")
+	slog.Info("App is running on the expected version.", "id", task.Id)
 	monitor.argo.metrics.ResetFailedDeployment(task.App)
 	if err := monitor.argo.State.SetTaskStatus(task.Id, models.StatusDeployedMessage, ""); err != nil {
-		log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, err)
+		slog.Error(fmt.Sprintf(failedToUpdateTaskStatusTemplate, err), "id", task.Id)
 	}
 	task.Status = models.StatusDeployedMessage
 }
 
 func (monitor *DeploymentMonitor) handleDeploymentFailure(task *models.Task, status string, application *models.Application) {
-	log.Info().Str("id", task.Id).Msg("App deployment failed.")
+	slog.Info("App deployment failed.", "id", task.Id)
 	monitor.argo.metrics.AddFailedDeployment(task.App)
 	reason := fmt.Sprintf(
 		"Application deployment failed. Rollout status is %s\n\n%s",
@@ -329,7 +329,7 @@ func (monitor *DeploymentMonitor) handleDeploymentFailure(task *models.Task, sta
 		application.GetRolloutMessage(status, task.ListImages()),
 	)
 	if err := monitor.argo.State.SetTaskStatus(task.Id, models.StatusFailedMessage, reason); err != nil {
-		log.Error().Str("id", task.Id).Msgf(failedToUpdateTaskStatusTemplate, err)
+		slog.Error(fmt.Sprintf(failedToUpdateTaskStatusTemplate, err), "id", task.Id)
 	}
 	task.Status = models.StatusFailedMessage
 }
@@ -348,24 +348,24 @@ func NewGitUpdater(locker lock.Locker, repoCachePath string) *GitUpdater {
 // newer deployment aborts instead of committing a stale image tag.
 func (gitUpdater *GitUpdater) UpdateIfNeeded(app *models.Application, task models.Task, isSuperseded ...func() bool) error {
 	if !app.IsManagedByWatcher() || !task.Validated {
-		log.Debug().Str("id", task.Id).Msg("Skipping git repo update: application not managed by watcher or task not validated.")
+		slog.Debug("Skipping git repo update: application not managed by watcher or task not validated.", "id", task.Id)
 		return nil
 	}
 
 	gitopsRepo, err := models.NewGitopsRepo(app, gitUpdater.repoCachePath)
 	if err != nil {
-		log.Error().Str("id", task.Id).Msgf("Failed to get gitops repo info for app %s: %s", task.App, err)
+		slog.Error(fmt.Sprintf("Failed to get gitops repo info for app %s: %s", task.App, err), "id", task.Id)
 		return err
 	}
 
 	gitUpdateFunc := func() error {
-		log.Debug().Str("id", task.Id).Msg("Application managed by watcher. Initiating git repo update.")
+		slog.Debug("Application managed by watcher. Initiating git repo update.", "id", task.Id)
 		return gitUpdater.updateGitRepo(app, &task, &gitopsRepo, isSuperseded...)
 	}
 
 	err = gitUpdater.locker.WithLock(gitopsRepo.RepoUrl, gitUpdateFunc)
 	if err != nil {
-		log.Error().Str("id", task.Id).Msgf("Failed git repo update for app %s: %s", task.App, err)
+		slog.Error(fmt.Sprintf("Failed git repo update for app %s: %s", task.App, err), "id", task.Id)
 		return err
 	}
 
@@ -378,7 +378,7 @@ func (gitUpdater *GitUpdater) updateGitRepo(app *models.Application, task *model
 	// WaitForRollout is a future improvement.
 	err := app.UpdateGitImageTag(context.Background(), task, gitopsRepo, updater.GitClient{}, isSuperseded...)
 	if err != nil {
-		log.Error().Str("id", task.Id).Msgf("Failed to update git repo. Error: %s", err.Error())
+		slog.Error(fmt.Sprintf("Failed to update git repo. Error: %s", err.Error()), "id", task.Id)
 		return err
 	}
 	return nil
@@ -470,7 +470,7 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 		// A newer deployment for the same app already marked this task "cancelled"
 		// in the shared state (possibly on another replica). Stop without writing a
 		// status so we do not overwrite it; reflect it locally for the notification.
-		log.Info().Str("id", task.Id).Msg("Deployment superseded by a newer deployment for the same app; stopping.")
+		slog.Info("Deployment superseded by a newer deployment for the same app; stopping.", "id", task.Id)
 		task.Status = models.StatusCancelledMessage
 	case err != nil:
 		// handle application failure
@@ -527,7 +527,7 @@ func handleApplicationFetchError(task models.Task, err error) error {
 	if task.IsAppNotFoundError(err) {
 		return retry.Unrecoverable(err)
 	}
-	log.Debug().Str("id", task.Id).Msgf("Failed fetching application status. Error: %s", err.Error())
+	slog.Debug(fmt.Sprintf("Failed fetching application status. Error: %s", err.Error()), "id", task.Id)
 	return err
 }
 
@@ -537,17 +537,17 @@ func checkRolloutStatus(task models.Task, application *models.Application, regis
 
 	switch status {
 	case models.ArgoRolloutAppDegraded:
-		log.Debug().Str("id", task.Id).Msgf("Application is degraded")
+		slog.Debug("Application is degraded", "id", task.Id)
 		normalizedImages := helpers.NormalizeImages(application.Status.Summary.Images)
 		hash := helpers.GenerateHash(strings.Join(normalizedImages, ","))
 		if !bytes.Equal(task.SavedAppStatus.ImagesHash, hash) {
 			return retry.Unrecoverable(errors.New("application has degraded"))
 		}
 	case models.ArgoRolloutAppSuccess:
-		log.Debug().Str("id", task.Id).Msgf("Application rollout finished")
+		slog.Debug("Application rollout finished", "id", task.Id)
 		return nil
 	default:
-		log.Debug().Str("id", task.Id).Msgf("Application status is not final. Status received \"%s\"", status)
+		slog.Debug(fmt.Sprintf("Application status is not final. Status received \"%s\"", status), "id", task.Id)
 	}
 	return errForceRetry
 }
@@ -570,6 +570,6 @@ func sendNotification(task models.Task, notifier *notifications.Notifier) {
 	}
 
 	if err := notifier.Send(task); err != nil {
-		log.Error().Str("id", task.Id).Msgf("Failed to dispatch notification. Error: %s", err.Error())
+		slog.Error(fmt.Sprintf("Failed to dispatch notification. Error: %s", err.Error()), "id", task.Id)
 	}
 }
