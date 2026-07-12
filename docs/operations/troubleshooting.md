@@ -59,10 +59,12 @@ Each entry follows the same shape: **Symptom · Likely cause · How to verify ·
 - The default `DEPLOYMENT_TIMEOUT` (900 seconds / 15 minutes) is too short for the workload.
 - Argo CD is not detecting the image update.
 - The lock is set on the application, blocking the deployment.
+- When relying on the built-in GitOps updater: the task was submitted without a valid deploy token or JWT, so the write-back was silently skipped and Argo CD never received the new tag. (If image tags are committed by other means — Argo CD Image Updater, your CI — this is expected and not the cause.)
 
 **How to verify:**
 - Check the Argo CD UI to confirm the application is syncing and the new image is being deployed.
 - Verify that the image tag annotation was correctly set: `kubectl describe app <ARGO_APP> -o yaml | grep -A5 argo-watcher`.
+- Confirm the CI job actually supplied `ARGO_WATCHER_DEPLOY_TOKEN` or a `Bearer` JWT; with `LOG_LEVEL=debug` a skipped write-back logs "Skipping git repo update".
 - Check if the application is locked: `curl -H "Authorization: Bearer $BEARER_TOKEN" $ARGO_WATCHER_URL/api/v1/locks | jq '.[] | select(.app == "<ARGO_APP>")'`.
 
 **Fix:**

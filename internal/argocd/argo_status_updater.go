@@ -342,8 +342,11 @@ func NewGitUpdater(locker lock.Locker, repoCachePath string) *GitUpdater {
 	}
 }
 
-// UpdateIfNeeded updates the git repository if the application is managed by the watcher and has valid credentials.
-func (gitUpdater *GitUpdater) UpdateIfNeeded(app *models.Application, task models.Task) error {
+// UpdateIfNeeded updates the git repository if the application is managed by the
+// watcher and has valid credentials. isSuperseded is an optional (at most one)
+// predicate forwarded to the write-back retry loop so a task superseded by a
+// newer deployment aborts instead of committing a stale image tag.
+func (gitUpdater *GitUpdater) UpdateIfNeeded(app *models.Application, task models.Task, isSuperseded ...func() bool) error {
 	if !app.IsManagedByWatcher() || !task.Validated {
 		log.Debug().Str("id", task.Id).Msg("Skipping git repo update: application not managed by watcher or task not validated.")
 		return nil
@@ -357,7 +360,7 @@ func (gitUpdater *GitUpdater) UpdateIfNeeded(app *models.Application, task model
 
 	gitUpdateFunc := func() error {
 		log.Debug().Str("id", task.Id).Msg("Application managed by watcher. Initiating git repo update.")
-		return gitUpdater.updateGitRepo(app, &task, &gitopsRepo)
+		return gitUpdater.updateGitRepo(app, &task, &gitopsRepo, isSuperseded...)
 	}
 
 	err = gitUpdater.locker.WithLock(gitopsRepo.RepoUrl, gitUpdateFunc)
@@ -369,11 +372,11 @@ func (gitUpdater *GitUpdater) UpdateIfNeeded(app *models.Application, task model
 	return nil
 }
 
-func (gitUpdater *GitUpdater) updateGitRepo(app *models.Application, task *models.Task, gitopsRepo *models.GitopsRepo) error {
+func (gitUpdater *GitUpdater) updateGitRepo(app *models.Application, task *models.Task, gitopsRepo *models.GitopsRepo, isSuperseded ...func() bool) error {
 	// context.Background() is intentional: the call stack above this point
 	// does not carry a context. Propagating a cancellable context from
 	// WaitForRollout is a future improvement.
-	err := app.UpdateGitImageTag(context.Background(), task, gitopsRepo, updater.GitClient{})
+	err := app.UpdateGitImageTag(context.Background(), task, gitopsRepo, updater.GitClient{}, isSuperseded...)
 	if err != nil {
 		log.Error().Str("id", task.Id).Msgf("Failed to update git repo. Error: %s", err.Error())
 		return err
@@ -502,8 +505,16 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 		return nil, err
 	}
 
-	// Handle git repo update if needed
-	if err := updater.gitUpdater.UpdateIfNeeded(app, task); err != nil {
+	// Handle git repo update if needed. The supersede predicate is re-checked
+	// inside the write-back retry loop so a task that keeps retrying under
+	// contention aborts (rather than overwriting a newer deployment) the moment a
+	// newer one supersedes it.
+	if err := updater.gitUpdater.UpdateIfNeeded(app, task, func() bool {
+		return updater.monitor.taskSuperseded(task.Id)
+	}); err != nil {
+		if errors.Is(err, models.ErrDeploymentSuperseded) {
+			return nil, errTaskSuperseded
+		}
 		return nil, err
 	}
 

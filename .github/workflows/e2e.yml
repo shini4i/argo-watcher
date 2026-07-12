@@ -1,0 +1,84 @@
+name: E2E lab
+
+# Manual per-release gate, launched from a PR: add the `e2e` label to a pull
+# request and this boots a disposable kind cluster with real ArgoCD + Gitea +
+# argo-watcher (built with -race) and runs the git-conflict soak and
+# supersession race against the PR's branch. Re-run by removing and re-adding
+# the label. Also dispatchable manually (workflow_dispatch) once on the default
+# branch.
+on:
+  pull_request:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      soak_seconds:
+        description: "Git-conflict soak duration, in seconds"
+        type: string
+        default: "300"
+      workers:
+        description: "Concurrent deploy workers"
+        type: string
+        default: "10"
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: e2e (kind + real ArgoCD/Gitea)
+    # Label path: run only when the `e2e` label is the one just added.
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'e2e'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+
+      # Node + Task + swag mirror the UI build the rest of the automation uses;
+      # `task build-race-image` runs `task build-ui` to produce web/dist.
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install Task
+        uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+
+      - name: Install build dependencies (swag for the UI's swagger step)
+        run: task install-deps
+
+      - name: Install kind, kubectl, helm
+        env:
+          KIND_VERSION: v0.31.0
+          KUBECTL_VERSION: v1.36.2
+          HELM_VERSION: v3.20.2
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          curl -fsSL -o "$tmp/kind" "https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-amd64"
+          curl -fsSL -o "$tmp/kubectl" "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          curl -fsSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" | tar -xz -C "$tmp" --strip-components=1 linux-amd64/helm
+          sudo install -m 0755 "$tmp"/kind "$tmp"/kubectl "$tmp"/helm /usr/local/bin/
+
+      - name: Run e2e lab
+        working-directory: test/e2e
+        # Inputs bound to env (never interpolated into the script); defaults apply
+        # on the label path where inputs are absent. On a hosted runner kind uses
+        # the docker provider, so image loading takes its `kind load` fast path.
+        env:
+          SOAK_SECONDS: ${{ inputs.soak_seconds || '300' }}
+          WORKERS: ${{ inputs.workers || '10' }}
+        run: task e2e SOAK="${SOAK_SECONDS}s" SOAK_SECONDS="${SOAK_SECONDS}" WORKERS="${WORKERS}"
+
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          echo "::group::pods"; kubectl get pods -A || true; echo "::endgroup::"
+          echo "::group::argo-watcher logs"; kubectl -n argo-watcher logs statefulset/argo-watcher --all-containers --tail=300 || true; echo "::endgroup::"
+          echo "::group::applications"; kubectl -n argocd get applications -o wide || true; echo "::endgroup::"

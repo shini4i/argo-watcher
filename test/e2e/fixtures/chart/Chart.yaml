@@ -1,0 +1,14 @@
+apiVersion: v2
+name: e2e-app
+description: >-
+  Thin umbrella for the e2e lab. Deploys the published shini4i `app` chart as a
+  dependency; carries NO templates of its own. seed-gitea.sh runs
+  `helm dependency update` so the resolved dependency is vendored into the
+  disposable Gitea repo (never stored in this repo). argo-watcher bumps the
+  image tag via the `app.image.tag` Helm parameter.
+type: application
+version: 0.1.0
+dependencies:
+  - name: app
+    version: 0.2.1
+    repository: https://shini4i.github.io/charts/

@@ -1,0 +1,8 @@
+# Values for the `app` subchart. argo-watcher overrides `app.image.tag` per
+# deployment via a .argocd-source-<app>.yaml override file it writes into the
+# gitops repo. Initial tag is intentionally older than the app chart default so
+# a deploy shows a visible transition.
+app:
+  image:
+    repository: traefik/whoami
+    tag: v1.10.1

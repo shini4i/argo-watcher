@@ -1,0 +1,32 @@
+# argo-watcher Helm values for the e2e lab.
+#
+# The image TAG is set at install time (`--set image.tag=...`) to the freshly
+# built race image, so it always reflects the code under test.
+logLevel: debug
+
+image:
+  repository: ghcr.io/shini4i/argo-watcher
+  # tag: injected by the Taskfile (the built `-race` image)
+
+argo:
+  # In-cluster ArgoCD API service (namespace argocd). Self-signed cert, hence
+  # skipTlsVerify.
+  url: https://argocd-server.argocd
+  skipTlsVerify: true
+  # Pre-created by scripts/mint-argo-token.sh; holds ARGO_TOKEN.
+  secretName: argo-watcher-secret
+
+# Git write-back over SSH to in-cluster Gitea. Both the Secret and the ConfigMap
+# below are created by scripts/seed-gitea.sh before this release is installed.
+updater:
+  sshSecretName: argo-watcher-ssh       # holds sshPrivateKey
+  sshKey: sshPrivateKey
+  knownHostsConfigMap: e2e-ssh-known-hosts   # holds the gitea-ssh host key
+  knownHostsKey: ssh_known_hosts
+
+# Base lab runs single-replica, in-memory state — enough to exercise the real
+# ArgoCD polling path. Phase B (soak) flips these to replicaCount: 2 + postgres
+# to exercise shared state and cross-replica poller handoff.
+postgres:
+  enabled: false
+replicaCount: 1

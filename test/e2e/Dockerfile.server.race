@@ -1,0 +1,46 @@
+# Lab-only image: argo-watcher built with the Go race detector.
+#
+# This exists ONLY for the per-release e2e lab. It is NOT the shipped image.
+#
+# Why a separate Dockerfile from Dockerfile.server:
+#   `go build -race` forces CGO_ENABLED=1 and produces a binary dynamically
+#   linked against glibc. The production image's base (gcr.io/distroless/static)
+#   ships no libc or dynamic loader, so a race binary cannot run there. This
+#   image therefore uses a glibc-bearing distroless base instead.
+#
+# web/dist is a generated artifact and must exist in the build context before
+# this build. The `build-race-image` task runs `task build-ui` first (the same
+# frontend build the rest of the automation uses), exactly as the production
+# image pipeline does.
+#
+# Build from the repo root so the Go module and web/dist + db assets are in
+# context:
+#   docker build -f test/e2e/Dockerfile.server.race -t argo-watcher:race .
+
+FROM golang:1.26.4-bookworm AS build
+
+WORKDIR /src
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+# CGO_ENABLED=1 is mandatory for -race (the detector is a C runtime).
+RUN CGO_ENABLED=1 go build -race -o /out/argo-watcher ./cmd/argo-watcher
+
+# base-debian12 (unlike static) carries glibc + the dynamic loader the race
+# binary needs, while staying distroless and running as nonroot.
+FROM gcr.io/distroless/base-debian12:nonroot
+
+WORKDIR /app
+
+COPY --from=build /out/argo-watcher /usr/local/bin/argo-watcher
+COPY --chown=nonroot:nonroot web/dist ./static
+COPY --chown=nonroot:nonroot db ./db
+
+# The :nonroot base already defaults to uid 65532, but make it explicit so the
+# non-root user is stated in the image, not just implied by the tag.
+USER 65532:65532
+
+CMD ["argo-watcher"]

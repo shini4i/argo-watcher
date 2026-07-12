@@ -2,7 +2,9 @@ package models
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math/rand"
 	"strings"
 	"time"
 
@@ -10,6 +12,13 @@ import (
 	"github.com/shini4i/argo-watcher/internal/helpers"
 	"github.com/shini4i/argo-watcher/pkg/updater"
 )
+
+// ErrDeploymentSuperseded is returned by the git write-back when the task is
+// found to be superseded by a newer deployment for the same app. The retry loop
+// re-checks this before each attempt and aborts rather than committing a stale
+// image tag — so a larger retry budget cannot let an older deployment win over a
+// newer one. Callers treat it as "cancelled", not a failure.
+var ErrDeploymentSuperseded = errors.New("deployment superseded before write-back; aborting to avoid committing a stale image tag")
 
 const (
 	ArgoRolloutAppSuccess      = "success"
@@ -349,10 +358,20 @@ func (app *Application) generateOverrideFileContent(annotations map[string]strin
 // a caller can cancel in-flight git operations (e.g. on graceful shutdown).
 // Production callers that lack a context chain may pass context.Background()
 // until a proper context is wired through the call stack.
-func (app *Application) UpdateGitImageTag(ctx context.Context, task *Task, gitopsRepo *GitopsRepo, gitHandler updater.GitHandler) error {
+//
+// isSuperseded is an optional (at most one) predicate re-checked before each
+// write-back attempt; when it returns true the loop aborts with
+// ErrDeploymentSuperseded instead of committing, so a newer deployment for the
+// same app is never overwritten by an older one that keeps retrying.
+func (app *Application) UpdateGitImageTag(ctx context.Context, task *Task, gitopsRepo *GitopsRepo, gitHandler updater.GitHandler, isSuperseded ...func() bool) error {
 	if gitopsRepo.Path == "" {
 		log.Warn().Str("id", task.Id).Msgf("No path found for app %s, unsupported Application configuration", app.Metadata.Name)
 		return nil
+	}
+
+	var supersededCheck func() bool
+	if len(isSuperseded) > 0 {
+		supersededCheck = isSuperseded[0]
 	}
 
 	releaseOverrides, err := app.generateOverrideFileContent(app.Metadata.Annotations, task)
@@ -371,15 +390,37 @@ func (app *Application) UpdateGitImageTag(ctx context.Context, task *Task, gitop
 		return err
 	}
 
-	return runGitUpdateWithRetry(ctx, repo, app.Metadata.Name, releaseOverrides, task)
+	return runGitUpdateWithRetry(ctx, repo, app.Metadata.Name, releaseOverrides, task, supersededCheck)
 }
 
-// gitUpdateRetryBackoff is the fixed delay between retry attempts of the
-// clone+update sequence. Matches the v0.9.1 retry-go FixedDelay defaults
-// — short enough that user-visible latency stays acceptable, long enough
-// to let a fast-flapping condition (e.g. transient remote unavailability)
-// clear up between attempts.
-const gitUpdateRetryBackoff = 2 * time.Second
+// Retry backoff bounds for the clone+update sequence. Backoff is capped
+// exponential with full jitter (see gitUpdateBackoff): the first retries fire
+// fast so the write-back can win a git push race against a competing writer
+// before it advances the branch again, while later retries back off for a
+// genuinely unavailable remote.
+const (
+	gitUpdateBaseBackoff = 250 * time.Millisecond
+	gitUpdateMaxBackoff  = 2 * time.Second
+)
+
+// gitUpdateBackoff returns the delay before the next retry, given the 1-based
+// number of the attempt that just failed. It computes base*2^(attempt-1),
+// capped at gitUpdateMaxBackoff, then applies full jitter (a uniform random
+// value in [0, ceiling]). Full jitter keeps early retries tight — the key to
+// winning a push race under sustained concurrent-writer contention — and also
+// de-synchronises multiple argo-watcher instances contending on one repo.
+func gitUpdateBackoff(attempt uint) time.Duration {
+	ceiling := gitUpdateBaseBackoff << (attempt - 1)
+	// Guard the shift: a large attempt count overflows to <= 0; saturate at cap.
+	if ceiling <= 0 || ceiling > gitUpdateMaxBackoff {
+		ceiling = gitUpdateMaxBackoff
+	}
+	// math/rand is deliberate: this jitter only de-synchronises retries
+	// (anti-thundering-herd). It guards no secret and gates no security
+	// decision, so a non-crypto RNG is correct.
+	// #nosec G404
+	return time.Duration(rand.Int63n(int64(ceiling) + 1)) // NOSONAR: pseudorandom is safe here (retry jitter, not a security context)
+}
 
 // runGitUpdateWithRetry runs the clone+update sequence with per-attempt
 // bounded contexts and a fixed-backoff retry loop. The final attempt always
@@ -390,30 +431,29 @@ const gitUpdateRetryBackoff = 2 * time.Second
 // Each attempt derives its context from parentCtx via WithTimeout(opTimeout),
 // so one stuck attempt cannot consume the budget of subsequent attempts. If
 // parentCtx is already cancelled, the loop exits early without sleeping.
-// The total worst-case wall clock is GitOpTimeout * GitMaxAttempts plus
-// (GitMaxAttempts-1) × gitUpdateRetryBackoff inter-attempt backoff.
+// The total worst-case wall clock is GitOpTimeout * GitMaxAttempts plus the
+// sum of the inter-attempt backoffs, each bounded by gitUpdateMaxBackoff.
 //
 // Permanent errors (see updater.IsPermanent) short-circuit the loop — for
 // example, a bad SSH key or auth failure will fail the same way on every
 // attempt and retrying just wastes the budget.
-func runGitUpdateWithRetry(parentCtx context.Context, repo *updater.GitRepo, appName string, releaseOverrides *updater.ArgoOverrideFile, task *Task) error {
+func runGitUpdateWithRetry(parentCtx context.Context, repo *updater.GitRepo, appName string, releaseOverrides *updater.ArgoOverrideFile, task *Task, isSuperseded func() bool) error {
 	maxAttempts := repo.GitMaxAttempts()
 	opTimeout := repo.GitOpTimeout()
 
 	var lastErr error
 	for attempt := uint(1); attempt <= maxAttempts; attempt++ {
-		// Always invalidate the cache on the final attempt. A poisoned cache may
-		// originate from a prior task on a previous invocation, not just the
-		// current attempt, so the self-heal must fire unconditionally.
-		if attempt == maxAttempts {
-			log.Warn().Str("id", task.Id).Msgf(
-				"Final attempt %d/%d: invalidating cache and performing fresh clone",
-				attempt, maxAttempts,
-			)
-			if invErr := repo.InvalidateCache(); invErr != nil {
-				log.Warn().Err(invErr).Str("id", task.Id).Msg("Failed to invalidate cache before final attempt; proceeding anyway")
-			}
+		// Abort before touching git if a newer deployment for the same app has
+		// superseded this task. Re-checked every attempt (not just once up front)
+		// so a task that keeps retrying under contention cannot commit a stale tag
+		// on top of a newer one — the correctness guard that makes a larger retry
+		// budget safe.
+		if isSuperseded != nil && isSuperseded() {
+			log.Info().Str("id", task.Id).Msgf("Git update aborted at attempt %d/%d: task superseded by a newer deployment", attempt, maxAttempts)
+			return ErrDeploymentSuperseded
 		}
+
+		invalidateCacheOnFinalAttempt(repo, task, attempt, maxAttempts)
 
 		err := runGitUpdateAttempt(parentCtx, repo, opTimeout, appName, releaseOverrides, task)
 		if err == nil {
@@ -422,7 +462,6 @@ func runGitUpdateWithRetry(parentCtx context.Context, repo *updater.GitRepo, app
 			}
 			return nil
 		}
-
 		lastErr = err
 
 		if updater.IsPermanent(err) {
@@ -430,20 +469,48 @@ func runGitUpdateWithRetry(parentCtx context.Context, repo *updater.GitRepo, app
 			return err
 		}
 
-		if attempt < maxAttempts {
-			log.Warn().Err(err).Str("id", task.Id).Msgf(
-				"Git update attempt %d/%d failed; retrying after %s",
-				attempt, maxAttempts, gitUpdateRetryBackoff,
-			)
-			select {
-			case <-parentCtx.Done():
-				return fmt.Errorf("git update cancelled during backoff: %w", parentCtx.Err())
-			case <-time.After(gitUpdateRetryBackoff):
-			}
+		if waitErr := backoffBeforeRetry(parentCtx, task, err, attempt, maxAttempts); waitErr != nil {
+			return waitErr
 		}
 	}
 
 	return fmt.Errorf("git update failed after %d attempts: %w", maxAttempts, lastErr)
+}
+
+// invalidateCacheOnFinalAttempt clears the on-disk cache before the final
+// attempt so a poisoned cache (partial commit, stale ref, half-written file) is
+// replaced by a fresh clone and self-heals without operator intervention.
+func invalidateCacheOnFinalAttempt(repo *updater.GitRepo, task *Task, attempt, maxAttempts uint) {
+	if attempt != maxAttempts {
+		return
+	}
+	log.Warn().Str("id", task.Id).Msgf(
+		"Final attempt %d/%d: invalidating cache and performing fresh clone",
+		attempt, maxAttempts,
+	)
+	if invErr := repo.InvalidateCache(); invErr != nil {
+		log.Warn().Err(invErr).Str("id", task.Id).Msg("Failed to invalidate cache before final attempt; proceeding anyway")
+	}
+}
+
+// backoffBeforeRetry waits (jittered) before the next attempt, unless this was
+// the final one. It returns a non-nil error only if parentCtx is cancelled
+// during the wait, signalling the caller to stop retrying.
+func backoffBeforeRetry(parentCtx context.Context, task *Task, attemptErr error, attempt, maxAttempts uint) error {
+	if attempt >= maxAttempts {
+		return nil
+	}
+	backoff := gitUpdateBackoff(attempt)
+	log.Warn().Err(attemptErr).Str("id", task.Id).Msgf(
+		"Git update attempt %d/%d failed; retrying after %s",
+		attempt, maxAttempts, backoff,
+	)
+	select {
+	case <-parentCtx.Done():
+		return fmt.Errorf("git update cancelled during backoff: %w", parentCtx.Err())
+	case <-time.After(backoff):
+		return nil
+	}
 }
 
 // runGitUpdateAttempt performs one clone+update cycle. It derives a per-attempt

@@ -95,6 +95,7 @@ func TestIntegration_PushRaceRecovery_WithLatencyInjection(t *testing.T) {
 
 	t.Setenv("SSH_KEY_PATH", env.SSHKeyPath)
 	t.Setenv("GIT_OP_TIMEOUT", "60s")
+	t.Setenv("GIT_MAX_ATTEMPTS", "3") // pin: decouple from the runtime default
 
 	// Apply upstream latency so every byte from client→server (handshake,
 	// fetch, push payload) is delayed. This widens the race window enough for
@@ -159,7 +160,7 @@ func TestIntegration_PushRaceRecovery_WithLatencyInjection(t *testing.T) {
 // directory (per-instance TempDir), so whoever loses the push race must rely
 // entirely on UpdateGitImageTag's retry loop to succeed.
 //
-// N=2 with the default 3 attempts gives the slower writer two chances to
+// N=2 with GIT_MAX_ATTEMPTS pinned to 3 gives the slower writer two chances to
 // retry after losing the race — comfortably more than the single retry the
 // previous architecture afforded.
 func TestIntegration_PushRaceRecovery_Concurrent(t *testing.T) {
@@ -168,6 +169,7 @@ func TestIntegration_PushRaceRecovery_Concurrent(t *testing.T) {
 
 	t.Setenv("SSH_KEY_PATH", env.SSHKeyPath)
 	t.Setenv("GIT_OP_TIMEOUT", "30s")
+	t.Setenv("GIT_MAX_ATTEMPTS", "3") // pin: decouple from the runtime default
 
 	const N = 2
 
@@ -212,7 +214,7 @@ func TestIntegration_PushRaceRecovery_Concurrent(t *testing.T) {
 		assert.NoError(t, e, "goroutine %d failed", i)
 	}
 	for i, d := range durations {
-		// Even with all 3 attempts firing, the per-task wall clock should stay
+		// Even with all pinned attempts firing, the per-task wall clock should stay
 		// well under 90s — typical case: 1-2 attempts × a few seconds each plus
 		// inter-attempt backoff. A goroutine that lingers beyond this points at
 		// either a stuck retry or a hung network call past GIT_OP_TIMEOUT.
@@ -239,9 +241,9 @@ func TestIntegration_PushRaceRecovery_Concurrent(t *testing.T) {
 // max(GIT_OP_TIMEOUT, SSH handshake timeout) — not infinite.
 //
 // GIT_MAX_ATTEMPTS=1 is required: this test validates the per-task ceiling
-// for a single attempt. Letting the default 3 attempts run would multiply the
-// SSH handshake timeout by 3 and blow past perTaskCeiling, which is not the
-// behaviour we are guarding against here.
+// for a single attempt. Letting the default attempts run would multiply the
+// SSH handshake timeout by the attempt count and blow past perTaskCeiling,
+// which is not the behaviour we are guarding against here.
 func TestIntegration_GitTimeoutEnforcement_ReturnsWithinBudget(t *testing.T) {
 	waitForGitea(t, 60*time.Second)
 	env := setupGitea(t)

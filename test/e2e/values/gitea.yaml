@@ -1,0 +1,31 @@
+# Gitea Helm values for the e2e lab: minimal, ephemeral git backend.
+#
+# sqlite + in-memory cache, all HA subcharts off, no persistence — the cluster
+# is rebuilt per run, so durability is a non-goal. Credentials are fixed
+# throwaway lab values (consistent with the committed test/keycloak realm).
+redis-cluster:
+  enabled: false
+redis:
+  enabled: false
+valkey-cluster:
+  enabled: false
+valkey:
+  enabled: false
+postgresql-ha:
+  enabled: false
+postgresql:
+  enabled: false
+
+persistence:
+  enabled: false
+
+replicaCount: 1
+
+gitea:
+  config:
+    database:
+      DB_TYPE: sqlite3
+  admin:
+    username: gitea_admin
+    password: gitea_admin_pw1
+    email: admin@example.com
