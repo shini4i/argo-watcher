@@ -1,0 +1,46 @@
+# Argo Application for one e2e fixture app. Rendered per app by substituting
+# __APP__ (see scripts/apply-apps.sh).
+#
+# Deliberately MULTI-SOURCE (spec.sources, plural): argo-watcher only honours the
+# write-back-repo/branch/path annotations when spec.sources is set. A single
+# spec.source would force write-back to the same URL Argo reads from, so the
+# HTTP-read / SSH-write-back split below would be impossible.
+#
+# Argo READS the repo over HTTP (public repo, no creds); argo-watcher WRITES the
+# image-tag override back over SSH (deploy key). All fixture apps share ONE repo
+# so their concurrent write-back pushes contend on the same branch head — the
+# git-conflict scenario the lab exists to exercise.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: __APP__
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argo-watcher/managed: "true"
+    argo-watcher/managed-images: app=traefik/whoami
+    # app.image.tag -> the `app` subchart's image.tag in the umbrella chart.
+    argo-watcher/app.helm.image-tag: app.image.tag
+    # Port 2222: Gitea's rootless SSH server binds 2222 in-pod, and gitea-ssh is
+    # a headless service (no port remapping), so connect to the pod's real port.
+    argo-watcher/write-back-repo: ssh://git@gitea-ssh.gitea.svc.cluster.local:2222/e2e/gitops.git
+    argo-watcher/write-back-branch: main
+    argo-watcher/write-back-path: chart
+    argo-watcher/write-back-filename: .argocd-source-__APP__.yaml
+spec:
+  project: default
+  sources:
+    - repoURL: http://gitea-http.gitea.svc.cluster.local:3000/e2e/gitops.git
+      targetRevision: main
+      path: chart
+      helm: {}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: __APP__
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

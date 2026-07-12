@@ -1,0 +1,116 @@
+# Orchestrator for the argo-watcher per-release e2e lab.
+#
+# Brings up a disposable, single-node kind cluster running REAL ArgoCD + Gitea,
+# then deploys argo-watcher built with the Go race detector so data races under
+# load surface in the pod logs. See README.md for the why.
+#
+#   task up      # build + boot the whole lab (idempotent)
+#   task verify  # assert argo-watcher reaches real Argo
+#   task down    # destroy the cluster
+version: '3'
+silent: true
+
+vars:
+  CLUSTER: aw-e2e
+  RACE_IMAGE: ghcr.io/shini4i/argo-watcher:race
+  # Pinned chart versions for reproducibility.
+  ARGOCD_CHART_VERSION: 9.1.3
+  GITEA_CHART_VERSION: 12.6.0
+  AW_CHART_VERSION: 1.0.8
+  AW_CHART_REPO: https://shini4i.github.io/charts/
+  # Number of fixture apps to seed (all share one gitops repo → push contention).
+  APPS: 1
+  # Deploy token gating git write-back; the driver/smoke sends it in the
+  # ARGO_WATCHER_DEPLOY_TOKEN header. Fixed throwaway lab value.
+  DEPLOY_TOKEN: e2e-deploy-token
+
+tasks:
+  up:
+    desc: "Build and boot the full e2e lab (idempotent)"
+    cmds:
+      - task: cluster
+      - task: build-race-image
+      - task: argocd
+      - task: load-race-image
+      - task: gitea
+      - task: seed
+      - task: argo-watcher
+      - task: apply-apps
+      - task: verify
+
+  cluster:
+    desc: "Create the kind cluster if it does not exist"
+    status:
+      - kind get clusters | grep -qx {{.CLUSTER}}
+    cmds:
+      - kind create cluster --name {{.CLUSTER}} --config kind-config.yaml
+
+  build-race-image:
+    desc: "Build the -race image from the repo root"
+    dir: ../..
+    cmds:
+      - docker build -f test/e2e/Dockerfile.server.race -t {{.RACE_IMAGE}} .
+
+  load-race-image:
+    desc: "Load the race image into the kind node"
+    cmds:
+      - ./scripts/load-race-image.sh {{.RACE_IMAGE}} {{.CLUSTER}}
+
+  argocd:
+    desc: "Install ArgoCD"
+    cmds:
+      - kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+      - helm upgrade --install argocd oci://ghcr.io/argoproj/argo-helm/argo-cd
+        --version {{.ARGOCD_CHART_VERSION}} -n argocd -f values/argocd.yaml
+      - kubectl -n argocd rollout status deploy/argocd-server --timeout=300s
+
+  gitea:
+    desc: "Install Gitea (git backend for the updater push path)"
+    cmds:
+      - kubectl create namespace gitea --dry-run=client -o yaml | kubectl apply -f -
+      - helm upgrade --install gitea gitea --repo https://dl.gitea.com/charts/
+        --version {{.GITEA_CHART_VERSION}} -n gitea -f values/gitea.yaml
+      - kubectl -n gitea rollout status deploy/gitea --timeout=300s
+
+  seed:
+    desc: "Seed Gitea (fixture repo + deploy key) and wire argo-watcher SSH"
+    cmds:
+      - ./scripts/seed-gitea.sh
+
+  apply-apps:
+    desc: "Render + apply {{.APPS}} fixture Argo Application(s)"
+    cmds:
+      - ./scripts/apply-apps.sh {{.APPS}}
+
+  smoke:
+    desc: "One authenticated end-to-end deploy proving the write-back loop"
+    cmds:
+      - DEPLOY_TOKEN={{.DEPLOY_TOKEN}} ./scripts/smoke-deploy.sh
+
+  argo-watcher:
+    desc: "Mint ARGO_TOKEN and install argo-watcher on the race image"
+    cmds:
+      - DEPLOY_TOKEN={{.DEPLOY_TOKEN}} ./scripts/mint-argo-token.sh
+      - helm upgrade --install argo-watcher argo-watcher --repo {{.AW_CHART_REPO}}
+        --version {{.AW_CHART_VERSION}} -n argo-watcher -f values/argo-watcher.yaml
+        --set image.tag=race
+      - kubectl -n argo-watcher rollout status statefulset/argo-watcher --timeout=180s
+
+  verify:
+    desc: "Assert argo-watcher is up and reaching real Argo (argocd_unavailable == 0)"
+    cmds:
+      - |
+        kubectl -n argo-watcher port-forward svc/argo-watcher 18090:80 >/dev/null 2>&1 &
+        pf=$!; trap 'kill $pf 2>/dev/null || true' EXIT
+        for _ in $(seq 1 15); do
+          curl -s -m 3 -o /dev/null localhost:18090/healthz && break; sleep 1
+        done
+        code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' localhost:18090/healthz)
+        unavail=$(curl -s -m 10 localhost:18090/metrics | awk '/^argocd_unavailable /{print $2}')
+        echo "healthz=$code argocd_unavailable=$unavail"
+        test "$code" = "200" && test "$unavail" = "0"
+
+  down:
+    desc: "Destroy the kind cluster"
+    cmds:
+      - kind delete cluster --name {{.CLUSTER}}

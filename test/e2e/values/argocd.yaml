@@ -1,0 +1,7 @@
+# ArgoCD Helm values for the argo-watcher e2e lab.
+# Minimal single-node footprint: SSO (dex) and notifications are not exercised
+# by the lab, so they are disabled to cut resource use and speed readiness.
+dex:
+  enabled: false
+notifications:
+  enabled: false
