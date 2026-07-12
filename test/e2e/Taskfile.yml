@@ -48,6 +48,17 @@ tasks:
       - task: apply-apps
       - task: verify
 
+  e2e:
+    desc: "One-shot per-release run: up → smoke → load → race → down"
+    cmds:
+      # Runs the whole flow. Stops on the first failing step, so a failed run
+      # leaves the cluster up for debugging; a fully green run tears it down.
+      - task: up
+      - task: smoke
+      - task: load
+      - task: race
+      - task: down
+
   cluster:
     desc: "Create the kind cluster if it does not exist"
     status:

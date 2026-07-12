@@ -20,6 +20,15 @@ pinned tool/chart versions are in `Taskfile.yml`.
 ## Usage
 
 ```sh
+task e2e     # one-shot per-release run: up → smoke → load → race → down
+```
+
+`task e2e` walks the whole flow. It stops on the first failing step, so a failed
+run leaves the cluster up for debugging; a fully green run tears it down.
+
+Individual steps (for iterating or debugging):
+
+```sh
 task up      # build the race image + boot the full lab (idempotent)
 task verify  # assert argo-watcher is up and reaching real Argo
 task smoke   # one authenticated deploy through the full write-back loop
@@ -28,10 +37,9 @@ task race    # same-app supersession: a newer deploy must win over an older retr
 task down    # destroy the cluster
 ```
 
-Run once per release (manual): `task up` → `task load` → `task race` → `task down`.
 Tunable soak knobs are `Taskfile.yml` vars (`APPS`, `WORKERS`, `WS_CLIENTS`,
 `SOAK`, `SOAK_SECONDS`, `COMPETITOR_INTERVAL`), overridable on the CLI, e.g.
-`task load SOAK=10m WORKERS=20`.
+`task e2e SOAK=10m WORKERS=20`.
 
 Reach any component with `kubectl port-forward` (there is no ingress), e.g.
 `kubectl -n argo-watcher port-forward svc/argo-watcher 8080:80`.
