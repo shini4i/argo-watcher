@@ -91,7 +91,7 @@ When using PostgreSQL for persistent storage (`STATE_TYPE=postgres`), the databa
 
 #### Using the Helm Chart
 
-If you deploy PostgreSQL alongside Argo Watcher using the Helm chart, migrations are applied automatically via an init container.
+If you deploy PostgreSQL alongside Argo Watcher using the Helm chart, migrations run automatically before every install and upgrade. The chart schedules a `pre-install`/`pre-upgrade` hook Job that executes `argo-watcher --migrate` against the configured database, so there is nothing to run manually.
 
 #### Manual Migration
 

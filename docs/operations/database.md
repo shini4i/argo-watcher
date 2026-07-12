@@ -26,7 +26,7 @@ Schema migrations live under [`db/migrations/`](https://github.com/shini4i/argo-
 
 ### With the Helm chart
 
-The Helm chart bundles an init container that runs migrations on every release. There is nothing for you to do — `helm upgrade` is enough.
+The Helm chart runs migrations automatically as a `pre-install`/`pre-upgrade` hook Job that executes `argo-watcher --migrate`. There is nothing for you to do — `helm install`/`helm upgrade` is enough.
 
 ### With Docker Compose (development)
 
