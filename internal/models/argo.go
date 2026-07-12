@@ -415,9 +415,11 @@ func gitUpdateBackoff(attempt uint) time.Duration {
 	if ceiling <= 0 || ceiling > gitUpdateMaxBackoff {
 		ceiling = gitUpdateMaxBackoff
 	}
-	// #nosec G404 -- this jitter only de-synchronises retries (anti-thundering-herd);
-	// it guards no secret and gates no security decision, so a non-crypto RNG is correct.
-	return time.Duration(rand.Int63n(int64(ceiling) + 1))
+	// math/rand is deliberate: this jitter only de-synchronises retries
+	// (anti-thundering-herd). It guards no secret and gates no security
+	// decision, so a non-crypto RNG is correct.
+	// #nosec G404
+	return time.Duration(rand.Int63n(int64(ceiling) + 1)) // NOSONAR: pseudorandom is safe here (retry jitter, not a security context)
 }
 
 // runGitUpdateWithRetry runs the clone+update sequence with per-attempt
