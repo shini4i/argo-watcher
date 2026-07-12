@@ -33,7 +33,7 @@ Each entry follows the same shape: **Symptom · Likely cause · How to verify ·
 - The `ARGO_APP` name does not match an application in Argo CD.
 - The `IMAGES` or `IMAGE_TAG` do not correspond to the built image.
 - The client timed out waiting for the deployment to complete.
-- A newer deployment for the same application was submitted while this one was still in progress, so the server cancelled this task (client logs `The deployment was cancelled because a newer deployment superseded it`). This is by design, not a real failure — confirm the newer deployment succeeded; no other action is needed.
+- A newer deployment of one of the same images was submitted while this one was still in progress, so the server cancelled this task (client logs `The deployment was cancelled because a newer deployment superseded it`). Only tasks sharing an image with the newer deployment are cancelled; independent per-image deployments of the same application do not cancel each other. This is by design, not a real failure — confirm the newer deployment succeeded; no other action is needed.
 
 **How to verify:**
 - Check the client logs in the CI output.

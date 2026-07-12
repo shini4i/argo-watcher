@@ -15,11 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the task detail page links to the earlier task the deployment rolls back to.
 - Expose `IsRollback` and `RollbackTargetId` as webhook notification template
   variables so alerts can highlight rollbacks.
-- Cancel superseded deployments: when a new deployment for an application is
-  triggered while a previous one is still in progress, the older deployment is
-  cancelled and marked with the new `cancelled` status instead of continuing to
-  poll Argo CD until it times out. The CLI client reports the cancellation and
-  the status is filterable in the Web UI (#353).
+- Cancel superseded deployments: when a new deployment is triggered while a
+  previous in-progress one for the same application targets one of the same
+  images, the older deployment is cancelled and marked with the new `cancelled`
+  status instead of continuing to poll Argo CD until it times out. Matching on
+  image name (not just the application) lets independent per-image deployments of
+  the same application run concurrently without cancelling each other. The CLI
+  client reports the cancellation and the status is filterable in the Web UI
+  (#353).
 - Per-task Argo CD refresh override: set `TASK_REFRESH=true`/`false` on the CLI
   client (or `refresh` in the task JSON) to override the server's instance-wide
   `ARGO_REFRESH_APP` default for a single deployment. Setting it to `false` for

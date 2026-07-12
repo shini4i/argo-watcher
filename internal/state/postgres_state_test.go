@@ -158,19 +158,25 @@ func TestPostgresState_SetTaskStatus(t *testing.T) {
 func TestPostgresState_CancelInProgressTasks(t *testing.T) {
 	env := newPostgresTestEnv(t)
 
-	inProgress := env.addTask(t, sampleTask("app-a"))
-	otherApp := env.addTask(t, sampleTask("app-b"))
-	finished := env.addTask(t, sampleTask("app-a"))
+	inProgress := env.addTask(t, taskWithImage("app-a", "image-a"))
+	sameAppOtherImage := env.addTask(t, taskWithImage("app-a", "image-b"))
+	otherApp := env.addTask(t, taskWithImage("app-b", "image-a"))
+	finished := env.addTask(t, taskWithImage("app-a", "image-a"))
 	require.NoError(t, env.state.SetTaskStatus(finished.Id, models.StatusDeployedMessage, ""))
 
-	count, err := env.state.CancelInProgressTasks("app-a", "superseded")
+	count, err := env.state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-a", Tag: "v2"}}, "superseded")
 	require.NoError(t, err)
-	assert.Equal(t, int64(1), count, "only the in-progress app-a task should be cancelled")
+	assert.Equal(t, int64(1), count, "only the in-progress app-a task sharing image-a should be cancelled")
 
 	got, err := env.state.GetTask(inProgress.Id)
 	require.NoError(t, err)
 	assert.Equal(t, models.StatusCancelledMessage, got.Status)
 	assert.Equal(t, "superseded", got.StatusReason)
+
+	// Same app but a different image is untouched.
+	gotSameApp, err := env.state.GetTask(sameAppOtherImage.Id)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusInProgressMessage, gotSameApp.Status)
 
 	gotOther, err := env.state.GetTask(otherApp.Id)
 	require.NoError(t, err)
@@ -179,6 +185,58 @@ func TestPostgresState_CancelInProgressTasks(t *testing.T) {
 	gotFinished, err := env.state.GetTask(finished.Id)
 	require.NoError(t, err)
 	assert.Equal(t, models.StatusDeployedMessage, gotFinished.Status)
+}
+
+// TestPostgresState_CancelInProgressTasks_MultiImageOverlap mirrors the
+// in-memory multi-image test: a task sharing one image name is cancelled while a
+// fully disjoint task is left alone, exercising overlap (not equality) matching.
+func TestPostgresState_CancelInProgressTasks_MultiImageOverlap(t *testing.T) {
+	env := newPostgresTestEnv(t)
+
+	overlapping := sampleTask("app-a")
+	overlapping.Images = []models.Image{{Image: "image-a", Tag: "v1"}, {Image: "image-b", Tag: "v1"}}
+	overlappingTask := env.addTask(t, overlapping)
+
+	disjoint := sampleTask("app-a")
+	disjoint.Images = []models.Image{{Image: "image-c", Tag: "v1"}, {Image: "image-d", Tag: "v1"}}
+	disjointTask := env.addTask(t, disjoint)
+
+	count, err := env.state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-b", Tag: "v2"}, {Image: "image-e", Tag: "v1"}}, "superseded")
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), count, "only the task sharing an image name should be cancelled")
+
+	gotOverlapping, err := env.state.GetTask(overlappingTask.Id)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusCancelledMessage, gotOverlapping.Status)
+
+	gotDisjoint, err := env.state.GetTask(disjointTask.Id)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusInProgressMessage, gotDisjoint.Status)
+}
+
+// TestPostgresState_CancelInProgressTasks_Count mirrors the in-memory count test
+// for CI: no-overlap returns 0 (the len(ids) == 0 early return) and an
+// overlapping deployment cancels every matching in-progress task.
+func TestPostgresState_CancelInProgressTasks_Count(t *testing.T) {
+	env := newPostgresTestEnv(t)
+
+	first := env.addTask(t, taskWithImage("app-a", "image-a"))
+	second := env.addTask(t, taskWithImage("app-a", "image-a"))
+
+	count, err := env.state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-z", Tag: "v1"}}, "superseded")
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), count, "a deployment sharing no image should cancel nothing")
+
+	count, err = env.state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-a", Tag: "v2"}}, "superseded")
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), count, "every matching in-progress task must be cancelled")
+
+	gotFirst, err := env.state.GetTask(first.Id)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusCancelledMessage, gotFirst.Status)
+	gotSecond, err := env.state.GetTask(second.Id)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusCancelledMessage, gotSecond.Status)
 }
 
 func TestPostgresState_ProcessObsoleteTasks(t *testing.T) {

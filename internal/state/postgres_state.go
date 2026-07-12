@@ -143,12 +143,35 @@ func (state *PostgresState) SetTaskStatus(id string, status string, reason strin
 	return nil
 }
 
-// CancelInProgressTasks marks every in-progress task for the given app as
-// cancelled in a single atomic UPDATE and returns how many rows were affected.
-// It supersedes older deployments when a newer one for the same app arrives.
-func (state *PostgresState) CancelInProgressTasks(app, reason string) (int64, error) {
-	result := state.orm.Model(&state_models.TaskModel{}).
+// CancelInProgressTasks marks in-progress tasks for the given app as cancelled
+// and returns how many rows were affected. A task is only cancelled when it
+// shares at least one image name with the supplied images (tags ignored), so
+// independent per-image deployments of the same app do not cancel each other.
+// Because the image match is evaluated in Go, the in-progress tasks are first
+// fetched, filtered by image overlap, then updated by id. The UPDATE re-checks
+// the in-progress status so a task that finished between the two queries is not
+// clobbered.
+func (state *PostgresState) CancelInProgressTasks(app string, images []models.Image, reason string) (int64, error) {
+	var candidates []state_models.TaskModel
+	if err := state.orm.Model(&state_models.TaskModel{}).
 		Where(`"tasks"."app" = ?`, app).
+		Where(whereStatusEquals, models.StatusInProgressMessage).
+		Find(&candidates).Error; err != nil {
+		return 0, err
+	}
+
+	var ids []uuid.UUID
+	for _, candidate := range candidates {
+		if imageNamesOverlap(candidate.Images, images) {
+			ids = append(ids, candidate.Id)
+		}
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+
+	result := state.orm.Model(&state_models.TaskModel{}).
+		Where("id IN ?", ids).
 		Where(whereStatusEquals, models.StatusInProgressMessage).
 		Updates(state_models.TaskModel{
 			Status:       models.StatusCancelledMessage,
