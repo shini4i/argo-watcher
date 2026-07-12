@@ -42,13 +42,13 @@ func TestNewGitConfig(t *testing.T) {
 		assert.Equal(t, 90*time.Second, config.GitOpTimeout)
 	})
 
-	t.Run("GitMaxAttempts defaults to 3", func(t *testing.T) {
+	t.Run("GitMaxAttempts defaults to 5", func(t *testing.T) {
 		t.Setenv("SSH_KEY_PATH", "/test/key")
 
 		config, err := NewGitConfig()
 
 		require.NoError(t, err)
-		assert.Equal(t, uint(3), config.GitMaxAttempts)
+		assert.Equal(t, uint(5), config.GitMaxAttempts)
 	})
 
 	t.Run("Failure - Missing Required Env Var", func(t *testing.T) {
@@ -116,7 +116,7 @@ func TestLegacyGitTimeoutMapping(t *testing.T) {
 		t.Setenv("GIT_TIMEOUT", "3m")
 		// GIT_OP_TIMEOUT intentionally unset. The 1:1 mapping preserves the old
 		// per-call budget: GIT_OP_TIMEOUT = 3m. GIT_MAX_ATTEMPTS stays at its
-		// default (3), so the worst-case total wall clock is 9m.
+		// default (5), so the worst-case total wall clock is 15m.
 
 		config, err := NewGitConfig()
 

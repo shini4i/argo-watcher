@@ -57,6 +57,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`ghcr.io/shini4i/argo-watcher:<tag>` and the `-client` image) instead of
   separate per-architecture `-amd64`/`-arm64` tags; pull the plain tag going
   forward. Each published image now also ships an attached SBOM.
+- Harden the GitOps write-back against concurrent writers on a shared repo: the
+  retry now uses a jittered capped-exponential backoff (fast early retries win a
+  push race) instead of a fixed 2s delay, and the default `GIT_MAX_ATTEMPTS` is
+  raised from 3 to 5. A task superseded by a newer deployment for the same
+  application now aborts its write-back (re-checked before every attempt) rather
+  than committing a stale image tag, so the larger retry budget cannot let an
+  older deployment overwrite a newer one.
 
 ### Fixed
 

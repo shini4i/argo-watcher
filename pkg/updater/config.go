@@ -20,14 +20,22 @@ type GitConfig struct {
 	// GitOpTimeout bounds a single clone+update attempt. Per-attempt (not total)
 	// timeout is deliberate: it lets retries actually succeed when the first
 	// attempt times out on a slow remote. The worst-case wall clock for the full
-	// retry loop is GitOpTimeout * GitMaxAttempts plus (GitMaxAttempts-1) × 2s
-	// inter-attempt backoff.
+	// retry loop is GitOpTimeout * GitMaxAttempts plus the inter-attempt backoffs
+	// (capped-exponential with jitter, each ≤ 2s).
 	GitOpTimeout time.Duration `env:"GIT_OP_TIMEOUT" envDefault:"90s"`
 	// GitMaxAttempts is the total number of attempts (initial + retries) the
 	// updater will make before giving up. On the final attempt the on-disk
 	// cache is invalidated and a fresh clone is performed, so a poisoned cache
 	// self-heals without operator intervention.
-	GitMaxAttempts uint `env:"GIT_MAX_ATTEMPTS" envDefault:"3"`
+	//
+	// The default is sized to survive contention on a shared GitOps repo: when a
+	// competing writer (another argo-watcher instance, other CI, or a human)
+	// advances the branch, each write-back attempt re-fetches, re-applies, and
+	// re-pushes. Combined with tight early backoff, 5 attempts clear typical
+	// contention; the old default of 3 gave up too soon. A superseded task aborts
+	// the loop early (see models.ErrDeploymentSuperseded), so a larger budget does
+	// not let an older deployment overwrite a newer one.
+	GitMaxAttempts uint `env:"GIT_MAX_ATTEMPTS" envDefault:"5"`
 }
 
 // NewGitConfig loads GitConfig from environment variables and applies the
@@ -83,7 +91,7 @@ func applyLegacyGitTimeout(config *GitConfig) error {
 	}
 
 	// #nosec G115 -- GitMaxAttempts is a small operator-configured retry count
-	// (default 3, validated > 0); its conversion to time.Duration is only used
+	// (default 5, validated > 0); its conversion to time.Duration is only used
 	// to format a warning-log message and crosses no security boundary.
 	worstCaseWallClock := legacy * time.Duration(config.GitMaxAttempts)
 	log.Warn().Msgf(
