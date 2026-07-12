@@ -39,7 +39,7 @@ Argo Watcher server is designed to run in a Kubernetes environment. You can depl
 Add the Helm repository and install the chart:
 
 ```bash
-helm repo add shini4i https://shini4i.github.io/helm-charts
+helm repo add shini4i https://shini4i.github.io/charts/
 helm repo update
 helm install argo-watcher shini4i/argo-watcher -f values.yaml
 ```
@@ -91,7 +91,7 @@ When using PostgreSQL for persistent storage (`STATE_TYPE=postgres`), the databa
 
 #### Using the Helm Chart
 
-If you deploy PostgreSQL alongside Argo Watcher using the Helm chart, migrations are applied automatically via an init container.
+If you deploy PostgreSQL alongside Argo Watcher using the Helm chart, migrations run automatically before every install and upgrade. The chart schedules a `pre-install`/`pre-upgrade` hook Job that executes `argo-watcher --migrate` against the configured database, so there is nothing to run manually.
 
 #### Manual Migration
 

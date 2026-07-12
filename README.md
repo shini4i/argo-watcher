@@ -78,16 +78,19 @@ graph LR
 5.  **Track & Report**: The Argo Watcher server continuously polls the Argo CD API. As the deployment progresses, it streams status updates to the Web UI and reports the final status (e.g., `deployed`, `failed`) back to the client.
 6.  **Complete**: The client exits with a status code that reflects the deployment outcome, allowing your CI pipeline to proceed or fail accordingly.
 
-## Quick Start
+## Getting Started
 
-Deploy the Argo Watcher server using Helm:
+The fastest way to try Argo Watcher is the bundled Docker Compose stack. It runs the server, a Postgres database, the Web UI, and a mock Argo CD, so you can exercise the full task lifecycle locally without a cluster:
 
 ```bash
-helm repo add shini4i https://shini4i.github.io/helm-charts
-helm install argo-watcher shini4i/argo-watcher -f values.yaml
+git clone https://github.com/shini4i/argo-watcher.git
+cd argo-watcher
+docker compose up
 ```
 
-Then add the client (`ghcr.io/shini4i/argo-watcher-client`) to your CI pipeline to report deployments. See the [installation guide](https://argo-watcher.readthedocs.io/en/latest/installation/) for full configuration details.
+Once it is up, the Web UI is available at [http://localhost:3100](http://localhost:3100). The [Quick Start](https://argo-watcher.readthedocs.io/en/latest/getting-started/quick-start/) walks through submitting a task and watching it deploy.
+
+To deploy to a real Kubernetes cluster with Helm and wire the client (`ghcr.io/shini4i/argo-watcher-client`) into your CI pipeline, follow the [Installation guide](https://argo-watcher.readthedocs.io/en/latest/guides/install/).
 
 ## Documentation
 
