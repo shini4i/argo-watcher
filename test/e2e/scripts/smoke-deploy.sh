@@ -19,7 +19,7 @@ PORT="${PORT:-18090}"
 # Wait for the app's initial sync so we deploy from a known-good baseline.
 for _ in $(seq 1 40); do
   s=$(kubectl -n argocd get application "$APP" -o jsonpath='{.status.sync.status}/{.status.health.status}' 2>/dev/null || true)
-  [ "$s" = "Synced/Healthy" ] && break
+  [[ "$s" == "Synced/Healthy" ]] && break
   sleep 5
 done
 
@@ -36,8 +36,9 @@ echo "task ${id}: deploying ${APP} -> ${IMAGE}:${TAG}"
 for _ in $(seq 1 48); do
   st=$(curl -s -m 10 "localhost:${PORT}/api/v1/tasks/${id}" | jq -r '.status // "?"')
   case "$st" in
-    deployed)       echo "OK: task deployed"; exit 0;;
-    failed|aborted) echo "FAIL: task ${st}";  exit 1;;
+    deployed)       echo "OK: task deployed"; exit 0 ;;
+    failed|aborted) echo "FAIL: task ${st}";  exit 1 ;;
+    *)              ;; # in progress / unknown — keep polling
   esac
   sleep 5
 done

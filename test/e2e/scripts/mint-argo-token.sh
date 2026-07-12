@@ -29,10 +29,10 @@ for _ in $(seq 1 30); do
     -H 'Content-Type: application/json' \
     -d "{\"username\":\"admin\",\"password\":\"${pw}\"}" \
     | jq -r '.token // empty' 2>/dev/null || true)"
-  [ -n "$token" ] && break
+  [[ -n "$token" ]] && break
   sleep 2
 done
-[ -n "$token" ] || { echo "failed to mint ARGO_TOKEN" >&2; exit 1; }
+[[ -n "$token" ]] || { echo "failed to mint ARGO_TOKEN" >&2; exit 1; }
 
 kubectl create namespace "$NS_AW" --dry-run=client -o yaml | kubectl apply -f -
 kubectl -n "$NS_AW" create secret generic argo-watcher-secret \

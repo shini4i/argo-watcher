@@ -19,7 +19,7 @@ for p in $(kubectl -n argo-watcher get pods -o name); do
   echo "  $p: $c"
   races=$((races + c))
 done
-[ "$races" -eq 0 ] || { echo "FAIL: $races DATA RACE line(s)"; fail=1; }
+[[ "$races" -eq 0 ]] || { echo "FAIL: $races DATA RACE line(s)"; fail=1; }
 
 echo "=== metrics ==="
 kubectl -n argo-watcher port-forward svc/argo-watcher 18091:80 >/dev/null 2>&1 &
@@ -29,14 +29,18 @@ metrics="$(curl -s -m 10 localhost:18091/metrics)"
 kill $pf 2>/dev/null || true
 # Some metrics are per-app labeled (failed_deployment{app=..}, processed_..);
 # sum the value field ($NF) across all series of each.
-sum_metric() { echo "$metrics" | awk -v k="^$1[ {]" '$0 ~ k {s+=$NF} END{print s+0}'; }
+sum_metric() {
+  local metric="$1"
+  echo "$metrics" | awk -v k="^${metric}[ {]" '$0 ~ k {s+=$NF} END{print s+0}'
+  return
+}
 fd=$(sum_metric failed_deployment)
 pd=$(sum_metric processed_deployments)
 au=$(echo "$metrics" | awk '/^argocd_unavailable /{print $NF}')
 ip=$(echo "$metrics" | awk '/^in_progress_tasks /{print $NF}')
 echo "  failed_deployment=${fd} processed_deployments=${pd} argocd_unavailable=${au:-?} in_progress_tasks=${ip:-?}"
-[ "${fd:-0}" = "0" ] || { echo "FAIL: failed_deployment=${fd}"; fail=1; }
-[ "${au:-0}" = "0" ] || { echo "FAIL: argocd_unavailable=${au}"; fail=1; }
+[[ "${fd:-0}" == "0" ]] || { echo "FAIL: failed_deployment=${fd}"; fail=1; }
+[[ "${au:-0}" == "0" ]] || { echo "FAIL: argocd_unavailable=${au}"; fail=1; }
 
 echo "=== no lost updates ==="
 kubectl -n gitea port-forward svc/gitea-http 13001:3000 >/dev/null 2>&1 &
@@ -52,7 +56,7 @@ kill $gpf 2>/dev/null || true
 for app in $(jq -r '.last_tag | keys[]' "$SUMMARY"); do
   want=$(jq -r ".last_tag[\"${app}\"]" "$SUMMARY")
   got=$(awk '/value:/{print $2}' "${work}/r/chart/.argocd-source-${app}.yaml" 2>/dev/null | tr -d '"')
-  if [ "$got" = "$want" ]; then
+  if [[ "$got" == "$want" ]]; then
     echo "  ${app}: OK (${got})"
   else
     echo "  ${app}: LOST UPDATE want=${want} got=${got:-<none>}"; fail=1
@@ -62,6 +66,6 @@ done
 echo "=== task tallies ==="
 jq '{submitted,deployed,failed,other}' "$SUMMARY"
 tf=$(jq -r '.failed' "$SUMMARY")
-[ "${tf}" = "0" ] || { echo "FAIL: ${tf} failed task(s)"; fail=1; }
+[[ "${tf}" == "0" ]] || { echo "FAIL: ${tf} failed task(s)"; fail=1; }
 
-if [ "$fail" -eq 0 ]; then echo "COLLECT: PASS"; else echo "COLLECT: FAIL"; exit 1; fi
+if [[ "$fail" -eq 0 ]]; then echo "COLLECT: PASS"; else echo "COLLECT: FAIL"; exit 1; fi

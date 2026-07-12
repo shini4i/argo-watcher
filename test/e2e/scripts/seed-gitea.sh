@@ -33,7 +33,7 @@ for _ in $(seq 1 30); do
   curl -sf -m 3 -u "${GITEA_ADMIN}:${GITEA_PW}" "${api}/version" >/dev/null 2>&1 && { ready=true; break; }
   sleep 1
 done
-[ "$ready" = true ] || { echo "gitea API never became ready" >&2; exit 1; }
+[[ "$ready" == true ]] || { echo "gitea API never became ready" >&2; exit 1; }
 
 gapi() { curl -sf -m 10 -u "${GITEA_ADMIN}:${GITEA_PW}" -H 'Content-Type: application/json' "$@"; }
 
@@ -76,7 +76,7 @@ kubectl -n "$NS_AW" create secret generic argo-watcher-ssh \
 # per-server, so we prefix it with the in-cluster hostname argo-watcher uses.
 gitea_pod="$(kubectl -n gitea get pod -l app.kubernetes.io/name=gitea -o name | head -1)"
 hostkey="$(kubectl -n gitea exec "$gitea_pod" -- cat /data/ssh/gitea.rsa.pub)"
-[ -n "$hostkey" ] || { echo "failed to read gitea host key" >&2; exit 1; }
+[[ -n "$hostkey" ]] || { echo "failed to read gitea host key" >&2; exit 1; }
 kubectl -n "$NS_AW" create configmap e2e-ssh-known-hosts \
   --from-literal=ssh_known_hosts="${SSH_HOST} ${hostkey}" \
   --dry-run=client -o yaml | kubectl apply -f -

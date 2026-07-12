@@ -31,7 +31,7 @@ git config user.email competitor@e2e
 
 n=0 pushes=0 conflicts=0
 end=$(( $(date +%s) + SECONDS_TOTAL ))
-while [ "$(date +%s)" -lt "$end" ]; do
+while [[ "$(date +%s)" -lt "$end" ]]; do
   git fetch -q origin main && git reset -q --hard origin/main
   n=$((n + 1))
   echo "$n $(date +%s)" >> competitor.log
