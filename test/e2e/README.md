@@ -10,11 +10,12 @@ Unlike the unit and integration suites, ArgoCD here is **not mocked**.
 
 ## Prerequisites
 
-`kind`, `kubectl`, `helm`, `jq`, `curl`, `task`, and **podman** as the kind
-provider (`KIND_EXPERIMENTAL_PROVIDER=podman`). The image-load step uses
+`kind`, `kubectl`, `helm`, `go`, `git`, `jq`, `curl`, `task`, and **podman** as
+the kind provider (`KIND_EXPERIMENTAL_PROVIDER=podman`). The image-load step uses
 `podman exec` against the kind node, so a podman-backed cluster is required; a
 `docker` CLI that is a podman shim works, a real docker-provider cluster does
-not. All pinned tool/chart versions are in `Taskfile.yml`.
+not. `go` runs the load driver and `git` drives the competitor writer. All
+pinned tool/chart versions are in `Taskfile.yml`.
 
 ## Usage
 
@@ -22,8 +23,15 @@ not. All pinned tool/chart versions are in `Taskfile.yml`.
 task up      # build the race image + boot the full lab (idempotent)
 task verify  # assert argo-watcher is up and reaching real Argo
 task smoke   # one authenticated deploy through the full write-back loop
+task load    # git-conflict soak: competitor + concurrent deploys, strict 0-failed
+task race    # same-app supersession: a newer deploy must win over an older retrying one
 task down    # destroy the cluster
 ```
+
+Run once per release (manual): `task up` → `task load` → `task race` → `task down`.
+Tunable soak knobs are `Taskfile.yml` vars (`APPS`, `WORKERS`, `WS_CLIENTS`,
+`SOAK`, `SOAK_SECONDS`, `COMPETITOR_INTERVAL`), overridable on the CLI, e.g.
+`task load SOAK=10m WORKERS=20`.
 
 Reach any component with `kubectl port-forward` (there is no ingress), e.g.
 `kubectl -n argo-watcher port-forward svc/argo-watcher 8080:80`.
