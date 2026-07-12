@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -19,7 +20,6 @@ import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/rs/zerolog/log"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
 	"github.com/shini4i/argo-watcher/internal/argocd"
@@ -72,11 +72,10 @@ func (fs safeFileSystem) validatePath(name string) (string, error) {
 	// Verify the cleaned path is still within the base directory
 	// Check for exact match (root directory) or proper prefix with separator
 	if cleanedFull != fs.basePath && !strings.HasPrefix(cleanedFull, fs.basePath+string(filepath.Separator)) {
-		log.Debug().
-			Str("requested_path", name).
-			Str("resolved_path", cleanedFull).
-			Str("base_path", fs.basePath).
-			Msg("blocked path traversal attempt")
+		slog.Debug("blocked path traversal attempt",
+			"requested_path", name,
+			"resolved_path", cleanedFull,
+			"base_path", fs.basePath)
 		return "", os.ErrPermission
 	}
 
@@ -111,11 +110,10 @@ func (fs safeFileSystem) Open(name string) (http.File, error) {
 	}
 
 	if !strings.HasPrefix(realPath, fs.basePath+string(filepath.Separator)) && realPath != fs.basePath {
-		log.Debug().
-			Str("requested_path", name).
-			Str("resolved_path", realPath).
-			Str("base_path", fs.basePath).
-			Msg("blocked symlink escape attempt")
+		slog.Debug("blocked symlink escape attempt",
+			"requested_path", name,
+			"resolved_path", realPath,
+			"base_path", fs.basePath)
 		_ = f.Close() // #nosec G104 - best effort cleanup
 		return nil, os.ErrPermission
 	}
@@ -165,24 +163,24 @@ func (w *wsResponseWriter) WriteHeader(code int) {
 	w.headerWritten = true
 
 	if w.brw == nil {
-		log.Error().Msg("buffered writer not available during WriteHeader")
+		slog.Error("buffered writer not available during WriteHeader")
 		return
 	}
 	statusLine := fmt.Sprintf("HTTP/1.1 %d %s\r\n", code, http.StatusText(code))
 	if _, err := w.brw.WriteString(statusLine); err != nil {
-		log.Error().Err(err).Msg("failed to write status line during WebSocket upgrade")
+		slog.Error("failed to write status line during WebSocket upgrade", "error", err)
 		return
 	}
 	if err := w.Header().Write(w.brw); err != nil {
-		log.Error().Err(err).Msg("failed to write headers during WebSocket upgrade")
+		slog.Error("failed to write headers during WebSocket upgrade", "error", err)
 		return
 	}
 	if _, err := w.brw.WriteString("\r\n"); err != nil {
-		log.Error().Err(err).Msg("failed to write header terminator during WebSocket upgrade")
+		slog.Error("failed to write header terminator during WebSocket upgrade", "error", err)
 		return
 	}
 	if err := w.brw.Flush(); err != nil {
-		log.Error().Err(err).Msg("failed to flush WebSocket upgrade response")
+		slog.Error("failed to flush WebSocket upgrade response", "error", err)
 	}
 }
 
@@ -227,11 +225,10 @@ func (env *Env) CreateRouter() *gin.Engine {
 	// CORS middleware writes headers that interfere with WebSocket hijacking
 	router.Use(func(c *gin.Context) {
 		if c.Request.URL.Path == "/ws" {
-			log.Debug().
-				Str("upgrade", c.Request.Header.Get("Upgrade")).
-				Str("connection", c.Request.Header.Get("Connection")).
-				Bool("written", c.Writer.Written()).
-				Msg("WebSocket request received")
+			slog.Debug("WebSocket request received",
+				"upgrade", c.Request.Header.Get("Upgrade"),
+				"connection", c.Request.Header.Get("Connection"),
+				"written", c.Writer.Written())
 
 			if strings.EqualFold(c.Request.Header.Get("Upgrade"), "websocket") {
 				env.handleWebSocketConnection(c)
@@ -255,7 +252,8 @@ func (env *Env) CreateRouter() *gin.Engine {
 	swaggerPath := filepath.Join(env.config.StaticFilePath, "swagger")
 	absSwaggerPath, err := filepath.Abs(swaggerPath)
 	if err != nil {
-		log.Fatal().Err(err).Msg("failed to resolve swagger files path")
+		slog.Error("failed to resolve swagger files path", "error", err)
+		os.Exit(1)
 	}
 	resolvedSwaggerPath, err := filepath.EvalSymlinks(absSwaggerPath)
 	if err != nil {
@@ -282,14 +280,13 @@ func (env *Env) CreateRouter() *gin.Engine {
 	// Static file serving - use NoRoute to handle unmatched paths
 	// This prevents static middleware from interfering with API and WebSocket routes
 	staticFilesPath := env.config.StaticFilePath
-	log.Debug().
-		Str("static_path", staticFilesPath).
-		Msg("serving frontend assets")
+	slog.Debug("serving frontend assets", "static_path", staticFilesPath)
 
 	// Get absolute path for security validation
 	absStaticPath, err := filepath.Abs(staticFilesPath)
 	if err != nil {
-		log.Fatal().Err(err).Msg("failed to resolve static files path")
+		slog.Error("failed to resolve static files path", "error", err)
+		os.Exit(1)
 	}
 
 	// Resolve symlinks in the base path to ensure consistent path comparison
@@ -349,7 +346,7 @@ func tryServeStaticFile(c *gin.Context, fs safeFileSystem) bool {
 // The caller is responsible for starting the server and handling graceful shutdown.
 func (env *Env) StartRouter(router *gin.Engine) *http.Server {
 	routerBind := fmt.Sprintf("%s:%s", env.config.Host, env.config.Port)
-	log.Debug().Msgf("Listening on %s", routerBind)
+	slog.Debug(fmt.Sprintf("Listening on %s", routerBind))
 	return &http.Server{
 		Addr:              routerBind,
 		Handler:           router,
@@ -401,9 +398,9 @@ func (env *Env) Shutdown() {
 
 	select {
 	case <-done:
-		log.Debug().Msg("All WebSocket connections closed gracefully")
+		slog.Debug("All WebSocket connections closed gracefully")
 	case <-time.After(shutdownTimeout):
-		log.Warn().Msg("Shutdown timeout reached, some WebSocket goroutines may still be running")
+		slog.Warn("Shutdown timeout reached, some WebSocket goroutines may still be running")
 	}
 }
 
@@ -469,7 +466,7 @@ func (env *Env) addTask(c *gin.Context) {
 
 	err := c.ShouldBindJSON(&task)
 	if err != nil {
-		log.Error().Msgf("couldn't process new task, got the following error: %s", err)
+		slog.Error(fmt.Sprintf("couldn't process new task, got the following error: %s", err))
 		c.JSON(http.StatusNotAcceptable, models.TaskStatus{
 			Status: "invalid payload",
 			Error:  err.Error(),
@@ -479,7 +476,7 @@ func (env *Env) addTask(c *gin.Context) {
 
 	// we need to handle cases when deploy lock is set either manually or by cron
 	if env.lockdown.IsLocked() {
-		log.Warn().Msgf("deploy lock is set, rejecting the task")
+		slog.Warn("deploy lock is set, rejecting the task")
 		c.JSON(http.StatusNotAcceptable, models.TaskStatus{
 			Status: "rejected",
 			Error:  "lockdown is active, deployments are not accepted",
@@ -492,7 +489,7 @@ func (env *Env) addTask(c *gin.Context) {
 		// A non-nil error means the strategy was invoked and rejected the
 		// token: a client mistake, not a server failure. Return 401 with
 		// the reason so the client can show something actionable.
-		log.Warn().Msgf("rejecting task: %s", err)
+		slog.Warn(fmt.Sprintf("rejecting task: %s", err))
 		c.JSON(http.StatusUnauthorized, models.TaskStatus{
 			Status: unauthorizedMessage,
 			Error:  err.Error(),
@@ -504,7 +501,7 @@ func (env *Env) addTask(c *gin.Context) {
 
 	newTask, err := env.argo.AddTask(task)
 	if err != nil {
-		log.Error().Msgf("Couldn't process new task. Got the following error: %s", err)
+		slog.Error(fmt.Sprintf("Couldn't process new task. Got the following error: %s", err))
 		c.JSON(http.StatusServiceUnavailable, models.TaskStatus{
 			Status: "down",
 			Error:  err.Error(),
@@ -537,11 +534,11 @@ func (env *Env) addTask(c *gin.Context) {
 func (env *Env) getState(c *gin.Context) {
 	startTime, err := strconv.ParseFloat(c.Query("from_timestamp"), 64)
 	if err != nil && c.Query("from_timestamp") != "" {
-		log.Debug().Str("from_timestamp", c.Query("from_timestamp")).Msg("invalid from_timestamp, defaulting to 0")
+		slog.Debug("invalid from_timestamp, defaulting to 0", "from_timestamp", c.Query("from_timestamp"))
 	}
 	endTime, err := strconv.ParseFloat(c.Query("to_timestamp"), 64)
 	if err != nil && c.Query("to_timestamp") != "" {
-		log.Debug().Str("to_timestamp", c.Query("to_timestamp")).Msg("invalid to_timestamp, defaulting to current time")
+		slog.Debug("invalid to_timestamp, defaulting to current time", "to_timestamp", c.Query("to_timestamp"))
 	}
 	if endTime == 0 {
 		endTime = float64(time.Now().Unix())
@@ -555,11 +552,11 @@ func (env *Env) getState(c *gin.Context) {
 
 	limit, err := strconv.Atoi(c.Query("limit"))
 	if err != nil && c.Query("limit") != "" {
-		log.Debug().Str("limit", c.Query("limit")).Msg("invalid limit, defaulting to 0")
+		slog.Debug("invalid limit, defaulting to 0", "limit", c.Query("limit"))
 	}
 	offset, err := strconv.Atoi(c.Query("offset"))
 	if err != nil && c.Query("offset") != "" {
-		log.Debug().Str("offset", c.Query("offset")).Msg("invalid offset, defaulting to 0")
+		slog.Debug("invalid offset, defaulting to 0", "offset", c.Query("offset"))
 	}
 	if limit <= 0 || limit > maxTaskListLimit {
 		limit = maxTaskListLimit
@@ -657,8 +654,8 @@ func (env *Env) requireKeycloakAuth(c *gin.Context) bool {
 
 	if err != nil {
 		// Strategy was invoked and rejected the token. Surface the reason.
-		log.Warn().Msgf("User tried %s %s with invalid token: %s",
-			c.Request.Method, c.Request.URL, err)
+		slog.Warn(fmt.Sprintf("User tried %s %s with invalid token: %s",
+			c.Request.Method, c.Request.URL, err))
 		c.JSON(http.StatusUnauthorized, models.TaskStatus{
 			Status: unauthorizedMessage,
 			Error:  err.Error(),
@@ -667,7 +664,7 @@ func (env *Env) requireKeycloakAuth(c *gin.Context) bool {
 	}
 
 	// (false, nil): no auth header sent at all.
-	log.Warn().Msgf("User tried %s %s without authentication", c.Request.Method, c.Request.URL)
+	slog.Warn(fmt.Sprintf("User tried %s %s without authentication", c.Request.Method, c.Request.URL))
 	c.JSON(http.StatusUnauthorized, models.TaskStatus{
 		Status: unauthorizedMessage,
 		Error:  "authentication required (set " + keycloakHeader + " header)",
@@ -689,7 +686,7 @@ func (env *Env) SetDeployLock(c *gin.Context) {
 
 	env.lockdown.SetLock()
 
-	log.Debug().Msg("deploy lock is set")
+	slog.Debug("deploy lock is set")
 
 	notifyWebSocketClients("locked")
 
@@ -710,7 +707,7 @@ func (env *Env) ReleaseDeployLock(c *gin.Context) {
 
 	env.lockdown.ReleaseLock()
 
-	log.Debug().Msg("deploy lock is released")
+	slog.Debug("deploy lock is released")
 
 	notifyWebSocketClients("unlocked")
 
@@ -752,14 +749,14 @@ func (env *Env) handleWebSocketConnection(c *gin.Context) {
 	// gin's ResponseWriter fails Hijack after WriteHeader, so we hijack first
 	hijacker, ok := c.Writer.(http.Hijacker)
 	if !ok {
-		log.Error().Msg("ResponseWriter does not support hijacking")
+		slog.Error("ResponseWriter does not support hijacking")
 		c.String(http.StatusInternalServerError, "WebSocket not supported")
 		return
 	}
 
 	netConn, brw, err := hijacker.Hijack()
 	if err != nil {
-		log.Error().Err(err).Msg("failed to hijack connection for WebSocket")
+		slog.Error("failed to hijack connection for WebSocket", "error", err)
 		// After a failed hijack, the connection state is unknown and we cannot reliably
 		// write a response. The client connection will eventually timeout.
 		return
@@ -774,7 +771,7 @@ func (env *Env) handleWebSocketConnection(c *gin.Context) {
 
 	conn, err := websocket.Accept(wrappedWriter, c.Request, options)
 	if err != nil {
-		log.Error().Err(err).Msg("failed to accept websocket connection")
+		slog.Error("failed to accept websocket connection", "error", err)
 		_ = netConn.Close() // #nosec G104 - best effort cleanup, already in error path
 		return
 	}

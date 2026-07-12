@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math/rand"
 	"strings"
 	"time"
 
-	"github.com/rs/zerolog/log"
 	"github.com/shini4i/argo-watcher/internal/helpers"
 	"github.com/shini4i/argo-watcher/pkg/updater"
 )
@@ -328,7 +328,7 @@ func (app *Application) generateOverrideFileContent(annotations map[string]strin
 	}
 
 	if len(managedImages) == 0 {
-		log.Error().Msgf("%s annotation not found, skipping image update", managedImagesAnnotation)
+		slog.Error(fmt.Sprintf("%s annotation not found, skipping image update", managedImagesAnnotation))
 		return nil, nil
 	}
 
@@ -342,7 +342,7 @@ func (app *Application) generateOverrideFileContent(annotations map[string]strin
 						ForceString: true,
 					})
 				} else {
-					log.Error().Msgf("%s annotation not found, skipping image %s update", fmt.Sprintf(managedImageTagPattern, appAlias), image.Image)
+					slog.Error(fmt.Sprintf("%s annotation not found, skipping image %s update", fmt.Sprintf(managedImageTagPattern, appAlias), image.Image))
 				}
 			}
 		}
@@ -365,7 +365,7 @@ func (app *Application) generateOverrideFileContent(annotations map[string]strin
 // same app is never overwritten by an older one that keeps retrying.
 func (app *Application) UpdateGitImageTag(ctx context.Context, task *Task, gitopsRepo *GitopsRepo, gitHandler updater.GitHandler, isSuperseded ...func() bool) error {
 	if gitopsRepo.Path == "" {
-		log.Warn().Str("id", task.Id).Msgf("No path found for app %s, unsupported Application configuration", app.Metadata.Name)
+		slog.Warn(fmt.Sprintf("No path found for app %s, unsupported Application configuration", app.Metadata.Name), "id", task.Id)
 		return nil
 	}
 
@@ -380,13 +380,13 @@ func (app *Application) UpdateGitImageTag(ctx context.Context, task *Task, gitop
 	}
 
 	if releaseOverrides == nil {
-		log.Warn().Str("id", task.Id).Msgf("No release overrides found for app %s", app.Metadata.Name)
+		slog.Warn(fmt.Sprintf("No release overrides found for app %s", app.Metadata.Name), "id", task.Id)
 		return nil
 	}
 
 	repo, err := updater.NewGitRepo(gitopsRepo.RepoUrl, gitopsRepo.BranchName, gitopsRepo.Path, gitopsRepo.Filename, gitopsRepo.RepoCachePath, gitHandler)
 	if err != nil {
-		log.Error().Str("id", task.Id).Msgf("Failed to create git repo instance for %s: %s", gitopsRepo.RepoUrl, err)
+		slog.Error(fmt.Sprintf("Failed to create git repo instance for %s: %s", gitopsRepo.RepoUrl, err), "id", task.Id)
 		return err
 	}
 
@@ -449,7 +449,7 @@ func runGitUpdateWithRetry(parentCtx context.Context, repo *updater.GitRepo, app
 		// on top of a newer one — the correctness guard that makes a larger retry
 		// budget safe.
 		if isSuperseded != nil && isSuperseded() {
-			log.Info().Str("id", task.Id).Msgf("Git update aborted at attempt %d/%d: task superseded by a newer deployment", attempt, maxAttempts)
+			slog.Info(fmt.Sprintf("Git update aborted at attempt %d/%d: task superseded by a newer deployment", attempt, maxAttempts), "id", task.Id)
 			return ErrDeploymentSuperseded
 		}
 
@@ -458,14 +458,14 @@ func runGitUpdateWithRetry(parentCtx context.Context, repo *updater.GitRepo, app
 		err := runGitUpdateAttempt(parentCtx, repo, opTimeout, appName, releaseOverrides, task)
 		if err == nil {
 			if attempt > 1 {
-				log.Info().Str("id", task.Id).Msgf("Git update succeeded on attempt %d/%d", attempt, maxAttempts)
+				slog.Info(fmt.Sprintf("Git update succeeded on attempt %d/%d", attempt, maxAttempts), "id", task.Id)
 			}
 			return nil
 		}
 		lastErr = err
 
 		if updater.IsPermanent(err) {
-			log.Error().Err(err).Str("id", task.Id).Msgf("Git update failed with permanent error on attempt %d/%d; not retrying", attempt, maxAttempts)
+			slog.Error(fmt.Sprintf("Git update failed with permanent error on attempt %d/%d; not retrying", attempt, maxAttempts), "error", err, "id", task.Id)
 			return err
 		}
 
@@ -484,12 +484,12 @@ func invalidateCacheOnFinalAttempt(repo *updater.GitRepo, task *Task, attempt, m
 	if attempt != maxAttempts {
 		return
 	}
-	log.Warn().Str("id", task.Id).Msgf(
+	slog.Warn(fmt.Sprintf(
 		"Final attempt %d/%d: invalidating cache and performing fresh clone",
 		attempt, maxAttempts,
-	)
+	), "id", task.Id)
 	if invErr := repo.InvalidateCache(); invErr != nil {
-		log.Warn().Err(invErr).Str("id", task.Id).Msg("Failed to invalidate cache before final attempt; proceeding anyway")
+		slog.Warn("Failed to invalidate cache before final attempt; proceeding anyway", "error", invErr, "id", task.Id)
 	}
 }
 
@@ -501,10 +501,10 @@ func backoffBeforeRetry(parentCtx context.Context, task *Task, attemptErr error,
 		return nil
 	}
 	backoff := gitUpdateBackoff(attempt)
-	log.Warn().Err(attemptErr).Str("id", task.Id).Msgf(
+	slog.Warn(fmt.Sprintf(
 		"Git update attempt %d/%d failed; retrying after %s",
 		attempt, maxAttempts, backoff,
-	)
+	), "error", attemptErr, "id", task.Id)
 	select {
 	case <-parentCtx.Done():
 		return fmt.Errorf("git update cancelled during backoff: %w", parentCtx.Err())

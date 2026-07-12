@@ -3,14 +3,13 @@ package argocd
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
 	"github.com/shini4i/argo-watcher/internal/helpers"
 	"github.com/shini4i/argo-watcher/internal/state"
-
-	"github.com/rs/zerolog/log"
 
 	"github.com/shini4i/argo-watcher/internal/models"
 )
@@ -102,9 +101,9 @@ func (argo *Argo) AddTask(task models.Task) (*models.Task, error) {
 	// setup it also cancels rollouts being watched by other replicas. Best-effort:
 	// a failure here must not block the new deployment.
 	if cancelled, err := argo.State.CancelInProgressTasks(task.App, task.Images, supersededTaskReason); err != nil {
-		log.Warn().Str("app", task.App).Msgf("Failed to cancel in-progress deployments for the app: %s", err)
+		slog.Warn(fmt.Sprintf("Failed to cancel in-progress deployments for the app: %s", err), "app", task.App)
 	} else if cancelled > 0 {
-		log.Info().Str("app", task.App).Msgf("Cancelled %d in-progress deployment(s) superseded by the new task", cancelled)
+		slog.Info(fmt.Sprintf("Cancelled %d in-progress deployment(s) superseded by the new task", cancelled), "app", task.App)
 	}
 
 	newTask, err := argo.State.AddTask(task)
@@ -112,13 +111,13 @@ func (argo *Argo) AddTask(task models.Task) (*models.Task, error) {
 		return nil, err
 	}
 
-	log.Info().Str("id", newTask.Id).Msgf("A new task was triggered")
+	slog.Info("A new task was triggered", "id", newTask.Id)
 	for index, value := range newTask.Images {
-		log.Info().Str("id", newTask.Id).Msgf("Task image [%d] expecting tag %s in app %s.",
+		slog.Info(fmt.Sprintf("Task image [%d] expecting tag %s in app %s.",
 			index,
 			value.Tag,
 			task.App,
-		)
+		), "id", newTask.Id)
 	}
 
 	argo.metrics.AddProcessedDeployment(task.App)

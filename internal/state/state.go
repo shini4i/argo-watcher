@@ -3,8 +3,8 @@ package state
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 
-	"github.com/rs/zerolog/log"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	"github.com/shini4i/argo-watcher/internal/models"
 )
@@ -53,14 +53,14 @@ type TaskRepository interface {
 // It initializes the appropriate repository according to the StateType field and
 // ensures that the returned implementation is already connected to the storage backend.
 func NewState(serverConfig *config.ServerConfig) (TaskRepository, error) {
-	log.Debug().Msg("Initializing argo-watcher state...")
+	slog.Debug("Initializing argo-watcher state...")
 	var state TaskRepository
 	switch name := serverConfig.StateType; name {
 	case "postgres":
-		log.Debug().Msg("Created postgres state..")
+		slog.Debug("Created postgres state..")
 		state = &PostgresState{}
 	case "in-memory":
-		log.Debug().Msg("Created in-memory state..")
+		slog.Debug("Created in-memory state..")
 		state = &InMemoryState{}
 	default:
 		return nil, fmt.Errorf("unexpected state type received: %s", name)

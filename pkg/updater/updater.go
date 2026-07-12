@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -22,7 +23,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
-	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v3"
 )
 
@@ -115,9 +115,9 @@ func (repo *GitRepo) Clone(ctx context.Context) error {
 	if err != nil {
 		// Differentiate between a simple "not found" and a real corruption issue for logging.
 		if errors.Is(err, git.ErrRepositoryNotExists) {
-			log.Debug().Msgf("No cache found for repo %s at %s. Cloning fresh.", repo.RepoURL, repo.localRepoPath)
+			slog.Debug(fmt.Sprintf("No cache found for repo %s at %s. Cloning fresh.", repo.RepoURL, repo.localRepoPath))
 		} else {
-			log.Warn().Msgf("Cached repo at %s is invalid or missing remote (%s). Re-cloning.", repo.localRepoPath, err)
+			slog.Warn(fmt.Sprintf("Cached repo at %s is invalid or missing remote (%s). Re-cloning.", repo.localRepoPath, err))
 			if err := os.RemoveAll(repo.localRepoPath); err != nil {
 				return fmt.Errorf("failed to remove invalid cache directory: %w", err)
 			}
@@ -133,7 +133,7 @@ func (repo *GitRepo) Clone(ctx context.Context) error {
 	}
 
 	// If we get here, the cache is valid and has an 'origin' remote.
-	log.Debug().Msgf("Successfully opened cached repository at %s", repo.localRepoPath)
+	slog.Debug(fmt.Sprintf("Successfully opened cached repository at %s", repo.localRepoPath))
 	err = repo.localRepo.FetchContext(ctx, &git.FetchOptions{
 		RemoteName: "origin",
 		Auth:       repo.sshAuth,
@@ -183,13 +183,13 @@ func (repo *GitRepo) generateCommitMessage(appName string, tmplData any) string 
 
 	tmpl, err := template.New("commitMsg").Parse(repo.gitConfig.CommitMessageFormat)
 	if err != nil {
-		log.Warn().Err(err).Msg("COMMIT_MESSAGE_FORMAT parse error; using default commit message")
+		slog.Warn("COMMIT_MESSAGE_FORMAT parse error; using default commit message", "error", err)
 		return commitMsg
 	}
 
 	var message bytes.Buffer
 	if err = tmpl.Execute(&message, tmplData); err != nil {
-		log.Warn().Err(err).Msg("COMMIT_MESSAGE_FORMAT execute error; using default commit message")
+		slog.Warn("COMMIT_MESSAGE_FORMAT execute error; using default commit message", "error", err)
 		return commitMsg
 	}
 
@@ -210,7 +210,7 @@ func (repo *GitRepo) UpdateApp(ctx context.Context, appName string, overrideCont
 
 	commitMsg := repo.generateCommitMessage(appName, tmplData)
 
-	log.Debug().Msgf("Updating override file: %s", fullPath)
+	slog.Debug(fmt.Sprintf("Updating override file: %s", fullPath))
 
 	finalContent, err := repo.mergeOverrideFileContent(fullPath, overrideContent)
 	if err != nil {
@@ -292,7 +292,7 @@ func (repo *GitRepo) commitAndPush(ctx context.Context, fullPath, commitMsg stri
 
 	// If the image tag is already correct, there will be no changes.
 	if status.IsClean() {
-		log.Debug().Msg("No changes detected. Skipping commit.")
+		slog.Debug("No changes detected. Skipping commit.")
 		return nil
 	}
 
@@ -423,4 +423,3 @@ func (repo *GitRepo) InvalidateCache() error {
 	}
 	return os.RemoveAll(repo.localRepoPath)
 }
-

@@ -2,13 +2,14 @@ package state
 
 import (
 	"errors"
+	"fmt"
+	"log/slog"
 	"sort"
 	"sync"
 	"time"
 
 	"github.com/avast/retry-go/v4"
 	"github.com/google/uuid"
-	"github.com/rs/zerolog/log"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	"github.com/shini4i/argo-watcher/internal/models"
@@ -34,7 +35,7 @@ var _ TaskRepository = (*InMemoryState)(nil)
 // It logs a debug message indicating that the InMemoryState does not connect to anything and skips the connection process.
 // This method exists to fulfill the TaskRepository interface requirement and has no functional value.
 func (state *InMemoryState) Connect(serverConfig *config.ServerConfig) error {
-	log.Debug().Msg("InMemoryState does not connect to anything. Skipping.")
+	slog.Debug("InMemoryState does not connect to anything. Skipping.")
 	return nil
 }
 
@@ -187,7 +188,7 @@ func (state *InMemoryState) Check() bool {
 // It starts a process to watch for obsolete tasks by invoking the `processInMemoryObsoleteTasks` function.
 // The function uses the `retry` package to periodically retry the task processing with a fixed delay of 60 minutes.
 func (state *InMemoryState) ProcessObsoleteTasks(retryTimes uint) {
-	log.Debug().Msg("Starting watching for obsolete tasks...")
+	slog.Debug("Starting watching for obsolete tasks...")
 	err := retry.Do(
 		func() error {
 			state.mu.Lock()
@@ -200,7 +201,7 @@ func (state *InMemoryState) ProcessObsoleteTasks(retryTimes uint) {
 		retry.Attempts(retryTimes),
 	)
 	if err != nil {
-		log.Error().Msgf("Couldn't process obsolete tasks. Got the following error: %s", err)
+		slog.Error(fmt.Sprintf("Couldn't process obsolete tasks. Got the following error: %s", err))
 	}
 }
 

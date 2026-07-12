@@ -4,12 +4,12 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/avast/retry-go/v4"
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
-	"github.com/rs/zerolog/log"
 	"gorm.io/datatypes"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -54,7 +54,7 @@ func (state *PostgresState) AddTask(task models.Task) (*models.Task, error) {
 	}
 
 	if err := state.orm.Create(&ormTask).Error; err != nil {
-		log.Error().Msgf("Failed to create task database record with error: %s", err.Error())
+		slog.Error(fmt.Sprintf("Failed to create task database record with error: %s", err.Error()))
 		return nil, fmt.Errorf("failed to create task in database")
 	}
 
@@ -83,7 +83,7 @@ func (state *PostgresState) GetTasks(startTime float64, endTime float64, app str
 	countQuery := query.Session(&gorm.Session{})
 	var total int64
 	if err := countQuery.Count(&total).Error; err != nil {
-		log.Error().Msg(err.Error())
+		slog.Error(err.Error())
 		return []models.Task{}, 0
 	}
 
@@ -98,7 +98,7 @@ func (state *PostgresState) GetTasks(startTime float64, endTime float64, app str
 
 	var ormTasks []state_models.TaskModel
 	if err := query.Find(&ormTasks).Error; err != nil {
-		log.Error().Msg(err.Error())
+		slog.Error(err.Error())
 		return []models.Task{}, 0
 	}
 
@@ -189,12 +189,12 @@ func (state *PostgresState) CancelInProgressTasks(app string, images []models.Im
 func (state *PostgresState) Check() bool {
 	connection, err := state.orm.DB()
 	if err != nil {
-		log.Error().Msgf("Failed to retrieve DB connection: %s", err.Error())
+		slog.Error(fmt.Sprintf("Failed to retrieve DB connection: %s", err.Error()))
 		return false
 	}
 
 	if err = connection.Ping(); err != nil {
-		log.Error().Msgf("Failed to ping DB: %s", err.Error())
+		slog.Error(fmt.Sprintf("Failed to ping DB: %s", err.Error()))
 		return false
 	}
 
@@ -206,11 +206,11 @@ func (state *PostgresState) Check() bool {
 // The function utilizes retry logic to handle potential errors and retry the process if necessary.
 // The retry interval is set to 60 minutes, and the retry attempts are set to 0 (no limit).
 func (state *PostgresState) ProcessObsoleteTasks(retryTimes uint) {
-	log.Debug().Msg("Starting watching for obsolete tasks...")
+	slog.Debug("Starting watching for obsolete tasks...")
 	err := retry.Do(
 		func() error {
 			if err := state.doProcessPostgresObsoleteTasks(); err != nil {
-				log.Error().Msgf("Couldn't process obsolete tasks. Got the following error: %s", err)
+				slog.Error(fmt.Sprintf("Couldn't process obsolete tasks. Got the following error: %s", err))
 				return err
 			}
 			return errDesiredRetry
@@ -221,7 +221,7 @@ func (state *PostgresState) ProcessObsoleteTasks(retryTimes uint) {
 	)
 
 	if err != nil {
-		log.Error().Msgf("Couldn't process obsolete tasks. Got the following error: %s", err)
+		slog.Error(fmt.Sprintf("Couldn't process obsolete tasks. Got the following error: %s", err))
 	}
 }
 
@@ -230,14 +230,14 @@ func (state *PostgresState) ProcessObsoleteTasks(retryTimes uint) {
 // The function expects a valid *sql.DB connection to the PostgreSQL database.
 // It returns an error if any database operation encounters an error; otherwise, it returns nil.
 func (state *PostgresState) doProcessPostgresObsoleteTasks() error {
-	log.Debug().Msg("Removing obsolete tasks...")
+	slog.Debug("Removing obsolete tasks...")
 
-	log.Debug().Msg("Removing app not found tasks older than 1 hour from the database...")
+	slog.Debug("Removing app not found tasks older than 1 hour from the database...")
 	if err := state.orm.Where(whereStatusEquals, models.StatusAppNotFoundMessage).Where("created < now() - interval '1 hour'").Delete(&state_models.TaskModel{}).Error; err != nil {
 		return err
 	}
 
-	log.Debug().Msg("Marking in progress tasks older than 1 hour as aborted...")
+	slog.Debug("Marking in progress tasks older than 1 hour as aborted...")
 	if err := state.orm.Where(whereStatusEquals, models.StatusInProgressMessage).Where("created < now() - interval '1 hour'").Updates(&state_models.TaskModel{Status: models.StatusAborted}).Error; err != nil {
 		return err
 	}

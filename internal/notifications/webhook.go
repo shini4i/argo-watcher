@@ -6,13 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"slices"
 	"strings"
 	"text/template"
 	"time"
-
-	"github.com/rs/zerolog/log"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	"github.com/shini4i/argo-watcher/internal/models"
@@ -120,7 +119,7 @@ func (s *WebhookStrategy) Send(task models.Task) error {
 		return fmt.Errorf("failed to execute webhook template: %w", err)
 	}
 
-	log.Debug().Str("id", task.Id).Msgf("Sending webhook payload: %s", payload.String())
+	slog.Debug(fmt.Sprintf("Sending webhook payload: %s", payload.String()), "id", task.Id)
 
 	req, err := http.NewRequestWithContext(ctx, "POST", s.url, &payload)
 	if err != nil {
@@ -138,7 +137,7 @@ func (s *WebhookStrategy) Send(task models.Task) error {
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			log.Warn().Err(err).Str("id", task.Id).Msg("Failed to close response body")
+			slog.Warn("Failed to close response body", "error", err, "id", task.Id)
 		}
 	}()
 
@@ -153,7 +152,7 @@ func (s *WebhookStrategy) Send(task models.Task) error {
 
 	_, err = io.Copy(io.Discard, resp.Body)
 	if err != nil {
-		log.Warn().Err(err).Str("id", task.Id).Msg("Failed to discard response body on success")
+		slog.Warn("Failed to discard response body on success", "error", err, "id", task.Id)
 	}
 
 	return nil

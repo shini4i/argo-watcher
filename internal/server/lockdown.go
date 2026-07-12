@@ -2,12 +2,11 @@ package server
 
 import (
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/rs/zerolog/log"
 )
 
 type Lockdown struct {
@@ -96,7 +95,7 @@ func (l *Lockdown) Parse(schedules string) error {
 		l.Schedules = append(l.Schedules, schedule)
 	}
 
-	log.Debug().Msgf("Parsed lockdown schedules: %v", l.Schedules)
+	slog.Debug(fmt.Sprintf("Parsed lockdown schedules: %v", l.Schedules))
 
 	return nil
 }

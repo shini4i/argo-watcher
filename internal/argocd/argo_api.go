@@ -7,13 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
 	"time"
 
 	retry "github.com/avast/retry-go/v4"
-	"github.com/rs/zerolog/log"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	"github.com/shini4i/argo-watcher/internal/models"
 )
@@ -43,7 +43,7 @@ func NewArgoApi() *ArgoApi {
 }
 
 func (api *ArgoApi) Init(serverConfig *config.ServerConfig) error {
-	log.Debug().Msg("Initializing argo-watcher client...")
+	slog.Debug("Initializing argo-watcher client...")
 	// set base url
 	api.baseUrl = serverConfig.ArgoUrl
 
@@ -72,11 +72,11 @@ func (api *ArgoApi) Init(serverConfig *config.ServerConfig) error {
 		Timeout:   time.Duration(serverConfig.ArgoApiTimeout) * time.Second,
 	}
 
-	log.Debug().Msgf("Timeout for ArgoCD API calls set to: %s", api.client.Timeout)
+	slog.Debug(fmt.Sprintf("Timeout for ArgoCD API calls set to: %s", api.client.Timeout))
 
 	// configure retry attempts for transient transport errors
 	api.maxRetries = serverConfig.ArgoApiRetries
-	log.Debug().Msgf("Max API retries set to: %d", api.maxRetries)
+	slog.Debug(fmt.Sprintf("Max API retries set to: %d", api.maxRetries))
 
 	return nil
 }
@@ -115,11 +115,7 @@ func (api *ArgoApi) doGet(ctx context.Context, reqURL string) ([]byte, int, erro
 		retry.DelayType(retry.BackOffDelay),
 		retry.LastErrorOnly(true),
 		retry.OnRetry(func(n uint, err error) {
-			log.Debug().
-				Err(err).
-				Uint("retry", n+1).
-				Str("url", reqURL).
-				Msg("retrying ArgoCD API request")
+			slog.Debug("retrying ArgoCD API request", "error", err, "retry", n+1, "url", reqURL)
 		}),
 	)
 	if err != nil {
@@ -127,7 +123,7 @@ func (api *ArgoApi) doGet(ctx context.Context, reqURL string) ([]byte, int, erro
 	}
 	defer func() {
 		if closeErr := resp.Body.Close(); closeErr != nil {
-			log.Error().Err(closeErr).Msg("failed to close response body")
+			slog.Error("failed to close response body", "error", closeErr)
 		}
 	}()
 
@@ -190,7 +186,7 @@ func (api *ArgoApi) GetApplication(ctx context.Context, app string, refresh bool
 
 	body, statusCode, err := api.doGet(ctx, apiUrl)
 	if err != nil {
-		log.Error().Err(err).Msg("failed to execute request")
+		slog.Error("failed to execute request", "error", err)
 		return nil, err
 	}
 
