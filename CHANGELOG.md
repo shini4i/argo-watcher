@@ -32,6 +32,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reconciling CronJob) avoids the status check timing out (#334).
 - New `argocd_refresh_duration_seconds` Prometheus histogram (label `app`) to
   surface slow or stuck Argo CD refreshes.
+- Mattermost notification strategy (`MATTERMOST_ENABLED`, `MATTERMOST_URL`,
+  `MATTERMOST_TOKEN`, `MATTERMOST_CHANNEL_ID`, `MATTERMOST_FORMAT`,
+  `MATTERMOST_MENTION_AUTHOR`) alongside the generic webhook. Instead of one
+  independent message per event, it posts the deployment start as a root channel
+  post and the result as a thread reply, optionally prefixing `@<Author>` to
+  notify the deploy author. Requires a Mattermost bot account with access to the
+  target channel. The start-to-thread mapping is kept in memory, so a restart
+  mid-deployment or a multi-replica setup degrades gracefully to a regular
+  channel post for the result (#460).
 
 ### Changed
 
