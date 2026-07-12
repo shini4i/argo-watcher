@@ -12,12 +12,12 @@ https://argo-watcher.example.com/api/v1
 
 ## Authentication
 
-If the [GitOps Updater](../guides/gitops-updater.md) is enabled, authorize the git write-back with one of the following:
+Authentication is only required to authorize the built-in [GitOps Updater](../guides/gitops-updater.md)'s git write-back. Provide one of:
 
 - **Deploy token** — Pass the `ARGO_WATCHER_DEPLOY_TOKEN` value as a query parameter or header.
 - **JWT token** — Include a `Bearer` token in the `Authorization` header.
 
-A task submitted **without** either credential is still accepted (`202 Accepted`) and monitored normally, but its git write-back is silently skipped — so the image tag is never committed and the deployment eventually times out. A token that is **present but invalid or expired** returns `401 Unauthorized`.
+A task submitted **without** a credential is still accepted (`202 Accepted`) and its rollout is monitored normally — argo-watcher simply does not perform the git write-back. This is the expected setup when the image tag is updated by other means (e.g. Argo CD Image Updater or your CI pipeline) and argo-watcher only tracks the resulting rollout. If you instead rely on the built-in updater to commit the tag and omit the credential, the write-back is skipped and the deployment times out waiting for an image change that never arrives. A token that is **present but invalid or expired** returns `401 Unauthorized`.
 
 If [Keycloak](../guides/keycloak.md) is enabled, additional endpoints (such as deploy lock) require a valid Keycloak session.
 

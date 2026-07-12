@@ -59,7 +59,7 @@ Each entry follows the same shape: **Symptom · Likely cause · How to verify ·
 - The default `DEPLOYMENT_TIMEOUT` (900 seconds / 15 minutes) is too short for the workload.
 - Argo CD is not detecting the image update.
 - The lock is set on the application, blocking the deployment.
-- The task was submitted without a valid deploy token or JWT, so the git write-back was silently skipped (the task is still accepted with `202`, but Argo CD is never updated).
+- When relying on the built-in GitOps updater: the task was submitted without a valid deploy token or JWT, so the write-back was silently skipped and Argo CD never received the new tag. (If image tags are committed by other means — Argo CD Image Updater, your CI — this is expected and not the cause.)
 
 **How to verify:**
 - Check the Argo CD UI to confirm the application is syncing and the new image is being deployed.
