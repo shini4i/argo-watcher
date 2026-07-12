@@ -118,11 +118,11 @@ func (k *KeycloakAuthService) Validate(token string) (bool, error) {
 func (k *KeycloakAuthService) allowedToRollback(username string, groups []string) bool {
 	for _, group := range groups {
 		if slices.Contains(k.PrivilegedGroups, group) {
-			slog.Debug(fmt.Sprintf("%s is a member of the privileged group: %v", username, group))
+			slog.Debug("user is a member of a privileged group", "username", username, "group", group)
 			return true
 		}
 	}
 
-	slog.Debug(fmt.Sprintf("%s is not a member of any of the privileged groups: %v", username, k.PrivilegedGroups))
+	slog.Debug("user is not a member of any privileged group", "username", username, "privileged_groups", k.PrivilegedGroups)
 	return false
 }
