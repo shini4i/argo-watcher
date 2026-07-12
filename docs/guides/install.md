@@ -39,7 +39,7 @@ Argo Watcher server is designed to run in a Kubernetes environment. You can depl
 Add the Helm repository and install the chart:
 
 ```bash
-helm repo add shini4i https://shini4i.github.io/helm-charts
+helm repo add shini4i https://shini4i.github.io/charts/
 helm repo update
 helm install argo-watcher shini4i/argo-watcher -f values.yaml
 ```
@@ -54,9 +54,9 @@ argo:
   # Optionally include ARGO_WATCHER_DEPLOY_TOKEN (must match the client-side value)
   secretName: "argo-watcher"
 
-# Built-in GitOps updater configuration (optional)
-updater:
-  sshSecretName: "ssh-secret"
+  # Built-in GitOps updater configuration (optional)
+  updater:
+    sshSecretName: "ssh-secret"
 
 # PostgreSQL configuration for persistent task storage
 # Omit or set enabled: false to use in-memory storage (non-HA, data lost on restart)
