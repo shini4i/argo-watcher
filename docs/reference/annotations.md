@@ -6,11 +6,18 @@ All annotations are prefixed with `argo-watcher/` and are optional unless otherw
 
 ## Annotation Reference
 
-| Annotation | Type | Scope | Default | Example | Description |
-|---|---|---|---|---|---|
-| `argo-watcher/images` | comma-separated string | Application | (none) | `app-service,database` | List of image names to monitor for updates. |
-| `argo-watcher/image-tag` | string | Application | (none) | `latest` | Expected image tag to watch for. |
-| `argo-watcher/deployment-locking` | string | Application | (none) | `on-schedule` | Enable deployment locking with a schedule. |
+| Annotation | Scope | Example | Description |
+|---|---|---|---|
+| `argo-watcher/managed` | Application | `true` | Enables Argo Watcher management (and the GitOps write-back) for this application. |
+| `argo-watcher/managed-images` | Application | `app=registry.example.com/group/project` | Maps an alias to a full image name; comma-separated for multiple. |
+| `argo-watcher/<alias>.helm.image-tag` | Application | `app.image.tag` | Helm value path the new tag is written to, keyed by the alias from `managed-images`. |
+| `argo-watcher/write-back-repo` | Application (multi-source only) | `git@github.com:example/gitops.git` | Overrides the write-back repo. Honored only when the app uses `spec.sources` (plural). |
+| `argo-watcher/write-back-branch` | Application (multi-source only) | `main` | Overrides the write-back branch (multi-source only). |
+| `argo-watcher/write-back-path` | Application (multi-source only) | `sandbox/charts/demo` | Overrides the write-back path (multi-source only). |
+| `argo-watcher/write-back-filename` | Application | `values-override.yaml` | Overrides the override-file name (default is derived from the app name). |
+| `argo-watcher/fire-and-forget` | Application | `true` | Commits the tag and marks the deployment `deployed` without monitoring status. |
+
+See the [Git Integration guide](../guides/gitops-updater.md) for full usage and examples.
 
 ## Usage in Guides
 

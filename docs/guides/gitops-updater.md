@@ -117,6 +117,9 @@ metadata:
     argo-watcher/write-back-path: "sandbox/charts/demo"
 ```
 
+!!! warning
+    `write-back-repo`, `write-back-branch`, and `write-back-path` are honored **only** for applications using `spec.sources` (plural, multi-source). For a single-`spec.source` application these three annotations are silently ignored — Argo Watcher derives the repo, branch, and path from the application's existing source instead; only `write-back-filename` is still read.
+
 For an application named `Demo`, Argo Watcher creates or updates the override file at:
 
 ```text

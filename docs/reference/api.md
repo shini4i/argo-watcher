@@ -12,10 +12,12 @@ https://argo-watcher.example.com/api/v1
 
 ## Authentication
 
-If the [GitOps Updater](../guides/gitops-updater.md) is enabled, task creation requires one of the following:
+If the [GitOps Updater](../guides/gitops-updater.md) is enabled, authorize the git write-back with one of the following:
 
 - **Deploy token** — Pass the `ARGO_WATCHER_DEPLOY_TOKEN` value as a query parameter or header.
 - **JWT token** — Include a `Bearer` token in the `Authorization` header.
+
+A task submitted **without** either credential is still accepted (`202 Accepted`) and monitored normally, but its git write-back is silently skipped — so the image tag is never committed and the deployment eventually times out. A token that is **present but invalid or expired** returns `401 Unauthorized`.
 
 If [Keycloak](../guides/keycloak.md) is enabled, additional endpoints (such as deploy lock) require a valid Keycloak session.
 
