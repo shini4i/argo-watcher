@@ -120,3 +120,21 @@ jobs:
           chart_name: argo-watcher
           app_version: ${{ github.ref_name }}
           update_chart_annotations: true
+
+      - name: Prune superseded pre-releases
+        # Once a stable vX.Y.Z ships, the date-stamped vX.Y.Z-pre.* snapshots
+        # that led to it are obsolete. Delete those releases and their tags so
+        # the Releases page keeps only shipped versions. Runs last and tolerates
+        # per-tag failures so a cleanup hiccup can't fail an otherwise-good
+        # release; skipped failures surface as workflow annotations.
+        if: (!contains(github.ref, 'pre'))
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release list --limit 200 --json tagName,isPrerelease \
+            --jq '.[] | select(.isPrerelease and (.tagName | startswith(env.GITHUB_REF_NAME + "-pre."))) | .tagName' \
+          | while read -r tag; do
+              echo "Deleting superseded pre-release: $tag"
+              gh release delete "$tag" --cleanup-tag --yes \
+                || echo "::warning::failed to delete pre-release $tag"
+            done
