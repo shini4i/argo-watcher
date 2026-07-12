@@ -453,18 +453,7 @@ func runGitUpdateWithRetry(parentCtx context.Context, repo *updater.GitRepo, app
 			return ErrDeploymentSuperseded
 		}
 
-		// Always invalidate the cache on the final attempt. A poisoned cache may
-		// originate from a prior task on a previous invocation, not just the
-		// current attempt, so the self-heal must fire unconditionally.
-		if attempt == maxAttempts {
-			log.Warn().Str("id", task.Id).Msgf(
-				"Final attempt %d/%d: invalidating cache and performing fresh clone",
-				attempt, maxAttempts,
-			)
-			if invErr := repo.InvalidateCache(); invErr != nil {
-				log.Warn().Err(invErr).Str("id", task.Id).Msg("Failed to invalidate cache before final attempt; proceeding anyway")
-			}
-		}
+		invalidateCacheOnFinalAttempt(repo, task, attempt, maxAttempts)
 
 		err := runGitUpdateAttempt(parentCtx, repo, opTimeout, appName, releaseOverrides, task)
 		if err == nil {
@@ -473,7 +462,6 @@ func runGitUpdateWithRetry(parentCtx context.Context, repo *updater.GitRepo, app
 			}
 			return nil
 		}
-
 		lastErr = err
 
 		if updater.IsPermanent(err) {
@@ -481,21 +469,48 @@ func runGitUpdateWithRetry(parentCtx context.Context, repo *updater.GitRepo, app
 			return err
 		}
 
-		if attempt < maxAttempts {
-			backoff := gitUpdateBackoff(attempt)
-			log.Warn().Err(err).Str("id", task.Id).Msgf(
-				"Git update attempt %d/%d failed; retrying after %s",
-				attempt, maxAttempts, backoff,
-			)
-			select {
-			case <-parentCtx.Done():
-				return fmt.Errorf("git update cancelled during backoff: %w", parentCtx.Err())
-			case <-time.After(backoff):
-			}
+		if waitErr := backoffBeforeRetry(parentCtx, task, err, attempt, maxAttempts); waitErr != nil {
+			return waitErr
 		}
 	}
 
 	return fmt.Errorf("git update failed after %d attempts: %w", maxAttempts, lastErr)
+}
+
+// invalidateCacheOnFinalAttempt clears the on-disk cache before the final
+// attempt so a poisoned cache (partial commit, stale ref, half-written file) is
+// replaced by a fresh clone and self-heals without operator intervention.
+func invalidateCacheOnFinalAttempt(repo *updater.GitRepo, task *Task, attempt, maxAttempts uint) {
+	if attempt != maxAttempts {
+		return
+	}
+	log.Warn().Str("id", task.Id).Msgf(
+		"Final attempt %d/%d: invalidating cache and performing fresh clone",
+		attempt, maxAttempts,
+	)
+	if invErr := repo.InvalidateCache(); invErr != nil {
+		log.Warn().Err(invErr).Str("id", task.Id).Msg("Failed to invalidate cache before final attempt; proceeding anyway")
+	}
+}
+
+// backoffBeforeRetry waits (jittered) before the next attempt, unless this was
+// the final one. It returns a non-nil error only if parentCtx is cancelled
+// during the wait, signalling the caller to stop retrying.
+func backoffBeforeRetry(parentCtx context.Context, task *Task, attemptErr error, attempt, maxAttempts uint) error {
+	if attempt >= maxAttempts {
+		return nil
+	}
+	backoff := gitUpdateBackoff(attempt)
+	log.Warn().Err(attemptErr).Str("id", task.Id).Msgf(
+		"Git update attempt %d/%d failed; retrying after %s",
+		attempt, maxAttempts, backoff,
+	)
+	select {
+	case <-parentCtx.Done():
+		return fmt.Errorf("git update cancelled during backoff: %w", parentCtx.Err())
+	case <-time.After(backoff):
+		return nil
+	}
 }
 
 // runGitUpdateAttempt performs one clone+update cycle. It derives a per-attempt
