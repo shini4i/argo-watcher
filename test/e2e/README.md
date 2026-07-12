@@ -43,12 +43,13 @@ Tunable soak knobs are `Taskfile.yml` vars (`APPS`, `WORKERS`, `WS_CLIENTS`,
 
 ## CI
 
-The same flow runs in GitHub Actions via the **E2E lab (manual)** workflow
-(`workflow_dispatch`): Actions → *E2E lab (manual)* → *Run workflow*, against the
-branch to validate. It runs on a hosted `ubuntu-latest` runner, where kind uses
-the **docker** provider — `load-race-image.sh` takes its `kind load` fast path
-there and falls back to the podman `ctr import` locally, so the lab runs
-unchanged in both places.
+The same flow runs in GitHub Actions via the **E2E lab** workflow: add the
+**`e2e`** label to a pull request and it runs the full flow against that PR's
+branch (re-run by removing and re-adding the label). It is also dispatchable
+manually (`workflow_dispatch`) once the workflow is on the default branch. Runs
+on a hosted `ubuntu-latest` runner, where kind uses the **docker** provider —
+`load-race-image.sh` takes its `kind load` fast path there and falls back to the
+podman `ctr import` locally, so the lab runs unchanged in both places.
 
 Reach any component with `kubectl port-forward` (there is no ingress), e.g.
 `kubectl -n argo-watcher port-forward svc/argo-watcher 8080:80`.
