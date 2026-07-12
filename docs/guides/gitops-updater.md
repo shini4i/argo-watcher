@@ -180,7 +180,8 @@ export ARGO_WATCHER_DEPLOY_TOKEN=your_deploy_token
 **Using JWT (recommended):**
 
 ```bash
-export BEARER_TOKEN="Bearer your_jwt_token"
+# Set the raw token — no "Bearer " prefix — so it can be masked as a CI variable.
+export BEARER_TOKEN="your_jwt_token"
 ```
 
 See the [Installation](install.md#client-setup) guide for complete CI/CD pipeline examples.
