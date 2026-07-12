@@ -50,7 +50,10 @@ jobs:
           # fetch the toolchain named in go.mod instead of failing.
           GOTOOLCHAIN: auto
         with:
-          args: ./...
+          # Exclude the e2e lab tooling (test/e2e): it is not shipped in any
+          # release binary, and its git-exec / file-read / math-rand usage is
+          # intentional for a disposable local lab, not a production attack surface.
+          args: -exclude-dir=test/e2e ./...
 
       - name: Run govulncheck
         id: govulncheck
