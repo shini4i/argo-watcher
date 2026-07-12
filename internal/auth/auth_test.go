@@ -4,7 +4,9 @@ import (
 	"errors"
 	"net/http"
 	"testing"
+	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	"github.com/stretchr/testify/assert"
 )
@@ -264,6 +266,38 @@ func TestAuthenticatorValidateBearerOnlyPrefix(t *testing.T) {
 	valid, validateErr := authenticator.Validate(request)
 	assert.False(t, valid)
 	assert.NoError(t, validateErr)
+}
+
+// TestAuthenticatorValidateJWTWithAndWithoutBearerPrefix proves that the
+// "Bearer " prefix is optional: a raw JWT on the Authorization header
+// validates identically to a "Bearer <jwt>" value. The raw form is what makes
+// the token maskable as a GitLab CI variable (no space in the value).
+func TestAuthenticatorValidateJWTWithAndWithoutBearerPrefix(t *testing.T) {
+	secret := "test_secret_key"
+	claims := jwt.MapClaims{"exp": float64(time.Now().Add(time.Hour).Unix())}
+	signed, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(secret))
+	assert.NoError(t, err)
+
+	cases := map[string]string{
+		"raw JWT (maskable)":       signed,
+		"Bearer-prefixed (legacy)": "Bearer " + signed,
+	}
+
+	for name, headerValue := range cases {
+		t.Run(name, func(t *testing.T) {
+			authenticator := NewAuthenticator(map[string]AuthStrategy{
+				"Authorization": NewJWTAuthService(secret),
+			})
+
+			request, reqErr := http.NewRequest(http.MethodGet, "http://example.com", http.NoBody)
+			assert.NoError(t, reqErr)
+			request.Header.Set("Authorization", headerValue)
+
+			valid, validateErr := authenticator.Validate(request)
+			assert.True(t, valid)
+			assert.NoError(t, validateErr)
+		})
+	}
 }
 
 func TestNewAuthenticatorSkipsNilStrategies(t *testing.T) {

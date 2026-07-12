@@ -72,7 +72,12 @@ func (watcher *Watcher) addTask(task models.Task, authMethod, token string) (str
 	if authMethod != "" && token != "" {
 		switch authMethod {
 		case "JWT":
-			request.Header.Set("Authorization", token)
+			// Send the raw JWT so the value is maskable as a GitLab CI variable
+			// (a "Bearer " prefix contains a space, which GitLab refuses to mask).
+			// A legacy "Bearer <jwt>" value is still accepted: strip the prefix
+			// here so the wire header is consistent regardless of how the user
+			// set BEARER_TOKEN.
+			request.Header.Set("Authorization", strings.TrimPrefix(token, "Bearer "))
 		case "DeployToken":
 			request.Header.Set("ARGO_WATCHER_DEPLOY_TOKEN", token)
 		}

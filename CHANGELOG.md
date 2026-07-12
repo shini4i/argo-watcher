@@ -46,6 +46,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on `401`/`403`, hints which token variables govern authentication
   (`ARGO_WATCHER_DEPLOY_TOKEN` / `BEARER_TOKEN`), replacing the previous
   status-code-only message.
+- `BEARER_TOKEN` can now be set to the raw JWT with no `Bearer ` prefix, so the
+  value is maskable as a GitLab CI variable (the space in `Bearer ` blocked
+  masking). The `Bearer <jwt>` form is still accepted for backward
+  compatibility — the client strips the prefix before sending.
 - Update backend and frontend dependencies to their latest releases. The bundled
   web UI now runs on React 19 and Material UI 9, and building from source
   requires Go 1.26.

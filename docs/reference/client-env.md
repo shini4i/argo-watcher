@@ -18,7 +18,7 @@ The Argo Watcher client is a lightweight CLI tool distributed as a Docker image 
 | Variable                    | Description                                                                                       |
 |-----------------------------|---------------------------------------------------------------------------------------------------|
 | `ARGO_WATCHER_DEPLOY_TOKEN` | Deploy token for Git image override (required when using the built-in GitOps updater)            |
-| `BEARER_TOKEN`              | JWT token for authentication (prefix with `Bearer `, e.g. `Bearer <token>`)                     |
+| `BEARER_TOKEN`              | JWT for authentication. Set the raw token (e.g. `eyJhbGci...`) so it is maskable as a GitLab CI variable; a legacy `Bearer <token>` value is still accepted. |
 | `TIMEOUT`                   | HTTP request timeout (e.g. `60s`, `2m`)                                                         |
 | `TASK_TIMEOUT`              | Maximum time (in seconds) to wait for a task to complete                                        |
 | `TASK_REFRESH`              | Override the server's refresh setting for this deployment (`true`/`false`); unset keeps the server default |

@@ -64,7 +64,7 @@ Each entry follows the same shape: **Symptom · Likely cause · How to verify ·
 **How to verify:**
 - Check the Argo CD UI to confirm the application is syncing and the new image is being deployed.
 - Verify that the image tag annotation was correctly set: `kubectl describe app <ARGO_APP> -o yaml | grep -A5 argo-watcher`.
-- Confirm the CI job actually supplied `ARGO_WATCHER_DEPLOY_TOKEN` or a `Bearer` JWT; with `LOG_LEVEL=debug` a skipped write-back logs "Skipping git repo update".
+- Confirm the CI job actually supplied `ARGO_WATCHER_DEPLOY_TOKEN` or `BEARER_TOKEN`; with `LOG_LEVEL=debug` a skipped write-back logs "Skipping git repo update".
 - Check if the application is locked: `curl -H "Authorization: Bearer $BEARER_TOKEN" $ARGO_WATCHER_URL/api/v1/locks | jq '.[] | select(.app == "<ARGO_APP>")'`.
 
 **Fix:**

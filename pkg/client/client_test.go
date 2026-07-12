@@ -211,6 +211,76 @@ func TestAddTask(t *testing.T) {
 	assert.Equal(t, expected.Id, taskId)
 }
 
+// TestAddTaskJWTHeader verifies the Authorization header the client puts on the
+// wire for a JWT. A raw JWT (the maskable GitLab CI form) and a legacy
+// "Bearer <jwt>" value must both yield a clean, unprefixed Authorization value
+// so backward compatibility is preserved while the raw form is maskable. A
+// prefix-only value ("Bearer ") is a misconfiguration that collapses to an
+// empty header rather than being sent verbatim — pinned here so the behavior
+// cannot change undetected.
+func TestAddTaskJWTHeader(t *testing.T) {
+	const jwtValue = "eyJhbGciOiJIUzI1NiJ9.eyJleHAiOjF9.signature"
+
+	cases := []struct {
+		name     string
+		input    string
+		wantAuth string
+	}{
+		{"raw JWT (maskable)", jwtValue, jwtValue},
+		{"Bearer-prefixed (legacy)", "Bearer " + jwtValue, jwtValue},
+		{"prefix only (misconfiguration)", "Bearer ", ""},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var gotAuth string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotAuth = r.Header.Get("Authorization")
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusAccepted)
+				_ = json.NewEncoder(w).Encode(models.TaskStatus{Status: models.StatusAccepted, Id: taskId})
+			}))
+			defer srv.Close()
+
+			watcher := NewWatcher(srv.URL, false, 30*time.Second)
+			_, err := watcher.addTask(models.Task{App: "test"}, "JWT", tc.input)
+
+			assert.NoError(t, err)
+			assert.Equal(t, tc.wantAuth, gotAuth, "Authorization header must carry the raw JWT without a Bearer prefix")
+		})
+	}
+}
+
+// TestAddTaskDeployTokenHeader guards that the deploy-token path is unaffected
+// by the JWT "Bearer " normalization: the ARGO_WATCHER_DEPLOY_TOKEN header must
+// carry the token verbatim, even for a value that happens to start with
+// "Bearer ", proving no stripping leaks onto this branch.
+func TestAddTaskDeployTokenHeader(t *testing.T) {
+	cases := map[string]string{
+		"plain token":            "s3cr3t-deploy-token",
+		"Bearer-looking literal": "Bearer not-a-jwt",
+	}
+
+	for name, tokenInput := range cases {
+		t.Run(name, func(t *testing.T) {
+			var gotToken string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotToken = r.Header.Get("ARGO_WATCHER_DEPLOY_TOKEN")
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusAccepted)
+				_ = json.NewEncoder(w).Encode(models.TaskStatus{Status: models.StatusAccepted, Id: taskId})
+			}))
+			defer srv.Close()
+
+			watcher := NewWatcher(srv.URL, false, 30*time.Second)
+			_, err := watcher.addTask(models.Task{App: "test"}, "DeployToken", tokenInput)
+
+			assert.NoError(t, err)
+			assert.Equal(t, tokenInput, gotToken, "deploy token must be sent verbatim, never prefix-stripped")
+		})
+	}
+}
+
 func TestGetTaskStatus(t *testing.T) {
 	t.Run("received deployed status", func(t *testing.T) {
 		task, err := client.getTaskStatus(taskId)
