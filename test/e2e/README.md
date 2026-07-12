@@ -41,6 +41,15 @@ Tunable soak knobs are `Taskfile.yml` vars (`APPS`, `WORKERS`, `WS_CLIENTS`,
 `SOAK`, `SOAK_SECONDS`, `COMPETITOR_INTERVAL`), overridable on the CLI, e.g.
 `task e2e SOAK=10m WORKERS=20`.
 
+## CI
+
+The same flow runs in GitHub Actions via the **E2E lab (manual)** workflow
+(`workflow_dispatch`): Actions → *E2E lab (manual)* → *Run workflow*, against the
+branch to validate. It runs on a hosted `ubuntu-latest` runner, where kind uses
+the **docker** provider — `load-race-image.sh` takes its `kind load` fast path
+there and falls back to the podman `ctr import` locally, so the lab runs
+unchanged in both places.
+
 Reach any component with `kubectl port-forward` (there is no ingress), e.g.
 `kubectl -n argo-watcher port-forward svc/argo-watcher 8080:80`.
 

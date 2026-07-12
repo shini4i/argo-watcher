@@ -1,0 +1,66 @@
+name: E2E lab (manual)
+
+# Manually triggered per-release gate. Boots a disposable kind cluster with real
+# ArgoCD + Gitea + argo-watcher (built with -race) and runs the git-conflict
+# soak and supersession race. Not on push/PR events — dispatch it against the
+# branch you want to validate.
+on:
+  workflow_dispatch:
+    inputs:
+      soak_seconds:
+        description: "Git-conflict soak duration, in seconds"
+        type: string
+        default: "300"
+      workers:
+        description: "Concurrent deploy workers"
+        type: string
+        default: "10"
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: e2e (kind + real ArgoCD/Gitea)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+
+      - name: Install kind, kubectl, helm, task
+        env:
+          KIND_VERSION: v0.31.0
+          KUBECTL_VERSION: v1.36.2
+          HELM_VERSION: v3.20.2
+          TASK_VERSION: v3.48.0
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          curl -fsSL -o "$tmp/kind" "https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-amd64"
+          curl -fsSL -o "$tmp/kubectl" "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          curl -fsSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" | tar -xz -C "$tmp" --strip-components=1 linux-amd64/helm
+          curl -fsSL "https://github.com/go-task/task/releases/download/${TASK_VERSION}/task_linux_amd64.tar.gz" | tar -xz -C "$tmp" task
+          sudo install -m 0755 "$tmp"/kind "$tmp"/kubectl "$tmp"/helm "$tmp"/task /usr/local/bin/
+
+      - name: Run e2e lab
+        working-directory: test/e2e
+        # Inputs are bound to env (never interpolated into the script) and passed
+        # as go-task vars. On a hosted runner kind uses the docker provider, so
+        # the image-load step takes its `kind load` fast path automatically.
+        env:
+          SOAK_SECONDS: ${{ inputs.soak_seconds }}
+          WORKERS: ${{ inputs.workers }}
+        run: task e2e SOAK="${SOAK_SECONDS}s" SOAK_SECONDS="${SOAK_SECONDS}" WORKERS="${WORKERS}"
+
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          echo "::group::pods"; kubectl get pods -A || true; echo "::endgroup::"
+          echo "::group::argo-watcher logs"; kubectl -n argo-watcher logs statefulset/argo-watcher --all-containers --tail=300 || true; echo "::endgroup::"
+          echo "::group::applications"; kubectl -n argocd get applications -o wide || true; echo "::endgroup::"
