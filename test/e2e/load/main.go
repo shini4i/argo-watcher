@@ -141,7 +141,8 @@ func main() {
 	}
 
 	client := &http.Client{Timeout: 30 * time.Second}
-	rng := rand.New(rand.NewSource(1)) // fixed seed: reproducible app/tag choices
+	// Fixed seed keeps app/tag selection reproducible across runs.
+	rng := rand.New(rand.NewSource(1)) // NOSONAR - load-driver work selection, not a security context
 	var rngMu sync.Mutex
 
 	for w := 0; w < cfg.workers; w++ {
@@ -304,7 +305,7 @@ func readGitTag(app string) (string, error) {
 		return "", err
 	}
 	defer os.RemoveAll(dir)
-	if out, err := exec.Command("git", "clone", "-q", repoURL, dir).CombinedOutput(); err != nil {
+	if out, err := exec.Command("git", "clone", "-q", repoURL, dir).CombinedOutput(); err != nil { // NOSONAR - local dev lab; git resolved from the developer's trusted PATH
 		return "", fmt.Errorf("git clone: %w: %s", err, out)
 	}
 	data, err := os.ReadFile(filepath.Join(dir, "chart", fmt.Sprintf(".argocd-source-%s.yaml", app)))
