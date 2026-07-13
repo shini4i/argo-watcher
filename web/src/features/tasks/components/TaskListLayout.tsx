@@ -1,6 +1,6 @@
 import { Children, isValidElement, type ReactNode } from 'react';
 import { Box, Stack } from '@mui/material';
-import { List, Pagination, type ListProps } from 'react-admin';
+import { List, Pagination, useListContext, type ListProps } from 'react-admin';
 import { PerPagePersistence, readPersistentPerPage } from '../../../shared/hooks/usePersistentPerPage';
 import { SearchFilteredView } from './SearchFilteredView';
 import { TaskListProvider } from './TaskListContext';
@@ -15,6 +15,38 @@ interface TaskListLayoutProps {
   listProps?: Partial<ListProps>;
   emptyComponent?: ReactNode | false;
 }
+
+/**
+ * Renders the list body: the children (datagrid) normally, or the page-specific
+ * empty placeholder when the backend returned zero rows and no filters are active.
+ *
+ * This gate lives here — inside <List> — rather than on <List empty>, because
+ * react-admin renders the `empty` element *instead of* the entire list, which
+ * drops the filter toolbar with it. Users would then land on an empty history
+ * page with no way to widen the date range. Rendering the placeholder in the
+ * body keeps the header/filters mounted above it. When filters are active we
+ * defer to the datagrid's own filtered empty state (with its "Clear filters"
+ * CTA), matching react-admin's original `shouldRenderEmptyPage` condition
+ * (`!error && !isPending && total === 0 && !filterValues`). The `!error` guard
+ * matters: on a fetch error after an empty load `total` is still 0, and we must
+ * defer to the list body rather than misattribute the error to genuine emptiness.
+ */
+const ListBody = ({
+  emptyComponent,
+  children,
+}: {
+  emptyComponent: ReactNode | false;
+  children: ReactNode;
+}) => {
+  const { isPending, total, filterValues, error } = useListContext();
+  const hasFilters = Object.keys(filterValues ?? {}).length > 0;
+
+  if (emptyComponent && !error && !isPending && total === 0 && !hasFilters) {
+    return <>{emptyComponent}</>;
+  }
+
+  return <>{children}</>;
+};
 
 /**
  * Shared wrapper for task list pages handling pagination persistence, headers, and empty states.
@@ -65,7 +97,7 @@ export const TaskListLayout = ({
       pagination={resolvedPagination}
       actions={actions}
       storeKey={storeKey}
-      empty={emptyComponent}
+      empty={false}
       {...rest}
     >
       <PerPagePersistence storageKey={perPageStorageKey} />
@@ -83,7 +115,9 @@ export const TaskListLayout = ({
           <Box sx={{ width: '100%' }} />
         )}
       </Stack>
-      <SearchFilteredView>{children}</SearchFilteredView>
+      <ListBody emptyComponent={emptyComponent}>
+        <SearchFilteredView>{children}</SearchFilteredView>
+      </ListBody>
     </List>
     </TaskListProvider>
   );

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep the History page filters visible when there are no matching deployments.
+  Previously, with no deployments in the default time window the empty-state
+  message replaced the whole view, hiding the date-range and application
+  filters so users had no way to widen the range.
+
 ## [0.11.0] - 2026-07-13
 
 ### Added
