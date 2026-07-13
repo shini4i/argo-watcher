@@ -452,6 +452,101 @@ func TestMergeOverrideFileContent(t *testing.T) {
 	})
 }
 
+func TestCommitAndPush_SkipsWhenContentUnchanged(t *testing.T) {
+	_, _, localRepo, _, localPath := setupGitForTest(t)
+
+	repo := newTestRepo(t, &GitClient{})
+	repo.localRepo = localRepo
+	repo.localRepoPath = localPath
+	appDir := filepath.Join(localPath, "apps")
+	require.NoError(t, os.Mkdir(appDir, 0755))
+	fullPath := filepath.Join(appDir, "values.yaml")
+
+	params := &ArgoOverrideFile{}
+	params.Helm.Parameters = []ArgoParameterOverride{{Name: "image.tag", Value: "v2.0.0"}}
+
+	// First write creates the commit.
+	require.NoError(t, repo.commitAndPush(context.Background(), fullPath, "msg", params))
+
+	headBefore, err := localRepo.Head()
+	require.NoError(t, err)
+
+	// Second call with byte-identical content must skip: no new commit, no error.
+	require.NoError(t, repo.commitAndPush(context.Background(), fullPath, "msg", params))
+
+	headAfter, err := localRepo.Head()
+	require.NoError(t, err)
+	assert.Equal(t, headBefore.Hash(), headAfter.Hash(), "expected no new commit when content is unchanged")
+}
+
+func TestCommitAndPush_RestagesModifiedTrackedFile(t *testing.T) {
+	_, remoteRepo, localRepo, _, localPath := setupGitForTest(t)
+
+	repo := newTestRepo(t, &GitClient{})
+	repo.localRepo = localRepo
+	repo.localRepoPath = localPath
+	appDir := filepath.Join(localPath, "apps")
+	require.NoError(t, os.Mkdir(appDir, 0755))
+	fullPath := filepath.Join(appDir, "values.yaml")
+
+	// First commit tracks the file at v1.
+	v1 := &ArgoOverrideFile{}
+	v1.Helm.Parameters = []ArgoParameterOverride{{Name: "image.tag", Value: "v1.0.0"}}
+	require.NoError(t, repo.commitAndPush(context.Background(), fullPath, "v1", v1))
+	headV1, err := localRepo.Head()
+	require.NoError(t, err)
+
+	// Second commit modifies the already-tracked file to v2. SkipStatus must still
+	// stage the modified content and advance HEAD with the new blob.
+	v2 := &ArgoOverrideFile{}
+	v2.Helm.Parameters = []ArgoParameterOverride{{Name: "image.tag", Value: "v2.0.0"}}
+	require.NoError(t, repo.commitAndPush(context.Background(), fullPath, "v2", v2))
+
+	headV2, err := localRepo.Head()
+	require.NoError(t, err)
+	assert.NotEqual(t, headV1.Hash(), headV2.Hash(), "modifying a tracked file must produce a new commit")
+
+	commit, err := remoteRepo.CommitObject(headV2.Hash())
+	require.NoError(t, err)
+	file, err := commit.File("apps/values.yaml")
+	require.NoError(t, err)
+	contents, err := file.Contents()
+	require.NoError(t, err)
+	assert.Contains(t, contents, "v2.0.0")
+	assert.NotContains(t, contents, "v1.0.0")
+}
+
+func TestCommitAndPush_StagesOnlyTargetFile(t *testing.T) {
+	_, remoteRepo, localRepo, _, localPath := setupGitForTest(t)
+
+	repo := newTestRepo(t, &GitClient{})
+	repo.localRepo = localRepo
+	repo.localRepoPath = localPath
+	appDir := filepath.Join(localPath, "apps")
+	require.NoError(t, os.Mkdir(appDir, 0755))
+	fullPath := filepath.Join(appDir, "values.yaml")
+
+	// An unrelated, untracked file sitting in the worktree must never be swept into
+	// our commit — we stage exactly the override file and nothing else.
+	require.NoError(t, os.WriteFile(filepath.Join(localPath, "stray.txt"), []byte("junk"), 0600))
+
+	params := &ArgoOverrideFile{}
+	params.Helm.Parameters = []ArgoParameterOverride{{Name: "image.tag", Value: "v2.0.0"}}
+	require.NoError(t, repo.commitAndPush(context.Background(), fullPath, "msg", params))
+
+	head, err := remoteRepo.Head()
+	require.NoError(t, err)
+	commit, err := remoteRepo.CommitObject(head.Hash())
+	require.NoError(t, err)
+	tree, err := commit.Tree()
+	require.NoError(t, err)
+
+	_, err = tree.File("apps/values.yaml")
+	require.NoError(t, err, "override file should be committed")
+	_, err = tree.File("stray.txt")
+	assert.Error(t, err, "unrelated untracked file must not be committed")
+}
+
 func TestCommitAndPush_WriteFileError(t *testing.T) {
 	localPath := t.TempDir()
 	r, err := git.PlainInit(localPath, false)

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- New `gitops_writeback_duration_seconds` and `gitops_lock_wait_duration_seconds`
+  Prometheus histograms (label `app`) to surface slow or contended git write-backs
+  to GitOps repositories — the first measures how long a write-back holds the
+  per-repository lock (clone/commit/push plus retries), the second how long a
+  deployment waits to acquire it.
+
+### Changed
+
+- Speed up GitOps write-backs by detecting whether the override file changed with a
+  targeted single-file comparison instead of scanning the entire working tree. On
+  large GitOps repositories this markedly reduces per-deployment commit latency,
+  most noticeably when several deployments to the same repository run concurrently
+  and each must wait its turn under the per-repository lock.
+
 ### Fixed
 
 - Keep the History page filters visible when there are no matching deployments.
