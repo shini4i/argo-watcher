@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
+	"github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
 	"github.com/shini4i/argo-watcher/internal/notifications"
 
 	"github.com/shini4i/argo-watcher/internal/helpers"
@@ -55,6 +56,9 @@ type DeploymentMonitor struct {
 type GitUpdater struct {
 	locker        lock.Locker
 	repoCachePath string
+	// metrics records lock-wait and write-back durations. May be nil in tests, in which
+	// case observation is skipped.
+	metrics prometheus.MetricsInterface
 }
 
 // NewDeploymentMonitor creates a deployment monitor with the supplied configuration.
@@ -334,11 +338,27 @@ func (monitor *DeploymentMonitor) handleDeploymentFailure(task *models.Task, sta
 	task.Status = models.StatusFailedMessage
 }
 
-// NewGitUpdater creates a GitUpdater instance.
-func NewGitUpdater(locker lock.Locker, repoCachePath string) *GitUpdater {
+// NewGitUpdater creates a GitUpdater instance. metrics may be nil, in which case
+// duration observation is skipped.
+func NewGitUpdater(locker lock.Locker, repoCachePath string, metrics prometheus.MetricsInterface) *GitUpdater {
 	return &GitUpdater{
 		locker:        locker,
 		repoCachePath: repoCachePath,
+		metrics:       metrics,
+	}
+}
+
+// observeLockWait records how long a task waited to acquire the per-repo lock.
+func (gitUpdater *GitUpdater) observeLockWait(app string, d time.Duration) {
+	if gitUpdater.metrics != nil {
+		gitUpdater.metrics.ObserveGitLockWaitDuration(app, d.Seconds())
+	}
+}
+
+// observeWriteback records how long the git write-back took while holding the lock.
+func (gitUpdater *GitUpdater) observeWriteback(app string, d time.Duration) {
+	if gitUpdater.metrics != nil {
+		gitUpdater.metrics.ObserveGitWritebackDuration(app, d.Seconds())
 	}
 }
 
@@ -358,7 +378,14 @@ func (gitUpdater *GitUpdater) UpdateIfNeeded(app *models.Application, task model
 		return err
 	}
 
+	// Timed from just before the lock request so lock-wait captures the full queueing
+	// delay behind concurrent write-backs to the same repo, and the write-back timer
+	// captures only the work done once the lock is held.
+	lockRequested := time.Now()
 	gitUpdateFunc := func() error {
+		gitUpdater.observeLockWait(task.App, time.Since(lockRequested))
+		workStart := time.Now()
+		defer func() { gitUpdater.observeWriteback(task.App, time.Since(workStart)) }()
 		slog.Debug("Application managed by watcher. Initiating git repo update.", "id", task.Id)
 		return gitUpdater.updateGitRepo(app, &task, &gitopsRepo, isSuperseded...)
 	}
@@ -418,7 +445,7 @@ func (updater *ArgoStatusUpdater) Init(argo Argo, cfg ArgoStatusUpdaterConfig) e
 	updater.monitor = NewDeploymentMonitor(argo, cfg.RegistryProxyURL, retryOptions, cfg.AcceptSuspended, cfg.RetryDelay)
 	updater.monitor.defaultAttempts = cfg.RetryAttempts
 	updater.monitor.refreshApp = cfg.RefreshApp
-	updater.gitUpdater = NewGitUpdater(cfg.Locker, cfg.RepoCachePath)
+	updater.gitUpdater = NewGitUpdater(cfg.Locker, cfg.RepoCachePath, argo.metrics)
 
 	var strategies []notifications.NotificationStrategy
 

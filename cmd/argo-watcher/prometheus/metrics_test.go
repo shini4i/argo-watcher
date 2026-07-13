@@ -6,7 +6,9 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMetrics_AddProcessedDeployment(t *testing.T) {
@@ -90,6 +92,45 @@ func TestMetrics_SetArgoUnavailable(t *testing.T) {
 			assert.Equal(t, tc.expectedValue, testutil.ToFloat64(m.ArgocdUnavailable))
 		})
 	}
+}
+
+// histogramSampleForApp reads the sample count and sum recorded for a given app label
+// on a HistogramVec, so tests can assert the exact value that was observed.
+func histogramSampleForApp(t *testing.T, vec *prometheus.HistogramVec, app string) (count uint64, sum float64) {
+	t.Helper()
+	obs, err := vec.GetMetricWithLabelValues(app)
+	require.NoError(t, err)
+	var metric dto.Metric
+	require.NoError(t, obs.(prometheus.Metric).Write(&metric))
+	return metric.GetHistogram().GetSampleCount(), metric.GetHistogram().GetSampleSum()
+}
+
+func TestMetrics_ObserveGitWritebackDuration(t *testing.T) {
+	// Arrange
+	reg := prometheus.NewRegistry()
+	m := NewMetrics(reg)
+
+	// Act
+	m.ObserveGitWritebackDuration("test-app", 3.5)
+
+	// Assert: exactly one observation of the passed value for the app.
+	count, sum := histogramSampleForApp(t, m.GitWritebackDuration, "test-app")
+	assert.Equal(t, uint64(1), count)
+	assert.Equal(t, 3.5, sum)
+}
+
+func TestMetrics_ObserveGitLockWaitDuration(t *testing.T) {
+	// Arrange
+	reg := prometheus.NewRegistry()
+	m := NewMetrics(reg)
+
+	// Act
+	m.ObserveGitLockWaitDuration("test-app", 12)
+
+	// Assert: exactly one observation of the passed value for the app.
+	count, sum := histogramSampleForApp(t, m.GitLockWaitDuration, "test-app")
+	assert.Equal(t, uint64(1), count)
+	assert.Equal(t, float64(12), sum)
 }
 
 func TestMetrics_InProgressTasks(t *testing.T) {

@@ -14,6 +14,8 @@ type MetricsInterface interface {
 	AddInProgressTask()
 	RemoveInProgressTask()
 	ObserveRefreshDuration(app string, seconds float64)
+	ObserveGitWritebackDuration(app string, seconds float64)
+	ObserveGitLockWaitDuration(app string, seconds float64)
 }
 
 // Metrics contains all the prometheus collectors.
@@ -23,6 +25,8 @@ type Metrics struct {
 	ArgocdUnavailable    prometheus.Gauge
 	InProgressTasks      prometheus.Gauge
 	RefreshDuration      *prometheus.HistogramVec
+	GitWritebackDuration *prometheus.HistogramVec
+	GitLockWaitDuration  *prometheus.HistogramVec
 }
 
 // NewMetrics creates and registers the metrics with the provided Registerer.
@@ -49,9 +53,29 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 			Help:    "Duration of ArgoCD application refresh requests, to surface slow or stuck refreshes.",
 			Buckets: prometheus.DefBuckets,
 		}, []string{"app"}),
+		// GitWritebackDuration times the whole write-back held under the per-repo lock:
+		// the clone/commit/push cycle plus any retries and inter-attempt backoff. This is
+		// the operationally meaningful number — it is how long the task blocks every other
+		// write-back to the same repo. Under push contention it can approach
+		// GIT_MAX_ATTEMPTS * GIT_OP_TIMEOUT plus backoff, so the buckets extend to 600s
+		// (the default 10s top bucket is far too low for git ops against a large repo).
+		GitWritebackDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "gitops_writeback_duration_seconds",
+			Help:    "Time the git write-back held the per-repo lock, covering the clone/commit/push cycle plus any retries and backoff.",
+			Buckets: []float64{0.5, 1, 2.5, 5, 10, 30, 60, 120, 300, 600},
+		}, []string{"app"}),
+		// GitLockWaitDuration times how long a task waited to acquire the per-repository
+		// write-back lock. Under concurrent deployments to one repo this is the dominant
+		// contributor to tail latency (the last task queues behind all the others), so the
+		// buckets extend to 300s.
+		GitLockWaitDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "gitops_lock_wait_duration_seconds",
+			Help:    "Time spent waiting to acquire the per-repository git write-back lock.",
+			Buckets: []float64{0.1, 0.5, 1, 5, 10, 30, 60, 120, 180, 300},
+		}, []string{"app"}),
 	}
 
-	reg.MustRegister(m.FailedDeployment, m.ProcessedDeployments, m.ArgocdUnavailable, m.InProgressTasks, m.RefreshDuration)
+	reg.MustRegister(m.FailedDeployment, m.ProcessedDeployments, m.ArgocdUnavailable, m.InProgressTasks, m.RefreshDuration, m.GitWritebackDuration, m.GitLockWaitDuration)
 
 	return m
 }
@@ -93,4 +117,16 @@ func (m *Metrics) RemoveInProgressTask() {
 // ObserveRefreshDuration records how long an ArgoCD refresh request took for the given app.
 func (m *Metrics) ObserveRefreshDuration(app string, seconds float64) {
 	m.RefreshDuration.WithLabelValues(app).Observe(seconds)
+}
+
+// ObserveGitWritebackDuration records how long the git write-back (clone, commit, push)
+// took for the given app, measured while holding the per-repo lock.
+func (m *Metrics) ObserveGitWritebackDuration(app string, seconds float64) {
+	m.GitWritebackDuration.WithLabelValues(app).Observe(seconds)
+}
+
+// ObserveGitLockWaitDuration records how long the given app's write-back waited to acquire
+// the per-repository lock.
+func (m *Metrics) ObserveGitLockWaitDuration(app string, seconds float64) {
+	m.GitLockWaitDuration.WithLabelValues(app).Observe(seconds)
 }

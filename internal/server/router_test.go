@@ -89,13 +89,15 @@ func (m *mockTaskRepository) ProcessObsoleteTasks(_ uint) {}
 // mockMetrics is a minimal mock for MetricsInterface used in tests.
 type mockMetrics struct{}
 
-func (m *mockMetrics) AddProcessedDeployment(_ string)            {}
-func (m *mockMetrics) AddFailedDeployment(_ string)               {}
-func (m *mockMetrics) ResetFailedDeployment(_ string)             {}
-func (m *mockMetrics) SetArgoUnavailable(_ bool)                  {}
-func (m *mockMetrics) AddInProgressTask()                         {}
-func (m *mockMetrics) RemoveInProgressTask()                      {}
-func (m *mockMetrics) ObserveRefreshDuration(_ string, _ float64) {}
+func (m *mockMetrics) AddProcessedDeployment(_ string)                 {}
+func (m *mockMetrics) AddFailedDeployment(_ string)                    {}
+func (m *mockMetrics) ResetFailedDeployment(_ string)                  {}
+func (m *mockMetrics) SetArgoUnavailable(_ bool)                       {}
+func (m *mockMetrics) AddInProgressTask()                              {}
+func (m *mockMetrics) RemoveInProgressTask()                           {}
+func (m *mockMetrics) ObserveRefreshDuration(_ string, _ float64)      {}
+func (m *mockMetrics) ObserveGitWritebackDuration(_ string, _ float64) {}
+func (m *mockMetrics) ObserveGitLockWaitDuration(_ string, _ float64)  {}
 
 func TestGetVersion(t *testing.T) {
 	gin.SetMode(gin.TestMode)

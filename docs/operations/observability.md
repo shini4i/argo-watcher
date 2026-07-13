@@ -12,7 +12,7 @@ scrape_configs:
 
 ## Exposed metrics
 
-The server emits five metrics today, all defined in [`cmd/argo-watcher/prometheus/metrics.go`](https://github.com/shini4i/argo-watcher/blob/main/cmd/argo-watcher/prometheus/metrics.go).
+The server emits seven metrics today, all defined in [`cmd/argo-watcher/prometheus/metrics.go`](https://github.com/shini4i/argo-watcher/blob/main/cmd/argo-watcher/prometheus/metrics.go).
 
 | Metric | Type | Labels | Description |
 |---|---|---|---|
@@ -21,6 +21,8 @@ The server emits five metrics today, all defined in [`cmd/argo-watcher/prometheu
 | `argocd_unavailable` | gauge | (none) | `1` when Argo Watcher cannot reach the Argo CD API, `0` otherwise. |
 | `in_progress_tasks` | gauge | (none) | Number of tasks currently in progress (between submission and terminal state). |
 | `argocd_refresh_duration_seconds` | histogram | `app` | Duration of ArgoCD application refresh requests, to surface slow or stuck refreshes. Recorded only when the status check requests a refresh. |
+| `gitops_writeback_duration_seconds` | histogram | `app` | Time the git write-back held the per-repo lock, covering the clone/commit/push cycle plus any retries and backoff. |
+| `gitops_lock_wait_duration_seconds` | histogram | `app` | Time spent waiting to acquire the per-repository git write-back lock. High values mean tasks are queued behind concurrent write-backs to the same repo. |
 
 In addition, the standard Go runtime metrics from the Prometheus client library are exposed (`go_*`, `process_*`).
 
@@ -77,6 +79,19 @@ groups:
             settles (e.g. an app with a constantly-reconciling CronJob) can stall the
             deployment check — set the per-task refresh override (or ARGO_REFRESH_APP) to
             false for such apps.
+
+      - alert: ArgoWatcherSlowGitWriteback
+        expr: histogram_quantile(0.95, sum by (app, le) (rate(gitops_writeback_duration_seconds_bucket[10m]))) > 60
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.app }} git write-back is slow"
+          description: |
+            The p95 git write-back for this application exceeds 60s, which points to push
+            contention (retries/backoff) or an expensive clone against a large GitOps repo.
+            Check gitops_lock_wait_duration_seconds for the same app to see whether it is
+            queued behind other write-backs to the same repository.
 ```
 
 ## Grafana panel queries

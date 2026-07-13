@@ -267,42 +267,48 @@ func (repo *GitRepo) mergeOverrideFileContent(fullPath string, overrideContent *
 }
 
 // commitAndPush handles the git workflow: writing changes, adding to stage,
-// committing, and pushing to the remote. If the working tree is clean after
-// writing the file, it skips the commit and push. ctx bounds the push.
+// committing, and pushing to the remote. If the override file already contains
+// exactly the content to be written, it skips the commit and push. ctx bounds
+// the push.
 func (repo *GitRepo) commitAndPush(ctx context.Context, fullPath, commitMsg string, overrideContent *ArgoOverrideFile) error {
 	worktree, err := repo.localRepo.Worktree()
 	if err != nil {
 		return err
 	}
 
-	// Write the final merged content to the override file.
+	// Marshal the final merged content.
 	contentBytes, err := yaml.Marshal(overrideContent)
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(fullPath, contentBytes, 0600); err != nil {
-		return fmt.Errorf("failed to write override file: %w", err)
-	}
 
-	// Check if writing the file actually resulted in changes.
-	status, err := worktree.Status()
-	if err != nil {
-		return fmt.Errorf("failed to get worktree status: %w", err)
-	}
-
-	// If the image tag is already correct, there will be no changes.
-	if status.IsClean() {
+	// Detect "nothing to commit" with a single-file byte compare instead of a
+	// full-worktree scan. Clone() hard-resets the worktree to origin HEAD before every
+	// attempt, and this override file is the only path argo-watcher ever writes, so the
+	// on-disk bytes equalling what we are about to write is equivalent to
+	// worktree.Status().IsClean() for our purposes — but O(1 file) instead of O(entire
+	// repo). On a large GitOps repo that whole-tree scan dominates the per-task cost, and
+	// it is paid serially for every concurrent task holding the per-repo lock in turn.
+	// #nosec G304 -- path already validated by assertInsideRoot in UpdateApp
+	if existing, readErr := os.ReadFile(fullPath); readErr == nil && bytes.Equal(existing, contentBytes) {
 		slog.Debug("No changes detected. Skipping commit.")
 		return nil
 	}
 
-	// Add the file to the staging area.
+	// Write the final merged content to the override file.
+	if err := os.WriteFile(fullPath, contentBytes, 0600); err != nil {
+		return fmt.Errorf("failed to write override file: %w", err)
+	}
+
+	// Add the file to the staging area. SkipStatus avoids the full-worktree Status()
+	// scan that worktree.Add performs internally; with an explicit single-file path
+	// go-git hashes and stages only that file (new or modified).
 	relativePath, err := filepath.Rel(repo.localRepoPath, fullPath)
 	if err != nil {
 		// This is a programmatic error, should not happen in practice.
 		return fmt.Errorf("could not determine relative path: %w", err)
 	}
-	if _, err := worktree.Add(relativePath); err != nil {
+	if err := worktree.AddWithOptions(&git.AddOptions{Path: relativePath, SkipStatus: true}); err != nil {
 		return err
 	}
 
