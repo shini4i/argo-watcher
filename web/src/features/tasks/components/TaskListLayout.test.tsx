@@ -3,13 +3,23 @@ import type { ReactElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TaskListLayout } from './TaskListLayout';
 
+interface StubListContext {
+  data: unknown[];
+  total?: number;
+  isPending?: boolean;
+  filterValues?: Record<string, unknown>;
+  error?: unknown;
+}
+
 const {
   listCalls,
+  listContextRef,
   ListMock,
   PaginationMock,
   PerPagePersistenceMock,
 } = vi.hoisted(() => {
   const listCallsInternal: Array<Record<string, unknown>> = [];
+  const contextRef: { current: StubListContext } = { current: { data: [] } };
 
   const list = ({ children, ...props }: Record<string, unknown>) => {
     listCallsInternal.push(props);
@@ -26,6 +36,7 @@ const {
 
   return {
     listCalls: listCallsInternal,
+    listContextRef: contextRef,
     ListMock: list,
     PaginationMock: pagination,
     PerPagePersistenceMock: perPage,
@@ -35,10 +46,9 @@ const {
 vi.mock('react-admin', () => ({
   List: ListMock,
   Pagination: PaginationMock,
-  // SearchFilteredView pulls useListContext + ListContextProvider through this
-  // mock; with the test's stubbed <List> not providing ListContext, we just
-  // hand back a passthrough that exposes empty data.
-  useListContext: () => ({ data: [] }),
+  // SearchFilteredView + TaskListLayout body both read useListContext; expose a
+  // mutable stub so individual tests can drive the empty/populated branches.
+  useListContext: () => listContextRef.current,
   ListContextProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
@@ -52,11 +62,14 @@ vi.mock('../../../shared/hooks/usePersistentPerPage', () => ({
 describe('TaskListLayout', () => {
   beforeEach(() => {
     listCalls.length = 0;
+    listContextRef.current = { data: [] };
     readPersistentPerPageMock.mockReset();
   });
 
   it('fills react-admin list props and renders header content when provided', () => {
     readPersistentPerPageMock.mockReturnValue(40);
+    // Non-empty result so the body renders children rather than the empty state.
+    listContextRef.current = { data: [{ id: 1 }], total: 1 };
 
     render(
       <TaskListLayout
@@ -94,7 +107,7 @@ describe('TaskListLayout', () => {
       pagination: ReactElement;
       actions: ReactElement;
       storeKey: string;
-      empty: ReactElement;
+      empty: unknown;
     };
 
     expect(props.title).toBe('Recent Tasks');
@@ -104,11 +117,87 @@ describe('TaskListLayout', () => {
     expect(props.pagination.props['data-testid']).toBe('custom-pagination');
     expect(props.actions.props['data-testid']).toBe('actions');
     expect(props.storeKey).toBe('customStore');
-    expect(props.empty.props['data-testid']).toBe('empty-state');
+    // The layout must NOT delegate the empty state to react-admin's <List empty>,
+    // because react-admin renders it *instead of* the list, dropping the filter
+    // toolbar. The empty placeholder is rendered inside the body instead.
+    expect(props.empty).toBe(false);
+  });
+
+  it('renders the empty placeholder alongside the header when there are no rows and no filters', () => {
+    readPersistentPerPageMock.mockReturnValue(25);
+    listContextRef.current = { data: [], total: 0, isPending: false, filterValues: {} };
+
+    render(
+      <TaskListLayout
+        perPageStorageKey="history.perPage"
+        header={[<button key="filters">Date filter</button>]}
+        emptyComponent={<div data-testid="empty-state" />}
+      >
+        <div data-testid="datagrid">Rows</div>
+      </TaskListLayout>,
+    );
+
+    // The header (filters) stays mounted so the user can still pick a date range.
+    expect(screen.getByText('Date filter')).toBeInTheDocument();
+    expect(screen.getByTestId('empty-state')).toBeInTheDocument();
+    // The datagrid children are replaced by the placeholder.
+    expect(screen.queryByTestId('datagrid')).not.toBeInTheDocument();
+  });
+
+  it('keeps rendering the datagrid (not the layout placeholder) when filters are active', () => {
+    readPersistentPerPageMock.mockReturnValue(25);
+    listContextRef.current = {
+      data: [],
+      total: 0,
+      isPending: false,
+      filterValues: { start: 1, end: 2 },
+    };
+
+    render(
+      <TaskListLayout
+        perPageStorageKey="history.perPage"
+        header={[<button key="filters">Date filter</button>]}
+        emptyComponent={<div data-testid="empty-state" />}
+      >
+        <div data-testid="datagrid">Rows</div>
+      </TaskListLayout>,
+    );
+
+    // With active filters, defer to the datagrid's own filtered empty state.
+    expect(screen.getByText('Date filter')).toBeInTheDocument();
+    expect(screen.getByTestId('datagrid')).toBeInTheDocument();
+    expect(screen.queryByTestId('empty-state')).not.toBeInTheDocument();
+  });
+
+  it('defers to the datagrid (not the layout placeholder) when a fetch error leaves zero rows', () => {
+    readPersistentPerPageMock.mockReturnValue(25);
+    listContextRef.current = {
+      data: [],
+      total: 0,
+      isPending: false,
+      filterValues: {},
+      error: new Error('backend unreachable'),
+    };
+
+    render(
+      <TaskListLayout
+        perPageStorageKey="history.perPage"
+        header={[<button key="filters">Date filter</button>]}
+        emptyComponent={<div data-testid="empty-state" />}
+      >
+        <div data-testid="datagrid">Rows</div>
+      </TaskListLayout>,
+    );
+
+    // A backend error must not be misattributed to genuine emptiness.
+    expect(screen.getByText('Date filter')).toBeInTheDocument();
+    expect(screen.getByTestId('datagrid')).toBeInTheDocument();
+    expect(screen.queryByTestId('empty-state')).not.toBeInTheDocument();
   });
 
   it('falls back to default pagination options and empty header placeholder', () => {
     readPersistentPerPageMock.mockReturnValue(15);
+    listContextRef.current = { data: [{ id: 1 }], total: 1 };
 
     render(
       <TaskListLayout title="History" perPageStorageKey="history.perPage">
