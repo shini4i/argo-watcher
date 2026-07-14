@@ -106,6 +106,7 @@ describe('App', () => {
     expect(adminProps.authProvider).toBe(authProviderStub);
     expect(adminProps.notification).toBe(AppNotificationStub);
     expect(adminProps.disableTelemetry).toBe(true);
+    expect(adminProps.loginPage).toBe(false);
     expect(adminProps.theme).toEqual({ paletteMode: 'dark' });
 
     expect(resourceCalls).toHaveLength(1);
