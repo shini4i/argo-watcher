@@ -44,15 +44,18 @@ export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
   const privilegedGroups: readonly string[] =
     (permissions as { privilegedGroups?: string[] })?.privilegedGroups ?? [];
   const privileged = hasPrivilegedAccess(groups, privilegedGroups);
-  // Default-deny while keycloakEnabled is unknown (null = config still loading
-  // or the /api/v1/config request failed) so a non-privileged user cannot
-  // toggle the lock during the brief startup window or on a transient error.
-  const canToggleLock =
-    keycloakEnabled === false || (keycloakEnabled === true && privileged);
+  // The manual toggle is only shown when Keycloak is enabled: without an auth
+  // backend the server does not expose the deploy-lock write endpoints, so there
+  // is nothing to toggle (mirrors the rollback button). Default-deny while
+  // keycloakEnabled is unknown (null = config still loading or the request failed).
+  const showLockToggle = keycloakEnabled === true;
+  const canToggleLock = keycloakEnabled === true && privileged;
   let lockHelperText: string | null = null;
   if (keycloakEnabled === null) {
     lockHelperText = 'Checking permissions…';
-  } else if (keycloakEnabled === true && !privileged) {
+  } else if (keycloakEnabled === false) {
+    lockHelperText = 'Manual deploy lock requires Keycloak.';
+  } else if (!privileged) {
     lockHelperText = 'Deploy lock requires privileged access.';
   }
 
@@ -171,12 +174,14 @@ export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
                   {deployLock ? 'Lock engaged' : 'Lock released'}
                 </Typography>
               </Stack>
-              <Switch
-                checked={deployLock}
-                onChange={handleDeployLockToggle}
-                disabled={!canToggleLock || lockUpdating}
-                slotProps={{ input: { 'aria-label': 'Toggle deploy lock' } }}
-              />
+              {showLockToggle && (
+                <Switch
+                  checked={deployLock}
+                  onChange={handleDeployLockToggle}
+                  disabled={!canToggleLock || lockUpdating}
+                  slotProps={{ input: { 'aria-label': 'Toggle deploy lock' } }}
+                />
+              )}
             </Stack>
             {lockHelperText && (
               <Typography variant="body2" sx={{

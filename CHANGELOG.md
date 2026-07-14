@@ -38,6 +38,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Previously, with no deployments in the default time window the empty-state
   message replaced the whole view, hiding the date-range and application
   filters so users had no way to widen the range.
+- Report the correct final status in failure notifications. When a deployment
+  failed (Argo CD unreachable, application not found), the stored task status
+  was correct but the outgoing result notification still carried "in progress",
+  so webhook consumers never saw the failure and Mattermost posted it as a new
+  "started" message instead of a threaded result.
+- Fail a deployment when a watcher-managed image is missing its image-tag
+  annotation, instead of silently skipping the git write-back and reporting
+  success. Previously an application whose `argo-watcher/managed-images` listed
+  an image without a matching `*.helm.image-tag` annotation logged an error,
+  wrote nothing to git, and still marked the deployment successful.
+
+### Security
+
+- Only expose the manual deploy-lock endpoints (`POST`/`DELETE
+  /api/v1/deploy-lock`) when Keycloak is enabled. Without an authentication
+  backend these state-changing endpoints were reachable unauthenticated,
+  letting anyone able to reach the server freeze or release all deployments;
+  they are now registered only when Keycloak is enabled, and the Web UI hides
+  the manual lock toggle to match. The read-only lock status and scheduled
+  lockdown are unaffected.
 
 ## [0.11.0] - 2026-07-13
 

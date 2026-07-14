@@ -335,15 +335,20 @@ func (app *Application) generateOverrideFileContent(annotations map[string]strin
 	for _, image := range task.Images {
 		for appAlias, appImage := range managedImages {
 			if image.Image == appImage {
-				if tagPath, exists := annotations[fmt.Sprintf(managedImageTagPattern, appAlias)]; exists {
-					overrideFileContent.Helm.Parameters = append(overrideFileContent.Helm.Parameters, updater.ArgoParameterOverride{
-						Name:        tagPath,
-						Value:       image.Tag,
-						ForceString: true,
-					})
-				} else {
-					slog.Error(fmt.Sprintf("%s annotation not found, skipping image %s update", fmt.Sprintf(managedImageTagPattern, appAlias), image.Image))
+				tagAnnotation := fmt.Sprintf(managedImageTagPattern, appAlias)
+				tagPath, exists := annotations[tagAnnotation]
+				if !exists {
+					// The image is declared managed but has no tag-path annotation, so
+					// we cannot know which Helm value to override. Silently skipping here
+					// would let the write-back report success while never updating git;
+					// fail loudly so the misconfiguration surfaces on the task instead.
+					return nil, fmt.Errorf("managed image %q (alias %q) is missing its %s annotation", appImage, appAlias, tagAnnotation)
 				}
+				overrideFileContent.Helm.Parameters = append(overrideFileContent.Helm.Parameters, updater.ArgoParameterOverride{
+					Name:        tagPath,
+					Value:       image.Tag,
+					ForceString: true,
+				})
 			}
 		}
 	}

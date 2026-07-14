@@ -19,7 +19,7 @@ Authentication is only required to authorize the built-in [GitOps Updater](../gu
 
 A task submitted **without** a credential is still accepted (`202 Accepted`) and its rollout is monitored normally — argo-watcher simply does not perform the git write-back. This is the expected setup when the image tag is updated by other means (e.g. Argo CD Image Updater or your CI pipeline) and argo-watcher only tracks the resulting rollout. If you instead rely on the built-in updater to commit the tag and omit the credential, the write-back is skipped and the deployment times out waiting for an image change that never arrives. A token that is **present but invalid or expired** returns `401 Unauthorized`.
 
-If [Keycloak](../guides/keycloak.md) is enabled, additional endpoints (such as deploy lock) require a valid Keycloak session.
+The state-changing `POST`/`DELETE /api/v1/deploy-lock` endpoints are only registered when [Keycloak](../guides/keycloak.md) is enabled, and require a valid Keycloak session; when Keycloak is disabled these endpoints are not exposed (`404 Not Found`). The read-only `GET /api/v1/deploy-lock` is always available regardless of Keycloak.
 
 ## Conventions
 

@@ -177,6 +177,55 @@ func TestDeployLock(t *testing.T) {
 	})
 }
 
+// TestDeployLockEndpointRegistration verifies that the state-changing deploy-lock
+// endpoints only exist when Keycloak is enabled. Without an auth backend they cannot
+// be protected, so they must not be exposed; the read-only GET stays available so the
+// banner and scheduled lockdown keep working.
+func TestDeployLockEndpointRegistration(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	hasRoute := func(routes gin.RoutesInfo, method, path string) bool {
+		for _, r := range routes {
+			if r.Method == method && r.Path == path {
+				return true
+			}
+		}
+		return false
+	}
+
+	newRouter := func(t *testing.T, keycloakEnabled bool) *gin.Engine {
+		t.Helper()
+		serverConfig := &config.ServerConfig{
+			StaticFilePath: t.TempDir(),
+			Keycloak:       config.KeycloakConfig{Enabled: keycloakEnabled},
+		}
+		env := &Env{config: serverConfig}
+		var err error
+		env.lockdown, err = NewLockdown("")
+		require.NoError(t, err)
+		return env.CreateRouter()
+	}
+
+	const lockPath = "/api/v1/deploy-lock"
+
+	t.Run("registers lock write endpoints when Keycloak is enabled", func(t *testing.T) {
+		routes := newRouter(t, true).Routes()
+		assert.True(t, hasRoute(routes, http.MethodPost, lockPath))
+		assert.True(t, hasRoute(routes, http.MethodDelete, lockPath))
+		assert.True(t, hasRoute(routes, http.MethodGet, lockPath))
+	})
+
+	t.Run("omits lock write endpoints when Keycloak is disabled", func(t *testing.T) {
+		routes := newRouter(t, false).Routes()
+		assert.False(t, hasRoute(routes, http.MethodPost, lockPath),
+			"POST deploy-lock must not be registered without an auth backend")
+		assert.False(t, hasRoute(routes, http.MethodDelete, lockPath),
+			"DELETE deploy-lock must not be registered without an auth backend")
+		assert.True(t, hasRoute(routes, http.MethodGet, lockPath),
+			"read-only GET deploy-lock must stay available")
+	})
+}
+
 func TestRemoveWebSocketConnection(t *testing.T) {
 	conn := &websocket.Conn{}
 	connectionsMutex.Lock()

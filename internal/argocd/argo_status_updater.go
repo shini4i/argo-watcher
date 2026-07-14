@@ -304,15 +304,19 @@ func (monitor *DeploymentMonitor) taskSuperseded(id string) bool {
 }
 
 // HandleArgoAPIFailure processes API errors and updates task status accordingly.
-func (monitor *DeploymentMonitor) HandleArgoAPIFailure(task models.Task, err error) {
+// task is taken by pointer so the resolved terminal status is reflected back to
+// the caller, keeping the outgoing failure notification in sync with the stored
+// status (mirroring handleDeploymentSuccess/handleDeploymentFailure).
+func (monitor *DeploymentMonitor) HandleArgoAPIFailure(task *models.Task, err error) {
 	monitor.argo.metrics.AddFailedDeployment(task.App)
-	finalStatus := determineFailureStatus(task, err)
+	finalStatus := determineFailureStatus(*task, err)
 	reason := fmt.Sprintf(ArgoAPIErrorTemplate, err.Error())
 	slog.Warn(fmt.Sprintf("Deployment failed with status \"%s\". Aborting with error: %s", finalStatus, reason), "id", task.Id)
 
 	if err := monitor.argo.State.SetTaskStatus(task.Id, finalStatus, reason); err != nil {
 		slog.Error(fmt.Sprintf(failedToUpdateTaskStatusTemplate, err), "id", task.Id)
 	}
+	task.Status = finalStatus
 }
 
 func (monitor *DeploymentMonitor) handleDeploymentSuccess(task *models.Task) {
@@ -501,7 +505,7 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 		task.Status = models.StatusCancelledMessage
 	case err != nil:
 		// handle application failure
-		updater.monitor.HandleArgoAPIFailure(task, err)
+		updater.monitor.HandleArgoAPIFailure(&task, err)
 	default:
 		// process deployment result
 		updater.monitor.ProcessDeploymentResult(&task, application)
