@@ -1,4 +1,4 @@
-package models
+package argocd
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/shini4i/argo-watcher/internal/models"
 	"github.com/shini4i/argo-watcher/internal/updater"
 )
 
@@ -37,8 +38,8 @@ func (h *fakeGitHandler) AddSSHKey(_, _, _ string) (*ssh.PublicKeys, error) {
 }
 
 // gitTestRepo builds a GitopsRepo pointing at a throwaway cache dir.
-func gitTestRepo(t *testing.T) *GitopsRepo {
-	return &GitopsRepo{
+func gitTestRepo(t *testing.T) *models.GitopsRepo {
+	return &models.GitopsRepo{
 		RepoUrl:       "git@example.com:test/repo.git",
 		BranchName:    "main",
 		Path:          "apps",
@@ -59,8 +60,8 @@ func TestGitUpdateSupersededOnLaterAttempt(t *testing.T) {
 	checks := 0
 	supersede := func() bool { checks++; return checks >= 2 } // false on attempt 1, true on attempt 2
 
-	err := newAppWithImages("test-app").UpdateGitImageTag(
-		context.Background(), newImageTask(), gitTestRepo(t), h, supersede,
+	err := UpdateGitImageTag(
+		context.Background(), newAppWithImages("test-app"), newImageTask(), gitTestRepo(t), h, supersede,
 	)
 
 	require.ErrorIs(t, err, ErrDeploymentSuperseded)
@@ -77,8 +78,8 @@ func TestGitUpdateExhaustsRetries(t *testing.T) {
 
 	h := &fakeGitHandler{cloneErr: errors.New("transient clone failure")}
 
-	err := newAppWithImages("test-app").UpdateGitImageTag(
-		context.Background(), newImageTask(), gitTestRepo(t), h,
+	err := UpdateGitImageTag(
+		context.Background(), newAppWithImages("test-app"), newImageTask(), gitTestRepo(t), h,
 	)
 
 	require.Error(t, err)
@@ -94,8 +95,8 @@ func TestGitUpdateExhaustsRetries(t *testing.T) {
 func TestUpdateGitImageTagSupersededGuard(t *testing.T) {
 	// SSH_KEY_PATH need only be set (not exist) for config load; the guard fires
 	// before the key is ever read, so a nonexistent path is fine here.
-	repo := func(t *testing.T) *GitopsRepo {
-		return &GitopsRepo{
+	repo := func(t *testing.T) *models.GitopsRepo {
+		return &models.GitopsRepo{
 			RepoUrl:       "git@example.com:test/repo.git",
 			BranchName:    "main",
 			Path:          "apps",
@@ -105,8 +106,8 @@ func TestUpdateGitImageTagSupersededGuard(t *testing.T) {
 
 	t.Run("superseded → aborts before any git operation", func(t *testing.T) {
 		t.Setenv("SSH_KEY_PATH", "/nonexistent/key")
-		err := newAppWithImages("test-app").UpdateGitImageTag(
-			context.Background(), newImageTask(), repo(t), updater.GitClient{},
+		err := UpdateGitImageTag(
+			context.Background(), newAppWithImages("test-app"), newImageTask(), repo(t), updater.GitClient{},
 			func() bool { return true },
 		)
 		require.ErrorIs(t, err, ErrDeploymentSuperseded)
@@ -114,8 +115,8 @@ func TestUpdateGitImageTagSupersededGuard(t *testing.T) {
 
 	t.Run("not superseded → proceeds (fails later, not with the guard error)", func(t *testing.T) {
 		t.Setenv("SSH_KEY_PATH", "/nonexistent/key")
-		err := newAppWithImages("test-app").UpdateGitImageTag(
-			context.Background(), newImageTask(), repo(t), updater.GitClient{},
+		err := UpdateGitImageTag(
+			context.Background(), newAppWithImages("test-app"), newImageTask(), repo(t), updater.GitClient{},
 			func() bool { return false },
 		)
 		require.Error(t, err) // fails on the missing SSH key, having passed the guard

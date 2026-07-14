@@ -33,8 +33,8 @@ type GitConfig struct {
 	// advances the branch, each write-back attempt re-fetches, re-applies, and
 	// re-pushes. Combined with tight early backoff, 5 attempts clear typical
 	// contention; the old default of 3 gave up too soon. A superseded task aborts
-	// the loop early (see models.ErrDeploymentSuperseded), so a larger budget does
-	// not let an older deployment overwrite a newer one.
+	// the loop early, so a larger budget does not let an older deployment
+	// overwrite a newer one.
 	GitMaxAttempts uint `env:"GIT_MAX_ATTEMPTS" envDefault:"5"`
 }
 

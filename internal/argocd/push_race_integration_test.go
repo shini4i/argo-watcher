@@ -1,6 +1,6 @@
 //go:build integration
 
-package models
+package argocd
 
 import (
 	"context"
@@ -17,8 +17,10 @@ import (
 	gogitconfig "github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	gogitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
-	"github.com/shini4i/argo-watcher/internal/lock"
 	cryptossh "golang.org/x/crypto/ssh"
+
+	"github.com/shini4i/argo-watcher/internal/lock"
+	"github.com/shini4i/argo-watcher/internal/models"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -114,10 +116,11 @@ func TestIntegration_PushRaceRecovery_WithLatencyInjection(t *testing.T) {
 		handler := &countingHandler{}
 		aDone := make(chan error, 1)
 		go func() {
-			aDone <- newAppWithImages("test-app").UpdateGitImageTag(
+			aDone <- UpdateGitImageTag(
 				context.Background(),
+				newAppWithImages("test-app"),
 				newImageTask(),
-				&GitopsRepo{
+				&models.GitopsRepo{
 					RepoUrl:       env.ProxyRepoURL,
 					BranchName:    "master",
 					Path:          "apps",
@@ -196,13 +199,14 @@ func TestIntegration_PushRaceRecovery_Concurrent(t *testing.T) {
 			defer wg.Done()
 			<-startCh // wait for the barrier release
 			start := time.Now()
-			errs[idx] = newAppWithImages(fmt.Sprintf("app-%d", idx)).UpdateGitImageTag(
+			errs[idx] = UpdateGitImageTag(
 				context.Background(),
-				&Task{
+				newAppWithImages(fmt.Sprintf("app-%d", idx)),
+				&models.Task{
 					Id:     fmt.Sprintf("task-%d", idx),
-					Images: []Image{{Image: "myimage", Tag: fmt.Sprintf("v%d", idx)}},
+					Images: []models.Image{{Image: "myimage", Tag: fmt.Sprintf("v%d", idx)}},
 				},
-				&GitopsRepo{
+				&models.GitopsRepo{
 					RepoUrl:       env.DirectRepoURL,
 					BranchName:    "master",
 					Path:          "apps",
@@ -276,7 +280,7 @@ func TestIntegration_GitTimeoutEnforcement_ReturnsWithinBudget(t *testing.T) {
 
 	locker := lock.NewInMemoryLocker()
 
-	gitopsRepo := &GitopsRepo{
+	gitopsRepo := &models.GitopsRepo{
 		RepoUrl:       env.ProxyRepoURL,
 		BranchName:    "master",
 		Path:          "apps",
@@ -287,9 +291,10 @@ func TestIntegration_GitTimeoutEnforcement_ReturnsWithinBudget(t *testing.T) {
 		var inner error
 		start := time.Now()
 		outer := locker.WithLock(gitopsRepo.RepoUrl, func() error {
-			inner = newAppWithImages(fmt.Sprintf("app-%d", idx)).UpdateGitImageTag(
+			inner = UpdateGitImageTag(
 				context.Background(),
-				&Task{Id: fmt.Sprintf("task-%d", idx), Images: []Image{{Image: "myimage", Tag: "v1"}}},
+				newAppWithImages(fmt.Sprintf("app-%d", idx)),
+				&models.Task{Id: fmt.Sprintf("task-%d", idx), Images: []models.Image{{Image: "myimage", Tag: "v1"}}},
 				gitopsRepo,
 				testGitHandler{},
 			)

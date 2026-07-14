@@ -1,6 +1,6 @@
 //go:build integration
 
-package models
+package argocd
 
 import (
 	"context"
