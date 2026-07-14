@@ -11,7 +11,7 @@ import (
 	"github.com/avast/retry-go/v4"
 	"github.com/google/uuid"
 
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
+	"github.com/shini4i/argo-watcher/internal/config"
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 

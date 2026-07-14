@@ -11,16 +11,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
+	"github.com/shini4i/argo-watcher/internal/config"
 	"github.com/shini4i/argo-watcher/internal/notifications"
+	"github.com/shini4i/argo-watcher/internal/prometheus"
 
 	"github.com/shini4i/argo-watcher/internal/helpers"
 
 	"github.com/avast/retry-go/v4"
+
 	"github.com/shini4i/argo-watcher/internal/lock"
 	"github.com/shini4i/argo-watcher/internal/models"
-	"github.com/shini4i/argo-watcher/pkg/updater"
+	"github.com/shini4i/argo-watcher/internal/updater"
 )
 
 const (

@@ -15,8 +15,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	"github.com/shini4i/argo-watcher/internal/auth"
+	"github.com/shini4i/argo-watcher/internal/config"
 )
 
 // Keycloak coordinates for the docker-compose `integration` profile. The realm,

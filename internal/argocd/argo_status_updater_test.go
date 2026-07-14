@@ -11,17 +11,19 @@ import (
 	"time"
 
 	"github.com/avast/retry-go/v4"
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
+
+	"github.com/shini4i/argo-watcher/internal/config"
 	"github.com/shini4i/argo-watcher/internal/helpers"
 	"github.com/shini4i/argo-watcher/internal/lock"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go.uber.org/mock/gomock"
+
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/mock"
 	"github.com/shini4i/argo-watcher/internal/models"
 	"github.com/shini4i/argo-watcher/internal/notifications"
-	"go.uber.org/mock/gomock"
 )
 
 var (

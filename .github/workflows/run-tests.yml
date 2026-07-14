@@ -118,7 +118,7 @@ jobs:
         run: task install-deps
 
       - name: Generate mocks
-        # internal/models/argo_test.go imports pkg/updater/mock; the package
+        # internal/models/argo_test.go imports internal/updater/mock; the package
         # must build cleanly before our integration tests can compile.
         run: task mocks
 

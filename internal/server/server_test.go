@@ -6,9 +6,10 @@ import (
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/shini4i/argo-watcher/internal/config"
 )
 
 func TestNewServer_Success(t *testing.T) {

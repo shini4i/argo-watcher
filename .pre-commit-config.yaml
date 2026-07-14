@@ -34,4 +34,4 @@ repos:
         # --exclude-paths for explicitly-passed files, so skip them at the
         # pre-commit layer. Keep this list in sync with .trufflehog-exclude
         # (used by CI).
-        exclude: ^(docker-compose\.yml|pkg/updater/updater_test\.go|docs/operations/database\.md)$
+        exclude: ^(docker-compose\.yml|internal/updater/updater_test\.go|docs/operations/database\.md)$

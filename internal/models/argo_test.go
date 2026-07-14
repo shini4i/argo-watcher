@@ -15,11 +15,12 @@ import (
 
 	gogit "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/shini4i/argo-watcher/pkg/updater"
-	updatrmock "github.com/shini4i/argo-watcher/pkg/updater/mock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
+
+	"github.com/shini4i/argo-watcher/internal/updater"
+	updatrmock "github.com/shini4i/argo-watcher/internal/updater/mock"
 )
 
 func TestListSyncResultResources(t *testing.T) {

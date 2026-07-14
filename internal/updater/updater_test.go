@@ -16,10 +16,11 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/go-git/go-git/v5/storage/memory"
-	"github.com/shini4i/argo-watcher/pkg/updater/mock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
+
+	"github.com/shini4i/argo-watcher/internal/updater/mock"
 )
 
 // newTestRepo creates a valid GitRepo instance for testing purposes.

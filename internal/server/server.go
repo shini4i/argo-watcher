@@ -13,10 +13,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
-	prom "github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
+
 	"github.com/shini4i/argo-watcher/internal/argocd"
+	"github.com/shini4i/argo-watcher/internal/config"
 	"github.com/shini4i/argo-watcher/internal/lock"
+	prom "github.com/shini4i/argo-watcher/internal/prometheus"
 	"github.com/shini4i/argo-watcher/internal/state"
 )
 

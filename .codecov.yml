@@ -1,5 +1,5 @@
 ignore:
-  - "pkg/updater/interfaces.go"
+  - "internal/updater/interfaces.go"
   - "cmd/mock/main.go"
   # e2e lab tooling (load driver, etc.) — not shipped; validated by running the
   # lab end-to-end, not by unit tests.

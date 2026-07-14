@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
+	"github.com/shini4i/argo-watcher/internal/config"
 )
 
 // AuthStrategy defines the behaviour required for a token validation strategy.
