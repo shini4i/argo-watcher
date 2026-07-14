@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
@@ -228,7 +229,19 @@ func TestClone(t *testing.T) {
 
 	t.Run("Cache Not Exists", func(t *testing.T) {
 		mockHandler.EXPECT().PlainOpen(gomock.Any()).Return(nil, git.ErrRepositoryNotExists)
-		mockHandler.EXPECT().PlainClone(gomock.Any(), gomock.Any(), false, gomock.Any()).Return(nil, nil)
+		// Capture the CloneOptions to assert the fresh clone is shallow. This is the
+		// only cheap (non-integration) guard against a regression that drops Depth:1
+		// or Tags:NoTags — `task test` excludes the integration suite, so without this
+		// such a revert would ship green. The corrupt-cache reclone path shares this
+		// call, so asserting once covers both.
+		mockHandler.EXPECT().PlainClone(gomock.Any(), gomock.Any(), false, gomock.Any()).
+			DoAndReturn(func(_ context.Context, _ string, _ bool, o *git.CloneOptions) (*git.Repository, error) {
+				assert.Equal(t, 1, o.Depth, "fresh clone must be shallow (Depth:1)")
+				assert.Equal(t, git.NoTags, o.Tags, "fresh clone must not fetch tags")
+				assert.True(t, o.SingleBranch, "fresh clone must be single-branch")
+				assert.Equal(t, plumbing.ReferenceName("refs/heads/"+repo.BranchName), o.ReferenceName)
+				return nil, nil
+			})
 		err := repo.Clone(context.Background())
 		assert.NoError(t, err)
 	})

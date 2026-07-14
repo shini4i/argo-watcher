@@ -89,6 +89,12 @@ func (repo *GitRepo) getRepoCachePath() string {
 //     the function assumes the cache is invalid. It safely removes the directory and then
 //     performs a fresh, single-branch clone from the remote.
 //
+// Both the fresh clone and the warm-cache fetch are shallow (Depth:1, no tags):
+// argo-watcher only reads the branch tip and commits one file on top of it, so
+// the repository's history is never needed. This keeps the clone/fetch cost off
+// the deep-history path, which matters because the whole operation runs under
+// the distributed per-repo advisory lock.
+//
 // The provided ctx bounds all network I/O; callers typically derive ctx from a
 // total-budget context for the whole update flow so that one stuck operation
 // cannot hold the per-repo lock past that budget.
@@ -123,10 +129,20 @@ func (repo *GitRepo) Clone(ctx context.Context) error {
 			}
 		}
 
+		// Depth:1 makes this a shallow clone: only the branch tip commit is
+		// fetched, not the repository's full history. argo-watcher only ever reads
+		// the tip and commits one file on top of it, so history is dead weight. On a
+		// deep-history GitOps repo (100k+ commits) a full clone is minutes of work,
+		// and it runs while holding the distributed per-repo advisory lock — so it
+		// blocks every other replica's write-back to that repo. A shallow clone caps
+		// that to seconds. Tags:NoTags likewise skips fetching tag refs, which a
+		// large repo may have thousands of and which are never used here.
 		repo.localRepo, err = repo.GitHandler.PlainClone(ctx, repo.localRepoPath, false, &git.CloneOptions{
 			URL:           repo.RepoURL,
 			ReferenceName: plumbing.ReferenceName("refs/heads/" + repo.BranchName),
 			SingleBranch:  true,
+			Depth:         1,
+			Tags:          git.NoTags,
 			Auth:          repo.sshAuth,
 		})
 		return err
@@ -134,10 +150,16 @@ func (repo *GitRepo) Clone(ctx context.Context) error {
 
 	// If we get here, the cache is valid and has an 'origin' remote.
 	slog.Debug(fmt.Sprintf("Successfully opened cached repository at %s", repo.localRepoPath))
+	// Depth:1 keeps the cache shallow across warm fetches too: only the new tip
+	// is fetched, never the intervening history. Without it go-git would deepen
+	// the shallow clone toward full history on the first fetch, undoing the cold
+	// clone's win on a deep-history repo. Tags:NoTags mirrors the clone.
 	err = repo.localRepo.FetchContext(ctx, &git.FetchOptions{
 		RemoteName: "origin",
 		Auth:       repo.sshAuth,
 		Force:      true,
+		Depth:      1,
+		Tags:       git.NoTags,
 	})
 	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
 		return fmt.Errorf("failed to fetch repo: %w", err)

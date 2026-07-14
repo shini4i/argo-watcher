@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   large GitOps repositories this markedly reduces per-deployment commit latency,
   most noticeably when several deployments to the same repository run concurrently
   and each must wait its turn under the per-repository lock.
+- Clone and fetch GitOps repositories shallowly (depth 1, no tags) instead of pulling
+  full history. On a repository with a deep history (100k+ commits) a full clone could
+  take minutes while holding the per-repository write-back lock, blocking every other
+  deployment to that repository; the shallow clone caps this to seconds. Commit, push,
+  retry/self-heal, and the persistent on-disk cache behave exactly as before.
 
 ### Fixed
 

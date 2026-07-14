@@ -89,9 +89,10 @@ groups:
           summary: "{{ $labels.app }} git write-back is slow"
           description: |
             The p95 git write-back for this application exceeds 60s, which points to push
-            contention (retries/backoff) or an expensive clone against a large GitOps repo.
-            Check gitops_lock_wait_duration_seconds for the same app to see whether it is
-            queued behind other write-backs to the same repository.
+            contention (retries/backoff) or, on a repo with an unusually large working tree,
+            slow transfer of that tree (history depth is not a factor — clone and fetch are
+            shallow). Check gitops_lock_wait_duration_seconds for the same app to see whether
+            it is queued behind other write-backs to the same repository.
 ```
 
 ## Grafana panel queries
