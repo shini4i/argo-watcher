@@ -408,7 +408,7 @@ func (gitUpdater *GitUpdater) updateGitRepo(app *models.Application, task *model
 	// context.Background() is intentional: the call stack above this point
 	// does not carry a context. Propagating a cancellable context from
 	// WaitForRollout is a future improvement.
-	err := app.UpdateGitImageTag(context.Background(), task, gitopsRepo, updater.GitClient{}, isSuperseded...)
+	err := UpdateGitImageTag(context.Background(), app, task, gitopsRepo, updater.GitClient{}, isSuperseded...)
 	if err != nil {
 		slog.Error(fmt.Sprintf("Failed to update git repo. Error: %s", err.Error()), "id", task.Id)
 		return err
@@ -544,7 +544,7 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 	if err := updater.gitUpdater.UpdateIfNeeded(app, task, func() bool {
 		return updater.monitor.taskSuperseded(task.Id)
 	}); err != nil {
-		if errors.Is(err, models.ErrDeploymentSuperseded) {
+		if errors.Is(err, ErrDeploymentSuperseded) {
 			return nil, errTaskSuperseded
 		}
 		return nil, err

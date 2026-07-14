@@ -1,6 +1,6 @@
 //go:build integration
 
-package models
+package argocd
 
 import (
 	"context"
@@ -18,6 +18,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/shini4i/argo-watcher/internal/models"
 )
 
 // cloneRemoteState clones the remote directly (full history, bypassing any
@@ -181,15 +183,16 @@ func TestIntegration_ShallowClone_UpgradeFromFullCache(t *testing.T) {
 	sentinel := filepath.Join(localRepoPath, ".git", "UPGRADE_SENTINEL")
 	require.NoError(t, os.WriteFile(sentinel, []byte("pre-upgrade cache"), 0o600))
 
-	gitopsRepo := &GitopsRepo{
+	gitopsRepo := &models.GitopsRepo{
 		RepoUrl:       env.DirectRepoURL,
 		BranchName:    "master",
 		Path:          "apps",
 		RepoCachePath: cachePath,
 	}
-	err := newAppWithImages(app).UpdateGitImageTag(
+	err := UpdateGitImageTag(
 		context.Background(),
-		&Task{Id: "task-upgrade", Images: []Image{{Image: "myimage", Tag: "v1"}}},
+		newAppWithImages(app),
+		&models.Task{Id: "task-upgrade", Images: []models.Image{{Image: "myimage", Tag: "v1"}}},
 		gitopsRepo,
 		testGitHandler{},
 	)
@@ -231,16 +234,17 @@ func TestIntegration_ShallowClone_WarmFetchOfExternallyAdvancedTip(t *testing.T)
 	const app = "advanced-tip-app"
 	cachePath := t.TempDir()
 	overrideRel := fmt.Sprintf("apps/.argocd-source-%s.yaml", app)
-	gitopsRepo := &GitopsRepo{
+	gitopsRepo := &models.GitopsRepo{
 		RepoUrl:       env.DirectRepoURL,
 		BranchName:    "master",
 		Path:          "apps",
 		RepoCachePath: cachePath,
 	}
 	writeBack := func(tag string) error {
-		return newAppWithImages(app).UpdateGitImageTag(
+		return UpdateGitImageTag(
 			context.Background(),
-			&Task{Id: "task-" + tag, Images: []Image{{Image: "myimage", Tag: tag}}},
+			newAppWithImages(app),
+			&models.Task{Id: "task-" + tag, Images: []models.Image{{Image: "myimage", Tag: tag}}},
 			gitopsRepo,
 			testGitHandler{},
 		)
@@ -290,16 +294,17 @@ func TestIntegration_ShallowClone_SelfHealFreshClone(t *testing.T) {
 	const app = "selfheal-app"
 	cachePath := t.TempDir()
 	overrideRel := fmt.Sprintf("apps/.argocd-source-%s.yaml", app)
-	gitopsRepo := &GitopsRepo{
+	gitopsRepo := &models.GitopsRepo{
 		RepoUrl:       env.DirectRepoURL,
 		BranchName:    "master",
 		Path:          "apps",
 		RepoCachePath: cachePath,
 	}
 	writeBack := func(tag string) error {
-		return newAppWithImages(app).UpdateGitImageTag(
+		return UpdateGitImageTag(
 			context.Background(),
-			&Task{Id: "task-" + tag, Images: []Image{{Image: "myimage", Tag: tag}}},
+			newAppWithImages(app),
+			&models.Task{Id: "task-" + tag, Images: []models.Image{{Image: "myimage", Tag: tag}}},
 			gitopsRepo,
 			testGitHandler{},
 		)
@@ -363,7 +368,7 @@ func TestIntegration_ShallowClone_WarmCacheWriteBacks(t *testing.T) {
 
 	// Direct SSH URL (no toxiproxy): this test injects no latency, so it needs
 	// only Gitea. Keeping the SUT on the direct URL avoids a toxiproxy dependency.
-	gitopsRepo := &GitopsRepo{
+	gitopsRepo := &models.GitopsRepo{
 		RepoUrl:       env.DirectRepoURL,
 		BranchName:    "master",
 		Path:          "apps",
@@ -371,9 +376,10 @@ func TestIntegration_ShallowClone_WarmCacheWriteBacks(t *testing.T) {
 	}
 
 	writeBack := func(tag string) error {
-		return newAppWithImages(app).UpdateGitImageTag(
+		return UpdateGitImageTag(
 			context.Background(),
-			&Task{Id: "task-" + tag, Images: []Image{{Image: "myimage", Tag: tag}}},
+			newAppWithImages(app),
+			&models.Task{Id: "task-" + tag, Images: []models.Image{{Image: "myimage", Tag: tag}}},
 			gitopsRepo,
 			testGitHandler{},
 		)

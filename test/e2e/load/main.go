@@ -96,7 +96,7 @@ func main() {
 	// MODE=race runs the same-app supersession scenario instead of the soak: fire
 	// concurrent deploys to ONE app with distinct tags and assert the committed
 	// tag belongs to a task that actually deployed — never a superseded one that
-	// clobbered the winner. Verifies models.ErrDeploymentSuperseded end-to-end.
+	// clobbered the winner. Verifies argocd.ErrDeploymentSuperseded end-to-end.
 	if os.Getenv("MODE") == "race" {
 		runRace(cfg)
 		return
