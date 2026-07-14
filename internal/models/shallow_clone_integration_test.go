@@ -123,6 +123,97 @@ func localTagCount(t *testing.T, localRepoPath string) int {
 	return count
 }
 
+// seedFullClone creates a NON-shallow clone of the remote at exactly the cache
+// path GitRepo.Clone will use, simulating a cache left behind by a pre-upgrade
+// (full-history) version of argo-watcher.
+func seedFullClone(t *testing.T, repoURL, sshKeyPath, branch, cachePath, localRepoPath string) {
+	t.Helper()
+	auth, err := gogitssh.NewPublicKeysFromFile("git", sshKeyPath, "")
+	require.NoError(t, err)
+	auth.HostKeyCallback = cryptossh.InsecureIgnoreHostKey()
+	require.NoError(t, os.MkdirAll(cachePath, 0o755))
+	_, err = gogit.PlainCloneContext(context.Background(), localRepoPath, false, &gogit.CloneOptions{
+		URL:           repoURL,
+		ReferenceName: plumbing.ReferenceName("refs/heads/" + branch),
+		SingleBranch:  true,
+		Auth:          auth,
+	})
+	require.NoError(t, err)
+	require.NoFileExists(t, filepath.Join(localRepoPath, ".git", "shallow"),
+		"precondition: the seeded cache must be a full (non-shallow) clone")
+}
+
+// TestIntegration_ShallowClone_UpgradeFromFullCache is the migration test: an
+// existing FULL-history cache on a persistent volume, left by a pre-upgrade
+// argo-watcher, must keep working after the switch to shallow fetch.
+//
+// Verified behavior (this test locks it in): a Depth:1 fetch does NOT
+// retroactively shallow an existing full repo. The write-back succeeds and the
+// commit lands, the cache is handled IN PLACE (no self-heal re-clone — the .git
+// sentinel survives), and the cache stays full. So a pre-upgrade full cache is
+// grandfathered: correct and no slower on the warm path (the expensive full
+// clone already happened and does not recur), it just keeps its larger on-disk
+// footprint until independently invalidated — at which point the self-heal path
+// re-clones it shallow (see TestIntegration_ShallowClone_SelfHealFreshClone).
+func TestIntegration_ShallowClone_UpgradeFromFullCache(t *testing.T) {
+	waitForGitea(t, 60*time.Second)
+	env := setupGitea(t)
+
+	t.Setenv("SSH_KEY_PATH", env.SSHKeyPath)
+	t.Setenv("GIT_OP_TIMEOUT", "60s")
+	// 2 so attempt 1 exercises the warm path on the pre-seeded full cache; if it
+	// fails, attempt 2 (final) self-heals via InvalidateCache + fresh clone.
+	t.Setenv("GIT_MAX_ATTEMPTS", "2")
+
+	const app = "upgrade-app"
+	cachePath := t.TempDir()
+	overrideRel := fmt.Sprintf("apps/.argocd-source-%s.yaml", app)
+	localRepoPath := computeRepoCachePath(cachePath, env.DirectRepoURL, "master")
+
+	// Give the remote some real history so "full" is meaningful, then seed a
+	// full-history cache at the code's cache path.
+	competitorPush(t, env.DirectRepoURL, env.SSHKeyPath, "hist1")
+	competitorPush(t, env.DirectRepoURL, env.SSHKeyPath, "hist2")
+	seedFullClone(t, env.DirectRepoURL, env.SSHKeyPath, "master", cachePath, localRepoPath)
+
+	// Sentinel in .git: survives the in-place warm path; removed by a self-heal
+	// (InvalidateCache does os.RemoveAll on the whole cache dir).
+	sentinel := filepath.Join(localRepoPath, ".git", "UPGRADE_SENTINEL")
+	require.NoError(t, os.WriteFile(sentinel, []byte("pre-upgrade cache"), 0o600))
+
+	gitopsRepo := &GitopsRepo{
+		RepoUrl:       env.DirectRepoURL,
+		BranchName:    "master",
+		Path:          "apps",
+		RepoCachePath: cachePath,
+	}
+	err := newAppWithImages(app).UpdateGitImageTag(
+		context.Background(),
+		&Task{Id: "task-upgrade", Images: []Image{{Image: "myimage", Tag: "v1"}}},
+		gitopsRepo,
+		testGitHandler{},
+	)
+
+	// Invariant 1: the write-back succeeds against a pre-existing full cache.
+	require.NoError(t, err, "write-back must succeed against a pre-upgrade full-history cache")
+
+	// Invariant 2: the commit lands correctly on the remote.
+	_, content := cloneRemoteState(t, env.DirectRepoURL, env.SSHKeyPath, "master", overrideRel)
+	assert.Contains(t, content, "v1", "the upgrade write-back must commit the tag")
+
+	// Invariant 3: the full cache was reused IN PLACE — no self-heal re-clone was
+	// needed (the sentinel in .git survives only if the cache dir was never wiped).
+	assert.FileExists(t, sentinel,
+		"a pre-upgrade full cache must be reused in place, not wiped and re-cloned")
+
+	// Invariant 4 (characterization): a Depth:1 fetch does NOT retroactively
+	// shallow an existing full repo — the grandfathered cache stays full. If a
+	// future go-git version changes this, update the migration note in the
+	// docstring rather than treating it as a regression.
+	assert.NoFileExists(t, filepath.Join(localRepoPath, ".git", "shallow"),
+		"Depth:1 fetch is not expected to shallow an already-full cache")
+}
+
 // TestIntegration_ShallowClone_WarmFetchOfExternallyAdvancedTip covers the case
 // the plain warm-cache test cannot: a Depth:1 warm fetch must retrieve a branch
 // tip that an EXTERNAL writer advanced by more than one commit, and our commit
