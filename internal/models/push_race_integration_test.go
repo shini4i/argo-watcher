@@ -137,6 +137,13 @@ func TestIntegration_PushRaceRecovery_WithLatencyInjection(t *testing.T) {
 		select {
 		case err := <-aDone:
 			require.NoError(t, err, "UpdateGitImageTag should succeed after recovery (attempt %d)", attempt)
+			// Recovery must fast-forward onto the competitor's commit, never clobber
+			// it: after A succeeds, the commit the external writer landed mid-flight
+			// must still be present on the remote. This is the correctness guarantee
+			// for the common case of the branch moving outside argo-watcher's flow.
+			_, competitorContent := cloneRemoteState(t, env.DirectRepoURL, env.SSHKeyPath, "master", "competitor.txt")
+			assert.Contains(t, competitorContent, "race-injection",
+				"recovery must preserve the competitor's commit, not force-push over it (attempt %d)", attempt)
 		case <-time.After(90 * time.Second):
 			t.Fatalf("UpdateGitImageTag did not complete in 90s (attempt %d)", attempt)
 		}
