@@ -37,7 +37,10 @@ func generateOverrideFileContent(annotations map[string]string, task *models.Tas
 	}
 
 	if len(managedImages) == 0 {
-		slog.Error(fmt.Sprintf("%s annotation not found, skipping image update", managedImagesAnnotation))
+		// Benign no-op: the app declares no managed images, so there is nothing
+		// to write back. This returns (nil, nil), so log at Warn — not Error —
+		// to avoid a false positive for operators alerting on error logs.
+		slog.Warn(fmt.Sprintf("%s annotation not found, skipping image update", managedImagesAnnotation))
 		return nil, nil
 	}
 
