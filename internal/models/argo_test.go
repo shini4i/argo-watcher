@@ -700,6 +700,76 @@ func computeRepoCachePath(base, repoURL, branch string) string {
 	return filepath.Join(base, strconv.FormatUint(hasher.Sum64(), 16))
 }
 
+func TestGenerateOverrideFileContent(t *testing.T) {
+	t.Run("Builds override when managed image has its tag annotation", func(t *testing.T) {
+		app := newAppWithImages("app")
+		task := newImageTask()
+
+		override, err := app.generateOverrideFileContent(app.Metadata.Annotations, task)
+
+		require.NoError(t, err)
+		require.NotNil(t, override)
+		require.Len(t, override.Helm.Parameters, 1)
+		assert.Equal(t, "image.tag", override.Helm.Parameters[0].Name)
+		assert.Equal(t, "v1.0.0", override.Helm.Parameters[0].Value)
+	})
+
+	t.Run("Errors when a managed image is missing its tag annotation", func(t *testing.T) {
+		app := &Application{
+			Metadata: ApplicationMetadata{
+				Name: "app",
+				Annotations: map[string]string{
+					// managed-images references "myimage" but the matching
+					// app.helm.image-tag annotation is absent — a misconfiguration
+					// that must fail loudly instead of silently no-op'ing the write-back.
+					"argo-watcher/managed-images": "app=myimage",
+				},
+			},
+		}
+		task := newImageTask()
+
+		override, err := app.generateOverrideFileContent(app.Metadata.Annotations, task)
+
+		require.Error(t, err)
+		assert.Nil(t, override)
+		assert.Contains(t, err.Error(), "image-tag")
+	})
+
+	t.Run("Errors when only some managed images have their tag annotation", func(t *testing.T) {
+		// Two managed images, but only "img1" has its tag annotation. The whole
+		// write-back must abort (fail loud) rather than emitting a partial override
+		// for the correctly-configured image and silently dropping the other.
+		app := &Application{
+			Metadata: ApplicationMetadata{
+				Name: "app",
+				Annotations: map[string]string{
+					"argo-watcher/managed-images":   "a=img1,b=img2",
+					"argo-watcher/a.helm.image-tag": "img1.tag",
+					// argo-watcher/b.helm.image-tag deliberately absent
+				},
+			},
+		}
+		task := &Task{Id: "test-id", Images: []Image{{Image: "img1", Tag: "v1"}, {Image: "img2", Tag: "v2"}}}
+
+		override, err := app.generateOverrideFileContent(app.Metadata.Annotations, task)
+
+		require.Error(t, err)
+		assert.Nil(t, override)
+		assert.Contains(t, err.Error(), "img2")
+	})
+
+	t.Run("Skips images that do not match any managed image", func(t *testing.T) {
+		app := newAppWithImages("app")
+		task := &Task{Id: "test-id", Images: []Image{{Image: "unmanaged", Tag: "v1"}}}
+
+		override, err := app.generateOverrideFileContent(app.Metadata.Annotations, task)
+
+		require.NoError(t, err)
+		require.NotNil(t, override)
+		assert.Empty(t, override.Helm.Parameters)
+	})
+}
+
 func TestUpdateGitImageTag(t *testing.T) {
 	t.Run("Returns nil when path is empty", func(t *testing.T) {
 		app := &Application{}
@@ -722,6 +792,27 @@ func TestUpdateGitImageTag(t *testing.T) {
 
 		err := app.UpdateGitImageTag(context.Background(), task, gitopsRepo, nil)
 		assert.NoError(t, err)
+	})
+
+	t.Run("Returns error when a managed image lacks its tag annotation", func(t *testing.T) {
+		// End-to-end guarantee: the misconfiguration must abort the write-back
+		// (surface as a task failure), not silently report success. The error is
+		// raised before any git access, so no repo/handler is needed.
+		app := &Application{
+			Metadata: ApplicationMetadata{
+				Name: "test-app",
+				Annotations: map[string]string{
+					"argo-watcher/managed-images": "app=myimage",
+					// argo-watcher/app.helm.image-tag deliberately absent
+				},
+			},
+		}
+		task := &Task{Id: "test-id", Images: []Image{{Image: "myimage", Tag: "v1.0.0"}}}
+		gitopsRepo := &GitopsRepo{Path: "/some/path"}
+
+		err := app.UpdateGitImageTag(context.Background(), task, gitopsRepo, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "image-tag")
 	})
 
 	t.Run("Returns error when NewGitRepo fails (no SSH_KEY_PATH)", func(t *testing.T) {

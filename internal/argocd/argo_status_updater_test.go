@@ -621,7 +621,7 @@ func TestDeploymentMonitorHandleArgoAPIFailureHandlesStateError(t *testing.T) {
 		SetTaskStatus(task.Id, models.StatusFailedMessage, gomock.Any()).
 		Return(errors.New("persist failed"))
 
-	monitor.HandleArgoAPIFailure(task, fmt.Errorf("boom"))
+	monitor.HandleArgoAPIFailure(&task, fmt.Errorf("boom"))
 }
 
 func TestGitUpdaterUpdateIfNeeded(t *testing.T) {
@@ -1440,7 +1440,11 @@ func TestArgoStatusUpdater_handleArgoAPIFailure(t *testing.T) {
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage, gomock.Any())
 
-		updater.monitor.HandleArgoAPIFailure(task, err)
+		updater.monitor.HandleArgoAPIFailure(&task, err)
+
+		// The resolved terminal status must be reflected back onto the task so the
+		// result notification does not report a stale "in progress" for a failure.
+		assert.Equal(t, models.StatusFailedMessage, task.Status)
 	})
 }
 

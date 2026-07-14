@@ -105,6 +105,24 @@ describe('ConfigDrawer', () => {
     expect(toggles[0]).toBeDisabled();
   });
 
+  it('hides the deploy lock toggle when Keycloak is disabled', async () => {
+    keycloakEnabledMock.mockReturnValue(false);
+    renderDrawer();
+
+    expect(screen.queryByRole('switch', { name: /toggle deploy lock/i })).toBeNull();
+    expect(screen.getByText(/manual deploy lock requires keycloak/i)).toBeInTheDocument();
+  });
+
+  it('hides the deploy lock toggle while Keycloak status is unknown', async () => {
+    // Default-deny during the config-loading / request-failed window: the toggle
+    // must not be rendered until Keycloak status is known.
+    keycloakEnabledMock.mockReturnValue(null);
+    renderDrawer();
+
+    expect(screen.queryByRole('switch', { name: /toggle deploy lock/i })).toBeNull();
+    expect(screen.getByText(/checking permissions/i)).toBeInTheDocument();
+  });
+
   it('calls deploy lock service when toggled', async () => {
     renderDrawer();
     await screen.findByRole('switch', { name: /toggle deploy lock/i });

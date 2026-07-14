@@ -272,8 +272,15 @@ func (env *Env) CreateRouter() *gin.Engine {
 		v1.GET("/tasks/:id", env.getTaskStatus)
 		v1.GET("/version", env.getVersion)
 		v1.GET("/config", env.getConfig)
-		v1.POST(deployLockEndpoint, env.SetDeployLock)
-		v1.DELETE(deployLockEndpoint, env.ReleaseDeployLock)
+		// The state-changing deploy-lock endpoints are only registered when Keycloak
+		// is enabled: without an auth backend they cannot be protected, so exposing
+		// them would leave an unauthenticated deploy-freeze switch reachable by anyone
+		// who can reach the server (including via a victim's browser). The read-only
+		// GET stays available so the banner and scheduled lockdown keep working.
+		if env.config.Keycloak.Enabled {
+			v1.POST(deployLockEndpoint, env.SetDeployLock)
+			v1.DELETE(deployLockEndpoint, env.ReleaseDeployLock)
+		}
 		v1.GET(deployLockEndpoint, env.isDeployLockSet)
 	}
 
@@ -674,7 +681,7 @@ func (env *Env) requireKeycloakAuth(c *gin.Context) bool {
 
 // SetDeployLock godoc
 // @Summary Set deploy lock
-// @Description Set deploy lock
+// @Description Set deploy lock. Only available when Keycloak is enabled; requires a valid Keycloak session.
 // @Tags frontend
 // @Success 200 {string} string
 // @Failure 401 {object} models.TaskStatus
@@ -695,7 +702,7 @@ func (env *Env) SetDeployLock(c *gin.Context) {
 
 // ReleaseDeployLock godoc
 // @Summary Release deploy lock
-// @Description Release deploy lock
+// @Description Release deploy lock. Only available when Keycloak is enabled; requires a valid Keycloak session.
 // @Tags frontend
 // @Success 200 {string} string
 // @Failure 401 {object} models.TaskStatus

@@ -217,6 +217,9 @@ The Web UI lockdown banner updates automatically (within about a minute) when a 
 
 ### Manual Lockdown
 
+!!! note
+    Manual locking requires Keycloak (`KEYCLOAK_ENABLED=true`). Without an auth backend the server does not register the `POST`/`DELETE /api/v1/deploy-lock` endpoints (requests return `404 Not Found`) and the Web UI does not show the lock toggle. The read-only lock status and scheduled lockdown (above) work regardless of Keycloak.
+
 #### Via API
 
 Set a lock:
