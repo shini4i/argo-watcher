@@ -30,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Never show React-admin's built-in username/password login form. The Web UI
+  authenticates only through a top-level Keycloak redirect, but the stock login
+  form could still surface as a misleading fallback when Keycloak was
+  misconfigured; it is now disabled outright.
 - Keep the History page filters visible when there are no matching deployments.
   Previously, with no deployments in the default time window the empty-state
   message replaced the whole view, hiding the date-range and application
