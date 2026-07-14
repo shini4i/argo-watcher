@@ -7,8 +7,9 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/shini4i/argo-watcher/internal/config"
 )
 
 func TestNewKeycloakAuthService(t *testing.T) {

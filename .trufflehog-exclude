@@ -1,3 +1,3 @@
 docker-compose\.yml
-pkg/updater/updater_test\.go
+internal/updater/updater_test\.go
 docs/operations/database\.md

@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/shini4i/argo-watcher/pkg/client"
+	"github.com/shini4i/argo-watcher/internal/client"
 )
 
 func main() {

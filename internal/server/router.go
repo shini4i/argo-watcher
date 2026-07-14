@@ -20,11 +20,12 @@ import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/prometheus"
+
 	"github.com/shini4i/argo-watcher/internal/argocd"
 	"github.com/shini4i/argo-watcher/internal/auth"
+	"github.com/shini4i/argo-watcher/internal/config"
 	"github.com/shini4i/argo-watcher/internal/models"
+	"github.com/shini4i/argo-watcher/internal/prometheus"
 )
 
 var version = "local"

@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/shini4i/argo-watcher/internal/helpers"
-	"github.com/shini4i/argo-watcher/pkg/updater"
+	"github.com/shini4i/argo-watcher/internal/updater"
 )
 
 // ErrDeploymentSuperseded is returned by the git write-back when the task is

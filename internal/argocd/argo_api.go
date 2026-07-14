@@ -14,7 +14,8 @@ import (
 	"time"
 
 	retry "github.com/avast/retry-go/v4"
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/config"
+
+	"github.com/shini4i/argo-watcher/internal/config"
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 

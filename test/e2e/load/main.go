@@ -31,9 +31,10 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/shini4i/argo-watcher/internal/models"
-	"github.com/shini4i/argo-watcher/pkg/updater"
 	"gopkg.in/yaml.v3"
+
+	"github.com/shini4i/argo-watcher/internal/models"
+	"github.com/shini4i/argo-watcher/internal/updater"
 )
 
 type config struct {

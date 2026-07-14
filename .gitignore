@@ -35,7 +35,7 @@ docs/reference/swagger.json
 
 # dynamically generated mocks (invoke scripts regenerate them)
 cmd/argo-watcher/mock
-pkg/updater/mock
+internal/updater/mock
 
 # goreleaser artifacts (tarballs, binaries)
 dist/

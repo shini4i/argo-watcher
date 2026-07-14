@@ -19,18 +19,18 @@ tasks:
       - echo "===> Generating mocks"
       - mockgen --source=internal/argocd/argo_api.go --destination=cmd/argo-watcher/mock/argo_api.go --package=mock
       - mockgen --source=internal/state/state.go --destination=cmd/argo-watcher/mock/state.go --package=mock
-      - mockgen --source=cmd/argo-watcher/prometheus/metrics.go --destination=cmd/argo-watcher/mock/metrics.go --package=mock
-      - mockgen --source=pkg/updater/interfaces.go --destination=pkg/updater/mock/interfaces.go --package=mock
+      - mockgen --source=internal/prometheus/metrics.go --destination=cmd/argo-watcher/mock/metrics.go --package=mock
+      - mockgen --source=internal/updater/interfaces.go --destination=internal/updater/mock/interfaces.go --package=mock
     sources:
       - internal/argocd/argo_api.go
       - internal/state/state.go
-      - cmd/argo-watcher/prometheus/metrics.go
-      - pkg/updater/interfaces.go
+      - internal/prometheus/metrics.go
+      - internal/updater/interfaces.go
     generates:
       - cmd/argo-watcher/mock/argo_api.go
       - cmd/argo-watcher/mock/state.go
       - cmd/argo-watcher/mock/metrics.go
-      - pkg/updater/mock/interfaces.go
+      - internal/updater/mock/interfaces.go
 
   docs:
     desc: Generate swagger spec

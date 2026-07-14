@@ -12,7 +12,7 @@ scrape_configs:
 
 ## Exposed metrics
 
-The server emits seven metrics today, all defined in [`cmd/argo-watcher/prometheus/metrics.go`](https://github.com/shini4i/argo-watcher/blob/main/cmd/argo-watcher/prometheus/metrics.go).
+The server emits seven metrics today, all defined in [`internal/prometheus/metrics.go`](https://github.com/shini4i/argo-watcher/blob/main/internal/prometheus/metrics.go).
 
 | Metric | Type | Labels | Description |
 |---|---|---|---|
