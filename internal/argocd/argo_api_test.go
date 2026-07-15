@@ -363,6 +363,58 @@ func TestArgoApiGetApplicationSuccess(t *testing.T) {
 	assert.Equal(t, app.Status.Summary.Images, result.Status.Summary.Images)
 }
 
+// TestArgoApiGetResourceTreeSuccess verifies that GetResourceTree hits the resource-tree
+// endpoint and decodes node health (the only place pod-level failure causes are exposed).
+func TestArgoApiGetResourceTreeSuccess(t *testing.T) {
+	tree := models.ApplicationTree{Nodes: []models.ApplicationTreeNode{
+		{Kind: "Pod", Name: "demo-xyz", Namespace: "demo"},
+	}}
+	tree.Nodes[0].Health.Status = "Degraded"
+	tree.Nodes[0].Health.Message = `Back-off pulling image "demo:v2": ErrImagePull`
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/v1/applications/demo/resource-tree", r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		require.NoError(t, json.NewEncoder(w).Encode(tree))
+	}))
+	defer server.Close()
+
+	parsedURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	api := NewArgoApi()
+	api.baseUrl = *parsedURL
+	api.client = server.Client()
+	api.maxRetries = 1
+
+	result, err := api.GetResourceTree(context.Background(), "demo")
+	require.NoError(t, err)
+	require.Len(t, result.Nodes, 1)
+	assert.Equal(t, "Degraded", result.Nodes[0].Health.Status)
+	assert.Equal(t, `Back-off pulling image "demo:v2": ErrImagePull`, result.Nodes[0].Health.Message)
+}
+
+// TestArgoApiGetResourceTreeError verifies a non-200 response surfaces as an error.
+func TestArgoApiGetResourceTreeError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		require.NoError(t, json.NewEncoder(w).Encode(models.ArgoApiErrorResponse{Message: "boom"}))
+	}))
+	defer server.Close()
+
+	parsedURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	api := NewArgoApi()
+	api.baseUrl = *parsedURL
+	api.client = server.Client()
+	api.maxRetries = 1
+
+	_, err = api.GetResourceTree(context.Background(), "demo")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "boom")
+}
+
 // TestArgoApiGetApplicationEscapesAppName verifies that special characters in app names
 // are properly URL-escaped to prevent path traversal and injection attacks.
 func TestArgoApiGetApplicationEscapesAppName(t *testing.T) {

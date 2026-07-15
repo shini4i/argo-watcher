@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Enrich deployment-failure reasons with the actual root cause from ArgoCD's live
+  resource tree. When a rollout fails — both "not available" and "not healthy" —
+  the task status reason now surfaces the failing pod's condition (e.g. an
+  `ImagePullBackOff`/`ErrImagePull` or crash-loop message), which the previous
+  top-level resource summary never carried, alongside the existing failed-hook and
+  terminal sync-operation diagnostics. No new stored data — the existing
+  `status_reason` is simply more actionable, so no database migration is required.
 - Speed up GitOps write-backs by detecting whether the override file changed with a
   targeted single-file comparison instead of scanning the entire working tree. On
   large GitOps repositories this markedly reduces per-deployment commit latency,

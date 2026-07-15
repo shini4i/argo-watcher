@@ -67,6 +67,19 @@ func zeroDelay(_ uint, _ error, _ *retry.Config) time.Duration {
 	return 0
 }
 
+// newArgoApiMock builds an ArgoApi mock pre-loaded with the best-effort defaults every test
+// tolerates. The failure-path resource-tree fetch is best-effort, so it defaults to "no tree"
+// (GetRolloutMessage then falls back to the app's top-level resources). Only tests that assert
+// on tree-derived diagnostics register their own GetResourceTree expectation (using a raw mock).
+//
+// Register any future best-effort (optional) ArgoApi call here so adding one never has to touch
+// every test setup again — the whole point of routing mock creation through this constructor.
+func newArgoApiMock(ctrl *gomock.Controller) *mock.MockArgoApiInterface {
+	api := mock.NewMockArgoApiInterface(ctrl)
+	api.EXPECT().GetResourceTree(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+	return api
+}
+
 // notSupersededState returns a TaskRepository mock whose GetTask always reports an
 // in-progress task, so the poll loop's supersession check never fires. Use it when
 // a test exercises rollout polling but is not about cancellation.
@@ -111,7 +124,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 	t.Run("Status Updater - Application deployed", func(t *testing.T) {
 		// mocks
-		apiMock := mock.NewMockArgoApiInterface(ctrl)
+		apiMock := newArgoApiMock(ctrl)
 		metricsMock := mock.NewMockMetricsInterface(ctrl)
 		stateMock := mock.NewMockTaskRepository(ctrl)
 
@@ -157,7 +170,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 	t.Run("Status Updater - Application deployed with Retry", func(t *testing.T) {
 		// mocks
-		apiMock := mock.NewMockArgoApiInterface(ctrl)
+		apiMock := newArgoApiMock(ctrl)
 		metricsMock := mock.NewMockMetricsInterface(ctrl)
 		stateMock := mock.NewMockTaskRepository(ctrl)
 
@@ -210,7 +223,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 	t.Run("Status Updater - Application deployed with Registry proxy", func(t *testing.T) {
 		// mocks
-		apiMock := mock.NewMockArgoApiInterface(ctrl)
+		apiMock := newArgoApiMock(ctrl)
 		metricsMock := mock.NewMockMetricsInterface(ctrl)
 		stateMock := mock.NewMockTaskRepository(ctrl)
 
@@ -254,7 +267,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 	t.Run("Status Updater - Application deployed without Registry proxy", func(t *testing.T) {
 		// mocks
-		apiMock := mock.NewMockArgoApiInterface(ctrl)
+		apiMock := newArgoApiMock(ctrl)
 		metricsMock := mock.NewMockMetricsInterface(ctrl)
 		stateMock := mock.NewMockTaskRepository(ctrl)
 
@@ -305,7 +318,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 	t.Run("Status Updater - Application not found", func(t *testing.T) {
 		// mocks
-		apiMock := mock.NewMockArgoApiInterface(ctrl)
+		apiMock := newArgoApiMock(ctrl)
 		metricsMock := mock.NewMockMetricsInterface(ctrl)
 		stateMock := mock.NewMockTaskRepository(ctrl)
 
@@ -336,7 +349,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 	t.Run("Status Updater - ArgoCD unavailable", func(t *testing.T) {
 		// mocks
-		apiMock := mock.NewMockArgoApiInterface(ctrl)
+		apiMock := newArgoApiMock(ctrl)
 		metricsMock := mock.NewMockMetricsInterface(ctrl)
 		stateMock := mock.NewMockTaskRepository(ctrl)
 
@@ -367,7 +380,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 	t.Run("Status Updater - Application API error", func(t *testing.T) {
 		// mocks
-		apiMock := mock.NewMockArgoApiInterface(ctrl)
+		apiMock := newArgoApiMock(ctrl)
 		metricsMock := mock.NewMockMetricsInterface(ctrl)
 		stateMock := mock.NewMockTaskRepository(ctrl)
 
@@ -398,7 +411,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 	t.Run("Status Updater - Application not available", func(t *testing.T) {
 		// mocks
-		apiMock := mock.NewMockArgoApiInterface(ctrl)
+		apiMock := newArgoApiMock(ctrl)
 		metricsMock := mock.NewMockMetricsInterface(ctrl)
 		stateMock := mock.NewMockTaskRepository(ctrl)
 
@@ -445,7 +458,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 	t.Run("Status Updater - Application out of Sync", func(t *testing.T) {
 		// mocks
-		apiMock := mock.NewMockArgoApiInterface(ctrl)
+		apiMock := newArgoApiMock(ctrl)
 		metricsMock := mock.NewMockMetricsInterface(ctrl)
 		stateMock := mock.NewMockTaskRepository(ctrl)
 
@@ -496,7 +509,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 	t.Run("Status Updater - Application not healthy", func(t *testing.T) {
 		// mocks
-		apiMock := mock.NewMockArgoApiInterface(ctrl)
+		apiMock := newArgoApiMock(ctrl)
 		metricsMock := mock.NewMockMetricsInterface(ctrl)
 		stateMock := mock.NewMockTaskRepository(ctrl)
 
@@ -578,10 +591,12 @@ func TestDeploymentMonitorHandleDeploymentFailureHandlesStateError(t *testing.T)
 
 	metrics := mock.NewMockMetricsInterface(ctrl)
 	state := mock.NewMockTaskRepository(ctrl)
+	api := newArgoApiMock(ctrl)
 
 	monitor := NewDeploymentMonitor(Argo{
 		metrics: metrics,
 		State:   state,
+		api:     api,
 	}, "", []retry.Option{retry.DelayType(zeroDelay), retry.LastErrorOnly(true)}, false, time.Millisecond)
 
 	task := models.Task{
@@ -601,6 +616,95 @@ func TestDeploymentMonitorHandleDeploymentFailureHandlesStateError(t *testing.T)
 
 	monitor.handleDeploymentFailure(&task, models.ArgoRolloutAppNotHealthy, application)
 	assert.Equal(t, models.StatusFailedMessage, task.Status)
+}
+
+// TestDeploymentMonitorHandleDeploymentFailureEnrichesReasonFromResourceTree pins the wiring:
+// the failure path fetches the live resource tree and the pod-level cause it carries lands in the
+// stored status reason. Uses a raw mock (not newArgoApiMock) so its GetResourceTree return is not
+// shadowed by the best-effort nil default.
+func TestDeploymentMonitorHandleDeploymentFailureEnrichesReasonFromResourceTree(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	metrics := mock.NewMockMetricsInterface(ctrl)
+	state := mock.NewMockTaskRepository(ctrl)
+	api := mock.NewMockArgoApiInterface(ctrl)
+
+	podNode := models.ApplicationTreeNode{Kind: "Pod", Name: "app-xyz", Namespace: "demo"}
+	podNode.Health.Status = "Degraded"
+	podNode.Health.Message = `Back-off pulling image "example.com/app:v2": ErrImagePull`
+	api.EXPECT().GetResourceTree(gomock.Any(), "demo").Return(&models.ApplicationTree{Nodes: []models.ApplicationTreeNode{podNode}}, nil)
+
+	monitor := NewDeploymentMonitor(Argo{
+		metrics: metrics,
+		State:   state,
+		api:     api,
+	}, "", []retry.Option{retry.DelayType(zeroDelay), retry.LastErrorOnly(true)}, false, time.Millisecond)
+
+	task := models.Task{
+		Id:     "task-id",
+		App:    "demo",
+		Images: []models.Image{{Image: "example.com/app", Tag: "v2"}},
+	}
+	application := &models.Application{}
+	application.Status.Summary.Images = []string{"example.com/app:v1"}
+
+	var capturedReason string
+	metrics.EXPECT().AddFailedDeployment(task.App)
+	state.EXPECT().
+		SetTaskStatus(task.Id, models.StatusFailedMessage, gomock.Any()).
+		DoAndReturn(func(_ string, _ string, reason string) error {
+			capturedReason = reason
+			return nil
+		})
+
+	monitor.handleDeploymentFailure(&task, models.ArgoRolloutAppNotAvailable, application)
+
+	assert.Contains(t, capturedReason, "Unhealthy resources:")
+	assert.Contains(t, capturedReason, `Pod(app-xyz) Degraded with message Back-off pulling image "example.com/app:v2": ErrImagePull`)
+}
+
+// TestDeploymentMonitorHandleDeploymentFailureResourceTreeErrorIsNonFatal pins the best-effort
+// contract: if the resource-tree fetch errors, the deployment is still marked failed and the
+// reason falls back to the baseline message (no panic on the nil tree). A regression that made
+// the fetch fatal — propagating the error and skipping SetTaskStatus — would fail this test.
+func TestDeploymentMonitorHandleDeploymentFailureResourceTreeErrorIsNonFatal(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	metrics := mock.NewMockMetricsInterface(ctrl)
+	state := mock.NewMockTaskRepository(ctrl)
+	api := mock.NewMockArgoApiInterface(ctrl)
+	api.EXPECT().GetResourceTree(gomock.Any(), "demo").Return(nil, errors.New("resource-tree unavailable"))
+
+	monitor := NewDeploymentMonitor(Argo{
+		metrics: metrics,
+		State:   state,
+		api:     api,
+	}, "", []retry.Option{retry.DelayType(zeroDelay), retry.LastErrorOnly(true)}, false, time.Millisecond)
+
+	task := models.Task{
+		Id:     "task-id",
+		App:    "demo",
+		Images: []models.Image{{Image: "example.com/app", Tag: "v2"}},
+	}
+	application := &models.Application{}
+	application.Status.Summary.Images = []string{"example.com/app:v1"}
+
+	var capturedReason string
+	metrics.EXPECT().AddFailedDeployment(task.App)
+	state.EXPECT().
+		SetTaskStatus(task.Id, models.StatusFailedMessage, gomock.Any()).
+		DoAndReturn(func(_ string, _ string, reason string) error {
+			capturedReason = reason
+			return nil
+		})
+
+	monitor.handleDeploymentFailure(&task, models.ArgoRolloutAppNotAvailable, application)
+
+	assert.Equal(t, models.StatusFailedMessage, task.Status)
+	assert.Contains(t, capturedReason, "Rollout status is not available")
+	assert.Contains(t, capturedReason, "List of expected images:")
 }
 
 func TestDeploymentMonitorHandleArgoAPIFailureHandlesStateError(t *testing.T) {
@@ -884,7 +988,8 @@ func TestArgoStatusUpdaterWaitForApplicationDeploymentErrors(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	api := mock.NewMockArgoApiInterface(ctrl)
+	api := newArgoApiMock(ctrl)
+
 	metrics := mock.NewMockMetricsInterface(ctrl)
 	state := mock.NewMockTaskRepository(ctrl)
 	locker := lock.NewInMemoryLocker()
@@ -928,7 +1033,8 @@ func TestDeploymentMonitorWaitRollout(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	api := mock.NewMockArgoApiInterface(ctrl)
+	api := newArgoApiMock(ctrl)
+
 	monitor := NewDeploymentMonitor(
 		Argo{api: api, State: notSupersededState(ctrl)},
 		"",
@@ -966,7 +1072,8 @@ func TestDeploymentMonitorWaitRolloutRespectsDeadline(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	api := mock.NewMockArgoApiInterface(ctrl)
+	api := newArgoApiMock(ctrl)
+
 	monitor := NewDeploymentMonitor(
 		Argo{api: api, State: notSupersededState(ctrl)},
 		"",
@@ -1007,7 +1114,8 @@ func TestDeploymentMonitorWaitRolloutReportsLastGoodStatusOnDeadline(t *testing.
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	api := mock.NewMockArgoApiInterface(ctrl)
+	api := newArgoApiMock(ctrl)
+
 	monitor := NewDeploymentMonitor(
 		Argo{api: api, State: notSupersededState(ctrl)},
 		"",
@@ -1046,7 +1154,8 @@ func TestDeploymentMonitorWaitRolloutSurfacesErrorWhenNoFetchSucceeds(t *testing
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	api := mock.NewMockArgoApiInterface(ctrl)
+	api := newArgoApiMock(ctrl)
+
 	monitor := NewDeploymentMonitor(
 		Argo{api: api, State: notSupersededState(ctrl)},
 		"",
@@ -1075,7 +1184,8 @@ func TestArgoStatusUpdaterStopsWhenSuperseded(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	apiMock := mock.NewMockArgoApiInterface(ctrl)
+	apiMock := newArgoApiMock(ctrl)
+
 	metricsMock := mock.NewMockMetricsInterface(ctrl)
 	stateMock := mock.NewMockTaskRepository(ctrl)
 
@@ -1117,7 +1227,8 @@ func TestArgoStatusUpdaterStopsMidPollWhenSuperseded(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	apiMock := mock.NewMockArgoApiInterface(ctrl)
+	apiMock := newArgoApiMock(ctrl)
+
 	metricsMock := mock.NewMockMetricsInterface(ctrl)
 	stateMock := mock.NewMockTaskRepository(ctrl)
 
@@ -1164,7 +1275,8 @@ func TestArgoStatusUpdaterAppDisappearsMidRollout(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	apiMock := mock.NewMockArgoApiInterface(ctrl)
+	apiMock := newArgoApiMock(ctrl)
+
 	metricsMock := mock.NewMockMetricsInterface(ctrl)
 	stateMock := mock.NewMockTaskRepository(ctrl)
 
@@ -1216,7 +1328,8 @@ func TestArgoStatusUpdaterProceedsWhenStatusReadFails(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	apiMock := mock.NewMockArgoApiInterface(ctrl)
+	apiMock := newArgoApiMock(ctrl)
+
 	metricsMock := mock.NewMockMetricsInterface(ctrl)
 	stateMock := mock.NewMockTaskRepository(ctrl)
 
@@ -1337,7 +1450,8 @@ func TestArgoStatusUpdater_processDeploymentResult(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	apiMock := mock.NewMockArgoApiInterface(ctrl)
+	apiMock := newArgoApiMock(ctrl)
+
 	metricsMock := mock.NewMockMetricsInterface(ctrl)
 	stateMock := mock.NewMockTaskRepository(ctrl)
 	mockLocker := lock.NewInMemoryLocker()
@@ -1423,7 +1537,8 @@ func TestArgoStatusUpdater_handleArgoAPIFailure(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	apiMock := mock.NewMockArgoApiInterface(ctrl)
+	apiMock := newArgoApiMock(ctrl)
+
 	metricsMock := mock.NewMockMetricsInterface(ctrl)
 	stateMock := mock.NewMockTaskRepository(ctrl)
 	mockLocker := lock.NewInMemoryLocker()
@@ -1595,7 +1710,8 @@ func newFetchTestMonitor(t *testing.T) (*DeploymentMonitor, *mock.MockArgoApiInt
 	ctrl := gomock.NewController(t)
 	t.Cleanup(ctrl.Finish)
 
-	api := mock.NewMockArgoApiInterface(ctrl)
+	api := newArgoApiMock(ctrl)
+
 	metrics := mock.NewMockMetricsInterface(ctrl)
 	monitor := NewDeploymentMonitor(
 		Argo{api: api, metrics: metrics},
