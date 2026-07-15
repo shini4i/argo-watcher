@@ -212,9 +212,11 @@ func (api *ArgoApi) GetApplication(ctx context.Context, app string, refresh bool
 func (api *ArgoApi) GetResourceTree(ctx context.Context, app string) (*models.ApplicationTree, error) {
 	apiUrl := fmt.Sprintf("%s/api/v1/applications/%s/resource-tree", api.baseUrl.String(), url.PathEscape(app))
 
+	// No logging here: this call is best-effort (the caller swallows the error to enrich a
+	// failure reason), so a transport hiccup must not surface as an ERROR-level line. The caller
+	// logs at Debug. The unmarshal error is wrapped with %w so the underlying cause is preserved.
 	body, statusCode, err := api.doGet(ctx, apiUrl)
 	if err != nil {
-		slog.Error("failed to execute request", "error", err)
 		return nil, err
 	}
 
@@ -224,7 +226,7 @@ func (api *ArgoApi) GetResourceTree(ctx context.Context, app string) (*models.Ap
 
 	var tree models.ApplicationTree
 	if err = json.Unmarshal(body, &tree); err != nil {
-		return nil, fmt.Errorf("could not parse json response: %s", body)
+		return nil, fmt.Errorf("could not parse resource-tree response: %w", err)
 	}
 
 	return &tree, nil

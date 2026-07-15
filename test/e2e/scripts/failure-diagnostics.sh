@@ -28,7 +28,11 @@ trap 'kill $(jobs -p) 2>/dev/null || true' EXIT
 for _ in $(seq 1 15); do curl -s -m3 -o /dev/null "localhost:${PORT}/healthz" && break; sleep 1; done
 
 # --- helpers ----------------------------------------------------------------
-api() { curl -s -m 15 "localhost:${PORT}/api/v1/$1" "${@:2}"; }
+api() {
+  local path="$1"; shift
+  curl -s -m 15 "localhost:${PORT}/api/v1/${path}" "$@"
+  return
+}
 
 # submit_task <json> <use_token> -> task id
 submit_task() {
@@ -36,6 +40,7 @@ submit_task() {
   [[ "$use_token" == "1" ]] && hdr=(-H "ARGO_WATCHER_DEPLOY_TOKEN: ${DEPLOY_TOKEN}")
   # "${hdr[@]+...}" guards the empty-array expansion so it is safe under `set -u` on bash < 4.4.
   api tasks -X POST -H 'Content-Type: application/json' "${hdr[@]+"${hdr[@]}"}" -d "$payload" | jq -r '.id'
+  return
 }
 
 # wait_terminal <id> -> prints final status
@@ -43,10 +48,14 @@ wait_terminal() {
   local id="$1" st
   for _ in $(seq 1 48); do
     st=$(api "tasks/${id}" | jq -r '.status // "?"')
-    case "$st" in deployed|failed|aborted) echo "$st"; return 0 ;; esac
+    case "$st" in
+      deployed|failed|aborted) echo "$st"; return 0 ;;
+      *) ;; # non-terminal: keep polling
+    esac
     sleep 5
   done
   echo "timeout"
+  return
 }
 
 # restore_good_tag <app>: bump the app back to a pullable tag so the lab stays reusable.
@@ -54,6 +63,7 @@ restore_good_tag() {
   local app="$1" id
   id=$(submit_task "{\"app\":\"${app}\",\"author\":\"e2e\",\"project\":\"lab\",\"timeout\":120,\"images\":[{\"image\":\"${IMAGE}\",\"tag\":\"${GOOD_TAG}\"}]}" 1)
   wait_terminal "$id" >/dev/null
+  return
 }
 
 # --- scenarios --------------------------------------------------------------
@@ -66,8 +76,9 @@ scenario_bad_image() {
   echo "expect=Pod("
   echo "expect=ErrImagePull"
   echo "teardown=teardown_bad_image"
+  return
 }
-teardown_bad_image() { restore_good_tag app1; }
+teardown_bad_image() { restore_good_tag app1; return; }
 
 # A deploy request whose image is never applied (unvalidated -> write-back skipped) stays
 # "not available" with the app green. There is nothing for ArgoCD to diagnose, so the reason
@@ -77,6 +88,7 @@ scenario_unvalidated_not_available() {
   echo "token=0"
   echo "expect=Rollout status is not available"
   echo "expect=List of expected images:"
+  return
 }
 
 # A failing PreSync hook (Helm Job) must surface as a failed hook, not just image lists.
@@ -87,9 +99,10 @@ scenario_failed_presync_hook() {
   echo "expect=PreSync Failed"
   echo "setup=setup_failed_presync_hook"
   echo "teardown=teardown_failed_presync_hook"
+  return
 }
-setup_failed_presync_hook()    { "${here}/hook-fixture.sh" add app3; }
-teardown_failed_presync_hook() { "${here}/hook-fixture.sh" remove app3; restore_good_tag app3; }
+setup_failed_presync_hook()    { "${here}/hook-fixture.sh" add app3; return; }
+teardown_failed_presync_hook() { "${here}/hook-fixture.sh" remove app3; restore_good_tag app3; return; }
 
 SCENARIOS=(
   scenario_bad_image

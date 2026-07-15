@@ -415,6 +415,44 @@ func TestArgoApiGetResourceTreeError(t *testing.T) {
 	assert.Contains(t, err.Error(), "boom")
 }
 
+// TestArgoApiGetResourceTreeUnmarshalError verifies a 200 with a non-JSON body surfaces a
+// wrapped parse error rather than a nil tree.
+func TestArgoApiGetResourceTreeUnmarshalError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("not json"))
+	}))
+	defer server.Close()
+
+	parsedURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	api := NewArgoApi()
+	api.baseUrl = *parsedURL
+	api.client = server.Client()
+	api.maxRetries = 1
+
+	_, err = api.GetResourceTree(context.Background(), "demo")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "could not parse resource-tree response")
+}
+
+// TestArgoApiGetResourceTreeTransportError verifies a transport failure (unreachable server) is
+// returned as an error — the best-effort caller relies on this to fall back to a nil tree.
+func TestArgoApiGetResourceTreeTransportError(t *testing.T) {
+	// Port 1 is not listenable, so the request fails to connect.
+	parsedURL, err := url.Parse("http://127.0.0.1:1")
+	require.NoError(t, err)
+
+	api := NewArgoApi()
+	api.baseUrl = *parsedURL
+	api.client = &http.Client{}
+	api.maxRetries = 1
+
+	_, err = api.GetResourceTree(context.Background(), "demo")
+	require.Error(t, err)
+}
+
 // TestArgoApiGetApplicationEscapesAppName verifies that special characters in app names
 // are properly URL-escaped to prevent path traversal and injection attacks.
 func TestArgoApiGetApplicationEscapesAppName(t *testing.T) {
