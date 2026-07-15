@@ -35,8 +35,9 @@ trap 'kill $(jobs -p) 2>/dev/null || true' EXIT
 # Wait for each port-forward to actually answer; fail loudly if it never does,
 # so a forwarding problem does not masquerade as a later "no task id" error.
 wait_ready() { # <name> <healthz-url>
-  for _ in $(seq 1 15); do curl -s -m3 -o /dev/null "$2" && return 0; sleep 1; done
-  echo "FAIL: port-forward to $1 not ready"; exit 1
+  local name="$1" url="$2"
+  for _ in $(seq 1 15); do curl -s -m3 -o /dev/null "$url" && return 0; sleep 1; done
+  echo "FAIL: port-forward to ${name} not ready"; exit 1
 }
 wait_ready argo-watcher   "localhost:${AW_PORT}/healthz"
 wait_ready webhook-tester "localhost:${WHT_PORT}/healthz"
@@ -59,7 +60,7 @@ echo "task ${id}: deploying ${APP} -> ${IMAGE}:${TAG}"
 status=""
 for _ in $(seq 1 48); do
   status=$(curl -s -m10 "localhost:${AW_PORT}/api/v1/tasks/${id}" | jq -r '.status // "?"')
-  case "$status" in deployed|failed|aborted) break ;; esac
+  case "$status" in deployed|failed|aborted) break ;; *) ;; esac # non-terminal: keep polling
   sleep 5
 done
 echo "task status=${status}"
@@ -85,14 +86,14 @@ for _ in $(seq 1 15); do
 done
 echo "captured events for task ${id}: ${events}"
 
-fail() { echo "FAIL: $1"; exit 1; }
 count=$(jq 'length' <<<"$events")
-[[ "$count" -ge 2 ]] || fail "expected >=2 webhook deliveries (start + result), got ${count}"
+[[ "$count" -ge 2 ]] \
+  || { echo "FAIL: expected >=2 webhook deliveries (start + result), got ${count}"; exit 1; }
 jq -e --arg a "$APP" 'any(.[]; .status == "in progress" and .app == $a)' <<<"$events" >/dev/null \
-  || fail "missing 'in progress' start event for app=${APP}"
+  || { echo "FAIL: missing 'in progress' start event for app=${APP}"; exit 1; }
 jq -e --arg a "$APP" --arg t "$TAG" 'any(.[]; .status == "deployed" and .app == $a and .tag == $t)' <<<"$events" >/dev/null \
-  || fail "missing 'deployed' result event for app=${APP} tag=${TAG}"
+  || { echo "FAIL: missing 'deployed' result event for app=${APP} tag=${TAG}"; exit 1; }
 jq -e --arg v "$AUTH_VALUE" 'all(.[]; .auth == $v)' <<<"$events" >/dev/null \
-  || fail "authorization header ${AUTH_HEADER} missing or wrong on a delivery"
+  || { echo "FAIL: authorization header ${AUTH_HEADER} missing or wrong on a delivery"; exit 1; }
 
 echo "NOTIFICATIONS: PASS"
