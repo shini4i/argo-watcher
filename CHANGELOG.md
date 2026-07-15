@@ -41,7 +41,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   routine only tracked established connections, not handshakes still being
   negotiated, which left a data race between an in-progress upgrade and shutdown
   (surfaced by the race detector). Handshakes are now accounted for, so shutdown
-  drains them cleanly.
+  drains them cleanly. Shutdown also stops accepting new connections before
+  draining the WebSocket goroutines, avoiding a rare shutdown-time panic when a
+  new connection arrived mid-drain.
 - Stop sending a stale "locked" WebSocket notification after a manual lock
   release. Releasing a manual lock during an active scheduled window suppresses
   that window for 15 minutes; when the timer expired the server always told
