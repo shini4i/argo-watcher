@@ -409,6 +409,69 @@ func TestLockdown_WatchTransitions(t *testing.T) {
 	})
 }
 
+// TestLockdown_ExpireOverride verifies that once the override window ends, the
+// system re-notifies clients with "locked" only when it is genuinely still
+// locked, and stays silent when the lock has meanwhile been lifted.
+func TestLockdown_ExpireOverride(t *testing.T) {
+	// scheduleAround builds a one-off schedule window offset from now, so tests
+	// can reproduce a scheduled lockdown that is still open or already closed.
+	// The wide margins keep the window on the correct side of "now" across
+	// hour/day/week boundaries.
+	scheduleAround := func(startOffset, endOffset time.Duration) LockdownSchedule {
+		now := time.Now()
+		start := now.Add(startOffset)
+		end := now.Add(endOffset)
+		return LockdownSchedule{
+			StartDay:  start.Weekday(),
+			StartHour: start.Hour(),
+			StartMin:  start.Minute(),
+			EndDay:    end.Weekday(),
+			EndHour:   end.Hour(),
+			EndMin:    end.Minute(),
+		}
+	}
+
+	t.Run("notifies locked when the scheduled window is still open", func(t *testing.T) {
+		// Mirrors the production path: ReleaseLock clears ManualLock, so the only
+		// way the system is still locked after the override expires is an active
+		// schedule window. Once OverrideMode clears, that window must re-notify.
+		l := &Lockdown{OverrideMode: true, Schedules: []LockdownSchedule{
+			scheduleAround(-2*time.Minute, 2*time.Minute),
+		}}
+
+		msgs := make(chan string, 1)
+		l.expireOverride(time.Millisecond, func(m string) { msgs <- m })
+
+		assert.False(t, l.OverrideMode, "override should be cleared")
+		select {
+		case m := <-msgs:
+			assert.Equal(t, "locked", m)
+		case <-time.After(time.Second):
+			t.Fatal("expected a 'locked' notification")
+		}
+	})
+
+	t.Run("stays silent when the scheduled window closed during the override", func(t *testing.T) {
+		// The exact bug scenario: the schedule window elapsed while the override
+		// was active, so once OverrideMode clears the system is unlocked and no
+		// stale "locked" message must be sent.
+		l := &Lockdown{OverrideMode: true, Schedules: []LockdownSchedule{
+			scheduleAround(-4*time.Minute, -2*time.Minute),
+		}}
+
+		msgs := make(chan string, 1)
+		l.expireOverride(time.Millisecond, func(m string) { msgs <- m })
+
+		assert.False(t, l.OverrideMode, "override should be cleared")
+		select {
+		case m := <-msgs:
+			t.Fatalf("unexpected notification: %q", m)
+		case <-time.After(50 * time.Millisecond):
+			// no notification is the expected outcome
+		}
+	})
+}
+
 // TestLockdown_IsLockedInternal tests the internal lock checking logic.
 func TestLockdown_IsLockedInternal(t *testing.T) {
 	t.Run("returns true when ManualLock is set", func(t *testing.T) {

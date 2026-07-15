@@ -153,15 +153,25 @@ func (l *Lockdown) ReleaseLock() {
 	l.mu.Unlock()
 
 	if isLocked {
-		go func() {
-			time.Sleep(15 * time.Minute)
-			l.mu.Lock()
-			l.OverrideMode = false
-			l.mu.Unlock()
+		go l.expireOverride(15*time.Minute, notifyWebSocketClients)
+	}
+}
 
-			// we need to re-notify clients that the lock is in action again
-			notifyWebSocketClients("locked")
-		}()
+// expireOverride waits for d, then clears the temporary override that ReleaseLock
+// enabled. It re-notifies clients with "locked" only when the system is genuinely
+// still locked once the override ends; if the scheduled window closed during the
+// wait, the system is now unlocked and no stale "locked" message is sent. The
+// duration and notifier are parameters so the guard can be unit-tested.
+func (l *Lockdown) expireOverride(d time.Duration, notify func(string)) {
+	time.Sleep(d)
+
+	l.mu.Lock()
+	l.OverrideMode = false
+	stillLocked := l.isLockedInternal()
+	l.mu.Unlock()
+
+	if stillLocked {
+		notify("locked")
 	}
 }
 

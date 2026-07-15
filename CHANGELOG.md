@@ -37,6 +37,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Stop sending a stale "locked" WebSocket notification after a manual lock
+  release. Releasing a manual lock during an active scheduled window suppresses
+  that window for 15 minutes; when the timer expired the server always told
+  clients the system was "locked" again, even if the scheduled window had ended
+  in the meantime — leaving the Web UI showing a lockdown that was no longer in
+  effect. It now re-notifies only when the system is genuinely still locked.
 - Never show React-admin's built-in username/password login form. The Web UI
   authenticates only through a top-level Keycloak redirect, but the stock login
   form could still surface as a misleading fallback when Keycloak was
