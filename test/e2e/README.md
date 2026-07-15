@@ -20,7 +20,7 @@ pinned tool/chart versions are in `Taskfile.yml`.
 ## Usage
 
 ```sh
-task e2e     # one-shot per-release run: up → smoke → failure-diagnostics → load → race → down
+task e2e     # one-shot per-release run: up → smoke → load → race → failure-diagnostics → down
 ```
 
 `task e2e` walks the whole flow. It stops on the first failing step, so a failed
