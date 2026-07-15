@@ -32,8 +32,14 @@ WHT_PORT="${WHT_PORT:-18097}"
 kubectl -n "$NS_AW"  port-forward svc/argo-watcher   "${AW_PORT}:80"  >/dev/null 2>&1 &
 kubectl -n "$NS_WHT" port-forward svc/webhook-tester "${WHT_PORT}:80" >/dev/null 2>&1 &
 trap 'kill $(jobs -p) 2>/dev/null || true' EXIT
-for _ in $(seq 1 15); do curl -s -m3 -o /dev/null "localhost:${AW_PORT}/healthz"  && break; sleep 1; done
-for _ in $(seq 1 15); do curl -s -m3 -o /dev/null "localhost:${WHT_PORT}/healthz" && break; sleep 1; done
+# Wait for each port-forward to actually answer; fail loudly if it never does,
+# so a forwarding problem does not masquerade as a later "no task id" error.
+wait_ready() { # <name> <healthz-url>
+  for _ in $(seq 1 15); do curl -s -m3 -o /dev/null "$2" && return 0; sleep 1; done
+  echo "FAIL: port-forward to $1 not ready"; exit 1
+}
+wait_ready argo-watcher   "localhost:${AW_PORT}/healthz"
+wait_ready webhook-tester "localhost:${WHT_PORT}/healthz"
 
 wht="localhost:${WHT_PORT}/api/session/${WEBHOOK_UUID}"
 

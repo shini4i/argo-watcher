@@ -35,7 +35,9 @@ app:
     - name: PUBSUB_DRIVER
       value: memory
     # Default is a 128-entry ring buffer; the soak fires two webhooks per task,
-    # so keep everything to avoid our asserted deploy being evicted.
+    # so keep everything to avoid our asserted deploy being evicted. 0 disables
+    # the cap (unlimited) — the in-memory store only trims when maxRequests > 0
+    # (verified in webhook-tester v2.3.0 internal/storage/inmemory.go).
     - name: MAX_REQUESTS
       value: "0"
   livenessProbe:
