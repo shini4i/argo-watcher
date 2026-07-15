@@ -22,12 +22,13 @@ import (
 )
 
 type Server struct {
-	router  *gin.Engine
-	config  *config.ServerConfig
-	argo    *argocd.Argo
-	metrics *prom.Metrics
-	updater *argocd.ArgoStatusUpdater
-	env     *Env
+	router      *gin.Engine
+	config      *config.ServerConfig
+	argo        *argocd.Argo
+	metrics     *prom.Metrics
+	updater     *argocd.ArgoStatusUpdater
+	env         *Env
+	probeCancel context.CancelFunc
 }
 
 // NewServer creates a new server instance with the given configuration and prometheus registerer.
@@ -55,11 +56,6 @@ func NewServer(serverConfig *config.ServerConfig, reg prometheus.Registerer) (*S
 	// initialize argo client
 	argo := &argocd.Argo{}
 	argo.Init(s, api, metrics)
-
-	// Keep the argocd_unavailable metric fresh via a background probe. The task
-	// list read path no longer performs an ArgoCD check (so it can't hang on an
-	// outage), so this is the only ambient refresher of that gauge.
-	go argo.StartLivenessProbe(context.Background(), argocd.ArgoLivenessProbeInterval)
 
 	// Create the locker instance based on the state type
 	var locker lock.Locker
@@ -105,13 +101,23 @@ func NewServer(serverConfig *config.ServerConfig, reg prometheus.Registerer) (*S
 	// create router
 	router := env.CreateRouter()
 
+	// Keep the argocd_unavailable metric fresh via a background probe. The task
+	// list read path no longer performs an ArgoCD check (so it can't hang on an
+	// outage), so this is the only ambient refresher of that gauge. Tie it to a
+	// cancellable context so graceful shutdown (and test teardown) can stop the
+	// goroutine instead of leaking it. Launched last, past every early-return
+	// error path, so the cancel is always owned by the returned Server.
+	probeCtx, probeCancel := context.WithCancel(context.Background())
+	go argo.StartLivenessProbe(probeCtx, argocd.ArgoLivenessProbeInterval)
+
 	return &Server{
-		router:  router,
-		config:  serverConfig,
-		argo:    argo,
-		metrics: metrics,
-		updater: updater,
-		env:     env,
+		router:      router,
+		config:      serverConfig,
+		argo:        argo,
+		metrics:     metrics,
+		updater:     updater,
+		env:         env,
+		probeCancel: probeCancel,
 	}, nil
 }
 
@@ -139,6 +145,11 @@ func (s *Server) Run() {
 	<-quit
 
 	slog.Info("shutting down server...")
+
+	// Stop the background ArgoCD liveness probe.
+	if s.probeCancel != nil {
+		s.probeCancel()
+	}
 
 	// Trigger WebSocket connection shutdown
 	s.env.Shutdown()

@@ -70,9 +70,9 @@ const ListBody = ({
 };
 
 /**
- * Shared wrapper for task list pages handling pagination persistence, headers, and empty states.
+ * Shared scaffold for task list pages: wraps React-admin's <List> with the
+ * toolbar/header, pagination persistence, and the empty/error body states.
  */
-/** Shared list scaffold wrapping React-admin's List with toolbar/header handling. */
 export const TaskListLayout = ({
   title,
   perPageStorageKey,

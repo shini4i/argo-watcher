@@ -86,8 +86,12 @@ func (argo *Argo) Check() (string, error) {
 // to be launched in its own goroutine.
 func (argo *Argo) StartLivenessProbe(ctx context.Context, interval time.Duration) {
 	// Probe once immediately so the gauge is populated at startup instead of
-	// only after the first interval elapses.
-	_, _ = argo.Check()
+	// only after the first interval elapses. Check() updates the metric itself;
+	// log at debug so an outage leaves a correlatable trace without spamming
+	// logs every interval.
+	if _, err := argo.Check(); err != nil {
+		slog.Debug("ArgoCD liveness probe failed", "error", err)
+	}
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -96,7 +100,9 @@ func (argo *Argo) StartLivenessProbe(ctx context.Context, interval time.Duration
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			_, _ = argo.Check()
+			if _, err := argo.Check(); err != nil {
+				slog.Debug("ArgoCD liveness probe failed", "error", err)
+			}
 		}
 	}
 }
