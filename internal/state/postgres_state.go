@@ -111,12 +111,24 @@ func (state *PostgresState) GetTasks(startTime float64, endTime float64, app str
 }
 
 // GetTask retrieves a task from the PostgreSQL database based on the provided task ID.
-// It returns the task as a pointer to models.Task and an error if the task is not found or an error occurs during retrieval.
+// It returns ErrTaskNotFound when the id is malformed or no matching row exists,
+// and a wrapped error for any other retrieval failure so callers can distinguish
+// 404 from 500.
 // The method executes a SELECT query with the given task ID and scans the result into the task struct.
 // It handles converting the created and updated timestamps to float64 values and unmarshalling the images from the database.
 func (state *PostgresState) GetTask(id string) (*models.Task, error) {
+	// The id column is a uuid, so a malformed id can never match a row. Treat it
+	// as not-found instead of letting Postgres raise a syntax error, which would
+	// otherwise surface as a client-triggerable HTTP 500 and ERROR-log noise.
+	if _, err := uuid.Parse(id); err != nil {
+		return nil, ErrTaskNotFound
+	}
+
 	var ormTask state_models.TaskModel
 	if err := state.orm.Take(&ormTask, "id = ?", id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrTaskNotFound
+		}
 		return nil, fmt.Errorf("error retrieving task with ID %s: %w", id, err)
 	}
 	return ormTask.ConvertToExternalTask(), nil

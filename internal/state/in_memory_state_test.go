@@ -96,8 +96,7 @@ func TestInMemoryState_GetTask_NotFound(t *testing.T) {
 	state := InMemoryState{}
 	task, err := state.GetTask("non-existent-id")
 	assert.Nil(t, task)
-	assert.Error(t, err)
-	assert.Equal(t, "task not found", err.Error())
+	assert.ErrorIs(t, err, ErrTaskNotFound)
 }
 
 // TestInMemoryState_GetTasks verifies that tasks can be retrieved within a time range
@@ -407,8 +406,7 @@ func TestInMemoryState_ProcessObsoleteTasks_RemovesAppNotFound(t *testing.T) {
 
 	// Verify "app not found" task was removed
 	_, err = state.GetTask(appNotFoundTask.Id)
-	assert.Error(t, err)
-	assert.Equal(t, "task not found", err.Error())
+	assert.ErrorIs(t, err, ErrTaskNotFound)
 }
 
 // TestInMemoryState_Check verifies that the Check method returns true for in-memory state.

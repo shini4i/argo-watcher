@@ -92,8 +92,16 @@ scenario_unvalidated_not_available() {
 }
 
 # A failing PreSync hook (Helm Job) must surface as a failed hook, not just image lists.
+#
+# The tag MUST differ from app3's current live tag. argo-watcher only drives a sync when the
+# write-back actually changes the override file (unchanged tags are a no-op since #472); a sync
+# is what makes ArgoCD run the PreSync hook. The SOAK phase deterministically (fixed RNG seed)
+# leaves app3 at one of ${TAGS} (v1.10.1/2/3), so we deploy a tag OUTSIDE that set to guarantee
+# a real write-back regardless of which SOAK tag app3 ended on. The tag is never pulled: a failing
+# PreSync hook aborts the sync before the main wave applies the Deployment — so the image stays at
+# the old tag, the expected image is "not available", and the failure diagnostics carry the hook.
 scenario_failed_presync_hook() {
-  echo "task={\"app\":\"app3\",\"author\":\"e2e\",\"project\":\"lab\",\"timeout\":90,\"images\":[{\"image\":\"${IMAGE}\",\"tag\":\"v1.10.2\"}]}"
+  echo "task={\"app\":\"app3\",\"author\":\"e2e\",\"project\":\"lab\",\"timeout\":90,\"images\":[{\"image\":\"${IMAGE}\",\"tag\":\"v0.0.0-hookfail\"}]}"
   echo "token=1"
   echo "expect=Failed hooks:"
   echo "expect=PreSync Failed"
