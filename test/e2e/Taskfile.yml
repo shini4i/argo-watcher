@@ -49,7 +49,7 @@ tasks:
       - task: verify
 
   e2e:
-    desc: "One-shot per-release run: up → smoke → load → race → down"
+    desc: "One-shot per-release run: up → smoke → load → race → failure-diagnostics → down"
     cmds:
       # Runs the whole flow. Stops on the first failing step, so a failed run
       # leaves the cluster up for debugging; a fully green run tears it down.
@@ -57,6 +57,10 @@ tasks:
       - task: smoke
       - task: load
       - task: race
+      # failure-diagnostics runs LAST: it deliberately breaks apps (bad images, a failing
+      # PreSync hook injected into the SHARED chart values) and pushes directly to the gitops
+      # repo, so running it before load/race would perturb those pristine-state soak gates.
+      - task: failure-diagnostics
       - task: down
 
   cluster:
@@ -111,6 +115,11 @@ tasks:
     desc: "One authenticated end-to-end deploy proving the write-back loop"
     cmds:
       - DEPLOY_TOKEN={{.DEPLOY_TOKEN}} ./scripts/smoke-deploy.sh
+
+  failure-diagnostics:
+    desc: "Assert failure reasons carry the real cause (pod ImagePullBackOff, failed hooks) from real ArgoCD"
+    cmds:
+      - DEPLOY_TOKEN={{.DEPLOY_TOKEN}} ./scripts/failure-diagnostics.sh
 
   load:
     desc: "Git-conflict soak: competitor writer + concurrent deploys + collect/assert"

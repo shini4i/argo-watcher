@@ -42,6 +42,10 @@ func (m *mockArgoApi) GetApplication(_ context.Context, _ string, _ bool) (*mode
 	return &models.Application{}, nil
 }
 
+func (m *mockArgoApi) GetResourceTree(_ context.Context, _ string) (*models.ApplicationTree, error) {
+	return &models.ApplicationTree{}, nil
+}
+
 // mockTaskRepository is a minimal mock for TaskRepository used in tests.
 // Calls to GetTasks capture the last argument set so handler-level tests can
 // assert that query params are forwarded to the repository.

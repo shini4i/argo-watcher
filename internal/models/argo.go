@@ -51,6 +51,25 @@ type Application struct {
 	Status   ApplicationStatus   `json:"status"`
 }
 
+// ApplicationTree is the live resource tree returned by ArgoCD's
+// /api/v1/applications/{name}/resource-tree endpoint. Unlike Application.Status.Resources
+// (which lists only the app's top-level managed resources: Deployment, Service, ...), the
+// tree includes their descendants — crucially the Pods, whose health carries the actual
+// failure cause (ImagePullBackOff, CrashLoopBackOff) that the top-level resources never expose.
+type ApplicationTree struct {
+	Nodes []ApplicationTreeNode `json:"nodes"`
+}
+
+type ApplicationTreeNode struct {
+	Kind      string `json:"kind"`      // example: Pod | Job
+	Name      string `json:"name"`      // example: app-6b7f-abcde
+	Namespace string `json:"namespace"` // example: app
+	Health    struct {
+		Status  string `json:"status"`  // example: Degraded
+		Message string `json:"message"` // example: Back-off pulling image "app:v2": ErrImagePull
+	} `json:"health"`
+}
+
 type ApplicationStatus struct {
 	Health struct {
 		Status string `json:"status"`
@@ -123,15 +142,21 @@ func (app *Application) GetRolloutStatus(rolloutImages []string, registryProxyUr
 	return ArgoRolloutAppSuccess
 }
 
-// GetRolloutMessage generates rollout failure message.
-func (app *Application) GetRolloutMessage(status string, rolloutImages []string) string {
+// GetRolloutMessage generates a rollout failure message.
+//
+// tree is ArgoCD's live resource tree (optional, may be nil). When present it is the
+// preferred source for the "Unhealthy resources" section because it alone carries the
+// pod-level failure cause (ImagePullBackOff / CrashLoopBackOff); when nil the message
+// falls back to the app's top-level Status.Resources, preserving the pre-tree behaviour.
+// The actionable diagnostics (terminal sync operation, failed hooks, unhealthy resources)
+// are appended to both the "not available" and "not healthy"/"degraded" failures so on-call
+// users don't have to context-switch into the ArgoCD UI regardless of how the rollout failed.
+func (app *Application) GetRolloutMessage(status string, rolloutImages []string, tree *ApplicationTree) string {
 	// handle application sync failure
 	switch status {
 	// not all images were deployed to the application
 	case ArgoRolloutAppNotAvailable:
-		// Image-mismatch is the bare minimum we always show. We additionally append any actionable diagnostics
-		// already returned by ArgoCD (failed sync operation, failed hooks, unhealthy resources) so on-call users
-		// don't have to context-switch into the ArgoCD UI to find the root cause.
+		// Image-mismatch is the bare minimum we always show, then append any diagnostics.
 		base := fmt.Sprintf(
 			"List of current images (last app check):\n"+
 				"\t%s\n\n"+
@@ -140,10 +165,8 @@ func (app *Application) GetRolloutMessage(status string, rolloutImages []string)
 			strings.Join(app.Status.Summary.Images, "\n\t"),
 			strings.Join(rolloutImages, "\n\t"),
 		)
-		if diag := app.buildNotAvailableDiagnostics(); diag != "" {
-			return base + "\n\n" + diag
-		}
-		return base
+		// Base message has no resource listing, so fall back to Status.Resources when no tree.
+		return appendDiagnostics(base, app.buildFailureDiagnostics(tree, true))
 	// application sync status wasn't valid
 	case ArgoRolloutAppNotSynced:
 		// display sync status and last sync message
@@ -158,8 +181,10 @@ func (app *Application) GetRolloutMessage(status string, rolloutImages []string)
 		)
 	// application is not in a healthy status
 	case ArgoRolloutAppNotHealthy, ArgoRolloutAppDegraded:
-		// display current health of pods
-		return fmt.Sprintf(
+		// display current health of the top-level resources, then append the same
+		// diagnostics as the "not available" path — a stalled rollout caused by a
+		// failing pod surfaces here just as often, and its cause lives in the tree.
+		base := fmt.Sprintf(
 			"App sync status \"%s\"\n"+
 				"App health status \"%s\"\n"+
 				"Resources:\n"+
@@ -168,6 +193,9 @@ func (app *Application) GetRolloutMessage(status string, rolloutImages []string)
 			app.Status.Health.Status,
 			strings.Join(app.ListUnhealthyResources(), "\n\t"),
 		)
+		// Base "Resources:" already lists the top-level resources, so do NOT fall back to them
+		// again here; only tree-sourced problem nodes (the distinct pod cause) add signal.
+		return appendDiagnostics(base, app.buildFailureDiagnostics(tree, false))
 	}
 
 	// handle unexpected status
@@ -175,6 +203,16 @@ func (app *Application) GetRolloutMessage(status string, rolloutImages []string)
 		"received unexpected rollout status \"%s\"",
 		status,
 	)
+}
+
+// appendDiagnostics joins the base failure message with the optional diagnostics suffix,
+// separated by a blank line. An empty suffix leaves the base message byte-identical, so
+// failures with no extra diagnostics keep their historical format.
+func appendDiagnostics(base, diagnostics string) string {
+	if diagnostics == "" {
+		return base
+	}
+	return base + "\n\n" + diagnostics
 }
 
 // formatSyncResultResource renders a single sync-result resource line. Shared between full and filtered listings
@@ -271,10 +309,52 @@ func (app *Application) listProblemResources() []string {
 	return list
 }
 
-// buildNotAvailableDiagnostics builds the optional diagnostics suffix appended to the "not available" rollout
-// failure message. Each section is included only when it has content; the empty string is returned when no
-// diagnostics are available, preserving the legacy image-list-only output for that case.
-func (app *Application) buildNotAvailableDiagnostics() string {
+// formatTreeNode renders a single resource-tree node line, mirroring formatHealthResource so
+// tree-sourced and Status.Resources-sourced "Unhealthy resources" lines look identical.
+func formatTreeNode(n ApplicationTreeNode) string {
+	line := fmt.Sprintf("%s(%s) %s", n.Kind, n.Name, n.Health.Status)
+	if n.Health.Message != "" {
+		line += " with message " + n.Health.Message
+	}
+	return line
+}
+
+// ListProblemNodes returns formatted lines for resource-tree nodes whose health indicates a
+// problem. This is where pod-level failure causes (ImagePullBackOff, CrashLoopBackOff) surface —
+// they are carried by the Pod nodes, which never appear in Application.Status.Resources.
+func (tree *ApplicationTree) ListProblemNodes() []string {
+	var list []string
+	for index := range tree.Nodes {
+		node := tree.Nodes[index]
+		if !isProblemHealthStatus(node.Health.Status) {
+			continue
+		}
+		list = append(list, formatTreeNode(node))
+	}
+	return list
+}
+
+// problemResourceLines returns the "Unhealthy resources" lines. It always prefers the live
+// resource tree (which alone carries pod-level causes). When the tree is nil it falls back to
+// the app's top-level Status.Resources only if allowStatusFallback is set — the not-available
+// path enables the fallback (its base message has no resource listing), while the not-healthy
+// path disables it because its base "Resources:" block already lists those same resources.
+func (app *Application) problemResourceLines(tree *ApplicationTree, allowStatusFallback bool) []string {
+	if tree != nil {
+		return tree.ListProblemNodes()
+	}
+	if allowStatusFallback {
+		return app.listProblemResources()
+	}
+	return nil
+}
+
+// buildFailureDiagnostics builds the optional diagnostics suffix appended to the "not available"
+// and "not healthy"/"degraded" rollout-failure messages. Each section is included only when it
+// has content; the empty string is returned when no diagnostics are available, preserving the
+// legacy output for that case. tree is optional (see GetRolloutMessage); allowStatusFallback
+// controls whether the tree-less "Unhealthy resources" section falls back to Status.Resources.
+func (app *Application) buildFailureDiagnostics(tree *ApplicationTree, allowStatusFallback bool) string {
 	var sections []string
 
 	if isTerminalFailurePhase(app.Status.OperationState.Phase) {
@@ -289,7 +369,7 @@ func (app *Application) buildNotAvailableDiagnostics() string {
 		sections = append(sections, "Failed hooks:\n\t"+strings.Join(hooks, "\n\t"))
 	}
 
-	if resources := app.listProblemResources(); len(resources) > 0 {
+	if resources := app.problemResourceLines(tree, allowStatusFallback); len(resources) > 0 {
 		sections = append(sections, "Unhealthy resources:\n\t"+strings.Join(resources, "\n\t"))
 	}
 

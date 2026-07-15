@@ -20,7 +20,7 @@ pinned tool/chart versions are in `Taskfile.yml`.
 ## Usage
 
 ```sh
-task e2e     # one-shot per-release run: up → smoke → load → race → down
+task e2e     # one-shot per-release run: up → smoke → load → race → failure-diagnostics → down
 ```
 
 `task e2e` walks the whole flow. It stops on the first failing step, so a failed
@@ -29,12 +29,13 @@ run leaves the cluster up for debugging; a fully green run tears it down.
 Individual steps (for iterating or debugging):
 
 ```sh
-task up      # build the race image + boot the full lab (idempotent)
-task verify  # assert argo-watcher is up and reaching real Argo
-task smoke   # one authenticated deploy through the full write-back loop
-task load    # git-conflict soak: competitor + concurrent deploys, strict 0-failed
-task race    # same-app supersession: a newer deploy must win over an older retrying one
-task down    # destroy the cluster
+task up                   # build the race image + boot the full lab (idempotent)
+task verify               # assert argo-watcher is up and reaching real Argo
+task smoke                # one authenticated deploy through the full write-back loop
+task failure-diagnostics  # assert failure reasons carry the real cause (pod ImagePullBackOff, failed hooks)
+task load                 # git-conflict soak: competitor + concurrent deploys, strict 0-failed
+task race                 # same-app supersession: a newer deploy must win over an older retrying one
+task down                 # destroy the cluster
 ```
 
 Tunable soak knobs are `Taskfile.yml` vars (`APPS`, `WORKERS`, `WS_CLIENTS`,
@@ -63,6 +64,8 @@ Reach any component with `kubectl port-forward` (there is no ingress), e.g.
 | `values/` | pinned Helm values for argocd / argo-watcher / gitea |
 | `scripts/load-race-image.sh` | load a local image into the kind node |
 | `scripts/mint-argo-token.sh` | mint `ARGO_TOKEN` into `argo-watcher-secret` |
+| `scripts/failure-diagnostics.sh` | table-driven failure-reason assertions (add a case = one table entry) |
+| `scripts/hook-fixture.sh` | add/remove a failing PreSync hook via the chart's `rawObject` |
 
 ## Gotchas (why the scripts exist)
 

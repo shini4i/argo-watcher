@@ -23,6 +23,7 @@ type ArgoApiInterface interface {
 	Init(serverConfig *config.ServerConfig) error
 	GetUserInfo() (*models.Userinfo, error)
 	GetApplication(ctx context.Context, app string, refresh bool) (*models.Application, error)
+	GetResourceTree(ctx context.Context, app string) (*models.ApplicationTree, error)
 }
 
 type ArgoApi struct {
@@ -201,4 +202,32 @@ func (api *ArgoApi) GetApplication(ctx context.Context, app string, refresh bool
 	}
 
 	return &argoApp, nil
+}
+
+// GetResourceTree fetches the live resource tree of the named ArgoCD application. It is the only
+// source that exposes descendant resources — notably the Pods, whose health carries the actual
+// failure cause (ImagePullBackOff, CrashLoopBackOff) absent from the application's top-level
+// Status.Resources. The context bounds the request so a caller under a deadline is never blocked
+// past it. It is called only on the failure path to enrich the reported reason.
+func (api *ArgoApi) GetResourceTree(ctx context.Context, app string) (*models.ApplicationTree, error) {
+	apiUrl := fmt.Sprintf("%s/api/v1/applications/%s/resource-tree", api.baseUrl.String(), url.PathEscape(app))
+
+	// No logging here: this call is best-effort (the caller swallows the error to enrich a
+	// failure reason), so a transport hiccup must not surface as an ERROR-level line. The caller
+	// logs at Debug. The unmarshal error is wrapped with %w so the underlying cause is preserved.
+	body, statusCode, err := api.doGet(ctx, apiUrl)
+	if err != nil {
+		return nil, err
+	}
+
+	if statusCode != http.StatusOK {
+		return nil, parseArgoErrorResponse(body)
+	}
+
+	var tree models.ApplicationTree
+	if err = json.Unmarshal(body, &tree); err != nil {
+		return nil, fmt.Errorf("could not parse resource-tree response: %w", err)
+	}
+
+	return &tree, nil
 }

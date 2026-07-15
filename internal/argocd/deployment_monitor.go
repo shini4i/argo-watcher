@@ -272,15 +272,36 @@ func (monitor *DeploymentMonitor) handleDeploymentSuccess(task *models.Task) {
 func (monitor *DeploymentMonitor) handleDeploymentFailure(task *models.Task, status string, application *models.Application) {
 	slog.Info("App deployment failed.", "id", task.Id)
 	monitor.argo.metrics.AddFailedDeployment(task.App)
+	tree := monitor.fetchResourceTree(task)
 	reason := fmt.Sprintf(
 		"Application deployment failed. Rollout status is %s\n\n%s",
 		status,
-		application.GetRolloutMessage(status, task.ListImages()),
+		application.GetRolloutMessage(status, task.ListImages(), tree),
 	)
 	if err := monitor.argo.State.SetTaskStatus(task.Id, models.StatusFailedMessage, reason); err != nil {
 		slog.Error(fmt.Sprintf(failedToUpdateTaskStatusTemplate, err), "id", task.Id)
 	}
 	task.Status = models.StatusFailedMessage
+}
+
+// resourceTreeTimeout bounds the best-effort resource-tree fetch on the failure path so
+// enriching the failure reason can never block terminal status reporting for long.
+const resourceTreeTimeout = 10 * time.Second
+
+// fetchResourceTree best-effort fetches the application's live resource tree to enrich the
+// failure reason with pod-level causes (ImagePullBackOff, CrashLoopBackOff). It is deliberately
+// non-fatal: any error yields a nil tree and GetRolloutMessage falls back to the app's top-level
+// resources, so a resource-tree hiccup never prevents the deployment from being marked failed.
+func (monitor *DeploymentMonitor) fetchResourceTree(task *models.Task) *models.ApplicationTree {
+	ctx, cancel := context.WithTimeout(context.Background(), resourceTreeTimeout)
+	defer cancel()
+
+	tree, err := monitor.argo.api.GetResourceTree(ctx, task.App)
+	if err != nil {
+		slog.Debug(fmt.Sprintf("Could not fetch resource tree for failure diagnostics: %s", err), "id", task.Id)
+		return nil
+	}
+	return tree
 }
 
 // handleApplicationFetchError ensures we don't retry for not found errors
