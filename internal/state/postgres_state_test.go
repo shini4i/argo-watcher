@@ -141,6 +141,46 @@ func TestPostgresState_GetTask(t *testing.T) {
 	assert.Equal(t, models.StatusInProgressMessage, task.Status)
 }
 
+// TestPostgresState_GetTask_NotFound verifies that GetTask returns the
+// ErrTaskNotFound sentinel (not a generic error) when no row matches, so the
+// HTTP layer can map it to 404 while other failures surface as 500.
+func TestPostgresState_GetTask_NotFound(t *testing.T) {
+	env := newPostgresTestEnv(t)
+
+	// Valid UUID that was never inserted -> gorm.ErrRecordNotFound.
+	task, err := env.state.GetTask("00000000-0000-0000-0000-000000000000")
+	assert.Nil(t, task)
+	assert.ErrorIs(t, err, ErrTaskNotFound)
+}
+
+// TestPostgresState_GetTask_MalformedID verifies that a non-UUID id is mapped to
+// ErrTaskNotFound (HTTP 404) rather than reaching the uuid-typed column and
+// producing a client-triggerable backend error (HTTP 500). The parse guard runs
+// before any query, so this does not need a live database.
+func TestPostgresState_GetTask_MalformedID(t *testing.T) {
+	state := &PostgresState{}
+	task, err := state.GetTask("not-a-uuid")
+	assert.Nil(t, task)
+	assert.ErrorIs(t, err, ErrTaskNotFound)
+}
+
+// TestPostgresState_GetTask_BackendError verifies that a non-not-found backend
+// failure (here: a closed connection pool) is returned as a wrapped error and
+// NOT the ErrTaskNotFound sentinel, so a database outage keeps mapping to HTTP
+// 500 instead of masquerading as a missing task.
+func TestPostgresState_GetTask_BackendError(t *testing.T) {
+	env := newPostgresTestEnv(t)
+
+	db, err := env.state.orm.DB()
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	task, err := env.state.GetTask("00000000-0000-0000-0000-000000000000")
+	assert.Nil(t, task)
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, ErrTaskNotFound)
+}
+
 func TestPostgresState_SetTaskStatus(t *testing.T) {
 	env := newPostgresTestEnv(t)
 	inserted := env.addTask(t, sampleTask("Test"))

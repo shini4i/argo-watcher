@@ -122,7 +122,7 @@ func (state *InMemoryState) GetTasks(startTime float64, endTime float64, app str
 // GetTask retrieves a task from the in-memory state based on the provided task ID.
 // It takes a string parameter for the task ID.
 // The method iterates over the tasks in the in-memory state and returns the task if a matching ID is found.
-// If no task with the given ID is found, it returns an error indicating that the task was not found.
+// If no task with the given ID is found, it returns ErrTaskNotFound.
 func (state *InMemoryState) GetTask(id string) (*models.Task, error) {
 	state.mu.RLock()
 	defer state.mu.RUnlock()
@@ -132,7 +132,7 @@ func (state *InMemoryState) GetTask(id string) (*models.Task, error) {
 			return &task, nil
 		}
 	}
-	return nil, errors.New("task not found")
+	return nil, ErrTaskNotFound
 }
 
 // SetTaskStatus updates the status and status reason of a task in the in-memory state based on the provided task ID.

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/shini4i/argo-watcher/internal/models"
+	"github.com/shini4i/argo-watcher/internal/state"
 )
 
 var version = "local"
@@ -161,15 +163,28 @@ func (env *Env) getState(c *gin.Context) {
 // @Produce json
 // @Success 200 {object} models.TaskStatus
 // @Failure 404 {object} models.TaskStatus
+// @Failure 500 {object} models.TaskStatus
 // @Router /api/v1/tasks/{id} [get]
 func (env *Env) getTaskStatus(c *gin.Context) {
 	id := c.Param("id")
 	task, err := env.argo.State.GetTask(id)
 
 	if err != nil {
-		c.JSON(http.StatusNotFound, models.TaskStatus{
+		if errors.Is(err, state.ErrTaskNotFound) {
+			c.JSON(http.StatusNotFound, models.TaskStatus{
+				Id:    id,
+				Error: "task not found",
+			})
+			return
+		}
+		// Any other error is a backend failure (e.g. the database is
+		// unreachable). Return 500 so it surfaces in metrics and alerting
+		// instead of masquerading as a missing task, and keep the internal
+		// detail out of the client response.
+		slog.Error(fmt.Sprintf("failed to retrieve task %s: %s", id, err))
+		c.JSON(http.StatusInternalServerError, models.TaskStatus{
 			Id:    id,
-			Error: err.Error(),
+			Error: "internal server error",
 		})
 	} else {
 		c.JSON(http.StatusOK, models.TaskStatus{

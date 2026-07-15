@@ -25,6 +25,7 @@ import (
 	"github.com/shini4i/argo-watcher/internal/config"
 	"github.com/shini4i/argo-watcher/internal/models"
 	"github.com/shini4i/argo-watcher/internal/prometheus"
+	"github.com/shini4i/argo-watcher/internal/state"
 )
 
 // mockArgoApi is a minimal mock for ArgoApiInterface used in tests.
@@ -1771,11 +1772,11 @@ func TestGetTaskStatusEndpoint(t *testing.T) {
 		assert.Contains(t, w.Body.String(), "test-app")
 	})
 
-	t.Run("returns error when task not found", func(t *testing.T) {
+	t.Run("returns 404 when task not found", func(t *testing.T) {
 		argo := &argocd.Argo{}
 		argo.Init(&mockTaskRepositoryWithHealth{
 			healthy:   true,
-			taskError: fmt.Errorf("task not found"),
+			taskError: state.ErrTaskNotFound,
 		}, &mockArgoApi{}, &mockMetrics{})
 
 		env := &Env{argo: argo}
@@ -1790,6 +1791,29 @@ func TestGetTaskStatusEndpoint(t *testing.T) {
 		assert.Equal(t, http.StatusNotFound, w.Code)
 		assert.Contains(t, w.Body.String(), "nonexistent")
 		assert.Contains(t, w.Body.String(), "task not found")
+	})
+
+	t.Run("returns 500 on backend failure", func(t *testing.T) {
+		argo := &argocd.Argo{}
+		argo.Init(&mockTaskRepositoryWithHealth{
+			healthy:   true,
+			taskError: fmt.Errorf("connection refused"),
+		}, &mockArgoApi{}, &mockMetrics{})
+
+		env := &Env{argo: argo}
+
+		router := gin.New()
+		router.GET("/api/v1/tasks/:id", env.getTaskStatus)
+
+		req, _ := http.NewRequest(http.MethodGet, "/api/v1/tasks/some-id", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
+		assert.Contains(t, w.Body.String(), "some-id")
+		assert.Contains(t, w.Body.String(), "internal server error")
+		// The internal error detail must not leak to the client.
+		assert.NotContains(t, w.Body.String(), "connection refused")
 	})
 }
 

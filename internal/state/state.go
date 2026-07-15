@@ -11,6 +11,12 @@ import (
 
 var errDesiredRetry = errors.New("desired retry error")
 
+// ErrTaskNotFound is returned by TaskRepository.GetTask when no task exists for
+// the requested id. Callers use errors.Is to distinguish a genuine "not found"
+// (HTTP 404) from a backend failure (HTTP 500), so a database outage is not
+// silently reported as a missing task.
+var ErrTaskNotFound = errors.New("task not found")
+
 // imageNamesOverlap reports whether the two image slices share at least one
 // image name (the repository, ignoring the tag). It is used to decide whether a
 // new deployment supersedes an in-progress one for the same app.

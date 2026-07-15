@@ -37,6 +37,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Return `500 Internal Server Error` instead of `404 Not Found` when looking up a
+  task by id fails for a backend reason (e.g. the database is unreachable).
+  Previously every error from the task lookup was reported as `404`, so a database
+  outage masqueraded as a missing task — hiding the failure from metrics and
+  alerting and leaking the raw backend error to the client. Genuine "no such task"
+  (including a malformed task id) still returns `404`; the `500` response body no
+  longer exposes internal error detail.
 - Wait for in-flight WebSocket upgrades during graceful shutdown. The shutdown
   routine only tracked established connections, not handshakes still being
   negotiated, which left a data race between an in-progress upgrade and shutdown
