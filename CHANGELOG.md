@@ -37,6 +37,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Wait for in-flight WebSocket upgrades during graceful shutdown. The shutdown
+  routine only tracked established connections, not handshakes still being
+  negotiated, which left a data race between an in-progress upgrade and shutdown
+  (surfaced by the race detector). Handshakes are now accounted for, so shutdown
+  drains them cleanly.
 - Stop sending a stale "locked" WebSocket notification after a manual lock
   release. Releasing a manual lock during an active scheduled window suppresses
   that window for 15 minutes; when the timer expired the server always told

@@ -680,6 +680,12 @@ func TestWebSocketInterceptor(t *testing.T) {
 	})
 }
 
+// TestWebSocketConnectionIntegration establishes a real WebSocket connection and
+// then triggers env.Shutdown during cleanup. Besides asserting the pre-hijack
+// upgrade works, it is the regression guard for the WebSocket hijack/shutdown
+// data race: it only detects that race when the suite runs under `go test -race`
+// (wired in .github/workflows/run-tests.yml), since a plain run cannot observe
+// it. Keep the -race CI step if you touch this test.
 func TestWebSocketConnectionIntegration(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

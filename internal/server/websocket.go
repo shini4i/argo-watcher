@@ -110,6 +110,17 @@ func (env *Env) handleWebSocketConnection(c *gin.Context) {
 		return
 	}
 
+	// Track the in-flight upgrade so graceful shutdown waits for handshakes that
+	// are still in progress, not only for connections that are already
+	// established. Bracketing the rest of the handler also gives Shutdown's
+	// connWg.Wait a happens-before edge over the handshake's response writes
+	// (websocket.Accept -> WriteHeader below); without it the only
+	// synchronization between this handler and shutdown is the underlying TCP
+	// socket, which the race detector cannot observe. Registered only after a
+	// successful hijack, so non-WebSocket early returns never touch connWg.
+	env.connWg.Add(1)
+	defer env.connWg.Done()
+
 	// Create wrapper with pre-hijacked connection
 	wrappedWriter := &wsResponseWriter{
 		ResponseWriter: c.Writer,
