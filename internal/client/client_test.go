@@ -1,8 +1,10 @@
 package client
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -277,6 +279,47 @@ func TestAddTaskDeployTokenHeader(t *testing.T) {
 
 			assert.NoError(t, err)
 			assert.Equal(t, tokenInput, gotToken, "deploy token must be sent verbatim, never prefix-stripped")
+		})
+	}
+}
+
+// TestAddTaskDebugLogRedactsToken guards the actual leak site fixed for the
+// go/clear-text-logging alert: with debug mode on, addTask logs an equivalent
+// cURL command, and the auth credential (JWT or deploy token) must be redacted
+// there. This pins the redaction arguments at the call site so dropping them
+// (which would silently reintroduce the leak) fails the suite.
+func TestAddTaskDebugLogRedactsToken(t *testing.T) {
+	cases := []struct {
+		name       string
+		authMethod string
+		token      string
+	}{
+		{"JWT", "JWT", "eyJhbGciOiJIUzI1NiJ9.super-secret-jwt.signature"},
+		{"DeployToken", "DeployToken", "s3cr3t-deploy-token"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusAccepted)
+				_ = json.NewEncoder(w).Encode(models.TaskStatus{Status: models.StatusAccepted, Id: taskId})
+			}))
+			defer srv.Close()
+
+			var logBuf bytes.Buffer
+			originalOutput := log.Writer()
+			log.SetOutput(&logBuf)
+			t.Cleanup(func() { log.SetOutput(originalOutput) })
+
+			watcher := NewWatcher(srv.URL, true, 30*time.Second)
+			_, err := watcher.addTask(models.Task{App: "test"}, tc.authMethod, tc.token)
+			assert.NoError(t, err)
+
+			logged := logBuf.String()
+			assert.Contains(t, logged, "Equivalent cURL command", "debug mode must log the cURL command")
+			assert.NotContains(t, logged, tc.token, "auth credential must not appear in logs")
+			assert.Contains(t, logged, "<redacted>", "auth header value must be redacted")
 		})
 	}
 }

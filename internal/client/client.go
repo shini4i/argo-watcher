@@ -83,8 +83,10 @@ func (watcher *Watcher) addTask(task models.Task, authMethod, token string) (str
 		}
 	}
 
-	// Print the equivalent cURL command for troubleshooting
-	if curlCommand, err := helpers.CurlCommandFromRequest(request); err != nil {
+	// Print the equivalent cURL command for troubleshooting. Redact the auth
+	// headers so the JWT / deploy token is never written to logs (e.g. CI job
+	// output), which are often persisted and widely readable.
+	if curlCommand, err := helpers.CurlCommandFromRequest(request, "Authorization", "ARGO_WATCHER_DEPLOY_TOKEN"); err != nil {
 		log.Printf("Couldn't get cURL command. Got the following error: %s", err)
 	} else if watcher.debugMode {
 		log.Printf("Adding task to argo-watcher. Equivalent cURL command: %s\n", curlCommand)
