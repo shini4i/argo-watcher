@@ -30,3 +30,28 @@ updater:
 postgres:
   enabled: false
 replicaCount: 1
+
+# Generic-webhook notifications, pointed at the in-cluster webhook-tester
+# receiver (installed by `task webhook-tester` before this release). Config is
+# entirely env-var driven, so we wire it through the chart's extraEnvs — no
+# chart change needed. Enabled globally: every task fires start + result
+# webhooks, giving the soak/race phases free notifier-under-race coverage while
+# scripts/notifications.sh asserts on a clean, uniquely-tagged deploy.
+#
+# The URL's fixed UUID must match WEBHOOK_UUID in Taskfile.yml; the receiver
+# auto-creates the session on the first POST (AUTO_CREATE_SESSIONS).
+extraEnvs:
+  - name: WEBHOOK_ENABLED
+    value: "true"
+  - name: WEBHOOK_URL
+    value: "http://webhook-tester.webhook-tester/11111111-1111-1111-1111-111111111111"
+  # Emit the fields notifications.sh asserts on. Rendered by Go text/template
+  # against models.Task; passed through verbatim (Helm toYaml does not evaluate
+  # the {{ }}).
+  - name: WEBHOOK_FORMAT
+    value: '{"id":"{{.Id}}","app":"{{.App}}","status":"{{.Status}}","author":"{{.Author}}","project":"{{.Project}}","images":[{{range $i,$img := .Images}}{{if $i}},{{end}}{"image":"{{$img.Image}}","tag":"{{$img.Tag}}"}{{end}}]}'
+  # Prove auth-header passthrough end to end (asserted on the captured request).
+  - name: WEBHOOK_AUTHORIZATION_HEADER_NAME
+    value: "X-E2E-Token"
+  - name: WEBHOOK_AUTHORIZATION_HEADER_VALUE
+    value: "e2e-webhook-secret"
