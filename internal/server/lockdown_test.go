@@ -418,8 +418,9 @@ func TestLockdown_ExpireOverride(t *testing.T) {
 	// The wide margins keep the window on the correct side of "now" across
 	// hour/day/week boundaries.
 	scheduleAround := func(startOffset, endOffset time.Duration) LockdownSchedule {
-		start := time.Now().Add(startOffset)
-		end := time.Now().Add(endOffset)
+		now := time.Now()
+		start := now.Add(startOffset)
+		end := now.Add(endOffset)
 		return LockdownSchedule{
 			StartDay:  start.Weekday(),
 			StartHour: start.Hour(),
