@@ -20,7 +20,7 @@ pinned tool/chart versions are in `Taskfile.yml`.
 ## Usage
 
 ```sh
-task e2e     # one-shot per-release run: up → smoke → load → race → failure-diagnostics → down
+task e2e     # one-shot per-release run: up → smoke → notifications → load → race → failure-diagnostics → down
 ```
 
 `task e2e` walks the whole flow. It stops on the first failing step, so a failed
@@ -32,6 +32,7 @@ Individual steps (for iterating or debugging):
 task up                   # build the race image + boot the full lab (idempotent)
 task verify               # assert argo-watcher is up and reaching real Argo
 task smoke                # one authenticated deploy through the full write-back loop
+task notifications        # assert the generic webhook fires (start + result) with the correct payload
 task failure-diagnostics  # assert failure reasons carry the real cause (pod ImagePullBackOff, failed hooks)
 task load                 # git-conflict soak: competitor + concurrent deploys, strict 0-failed
 task race                 # same-app supersession: a newer deploy must win over an older retrying one
@@ -61,11 +62,12 @@ Reach any component with `kubectl port-forward` (there is no ingress), e.g.
 |---|---|
 | `Dockerfile.server.race` | argo-watcher built with `-race` on a glibc distroless base |
 | `kind-config.yaml` | single-node cluster |
-| `values/` | pinned Helm values for argocd / argo-watcher / gitea |
+| `values/` | pinned Helm values for argocd / argo-watcher / gitea / webhook-tester |
 | `scripts/load-race-image.sh` | load a local image into the kind node |
 | `scripts/mint-argo-token.sh` | mint `ARGO_TOKEN` into `argo-watcher-secret` |
 | `scripts/failure-diagnostics.sh` | table-driven failure-reason assertions (add a case = one table entry) |
 | `scripts/hook-fixture.sh` | add/remove a failing PreSync hook via the chart's `rawObject` |
+| `scripts/notifications.sh` | assert the generic webhook fires start + result with the templated payload and auth header |
 
 ## Gotchas (why the scripts exist)
 
@@ -77,6 +79,16 @@ Reach any component with `kubectl port-forward` (there is no ingress), e.g.
   `CGO_ENABLED=1` and dynamic linking, so `Dockerfile.server.race` uses
   `gcr.io/distroless/base-debian12` — the production `distroless/static` base
   cannot run it.
+- **Webhook notifications are enabled globally, not just for `notifications`.**
+  The webhook is env-configured at install (`values/argo-watcher.yaml`
+  `extraEnvs`) pointing at the in-cluster `webhook-tester` receiver, so *every*
+  task fires start + result webhooks — the soak/race phases exercise the
+  notifier under `-race` for free. `notifications.sh` still gets a deterministic
+  assertion by running on a clean state and filtering the receiver's capture on
+  its own task id. The receiver is the generic `app` chart running
+  `tarampampam/webhook-tester` (in-memory, single container, no DB/Redis); its
+  `AUTO_CREATE_SESSIONS` makes the fixed-UUID `WEBHOOK_URL` work with no startup
+  wiring (the `WEBHOOK_UUID` in `Taskfile.yml` and the URL must match).
 
 ## Topology note
 

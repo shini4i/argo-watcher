@@ -1,0 +1,54 @@
+# In-cluster webhook receiver for the notifications e2e phase, deployed with the
+# generic shini4i `app` chart (the same chart family the lab already uses) so we
+# add no bespoke manifests.
+#
+# tarampampam/webhook-tester is a single-binary, in-memory, open-source
+# webhook.site clone: it captures incoming HTTP requests and serves them back
+# over a JSON API, so notifications.sh can assert on exactly what argo-watcher
+# delivered. Storage and pub/sub both default to memory (wiped on restart —
+# fine for a disposable per-release lab); no database or Redis needed.
+#
+# AUTO_CREATE_SESSIONS lets argo-watcher POST to a fixed-UUID URL
+# (http://webhook-tester.webhook-tester/<uuid>) with zero startup wiring: the
+# session is created on first request and read back via
+# GET /api/session/<uuid>/requests.
+fullnameOverride: webhook-tester
+
+image:
+  repository: ghcr.io/tarampampam/webhook-tester
+  # Pinned for reproducibility (latest release at time of writing).
+  tag: "2.3.0"
+
+service:
+  type: ClusterIP
+  ports:
+    - port: 80
+      containerPort: 8080
+      name: http
+
+app:
+  env:
+    - name: AUTO_CREATE_SESSIONS
+      value: "true"
+    - name: STORAGE_DRIVER
+      value: memory
+    - name: PUBSUB_DRIVER
+      value: memory
+    # Default is a 128-entry ring buffer; the soak fires two webhooks per task,
+    # so keep everything to avoid our asserted deploy being evicted. 0 disables
+    # the cap (unlimited) — the in-memory store only trims when maxRequests > 0
+    # (verified in webhook-tester v2.3.0 internal/storage/inmemory.go).
+    - name: MAX_REQUESTS
+      value: "0"
+  livenessProbe:
+    httpGet:
+      path: /healthz
+      port: http
+    initialDelaySeconds: 2
+    periodSeconds: 10
+  readinessProbe:
+    httpGet:
+      path: /healthz
+      port: http
+    initialDelaySeconds: 2
+    periodSeconds: 5
