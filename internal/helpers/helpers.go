@@ -80,8 +80,10 @@ func headerMatches(name string, names []string) bool {
 }
 
 // shellEscapeSingleQuote escapes single quotes for use inside single-quoted shell strings.
-// It replaces each single quote with the sequence '\” which ends the current single-quoted
-// string, adds an escaped single quote, and starts a new single-quoted string.
+// Each single quote is replaced with the following four-character sequence, which ends the
+// current single-quoted string, adds an escaped single quote, and starts a new one:
+//
+//	'\''
 func shellEscapeSingleQuote(s string) string {
 	return strings.ReplaceAll(s, "'", `'\''`)
 }

@@ -135,7 +135,9 @@ func TestCurlCommandFromRequest_ShellEscaping(t *testing.T) {
 }
 
 // TestShellEscapeSingleQuote verifies that shellEscapeSingleQuote correctly escapes
-// single quotes using the '\” pattern for safe shell string interpolation.
+// single quotes for safe shell string interpolation, using the sequence:
+//
+//	'\''
 func TestShellEscapeSingleQuote(t *testing.T) {
 	testCases := []struct {
 		input    string
