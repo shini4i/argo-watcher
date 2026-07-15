@@ -151,16 +151,27 @@ func (s *Server) Run() {
 		s.probeCancel()
 	}
 
-	// Trigger WebSocket connection shutdown
-	s.env.Shutdown()
-
-	// Give outstanding requests 30 seconds to complete
+	// Stop accepting new connections first and let outstanding HTTP requests
+	// drain (up to 30 seconds), then shut down the WebSocket goroutines. Closing
+	// the listener before env.Shutdown means new handshakes can no longer arrive,
+	// which greatly narrows the window in which a WebSocket handler could call
+	// connWg.Add(1) after env.Shutdown has begun waiting on connWg (a WaitGroup
+	// misuse that could panic during shutdown). It does not fully eliminate it: a
+	// handshake already past the hijack but not yet registered is untracked by
+	// srv.Shutdown, so it can still register in that nanosecond gap — an
+	// acceptable residual given it can only occur on an already-terminating
+	// process. Hijacked WebSocket connections are not waited on by srv.Shutdown;
+	// they are drained by env.Shutdown below.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	if err := srv.Shutdown(ctx); err != nil {
 		slog.Error("server forced to shutdown", "error", err)
 	}
+
+	// Now that the listener is closed, signal the WebSocket connection
+	// goroutines to stop and wait for them to finish.
+	s.env.Shutdown()
 
 	slog.Info("server exited")
 }
