@@ -1,6 +1,7 @@
 package argocd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -17,6 +18,9 @@ import (
 var (
 	// ArgoSyncRetryDelay is the delay between ArgoCD sync status retries.
 	ArgoSyncRetryDelay = 15 * time.Second
+	// ArgoLivenessProbeInterval is how often the background liveness probe
+	// refreshes the argocd_unavailable metric (see Argo.StartLivenessProbe).
+	ArgoLivenessProbeInterval = 30 * time.Second
 )
 
 // rollbackHistoryWindow bounds how many of an app's most recent successfully
@@ -71,6 +75,30 @@ func (argo *Argo) Check() (string, error) {
 
 	argo.metrics.SetArgoUnavailable(false)
 	return "up", nil
+}
+
+// StartLivenessProbe periodically runs Check() so the argocd_unavailable metric
+// keeps reflecting ArgoCD reachability even during read-only periods (no new
+// deployments). Check() refreshes that gauge as a side effect; the probe's
+// return value is intentionally discarded. This is the single ambient refresher:
+// it lives here, off every request path, so listing tasks never blocks on a
+// live ArgoCD call (see GetTasks). It runs until ctx is cancelled and is meant
+// to be launched in its own goroutine.
+func (argo *Argo) StartLivenessProbe(ctx context.Context, interval time.Duration) {
+	// Probe once immediately so the gauge is populated at startup instead of
+	// only after the first interval elapses.
+	_, _ = argo.Check()
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			_, _ = argo.Check()
+		}
+	}
 }
 
 // AddTask validates a new deployment task and adds it to the task repository.
@@ -163,14 +191,17 @@ func imageSignature(task models.Task) string {
 }
 
 // GetTasks retrieves tasks from the state within a given time range and optional app/status filters and pagination window.
+//
+// Listing is a pure read from the state store and is deliberately NOT gated on
+// ArgoCD reachability. Stored task history must stay viewable even when ArgoCD
+// is unavailable (e.g. a DNS/network outage): coupling the read to a live
+// ArgoCD `session/userinfo` call would otherwise make the whole list hang on the
+// API retry budget and then hide existing tasks behind an error. Write paths
+// (AddTask) keep the Check() gate because creating a deployment genuinely
+// requires ArgoCD to be up; that gate — not this read — is now the only place
+// the argocd_unavailable metric is refreshed. Note the /healthz endpoint probes
+// only the state backend (SimpleHealthCheck), not ArgoCD.
 func (argo *Argo) GetTasks(startTime float64, endTime float64, app string, status string, limit int, offset int) models.TasksResponse {
-	if _, err := argo.Check(); err != nil {
-		return models.TasksResponse{
-			Tasks: []models.Task{},
-			Error: err.Error(),
-		}
-	}
-
 	tasks, total := argo.State.GetTasks(startTime, endTime, app, status, limit, offset)
 
 	return models.TasksResponse{

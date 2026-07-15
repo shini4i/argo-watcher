@@ -56,6 +56,11 @@ func NewServer(serverConfig *config.ServerConfig, reg prometheus.Registerer) (*S
 	argo := &argocd.Argo{}
 	argo.Init(s, api, metrics)
 
+	// Keep the argocd_unavailable metric fresh via a background probe. The task
+	// list read path no longer performs an ArgoCD check (so it can't hang on an
+	// outage), so this is the only ambient refresher of that gauge.
+	go argo.StartLivenessProbe(context.Background(), argocd.ArgoLivenessProbeInterval)
+
 	// Create the locker instance based on the state type
 	var locker lock.Locker
 	if serverConfig.StateType == "postgres" {

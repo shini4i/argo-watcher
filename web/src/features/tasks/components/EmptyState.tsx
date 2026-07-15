@@ -2,8 +2,9 @@ import { type ReactNode } from 'react';
 import { Box, Button, Stack, Typography } from '@mui/material';
 import InboxOutlinedIcon from '@mui/icons-material/InboxOutlined';
 import FilterAltOutlinedIcon from '@mui/icons-material/FilterAltOutlined';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutlined';
 
-type EmptyStateIcon = 'inbox' | 'filter';
+type EmptyStateIcon = 'inbox' | 'filter' | 'error';
 
 interface EmptyStateProps {
   readonly icon?: EmptyStateIcon;
@@ -15,6 +16,7 @@ interface EmptyStateProps {
 const ICONS: Record<EmptyStateIcon, ReactNode> = {
   inbox: <InboxOutlinedIcon sx={{ fontSize: 36, color: 'text.disabled' }} />,
   filter: <FilterAltOutlinedIcon sx={{ fontSize: 36, color: 'text.disabled' }} />,
+  error: <ErrorOutlineIcon sx={{ fontSize: 36, color: 'error.main' }} />,
 };
 
 /**

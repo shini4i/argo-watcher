@@ -2,6 +2,7 @@ import { Children, isValidElement, type ReactNode } from 'react';
 import { Box, Stack } from '@mui/material';
 import { List, Pagination, useListContext, type ListProps } from 'react-admin';
 import { PerPagePersistence, readPersistentPerPage } from '../../../shared/hooks/usePersistentPerPage';
+import { EmptyState, EmptyStateCta } from './EmptyState';
 import { SearchFilteredView } from './SearchFilteredView';
 import { TaskListProvider } from './TaskListContext';
 
@@ -27,9 +28,18 @@ interface TaskListLayoutProps {
  * body keeps the header/filters mounted above it. When filters are active we
  * defer to the datagrid's own filtered empty state (with its "Clear filters"
  * CTA), matching react-admin's original `shouldRenderEmptyPage` condition
- * (`!error && !isPending && total === 0 && !filterValues`). The `!error` guard
- * matters: on a fetch error after an empty load `total` is still 0, and we must
- * defer to the list body rather than misattribute the error to genuine emptiness.
+ * (`!error && !isPending && total === 0 && !filterValues`).
+ *
+ * A fetch error (a 5xx, a network drop, or the request timing out — see
+ * REQUEST_TIMEOUT_MS in httpClient) is rendered as an explicit error state with
+ * a retry, NOT as the empty placeholder or the datagrid's "no tasks" message: a
+ * load failure must never masquerade as genuine emptiness. The header/filters
+ * stay mounted above it so the user can still adjust the query and retry.
+ *
+ * The error panel is gated on `total === 0` so it only replaces the body when
+ * there is nothing to show. react-admin keeps the previously loaded rows across
+ * a refetch, so a transient auto-refresh failure keeps the populated grid (the
+ * error is surfaced via react-admin's notification) instead of blanking it.
  */
 const ListBody = ({
   emptyComponent,
@@ -38,10 +48,21 @@ const ListBody = ({
   emptyComponent: ReactNode | false;
   children: ReactNode;
 }) => {
-  const { isPending, total, filterValues, error } = useListContext();
+  const { isPending, total, filterValues, error, refetch } = useListContext();
   const hasFilters = Object.keys(filterValues ?? {}).length > 0;
 
-  if (emptyComponent && !error && !isPending && total === 0 && !hasFilters) {
+  if (error && !isPending && total === 0) {
+    return (
+      <EmptyState
+        icon="error"
+        title="Couldn’t load tasks"
+        description="The request failed or timed out. Check that the server is reachable, then try again."
+        cta={<EmptyStateCta label="Retry" onClick={() => refetch()} />}
+      />
+    );
+  }
+
+  if (emptyComponent && !isPending && total === 0 && !hasFilters) {
     return <>{emptyComponent}</>;
   }
 

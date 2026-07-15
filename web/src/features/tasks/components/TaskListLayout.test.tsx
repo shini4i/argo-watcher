@@ -9,6 +9,7 @@ interface StubListContext {
   isPending?: boolean;
   filterValues?: Record<string, unknown>;
   error?: unknown;
+  refetch?: () => void;
 }
 
 const {
@@ -169,14 +170,16 @@ describe('TaskListLayout', () => {
     expect(screen.queryByTestId('empty-state')).not.toBeInTheDocument();
   });
 
-  it('defers to the datagrid (not the layout placeholder) when a fetch error leaves zero rows', () => {
+  it('shows an honest error state (not the empty placeholder or datagrid) when a fetch fails', () => {
     readPersistentPerPageMock.mockReturnValue(25);
+    const refetch = vi.fn();
     listContextRef.current = {
       data: [],
       total: 0,
       isPending: false,
       filterValues: {},
       error: new Error('backend unreachable'),
+      refetch,
     };
 
     render(
@@ -189,9 +192,67 @@ describe('TaskListLayout', () => {
       </TaskListLayout>,
     );
 
-    // A backend error must not be misattributed to genuine emptiness.
+    // The header/filters stay mounted so the user can adjust the query and retry.
     expect(screen.getByText('Date filter')).toBeInTheDocument();
+    // A backend error must never masquerade as genuine emptiness.
+    expect(screen.getByText('Couldn’t load tasks')).toBeInTheDocument();
+    expect(screen.queryByTestId('datagrid')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('empty-state')).not.toBeInTheDocument();
+
+    screen.getByRole('button', { name: 'Retry' }).click();
+    expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the populated grid (not the error panel) when a refetch fails with rows already loaded', () => {
+    readPersistentPerPageMock.mockReturnValue(25);
+    // react-admin keeps the previously loaded rows across a refetch, so a
+    // transient auto-refresh error with total > 0 must not blank the grid.
+    listContextRef.current = {
+      data: [{ id: 1 }, { id: 2 }],
+      total: 2,
+      isPending: false,
+      filterValues: {},
+      error: new Error('transient refetch failure'),
+      refetch: vi.fn(),
+    };
+
+    render(
+      <TaskListLayout
+        perPageStorageKey="history.perPage"
+        emptyComponent={<div data-testid="empty-state" />}
+      >
+        <div data-testid="datagrid">Rows</div>
+      </TaskListLayout>,
+    );
+
     expect(screen.getByTestId('datagrid')).toBeInTheDocument();
+    expect(screen.queryByText('Couldn’t load tasks')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('empty-state')).not.toBeInTheDocument();
+  });
+
+  it('keeps showing the skeleton (defers to children) while a request is pending', () => {
+    readPersistentPerPageMock.mockReturnValue(25);
+    // isPending must win over an error left over from a prior fetch so a refetch
+    // shows the loading state rather than flashing the error panel.
+    listContextRef.current = {
+      data: [],
+      total: 0,
+      isPending: true,
+      filterValues: {},
+      error: new Error('stale error from previous attempt'),
+    };
+
+    render(
+      <TaskListLayout
+        perPageStorageKey="history.perPage"
+        emptyComponent={<div data-testid="empty-state" />}
+      >
+        <div data-testid="datagrid">Rows</div>
+      </TaskListLayout>,
+    );
+
+    expect(screen.getByTestId('datagrid')).toBeInTheDocument();
+    expect(screen.queryByText('Couldn’t load tasks')).not.toBeInTheDocument();
     expect(screen.queryByTestId('empty-state')).not.toBeInTheDocument();
   });
 

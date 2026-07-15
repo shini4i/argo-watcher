@@ -48,6 +48,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   success. Previously an application whose `argo-watcher/managed-images` listed
   an image without a matching `*.helm.image-tag` annotation logged an error,
   wrote nothing to git, and still marked the deployment successful.
+- Keep the task list responsive and populated when Argo CD is unreachable.
+  Listing tasks performed a live Argo CD login check on every read, so a DNS or
+  network outage made the list hang for the full API retry budget and then
+  render empty — hiding task history that was sitting untouched in the state
+  store. Listing now reads straight from the state backend; the Argo CD check is
+  retained only on the deployment-creation path, which genuinely requires it.
+- Show an explicit, retryable error in the Web UI when the task list fails to
+  load, instead of leaving it stuck in the loading skeleton or rendering a
+  misleading "no tasks" placeholder. Web UI requests are now bounded by a
+  30-second client-side timeout, so a hung backend can no longer pin the table
+  in its skeleton state indefinitely.
 
 ### Security
 
