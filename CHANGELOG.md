@@ -89,6 +89,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   they are now registered only when Keycloak is enabled, and the Web UI hides
   the manual lock toggle to match. The read-only lock status and scheduled
   lockdown are unaffected.
+- Redact the authorization credential from the client's debug output. With debug
+  mode enabled the client logged an equivalent cURL command that included the
+  `Authorization` (JWT) and `ARGO_WATCHER_DEPLOY_TOKEN` header values in clear
+  text, leaking the deploy credential into CI job logs and log aggregators. Those
+  header values are now replaced with `<redacted>` while the header names remain
+  visible for troubleshooting.
 
 ## [0.11.0] - 2026-07-13
 

@@ -27,8 +27,11 @@ func ImagesContains(images []string, image string, registryProxy string) bool {
 
 // CurlCommandFromRequest generates a cURL command string from an HTTP request,
 // including the request method, headers, request body, and URL.
+// The value of any header whose name matches redactHeaders (case-insensitively)
+// is replaced with "<redacted>" so secrets such as auth tokens are not written
+// to logs; the header name itself is kept for troubleshooting.
 // It handles any errors during the process and returns the formatted cURL command or an error if encountered.
-func CurlCommandFromRequest(request *http.Request) (string, error) {
+func CurlCommandFromRequest(request *http.Request, redactHeaders ...string) (string, error) {
 	clonedRequest, err := httputil.DumpRequest(request, true)
 	if err != nil {
 		return "", err
@@ -38,6 +41,10 @@ func CurlCommandFromRequest(request *http.Request) (string, error) {
 
 	// Iterate over request headers and add them to the cURL command
 	for key, values := range request.Header {
+		if headerMatches(key, redactHeaders) {
+			cmd += fmt.Sprintf(" -H '%s: <redacted>'", shellEscapeSingleQuote(key))
+			continue
+		}
 		for _, value := range values {
 			cmd += fmt.Sprintf(" -H '%s: %s'", shellEscapeSingleQuote(key), shellEscapeSingleQuote(value))
 		}
@@ -61,8 +68,19 @@ func CurlCommandFromRequest(request *http.Request) (string, error) {
 	return cmd, nil
 }
 
+// headerMatches reports whether the given header name matches any entry in
+// names, comparing case-insensitively to tolerate HTTP header canonicalization.
+func headerMatches(name string, names []string) bool {
+	for _, candidate := range names {
+		if strings.EqualFold(name, candidate) {
+			return true
+		}
+	}
+	return false
+}
+
 // shellEscapeSingleQuote escapes single quotes for use inside single-quoted shell strings.
-// It replaces each single quote with the sequence '\'' which ends the current single-quoted
+// It replaces each single quote with the sequence '\” which ends the current single-quoted
 // string, adds an escaped single quote, and starts a new single-quoted string.
 func shellEscapeSingleQuote(s string) string {
 	return strings.ReplaceAll(s, "'", `'\''`)

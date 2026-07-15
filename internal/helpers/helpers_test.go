@@ -75,6 +75,47 @@ func TestCurlCommandFromRequest(t *testing.T) {
 	assert.Equal(t, sortedExpectedCurl, sortedActualCurl)
 }
 
+// TestCurlCommandFromRequest_RedactsHeaders verifies that the values of the
+// named sensitive headers are replaced with a placeholder while non-sensitive
+// headers are emitted verbatim, and that matching is case-insensitive.
+func TestCurlCommandFromRequest_RedactsHeaders(t *testing.T) {
+	request, _ := http.NewRequest("POST", "https://example.com/api", strings.NewReader(""))
+	request.Header.Add("Authorization", "super-secret-jwt")
+	request.Header.Add("ARGO_WATCHER_DEPLOY_TOKEN", "super-secret-token")
+	request.Header.Add("Content-Type", "application/json")
+
+	actualCurl, err := CurlCommandFromRequest(request, "authorization", "ARGO_WATCHER_DEPLOY_TOKEN")
+	assert.NoError(t, err)
+
+	// Secret values must not appear anywhere in the command.
+	assert.NotContains(t, actualCurl, "super-secret-jwt", "JWT value must be redacted")
+	assert.NotContains(t, actualCurl, "super-secret-token", "deploy token value must be redacted")
+
+	// Header names stay visible with a redacted placeholder value.
+	assert.Contains(t, actualCurl, "-H 'Authorization: <redacted>'")
+	assert.Contains(t, actualCurl, "-H 'Argo_watcher_deploy_token: <redacted>'")
+
+	// Non-sensitive headers are unchanged.
+	assert.Contains(t, actualCurl, "-H 'Content-Type: application/json'")
+}
+
+// TestCurlCommandFromRequest_RedactsMultiValueHeader verifies that a sensitive
+// header carrying multiple values collapses to a single redacted entry and never
+// emits any of the raw values.
+func TestCurlCommandFromRequest_RedactsMultiValueHeader(t *testing.T) {
+	request, _ := http.NewRequest("POST", "https://example.com/api", strings.NewReader(""))
+	request.Header.Add("Authorization", "secret-a")
+	request.Header.Add("Authorization", "secret-b")
+
+	actualCurl, err := CurlCommandFromRequest(request, "Authorization")
+	assert.NoError(t, err)
+
+	assert.NotContains(t, actualCurl, "secret-a")
+	assert.NotContains(t, actualCurl, "secret-b")
+	assert.Equal(t, 1, strings.Count(actualCurl, "-H 'Authorization: <redacted>'"),
+		"multi-value sensitive header must collapse to exactly one redacted entry")
+}
+
 // TestCurlCommandFromRequest_ShellEscaping verifies that single quotes in headers,
 // body, and URL are properly escaped to prevent shell injection.
 func TestCurlCommandFromRequest_ShellEscaping(t *testing.T) {
@@ -94,7 +135,7 @@ func TestCurlCommandFromRequest_ShellEscaping(t *testing.T) {
 }
 
 // TestShellEscapeSingleQuote verifies that shellEscapeSingleQuote correctly escapes
-// single quotes using the '\'' pattern for safe shell string interpolation.
+// single quotes using the '\” pattern for safe shell string interpolation.
 func TestShellEscapeSingleQuote(t *testing.T) {
 	testCases := []struct {
 		input    string
