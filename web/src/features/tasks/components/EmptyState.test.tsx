@@ -17,6 +17,12 @@ describe('EmptyState', () => {
     expect(container.querySelector('p')).toBeNull();
   });
 
+  it('renders the error icon variant', () => {
+    const { container } = render(<EmptyState icon="error" title="Couldn't load" />);
+    expect(screen.getByText("Couldn't load")).toBeInTheDocument();
+    expect(container.querySelector('svg[data-testid="ErrorOutlinedIcon"]')).not.toBeNull();
+  });
+
   it('renders the supplied CTA', () => {
     const onClick = vi.fn();
     render(

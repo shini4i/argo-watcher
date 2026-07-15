@@ -1,9 +1,11 @@
 package argocd
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/shini4i/argo-watcher/cmd/argo-watcher/mock"
@@ -495,7 +497,10 @@ func TestArgoGetTasks(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	t.Run("returnsTasksWhenDependenciesAreHealthy", func(t *testing.T) {
+	// Listing tasks is a pure read from the state store and must NOT be gated on
+	// ArgoCD reachability. Verify GetTasks never calls Check()/GetUserInfo(): the
+	// mocks below would fail the run if it did, since no such calls are expected.
+	t.Run("readsFromStateWithoutCheckingArgoCD", func(t *testing.T) {
 		api := mock.NewMockArgoApiInterface(ctrl)
 		metrics := mock.NewMockMetricsInterface(ctrl)
 		state := mock.NewMockTaskRepository(ctrl)
@@ -503,9 +508,6 @@ func TestArgoGetTasks(t *testing.T) {
 		start := 10.0
 		end := 20.0
 
-		state.EXPECT().Check().Return(true)
-		api.EXPECT().GetUserInfo().Return(&models.Userinfo{LoggedIn: true}, nil)
-		metrics.EXPECT().SetArgoUnavailable(false)
 		expectedTasks := []models.Task{
 			{Id: "task-1", App: "demo", Images: []models.Image{{Image: "example.com/app", Tag: "v1.0.0"}}},
 		}
@@ -521,23 +523,66 @@ func TestArgoGetTasks(t *testing.T) {
 		assert.Empty(t, response.Error)
 	})
 
-	t.Run("returnsErrorWhenHealthCheckFails", func(t *testing.T) {
+	// The invariant "GetTasks issues no ArgoCD/metrics calls" must hold for every
+	// input, not just the one above — this case pins it on a distinct filter and
+	// time window. The api/metrics mocks expect zero interactions, so any ArgoCD
+	// call regresses. (There is no reachability to simulate: the read never
+	// touches ArgoCD, which is precisely why stored history stays viewable during
+	// an outage.)
+	t.Run("makesNoArgoCDCallsRegardlessOfInput", func(t *testing.T) {
 		api := mock.NewMockArgoApiInterface(ctrl)
 		metrics := mock.NewMockMetricsInterface(ctrl)
 		state := mock.NewMockTaskRepository(ctrl)
 
-		state.EXPECT().Check().Return(false)
-		api.EXPECT().GetUserInfo().Return(&models.Userinfo{LoggedIn: true}, nil)
-		metrics.EXPECT().SetArgoUnavailable(true)
+		expectedTasks := []models.Task{
+			{Id: "task-1", App: "demo"},
+		}
+		state.EXPECT().GetTasks(0.0, 100.0, "demo", "", 0, 0).Return(expectedTasks, int64(len(expectedTasks)))
 
 		argo := &Argo{}
 		argo.Init(state, api, metrics)
 
 		response := argo.GetTasks(0, 100, "demo", "", 0, 0)
 
-		assert.Empty(t, response.Tasks)
-		assert.Equal(t, models.StatusConnectionUnavailable, response.Error)
+		assert.Equal(t, expectedTasks, response.Tasks)
+		assert.Equal(t, int64(len(expectedTasks)), response.Total)
+		assert.Empty(t, response.Error)
 	})
+}
+
+func TestArgoStartLivenessProbe(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	api := mock.NewMockArgoApiInterface(ctrl)
+	metrics := mock.NewMockMetricsInterface(ctrl)
+	state := mock.NewMockTaskRepository(ctrl)
+
+	// Cancel before starting: the immediate probe still runs Check() exactly
+	// once (refreshing the metric), then the loop returns on ctx.Done() without
+	// waiting for a tick. This proves the ambient refresh + clean-exit contract
+	// deterministically, with no reliance on timer scheduling.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	state.EXPECT().Check().Return(true)
+	api.EXPECT().GetUserInfo().Return(&models.Userinfo{LoggedIn: true}, nil)
+	metrics.EXPECT().SetArgoUnavailable(false)
+
+	argo := &Argo{}
+	argo.Init(state, api, metrics)
+
+	done := make(chan struct{})
+	go func() {
+		argo.StartLivenessProbe(ctx, time.Hour)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("StartLivenessProbe did not return after context cancellation")
+	}
 }
 
 func TestArgoSimpleHealthCheck(t *testing.T) {

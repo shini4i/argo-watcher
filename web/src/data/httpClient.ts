@@ -7,6 +7,15 @@ const DEFAULT_HEADERS: Record<string, string> = {
   Accept: 'application/json',
 };
 
+/**
+ * Hard ceiling on how long a single request may stay in flight before it is
+ * aborted. Without it a degraded backend (e.g. a task list blocked behind an
+ * upstream dependency that is retrying against a dead resolver) leaves the UI
+ * stuck in its loading skeleton indefinitely. Aborting surfaces the failure to
+ * react-admin so the caller can render an honest error state instead.
+ */
+export const REQUEST_TIMEOUT_MS = 30_000;
+
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 export interface HttpClientOptions {
@@ -111,6 +120,11 @@ export const httpClient = async <T>(path: string, options: HttpClientOptions = {
   const url = joinUrl(API_BASE_URL, path);
   const requestInit = buildRequestInit(options);
 
+  // Bound the request so a hung backend cannot pin the UI in its loading state.
+  const controller = new AbortController();
+  requestInit.signal = controller.signal;
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
   let response: Response;
   try {
     response = await fetch(url, requestInit);
@@ -119,7 +133,13 @@ export const httpClient = async <T>(path: string, options: HttpClientOptions = {
       throw error;
     }
 
+    if (error && typeof error === 'object' && (error as { name?: string }).name === 'AbortError') {
+      throw new HttpError('Request timed out', 0, { cause: error });
+    }
+
     throw new HttpError('Network error', 0, { cause: error });
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   const data = await parseJson<T>(response);

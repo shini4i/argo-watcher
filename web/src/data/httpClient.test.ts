@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HttpError } from 'react-admin';
-import { buildQueryString, httpClient } from './httpClient';
+import { buildQueryString, httpClient, REQUEST_TIMEOUT_MS } from './httpClient';
 
 const { getAccessTokenMock } = vi.hoisted(() => ({
   getAccessTokenMock: vi.fn(() => 'token-abc'),
@@ -90,6 +90,71 @@ describe('httpClient', () => {
   it('throws HttpError on network failure', async () => {
     mockFetch.mockRejectedValue(new Error('dns'));
     await expect(httpClient('/status')).rejects.toBeInstanceOf(HttpError);
+  });
+
+  it('passes an AbortSignal to fetch so a hung request cannot wait forever', async () => {
+    mockFetch.mockResolvedValue(
+      new Response(JSON.stringify({ status: 'ok' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    await httpClient('/status');
+
+    const [, init] = mockFetch.mock.calls[0];
+    expect(init?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('aborts a hung request after REQUEST_TIMEOUT_MS and rejects as a timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      // fetch never settles on its own; it rejects only once its signal aborts,
+      // so the rejection can come solely from httpClient's own timeout wiring.
+      mockFetch.mockImplementation(
+        (_url: string, init: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            const signal = init?.signal as AbortSignal;
+            signal?.addEventListener('abort', () =>
+              reject(new DOMException('The operation was aborted.', 'AbortError')),
+            );
+          }),
+      );
+
+      const promise = httpClient('/status');
+      // Attach the rejection assertion before advancing so there is no window
+      // where the rejection is unhandled.
+      const assertion = expect(promise).rejects.toThrow(/timed out/i);
+      await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS);
+      await assertion;
+
+      const init = mockFetch.mock.calls[0][1] as RequestInit;
+      expect((init.signal as AbortSignal).aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('clears the timeout on the success path so no late abort fires', async () => {
+    vi.useFakeTimers();
+    try {
+      mockFetch.mockResolvedValue(
+        new Response(JSON.stringify({ status: 'ok' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+
+      const response = await httpClient<{ status: string }>('/status');
+      expect(response.data).toEqual({ status: 'ok' });
+
+      // Advancing past the timeout must not abort the already-completed request.
+      const init = mockFetch.mock.calls[0][1] as RequestInit;
+      await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS * 2);
+      expect((init.signal as AbortSignal).aborted).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('returns undefined when response is not JSON', async () => {
