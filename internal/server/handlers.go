@@ -181,7 +181,7 @@ func (env *Env) getTaskStatus(c *gin.Context) {
 		// unreachable). Return 500 so it surfaces in metrics and alerting
 		// instead of masquerading as a missing task, and keep the internal
 		// detail out of the client response.
-		slog.Error(fmt.Sprintf("failed to retrieve task %s: %s", id, err))
+		slog.Error("failed to retrieve task", "id", id, "error", err)
 		c.JSON(http.StatusInternalServerError, models.TaskStatus{
 			Id:    id,
 			Error: "internal server error",
