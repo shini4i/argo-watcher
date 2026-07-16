@@ -33,8 +33,10 @@ bin_dir="$(mktemp -d)"
 CLIENT_BIN="${bin_dir}/aw-client"
 ( cd "$root" && go build -o "$CLIENT_BIN" ./cmd/client ) || { echo "failure-diagnostics: FAIL — client build failed" >&2; exit 1; }
 
-kubectl -n "$NS_AW" port-forward svc/argo-watcher "${PORT}:80" >/dev/null 2>&1 &
+# Register cleanup before starting the port-forward so an exit in the tiny window
+# between the two can never orphan it.
 trap 'kill $(jobs -p) 2>/dev/null || true; rm -rf "$bin_dir"' EXIT
+kubectl -n "$NS_AW" port-forward svc/argo-watcher "${PORT}:80" >/dev/null 2>&1 &
 for _ in $(seq 1 15); do curl -s -m3 -o /dev/null "localhost:${PORT}/healthz" && break; sleep 1; done
 
 # --- helpers ----------------------------------------------------------------
@@ -43,8 +45,10 @@ for _ in $(seq 1 15); do curl -s -m3 -o /dev/null "localhost:${PORT}/healthz" &&
 # client's exit code (0 = deployed, non-zero = failed/cancelled/etc.).
 run_client() {
   local payload="$1" use_token="$2" token_env=()
-  local app image tag timeout
+  local app author project image tag timeout
   app=$(jq -r '.app' <<<"$payload")
+  author=$(jq -r '.author' <<<"$payload")
+  project=$(jq -r '.project' <<<"$payload")
   image=$(jq -r '.images[0].image' <<<"$payload")
   tag=$(jq -r '.images[0].tag' <<<"$payload")
   timeout=$(jq -r '.timeout // 180' <<<"$payload")
@@ -60,7 +64,7 @@ run_client() {
   # "${token_env[@]+...}" guards the empty-array expansion under `set -u` on bash < 4.4.
   env ARGO_WATCHER_URL="http://localhost:${PORT}" \
       IMAGES="$image" IMAGE_TAG="$tag" ARGO_APP="$app" \
-      COMMIT_AUTHOR="e2e" PROJECT_NAME="lab" \
+      COMMIT_AUTHOR="$author" PROJECT_NAME="$project" \
       RETRY_INTERVAL="5s" TASK_TIMEOUT="$timeout" \
       "${token_env[@]+"${token_env[@]}"}" \
       "$CLIENT_BIN" 2>&1

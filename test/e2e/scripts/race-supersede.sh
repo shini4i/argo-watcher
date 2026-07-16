@@ -40,12 +40,14 @@ trap 'rm -rf "$bin_dir" "$clone_dir" "$old_out" "$new_out"' EXIT
 # deploy <tag> <outfile>: run the client to deploy APP:tag, blocking to a terminal
 # status. Combined stdout+stderr goes to outfile; the client's exit code propagates.
 deploy() {
+  local tag="$1" out="$2"
   env ARGO_WATCHER_URL="$BASE_URL" \
-      IMAGES="$IMAGE" IMAGE_TAG="$1" ARGO_APP="$APP" \
+      IMAGES="$IMAGE" IMAGE_TAG="$tag" ARGO_APP="$APP" \
       COMMIT_AUTHOR="e2e" PROJECT_NAME="lab" \
       ARGO_WATCHER_DEPLOY_TOKEN="$DEPLOY_TOKEN" \
       RETRY_INTERVAL="5s" TASK_TIMEOUT="180" \
-      "$CLIENT_BIN" >"$2" 2>&1
+      "$CLIENT_BIN" >"$out" 2>&1
+  return
 }
 
 echo "race: ${APP} <- OLD ${OLD_TAG} then NEW ${NEW_TAG} (competitor forces write-back retries)"
@@ -65,6 +67,13 @@ override="${clone_dir}/chart/.argocd-source-${APP}.yaml"
 # awk keeps this yq-free (yq is not on GitHub runners): after the app.image.tag
 # name line, take the value on the next `value:` line, stripping any quotes.
 committed=$(awk '/name:[[:space:]]*app\.image\.tag/{f=1} f&&/value:/{v=$NF; gsub(/"/,"",v); print v; exit}' "$override")
+# Distinguish a parse failure (key renamed / file missing / non-consecutive lines)
+# from a genuine supersede violation — an empty result would otherwise masquerade
+# as "committed tag <none> is not the newer tag" below.
+if [[ -z "$committed" ]]; then
+  echo "race: FAIL — could not read app.image.tag from ${override} (parse failure, not a supersede result)" >&2
+  exit 1
+fi
 echo "race: committed git tag=${committed}"
 
 rc=0
