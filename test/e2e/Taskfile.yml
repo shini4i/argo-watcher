@@ -214,13 +214,13 @@ tasks:
         kubectl -n gitea port-forward svc/gitea-http 13000:3000 >/dev/null 2>&1 & gpf=$!
         trap 'kill $awpf $gpf 2>/dev/null || true' EXIT
         for _ in $(seq 1 15); do curl -s -m3 -o /dev/null localhost:8080/healthz && break; sleep 1; done
-        HTTP_PORT=13010 SECONDS_TOTAL=45 INTERVAL=1 ./scripts/competitor.sh & comp=$!
+        # race-supersede.sh is self-contained: it resets the app to a baseline tag,
+        # starts its own competitor writer (deliberately over-driven at INTERVAL=1
+        # to force the ordering window — the script's default), then runs the race.
         ga=gitea_admin; gp=gitea_admin_pw1   # throwaway lab creds; kept out of a literal user:pass@ URL
-        MODE=race DEPLOY_TOKEN={{.DEPLOY_TOKEN}} BASE_URL=http://localhost:8080 \
+        DEPLOY_TOKEN={{.DEPLOY_TOKEN}} BASE_URL=http://localhost:8080 \
           GITEA_REPO_URL="http://${ga}:${gp}@localhost:13000/e2e/gitops.git" \
-          go run ./load; rc=$?
-        wait $comp 2>/dev/null || true
-        exit $rc
+          ./scripts/race-supersede.sh
 
   down:
     desc: "Destroy the kind cluster"

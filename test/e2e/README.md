@@ -4,7 +4,13 @@ A disposable, reproducible lab that runs **real** ArgoCD and Gitea on a
 single-node [kind](https://kind.sigs.k8s.io/) cluster and deploys argo-watcher
 built with the Go **race detector**. It exercises the code paths the fast test
 suites cannot: the real ArgoCD polling loop, sustained-concurrency data races,
-and the real git push path — once per release, not on every PR.
+and the real git push path — once per release, not on every PR. The `smoke`,
+`failure-diagnostics`, and `race` phases drive the **real `cmd/client` binary**
+(not a hand-rolled HTTP call), so the tool users actually run is covered
+end-to-end: success (exit 0), a surfaced failure reason (exit 1), and the
+superseded/cancelled path (exit 1). The `load` soak stays a purpose-built
+concurrent driver (`load/`) — it asserts server behaviour under contention, not
+client behaviour.
 
 Unlike the unit and integration suites, ArgoCD here is **not mocked**.
 
@@ -14,8 +20,8 @@ Unlike the unit and integration suites, ArgoCD here is **not mocked**.
 the kind provider (`KIND_EXPERIMENTAL_PROVIDER=podman`). The image-load step uses
 `podman exec` against the kind node, so a podman-backed cluster is required; a
 `docker` CLI that is a podman shim works, a real docker-provider cluster does
-not. `go` runs the load driver and `git` drives the competitor writer. All
-pinned tool/chart versions are in `Taskfile.yml`.
+not. `go` builds the client binary and runs the load driver, and `git` drives
+the competitor writer. All pinned tool/chart versions are in `Taskfile.yml`.
 
 ## Usage
 
@@ -31,7 +37,7 @@ Individual steps (for iterating or debugging):
 ```sh
 task up                   # build the race image + boot the full lab (idempotent)
 task verify               # assert argo-watcher is up and reaching real Argo
-task smoke                # one authenticated deploy through the full write-back loop
+task smoke                # one authenticated deploy through the full write-back loop, via the real client binary
 task notifications        # assert the generic webhook fires (start + result) with the correct payload
 task failure-diagnostics  # assert failure reasons carry the real cause (pod ImagePullBackOff, failed hooks)
 task load                 # git-conflict soak: competitor + concurrent deploys, strict 0-failed
@@ -65,7 +71,8 @@ Reach any component with `kubectl port-forward` (there is no ingress), e.g.
 | `values/` | pinned Helm values for argocd / argo-watcher / gitea / webhook-tester |
 | `scripts/load-race-image.sh` | load a local image into the kind node |
 | `scripts/mint-argo-token.sh` | mint `ARGO_TOKEN` into `argo-watcher-secret` |
-| `scripts/failure-diagnostics.sh` | table-driven failure-reason assertions (add a case = one table entry) |
+| `scripts/failure-diagnostics.sh` | table-driven failure-reason assertions, driven through the real client (add a case = one table entry) |
+| `scripts/race-supersede.sh` | same-app supersession assertion: real client, newer deploy wins, older is superseded |
 | `scripts/hook-fixture.sh` | add/remove a failing PreSync hook via the chart's `rawObject` |
 | `scripts/notifications.sh` | assert the generic webhook fires start + result with the templated payload and auth header |
 

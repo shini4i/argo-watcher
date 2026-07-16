@@ -23,18 +23,14 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/coder/websocket"
-	"gopkg.in/yaml.v3"
 
 	"github.com/shini4i/argo-watcher/internal/models"
-	"github.com/shini4i/argo-watcher/internal/updater"
 )
 
 type config struct {
@@ -92,15 +88,6 @@ func loadConfig() config {
 
 func main() {
 	cfg := loadConfig()
-
-	// MODE=race runs the same-app supersession scenario instead of the soak: fire
-	// concurrent deploys to ONE app with distinct tags and assert the committed
-	// tag belongs to a task that actually deployed — never a superseded one that
-	// clobbered the winner. Verifies argocd.ErrDeploymentSuperseded end-to-end.
-	if os.Getenv("MODE") == "race" {
-		runRace(cfg)
-		return
-	}
 
 	log.Printf("driver: apps=%d workers=%d wsClients=%d duration=%s", cfg.apps, cfg.workers, cfg.wsClients, cfg.duration)
 
@@ -234,95 +221,6 @@ func getStatus(ctx context.Context, client *http.Client, baseURL, id string) str
 		return ""
 	}
 	return ts.Status
-}
-
-// runRace fires an OLDER then a NEWER deploy for the same app while a competitor
-// keeps write-backs retrying, and asserts the NEWER tag is what ends up committed
-// — i.e. the older task's retry never clobbers the newer one. Without the
-// supersession guard in the write-back loop, the older task could commit its
-// (stale) tag last. Fatals on violation.
-func runRace(cfg config) {
-	const app = "app1"
-	if len(cfg.tags) < 2 {
-		log.Fatalf("race: need >= 2 distinct tags, got %v", cfg.tags)
-	}
-	tagOld, tagNew := cfg.tags[0], cfg.tags[len(cfg.tags)-1]
-	if tagOld == tagNew {
-		log.Fatalf("race: first and last tag must differ (%v)", cfg.tags)
-	}
-	log.Printf("race: %s <- OLD %s then NEW %s (competitor forces retries)", app, tagOld, tagNew)
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	var mu sync.Mutex
-	status := map[string]string{}
-	var wg sync.WaitGroup
-	deploy := func(tag string) {
-		defer wg.Done()
-		ctx, cancel := context.WithTimeout(context.Background(), cfg.taskBudget)
-		defer cancel()
-		st := deployAndWait(ctx, client, cfg, app, tag)
-		mu.Lock()
-		status[tag] = st
-		mu.Unlock()
-	}
-
-	wg.Add(1)
-	go deploy(tagOld)
-	time.Sleep(300 * time.Millisecond) // ensure NEW is created after OLD (supersedes it)
-	wg.Add(1)
-	go deploy(tagNew)
-	wg.Wait()
-
-	gitTag, err := readGitTag(app)
-	if err != nil {
-		log.Fatalf("race: reading committed tag: %v", err)
-	}
-	log.Printf("race: OLD %s=%s  NEW %s=%s  committed git tag=%s",
-		tagOld, status[tagOld], tagNew, status[tagNew], gitTag)
-
-	for tag, st := range status {
-		if st == models.StatusFailedMessage || st == models.StatusArgoCDUnavailableMessage {
-			log.Fatalf("race: FAIL — deploy %s ended %q", tag, st)
-		}
-	}
-	if gitTag == tagOld {
-		log.Fatalf("race: FAIL — the OLDER tag %q won over the newer %q (superseded task clobbered the winner)", tagOld, tagNew)
-	}
-	if gitTag != tagNew {
-		log.Fatalf("race: FAIL — committed tag %q is neither the old nor the new tag", gitTag)
-	}
-	fmt.Printf("race OK: newer tag %q won; older %q did not clobber it\n", tagNew, tagOld)
-}
-
-// readGitTag clones the gitops repo (GITEA_REPO_URL) and returns the app.image.tag
-// currently committed in the app's .argocd-source override file.
-func readGitTag(app string) (string, error) {
-	repoURL := os.Getenv("GITEA_REPO_URL")
-	if repoURL == "" {
-		return "", fmt.Errorf("GITEA_REPO_URL not set")
-	}
-	dir, err := os.MkdirTemp("", "race-git-")
-	if err != nil {
-		return "", err
-	}
-	defer os.RemoveAll(dir)
-	if out, err := exec.Command("git", "clone", "-q", repoURL, dir).CombinedOutput(); err != nil { // NOSONAR - local dev lab; git resolved from the developer's trusted PATH
-		return "", fmt.Errorf("git clone: %w: %s", err, out)
-	}
-	data, err := os.ReadFile(filepath.Join(dir, "chart", fmt.Sprintf(".argocd-source-%s.yaml", app)))
-	if err != nil {
-		return "", err
-	}
-	var ov updater.ArgoOverrideFile
-	if err := yaml.Unmarshal(data, &ov); err != nil {
-		return "", err
-	}
-	for _, p := range ov.Helm.Parameters {
-		if p.Name == "app.image.tag" {
-			return p.Value, nil
-		}
-	}
-	return "", fmt.Errorf("app.image.tag not found in %s override", app)
 }
 
 // runWSClient keeps one WebSocket connection open, draining messages until the
