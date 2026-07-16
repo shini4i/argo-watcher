@@ -11,30 +11,47 @@
 # Without the supersession guard in the write-back loop, the older task could commit
 # its stale tag last. Exits non-zero on any violation.
 #
+# The script is self-contained and order-independent: it first resets the app to a
+# BASE_TAG distinct from OLD and NEW, so the OLD deploy ALWAYS triggers a real,
+# supersede-able write-back regardless of what tag earlier phases (the soak) left
+# the app on. Without this, if the app already sits on OLD_TAG, the OLD deploy is a
+# no-op fast-path (unchanged tags skip write-back since #472), completes instantly,
+# and is never superseded. It then starts the competitor itself so contention is
+# active before the race fires.
+#
 # Required env: GITEA_REPO_URL (gitops repo clone URL, creds inline).
-# Optional env: BASE_URL, DEPLOY_TOKEN, APP, OLD_TAG, NEW_TAG, IMAGE.
+# Optional env: BASE_URL, DEPLOY_TOKEN, APP, BASE_TAG, OLD_TAG, NEW_TAG, IMAGE,
+#               COMPETITOR_INTERVAL, COMPETITOR_SECONDS, COMPETITOR_HTTP_PORT.
 set -uo pipefail
 
 APP="${APP:-app1}"
+BASE_TAG="${BASE_TAG:-v1.10.2}"
 OLD_TAG="${OLD_TAG:-v1.10.1}"
 NEW_TAG="${NEW_TAG:-v1.10.3}"
 IMAGE="${IMAGE:-traefik/whoami}"
 DEPLOY_TOKEN="${DEPLOY_TOKEN:-e2e-deploy-token}"
 BASE_URL="${BASE_URL:-http://localhost:8080}"
 GITEA_REPO_URL="${GITEA_REPO_URL:?GITEA_REPO_URL required (gitops repo clone URL)}"
+COMPETITOR_INTERVAL="${COMPETITOR_INTERVAL:-1}"
+COMPETITOR_SECONDS="${COMPETITOR_SECONDS:-90}"
+COMPETITOR_HTTP_PORT="${COMPETITOR_HTTP_PORT:-13010}"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "${here}/../../.." && pwd)"
 
-if [[ "$OLD_TAG" == "$NEW_TAG" ]]; then
-  echo "race: OLD_TAG and NEW_TAG must differ (both ${OLD_TAG})" >&2; exit 1
+# BASE_TAG, OLD_TAG, NEW_TAG must all differ: BASE ≠ OLD/NEW so both race deploys
+# force a real write-back; OLD ≠ NEW so NEW genuinely supersedes OLD.
+if [[ "$BASE_TAG" == "$OLD_TAG" || "$BASE_TAG" == "$NEW_TAG" || "$OLD_TAG" == "$NEW_TAG" ]]; then
+  echo "race: BASE_TAG/OLD_TAG/NEW_TAG must all differ (base=${BASE_TAG} old=${OLD_TAG} new=${NEW_TAG})" >&2
+  exit 1
 fi
 
 # Build the client once so both deploys launch a prebuilt binary — a per-invocation
 # `go run` compile would blow the sub-second submission ordering the race needs.
 bin_dir="$(mktemp -d)"
-old_out="$(mktemp)"; new_out="$(mktemp)"; clone_dir="$(mktemp -d)"
+base_out="$(mktemp)"; old_out="$(mktemp)"; new_out="$(mktemp)"; clone_dir="$(mktemp -d)"
 CLIENT_BIN="${bin_dir}/aw-client"
-trap 'rm -rf "$bin_dir" "$clone_dir" "$old_out" "$new_out"' EXIT
+comp_pid=""
+trap '[ -n "$comp_pid" ] && kill "$comp_pid" 2>/dev/null; rm -rf "$bin_dir" "$clone_dir" "$base_out" "$old_out" "$new_out"' EXIT
 ( cd "$root" && go build -o "$CLIENT_BIN" ./cmd/client ) || { echo "race: FAIL — client build failed" >&2; exit 1; }
 
 # deploy <tag> <outfile>: run the client to deploy APP:tag, blocking to a terminal
@@ -50,6 +67,22 @@ deploy() {
   return
 }
 
+# 1) Baseline: pin the app to BASE_TAG (no competitor yet, so this is fast) so the
+#    OLD deploy below is guaranteed to be a real, supersede-able write-back.
+echo "race: resetting ${APP} to baseline ${BASE_TAG} before the race"
+if ! deploy "$BASE_TAG" "$base_out"; then
+  echo "race: FAIL — baseline deploy of ${BASE_TAG} did not reach 'deployed'" >&2
+  sed 's/^/  | /' "$base_out"
+  exit 1
+fi
+
+# 2) Start the competitor to force write-back contention, and give it a moment to
+#    clone and begin advancing origin/main before the race deploys run.
+HTTP_PORT="$COMPETITOR_HTTP_PORT" SECONDS_TOTAL="$COMPETITOR_SECONDS" INTERVAL="$COMPETITOR_INTERVAL" \
+  "${here}/competitor.sh" & comp_pid=$!
+sleep 5
+
+# 3) Race: fire OLD then NEW; NEW must supersede the still-retrying OLD.
 echo "race: ${APP} <- OLD ${OLD_TAG} then NEW ${NEW_TAG} (competitor forces write-back retries)"
 deploy "$OLD_TAG" "$old_out" & old_pid=$!
 sleep 0.3   # ensure NEW is submitted after OLD so it supersedes it
