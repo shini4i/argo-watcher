@@ -1,15 +1,20 @@
 #!/usr/bin/env bash
-# Assert argo-watcher extracts an ACTIONABLE failure reason from real ArgoCD — not just the
-# image lists. Each scenario drives a deployment that is meant to fail a specific way, then
-# checks the stored task `status_reason` contains the substrings that pin the diagnosis.
+# Assert the REAL argo-watcher client (cmd/client) surfaces an ACTIONABLE failure
+# reason from real ArgoCD — not just that the server stored one. Each scenario
+# drives a deployment meant to fail a specific way, runs the client binary against
+# it, and checks the client (a) exits non-zero and (b) prints the substrings that
+# pin the diagnosis. This exercises the client's failure path end-to-end (the
+# waitForDeployment "failed" branch + handleDeploymentError), which raw curl polls
+# never did.
 #
-# Table-driven on purpose: adding coverage is one entry in SCENARIOS plus a scenario_<name>
-# function. Each scenario echoes, on stdout, a series of "key=value" lines the runner reads:
-#   task=<json>            deploy payload POSTed to /api/v1/tasks   (required)
+# Table-driven on purpose: adding coverage is one entry in SCENARIOS plus a
+# scenario_<name> function. Each scenario echoes, on stdout, "key=value" lines the
+# runner reads:
+#   task=<json>            deploy payload (app/author/project/timeout/images)  (required)
 #   token=<0|1>            send the deploy token (enables write-back); default 1
-#   expect=<substring>     a substring that MUST appear in status_reason (repeatable)
+#   expect=<substring>     a substring that MUST appear in the client output (repeatable)
 #   setup / teardown       optional: names of functions run before/after the scenario
-# The runner submits the task, waits for a terminal status, and greps the reason.
+# The runner runs the client, captures its combined output + exit code, and greps.
 #
 # Usage: DEPLOY_TOKEN=... failure-diagnostics.sh
 set -uo pipefail
@@ -19,50 +24,54 @@ DEPLOY_TOKEN="${DEPLOY_TOKEN:-e2e-deploy-token}"
 PORT="${PORT:-18095}"
 IMAGE="${IMAGE:-traefik/whoami}"
 GOOD_TAG="${GOOD_TAG:-v1.10.1}"
-GITEA_ADMIN="${GITEA_ADMIN:-gitea_admin}"
-GITEA_PW="${GITEA_PW:-gitea_admin_pw1}"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="$(cd "${here}/../../.." && pwd)"
+
+# Build the client once; every scenario runs the same binary (deterministic, no
+# per-invocation `go run` compile).
+bin_dir="$(mktemp -d)"
+CLIENT_BIN="${bin_dir}/aw-client"
+( cd "$root" && go build -o "$CLIENT_BIN" ./cmd/client ) || { echo "failure-diagnostics: FAIL — client build failed" >&2; exit 1; }
 
 kubectl -n "$NS_AW" port-forward svc/argo-watcher "${PORT}:80" >/dev/null 2>&1 &
-trap 'kill $(jobs -p) 2>/dev/null || true' EXIT
+trap 'kill $(jobs -p) 2>/dev/null || true; rm -rf "$bin_dir"' EXIT
 for _ in $(seq 1 15); do curl -s -m3 -o /dev/null "localhost:${PORT}/healthz" && break; sleep 1; done
 
 # --- helpers ----------------------------------------------------------------
-api() {
-  local path="$1"; shift
-  curl -s -m 15 "localhost:${PORT}/api/v1/${path}" "$@"
+# run_client <task-json> <use_token>: runs the client binary for the deploy
+# described by the JSON. Prints the client's combined stdout+stderr; returns the
+# client's exit code (0 = deployed, non-zero = failed/cancelled/etc.).
+run_client() {
+  local payload="$1" use_token="$2" token_env=()
+  local app image tag timeout
+  app=$(jq -r '.app' <<<"$payload")
+  image=$(jq -r '.images[0].image' <<<"$payload")
+  tag=$(jq -r '.images[0].tag' <<<"$payload")
+  timeout=$(jq -r '.timeout // 180' <<<"$payload")
+  if [[ "$use_token" == "1" ]]; then
+    token_env=(ARGO_WATCHER_DEPLOY_TOKEN="$DEPLOY_TOKEN")
+  else
+    # Explicitly neutralize any ambient auth so a token=0 scenario stays
+    # unvalidated even when the developer has these exported in their shell
+    # (empty is treated as no token by the client). `env` does not clear
+    # inherited vars on its own.
+    token_env=(ARGO_WATCHER_DEPLOY_TOKEN= BEARER_TOKEN=)
+  fi
+  # "${token_env[@]+...}" guards the empty-array expansion under `set -u` on bash < 4.4.
+  env ARGO_WATCHER_URL="http://localhost:${PORT}" \
+      IMAGES="$image" IMAGE_TAG="$tag" ARGO_APP="$app" \
+      COMMIT_AUTHOR="e2e" PROJECT_NAME="lab" \
+      RETRY_INTERVAL="5s" TASK_TIMEOUT="$timeout" \
+      "${token_env[@]+"${token_env[@]}"}" \
+      "$CLIENT_BIN" 2>&1
   return
 }
 
-# submit_task <json> <use_token> -> task id
-submit_task() {
-  local payload="$1" use_token="$2" hdr=()
-  [[ "$use_token" == "1" ]] && hdr=(-H "ARGO_WATCHER_DEPLOY_TOKEN: ${DEPLOY_TOKEN}")
-  # "${hdr[@]+...}" guards the empty-array expansion so it is safe under `set -u` on bash < 4.4.
-  api tasks -X POST -H 'Content-Type: application/json' "${hdr[@]+"${hdr[@]}"}" -d "$payload" | jq -r '.id'
-  return
-}
-
-# wait_terminal <id> -> prints final status
-wait_terminal() {
-  local id="$1" st
-  for _ in $(seq 1 48); do
-    st=$(api "tasks/${id}" | jq -r '.status // "?"')
-    case "$st" in
-      deployed|failed|aborted) echo "$st"; return 0 ;;
-      *) ;; # non-terminal: keep polling
-    esac
-    sleep 5
-  done
-  echo "timeout"
-  return
-}
-
-# restore_good_tag <app>: bump the app back to a pullable tag so the lab stays reusable.
+# restore_good_tag <app>: bump the app back to a pullable tag so the lab stays
+# reusable. Best-effort — a restore hiccup must not fail the suite.
 restore_good_tag() {
-  local app="$1" id
-  id=$(submit_task "{\"app\":\"${app}\",\"author\":\"e2e\",\"project\":\"lab\",\"timeout\":120,\"images\":[{\"image\":\"${IMAGE}\",\"tag\":\"${GOOD_TAG}\"}]}" 1)
-  wait_terminal "$id" >/dev/null
+  local app="$1"
+  run_client "{\"app\":\"${app}\",\"author\":\"e2e\",\"project\":\"lab\",\"timeout\":120,\"images\":[{\"image\":\"${IMAGE}\",\"tag\":\"${GOOD_TAG}\"}]}" 1 >/dev/null 2>&1 || true
   return
 }
 
@@ -131,19 +140,18 @@ for scenario in "${SCENARIOS[@]}"; do
 
   [[ -n "$setup" ]] && { echo "  setup: $setup"; "$setup"; }
 
-  id=$(submit_task "$task" "$token")
-  status=$(wait_terminal "$id")
-  reason=$(api "tasks/${id}" | jq -r '.status_reason // ""')
-  echo "  status=${status}"
-  echo "  reason: $(sed 's/^/    | /' <<<"$reason")"
+  out=$(run_client "$task" "$token"); rc=$?
+  echo "  client exit=${rc}"
+  # shellcheck disable=SC2001  # per-line prefix needs a regex anchor; ${//} can't do it
+  echo "  client output: $(sed 's/^/    | /' <<<"$out")"
 
   ok=1
-  [[ "$status" == "failed" ]] || { echo "  FAIL: expected terminal 'failed', got '${status}'"; ok=0; }
+  [[ "$rc" -ne 0 ]] || { echo "  FAIL: expected the client to exit non-zero, got ${rc}"; ok=0; }
   for want in "${expects[@]}"; do
-    if grep -qF -- "$want" <<<"$reason"; then
-      echo "  OK: reason contains «${want}»"
+    if grep -qF -- "$want" <<<"$out"; then
+      echo "  OK: client output contains «${want}»"
     else
-      echo "  FAIL: reason missing «${want}»"; ok=0
+      echo "  FAIL: client output missing «${want}»"; ok=0
     fi
   done
 
