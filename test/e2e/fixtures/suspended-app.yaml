@@ -1,8 +1,9 @@
 # Dedicated fixture Argo Application for the ACCEPT_SUSPENDED_APP phase (name
-# "suspendapp", outside the app1..N soak range). Its only workload is a paused
-# Deployment (directory source, plain manifest), so ArgoCD reports the app health
-# as Suspended. No argo-watcher annotations: the phase deploys without a token, so
-# there is no write-back — it only checks that a Suspended app is accepted.
+# "suspendapp", outside the app1..N soak range). Its workload is an argo-rollouts
+# Rollout (canary with a pause step). argo-watcher manages it: the image-tag
+# write-back triggers a new revision, which pauses mid-canary with the new image
+# running, so ArgoCD reports the app Suspended. Multi-source (spec.sources) because
+# argo-watcher only honours the write-back annotations when spec.sources is set.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -10,14 +11,21 @@ metadata:
   namespace: argocd
   finalizers:
     - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argo-watcher/managed: "true"
+    argo-watcher/managed-images: whoami=traefik/whoami
+    argo-watcher/whoami.helm.image-tag: image.tag
+    argo-watcher/write-back-repo: ssh://git@gitea-ssh.gitea.svc.cluster.local:2222/e2e/gitops.git
+    argo-watcher/write-back-branch: main
+    argo-watcher/write-back-path: rollout-chart
+    argo-watcher/write-back-filename: .argocd-source-suspendapp.yaml
 spec:
   project: default
-  source:
-    repoURL: http://gitea-http.gitea.svc.cluster.local:3000/e2e/gitops.git
-    targetRevision: main
-    path: suspended
-    directory:
-      recurse: false
+  sources:
+    - repoURL: http://gitea-http.gitea.svc.cluster.local:3000/e2e/gitops.git
+      targetRevision: main
+      path: rollout-chart
+      helm: {}
   destination:
     server: https://kubernetes.default.svc
     namespace: suspendapp

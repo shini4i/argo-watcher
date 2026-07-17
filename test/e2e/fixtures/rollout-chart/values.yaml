@@ -1,0 +1,7 @@
+# argo-watcher writes back image.tag per deployment (see the suspendapp
+# Application's whoami.helm.image-tag annotation). The initial tag rolls out
+# revision 1 (Healthy); the write-back bump triggers revision 2, which pauses at
+# the canary step.
+image:
+  repository: traefik/whoami
+  tag: v1.10.1

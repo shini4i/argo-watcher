@@ -1,0 +1,31 @@
+# A single-replica Rollout with a canary strategy that pauses indefinitely after
+# shifting all weight to the new revision. Revision 1 (initial) skips the steps and
+# goes straight to Healthy with a running pod. A later revision (triggered by
+# argo-watcher's image-tag write-back) runs the canary: it scales the new revision
+# up (so its image is live and appears in the app's summary images) and then pauses
+# — ArgoCD reports the app health as Suspended while the pod keeps running. That is
+# the "Rollout suspended mid-rollout" state ACCEPT_SUSPENDED_APP is meant to accept.
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: suspendapp
+  labels:
+    app: suspendapp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: suspendapp
+  template:
+    metadata:
+      labels:
+        app: suspendapp
+    spec:
+      containers:
+        - name: whoami
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+  strategy:
+    canary:
+      steps:
+        - setWeight: 100
+        - pause: {}

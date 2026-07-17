@@ -15,6 +15,8 @@ vars:
   RACE_IMAGE: ghcr.io/shini4i/argo-watcher:race
   # Pinned chart versions for reproducibility.
   ARGOCD_CHART_VERSION: 9.1.3
+  # argo-rollouts provides the Rollout CRD + controller for the accept-suspended phase.
+  ROLLOUTS_CHART_VERSION: 2.41.0
   GITEA_CHART_VERSION: 12.6.0
   AW_CHART_VERSION: 1.0.8
   AW_CHART_REPO: https://shini4i.github.io/charts/
@@ -50,6 +52,7 @@ tasks:
       - task: cluster
       - task: build-race-image
       - task: argocd
+      - task: argo-rollouts
       - task: load-race-image
       - task: gitea
       - task: seed
@@ -111,6 +114,14 @@ tasks:
       - helm upgrade --install argocd oci://ghcr.io/argoproj/argo-helm/argo-cd
         --version {{.ARGOCD_CHART_VERSION}} -n argocd -f values/argocd.yaml
       - kubectl -n argocd rollout status deploy/argocd-server --timeout=300s
+
+  argo-rollouts:
+    desc: "Install argo-rollouts (Rollout CRD + controller) for the accept-suspended phase"
+    cmds:
+      - kubectl create namespace argo-rollouts --dry-run=client -o yaml | kubectl apply -f -
+      - helm upgrade --install argo-rollouts oci://ghcr.io/argoproj/argo-helm/argo-rollouts
+        --version {{.ROLLOUTS_CHART_VERSION}} -n argo-rollouts
+      - kubectl -n argo-rollouts rollout status deploy/argo-rollouts --timeout=180s
 
   gitea:
     desc: "Install Gitea (git backend for the updater push path)"
@@ -179,9 +190,9 @@ tasks:
       - DEPLOY_TOKEN={{.DEPLOY_TOKEN}} ./scripts/multi-image.sh
 
   accept-suspended:
-    desc: "Assert ACCEPT_SUSPENDED_APP: a Synced+Suspended app is accepted as deployed"
+    desc: "Assert ACCEPT_SUSPENDED_APP: a paused Rollout (Synced+Suspended) is accepted as deployed"
     cmds:
-      - ./scripts/accept-suspended.sh
+      - DEPLOY_TOKEN={{.DEPLOY_TOKEN}} ./scripts/accept-suspended.sh
 
   docker-proxy:
     desc: "Assert DOCKER_IMAGES_PROXY: a bare image name matches the proxy-prefixed running image"

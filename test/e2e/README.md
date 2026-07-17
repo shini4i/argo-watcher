@@ -44,7 +44,7 @@ task jwt-auth             # assert the JWT (BEARER_TOKEN) auth path drives an au
 task fire-and-forget      # assert fire-and-forget mode: a CronJob-only app reports deployed without the image rolling out
 task commit-format        # assert COMMIT_MESSAGE_FORMAT renders into the git write-back commit message
 task multi-image          # assert a multi-image deploy bumps and writes back both images in one commit
-task accept-suspended     # assert ACCEPT_SUSPENDED_APP treats a Synced+Suspended app as deployed
+task accept-suspended     # assert ACCEPT_SUSPENDED_APP treats a paused argo-rollouts Rollout (Suspended) as deployed
 task docker-proxy         # assert DOCKER_IMAGES_PROXY matches a bare image name against the proxy-prefixed running image
 task notifications        # assert the generic webhook fires (start + result) with the correct payload
 task failure-diagnostics  # assert failure reasons carry the real cause (pod ImagePullBackOff, failed hooks)
@@ -94,8 +94,8 @@ Reach any component with `kubectl port-forward` (there is no ingress), e.g.
 | `scripts/multi-image.sh` | assert a two-image deploy reaches "deployed" and writes back both image-tag overrides in one commit |
 | `fixtures/multi-image/` | two-image umbrella: the `app` chart (primary image) plus a second image via the chart's rawObject passthrough |
 | `fixtures/multi-image-app.yaml` | dedicated `multiapp` Argo Application declaring two managed images mapped to two Helm image-tag values |
-| `scripts/accept-suspended.sh` | assert `ACCEPT_SUSPENDED_APP` accepts a Synced+Suspended app as deployed |
-| `fixtures/suspended/` + `fixtures/suspended-app.yaml` | `suspendapp`: a paused Deployment (ArgoCD reports it Suspended), directory source |
+| `scripts/accept-suspended.sh` | assert `ACCEPT_SUSPENDED_APP` accepts a paused Rollout as deployed (write-back triggers a canary pause) |
+| `fixtures/rollout-chart/` + `fixtures/suspended-app.yaml` | `suspendapp`: a managed argo-rollouts Rollout (canary pause step); the write-back bump pauses it mid-rollout so ArgoCD reports it Suspended |
 | `scripts/docker-proxy.sh` | assert `DOCKER_IMAGES_PROXY` matches a bare image against the proxy-prefixed running image |
 | `fixtures/proxy-app.yaml` | `proxyapp`: reuses the shared chart with the image repository overridden to `mirror.gcr.io/traefik/whoami` |
 
