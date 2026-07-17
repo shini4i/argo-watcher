@@ -103,6 +103,7 @@ func (m *mockMetrics) RemoveInProgressTask()                           {}
 func (m *mockMetrics) ObserveRefreshDuration(_ string, _ float64)      {}
 func (m *mockMetrics) ObserveGitWritebackDuration(_ string, _ float64) {}
 func (m *mockMetrics) ObserveGitLockWaitDuration(_ string, _ float64)  {}
+func (m *mockMetrics) ObserveDeploymentDuration(_ string, _ float64)   {}
 
 func TestGetVersion(t *testing.T) {
 	gin.SetMode(gin.TestMode)
