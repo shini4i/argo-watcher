@@ -88,6 +88,10 @@ scenario_bad_image() {
   echo "expect=Unhealthy resources:"
   echo "expect=Pod("
   echo "expect=ErrImagePull"
+  # On failure the client prints the ArgoCD UI link built from the server's
+  # ARGO_URL_ALIAS (set in values/argo-watcher.yaml); asserting the aliased URL
+  # here covers that config toggle without a dedicated phase.
+  echo "expect=https://argocd.e2e.lab/applications/app1"
   echo "teardown=teardown_bad_image"
   return
 }

@@ -41,6 +41,31 @@ replicaCount: 1
 # The URL's fixed UUID must match WEBHOOK_UUID in Taskfile.yml; the receiver
 # auto-creates the session on the first POST (AUTO_CREATE_SESSIONS).
 extraEnvs:
+  # HMAC secret for the JWT auth strategy (registered on the Authorization
+  # header, alongside the deploy-token strategy). Enables the client BEARER_TOKEN
+  # path; scripts/jwt-auth.sh mints a token with this key. Throwaway lab value —
+  # MUST match JWT_SECRET in Taskfile.yml.
+  - name: JWT_SECRET
+    value: "e2e-jwt-secret"
+  # Custom git write-back commit message, a Go text/template rendered against the
+  # models.Task. scripts/commit-format.sh asserts a real write-back commit carries
+  # this rendered message. Passed verbatim (Helm toYaml does not evaluate {{ }}).
+  - name: COMMIT_MESSAGE_FORMAT
+    value: "e2e-commit-fmt app={{.App}} by={{.Author}}"
+  # Alias used to build the ArgoCD app URL the client prints (in place of the
+  # in-cluster argo url, which is unreachable from outside). The failure-diagnostics
+  # phase asserts this alias appears in the client's failure output.
+  - name: ARGO_URL_ALIAS
+    value: "https://argocd.e2e.lab"
+  # Treat a Synced+Suspended app as a successful rollout (accept-suspended phase).
+  # Global, but harmless to the normal fixtures, which report Healthy not Suspended.
+  - name: ACCEPT_SUSPENDED_APP
+    value: "true"
+  # Registry proxy prefix for image matching (docker-proxy phase). proxyapp runs
+  # mirror.gcr.io/traefik/whoami; a deploy of the bare image matches via the proxy
+  # form. Global, but safe: the normal fixtures still match on the bare image name.
+  - name: DOCKER_IMAGES_PROXY
+    value: "mirror.gcr.io"
   - name: WEBHOOK_ENABLED
     value: "true"
   - name: WEBHOOK_URL

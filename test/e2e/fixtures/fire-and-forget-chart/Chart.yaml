@@ -1,0 +1,10 @@
+apiVersion: v2
+name: fire-and-forget-cron
+description: >-
+  Fixture chart for the fire-and-forget phase. Renders a single CronJob with
+  image.tag exposed as a Helm value so argo-watcher can write it back. A bespoke
+  chart is unavoidable here: the published `app` chart renders a
+  Deployment/StatefulSet, not a CronJob, and the write-back needs a Helm
+  image-tag parameter.
+type: application
+version: 0.1.0

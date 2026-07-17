@@ -1,0 +1,10 @@
+apiVersion: v2
+name: suspend-rollout
+description: >-
+  Fixture chart for the accept-suspended phase. Renders a single argo-rollouts
+  Rollout with a canary pause step, exposing image.tag as a Helm value so
+  argo-watcher can write it back. A bespoke chart is unavoidable here: the
+  published `app` chart renders a Deployment/StatefulSet, not a Rollout CRD, and
+  the write-back needs a Helm image-tag parameter.
+type: application
+version: 0.1.0

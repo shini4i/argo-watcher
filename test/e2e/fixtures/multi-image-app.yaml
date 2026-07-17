@@ -1,0 +1,42 @@
+# Dedicated fixture Argo Application for the multi-image phase (name "multiapp",
+# outside the app1..N soak range). It renders the bespoke two-image chart and
+# declares TWO managed images, each mapped to its own Helm image-tag value, so one
+# deploy makes argo-watcher write back two image-tag overrides in a single commit.
+#
+# Multi-source (spec.sources) for the same reason as the app1..N template:
+# argo-watcher only honours the write-back annotations when spec.sources is set.
+# Argo reads over HTTP; argo-watcher writes the override file back over SSH.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: multiapp
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argo-watcher/managed: "true"
+    argo-watcher/managed-images: main=traefik/whoami,proxy=nginxinc/nginx-unprivileged
+    # Primary image tag -> the app subchart's image.tag; second image tag ->
+    # app.proxyTag, referenced by the rawObject proxy Deployment (see values.yaml).
+    argo-watcher/main.helm.image-tag: app.image.tag
+    argo-watcher/proxy.helm.image-tag: app.proxyTag
+    argo-watcher/write-back-repo: ssh://git@gitea-ssh.gitea.svc.cluster.local:2222/e2e/gitops.git
+    argo-watcher/write-back-branch: main
+    argo-watcher/write-back-path: multi-image
+    argo-watcher/write-back-filename: .argocd-source-multiapp.yaml
+spec:
+  project: default
+  sources:
+    - repoURL: http://gitea-http.gitea.svc.cluster.local:3000/e2e/gitops.git
+      targetRevision: main
+      path: multi-image
+      helm: {}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: multiapp
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

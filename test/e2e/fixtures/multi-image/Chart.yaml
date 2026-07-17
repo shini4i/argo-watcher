@@ -1,0 +1,14 @@
+apiVersion: v2
+name: multi-image-app
+description: >-
+  Two-image fixture for the e2e multi-image phase. Like the app1..N umbrella it
+  deploys the published shini4i `app` chart (primary image), and adds a SECOND,
+  distinct image as a rawObject Deployment through the same chart — no bespoke
+  templates. Both image tags are Helm values argo-watcher writes back, so one
+  deploy bumps both. seed-gitea.sh runs `helm dependency update` to vendor `app`.
+type: application
+version: 0.1.0
+dependencies:
+  - name: app
+    version: 0.2.1
+    repository: https://shini4i.github.io/charts/

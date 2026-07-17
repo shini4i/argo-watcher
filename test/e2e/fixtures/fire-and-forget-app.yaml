@@ -1,0 +1,42 @@
+# Dedicated fixture Argo Application for the fire-and-forget phase (name "ffapp",
+# outside the app1..N soak range). Its only workload is a CronJob (rendered by the
+# fire-and-forget chart, image tag a Helm value). argo-watcher MANAGES it: a deploy
+# writes the new image tag back, so ArgoCD updates the CronJob to that image — but
+# a CronJob has no long-running pod, so the new image is never observed rolling
+# out. argo-watcher/fire-and-forget: "true" makes argo-watcher report success
+# immediately instead of waiting out the timeout.
+#
+# Multi-source (spec.sources) because argo-watcher only honours the write-back
+# annotations when spec.sources is set.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ffapp
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argo-watcher/managed: "true"
+    argo-watcher/managed-images: whoami=traefik/whoami
+    argo-watcher/whoami.helm.image-tag: image.tag
+    argo-watcher/fire-and-forget: "true"
+    argo-watcher/write-back-repo: ssh://git@gitea-ssh.gitea.svc.cluster.local:2222/e2e/gitops.git
+    argo-watcher/write-back-branch: main
+    argo-watcher/write-back-path: fire-and-forget-chart
+    argo-watcher/write-back-filename: .argocd-source-ffapp.yaml
+spec:
+  project: default
+  sources:
+    - repoURL: http://gitea-http.gitea.svc.cluster.local:3000/e2e/gitops.git
+      targetRevision: main
+      path: fire-and-forget-chart
+      helm: {}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ffapp
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

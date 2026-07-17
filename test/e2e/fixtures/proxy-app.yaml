@@ -1,0 +1,33 @@
+# Dedicated fixture Argo Application for the DOCKER_IMAGES_PROXY phase (name
+# "proxyapp", outside the app1..N soak range). It reuses the shared app1..N chart
+# but overrides the image repository to a registry-proxy-prefixed name
+# (mirror.gcr.io/traefik/whoami) via a Helm parameter — no new chart. So the app
+# runs a proxy-prefixed image, while a deploy requests the bare image name; the
+# match only succeeds because DOCKER_IMAGES_PROXY is set. No argo-watcher
+# annotations: the phase deploys without a token, so there is no write-back.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: proxyapp
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: http://gitea-http.gitea.svc.cluster.local:3000/e2e/gitops.git
+    targetRevision: main
+    path: chart
+    helm:
+      parameters:
+        - name: app.image.repository
+          value: mirror.gcr.io/traefik/whoami
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: proxyapp
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
