@@ -95,9 +95,39 @@ groups:
             it is queued behind other write-backs to the same repository.
 ```
 
+## Example dashboard
+
+A ready-made Grafana dashboard lives in the repository at
+[`monitoring/grafana/dashboards/argo-watcher.json`](https://github.com/shini4i/argo-watcher/blob/main/monitoring/grafana/dashboards/argo-watcher.json).
+It has an **Overview** row that illustrates every exposed metric in aggregate
+(availability, in-progress tasks, deployment counts, failing apps) and a
+**Per-Application Breakdown** row driven by an `Application` template variable, so
+you can select one app (or several) and see its deployment counts, failures, and
+the refresh / write-back / lock-wait latency percentiles.
+
+Import it into any Grafana by uploading the JSON (**Dashboards → New → Import**),
+or spin up a self-contained Prometheus + Grafana stack next to the dev server:
+
+```bash
+docker compose --profile monitoring up
+```
+
+![Argo Watcher Grafana dashboard](https://raw.githubusercontent.com/shini4i/assets/main/src/argo-watcher/grafana-dashboard.png)
+
+This starts Prometheus (scraping the dev `backend`) and Grafana with the
+datasource and dashboard already provisioned. Open Grafana at
+<http://localhost:3001> — anonymous admin access is enabled for local use, so no
+login is required. Drive a few deployments through the client to populate the
+panels.
+
+The two **Git Write-back Duration** and **Git Lock Wait Duration** panels only
+populate for applications using GitOps write-back (`argo-watcher/managed`); they
+stay empty for status-only deployments.
+
 ## Grafana panel queries
 
-Three panels that cover the most useful operational views.
+If you would rather build your own panels, these three cover the most useful
+operational views.
 
 ### Active in-progress tasks
 

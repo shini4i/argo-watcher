@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Example Grafana dashboard (`monitoring/grafana/dashboards/argo-watcher.json`)
+  visualizing every exposed Prometheus metric, with a per-application drill-down
+  driven by an `Application` variable. A `monitoring` docker-compose profile runs
+  Prometheus and Grafana with the datasource and dashboard pre-provisioned
+  (`docker compose --profile monitoring up`).
+
 ## [0.12.0] - 2026-07-15
 
 ### Added
