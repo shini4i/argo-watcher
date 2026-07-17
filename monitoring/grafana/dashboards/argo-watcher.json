@@ -25,7 +25,7 @@
       {
         "current": {},
         "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "definition": "label_values(processed_deployments, app)",
+        "definition": "label_values(processed_deployments{job=\"argo-watcher\"}, app)",
         "includeAll": true,
         "allValue": ".*",
         "label": "Application",
@@ -34,7 +34,7 @@
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values(processed_deployments, app)",
+          "query": "label_values(processed_deployments{job=\"argo-watcher\"}, app)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 2,
