@@ -26,7 +26,7 @@ the competitor writer. All pinned tool/chart versions are in `Taskfile.yml`.
 ## Usage
 
 ```sh
-task e2e     # one-shot per-release run: up → api-surface → smoke → client-knobs → jwt-auth → notifications → load → race → failure-diagnostics → down
+task e2e     # one-shot per-release run: up → api-surface → smoke → client-knobs → jwt-auth → fire-and-forget → notifications → load → race → failure-diagnostics → down
 ```
 
 `task e2e` walks the whole flow. It stops on the first failing step, so a failed
@@ -41,6 +41,7 @@ task api-surface          # assert the read-only HTTP surface (version/config/ta
 task smoke                # one authenticated deploy through the full write-back loop, via the real client binary
 task client-knobs         # assert client env knobs: TASK_REFRESH override deploys, DEBUG cURL log redacts the token
 task jwt-auth             # assert the JWT (BEARER_TOKEN) auth path drives an authenticated write-back to deployed
+task fire-and-forget      # assert fire-and-forget mode reports deployed on a tag the app can never run
 task notifications        # assert the generic webhook fires (start + result) with the correct payload
 task failure-diagnostics  # assert failure reasons carry the real cause (pod ImagePullBackOff, failed hooks)
 task load                 # git-conflict soak: competitor + concurrent deploys, strict 0-failed
@@ -82,6 +83,8 @@ Reach any component with `kubectl port-forward` (there is no ingress), e.g.
 | `scripts/client-knobs.sh` | assert client env knobs via the real client: `TASK_REFRESH=false` still deploys, `DEBUG=true` cURL log redacts the deploy token |
 | `scripts/jwt-auth.sh` | assert the JWT (`BEARER_TOKEN`) auth path: mint an HS256 token, deploy with no deploy token, prove the authenticated write-back reaches deployed |
 | `tools/mintjwt/` | tiny Go HS256 JWT minter (signs with the server's own jwt library; avoids an openssl dependency) |
+| `scripts/fire-and-forget.sh` | assert the `argo-watcher/fire-and-forget` annotation short-circuits rollout checks (deploy an impossible tag, still "deployed") |
+| `fixtures/fire-and-forget-app.yaml` | dedicated `ffapp` Argo Application carrying the fire-and-forget annotation, outside the app1..N soak range |
 
 ## Gotchas (why the scripts exist)
 

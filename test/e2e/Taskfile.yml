@@ -68,6 +68,7 @@ tasks:
       - task: smoke
       - task: client-knobs
       - task: jwt-auth
+      - task: fire-and-forget
       - task: notifications
       - task: load
       - task: race
@@ -157,6 +158,11 @@ tasks:
     desc: "Assert the JWT (BEARER_TOKEN) auth path: JWT-authenticated write-back reaches deployed"
     cmds:
       - JWT_SECRET={{.JWT_SECRET}} ./scripts/jwt-auth.sh
+
+  fire-and-forget:
+    desc: "Assert fire-and-forget mode: a deploy to an impossible tag still reports deployed"
+    cmds:
+      - ./scripts/fire-and-forget.sh
 
   notifications:
     desc: "Assert the generic webhook fires (start + result) with the correct payload against a real receiver"
