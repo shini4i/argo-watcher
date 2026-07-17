@@ -1,12 +1,13 @@
-# A dedicated fixture Argo Application for the fire-and-forget phase, separate
-# from the app1..N soak fixtures (name "ffapp", outside their range, so no other
-# phase touches it).
+# Dedicated fixture Argo Application for the fire-and-forget phase (name "ffapp",
+# outside the app1..N soak range so no other phase touches it).
 #
-# It carries argo-watcher/fire-and-forget: "true". A deploy to this app skips the
-# rollout health check and reports success immediately, so the phase can prove the
-# behaviour by deploying a tag the app can never actually run and still reaching
-# "deployed". No write-back annotations: the phase deploys without a token, so the
-# gitops repo is never mutated and the app stays healthy on the chart-default tag.
+# Its only workload is a CronJob (deployed from the gitops repo's cronjob/ path as
+# plain manifests, no Helm). A CronJob-only app runs no pod until its schedule
+# fires, so a newly-deployed image tag is never observed running and a normal
+# deploy would wait out the timeout. argo-watcher/fire-and-forget: "true" makes
+# such a deploy report success immediately — the behaviour this fixture exists to
+# prove. No write-back annotations: the phase deploys without a token, so the
+# gitops repo is never mutated.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -15,17 +16,15 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
   annotations:
-    argo-watcher/managed: "true"
-    argo-watcher/managed-images: app=traefik/whoami
-    argo-watcher/app.helm.image-tag: app.image.tag
     argo-watcher/fire-and-forget: "true"
 spec:
   project: default
-  sources:
-    - repoURL: http://gitea-http.gitea.svc.cluster.local:3000/e2e/gitops.git
-      targetRevision: main
-      path: chart
-      helm: {}
+  source:
+    repoURL: http://gitea-http.gitea.svc.cluster.local:3000/e2e/gitops.git
+    targetRevision: main
+    path: cronjob
+    directory:
+      recurse: false
   destination:
     server: https://kubernetes.default.svc
     namespace: ffapp

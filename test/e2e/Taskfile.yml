@@ -161,7 +161,7 @@ tasks:
       - JWT_SECRET={{.JWT_SECRET}} ./scripts/jwt-auth.sh
 
   fire-and-forget:
-    desc: "Assert fire-and-forget mode: a deploy to an impossible tag still reports deployed"
+    desc: "Assert fire-and-forget mode: a CronJob-only app reports deployed without the image rolling out"
     cmds:
       - ./scripts/fire-and-forget.sh
 

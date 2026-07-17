@@ -22,6 +22,7 @@ SSH_HOST="[gitea-ssh.gitea.svc.cluster.local]:2222"
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 chart_src="${here}/../fixtures/chart"
+cronjob_src="${here}/../fixtures/cronjob"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"; kill $(jobs -p) 2>/dev/null || true' EXIT
 
@@ -60,8 +61,12 @@ cp -r "${chart_src}/." "${work}/chart/"
 # renders it without needing network access at sync time. The resolved chart is
 # committed only here (ephemeral Gitea), never in the argo-watcher repo.
 helm dependency update "${work}/chart" >/dev/null
-git -C "$work" -c user.name=seed -c user.email=seed@e2e add chart
-git -C "$work" -c user.name=seed -c user.email=seed@e2e commit -qm 'seed fixture chart'
+# Plain-manifest CronJob for the fire-and-forget fixture (ffapp), deployed by a
+# directory-type Argo source — no Helm, so it is pushed as-is alongside the chart.
+mkdir -p "${work}/cronjob"
+cp -r "${cronjob_src}/." "${work}/cronjob/"
+git -C "$work" -c user.name=seed -c user.email=seed@e2e add chart cronjob
+git -C "$work" -c user.name=seed -c user.email=seed@e2e commit -qm 'seed fixture chart and cronjob'
 git -C "$work" push -q --force \
   "http://${GITEA_ADMIN}:${GITEA_PW}@localhost:${HTTP_PORT}/${ORG}/${REPO}.git" main
 

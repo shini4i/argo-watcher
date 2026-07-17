@@ -1,0 +1,24 @@
+# A CronJob-only workload for the fire-and-forget fixture (ffapp). This is the
+# real use case for argo-watcher/fire-and-forget: an app whose only workload is a
+# CronJob runs no pod until its schedule fires, so a freshly-deployed image tag is
+# never observed "running" and a normal deploy would wait out the timeout. The
+# schedule here is effectively never (Jan 1st), so during the phase no job ever
+# runs — the deployed tag never rolls out, which is precisely what fire-and-forget
+# must tolerate.
+#
+# Applied via a directory-type Argo source (no Helm); Argo places it in the
+# Application's destination namespace.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ffapp-cron
+spec:
+  schedule: "0 0 1 1 *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: whoami
+              image: traefik/whoami:v1.10.1
