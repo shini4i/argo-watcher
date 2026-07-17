@@ -1,13 +1,13 @@
 # Dedicated fixture Argo Application for the fire-and-forget phase (name "ffapp",
-# outside the app1..N soak range so no other phase touches it).
+# outside the app1..N soak range). Its only workload is a CronJob (rendered by the
+# fire-and-forget chart, image tag a Helm value). argo-watcher MANAGES it: a deploy
+# writes the new image tag back, so ArgoCD updates the CronJob to that image — but
+# a CronJob has no long-running pod, so the new image is never observed rolling
+# out. argo-watcher/fire-and-forget: "true" makes argo-watcher report success
+# immediately instead of waiting out the timeout.
 #
-# Its only workload is a CronJob (deployed from the gitops repo's cronjob/ path as
-# plain manifests, no Helm). A CronJob-only app runs no pod until its schedule
-# fires, so a newly-deployed image tag is never observed running and a normal
-# deploy would wait out the timeout. argo-watcher/fire-and-forget: "true" makes
-# such a deploy report success immediately — the behaviour this fixture exists to
-# prove. No write-back annotations: the phase deploys without a token, so the
-# gitops repo is never mutated.
+# Multi-source (spec.sources) because argo-watcher only honours the write-back
+# annotations when spec.sources is set.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -16,15 +16,21 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
   annotations:
+    argo-watcher/managed: "true"
+    argo-watcher/managed-images: whoami=traefik/whoami
+    argo-watcher/whoami.helm.image-tag: image.tag
     argo-watcher/fire-and-forget: "true"
+    argo-watcher/write-back-repo: ssh://git@gitea-ssh.gitea.svc.cluster.local:2222/e2e/gitops.git
+    argo-watcher/write-back-branch: main
+    argo-watcher/write-back-path: fire-and-forget-chart
+    argo-watcher/write-back-filename: .argocd-source-ffapp.yaml
 spec:
   project: default
-  source:
-    repoURL: http://gitea-http.gitea.svc.cluster.local:3000/e2e/gitops.git
-    targetRevision: main
-    path: cronjob
-    directory:
-      recurse: false
+  sources:
+    - repoURL: http://gitea-http.gitea.svc.cluster.local:3000/e2e/gitops.git
+      targetRevision: main
+      path: fire-and-forget-chart
+      helm: {}
   destination:
     server: https://kubernetes.default.svc
     namespace: ffapp

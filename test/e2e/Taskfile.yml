@@ -175,9 +175,9 @@ tasks:
       - JWT_SECRET={{.JWT_SECRET}} ./scripts/jwt-auth.sh
 
   fire-and-forget:
-    desc: "Assert fire-and-forget mode: a CronJob-only app reports deployed without the image rolling out"
+    desc: "Assert fire-and-forget mode: a managed CronJob app reports deployed without the image rolling out"
     cmds:
-      - ./scripts/fire-and-forget.sh
+      - DEPLOY_TOKEN={{.DEPLOY_TOKEN}} ./scripts/fire-and-forget.sh
 
   commit-format:
     desc: "Assert COMMIT_MESSAGE_FORMAT renders into the git write-back commit message"

@@ -22,7 +22,7 @@ SSH_HOST="[gitea-ssh.gitea.svc.cluster.local]:2222"
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 chart_src="${here}/../fixtures/chart"
-cronjob_src="${here}/../fixtures/cronjob"
+ffcron_src="${here}/../fixtures/fire-and-forget-chart"
 multiimage_src="${here}/../fixtures/multi-image"
 rollout_src="${here}/../fixtures/rollout-chart"
 work="$(mktemp -d)"
@@ -63,10 +63,10 @@ cp -r "${chart_src}/." "${work}/chart/"
 # renders it without needing network access at sync time. The resolved chart is
 # committed only here (ephemeral Gitea), never in the argo-watcher repo.
 helm dependency update "${work}/chart" >/dev/null
-# Plain-manifest CronJob for the fire-and-forget fixture (ffapp), deployed by a
-# directory-type Argo source — no Helm, so it is pushed as-is alongside the chart.
-mkdir -p "${work}/cronjob"
-cp -r "${cronjob_src}/." "${work}/cronjob/"
+# CronJob chart for the fire-and-forget fixture (ffapp); no subchart deps, pushed
+# as-is (its image tag is a Helm value argo-watcher writes back).
+mkdir -p "${work}/fire-and-forget-chart"
+cp -r "${ffcron_src}/." "${work}/fire-and-forget-chart/"
 # Two-image umbrella for the multi-image fixture (multiapp); vendor its `app`
 # dependency the same way as the main chart.
 mkdir -p "${work}/multi-image"
@@ -76,8 +76,8 @@ helm dependency update "${work}/multi-image" >/dev/null
 # so it is pushed as-is (no helm dependency update).
 mkdir -p "${work}/rollout-chart"
 cp -r "${rollout_src}/." "${work}/rollout-chart/"
-git -C "$work" -c user.name=seed -c user.email=seed@e2e add chart cronjob multi-image rollout-chart
-git -C "$work" -c user.name=seed -c user.email=seed@e2e commit -qm 'seed fixture chart, cronjob, multi-image, and rollout charts'
+git -C "$work" -c user.name=seed -c user.email=seed@e2e add chart fire-and-forget-chart multi-image rollout-chart
+git -C "$work" -c user.name=seed -c user.email=seed@e2e commit -qm 'seed fixture chart, fire-and-forget, multi-image, and rollout charts'
 git -C "$work" push -q --force \
   "http://${GITEA_ADMIN}:${GITEA_PW}@localhost:${HTTP_PORT}/${ORG}/${REPO}.git" main
 

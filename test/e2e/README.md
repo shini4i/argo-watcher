@@ -42,7 +42,7 @@ task api-surface          # assert the read-only HTTP surface (version/config/ta
 task smoke                # one authenticated deploy through the full write-back loop, via the real client binary
 task client-knobs         # assert client env knobs: TASK_REFRESH override deploys, DEBUG cURL log redacts the token
 task jwt-auth             # assert the JWT (BEARER_TOKEN) auth path drives an authenticated write-back to deployed
-task fire-and-forget      # assert fire-and-forget mode: a CronJob-only app reports deployed without the image rolling out
+task fire-and-forget      # assert fire-and-forget mode: a managed CronJob app's write-back reaches deployed without the image rolling out
 task commit-format        # assert COMMIT_MESSAGE_FORMAT renders into the git write-back commit message
 task multi-image          # assert a multi-image deploy bumps and writes back both images in one commit
 task accept-suspended     # assert ACCEPT_SUSPENDED_APP treats a paused argo-rollouts Rollout (Suspended) as deployed
@@ -88,9 +88,8 @@ Reach any component with `kubectl port-forward` (there is no ingress), e.g.
 | `scripts/client-knobs.sh` | assert client env knobs via the real client: `TASK_REFRESH=false` still deploys, `DEBUG=true` cURL log redacts the deploy token |
 | `scripts/jwt-auth.sh` | assert the JWT (`BEARER_TOKEN`) auth path: mint an HS256 token, deploy with no deploy token, prove the authenticated write-back reaches deployed |
 | `tools/mintjwt/` | tiny Go HS256 JWT minter (signs with the server's own jwt library; avoids an openssl dependency) |
-| `scripts/fire-and-forget.sh` | assert `argo-watcher/fire-and-forget` on a CronJob-only app: a deploy reports "deployed" even though the image never rolls out (no pod until the schedule fires) |
-| `fixtures/fire-and-forget-app.yaml` | dedicated `ffapp` Argo Application (CronJob-only, directory source) carrying the fire-and-forget annotation, outside the app1..N soak range |
-| `fixtures/cronjob/cronjob.yaml` | the CronJob-only workload ffapp deploys (effectively-never schedule), seeded into the gitops repo alongside the chart |
+| `scripts/fire-and-forget.sh` | assert `argo-watcher/fire-and-forget` on a managed CronJob app: the write-back updates the CronJob's image and the deploy reports "deployed" even though the image never rolls out (no pod until the schedule fires) |
+| `fixtures/fire-and-forget-app.yaml` + `fixtures/fire-and-forget-chart/` | dedicated `ffapp` Argo Application (managed) and its CronJob chart (image tag a write-back target, effectively-never schedule), outside the app1..N soak range |
 | `scripts/commit-format.sh` | assert `COMMIT_MESSAGE_FORMAT` renders into the real write-back commit message (reads the commit back from the gitops repo) |
 | `scripts/multi-image.sh` | assert a two-image deploy reaches "deployed" and writes back both image-tag overrides in one commit |
 | `fixtures/multi-image/` | two-image umbrella: the `app` chart (primary image) plus a second image via the chart's rawObject passthrough |

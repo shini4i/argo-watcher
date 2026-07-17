@@ -1,0 +1,22 @@
+# A CronJob-only workload. With no long-running pod, a freshly-deployed image tag
+# is never observed running, so a normal deploy would wait out the timeout —
+# fire-and-forget reports success immediately instead.
+#
+# The far-future schedule (Jan 1st) is a TEST DEVICE, not a real pattern: real
+# CronJobs fire periodically. It guarantees no job runs during the phase's window,
+# so the "new image is not running" condition holds deterministically without the
+# test racing the next trigger.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ffapp-cron
+spec:
+  schedule: "0 0 1 1 *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: whoami
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"

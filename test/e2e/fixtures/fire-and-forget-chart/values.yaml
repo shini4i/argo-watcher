@@ -1,0 +1,7 @@
+# argo-watcher writes back image.tag per deployment (see the ffapp Application's
+# whoami.helm.image-tag annotation). A deploy bumps this tag; the CronJob is
+# updated to the new image but — with an effectively-never schedule — runs no pod,
+# so the new image never rolls out. That is the state fire-and-forget tolerates.
+image:
+  repository: traefik/whoami
+  tag: v1.10.1
