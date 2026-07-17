@@ -37,6 +37,7 @@ for _ in $(seq 1 60); do
   [[ "$s" == "Synced/Healthy" ]] && break
   sleep 5
 done
+[[ "$s" == "Synced/Healthy" ]] || { echo "ACCEPT-SUSPENDED: FAIL — ${APP} rev1 never reached Synced/Healthy (last: ${s:-unknown})"; exit 1; }
 echo "suspendapp revision 1 status: ${s:-unknown}"
 
 kubectl -n "$NS_AW" port-forward svc/argo-watcher "${PORT}:80" >/dev/null 2>&1 &

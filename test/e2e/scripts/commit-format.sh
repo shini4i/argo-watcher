@@ -38,6 +38,7 @@ for _ in $(seq 1 40); do
   [[ "$s" == "Synced/Healthy" ]] && break
   sleep 5
 done
+[[ "$s" == "Synced/Healthy" ]] || { echo "COMMIT-FORMAT: FAIL — ${APP} never reached Synced/Healthy (last: ${s:-unknown})"; exit 1; }
 
 # Deploy a tag differing from the current one so the write-back actually commits
 # (an unchanged tag is byte-compared and skipped).

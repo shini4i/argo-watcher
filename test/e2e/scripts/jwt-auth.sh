@@ -32,6 +32,7 @@ for _ in $(seq 1 40); do
   [[ "$s" == "Synced/Healthy" ]] && break
   sleep 5
 done
+[[ "$s" == "Synced/Healthy" ]] || { echo "JWT-AUTH: FAIL — ${APP} never reached Synced/Healthy (last: ${s:-unknown})"; exit 1; }
 
 # Pick a tag that differs from the currently deployed one so the deploy forces a
 # write-back regardless of what earlier phases left the app on. Both tags exist.

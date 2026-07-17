@@ -33,6 +33,7 @@ for _ in $(seq 1 40); do
   [[ "$s" == "Synced/Healthy" ]] && break
   sleep 5
 done
+[[ "$s" == "Synced/Healthy" ]] || { echo "CLIENT-KNOBS: FAIL — ${APP} never reached Synced/Healthy (last: ${s:-unknown})"; exit 1; }
 
 kubectl -n "$NS_AW" port-forward svc/argo-watcher "${PORT}:80" >/dev/null 2>&1 &
 for _ in $(seq 1 15); do curl -s -m 3 -o /dev/null "localhost:${PORT}/healthz" && break; sleep 1; done
