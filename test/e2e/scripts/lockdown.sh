@@ -41,7 +41,7 @@ trap cleanup EXIT
 
 # (re)start the port-forward after a rollout swaps the pod out.
 start_pf() {
-  [ -n "$pf_pid" ] && kill "$pf_pid" 2>/dev/null || true
+  [[ -n "$pf_pid" ]] && kill "$pf_pid" 2>/dev/null || true
   kubectl -n "$NS_AW" port-forward svc/argo-watcher "${PORT}:80" >/dev/null 2>&1 &
   pf_pid=$!
   for _ in $(seq 1 15); do curl -s -m 3 -o /dev/null "localhost:${PORT}/healthz" && break; sleep 1; done

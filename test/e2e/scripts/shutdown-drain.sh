@@ -93,11 +93,12 @@ done
 for _ in $(seq 1 30); do kill -0 "$log_pid" 2>/dev/null || break; sleep 1; done
 kill "$log_pid" 2>/dev/null || true
 assert_log() {  # pattern human-label want(present|absent)
-  if grep -qF "$1" "$log_out"; then found=1; else found=0; fi
-  if { [[ "$3" == present && "$found" == 1 ]] || [[ "$3" == absent && "$found" == 0 ]]; }; then
-    echo "  OK   log ${3}: ${2}"
+  local pattern="$1" label="$2" want="$3" found
+  if grep -qF "$pattern" "$log_out"; then found=1; else found=0; fi
+  if { [[ "$want" == present && "$found" == 1 ]] || [[ "$want" == absent && "$found" == 0 ]]; }; then
+    echo "  OK   log ${want}: ${label}"
   else
-    echo "  FAIL log ${3} expected but not: ${2}"; fail=1
+    echo "  FAIL log ${want} expected but not: ${label}"; fail=1
   fi
 }
 assert_log "shutting down server..."                   "shutdown initiated"        present
