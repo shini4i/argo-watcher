@@ -63,6 +63,7 @@ tasks:
       - task: up
       - task: api-surface
       - task: smoke
+      - task: client-knobs
       - task: notifications
       - task: load
       - task: race
@@ -142,6 +143,11 @@ tasks:
     desc: "One authenticated end-to-end deploy proving the write-back loop"
     cmds:
       - DEPLOY_TOKEN={{.DEPLOY_TOKEN}} ./scripts/smoke-deploy.sh
+
+  client-knobs:
+    desc: "Assert client env knobs: TASK_REFRESH override deploys, DEBUG cURL log redacts the token"
+    cmds:
+      - DEPLOY_TOKEN={{.DEPLOY_TOKEN}} ./scripts/client-knobs.sh
 
   notifications:
     desc: "Assert the generic webhook fires (start + result) with the correct payload against a real receiver"
