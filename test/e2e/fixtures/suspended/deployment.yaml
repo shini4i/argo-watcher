@@ -1,0 +1,27 @@
+# A paused Deployment for the ACCEPT_SUSPENDED_APP fixture (suspendapp). A
+# Deployment created with spec.paused: true rolls out no pods, and ArgoCD reports
+# its health as "Suspended" — the state the acceptSuspended option exists to treat
+# as a successful rollout (the app chart cannot render a paused-only workload, so
+# this is a plain manifest applied via a directory-type Argo source). Its pod
+# template image still appears in the app's summary images, so the image check
+# passes and the deploy reaches the Suspended branch of the rollout status.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: suspendapp
+  labels:
+    app: suspendapp
+spec:
+  paused: true
+  replicas: 1
+  selector:
+    matchLabels:
+      app: suspendapp
+  template:
+    metadata:
+      labels:
+        app: suspendapp
+    spec:
+      containers:
+        - name: whoami
+          image: traefik/whoami:v1.10.1

@@ -57,6 +57,15 @@ extraEnvs:
   # phase asserts this alias appears in the client's failure output.
   - name: ARGO_URL_ALIAS
     value: "https://argocd.e2e.lab"
+  # Treat a Synced+Suspended app as a successful rollout (accept-suspended phase).
+  # Global, but harmless to the normal fixtures, which report Healthy not Suspended.
+  - name: ACCEPT_SUSPENDED_APP
+    value: "true"
+  # Registry proxy prefix for image matching (docker-proxy phase). proxyapp runs
+  # mirror.gcr.io/traefik/whoami; a deploy of the bare image matches via the proxy
+  # form. Global, but safe: the normal fixtures still match on the bare image name.
+  - name: DOCKER_IMAGES_PROXY
+    value: "mirror.gcr.io"
   - name: WEBHOOK_ENABLED
     value: "true"
   - name: WEBHOOK_URL

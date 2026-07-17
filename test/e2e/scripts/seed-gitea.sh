@@ -24,6 +24,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 chart_src="${here}/../fixtures/chart"
 cronjob_src="${here}/../fixtures/cronjob"
 multiimage_src="${here}/../fixtures/multi-image"
+suspended_src="${here}/../fixtures/suspended"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"; kill $(jobs -p) 2>/dev/null || true' EXIT
 
@@ -71,8 +72,12 @@ cp -r "${cronjob_src}/." "${work}/cronjob/"
 mkdir -p "${work}/multi-image"
 cp -r "${multiimage_src}/." "${work}/multi-image/"
 helm dependency update "${work}/multi-image" >/dev/null
-git -C "$work" -c user.name=seed -c user.email=seed@e2e add chart cronjob multi-image
-git -C "$work" -c user.name=seed -c user.email=seed@e2e commit -qm 'seed fixture chart, cronjob, and multi-image chart'
+# Plain-manifest paused Deployment for the accept-suspended fixture (suspendapp),
+# deployed by a directory-type Argo source — pushed as-is.
+mkdir -p "${work}/suspended"
+cp -r "${suspended_src}/." "${work}/suspended/"
+git -C "$work" -c user.name=seed -c user.email=seed@e2e add chart cronjob multi-image suspended
+git -C "$work" -c user.name=seed -c user.email=seed@e2e commit -qm 'seed fixture chart, cronjob, multi-image, and suspended manifests'
 git -C "$work" push -q --force \
   "http://${GITEA_ADMIN}:${GITEA_PW}@localhost:${HTTP_PORT}/${ORG}/${REPO}.git" main
 

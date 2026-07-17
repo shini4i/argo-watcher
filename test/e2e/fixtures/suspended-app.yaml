@@ -1,0 +1,29 @@
+# Dedicated fixture Argo Application for the ACCEPT_SUSPENDED_APP phase (name
+# "suspendapp", outside the app1..N soak range). Its only workload is a paused
+# Deployment (directory source, plain manifest), so ArgoCD reports the app health
+# as Suspended. No argo-watcher annotations: the phase deploys without a token, so
+# there is no write-back — it only checks that a Suspended app is accepted.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: suspendapp
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: http://gitea-http.gitea.svc.cluster.local:3000/e2e/gitops.git
+    targetRevision: main
+    path: suspended
+    directory:
+      recurse: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: suspendapp
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

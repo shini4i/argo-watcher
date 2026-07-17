@@ -71,6 +71,8 @@ tasks:
       - task: fire-and-forget
       - task: commit-format
       - task: multi-image
+      - task: accept-suspended
+      - task: docker-proxy
       - task: notifications
       - task: load
       - task: race
@@ -175,6 +177,16 @@ tasks:
     desc: "Assert a multi-image deploy bumps and writes back both images in one commit"
     cmds:
       - DEPLOY_TOKEN={{.DEPLOY_TOKEN}} ./scripts/multi-image.sh
+
+  accept-suspended:
+    desc: "Assert ACCEPT_SUSPENDED_APP: a Synced+Suspended app is accepted as deployed"
+    cmds:
+      - ./scripts/accept-suspended.sh
+
+  docker-proxy:
+    desc: "Assert DOCKER_IMAGES_PROXY: a bare image name matches the proxy-prefixed running image"
+    cmds:
+      - ./scripts/docker-proxy.sh
 
   notifications:
     desc: "Assert the generic webhook fires (start + result) with the correct payload against a real receiver"
