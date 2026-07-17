@@ -161,6 +161,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(&application, nil).MinTimes(2).MaxTimes(3)
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().ResetFailedDeployment(task.App)
+		metricsMock.EXPECT().ObserveDeploymentDuration(task.App, gomock.Any())
 		metricsMock.EXPECT().RemoveInProgressTask()
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
 
@@ -214,6 +215,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(&healthyApp, nil).Times(1)
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().ResetFailedDeployment(task.App)
+		metricsMock.EXPECT().ObserveDeploymentDuration(task.App, gomock.Any())
 		metricsMock.EXPECT().RemoveInProgressTask()
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
 
@@ -258,6 +260,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(&application, nil).MinTimes(2).MaxTimes(3)
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().ResetFailedDeployment(task.App)
+		metricsMock.EXPECT().ObserveDeploymentDuration(task.App, gomock.Any())
 		metricsMock.EXPECT().RemoveInProgressTask()
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
 
@@ -1355,6 +1358,7 @@ func TestArgoStatusUpdaterProceedsWhenStatusReadFails(t *testing.T) {
 	apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(&application, nil).MinTimes(1)
 	metricsMock.EXPECT().AddInProgressTask()
 	metricsMock.EXPECT().ResetFailedDeployment(task.App)
+	metricsMock.EXPECT().ObserveDeploymentDuration(task.App, gomock.Any())
 	metricsMock.EXPECT().RemoveInProgressTask()
 	// Proceeds to a normal deployed result rather than stopping as superseded.
 	stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "")

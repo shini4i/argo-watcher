@@ -133,6 +133,20 @@ func TestMetrics_ObserveGitLockWaitDuration(t *testing.T) {
 	assert.Equal(t, float64(12), sum)
 }
 
+func TestMetrics_ObserveDeploymentDuration(t *testing.T) {
+	// Arrange
+	reg := prometheus.NewRegistry()
+	m := NewMetrics(reg)
+
+	// Act
+	m.ObserveDeploymentDuration("test-app", 42)
+
+	// Assert: exactly one observation of the passed value for the app.
+	count, sum := histogramSampleForApp(t, m.DeploymentDuration, "test-app")
+	assert.Equal(t, uint64(1), count)
+	assert.Equal(t, float64(42), sum)
+}
+
 func TestMetrics_InProgressTasks(t *testing.T) {
 	// Arrange
 	reg := prometheus.NewRegistry()

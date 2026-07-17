@@ -16,6 +16,7 @@ type MetricsInterface interface {
 	ObserveRefreshDuration(app string, seconds float64)
 	ObserveGitWritebackDuration(app string, seconds float64)
 	ObserveGitLockWaitDuration(app string, seconds float64)
+	ObserveDeploymentDuration(app string, seconds float64)
 }
 
 // Metrics contains all the prometheus collectors.
@@ -27,6 +28,7 @@ type Metrics struct {
 	RefreshDuration      *prometheus.HistogramVec
 	GitWritebackDuration *prometheus.HistogramVec
 	GitLockWaitDuration  *prometheus.HistogramVec
+	DeploymentDuration   *prometheus.HistogramVec
 }
 
 // NewMetrics creates and registers the metrics with the provided Registerer.
@@ -73,9 +75,19 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 			Help:    "Time spent waiting to acquire the per-repository git write-back lock.",
 			Buckets: []float64{0.1, 0.5, 1, 5, 10, 30, 60, 120, 180, 300},
 		}, []string{"app"}),
+		// DeploymentDuration times a successful deployment end to end: from the start of
+		// rollout monitoring until the application reaches the deployed state. Only successful
+		// deployments are observed — a failed deployment's wall-clock is dominated by the
+		// configured timeout and would distort the distribution. Buckets span seconds (a
+		// fire-and-forget commit) to minutes (a real rollout bounded by DEPLOYMENT_TIMEOUT).
+		DeploymentDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "deployment_duration_seconds",
+			Help:    "Wall-clock time a successful deployment took, from the start of monitoring until the app reached the deployed state.",
+			Buckets: []float64{1, 2.5, 5, 10, 30, 60, 120, 300, 600},
+		}, []string{"app"}),
 	}
 
-	reg.MustRegister(m.FailedDeployment, m.ProcessedDeployments, m.ArgocdUnavailable, m.InProgressTasks, m.RefreshDuration, m.GitWritebackDuration, m.GitLockWaitDuration)
+	reg.MustRegister(m.FailedDeployment, m.ProcessedDeployments, m.ArgocdUnavailable, m.InProgressTasks, m.RefreshDuration, m.GitWritebackDuration, m.GitLockWaitDuration, m.DeploymentDuration)
 
 	return m
 }
@@ -129,4 +141,10 @@ func (m *Metrics) ObserveGitWritebackDuration(app string, seconds float64) {
 // the per-repository lock.
 func (m *Metrics) ObserveGitLockWaitDuration(app string, seconds float64) {
 	m.GitLockWaitDuration.WithLabelValues(app).Observe(seconds)
+}
+
+// ObserveDeploymentDuration records how long a successful deployment took for the given app,
+// measured from the start of rollout monitoring until the app reached the deployed state.
+func (m *Metrics) ObserveDeploymentDuration(app string, seconds float64) {
+	m.DeploymentDuration.WithLabelValues(app).Observe(seconds)
 }
