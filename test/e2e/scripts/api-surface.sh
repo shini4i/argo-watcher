@@ -11,10 +11,12 @@
 #   - GET  /api/v1/tasks/<unknown-uuid> -> 404 "task not found" (the 404-vs-500
 #                                          distinction, commit fa0b3fd)
 #   - GET  /api/v1/deploy-lock          -> 200 (read-only, always registered)
-#   - POST/DELETE /api/v1/deploy-lock   -> 404 when Keycloak is disabled: the
-#                                          state-changing freeze switch is NOT
-#                                          registered, so it cannot be reached
-#                                          unauthenticated (router.go guarantee).
+#   - POST /api/v1/deploy-lock          -> with Keycloak disabled the state-changing
+#                                          handler is NOT registered, so the request
+#                                          falls through to the SPA static handler
+#                                          (200 HTML), not a 404. Asserted
+#                                          behaviourally: an unauthenticated POST
+#                                          must leave the lock unset (router.go).
 set -euo pipefail
 
 NS_AW="${NS_AW:-argo-watcher}"

@@ -1,7 +1,8 @@
 # argo-watcher end-to-end lab
 
-A disposable, reproducible lab that runs **real** ArgoCD and Gitea on a
-single-node [kind](https://kind.sigs.k8s.io/) cluster and deploys argo-watcher
+A disposable, reproducible lab that runs **real** ArgoCD, Gitea, and
+argo-rollouts (the latter only for the `accept-suspended` canary-pause phase) on
+a single-node [kind](https://kind.sigs.k8s.io/) cluster and deploys argo-watcher
 built with the Go **race detector**. It exercises the code paths the fast test
 suites cannot: the real ArgoCD polling loop, sustained-concurrency data races,
 and the real git push path — once per release, not on every PR. The `smoke`,
@@ -119,6 +120,13 @@ Reach any component with `kubectl port-forward` (there is no ingress), e.g.
   `tarampampam/webhook-tester` (in-memory, single container, no DB/Redis); its
   `AUTO_CREATE_SESSIONS` makes the fixed-UUID `WEBHOOK_URL` work with no startup
   wiring (the `WEBHOOK_UUID` in `Taskfile.yml` and the URL must match).
+
+- **Several config toggles are set globally via `values/argo-watcher.yaml`
+  `extraEnvs`** so a single boot can assert them: `JWT_SECRET` (jwt-auth),
+  `COMMIT_MESSAGE_FORMAT` (commit-format), `ACCEPT_SUSPENDED_APP` +
+  `DOCKER_IMAGES_PROXY` (their same-named phases), and `ARGO_URL_ALIAS` — the
+  last makes the client print an externally-shaped ArgoCD link on failure, which
+  `failure-diagnostics.sh` asserts. All are harmless to the other phases.
 
 ## Topology note
 
