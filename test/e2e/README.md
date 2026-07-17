@@ -26,7 +26,7 @@ the competitor writer. All pinned tool/chart versions are in `Taskfile.yml`.
 ## Usage
 
 ```sh
-task e2e     # one-shot per-release run: up → api-surface → smoke → client-knobs → jwt-auth → fire-and-forget → commit-format → notifications → load → race → failure-diagnostics → down
+task e2e     # one-shot per-release run: up → api-surface → smoke → client-knobs → jwt-auth → fire-and-forget → commit-format → multi-image → notifications → load → race → failure-diagnostics → down
 ```
 
 `task e2e` walks the whole flow. It stops on the first failing step, so a failed
@@ -43,6 +43,7 @@ task client-knobs         # assert client env knobs: TASK_REFRESH override deplo
 task jwt-auth             # assert the JWT (BEARER_TOKEN) auth path drives an authenticated write-back to deployed
 task fire-and-forget      # assert fire-and-forget mode: a CronJob-only app reports deployed without the image rolling out
 task commit-format        # assert COMMIT_MESSAGE_FORMAT renders into the git write-back commit message
+task multi-image          # assert a multi-image deploy bumps and writes back both images in one commit
 task notifications        # assert the generic webhook fires (start + result) with the correct payload
 task failure-diagnostics  # assert failure reasons carry the real cause (pod ImagePullBackOff, failed hooks)
 task load                 # git-conflict soak: competitor + concurrent deploys, strict 0-failed
@@ -88,6 +89,9 @@ Reach any component with `kubectl port-forward` (there is no ingress), e.g.
 | `fixtures/fire-and-forget-app.yaml` | dedicated `ffapp` Argo Application (CronJob-only, directory source) carrying the fire-and-forget annotation, outside the app1..N soak range |
 | `fixtures/cronjob/cronjob.yaml` | the CronJob-only workload ffapp deploys (effectively-never schedule), seeded into the gitops repo alongside the chart |
 | `scripts/commit-format.sh` | assert `COMMIT_MESSAGE_FORMAT` renders into the real write-back commit message (reads the commit back from the gitops repo) |
+| `scripts/multi-image.sh` | assert a two-image deploy reaches "deployed" and writes back both image-tag overrides in one commit |
+| `fixtures/multi-image/` | two-image umbrella: the `app` chart (primary image) plus a second image via the chart's rawObject passthrough |
+| `fixtures/multi-image-app.yaml` | dedicated `multiapp` Argo Application declaring two managed images mapped to two Helm image-tag values |
 
 ## Gotchas (why the scripts exist)
 

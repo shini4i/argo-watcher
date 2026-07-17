@@ -1,0 +1,41 @@
+# Values for the `app` subchart. Two distinct images are deployed together:
+#   - the subchart's primary image (traefik/whoami), tag at app.image.tag
+#   - a second image (nginxinc/nginx-unprivileged) rendered as a rawObject
+#     Deployment, tag at app.proxyTag (referenced via tpl so argo-watcher can
+#     write it back as a managed image)
+# Both default to `latest` because the client applies a single IMAGE_TAG to every
+# image in one deploy, and `latest` is a tag both images publish.
+app:
+  image:
+    repository: traefik/whoami
+    tag: latest
+
+  # Tag for the rawObject proxy image below; a managed write-back target
+  # (see the multi-image Application's proxy.helm.image-tag annotation).
+  proxyTag: latest
+
+  # Second image, added through the app chart's rawObject passthrough (the same
+  # mechanism hook-fixture.sh uses) rather than a hand-written chart. Rendered via
+  # app.render, which tpls the value — so {{ .Values.proxyTag }} resolves against
+  # the subchart values. No probes: the image runs a long-lived server, so the pod
+  # reaching Running is enough for Argo to report the Deployment Healthy.
+  rawObject:
+    - apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: proxy
+        labels:
+          app: proxy
+      spec:
+        replicas: 1
+        selector:
+          matchLabels:
+            app: proxy
+        template:
+          metadata:
+            labels:
+              app: proxy
+          spec:
+            containers:
+              - name: proxy
+                image: "nginxinc/nginx-unprivileged:{{ .Values.proxyTag }}"

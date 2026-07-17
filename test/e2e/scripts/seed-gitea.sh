@@ -23,6 +23,7 @@ SSH_HOST="[gitea-ssh.gitea.svc.cluster.local]:2222"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 chart_src="${here}/../fixtures/chart"
 cronjob_src="${here}/../fixtures/cronjob"
+multiimage_src="${here}/../fixtures/multi-image"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"; kill $(jobs -p) 2>/dev/null || true' EXIT
 
@@ -65,8 +66,13 @@ helm dependency update "${work}/chart" >/dev/null
 # directory-type Argo source — no Helm, so it is pushed as-is alongside the chart.
 mkdir -p "${work}/cronjob"
 cp -r "${cronjob_src}/." "${work}/cronjob/"
-git -C "$work" -c user.name=seed -c user.email=seed@e2e add chart cronjob
-git -C "$work" -c user.name=seed -c user.email=seed@e2e commit -qm 'seed fixture chart and cronjob'
+# Two-image umbrella for the multi-image fixture (multiapp); vendor its `app`
+# dependency the same way as the main chart.
+mkdir -p "${work}/multi-image"
+cp -r "${multiimage_src}/." "${work}/multi-image/"
+helm dependency update "${work}/multi-image" >/dev/null
+git -C "$work" -c user.name=seed -c user.email=seed@e2e add chart cronjob multi-image
+git -C "$work" -c user.name=seed -c user.email=seed@e2e commit -qm 'seed fixture chart, cronjob, and multi-image chart'
 git -C "$work" push -q --force \
   "http://${GITEA_ADMIN}:${GITEA_PW}@localhost:${HTTP_PORT}/${ORG}/${REPO}.git" main
 

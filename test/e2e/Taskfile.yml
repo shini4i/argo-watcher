@@ -70,6 +70,7 @@ tasks:
       - task: jwt-auth
       - task: fire-and-forget
       - task: commit-format
+      - task: multi-image
       - task: notifications
       - task: load
       - task: race
@@ -169,6 +170,11 @@ tasks:
     desc: "Assert COMMIT_MESSAGE_FORMAT renders into the git write-back commit message"
     cmds:
       - DEPLOY_TOKEN={{.DEPLOY_TOKEN}} ./scripts/commit-format.sh
+
+  multi-image:
+    desc: "Assert a multi-image deploy bumps and writes back both images in one commit"
+    cmds:
+      - DEPLOY_TOKEN={{.DEPLOY_TOKEN}} ./scripts/multi-image.sh
 
   notifications:
     desc: "Assert the generic webhook fires (start + result) with the correct payload against a real receiver"
