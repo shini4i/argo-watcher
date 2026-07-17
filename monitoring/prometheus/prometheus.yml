@@ -1,0 +1,9 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # argo-watcher exposes its metrics on the same port as the API, at /metrics.
+  - job_name: argo-watcher
+    static_configs:
+      - targets: ["backend:8080"]

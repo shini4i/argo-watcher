@@ -71,6 +71,39 @@ services:
     ports:
       - "8081:8081"
 
+  # Prometheus + Grafana for the example dashboard (issue #280). Kept behind the
+  # `monitoring` profile so the default `docker compose up` dev stack stays lean;
+  # bring it up with `docker compose --profile monitoring up`.
+  prometheus:
+    profiles: [monitoring]
+    image: prom/prometheus:v3.13.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      backend:
+        condition: service_started
+
+  grafana:
+    profiles: [monitoring]
+    image: grafana/grafana:12.3.8
+    environment:
+      # Local example only: anonymous admin access, no login prompt.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3001:3000"
+    depends_on:
+      prometheus:
+        condition: service_started
+
   # Integration-test backend. Brought up by `task test-integration`; not part of
   # the default `docker compose up` because the dev stack does not need it.
   gitea:
