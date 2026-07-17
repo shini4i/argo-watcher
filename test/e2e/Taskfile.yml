@@ -62,7 +62,7 @@ tasks:
       - task: verify
 
   e2e:
-    desc: "One-shot per-release run: up → smoke → load → race → failure-diagnostics → down"
+    desc: "One-shot per-release run: boot the lab, run every phase in order, tear it down (see README Usage for the full step list)"
     cmds:
       # Runs the whole flow. Stops on the first failing step, so a failed run
       # leaves the cluster up for debugging; a fully green run tears it down.
@@ -76,13 +76,20 @@ tasks:
       - task: multi-image
       - task: accept-suspended
       - task: docker-proxy
+      # lockdown toggles LOCKDOWN_SCHEDULE on the release and reverts before it
+      # returns (ending unlocked), so it must run BEFORE the soak but is otherwise
+      # self-contained; placed here after the light deploy phases.
+      - task: lockdown
       - task: notifications
       - task: load
       - task: race
-      # failure-diagnostics runs LAST: it deliberately breaks apps (bad images, a failing
-      # PreSync hook injected into the SHARED chart values) and pushes directly to the gitops
-      # repo, so running it before load/race would perturb those pristine-state soak gates.
+      # failure-diagnostics runs after the soak: it deliberately breaks apps (bad images, a
+      # failing PreSync hook injected into the SHARED chart values) and pushes directly to the
+      # gitops repo, so running it before load/race would perturb those pristine-state soak gates.
       - task: failure-diagnostics
+      # shutdown-drain runs LAST (before down): it deletes the argo-watcher pod to exercise
+      # graceful shutdown, so nothing but `down` should depend on the server afterwards.
+      - task: shutdown-drain
       - task: down
 
   cluster:
@@ -198,6 +205,18 @@ tasks:
     desc: "Assert DOCKER_IMAGES_PROXY: a bare image name matches the proxy-prefixed running image"
     cmds:
       - ./scripts/docker-proxy.sh
+
+  lockdown:
+    desc: "Assert LOCKDOWN_SCHEDULE freezes deploys in-window (406) and the watcher broadcasts 'locked'"
+    cmds:
+      # Toggles LOCKDOWN_SCHEDULE on the live release for its own duration and
+      # reverts before returning; needs the chart coordinates to helm-upgrade.
+      - AW_CHART_REPO={{.AW_CHART_REPO}} AW_CHART_VERSION={{.AW_CHART_VERSION}} ./scripts/lockdown.sh
+
+  shutdown-drain:
+    desc: "Assert graceful shutdown drains in-flight WebSocket connections (GoingAway) with no race/panic"
+    cmds:
+      - ./scripts/shutdown-drain.sh
 
   notifications:
     desc: "Assert the generic webhook fires (start + result) with the correct payload against a real receiver"
