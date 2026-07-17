@@ -65,6 +65,11 @@ func (monitor *DeploymentMonitor) EndTracking() {
 	monitor.argo.metrics.RemoveInProgressTask()
 }
 
+// ObserveDeploymentDuration records the wall-clock duration of a successful deployment for the app.
+func (monitor *DeploymentMonitor) ObserveDeploymentDuration(app string, seconds float64) {
+	monitor.argo.metrics.ObserveDeploymentDuration(app, seconds)
+}
+
 // resolveRefresh reports whether this task's status check should request an ArgoCD refresh.
 // A per-task Refresh override wins over the instance-wide default; a nil override (field omitted
 // by the client) keeps the default, so old clients behave exactly as before (issue #334).

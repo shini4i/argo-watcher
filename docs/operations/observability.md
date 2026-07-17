@@ -12,7 +12,7 @@ scrape_configs:
 
 ## Exposed metrics
 
-The server emits seven metrics today, all defined in [`internal/prometheus/metrics.go`](https://github.com/shini4i/argo-watcher/blob/main/internal/prometheus/metrics.go).
+The server emits eight metrics today, all defined in [`internal/prometheus/metrics.go`](https://github.com/shini4i/argo-watcher/blob/main/internal/prometheus/metrics.go).
 
 | Metric | Type | Labels | Description |
 |---|---|---|---|
@@ -23,6 +23,7 @@ The server emits seven metrics today, all defined in [`internal/prometheus/metri
 | `argocd_refresh_duration_seconds` | histogram | `app` | Duration of ArgoCD application refresh requests, to surface slow or stuck refreshes. Recorded only when the status check requests a refresh. |
 | `gitops_writeback_duration_seconds` | histogram | `app` | Time the git write-back held the per-repo lock, covering the clone/commit/push cycle plus any retries and backoff. |
 | `gitops_lock_wait_duration_seconds` | histogram | `app` | Time spent waiting to acquire the per-repository git write-back lock. High values mean tasks are queued behind concurrent write-backs to the same repo. |
+| `deployment_duration_seconds` | histogram | `app` | End-to-end wall-clock time of a successful deployment, from the start of rollout monitoring until the app reached the deployed state. Only successful deployments are observed (a failure's duration is dominated by the timeout). |
 
 In addition, the standard Go runtime metrics from the Prometheus client library are exposed (`go_*`, `process_*`).
 
@@ -102,8 +103,9 @@ A ready-made Grafana dashboard lives in the repository at
 It has an **Overview** row that illustrates every exposed metric in aggregate
 (availability, in-progress tasks, deployment counts, failing apps) and a
 **Per-Application Breakdown** row driven by an `Application` template variable, so
-you can select one app (or several) and see its deployment counts, failures, and
-the refresh / write-back / lock-wait latency percentiles.
+you can select one app (or several) and see its deployment counts, failures,
+end-to-end deployment duration, and the refresh / write-back / lock-wait latency
+percentiles.
 
 Import it into any Grafana by uploading the JSON (**Dashboards → New → Import**),
 or spin up a self-contained Prometheus + Grafana stack next to the dev server:

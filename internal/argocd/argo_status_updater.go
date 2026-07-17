@@ -94,6 +94,12 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 	// notify about the deployment start
 	sendNotification(task, updater.notifier)
 
+	// start bounds the deployment-duration metric: a monotonic in-process clock over the
+	// rollout work only. It is taken after the start notification so a slow synchronous
+	// notifier does not inflate the measured duration, and deliberately not derived from
+	// task.Created (whose stored unit differs across state backends).
+	start := time.Now()
+
 	// wait for application to get into deployed status or timeout
 	application, err := updater.waitForApplicationDeployment(task)
 
@@ -110,6 +116,13 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 	default:
 		// process deployment result
 		updater.monitor.ProcessDeploymentResult(&task, application)
+	}
+
+	// Record how long a successful deployment took. Only the deployed state is timed:
+	// a failure/abort/supersession is not a completed deployment and its wall-clock is
+	// dominated by the timeout, so it would distort the histogram.
+	if task.Status == models.StatusDeployedMessage {
+		updater.monitor.ObserveDeploymentDuration(task.App, time.Since(start).Seconds())
 	}
 
 	// send webhook event about the deployment result

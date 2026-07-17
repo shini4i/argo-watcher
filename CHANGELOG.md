@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- New `deployment_duration_seconds` Prometheus histogram (label `app`) recording
+  the end-to-end wall-clock time of a successful deployment, from the start of
+  rollout monitoring until the app reached the deployed state. Surfaced as a
+  per-application percentile panel on the example Grafana dashboard.
 - Example Grafana dashboard (`monitoring/grafana/dashboards/argo-watcher.json`)
   visualizing every exposed Prometheus metric, with a per-application drill-down
   driven by an `Application` variable. A `monitoring` docker-compose profile runs
