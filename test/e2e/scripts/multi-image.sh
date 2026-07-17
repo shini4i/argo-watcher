@@ -67,10 +67,14 @@ fail=0
 if [[ ! -f "$override" ]]; then
   echo "  FAIL override file not written: multi-image/.argocd-source-${APP}.yaml"; fail=1
 else
-  names=$(yq -r '.helm.parameters[].name' "$override" 2>/dev/null || true)
-  echo "  written params: $(echo "$names" | tr '\n' ' ')"
-  grep -qx "app.image.tag" <<<"$names" || { echo "  FAIL app.image.tag (primary image) not written back"; fail=1; }
-  grep -qx "app.proxyTag" <<<"$names"  || { echo "  FAIL app.proxyTag (second image) not written back"; fail=1; }
+  # Assert both managed images were written back AND carry the deployed tag (not a
+  # stale value) — a regression writing the wrong tag for one image would otherwise
+  # slip through a names-only check.
+  v_main=$(yq -r '.helm.parameters[] | select(.name == "app.image.tag").value' "$override" 2>/dev/null || true)
+  v_proxy=$(yq -r '.helm.parameters[] | select(.name == "app.proxyTag").value' "$override" 2>/dev/null || true)
+  echo "  written params: app.image.tag=${v_main:-<none>} app.proxyTag=${v_proxy:-<none>}"
+  [[ "$v_main" == "$TAG" ]]  || { echo "  FAIL app.image.tag (primary image) not written back as ${TAG}"; fail=1; }
+  [[ "$v_proxy" == "$TAG" ]] || { echo "  FAIL app.proxyTag (second image) not written back as ${TAG}"; fail=1; }
 fi
 
 if [[ "$fail" -eq 0 ]]; then
