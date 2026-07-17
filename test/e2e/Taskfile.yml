@@ -61,6 +61,7 @@ tasks:
       # Runs the whole flow. Stops on the first failing step, so a failed run
       # leaves the cluster up for debugging; a fully green run tears it down.
       - task: up
+      - task: api-surface
       - task: smoke
       - task: notifications
       - task: load
@@ -129,6 +130,13 @@ tasks:
     desc: "Render + apply {{.APPS}} fixture Argo Application(s)"
     cmds:
       - ./scripts/apply-apps.sh {{.APPS}}
+
+  api-surface:
+    desc: "Assert the read-only HTTP surface (version/config/task-list/deploy-lock) to contract"
+    cmds:
+      # Pure curl/jq, touches no state — runs right after `up`, before the deploy
+      # phases, as a fast contract check of the endpoints no other phase exercises.
+      - DEPLOY_TOKEN={{.DEPLOY_TOKEN}} ./scripts/api-surface.sh
 
   smoke:
     desc: "One authenticated end-to-end deploy proving the write-back loop"

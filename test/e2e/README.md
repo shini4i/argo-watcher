@@ -26,7 +26,7 @@ the competitor writer. All pinned tool/chart versions are in `Taskfile.yml`.
 ## Usage
 
 ```sh
-task e2e     # one-shot per-release run: up → smoke → notifications → load → race → failure-diagnostics → down
+task e2e     # one-shot per-release run: up → api-surface → smoke → notifications → load → race → failure-diagnostics → down
 ```
 
 `task e2e` walks the whole flow. It stops on the first failing step, so a failed
@@ -37,6 +37,7 @@ Individual steps (for iterating or debugging):
 ```sh
 task up                   # build the race image + boot the full lab (idempotent)
 task verify               # assert argo-watcher is up and reaching real Argo
+task api-surface          # assert the read-only HTTP surface (version/config/task-list/deploy-lock) to contract
 task smoke                # one authenticated deploy through the full write-back loop, via the real client binary
 task notifications        # assert the generic webhook fires (start + result) with the correct payload
 task failure-diagnostics  # assert failure reasons carry the real cause (pod ImagePullBackOff, failed hooks)
@@ -75,6 +76,7 @@ Reach any component with `kubectl port-forward` (there is no ingress), e.g.
 | `scripts/race-supersede.sh` | same-app supersession assertion: real client, newer deploy wins, older is superseded |
 | `scripts/hook-fixture.sh` | add/remove a failing PreSync hook via the chart's `rawObject` |
 | `scripts/notifications.sh` | assert the generic webhook fires start + result with the templated payload and auth header |
+| `scripts/api-surface.sh` | assert the read-only HTTP surface to contract: version/config (secrets redacted), task-list filters + invalid-status 400, unknown-task 404, deploy-lock POST/DELETE 404 when Keycloak is off |
 
 ## Gotchas (why the scripts exist)
 
