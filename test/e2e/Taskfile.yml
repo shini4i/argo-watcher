@@ -29,6 +29,9 @@ vars:
   # Deploy token gating git write-back; the driver/smoke sends it in the
   # ARGO_WATCHER_DEPLOY_TOKEN header. Fixed throwaway lab value.
   DEPLOY_TOKEN: e2e-deploy-token
+  # HMAC secret for the JWT auth strategy exercised by the jwt-auth phase.
+  # MUST match JWT_SECRET in values/argo-watcher.yaml. Fixed throwaway lab value.
+  JWT_SECRET: e2e-jwt-secret
   # Soak parameters (git-conflict load phase).
   WORKERS: 10
   WS_CLIENTS: 10
@@ -64,6 +67,7 @@ tasks:
       - task: api-surface
       - task: smoke
       - task: client-knobs
+      - task: jwt-auth
       - task: notifications
       - task: load
       - task: race
@@ -148,6 +152,11 @@ tasks:
     desc: "Assert client env knobs: TASK_REFRESH override deploys, DEBUG cURL log redacts the token"
     cmds:
       - DEPLOY_TOKEN={{.DEPLOY_TOKEN}} ./scripts/client-knobs.sh
+
+  jwt-auth:
+    desc: "Assert the JWT (BEARER_TOKEN) auth path: JWT-authenticated write-back reaches deployed"
+    cmds:
+      - JWT_SECRET={{.JWT_SECRET}} ./scripts/jwt-auth.sh
 
   notifications:
     desc: "Assert the generic webhook fires (start + result) with the correct payload against a real receiver"

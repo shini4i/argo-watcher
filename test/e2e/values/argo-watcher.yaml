@@ -41,6 +41,12 @@ replicaCount: 1
 # The URL's fixed UUID must match WEBHOOK_UUID in Taskfile.yml; the receiver
 # auto-creates the session on the first POST (AUTO_CREATE_SESSIONS).
 extraEnvs:
+  # HMAC secret for the JWT auth strategy (registered on the Authorization
+  # header, alongside the deploy-token strategy). Enables the client BEARER_TOKEN
+  # path; scripts/jwt-auth.sh mints a token with this key. Throwaway lab value —
+  # MUST match JWT_SECRET in Taskfile.yml.
+  - name: JWT_SECRET
+    value: "e2e-jwt-secret"
   - name: WEBHOOK_ENABLED
     value: "true"
   - name: WEBHOOK_URL
