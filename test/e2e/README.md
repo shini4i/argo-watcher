@@ -27,7 +27,7 @@ the competitor writer. All pinned tool/chart versions are in `Taskfile.yml`.
 ## Usage
 
 ```sh
-task e2e     # one-shot per-release run: up → api-surface → smoke → client-knobs → jwt-auth → fire-and-forget → commit-format → multi-image → accept-suspended → docker-proxy → notifications → load → race → failure-diagnostics → down
+task e2e     # one-shot per-release run: up → api-surface → smoke → client-knobs → jwt-auth → fire-and-forget → commit-format → multi-image → accept-suspended → docker-proxy → lockdown → notifications → load → race → failure-diagnostics → shutdown-drain → down
 ```
 
 `task e2e` walks the whole flow. It stops on the first failing step, so a failed
@@ -47,10 +47,12 @@ task commit-format        # assert COMMIT_MESSAGE_FORMAT renders into the git wr
 task multi-image          # assert a multi-image deploy bumps and writes back both images in one commit
 task accept-suspended     # assert ACCEPT_SUSPENDED_APP treats a paused argo-rollouts Rollout (Suspended) as deployed
 task docker-proxy         # assert DOCKER_IMAGES_PROXY matches a bare image name against the proxy-prefixed running image
+task lockdown             # assert LOCKDOWN_SCHEDULE freezes deploys in-window (406) and the watcher broadcasts "locked"
 task notifications        # assert the generic webhook fires (start + result) with the correct payload
-task failure-diagnostics  # assert failure reasons carry the real cause (pod ImagePullBackOff, failed hooks)
 task load                 # git-conflict soak: competitor + concurrent deploys, strict 0-failed
 task race                 # same-app supersession: a newer deploy must win over an older retrying one
+task failure-diagnostics  # assert failure reasons carry the real cause (pod ImagePullBackOff, failed hooks)
+task shutdown-drain       # assert graceful shutdown drains in-flight WebSocket connections (GoingAway) with no race/panic
 task down                 # destroy the cluster
 ```
 
@@ -98,6 +100,9 @@ Reach any component with `kubectl port-forward` (there is no ingress), e.g.
 | `fixtures/rollout-chart/` + `fixtures/suspended-app.yaml` | `suspendapp`: a managed argo-rollouts Rollout (canary pause step); the write-back bump pauses it mid-rollout so ArgoCD reports it Suspended |
 | `scripts/docker-proxy.sh` | assert `DOCKER_IMAGES_PROXY` matches a bare image against the proxy-prefixed running image |
 | `fixtures/proxy-app.yaml` | `proxyapp`: reuses the shared chart with the image repository overridden to `mirror.gcr.io/traefik/whoami` |
+| `scripts/lockdown.sh` | assert scheduled lockdown: toggles `LOCKDOWN_SCHEDULE` on the release (window opening ~3 min out) and reverts, asserting in-window deploys are rejected (406), `GET /deploy-lock` reports `true`, and the watcher broadcasts `"locked"` on the transition |
+| `scripts/shutdown-drain.sh` | assert graceful shutdown: hold WebSocket clients open, delete the pod, and assert every client sees a `1001 "server shutdown"` close and the logs show the ordered drain with no data race / panic / drain timeout |
+| `tools/wsprobe/` | tiny Go WebSocket probe used by `lockdown` (grep for the `"locked"` broadcast) and `shutdown-drain` (assert the graceful GoingAway close), streaming `MSG`/`CLOSED` events one per line |
 
 ## Gotchas (why the scripts exist)
 
@@ -120,6 +125,22 @@ Reach any component with `kubectl port-forward` (there is no ingress), e.g.
   `AUTO_CREATE_SESSIONS` makes the fixed-UUID `WEBHOOK_URL` work with no startup
   wiring (the `WEBHOOK_UUID` in `Taskfile.yml` and the URL must match).
 
+- **`LOCKDOWN_SCHEDULE` is toggled in place, not set globally.** It is a
+  server-global freeze, so enabling it in the shared install would block every
+  other deploy phase. `lockdown.sh` instead helm-upgrades the live release with a
+  schedule whose window *opens ~3 minutes in the future* and reverts before it
+  returns. The future start is deliberate: the pod boots unlocked and then
+  crosses into the window while a `wsprobe` client watches, which is the only way
+  to observe a *scheduled* `"locked"` broadcast (the watcher notifies on state
+  change, not at boot, and polls at minute granularity). The 406 + `GET`-true +
+  revert-accepts checks are deterministic; the WS-transition sub-check is skipped
+  (not failed) if a slow rollout boots in-window. Manual (Keycloak) lock/unlock
+  WS notifications are a separate, deterministic trigger left to the heavy tier.
+- **`shutdown-drain` follows the pod's logs before deleting it.** A recreated
+  StatefulSet pod is a new object, so `kubectl logs --previous` would not have the
+  terminated instance's shutdown logs; the script streams `logs -f` to a file
+  first, then deletes the pod with `--grace-period=60` so the full drain
+  (`srv.Shutdown` 30s + WS drain 10s) completes before SIGKILL.
 - **Several config toggles are set globally via `values/argo-watcher.yaml`
   `extraEnvs`** so a single boot can assert them: `JWT_SECRET` (jwt-auth),
   `COMMIT_MESSAGE_FORMAT` (commit-format), `ACCEPT_SUSPENDED_APP` +
