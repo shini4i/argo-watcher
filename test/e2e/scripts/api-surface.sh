@@ -39,17 +39,6 @@ req() {
   BODY="${out%$'\n'*}"
 }
 
-# expect_code METHOD URL WANT LABEL — status-only assertion (body irrelevant).
-expect_code() {
-  local method="$1" url="$2" want="$3" label="$4"
-  req "$method" "$url"
-  if [[ "$CODE" == "$want" ]]; then
-    echo "  OK   ${label}: ${method} -> ${CODE}"
-  else
-    echo "  FAIL ${label}: ${method} -> ${CODE} (want ${want})"; fail=1
-  fi
-}
-
 echo "=== version ==="
 req GET "${base}/version"
 if [[ "$CODE" == "200" ]] && echo "$BODY" | jq -e 'type == "string" and length > 0' >/dev/null 2>&1; then
@@ -95,14 +84,22 @@ fi
 
 echo "=== deploy-lock endpoints ==="
 req GET "${base}/deploy-lock"
-if [[ "$CODE" == "200" ]] && echo "$BODY" | jq -e 'type == "boolean"' >/dev/null 2>&1; then
-  echo "  OK   GET deploy-lock -> 200 (${BODY})"
+if [[ "$CODE" == "200" ]] && echo "$BODY" | jq -e '. == false' >/dev/null 2>&1; then
+  echo "  OK   GET deploy-lock -> 200 (unlocked)"
 else
-  echo "  FAIL GET deploy-lock: code=${CODE} body=${BODY} (want 200 boolean)"; fail=1
+  echo "  FAIL GET deploy-lock: code=${CODE} body=${BODY} (want 200 false)"; fail=1
 fi
-# With Keycloak disabled these routes are deliberately NOT registered, so gin
-# returns 404. A 200/401 here would mean an unauthenticated freeze switch is live.
-expect_code POST "${base}/deploy-lock" 404 "POST deploy-lock (no Keycloak)"
-expect_code DELETE "${base}/deploy-lock" 404 "DELETE deploy-lock (no Keycloak)"
+# Security property: with Keycloak disabled the state-changing POST/DELETE handlers
+# are NOT registered (router.go), so an unauthenticated caller cannot freeze
+# deploys. The unmatched route falls through to the SPA static handler (200 HTML),
+# NOT a 404 — so assert the guarantee behaviourally: after an unauthenticated POST
+# the lock is still not set.
+req POST "${base}/deploy-lock"
+req GET "${base}/deploy-lock"
+if echo "$BODY" | jq -e '. == false' >/dev/null 2>&1; then
+  echo "  OK   POST deploy-lock did not set the lock (still unlocked without Keycloak)"
+else
+  echo "  FAIL POST deploy-lock set the lock without Keycloak (body=${BODY})"; fail=1
+fi
 
 if [[ "$fail" -eq 0 ]]; then echo "API-SURFACE: PASS"; else echo "API-SURFACE: FAIL"; exit 1; fi
