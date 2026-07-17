@@ -83,9 +83,11 @@ schedule="${start_day} ${start_hm} - ${end_day} ${end_hm}"
 echo "lockdown window: ${schedule} (opens ~180s from now)"
 
 # Append LOCKDOWN_SCHEDULE as the next extraEnvs entry. The index is the count of
-# entries in the values file (each is a top-level "  - name:" under extraEnvs) —
-# read from the file, not the live release, so it is independent of release state.
-idx=$(grep -c '^  - name:' "$VALUES")
+# entries in the values file's extraEnvs block — read from the file, not the live
+# release, so it is independent of release state. The awk scopes the count to the
+# extraEnvs block (between "extraEnvs:" and the next top-level key), so a same-
+# indented "- name:" added to some other section can't silently shift the index.
+idx=$(awk '/^extraEnvs:/{f=1;next} f&&/^[^[:space:]#]/{f=0} f&&/^  - name:/{c++} END{print c+0}' "$VALUES")
 helm_apply --set-string "extraEnvs[${idx}].name=LOCKDOWN_SCHEDULE" \
            --set-string "extraEnvs[${idx}].value=${schedule}"
 start_pf
@@ -95,6 +97,14 @@ assert_ws=1
 if curl -s -m 10 "${base}/deploy-lock" | jq -e '. == false' >/dev/null 2>&1; then
   echo "  OK   booted unlocked (pre-window); watching for the scheduled 'locked' broadcast"
   WS_URL="ws://localhost:${PORT}/ws" DURATION=400s "${bin_dir}/wsprobe" >"$probe_out" 2>/dev/null &
+  # Wait for the probe to actually connect (OPEN) before the window opens, so a
+  # slow handshake can't miss the one-shot "locked" broadcast — same guard as
+  # shutdown-drain.sh. The window is still ~180s out, so 20s is ample.
+  ws_open=0
+  for _ in $(seq 1 20); do grep -q '^OPEN$' "$probe_out" && { ws_open=1; break; }; sleep 1; done
+  if [[ "$ws_open" != "1" ]]; then
+    echo "  FAIL WS probe never connected before the window opened"; fail=1; assert_ws=0
+  fi
 else
   echo "  NOTE rollout booted in-window; skipping the WS-transition sub-check (not a failure)"
   assert_ws=0
