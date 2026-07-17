@@ -47,6 +47,11 @@ extraEnvs:
   # MUST match JWT_SECRET in Taskfile.yml.
   - name: JWT_SECRET
     value: "e2e-jwt-secret"
+  # Custom git write-back commit message, a Go text/template rendered against the
+  # models.Task. scripts/commit-format.sh asserts a real write-back commit carries
+  # this rendered message. Passed verbatim (Helm toYaml does not evaluate {{ }}).
+  - name: COMMIT_MESSAGE_FORMAT
+    value: "e2e-commit-fmt app={{.App}} by={{.Author}}"
   - name: WEBHOOK_ENABLED
     value: "true"
   - name: WEBHOOK_URL

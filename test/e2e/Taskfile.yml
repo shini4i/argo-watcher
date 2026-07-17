@@ -69,6 +69,7 @@ tasks:
       - task: client-knobs
       - task: jwt-auth
       - task: fire-and-forget
+      - task: commit-format
       - task: notifications
       - task: load
       - task: race
@@ -163,6 +164,11 @@ tasks:
     desc: "Assert fire-and-forget mode: a deploy to an impossible tag still reports deployed"
     cmds:
       - ./scripts/fire-and-forget.sh
+
+  commit-format:
+    desc: "Assert COMMIT_MESSAGE_FORMAT renders into the git write-back commit message"
+    cmds:
+      - DEPLOY_TOKEN={{.DEPLOY_TOKEN}} ./scripts/commit-format.sh
 
   notifications:
     desc: "Assert the generic webhook fires (start + result) with the correct payload against a real receiver"
