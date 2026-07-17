@@ -52,6 +52,11 @@ extraEnvs:
   # this rendered message. Passed verbatim (Helm toYaml does not evaluate {{ }}).
   - name: COMMIT_MESSAGE_FORMAT
     value: "e2e-commit-fmt app={{.App}} by={{.Author}}"
+  # Alias used to build the ArgoCD app URL the client prints (in place of the
+  # in-cluster argo url, which is unreachable from outside). The failure-diagnostics
+  # phase asserts this alias appears in the client's failure output.
+  - name: ARGO_URL_ALIAS
+    value: "https://argocd.e2e.lab"
   - name: WEBHOOK_ENABLED
     value: "true"
   - name: WEBHOOK_URL
