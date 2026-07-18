@@ -1,0 +1,14 @@
+# ClusterIP for the Postgres StatefulSet. The chart's postgres.host points here
+# (same namespace, so the short name resolves).
+apiVersion: v1
+kind: Service
+metadata:
+  name: argo-watcher-db
+  namespace: argo-watcher
+spec:
+  selector:
+    app: argo-watcher-db
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432

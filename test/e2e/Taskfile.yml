@@ -83,6 +83,12 @@ tasks:
       - task: notifications
       - task: load
       - task: race
+      # state-postgres flips the release to STATE_TYPE=postgres and asserts the Postgres-only
+      # properties (schema migration, deploy loop, task-survives-restart, supersession under
+      # contention). Placed after the in-memory phases (which validate that backend) and BEFORE
+      # failure-diagnostics so it deploys against pristine apps. Everything after runs on
+      # Postgres — both remaining phases are backend-agnostic, so that is a free bonus.
+      - task: state-postgres
       # failure-diagnostics runs after the soak: it deliberately breaks apps (bad images, a
       # failing PreSync hook injected into the SHARED chart values) and pushes directly to the
       # gitops repo, so running it before load/race would perturb those pristine-state soak gates.
@@ -282,6 +288,13 @@ tasks:
         unavail=$(curl -s -m 10 localhost:18090/metrics | awk '/^argocd_unavailable /{print $2}')
         echo "healthz=$code argocd_unavailable=$unavail"
         test "$code" = "200" && test "$unavail" = "0"
+
+  state-postgres:
+    desc: "Flip the release to Postgres state and assert migration, deploy, task-survives-restart, supersession"
+    deps: [apply-apps]
+    cmds:
+      - AW_CHART_REPO={{.AW_CHART_REPO}} AW_CHART_VERSION={{.AW_CHART_VERSION}}
+        DEPLOY_TOKEN={{.DEPLOY_TOKEN}} ./scripts/state-postgres.sh
 
   race:
     desc: "Same-app supersession race: a newer deploy must win over an older retrying one"

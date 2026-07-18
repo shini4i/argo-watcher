@@ -27,7 +27,7 @@ the competitor writer. All pinned tool/chart versions are in `Taskfile.yml`.
 ## Usage
 
 ```sh
-task e2e     # one-shot per-release run: up → api-surface → smoke → client-knobs → jwt-auth → fire-and-forget → commit-format → multi-image → accept-suspended → docker-proxy → lockdown → notifications → load → race → failure-diagnostics → shutdown-drain → down
+task e2e     # one-shot per-release run: up → api-surface → smoke → client-knobs → jwt-auth → fire-and-forget → commit-format → multi-image → accept-suspended → docker-proxy → lockdown → notifications → load → race → state-postgres → failure-diagnostics → shutdown-drain → down
 ```
 
 `task e2e` walks the whole flow. It stops on the first failing step, so a failed
@@ -51,6 +51,7 @@ task lockdown             # assert LOCKDOWN_SCHEDULE freezes deploys in-window (
 task notifications        # assert the generic webhook fires (start + result) with the correct payload
 task load                 # git-conflict soak: competitor + concurrent deploys, strict 0-failed
 task race                 # same-app supersession: a newer deploy must win over an older retrying one
+task state-postgres       # flip the release to Postgres state: assert migration, deploy loop, task survives a pod restart, supersession under contention
 task failure-diagnostics  # assert failure reasons carry the real cause (pod ImagePullBackOff, failed hooks)
 task shutdown-drain       # assert graceful shutdown drains in-flight WebSocket connections (GoingAway) with no race/panic
 task down                 # destroy the cluster
@@ -84,6 +85,9 @@ Reach any component with `kubectl port-forward` (there is no ingress), e.g.
 | `scripts/mint-argo-token.sh` | mint `ARGO_TOKEN` into `argo-watcher-secret` |
 | `scripts/failure-diagnostics.sh` | table-driven failure-reason assertions, driven through the real client (add a case = one table entry) |
 | `scripts/race-supersede.sh` | same-app supersession assertion: real client, newer deploy wins, older is superseded |
+| `scripts/state-postgres.sh` | flip the release to `STATE_TYPE=postgres` and assert the Postgres-only path: schema migration Job, real deploy loop, task history surviving a pod restart (in-memory loses it), and supersession under contention (the hand-written `CancelInProgressTasks` SQL) |
+| `fixtures/postgres/` | in-cluster Postgres (Secret + Service + StatefulSet, one resource per file) the `state-postgres` phase points the release at; the chart bundles no database |
+| `values/argo-watcher-postgres.yaml` | overlay layered over `values/argo-watcher.yaml` that enables `postgres` (sets `STATE_TYPE=postgres`, wires `DB_*`, triggers the migration Job) |
 | `scripts/hook-fixture.sh` | add/remove a failing PreSync hook via the chart's `rawObject` |
 | `scripts/notifications.sh` | assert the generic webhook fires start + result with the templated payload and auth header |
 | `scripts/api-surface.sh` | assert the read-only HTTP surface to contract: version/config (secrets redacted), task-list filters + invalid-status 400, unknown-task 404, deploy-lock POST/DELETE 404 when Keycloak is off |
@@ -136,6 +140,18 @@ Reach any component with `kubectl port-forward` (there is no ingress), e.g.
   revert-accepts checks are deterministic; the WS-transition sub-check is skipped
   (not failed) if a slow rollout boots in-window. Manual (Keycloak) lock/unlock
   WS notifications are a separate, deterministic trigger left to the heavy tier.
+- **`state-postgres` flips the shared release to Postgres mid-flow rather than
+  running a parallel stack.** The base lab is single-replica in-memory; every
+  functional phase before this one validates that backend. `state-postgres` then
+  helm-upgrades the SAME release with `values/argo-watcher-postgres.yaml` (the
+  chart bundles no database, so `fixtures/postgres/` supplies an in-cluster
+  Postgres first) and asserts the Postgres-only properties — the migration Job,
+  the deploy loop, a task record surviving a pod restart, and supersession under
+  contention. It runs *before* `failure-diagnostics` so it deploys against
+  pristine apps; the two phases after it are backend-agnostic, so they simply run
+  on Postgres for free. Multi-replica is out of scope — the chart requires
+  postgres for `replicaCount > 1`, and shared-state / cross-replica handoff is
+  deliberately not exercised.
 - **`shutdown-drain` follows the pod's logs before deleting it.** A recreated
   StatefulSet pod is a new object, so `kubectl logs --previous` would not have the
   terminated instance's shutdown logs; the script streams `logs -f` to a file
@@ -150,7 +166,8 @@ Reach any component with `kubectl port-forward` (there is no ingress), e.g.
 
 ## Topology note
 
-The base lab runs argo-watcher single-replica with in-memory state. The soak
-phase (see the project plan) flips `values/argo-watcher.yaml` to
-`replicaCount: 2` + Postgres to exercise shared state and cross-replica poller
-handoff.
+The base lab runs argo-watcher single-replica with in-memory state. The
+`state-postgres` phase (see Usage) flips the same release to Postgres, still
+single-replica, to exercise the Postgres-backed path. Multi-replica
+(`replicaCount: 2` + shared state / cross-replica poller handoff) is out of
+scope for this lab and remains future work.

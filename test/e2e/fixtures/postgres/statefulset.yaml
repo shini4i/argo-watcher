@@ -1,0 +1,76 @@
+# Single-replica Postgres backing argo-watcher's state during the state-postgres
+# phase. The persistence assertion deletes the argo-watcher pod, not this one, so
+# the DB (and the task history it holds) stays up across that restart.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: argo-watcher-db
+  namespace: argo-watcher
+spec:
+  serviceName: argo-watcher-db
+  replicas: 1
+  selector:
+    matchLabels:
+      app: argo-watcher-db
+  template:
+    metadata:
+      labels:
+        app: argo-watcher-db
+    spec:
+      # Postgres needs no Kubernetes API access, so don't mount its token —
+      # a compromised container then has no service-account credential to abuse.
+      automountServiceAccountToken: false
+      # The official image's initdb runs as uid 999 (postgres); fsGroup lets it
+      # own the mounted PVC.
+      securityContext:
+        fsGroup: 999
+      containers:
+        - name: postgres
+          # Pinned to match the Postgres the unit/integration tests run against
+          # in CI (.github/workflows/run-tests.yml), so the e2e schema path is
+          # exercised on the same major version.
+          image: postgres:18.4
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: argo_watcher
+            - name: POSTGRES_DB
+              value: argo_watcher
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: argo-watcher-db
+                  key: DB_PASSWORD
+            # Point PGDATA at a subdirectory so initdb owns an empty dir, not the
+            # volume's lost+found root.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "argo_watcher", "-d", "argo_watcher"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+          resources:
+            # The database itself lives on the PVC; ephemeral-storage here just
+            # bounds the container filesystem (logs, temp) so it can't exhaust the
+            # node disk.
+            requests:
+              cpu: 50m
+              memory: 128Mi
+              ephemeral-storage: 128Mi
+            limits:
+              memory: 256Mi
+              ephemeral-storage: 1Gi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi

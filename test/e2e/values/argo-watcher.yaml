@@ -25,8 +25,12 @@ updater:
   knownHostsKey: ssh_known_hosts
 
 # Base lab runs single-replica, in-memory state — enough to exercise the real
-# ArgoCD polling path. Phase B (soak) flips these to replicaCount: 2 + postgres
-# to exercise shared state and cross-replica poller handoff.
+# ArgoCD polling path. The `state-postgres` phase layers
+# values/argo-watcher-postgres.yaml on top to flip this SAME release to
+# single-replica Postgres and assert the Postgres-only properties (schema
+# migration + task history surviving a pod restart). Multi-replica is out of
+# scope: the chart requires postgres for replicaCount > 1, and shared-state /
+# cross-replica handoff is deliberately not exercised here.
 postgres:
   enabled: false
 replicaCount: 1
