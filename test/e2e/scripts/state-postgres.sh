@@ -56,7 +56,7 @@ base="http://localhost:${PORT}/api/v1"
 # /healthz answers. Called again after the restart, since deleting the pod kills
 # the previous forward.
 forward() {
-  [ -n "$pf_pid" ] && kill "$pf_pid" 2>/dev/null || true
+  [[ -n "$pf_pid" ]] && kill "$pf_pid" 2>/dev/null || true
   kubectl -n "$NS_AW" port-forward svc/argo-watcher "${PORT}:80" >/dev/null 2>&1 &
   pf_pid=$!
   for _ in $(seq 1 30); do
@@ -94,7 +94,7 @@ forward
 
 echo "=== asserting the server is actually on Postgres ==="
 st="$(curl -s -m 10 "${base}/config" | jq -r '.state_type')"
-if [ "$st" != "postgres" ]; then
+if [[ "$st" != "postgres" ]]; then
   echo "STATE-POSTGRES: FAIL — /config state_type=${st:-<none>}, want postgres"
   exit 1
 fi
@@ -108,10 +108,10 @@ echo "=== deploying ${APP} on Postgres (real write-back loop) ==="
 # so the write-back actually commits (an unchanged tag is byte-compared and skipped).
 for _ in $(seq 1 40); do
   s=$(kubectl -n argocd get application "$APP" -o jsonpath='{.status.sync.status}/{.status.health.status}' 2>/dev/null || true)
-  [ "$s" = "Synced/Healthy" ] && break
+  [[ "$s" == "Synced/Healthy" ]] && break
   sleep 5
 done
-[ "$s" = "Synced/Healthy" ] || { echo "STATE-POSTGRES: FAIL — ${APP} never reached Synced/Healthy (last: ${s:-unknown})"; exit 1; }
+[[ "$s" == "Synced/Healthy" ]] || { echo "STATE-POSTGRES: FAIL — ${APP} never reached Synced/Healthy (last: ${s:-unknown})"; exit 1; }
 
 cur=$(kubectl -n argocd get application "$APP" -o jsonpath='{.status.summary.images}' 2>/dev/null || true)
 if [[ "$cur" == *v1.10.2* ]]; then TAG="v1.10.1"; else TAG="v1.10.2"; fi
@@ -129,7 +129,7 @@ echo "  OK   ${APP}:${TAG} deployed on Postgres"
 
 # Capture the task we just created: the newest task for this app.
 id=$(curl -s -m 10 "${base}/tasks?from_timestamp=0&app=${APP}" | jq -r '.tasks | sort_by(.created) | last | .id')
-if [ -z "$id" ] || [ "$id" = "null" ]; then
+if [[ -z "$id" || "$id" == "null" ]]; then
   echo "STATE-POSTGRES: FAIL — could not read the created task id from the task list"
   exit 1
 fi
@@ -142,7 +142,7 @@ forward   # the previous forward died with the pod
 
 code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' "${base}/tasks/${id}")
 status_after=$(curl -s -m 10 "${base}/tasks/${id}" | jq -r '.status')
-if [ "$code" != "200" ] || [ "$status_after" != "deployed" ]; then
+if [[ "$code" != "200" || "$status_after" != "deployed" ]]; then
   echo "STATE-POSTGRES: FAIL — task ${id} did not survive the restart (http=${code} status=${status_after:-<none>})"
   echo "  (in-memory loses history here; Postgres must return 200 'deployed')"
   exit 1
@@ -157,7 +157,7 @@ echo "=== supersession under git contention on Postgres ==="
 # Wait for app1 to be Healthy first (as the `race` task does) so the baseline reset
 # deploys from a known-good state — matters when this phase is run standalone.
 for _ in $(seq 1 40); do
-  [ "$(kubectl -n argocd get application app1 -o jsonpath='{.status.health.status}' 2>/dev/null)" = "Healthy" ] && break
+  [[ "$(kubectl -n argocd get application app1 -o jsonpath='{.status.health.status}' 2>/dev/null)" == "Healthy" ]] && break
   sleep 3
 done
 kubectl -n gitea port-forward svc/gitea-http "${GITEA_PORT}:3000" >/dev/null 2>&1 &

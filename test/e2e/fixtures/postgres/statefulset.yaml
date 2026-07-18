@@ -17,6 +17,9 @@ spec:
       labels:
         app: argo-watcher-db
     spec:
+      # Postgres needs no Kubernetes API access, so don't mount its token —
+      # a compromised container then has no service-account credential to abuse.
+      automountServiceAccountToken: false
       # The official image's initdb runs as uid 999 (postgres); fsGroup lets it
       # own the mounted PVC.
       securityContext:
@@ -53,11 +56,16 @@ spec:
             periodSeconds: 5
             timeoutSeconds: 3
           resources:
+            # The database itself lives on the PVC; ephemeral-storage here just
+            # bounds the container filesystem (logs, temp) so it can't exhaust the
+            # node disk.
             requests:
               cpu: 50m
               memory: 128Mi
+              ephemeral-storage: 128Mi
             limits:
               memory: 256Mi
+              ephemeral-storage: 1Gi
   volumeClaimTemplates:
     - metadata:
         name: data
