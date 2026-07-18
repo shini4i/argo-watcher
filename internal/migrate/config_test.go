@@ -60,5 +60,6 @@ func TestNewMigrationConfig_ValidationError(t *testing.T) {
 	// Assert
 	require.Error(t, err)
 	assert.Nil(t, cfg)
-	assert.Contains(t, err.Error(), "database component validation failed")
+	assert.Contains(t, err.Error(), "missing required environment variables")
+	assert.Contains(t, err.Error(), "DB_USER")
 }

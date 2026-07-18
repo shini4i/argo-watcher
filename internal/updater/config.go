@@ -7,6 +7,8 @@ import (
 	"time"
 
 	envConfig "github.com/caarlos0/env/v11"
+
+	"github.com/shini4i/argo-watcher/internal/helpers"
 )
 
 // GitConfig holds runtime configuration for the git updater, parsed from
@@ -47,9 +49,9 @@ type GitConfig struct {
 // cases (mapped or ignored). New deployments should set GIT_OP_TIMEOUT and
 // GIT_MAX_ATTEMPTS directly.
 func NewGitConfig() (*GitConfig, error) {
-	var config GitConfig
-	if err := envConfig.Parse(&config); err != nil {
-		return nil, err
+	config, err := envConfig.ParseAs[GitConfig]()
+	if err != nil {
+		return nil, helpers.PrettifyEnvError(err, "invalid argo-watcher git updater configuration:")
 	}
 
 	if err := applyLegacyGitTimeout(&config); err != nil {
