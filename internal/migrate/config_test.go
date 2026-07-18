@@ -28,6 +28,9 @@ func TestNewMigrationConfig_Success(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
 	assert.Equal(t, "/app/db/migrations", cfg.MigrationsPath)
+	// Verify the DSN is assembled correctly: DB_SSL_MODE flows into the sslmode
+	// segment and the password's special characters are URL-escaped.
+	assert.Equal(t, "postgres://testuser:testpassword%21%40%23@localhost:5432/testdb?sslmode=require", cfg.DSN)
 }
 
 // TestNewMigrationConfig_CustomPath tests that a custom migration path from env vars is used.
