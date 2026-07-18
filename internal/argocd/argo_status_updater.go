@@ -174,6 +174,6 @@ func sendNotification(task models.Task, notifier *notifications.Notifier) {
 	}
 
 	if err := notifier.Send(task); err != nil {
-		slog.Error(fmt.Sprintf("Failed to dispatch notification. Error: %s", err.Error()), "id", task.Id)
+		slog.Error("Failed to dispatch notification", "error", err, "id", task.Id)
 	}
 }

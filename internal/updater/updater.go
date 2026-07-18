@@ -121,9 +121,9 @@ func (repo *GitRepo) Clone(ctx context.Context) error {
 	if err != nil {
 		// Differentiate between a simple "not found" and a real corruption issue for logging.
 		if errors.Is(err, git.ErrRepositoryNotExists) {
-			slog.Debug(fmt.Sprintf("No cache found for repo %s at %s. Cloning fresh.", repo.RepoURL, repo.localRepoPath))
+			slog.Debug("No cache found for repo, cloning fresh", "repo", repo.RepoURL, "path", repo.localRepoPath)
 		} else {
-			slog.Warn(fmt.Sprintf("Cached repo at %s is invalid or missing remote (%s). Re-cloning.", repo.localRepoPath, err))
+			slog.Warn("Cached repo is invalid or missing remote, re-cloning", "path", repo.localRepoPath, "error", err)
 			if err := os.RemoveAll(repo.localRepoPath); err != nil {
 				return fmt.Errorf("failed to remove invalid cache directory: %w", err)
 			}
@@ -149,7 +149,7 @@ func (repo *GitRepo) Clone(ctx context.Context) error {
 	}
 
 	// If we get here, the cache is valid and has an 'origin' remote.
-	slog.Debug(fmt.Sprintf("Successfully opened cached repository at %s", repo.localRepoPath))
+	slog.Debug("Successfully opened cached repository", "path", repo.localRepoPath)
 	// Depth:1 keeps the cache shallow across warm fetches too: only the new tip
 	// is fetched, never the intervening history. Without it go-git would deepen
 	// the shallow clone toward full history on the first fetch, undoing the cold
@@ -232,7 +232,7 @@ func (repo *GitRepo) UpdateApp(ctx context.Context, appName string, overrideCont
 
 	commitMsg := repo.generateCommitMessage(appName, tmplData)
 
-	slog.Debug(fmt.Sprintf("Updating override file: %s", fullPath))
+	slog.Debug("Updating override file", "path", fullPath)
 
 	finalContent, err := repo.mergeOverrideFileContent(fullPath, overrideContent)
 	if err != nil {

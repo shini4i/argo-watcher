@@ -95,7 +95,7 @@ func (l *Lockdown) Parse(schedules string) error {
 		l.Schedules = append(l.Schedules, schedule)
 	}
 
-	slog.Debug(fmt.Sprintf("Parsed lockdown schedules: %v", l.Schedules))
+	slog.Debug("parsed lockdown schedules", "schedules", l.Schedules)
 
 	return nil
 }

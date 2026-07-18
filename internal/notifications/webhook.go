@@ -119,7 +119,7 @@ func (s *WebhookStrategy) Send(task models.Task) error {
 		return fmt.Errorf("failed to execute webhook template: %w", err)
 	}
 
-	slog.Debug(fmt.Sprintf("Sending webhook payload: %s", payload.String()), "id", task.Id)
+	slog.Debug("Sending webhook payload", "payload", payload.String(), "id", task.Id)
 
 	req, err := http.NewRequestWithContext(ctx, "POST", s.url, &payload)
 	if err != nil {

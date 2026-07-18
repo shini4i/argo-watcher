@@ -86,7 +86,7 @@ func (k *KeycloakAuthService) Validate(token string) (bool, error) {
 	defer func(Body io.ReadCloser) {
 		err := Body.Close()
 		if err != nil {
-			slog.Error(fmt.Sprintf("error closing response body: %v", err))
+			slog.Error("error closing response body", "error", err)
 		}
 	}(resp.Body)
 

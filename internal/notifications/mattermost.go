@@ -138,7 +138,7 @@ func (s *MattermostStrategy) createPost(post mattermostPostRequest) (string, err
 		return "", fmt.Errorf("failed to marshal mattermost post: %w", err)
 	}
 
-	slog.Debug(fmt.Sprintf("Sending mattermost post: %s", string(payload)))
+	slog.Debug("Sending mattermost post", "payload", string(payload))
 
 	req, err := http.NewRequestWithContext(ctx, "POST", s.baseURL+"/api/v4/posts", bytes.NewReader(payload))
 	if err != nil {
