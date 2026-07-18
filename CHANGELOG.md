@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Server and deployment-watcher logs now use structured `slog` key/value
+  attributes (e.g. `error`, `app`, `id`, `status`) instead of interpolating
+  values into the message string, and some message texts were tightened. Log
+  consumers that match on the old message strings may need updating. One
+  deployment-failure event that was logged at info is now logged at warning,
+  matching the sibling failure path. The client CLI and migration tool keep
+  their plain-text log output.
+
 ### Added
 
 - New `deployment_duration_seconds` Prometheus histogram (label `app`) recording
