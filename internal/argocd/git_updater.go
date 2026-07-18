@@ -2,7 +2,6 @@ package argocd
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"time"
 
@@ -57,7 +56,7 @@ func (gitUpdater *GitUpdater) UpdateIfNeeded(app *models.Application, task model
 
 	gitopsRepo, err := models.NewGitopsRepo(app, gitUpdater.repoCachePath)
 	if err != nil {
-		slog.Error(fmt.Sprintf("Failed to get gitops repo info for app %s: %s", task.App, err), "id", task.Id)
+		slog.Error("Failed to get gitops repo info", "app", task.App, "error", err, "id", task.Id)
 		return err
 	}
 
@@ -75,7 +74,7 @@ func (gitUpdater *GitUpdater) UpdateIfNeeded(app *models.Application, task model
 
 	err = gitUpdater.locker.WithLock(gitopsRepo.RepoUrl, gitUpdateFunc)
 	if err != nil {
-		slog.Error(fmt.Sprintf("Failed git repo update for app %s: %s", task.App, err), "id", task.Id)
+		slog.Error("Failed git repo update", "app", task.App, "error", err, "id", task.Id)
 		return err
 	}
 
@@ -88,7 +87,7 @@ func (gitUpdater *GitUpdater) updateGitRepo(app *models.Application, task *model
 	// WaitForRollout is a future improvement.
 	err := UpdateGitImageTag(context.Background(), app, task, gitopsRepo, updater.GitClient{}, isSuperseded...)
 	if err != nil {
-		slog.Error(fmt.Sprintf("Failed to update git repo. Error: %s", err.Error()), "id", task.Id)
+		slog.Error("Failed to update git repo", "error", err, "id", task.Id)
 		return err
 	}
 	return nil

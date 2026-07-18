@@ -126,7 +126,7 @@ func (env *Env) CreateRouter() *gin.Engine {
 // The caller is responsible for starting the server and handling graceful shutdown.
 func (env *Env) StartRouter(router *gin.Engine) *http.Server {
 	routerBind := fmt.Sprintf("%s:%s", env.config.Host, env.config.Port)
-	slog.Debug(fmt.Sprintf("Listening on %s", routerBind))
+	slog.Debug("listening", "address", routerBind)
 	return &http.Server{
 		Addr:              routerBind,
 		Handler:           router,

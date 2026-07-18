@@ -74,11 +74,11 @@ func (api *ArgoApi) Init(serverConfig *config.ServerConfig) error {
 		Timeout:   time.Duration(serverConfig.ArgoApiTimeout) * time.Second,
 	}
 
-	slog.Debug(fmt.Sprintf("Timeout for ArgoCD API calls set to: %s", api.client.Timeout))
+	slog.Debug("Timeout for ArgoCD API calls set", "timeout", api.client.Timeout)
 
 	// configure retry attempts for transient transport errors
 	api.maxRetries = serverConfig.ArgoApiRetries
-	slog.Debug(fmt.Sprintf("Max API retries set to: %d", api.maxRetries))
+	slog.Debug("Max API retries set", "max_retries", api.maxRetries)
 
 	return nil
 }

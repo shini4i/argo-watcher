@@ -7,6 +7,8 @@ import (
 	"time"
 
 	envConfig "github.com/caarlos0/env/v11"
+
+	"github.com/shini4i/argo-watcher/internal/helpers"
 )
 
 // GitConfig holds runtime configuration for the git updater, parsed from
@@ -47,9 +49,9 @@ type GitConfig struct {
 // cases (mapped or ignored). New deployments should set GIT_OP_TIMEOUT and
 // GIT_MAX_ATTEMPTS directly.
 func NewGitConfig() (*GitConfig, error) {
-	var config GitConfig
-	if err := envConfig.Parse(&config); err != nil {
-		return nil, err
+	config, err := envConfig.ParseAs[GitConfig]()
+	if err != nil {
+		return nil, helpers.PrettifyEnvError(err, "invalid argo-watcher git updater configuration:")
 	}
 
 	if err := applyLegacyGitTimeout(&config); err != nil {
@@ -94,10 +96,8 @@ func applyLegacyGitTimeout(config *GitConfig) error {
 	// (default 5, validated > 0); its conversion to time.Duration is only used
 	// to format a warning-log message and crosses no security boundary.
 	worstCaseWallClock := legacy * time.Duration(config.GitMaxAttempts)
-	slog.Warn(fmt.Sprintf(
-		"GIT_TIMEOUT is deprecated; using %s as GIT_OP_TIMEOUT directly. With GIT_MAX_ATTEMPTS=%d retries enabled, the worst-case total wall clock is %s. Set GIT_OP_TIMEOUT explicitly to silence this warning.",
-		legacy, config.GitMaxAttempts, worstCaseWallClock,
-	))
+	slog.Warn("GIT_TIMEOUT is deprecated; using it as GIT_OP_TIMEOUT directly. Set GIT_OP_TIMEOUT explicitly to silence this warning.",
+		"git_op_timeout", legacy, "max_attempts", config.GitMaxAttempts, "worst_case_wall_clock", worstCaseWallClock)
 	config.GitOpTimeout = legacy
 	return nil
 }

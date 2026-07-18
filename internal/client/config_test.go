@@ -54,3 +54,17 @@ func TestNewClientConfig_InvalidDuration(t *testing.T) {
 	assert.Contains(t, err.Error(), "Timeout")
 	assert.Contains(t, err.Error(), `"invalid"`)
 }
+
+// TestNewClientConfig_EmptyRequiredRejected verifies that a required client
+// variable set to an empty string is rejected at parse time (the `,notEmpty`
+// tag), not silently accepted.
+func TestNewClientConfig_EmptyRequiredRejected(t *testing.T) {
+	setValidClientEnv(t)
+	t.Setenv("ARGO_APP", "") // set, but empty
+
+	_, err := NewClientConfig()
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "ARGO_APP")
+	assert.Contains(t, err.Error(), "should not be empty")
+}

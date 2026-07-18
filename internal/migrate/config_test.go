@@ -28,6 +28,9 @@ func TestNewMigrationConfig_Success(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
 	assert.Equal(t, "/app/db/migrations", cfg.MigrationsPath)
+	// Verify the DSN is assembled correctly: DB_SSL_MODE flows into the sslmode
+	// segment and the password's special characters are URL-escaped.
+	assert.Equal(t, "postgres://testuser:testpassword%21%40%23@localhost:5432/testdb?sslmode=require", cfg.DSN)
 }
 
 // TestNewMigrationConfig_CustomPath tests that a custom migration path from env vars is used.
@@ -60,5 +63,24 @@ func TestNewMigrationConfig_ValidationError(t *testing.T) {
 	// Assert
 	require.Error(t, err)
 	assert.Nil(t, cfg)
-	assert.Contains(t, err.Error(), "database component validation failed")
+	assert.Contains(t, err.Error(), "missing required environment variables")
+	assert.Contains(t, err.Error(), "DB_USER")
+}
+
+// TestNewMigrationConfig_EmptyRequiredRejected verifies that a required DB
+// variable set to an empty string is rejected (the `,notEmpty` tag), rather
+// than producing a malformed DSN that fails obscurely at connect time.
+func TestNewMigrationConfig_EmptyRequiredRejected(t *testing.T) {
+	t.Setenv("DB_HOST", "localhost")
+	t.Setenv("DB_PORT", "5432")
+	t.Setenv("DB_USER", "") // set, but empty
+	t.Setenv("DB_PASSWORD", "testpassword")
+	t.Setenv("DB_NAME", "testdb")
+
+	cfg, err := NewMigrationConfig()
+
+	require.Error(t, err)
+	assert.Nil(t, cfg)
+	assert.Contains(t, err.Error(), "DB_USER")
+	assert.Contains(t, err.Error(), "should not be empty")
 }

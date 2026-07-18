@@ -2,14 +2,13 @@ package models
 
 import (
 	"fmt"
-
-	"github.com/go-playground/validator/v10"
+	"strings"
 )
 
 type GitopsRepo struct {
-	RepoUrl       string `validate:"required"`
-	BranchName    string `validate:"required"`
-	Path          string `validate:"required"`
+	RepoUrl       string
+	BranchName    string
+	Path          string
 	Filename      string
 	RepoCachePath string
 }
@@ -51,10 +50,21 @@ func extractGitOverrides(annotations map[string]string, app *Application, isSour
 		}
 	}
 
-	// Perform struct validation
-	validate := validator.New()
-	if err := validate.Struct(gr); err != nil {
-		return gr, fmt.Errorf("invalid gitops repo: %w", err)
+	// RepoUrl, BranchName and Path are mandatory: they come either from the
+	// Application's source spec or the managed-git annotations, and a git
+	// write-back cannot proceed without all three.
+	var missing []string
+	if gr.RepoUrl == "" {
+		missing = append(missing, "RepoUrl")
+	}
+	if gr.BranchName == "" {
+		missing = append(missing, "BranchName")
+	}
+	if gr.Path == "" {
+		missing = append(missing, "Path")
+	}
+	if len(missing) > 0 {
+		return gr, fmt.Errorf("invalid gitops repo: missing required field(s): %s", strings.Join(missing, ", "))
 	}
 
 	return gr, nil

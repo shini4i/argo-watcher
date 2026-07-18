@@ -54,7 +54,7 @@ func (state *PostgresState) AddTask(task models.Task) (*models.Task, error) {
 	}
 
 	if err := state.orm.Create(&ormTask).Error; err != nil {
-		slog.Error(fmt.Sprintf("Failed to create task database record with error: %s", err.Error()))
+		slog.Error("Failed to create task database record", "error", err)
 		return nil, fmt.Errorf("failed to create task in database")
 	}
 
@@ -83,7 +83,7 @@ func (state *PostgresState) GetTasks(startTime float64, endTime float64, app str
 	countQuery := query.Session(&gorm.Session{})
 	var total int64
 	if err := countQuery.Count(&total).Error; err != nil {
-		slog.Error(err.Error())
+		slog.Error("Failed to count tasks", "error", err)
 		return []models.Task{}, 0
 	}
 
@@ -98,7 +98,7 @@ func (state *PostgresState) GetTasks(startTime float64, endTime float64, app str
 
 	var ormTasks []state_models.TaskModel
 	if err := query.Find(&ormTasks).Error; err != nil {
-		slog.Error(err.Error())
+		slog.Error("Failed to query tasks", "error", err)
 		return []models.Task{}, 0
 	}
 
@@ -201,12 +201,12 @@ func (state *PostgresState) CancelInProgressTasks(app string, images []models.Im
 func (state *PostgresState) Check() bool {
 	connection, err := state.orm.DB()
 	if err != nil {
-		slog.Error(fmt.Sprintf("Failed to retrieve DB connection: %s", err.Error()))
+		slog.Error("Failed to retrieve DB connection", "error", err)
 		return false
 	}
 
 	if err = connection.Ping(); err != nil {
-		slog.Error(fmt.Sprintf("Failed to ping DB: %s", err.Error()))
+		slog.Error("Failed to ping DB", "error", err)
 		return false
 	}
 
@@ -222,7 +222,7 @@ func (state *PostgresState) ProcessObsoleteTasks(retryTimes uint) {
 	err := retry.Do(
 		func() error {
 			if err := state.doProcessPostgresObsoleteTasks(); err != nil {
-				slog.Error(fmt.Sprintf("Couldn't process obsolete tasks. Got the following error: %s", err))
+				slog.Error("Couldn't process obsolete tasks", "error", err)
 				return err
 			}
 			return errDesiredRetry
@@ -233,7 +233,7 @@ func (state *PostgresState) ProcessObsoleteTasks(retryTimes uint) {
 	)
 
 	if err != nil {
-		slog.Error(fmt.Sprintf("Couldn't process obsolete tasks. Got the following error: %s", err))
+		slog.Error("Couldn't process obsolete tasks", "error", err)
 	}
 }
 

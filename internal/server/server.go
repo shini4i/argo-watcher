@@ -186,10 +186,10 @@ var logLevelVar = new(slog.LevelVar)
 func initLogs(logLevel string) {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: logLevelVar})))
 	if lvl, err := parseLogLevel(logLevel); err != nil {
-		slog.Warn(fmt.Sprintf("Couldn't parse log level. Got the following error: %s", err))
+		slog.Warn("couldn't parse log level, using default", "error", err)
 	} else {
 		logLevelVar.Set(lvl)
-		slog.Debug(fmt.Sprintf("Configured log level: %s", lvl))
+		slog.Debug("configured log level", "level", lvl)
 	}
 }
 

@@ -8,14 +8,9 @@ import (
 	"strings"
 
 	envConfig "github.com/caarlos0/env/v11"
-	"github.com/go-playground/validator/v10"
 
 	"github.com/shini4i/argo-watcher/internal/helpers"
 )
-
-// validate is package-scoped because validator.New caches struct reflection
-// metadata; reusing one instance across calls avoids re-doing that work.
-var validate = validator.New()
 
 type KeycloakConfig struct {
 	Enabled                 bool     `env:"KEYCLOAK_ENABLED" json:"enabled"`
@@ -52,15 +47,15 @@ type MattermostConfig struct {
 }
 
 type ServerConfig struct {
-	ArgoUrl            url.URL          `env:"ARGO_URL,required" json:"argo_cd_url"`
+	ArgoUrl            url.URL          `env:"ARGO_URL,required,notEmpty" json:"argo_cd_url"`
 	ArgoUrlAlias       string           `env:"ARGO_URL_ALIAS" json:"argo_cd_url_alias,omitempty"` // Used to generate App Url. Can be omitted if ArgoUrl is reachable from outside.
-	ArgoToken          string           `env:"ARGO_TOKEN,required" json:"-"`
+	ArgoToken          string           `env:"ARGO_TOKEN,required,notEmpty" json:"-"`
 	ArgoApiTimeout     int64            `env:"ARGO_API_TIMEOUT" envDefault:"60" json:"argo_api_timeout"`
 	AcceptSuspendedApp bool             `env:"ACCEPT_SUSPENDED_APP" envDefault:"false" json:"accept_suspended_app"` // If true, we will accept "Suspended" health status as valid
 	DeploymentTimeout  uint             `env:"DEPLOYMENT_TIMEOUT" envDefault:"900" json:"deployment_timeout"`
 	ArgoRefreshApp     bool             `env:"ARGO_REFRESH_APP" envDefault:"true" json:"argo_refresh_app"`
 	RegistryProxyUrl   string           `env:"DOCKER_IMAGES_PROXY" json:"registry_proxy_url,omitempty"`
-	StateType          string           `env:"STATE_TYPE,required" validate:"oneof=postgres in-memory" json:"state_type"`
+	StateType          string           `env:"STATE_TYPE,required" json:"state_type"`
 	StaticFilePath     string           `env:"STATIC_FILES_PATH" envDefault:"static" json:"-"`
 	SkipTlsVerify      bool             `env:"SKIP_TLS_VERIFY" envDefault:"false" json:"skip_tls_verify"`
 	LogLevel           string           `env:"LOG_LEVEL" envDefault:"info" json:"log_level"`
@@ -73,8 +68,8 @@ type ServerConfig struct {
 	LockdownSchedule   string           `env:"LOCKDOWN_SCHEDULE" json:"lockdown_schedule,omitempty"`
 	Webhook            WebhookConfig    `json:"webhook,omitempty"`
 	Mattermost         MattermostConfig `json:"mattermost,omitempty"`
-	DevEnvironment     bool             `env:"DEV_ENVIRONMENT" envDefault:"false" json:"devEnvironment"`                        // Whether a set of dev specific setting should be turned on, do not touch unless you know what you are doing
-	ArgoApiRetries     uint             `env:"ARGO_API_RETRIES" envDefault:"3" validate:"min=1,max=10" json:"argo_api_retries"` // Total attempts (including initial); passed to retry.Attempts()
+	DevEnvironment     bool             `env:"DEV_ENVIRONMENT" envDefault:"false" json:"devEnvironment"` // Whether a set of dev specific setting should be turned on, do not touch unless you know what you are doing
+	ArgoApiRetries     uint             `env:"ARGO_API_RETRIES" envDefault:"3" json:"argo_api_retries"`  // Total attempts (including initial); passed to retry.Attempts()
 	RepoCachePath      string           `env:"REPO_CACHE_PATH" envDefault:"/data" json:"-"`
 }
 
@@ -95,47 +90,33 @@ func NewServerConfig() (*ServerConfig, error) {
 	config.JWTSecret = strings.TrimSpace(config.JWTSecret)
 	config.Mattermost.Token = strings.TrimSpace(config.Mattermost.Token)
 
-	if err := validate.Struct(&config); err != nil {
-		return nil, prettifyValidatorError(err)
+	if err := validateServerConfig(&config); err != nil {
+		return nil, err
 	}
 
 	return &config, nil
 }
 
-// prettifyValidatorError reformats go-playground/validator's
-// `Key: 'ServerConfig.X' Error:Field validation for 'X' failed on the 'tag'`
-// blob into one-line-per-field readable output. The Go field name (e.g.
-// StateType) maps obviously to its env var (STATE_TYPE) for any operator;
-// no translation is attempted.
-func prettifyValidatorError(err error) error {
-	var ve validator.ValidationErrors
-	if !errors.As(err, &ve) {
-		return err
+// validateServerConfig checks the semantic rules that env parsing cannot
+// express (allowed enum values, numeric ranges). It reports every violation in
+// one grouped message — mirroring helpers.PrettifyEnvError — so an operator can
+// fix all of them in a single pass. Required-ness and non-emptiness are handled
+// by the env `,required,notEmpty` tags during parsing, not here.
+func validateServerConfig(config *ServerConfig) error {
+	var problems []string
+	if config.StateType != "postgres" && config.StateType != "in-memory" {
+		problems = append(problems, fmt.Sprintf("  - StateType: must be one of [postgres in-memory], got %q", config.StateType))
+	}
+	if config.ArgoApiRetries < 1 || config.ArgoApiRetries > 10 {
+		problems = append(problems, fmt.Sprintf("  - ArgoApiRetries: must be between 1 and 10, got %d", config.ArgoApiRetries))
 	}
 
-	lines := make([]string, 0, len(ve))
-	for _, fe := range ve {
-		lines = append(lines, fmt.Sprintf("  - %s: %s", fe.Field(), describeValidatorFailure(fe)))
+	if len(problems) == 0 {
+		return nil
 	}
-	sort.Strings(lines)
+	sort.Strings(problems)
 	return errors.New("invalid argo-watcher server configuration:\ninvalid values:\n" +
-		strings.Join(lines, "\n"))
-}
-
-// describeValidatorFailure renders a single validator error as a short human
-// phrase. Falls back to "<tag> validation failed" for tags this function
-// does not specialise.
-func describeValidatorFailure(fe validator.FieldError) string {
-	switch fe.Tag() {
-	case "oneof":
-		return fmt.Sprintf("must be one of [%s], got %q", fe.Param(), fe.Value())
-	case "min":
-		return fmt.Sprintf("must be >= %s, got %v", fe.Param(), fe.Value())
-	case "max":
-		return fmt.Sprintf("must be <= %s, got %v", fe.Param(), fe.Value())
-	default:
-		return fmt.Sprintf("%s validation failed (got %v)", fe.Tag(), fe.Value())
-	}
+		strings.Join(problems, "\n"))
 }
 
 // GetRetryAttempts calculates the number of retry attempts based on the Deployment timeout value in the server configuration.

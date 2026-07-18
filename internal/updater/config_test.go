@@ -59,7 +59,8 @@ func TestNewGitConfig(t *testing.T) {
 
 		require.Error(t, err)
 		assert.Nil(t, config)
-		assert.Contains(t, err.Error(), "required environment variable \"SSH_KEY_PATH\" is not set")
+		assert.Contains(t, err.Error(), "missing required environment variables")
+		assert.Contains(t, err.Error(), "SSH_KEY_PATH")
 	})
 
 	t.Run("Failure - Malformed GIT_OP_TIMEOUT", func(t *testing.T) {

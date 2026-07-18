@@ -2,7 +2,6 @@ package state
 
 import (
 	"errors"
-	"fmt"
 	"log/slog"
 	"sort"
 	"sync"
@@ -201,7 +200,7 @@ func (state *InMemoryState) ProcessObsoleteTasks(retryTimes uint) {
 		retry.Attempts(retryTimes),
 	)
 	if err != nil {
-		slog.Error(fmt.Sprintf("Couldn't process obsolete tasks. Got the following error: %s", err))
+		slog.Error("Couldn't process obsolete tasks", "error", err)
 	}
 }
 

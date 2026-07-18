@@ -16,7 +16,6 @@ import (
 )
 
 const (
-	failedToUpdateTaskStatusTemplate = "Failed to change task status: %s"
 	// legacyRetryIntervals preserves the historical 15-step retry window (assumes 15s retry delay, totaling ~3m45s).
 	legacyRetryIntervals = 15
 )
@@ -205,19 +204,13 @@ func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) ([]ret
 	}
 
 	if task.Timeout <= 0 {
-		slog.Debug(fmt.Sprintf("Task timeout is non-positive, defaulting to %d attempts", defaultAttempts), "id", task.Id)
+		slog.Debug("Task timeout is non-positive, defaulting to a fixed attempt count", "attempts", defaultAttempts, "id", task.Id)
 		return append(retryOptions, retry.Attempts(defaultAttempts)), helpers.MulDurationSaturating(defaultAttempts, delay)
 	}
 
 	attempts := helpers.SafeIntToUint(int64(task.Timeout)/delaySeconds + 1)
 
-	slog.Debug(fmt.Sprintf(
-		"Overriding task timeout to %ds with retry delay %s (~%d second step, %d attempts)",
-		task.Timeout,
-		delay,
-		delaySeconds,
-		attempts,
-	), "id", task.Id)
+	slog.Debug("Overriding task timeout", "timeout_seconds", task.Timeout, "retry_delay", delay, "delay_step_seconds", delaySeconds, "attempts", attempts, "id", task.Id)
 
 	return append(retryOptions, retry.Attempts(attempts)), helpers.MulDurationSaturating(attempts, delay)
 }
@@ -243,7 +236,7 @@ func (monitor *DeploymentMonitor) ProcessDeploymentResult(task *models.Task, app
 func (monitor *DeploymentMonitor) taskSuperseded(id string) bool {
 	current, err := monitor.argo.State.GetTask(id)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("Could not read task status to check for supersession: %s", err), "id", id)
+		slog.Warn("Could not read task status to check for supersession", "error", err, "id", id)
 		return false
 	}
 	return current.Status == models.StatusCancelledMessage
@@ -257,10 +250,10 @@ func (monitor *DeploymentMonitor) HandleArgoAPIFailure(task *models.Task, err er
 	monitor.argo.metrics.AddFailedDeployment(task.App)
 	finalStatus := determineFailureStatus(*task, err)
 	reason := fmt.Sprintf(ArgoAPIErrorTemplate, err.Error())
-	slog.Warn(fmt.Sprintf("Deployment failed with status \"%s\". Aborting with error: %s", finalStatus, reason), "id", task.Id)
+	slog.Warn("Deployment failed; aborting", "status", finalStatus, "reason", reason, "id", task.Id)
 
 	if err := monitor.argo.State.SetTaskStatus(task.Id, finalStatus, reason); err != nil {
-		slog.Error(fmt.Sprintf(failedToUpdateTaskStatusTemplate, err), "id", task.Id)
+		slog.Error("Failed to change task status", "error", err, "id", task.Id)
 	}
 	task.Status = finalStatus
 }
@@ -269,13 +262,13 @@ func (monitor *DeploymentMonitor) handleDeploymentSuccess(task *models.Task) {
 	slog.Info("App is running on the expected version.", "id", task.Id)
 	monitor.argo.metrics.ResetFailedDeployment(task.App)
 	if err := monitor.argo.State.SetTaskStatus(task.Id, models.StatusDeployedMessage, ""); err != nil {
-		slog.Error(fmt.Sprintf(failedToUpdateTaskStatusTemplate, err), "id", task.Id)
+		slog.Error("Failed to change task status", "error", err, "id", task.Id)
 	}
 	task.Status = models.StatusDeployedMessage
 }
 
 func (monitor *DeploymentMonitor) handleDeploymentFailure(task *models.Task, status string, application *models.Application) {
-	slog.Info("App deployment failed.", "id", task.Id)
+	slog.Warn("App deployment failed.", "id", task.Id)
 	monitor.argo.metrics.AddFailedDeployment(task.App)
 	tree := monitor.fetchResourceTree(task)
 	reason := fmt.Sprintf(
@@ -284,7 +277,7 @@ func (monitor *DeploymentMonitor) handleDeploymentFailure(task *models.Task, sta
 		application.GetRolloutMessage(status, task.ListImages(), tree),
 	)
 	if err := monitor.argo.State.SetTaskStatus(task.Id, models.StatusFailedMessage, reason); err != nil {
-		slog.Error(fmt.Sprintf(failedToUpdateTaskStatusTemplate, err), "id", task.Id)
+		slog.Error("Failed to change task status", "error", err, "id", task.Id)
 	}
 	task.Status = models.StatusFailedMessage
 }
@@ -303,7 +296,7 @@ func (monitor *DeploymentMonitor) fetchResourceTree(task *models.Task) *models.A
 
 	tree, err := monitor.argo.api.GetResourceTree(ctx, task.App)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("Could not fetch resource tree for failure diagnostics: %s", err), "id", task.Id)
+		slog.Debug("Could not fetch resource tree for failure diagnostics", "error", err, "id", task.Id)
 		return nil
 	}
 	return tree
@@ -314,7 +307,7 @@ func handleApplicationFetchError(task models.Task, err error) error {
 	if task.IsAppNotFoundError(err) {
 		return retry.Unrecoverable(err)
 	}
-	slog.Debug(fmt.Sprintf("Failed fetching application status. Error: %s", err.Error()), "id", task.Id)
+	slog.Debug("Failed fetching application status", "error", err, "id", task.Id)
 	return err
 }
 
@@ -334,7 +327,7 @@ func checkRolloutStatus(task models.Task, application *models.Application, regis
 		slog.Debug("Application rollout finished", "id", task.Id)
 		return nil
 	default:
-		slog.Debug(fmt.Sprintf("Application status is not final. Status received \"%s\"", status), "id", task.Id)
+		slog.Debug("Application status is not final", "status", status, "id", task.Id)
 	}
 	return errForceRetry
 }

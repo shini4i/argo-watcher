@@ -61,20 +61,20 @@ func mockReturnAppStatus(c *gin.Context) {
 	appStatus.Status.Summary.Images = []string{"app:v0.0.1", "nginx:1.21.6", "migrations:v0.0.1"}
 
 	if app == "app4" && requestsCount < 5 {
-		slog.Info(fmt.Sprintf("app4 requests count %d", requestsCount))
+		slog.Info("app4 requests count", "count", requestsCount)
 		requestsCount++
 		if requestsCount < 2 {
 			appStatus.Status.Summary.Images = []string{"app:v0.0.1-rc1", "nginx:1.21.6", "migrations:v0.0.1"}
 		}
 		appStatus.Status.Health.Status = "UhHealthy"
-		slog.Info(fmt.Sprintf("app4 sync status is %s", appStatus.Status.Sync.Status))
-		slog.Info(fmt.Sprintf("app4 health status is %s", appStatus.Status.Health.Status))
+		slog.Info("app4 sync status", "status", appStatus.Status.Sync.Status)
+		slog.Info("app4 health status", "status", appStatus.Status.Health.Status)
 	} else if app == "app4" {
 		requestsCount = 0
 		appStatus.Status.Health.Status = "Healthy"
 		appStatus.Status.Sync.Status = "Synced"
-		slog.Info(fmt.Sprintf("app4 sync status is %s", appStatus.Status.Sync.Status))
-		slog.Info(fmt.Sprintf("app4 health status is %s", appStatus.Status.Health.Status))
+		slog.Info("app4 sync status", "status", appStatus.Status.Sync.Status)
+		slog.Info("app4 health status", "status", appStatus.Status.Health.Status)
 	} else {
 		appStatus.Status.Health.Status = "Healthy"
 	}
@@ -83,13 +83,13 @@ func mockReturnAppStatus(c *gin.Context) {
 }
 
 func main() {
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	slog.Info("Starting mock web server")
 
 	router := setupRouter()
 
 	err := router.Run(":8081")
 	if err != nil {
-		slog.Error(err.Error())
+		slog.Error("mock web server stopped", "error", err)
 	}
 }

@@ -2,7 +2,6 @@ package server
 
 import (
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -53,7 +52,7 @@ func (env *Env) addTask(c *gin.Context) {
 
 	err := c.ShouldBindJSON(&task)
 	if err != nil {
-		slog.Error(fmt.Sprintf("couldn't process new task, got the following error: %s", err))
+		slog.Error("failed to parse task payload", "error", err)
 		c.JSON(http.StatusNotAcceptable, models.TaskStatus{
 			Status: "invalid payload",
 			Error:  err.Error(),
@@ -76,7 +75,7 @@ func (env *Env) addTask(c *gin.Context) {
 		// A non-nil error means the strategy was invoked and rejected the
 		// token: a client mistake, not a server failure. Return 401 with
 		// the reason so the client can show something actionable.
-		slog.Warn(fmt.Sprintf("rejecting task: %s", err))
+		slog.Warn("rejecting task", "error", err)
 		c.JSON(http.StatusUnauthorized, models.TaskStatus{
 			Status: unauthorizedMessage,
 			Error:  err.Error(),
@@ -88,7 +87,7 @@ func (env *Env) addTask(c *gin.Context) {
 
 	newTask, err := env.argo.AddTask(task)
 	if err != nil {
-		slog.Error(fmt.Sprintf("Couldn't process new task. Got the following error: %s", err))
+		slog.Error("failed to add task", "error", err)
 		c.JSON(http.StatusServiceUnavailable, models.TaskStatus{
 			Status: "down",
 			Error:  err.Error(),
@@ -254,8 +253,8 @@ func (env *Env) requireKeycloakAuth(c *gin.Context) bool {
 
 	if err != nil {
 		// Strategy was invoked and rejected the token. Surface the reason.
-		slog.Warn(fmt.Sprintf("User tried %s %s with invalid token: %s",
-			c.Request.Method, c.Request.URL, err))
+		slog.Warn("rejected request with invalid token",
+			"method", c.Request.Method, "url", c.Request.URL, "error", err)
 		c.JSON(http.StatusUnauthorized, models.TaskStatus{
 			Status: unauthorizedMessage,
 			Error:  err.Error(),
@@ -264,7 +263,7 @@ func (env *Env) requireKeycloakAuth(c *gin.Context) bool {
 	}
 
 	// (false, nil): no auth header sent at all.
-	slog.Warn(fmt.Sprintf("User tried %s %s without authentication", c.Request.Method, c.Request.URL))
+	slog.Warn("rejected unauthenticated request", "method", c.Request.Method, "url", c.Request.URL)
 	c.JSON(http.StatusUnauthorized, models.TaskStatus{
 		Status: unauthorizedMessage,
 		Error:  "authentication required (set " + keycloakHeader + " header)",
