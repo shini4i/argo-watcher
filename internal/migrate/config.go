@@ -13,11 +13,11 @@ import (
 
 // dbConfig holds the database connection components required to build a migration-compatible DSN.
 type dbConfig struct {
-	User           string `env:"DB_USER,required"`
-	Password       string `env:"DB_PASSWORD,required"`
-	Host           string `env:"DB_HOST,required"`
-	Port           string `env:"DB_PORT,required"`
-	Name           string `env:"DB_NAME,required"`
+	User           string `env:"DB_USER,required,notEmpty"`
+	Password       string `env:"DB_PASSWORD,required,notEmpty"`
+	Host           string `env:"DB_HOST,required,notEmpty"`
+	Port           string `env:"DB_PORT,required,notEmpty"`
+	Name           string `env:"DB_NAME,required,notEmpty"`
 	SSLMode        string `env:"DB_SSL_MODE" envDefault:"disable"`
 	MigrationsPath string `env:"DB_MIGRATIONS_PATH" envDefault:"/app/db/migrations"`
 }

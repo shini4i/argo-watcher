@@ -5,7 +5,6 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/go-playground/validator/v10"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -100,8 +99,23 @@ func TestNewServerConfig_InvalidArgoApiRetries_IsReadable(t *testing.T) {
 	_, err := NewServerConfig()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "ArgoApiRetries")
-	assert.Contains(t, err.Error(), "must be <= 10")
+	assert.Contains(t, err.Error(), "must be between 1 and 10")
 	assert.Contains(t, err.Error(), "got 11")
+}
+
+// TestNewServerConfig_EmptyRequiredRejected verifies that a required variable
+// that is present but empty is rejected at parse time (the `,notEmpty` tag),
+// not silently accepted and left to fail later. This guards the empty-value
+// rejection that replaced go-playground/validator.
+func TestNewServerConfig_EmptyRequiredRejected(t *testing.T) {
+	t.Setenv("ARGO_URL", "https://example.com")
+	t.Setenv("STATE_TYPE", "in-memory")
+	t.Setenv("ARGO_TOKEN", "") // set, but empty
+
+	_, err := NewServerConfig()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "ARGO_TOKEN")
+	assert.Contains(t, err.Error(), "should not be empty")
 }
 
 func TestServerConfig_GetRetryAttempts(t *testing.T) {
@@ -164,23 +178,6 @@ func TestNewServerConfig_ArgoApiRetriesTooHighRejected(t *testing.T) {
 
 	_, err := NewServerConfig()
 	assert.Error(t, err)
-}
-
-// TestPrettifyValidatorError_UnknownTagFallsBack guards the default branch in
-// describeValidatorFailure: any future validator tag (e.g. "url") that this
-// switch does not specialise must still produce a non-empty, field-naming
-// message instead of swallowing the validation failure.
-func TestPrettifyValidatorError_UnknownTagFallsBack(t *testing.T) {
-	type sample struct {
-		Field string `validate:"url"`
-	}
-	v := validator.New()
-	verr := v.Struct(sample{Field: "not-a-url"})
-	assert.Error(t, verr)
-
-	formatted := prettifyValidatorError(verr)
-	assert.Contains(t, formatted.Error(), "Field")
-	assert.Contains(t, formatted.Error(), "url validation failed")
 }
 
 func TestServerConfig_JSONExcludesSensitiveFields(t *testing.T) {
