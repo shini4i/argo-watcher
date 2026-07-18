@@ -17,20 +17,23 @@ tasks:
     desc: Generate mocks for tests
     cmds:
       - echo "===> Generating mocks"
-      - mockgen --source=internal/argocd/argo_api.go --destination=cmd/argo-watcher/mock/argo_api.go --package=mock
-      - mockgen --source=internal/state/state.go --destination=cmd/argo-watcher/mock/state.go --package=mock
-      - mockgen --source=internal/prometheus/metrics.go --destination=cmd/argo-watcher/mock/metrics.go --package=mock
-      - mockgen --source=internal/updater/interfaces.go --destination=internal/updater/mock/interfaces.go --package=mock
+      - mockgen --source=internal/argocd/argo_api.go --destination=internal/mocks/argo_api.go --package=mocks
+      - mockgen --source=internal/state/state.go --destination=internal/mocks/state.go --package=mocks
+      - mockgen --source=internal/prometheus/metrics.go --destination=internal/mocks/metrics.go --package=mocks
+      - mockgen --source=internal/updater/interfaces.go --destination=internal/mocks/updater.go --package=mocks
+      - mockgen --source=internal/notifications/webhook.go --destination=internal/mocks/notifications.go --package=mocks
+      - mockgen --source=internal/auth/auth.go --destination=internal/mocks/auth.go --package=mocks
+      - mockgen --source=internal/migrate/migrate.go --destination=internal/mocks/migrate.go --package=mocks
     sources:
       - internal/argocd/argo_api.go
       - internal/state/state.go
       - internal/prometheus/metrics.go
       - internal/updater/interfaces.go
+      - internal/notifications/webhook.go
+      - internal/auth/auth.go
+      - internal/migrate/migrate.go
     generates:
-      - cmd/argo-watcher/mock/argo_api.go
-      - cmd/argo-watcher/mock/state.go
-      - cmd/argo-watcher/mock/metrics.go
-      - internal/updater/mock/interfaces.go
+      - internal/mocks/*.go
 
   docs:
     desc: Generate swagger spec

@@ -11,8 +11,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	"github.com/shini4i/argo-watcher/internal/config"
+	"github.com/shini4i/argo-watcher/internal/mocks"
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
@@ -28,12 +30,19 @@ func validMattermostConfig() *config.MattermostConfig {
 	}
 }
 
+// unusedHTTPClient returns a mock HTTPClient for tests that never reach the
+// network (constructor validation, pre-request failures). No calls are expected.
+func unusedHTTPClient(t *testing.T) *mocks.MockHTTPClient {
+	t.Helper()
+	return mocks.NewMockHTTPClient(gomock.NewController(t))
+}
+
 // TestNewMattermostStrategy tests the constructor for MattermostStrategy.
 func TestNewMattermostStrategy(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		cfg := validMattermostConfig()
 		cfg.Url = "http://mattermost.local/"
-		client := &MockHTTPClient{}
+		client := unusedHTTPClient(t)
 
 		service, err := NewMattermostStrategy(cfg, client)
 
@@ -49,7 +58,7 @@ func TestNewMattermostStrategy(t *testing.T) {
 	})
 
 	t.Run("Nil Config", func(t *testing.T) {
-		service, err := NewMattermostStrategy(nil, &MockHTTPClient{})
+		service, err := NewMattermostStrategy(nil, unusedHTTPClient(t))
 
 		require.Error(t, err)
 		assert.Nil(t, service)
@@ -60,7 +69,7 @@ func TestNewMattermostStrategy(t *testing.T) {
 		cfg := validMattermostConfig()
 		cfg.Enabled = false
 
-		service, err := NewMattermostStrategy(cfg, &MockHTTPClient{})
+		service, err := NewMattermostStrategy(cfg, unusedHTTPClient(t))
 
 		require.Error(t, err)
 		assert.Nil(t, service)
@@ -84,7 +93,7 @@ func TestNewMattermostStrategy(t *testing.T) {
 				cfg := validMattermostConfig()
 				tc.mutate(cfg)
 
-				service, err := NewMattermostStrategy(cfg, &MockHTTPClient{})
+				service, err := NewMattermostStrategy(cfg, unusedHTTPClient(t))
 
 				require.Error(t, err)
 				assert.Nil(t, service)
@@ -105,7 +114,7 @@ func TestNewMattermostStrategy(t *testing.T) {
 		cfg := validMattermostConfig()
 		cfg.Format = "{{.App"
 
-		service, err := NewMattermostStrategy(cfg, &MockHTTPClient{})
+		service, err := NewMattermostStrategy(cfg, unusedHTTPClient(t))
 
 		require.Error(t, err)
 		assert.Nil(t, service)
@@ -144,24 +153,23 @@ func decodePostBody(t *testing.T, req *http.Request) map[string]any {
 // TestMattermostSend tests the Send method of the MattermostStrategy.
 func TestMattermostSend(t *testing.T) {
 	t.Run("Start Creates Root Post And Stores Post Id", func(t *testing.T) {
-		mockClient := &MockHTTPClient{
-			DoFunc: func(req *http.Request) (*http.Response, error) {
-				assert.Equal(t, http.MethodPost, req.Method)
-				assert.Equal(t, "http://mattermost.local/api/v4/posts", req.URL.String())
-				assert.Equal(t, "application/json", req.Header.Get("Content-Type"))
-				assert.Equal(t, "Bearer bot-token", req.Header.Get("Authorization"))
+		mockClient := mocks.NewMockHTTPClient(gomock.NewController(t))
+		mockClient.EXPECT().Do(gomock.Any()).DoAndReturn(func(req *http.Request) (*http.Response, error) {
+			assert.Equal(t, http.MethodPost, req.Method)
+			assert.Equal(t, "http://mattermost.local/api/v4/posts", req.URL.String())
+			assert.Equal(t, "application/json", req.Header.Get("Content-Type"))
+			assert.Equal(t, "Bearer bot-token", req.Header.Get("Authorization"))
 
-				body := decodePostBody(t, req)
-				assert.Equal(t, "channel123", body["channel_id"])
-				assert.Equal(t, "@jdoe app1: in progress", body["message"])
-				assert.NotContains(t, body, "root_id")
+			body := decodePostBody(t, req)
+			assert.Equal(t, "channel123", body["channel_id"])
+			assert.Equal(t, "@jdoe app1: in progress", body["message"])
+			assert.NotContains(t, body, "root_id")
 
-				return &http.Response{
-					StatusCode: http.StatusCreated,
-					Body:       io.NopCloser(strings.NewReader(`{"id":"post123"}`)),
-				}, nil
-			},
-		}
+			return &http.Response{
+				StatusCode: http.StatusCreated,
+				Body:       io.NopCloser(strings.NewReader(`{"id":"post123"}`)),
+			}, nil
+		})
 		service := newTestMattermostStrategy(t, mockClient)
 
 		err := service.Send(models.Task{Id: "task-1", App: "app1", Status: models.StatusInProgressMessage, Author: "jdoe"})
@@ -171,18 +179,17 @@ func TestMattermostSend(t *testing.T) {
 	})
 
 	t.Run("Result Replies In Thread With Mention", func(t *testing.T) {
-		mockClient := &MockHTTPClient{
-			DoFunc: func(req *http.Request) (*http.Response, error) {
-				body := decodePostBody(t, req)
-				assert.Equal(t, "post123", body["root_id"])
-				assert.Equal(t, "@jdoe app1: deployed", body["message"])
+		mockClient := mocks.NewMockHTTPClient(gomock.NewController(t))
+		mockClient.EXPECT().Do(gomock.Any()).DoAndReturn(func(req *http.Request) (*http.Response, error) {
+			body := decodePostBody(t, req)
+			assert.Equal(t, "post123", body["root_id"])
+			assert.Equal(t, "@jdoe app1: deployed", body["message"])
 
-				return &http.Response{
-					StatusCode: http.StatusCreated,
-					Body:       io.NopCloser(strings.NewReader(`{"id":"post456"}`)),
-				}, nil
-			},
-		}
+			return &http.Response{
+				StatusCode: http.StatusCreated,
+				Body:       io.NopCloser(strings.NewReader(`{"id":"post456"}`)),
+			}, nil
+		})
 		service := newTestMattermostStrategy(t, mockClient)
 		service.rootPosts["task-1"] = "post123"
 
@@ -193,17 +200,16 @@ func TestMattermostSend(t *testing.T) {
 	})
 
 	t.Run("Mention Disabled Leaves Message As Is", func(t *testing.T) {
-		mockClient := &MockHTTPClient{
-			DoFunc: func(req *http.Request) (*http.Response, error) {
-				body := decodePostBody(t, req)
-				assert.Equal(t, "app1: deployed", body["message"])
+		mockClient := mocks.NewMockHTTPClient(gomock.NewController(t))
+		mockClient.EXPECT().Do(gomock.Any()).DoAndReturn(func(req *http.Request) (*http.Response, error) {
+			body := decodePostBody(t, req)
+			assert.Equal(t, "app1: deployed", body["message"])
 
-				return &http.Response{
-					StatusCode: http.StatusCreated,
-					Body:       io.NopCloser(strings.NewReader(`{"id":"post456"}`)),
-				}, nil
-			},
-		}
+			return &http.Response{
+				StatusCode: http.StatusCreated,
+				Body:       io.NopCloser(strings.NewReader(`{"id":"post456"}`)),
+			}, nil
+		})
 		service := newTestMattermostStrategy(t, mockClient)
 		service.mentionAuthor = false
 
@@ -213,18 +219,17 @@ func TestMattermostSend(t *testing.T) {
 	})
 
 	t.Run("Result Without Known Root Posts To Channel", func(t *testing.T) {
-		mockClient := &MockHTTPClient{
-			DoFunc: func(req *http.Request) (*http.Response, error) {
-				body := decodePostBody(t, req)
-				assert.NotContains(t, body, "root_id")
-				assert.Equal(t, "app1: failed", body["message"])
+		mockClient := mocks.NewMockHTTPClient(gomock.NewController(t))
+		mockClient.EXPECT().Do(gomock.Any()).DoAndReturn(func(req *http.Request) (*http.Response, error) {
+			body := decodePostBody(t, req)
+			assert.NotContains(t, body, "root_id")
+			assert.Equal(t, "app1: failed", body["message"])
 
-				return &http.Response{
-					StatusCode: http.StatusCreated,
-					Body:       io.NopCloser(strings.NewReader(`{"id":"post456"}`)),
-				}, nil
-			},
-		}
+			return &http.Response{
+				StatusCode: http.StatusCreated,
+				Body:       io.NopCloser(strings.NewReader(`{"id":"post456"}`)),
+			}, nil
+		})
 		service := newTestMattermostStrategy(t, mockClient)
 
 		err := service.Send(models.Task{Id: "task-1", App: "app1", Status: models.StatusFailedMessage})
@@ -233,11 +238,8 @@ func TestMattermostSend(t *testing.T) {
 	})
 
 	t.Run("Root Entry Deleted Even If Result Post Fails", func(t *testing.T) {
-		mockClient := &MockHTTPClient{
-			DoFunc: func(req *http.Request) (*http.Response, error) {
-				return nil, errors.New("network error")
-			},
-		}
+		mockClient := mocks.NewMockHTTPClient(gomock.NewController(t))
+		mockClient.EXPECT().Do(gomock.Any()).Return(nil, errors.New("network error"))
 		service := newTestMattermostStrategy(t, mockClient)
 		service.rootPosts["task-1"] = "post123"
 
@@ -248,14 +250,11 @@ func TestMattermostSend(t *testing.T) {
 	})
 
 	t.Run("Failed Start Does Not Store Post Id", func(t *testing.T) {
-		mockClient := &MockHTTPClient{
-			DoFunc: func(req *http.Request) (*http.Response, error) {
-				return &http.Response{
-					StatusCode: http.StatusForbidden,
-					Body:       io.NopCloser(strings.NewReader(`{"message":"no access"}`)),
-				}, nil
-			},
-		}
+		mockClient := mocks.NewMockHTTPClient(gomock.NewController(t))
+		mockClient.EXPECT().Do(gomock.Any()).Return(&http.Response{
+			StatusCode: http.StatusForbidden,
+			Body:       io.NopCloser(strings.NewReader(`{"message":"no access"}`)),
+		}, nil)
 		service := newTestMattermostStrategy(t, mockClient)
 
 		err := service.Send(models.Task{Id: "task-1", App: "app1", Status: models.StatusInProgressMessage})
@@ -267,14 +266,11 @@ func TestMattermostSend(t *testing.T) {
 	})
 
 	t.Run("Missing Post Id In Response", func(t *testing.T) {
-		mockClient := &MockHTTPClient{
-			DoFunc: func(req *http.Request) (*http.Response, error) {
-				return &http.Response{
-					StatusCode: http.StatusCreated,
-					Body:       io.NopCloser(strings.NewReader(`{}`)),
-				}, nil
-			},
-		}
+		mockClient := mocks.NewMockHTTPClient(gomock.NewController(t))
+		mockClient.EXPECT().Do(gomock.Any()).Return(&http.Response{
+			StatusCode: http.StatusCreated,
+			Body:       io.NopCloser(strings.NewReader(`{}`)),
+		}, nil)
 		service := newTestMattermostStrategy(t, mockClient)
 
 		err := service.Send(models.Task{Id: "task-1", App: "app1", Status: models.StatusInProgressMessage})
@@ -284,14 +280,11 @@ func TestMattermostSend(t *testing.T) {
 	})
 
 	t.Run("Invalid Response Body", func(t *testing.T) {
-		mockClient := &MockHTTPClient{
-			DoFunc: func(req *http.Request) (*http.Response, error) {
-				return &http.Response{
-					StatusCode: http.StatusCreated,
-					Body:       io.NopCloser(strings.NewReader(`not-json`)),
-				}, nil
-			},
-		}
+		mockClient := mocks.NewMockHTTPClient(gomock.NewController(t))
+		mockClient.EXPECT().Do(gomock.Any()).Return(&http.Response{
+			StatusCode: http.StatusCreated,
+			Body:       io.NopCloser(strings.NewReader(`not-json`)),
+		}, nil)
 		service := newTestMattermostStrategy(t, mockClient)
 
 		err := service.Send(models.Task{Id: "task-1", App: "app1", Status: models.StatusInProgressMessage})
@@ -301,7 +294,7 @@ func TestMattermostSend(t *testing.T) {
 	})
 
 	t.Run("Failed Request Creation", func(t *testing.T) {
-		service := newTestMattermostStrategy(t, &MockHTTPClient{})
+		service := newTestMattermostStrategy(t, unusedHTTPClient(t))
 		service.baseURL = ":invalid-url:"
 
 		err := service.Send(models.Task{Id: "task-1", App: "app1", Status: models.StatusInProgressMessage})
@@ -311,14 +304,11 @@ func TestMattermostSend(t *testing.T) {
 	})
 
 	t.Run("Non-201 Status With Body Read Error", func(t *testing.T) {
-		mockClient := &MockHTTPClient{
-			DoFunc: func(req *http.Request) (*http.Response, error) {
-				return &http.Response{
-					StatusCode: http.StatusForbidden,
-					Body:       io.NopCloser(&errorReader{err: errors.New("read error")}),
-				}, nil
-			},
-		}
+		mockClient := mocks.NewMockHTTPClient(gomock.NewController(t))
+		mockClient.EXPECT().Do(gomock.Any()).Return(&http.Response{
+			StatusCode: http.StatusForbidden,
+			Body:       io.NopCloser(&errorReader{err: errors.New("read error")}),
+		}, nil)
 		service := newTestMattermostStrategy(t, mockClient)
 
 		err := service.Send(models.Task{Id: "task-1", App: "app1", Status: models.StatusInProgressMessage})
@@ -331,7 +321,7 @@ func TestMattermostSend(t *testing.T) {
 		invalidTmpl, err := template.New("mattermost").Parse(`{{.Missing}}`)
 		require.NoError(t, err)
 
-		service := newTestMattermostStrategy(t, &MockHTTPClient{})
+		service := newTestMattermostStrategy(t, unusedHTTPClient(t))
 		service.template = invalidTmpl
 
 		err = service.Send(models.Task{Id: "task-1", Status: models.StatusInProgressMessage})

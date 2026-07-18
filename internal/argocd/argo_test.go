@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/mock"
+	"github.com/shini4i/argo-watcher/internal/mocks"
 	"github.com/shini4i/argo-watcher/internal/models"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
@@ -24,8 +24,8 @@ func TestArgoCheck(t *testing.T) {
 	t.Run("Argo Watcher - Up", func(t *testing.T) {
 		// mocks
 		apiMock := newArgoApiMock(ctrl)
-		metricsMock := mock.NewMockMetricsInterface(ctrl)
-		stateMock := mock.NewMockTaskRepository(ctrl)
+		metricsMock := mocks.NewMockMetricsInterface(ctrl)
+		stateMock := mocks.NewMockTaskRepository(ctrl)
 
 		// mock calls
 		stateMock.EXPECT().Check().Return(true)
@@ -49,8 +49,8 @@ func TestArgoCheck(t *testing.T) {
 	t.Run("Argo Watcher - Down - Cannot connect to State manager", func(t *testing.T) {
 		// mocks
 		api := newArgoApiMock(ctrl)
-		metrics := mock.NewMockMetricsInterface(ctrl)
-		state := mock.NewMockTaskRepository(ctrl)
+		metrics := mocks.NewMockMetricsInterface(ctrl)
+		state := mocks.NewMockTaskRepository(ctrl)
 
 		// mock calls
 		state.EXPECT().Check().Return(false)
@@ -74,8 +74,8 @@ func TestArgoCheck(t *testing.T) {
 	t.Run("Argo Watcher - Down - Cannot login", func(t *testing.T) {
 		// mocks
 		api := newArgoApiMock(ctrl)
-		metrics := mock.NewMockMetricsInterface(ctrl)
-		state := mock.NewMockTaskRepository(ctrl)
+		metrics := mocks.NewMockMetricsInterface(ctrl)
+		state := mocks.NewMockTaskRepository(ctrl)
 
 		// mock calls
 		state.EXPECT().Check().Return(true)
@@ -99,8 +99,8 @@ func TestArgoCheck(t *testing.T) {
 	t.Run("Argo Watcher - Down - Unexpected login failure", func(t *testing.T) {
 		// mocks
 		api := newArgoApiMock(ctrl)
-		metrics := mock.NewMockMetricsInterface(ctrl)
-		state := mock.NewMockTaskRepository(ctrl)
+		metrics := mocks.NewMockMetricsInterface(ctrl)
+		state := mocks.NewMockTaskRepository(ctrl)
 
 		// mock calls
 		state.EXPECT().Check().Return(true)
@@ -125,8 +125,8 @@ func TestArgoAddTask(t *testing.T) {
 	t.Run("Argo Unavailable", func(t *testing.T) {
 		// mocks
 		api := newArgoApiMock(ctrl)
-		metrics := mock.NewMockMetricsInterface(ctrl)
-		state := mock.NewMockTaskRepository(ctrl)
+		metrics := mocks.NewMockMetricsInterface(ctrl)
+		state := mocks.NewMockTaskRepository(ctrl)
 
 		// mock calls
 		state.EXPECT().Check().Return(true)
@@ -147,8 +147,8 @@ func TestArgoAddTask(t *testing.T) {
 	t.Run("Argo - Image not passed", func(t *testing.T) {
 		// mocks
 		api := newArgoApiMock(ctrl)
-		metrics := mock.NewMockMetricsInterface(ctrl)
-		state := mock.NewMockTaskRepository(ctrl)
+		metrics := mocks.NewMockMetricsInterface(ctrl)
+		state := mocks.NewMockTaskRepository(ctrl)
 
 		// mock calls
 		state.EXPECT().Check().Return(true)
@@ -172,8 +172,8 @@ func TestArgoAddTask(t *testing.T) {
 	t.Run("Argo - App not passed", func(t *testing.T) {
 		// mocks
 		api := newArgoApiMock(ctrl)
-		metrics := mock.NewMockMetricsInterface(ctrl)
-		state := mock.NewMockTaskRepository(ctrl)
+		metrics := mocks.NewMockMetricsInterface(ctrl)
+		state := mocks.NewMockTaskRepository(ctrl)
 
 		// mock calls
 		state.EXPECT().Check().Return(true)
@@ -201,8 +201,8 @@ func TestArgoAddTask(t *testing.T) {
 	t.Run("Argo - State add failed", func(t *testing.T) {
 		// mocks
 		api := newArgoApiMock(ctrl)
-		metrics := mock.NewMockMetricsInterface(ctrl)
-		state := mock.NewMockTaskRepository(ctrl)
+		metrics := mocks.NewMockMetricsInterface(ctrl)
+		state := mocks.NewMockTaskRepository(ctrl)
 
 		// mock calls
 		state.EXPECT().Check().Return(true)
@@ -237,8 +237,8 @@ func TestArgoAddTask(t *testing.T) {
 	t.Run("Argo - Task added", func(t *testing.T) {
 		// mocks
 		api := newArgoApiMock(ctrl)
-		metrics := mock.NewMockMetricsInterface(ctrl)
-		state := mock.NewMockTaskRepository(ctrl)
+		metrics := mocks.NewMockMetricsInterface(ctrl)
+		state := mocks.NewMockTaskRepository(ctrl)
 
 		// mock calls
 		state.EXPECT().Check().Return(true)
@@ -290,8 +290,8 @@ func TestArgoAddTask(t *testing.T) {
 	t.Run("Argo - Cancel failure does not block new deployment", func(t *testing.T) {
 		// mocks
 		api := newArgoApiMock(ctrl)
-		metrics := mock.NewMockMetricsInterface(ctrl)
-		state := mock.NewMockTaskRepository(ctrl)
+		metrics := mocks.NewMockMetricsInterface(ctrl)
+		state := mocks.NewMockTaskRepository(ctrl)
 
 		state.EXPECT().Check().Return(true)
 		api.EXPECT().GetUserInfo().Return(&models.Userinfo{LoggedIn: true}, nil)
@@ -317,8 +317,8 @@ func TestArgoAddTask(t *testing.T) {
 
 	t.Run("Argo - Rollback fields are computed and persisted", func(t *testing.T) {
 		api := newArgoApiMock(ctrl)
-		metrics := mock.NewMockMetricsInterface(ctrl)
-		state := mock.NewMockTaskRepository(ctrl)
+		metrics := mocks.NewMockMetricsInterface(ctrl)
+		state := mocks.NewMockTaskRepository(ctrl)
 
 		state.EXPECT().Check().Return(true)
 		api.EXPECT().GetUserInfo().Return(&models.Userinfo{LoggedIn: true}, nil)
@@ -352,8 +352,8 @@ func TestArgoAddTask(t *testing.T) {
 
 	t.Run("Argo - Client-supplied rollback fields are overwritten from history", func(t *testing.T) {
 		api := newArgoApiMock(ctrl)
-		metrics := mock.NewMockMetricsInterface(ctrl)
-		state := mock.NewMockTaskRepository(ctrl)
+		metrics := mocks.NewMockMetricsInterface(ctrl)
+		state := mocks.NewMockTaskRepository(ctrl)
 
 		state.EXPECT().Check().Return(true)
 		api.EXPECT().GetUserInfo().Return(&models.Userinfo{LoggedIn: true}, nil)
@@ -480,7 +480,7 @@ func TestArgoDetectRollback(t *testing.T) {
 				})
 			}
 
-			state := mock.NewMockTaskRepository(ctrl)
+			state := mocks.NewMockTaskRepository(ctrl)
 			state.EXPECT().
 				GetTasks(gomock.Any(), gomock.Any(), "test-app", models.StatusDeployedMessage, rollbackHistoryWindow, 0).
 				Return(deployed, int64(len(deployed)))
@@ -502,8 +502,8 @@ func TestArgoGetTasks(t *testing.T) {
 	// mocks below would fail the run if it did, since no such calls are expected.
 	t.Run("readsFromStateWithoutCheckingArgoCD", func(t *testing.T) {
 		api := newArgoApiMock(ctrl)
-		metrics := mock.NewMockMetricsInterface(ctrl)
-		state := mock.NewMockTaskRepository(ctrl)
+		metrics := mocks.NewMockMetricsInterface(ctrl)
+		state := mocks.NewMockTaskRepository(ctrl)
 
 		start := 10.0
 		end := 20.0
@@ -531,8 +531,8 @@ func TestArgoGetTasks(t *testing.T) {
 	// an outage.)
 	t.Run("makesNoArgoCDCallsRegardlessOfInput", func(t *testing.T) {
 		api := newArgoApiMock(ctrl)
-		metrics := mock.NewMockMetricsInterface(ctrl)
-		state := mock.NewMockTaskRepository(ctrl)
+		metrics := mocks.NewMockMetricsInterface(ctrl)
+		state := mocks.NewMockTaskRepository(ctrl)
 
 		expectedTasks := []models.Task{
 			{Id: "task-1", App: "demo"},
@@ -555,8 +555,8 @@ func TestArgoStartLivenessProbe(t *testing.T) {
 	defer ctrl.Finish()
 
 	api := newArgoApiMock(ctrl)
-	metrics := mock.NewMockMetricsInterface(ctrl)
-	state := mock.NewMockTaskRepository(ctrl)
+	metrics := mocks.NewMockMetricsInterface(ctrl)
+	state := mocks.NewMockTaskRepository(ctrl)
 
 	// Cancel before starting: the immediate probe still runs Check() exactly
 	// once (refreshing the metric), then the loop returns on ctx.Done() without
@@ -589,7 +589,7 @@ func TestArgoSimpleHealthCheck(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	state := mock.NewMockTaskRepository(ctrl)
+	state := mocks.NewMockTaskRepository(ctrl)
 	state.EXPECT().Check().Return(true)
 
 	argo := &Argo{}

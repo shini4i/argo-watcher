@@ -33,9 +33,8 @@ docs/reference/swagger.json
 # Taskfile cache (genny metadata)
 .task/
 
-# dynamically generated mocks (invoke scripts regenerate them)
-cmd/argo-watcher/mock
-internal/updater/mock
+# dynamically generated mocks (task mocks regenerates them)
+internal/mocks/
 
 # goreleaser artifacts (tarballs, binaries)
 dist/

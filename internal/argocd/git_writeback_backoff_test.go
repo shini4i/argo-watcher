@@ -10,31 +10,24 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
+	"github.com/shini4i/argo-watcher/internal/mocks"
 	"github.com/shini4i/argo-watcher/internal/models"
 	"github.com/shini4i/argo-watcher/internal/updater"
 )
 
-// fakeGitHandler drives runGitUpdateWithRetry without a real remote: PlainOpen
-// reports no cache so Clone takes the fresh-clone path, and PlainClone returns a
-// (non-permanent) error on every call, so every attempt fails and the loop
-// retries. cloneCalls counts how many attempts actually reached the clone.
-type fakeGitHandler struct {
-	cloneCalls int
-	cloneErr   error
-}
-
-func (h *fakeGitHandler) PlainOpen(string) (*git.Repository, error) {
-	return nil, git.ErrRepositoryNotExists
-}
-
-func (h *fakeGitHandler) PlainClone(_ context.Context, _ string, _ bool, _ *git.CloneOptions) (*git.Repository, error) {
-	h.cloneCalls++
-	return nil, h.cloneErr
-}
-
-func (h *fakeGitHandler) AddSSHKey(_, _, _ string) (*ssh.PublicKeys, error) {
-	return &ssh.PublicKeys{}, nil
+// retryingGitHandler returns a MockGitHandler that drives runGitUpdateWithRetry
+// without a real remote: PlainOpen reports no cache so Clone takes the
+// fresh-clone path, AddSSHKey succeeds, and PlainClone returns cloneErr exactly
+// wantClones times. The Times(wantClones) expectation verifies how many attempts
+// actually reached the clone, replacing a manual counter.
+func retryingGitHandler(ctrl *gomock.Controller, cloneErr error, wantClones int) *mocks.MockGitHandler {
+	h := mocks.NewMockGitHandler(ctrl)
+	h.EXPECT().PlainOpen(gomock.Any()).Return(nil, git.ErrRepositoryNotExists).AnyTimes()
+	h.EXPECT().AddSSHKey(gomock.Any(), gomock.Any(), gomock.Any()).Return(&ssh.PublicKeys{}, nil).AnyTimes()
+	h.EXPECT().PlainClone(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, cloneErr).Times(wantClones)
+	return h
 }
 
 // gitTestRepo builds a GitopsRepo pointing at a throwaway cache dir.
@@ -56,7 +49,9 @@ func TestGitUpdateSupersededOnLaterAttempt(t *testing.T) {
 	t.Setenv("GIT_OP_TIMEOUT", "5s")
 	t.Setenv("GIT_MAX_ATTEMPTS", "5")
 
-	h := &fakeGitHandler{cloneErr: errors.New("transient clone failure")}
+	// attempt 1 reaches the clone (Times(1)); the guard fires on attempt 2 before
+	// any second clone, which gomock verifies at controller finish.
+	h := retryingGitHandler(gomock.NewController(t), errors.New("transient clone failure"), 1)
 	checks := 0
 	supersede := func() bool { checks++; return checks >= 2 } // false on attempt 1, true on attempt 2
 
@@ -65,7 +60,6 @@ func TestGitUpdateSupersededOnLaterAttempt(t *testing.T) {
 	)
 
 	require.ErrorIs(t, err, ErrDeploymentSuperseded)
-	assert.Equal(t, 1, h.cloneCalls, "attempt 1 must reach the clone; the guard fires on attempt 2, not up front")
 }
 
 // TestGitUpdateExhaustsRetries covers the multi-attempt retry mechanics on the
@@ -76,7 +70,9 @@ func TestGitUpdateExhaustsRetries(t *testing.T) {
 	t.Setenv("GIT_OP_TIMEOUT", "5s")
 	t.Setenv("GIT_MAX_ATTEMPTS", "3")
 
-	h := &fakeGitHandler{cloneErr: errors.New("transient clone failure")}
+	// all 3 attempts must reach the clone when every one fails transiently;
+	// Times(3) enforces that at controller finish.
+	h := retryingGitHandler(gomock.NewController(t), errors.New("transient clone failure"), 3)
 
 	err := UpdateGitImageTag(
 		context.Background(), newAppWithImages("test-app"), newImageTask(), gitTestRepo(t), h,
@@ -84,7 +80,6 @@ func TestGitUpdateExhaustsRetries(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "git update failed after 3 attempts")
-	assert.Equal(t, 3, h.cloneCalls, "all attempts should run when every one fails transiently")
 }
 
 // TestUpdateGitImageTagSupersededGuard verifies the write-back aborts with

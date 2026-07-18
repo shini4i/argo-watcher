@@ -134,8 +134,8 @@ jobs:
         run: task install-deps
 
       - name: Generate mocks
-        # internal/models/argo_test.go imports internal/updater/mock; the package
-        # must build cleanly before our integration tests can compile.
+        # The generated mocks (internal/mocks) are gitignored; regenerate them so
+        # every test file that imports them compiles before the tests run.
         run: task mocks
 
       - name: Run integration tests
@@ -192,6 +192,15 @@ jobs:
 
       - name: Install Task
         uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+
+      - name: Install environment dependencies
+        run: task install-deps
+
+      - name: Generate mocks
+        # The Keycloak auth tests live in the server package, whose test files
+        # import the gitignored internal/mocks package; regenerate it before
+        # compiling them.
+        run: task mocks
 
       - name: Start Keycloak
         # Imports test/keycloak on boot; the test polls the realm's OIDC

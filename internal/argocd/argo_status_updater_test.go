@@ -20,7 +20,7 @@ import (
 
 	"go.uber.org/mock/gomock"
 
-	"github.com/shini4i/argo-watcher/cmd/argo-watcher/mock"
+	"github.com/shini4i/argo-watcher/internal/mocks"
 	"github.com/shini4i/argo-watcher/internal/models"
 	"github.com/shini4i/argo-watcher/internal/notifications"
 )
@@ -74,8 +74,8 @@ func zeroDelay(_ uint, _ error, _ *retry.Config) time.Duration {
 //
 // Register any future best-effort (optional) ArgoApi call here so adding one never has to touch
 // every test setup again — the whole point of routing mock creation through this constructor.
-func newArgoApiMock(ctrl *gomock.Controller) *mock.MockArgoApiInterface {
-	api := mock.NewMockArgoApiInterface(ctrl)
+func newArgoApiMock(ctrl *gomock.Controller) *mocks.MockArgoApiInterface {
+	api := mocks.NewMockArgoApiInterface(ctrl)
 	api.EXPECT().GetResourceTree(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 	return api
 }
@@ -83,8 +83,8 @@ func newArgoApiMock(ctrl *gomock.Controller) *mock.MockArgoApiInterface {
 // notSupersededState returns a TaskRepository mock whose GetTask always reports an
 // in-progress task, so the poll loop's supersession check never fires. Use it when
 // a test exercises rollout polling but is not about cancellation.
-func notSupersededState(ctrl *gomock.Controller) *mock.MockTaskRepository {
-	state := mock.NewMockTaskRepository(ctrl)
+func notSupersededState(ctrl *gomock.Controller) *mocks.MockTaskRepository {
+	state := mocks.NewMockTaskRepository(ctrl)
 	state.EXPECT().GetTask(gomock.Any()).Return(&models.Task{Status: models.StatusInProgressMessage}, nil).AnyTimes()
 	return state
 }
@@ -125,8 +125,8 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 	t.Run("Status Updater - Application deployed", func(t *testing.T) {
 		// mocks
 		apiMock := newArgoApiMock(ctrl)
-		metricsMock := mock.NewMockMetricsInterface(ctrl)
-		stateMock := mock.NewMockTaskRepository(ctrl)
+		metricsMock := mocks.NewMockMetricsInterface(ctrl)
+		stateMock := mocks.NewMockTaskRepository(ctrl)
 
 		// argo manager
 		argo := &Argo{}
@@ -172,8 +172,8 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 	t.Run("Status Updater - Application deployed with Retry", func(t *testing.T) {
 		// mocks
 		apiMock := newArgoApiMock(ctrl)
-		metricsMock := mock.NewMockMetricsInterface(ctrl)
-		stateMock := mock.NewMockTaskRepository(ctrl)
+		metricsMock := mocks.NewMockMetricsInterface(ctrl)
+		stateMock := mocks.NewMockTaskRepository(ctrl)
 
 		// argo manager
 		argo := &Argo{}
@@ -226,8 +226,8 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 	t.Run("Status Updater - Application deployed with Registry proxy", func(t *testing.T) {
 		// mocks
 		apiMock := newArgoApiMock(ctrl)
-		metricsMock := mock.NewMockMetricsInterface(ctrl)
-		stateMock := mock.NewMockTaskRepository(ctrl)
+		metricsMock := mocks.NewMockMetricsInterface(ctrl)
+		stateMock := mocks.NewMockTaskRepository(ctrl)
 
 		// argo manager
 		argo := &Argo{}
@@ -271,8 +271,8 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 	t.Run("Status Updater - Application deployed without Registry proxy", func(t *testing.T) {
 		// mocks
 		apiMock := newArgoApiMock(ctrl)
-		metricsMock := mock.NewMockMetricsInterface(ctrl)
-		stateMock := mock.NewMockTaskRepository(ctrl)
+		metricsMock := mocks.NewMockMetricsInterface(ctrl)
+		stateMock := mocks.NewMockTaskRepository(ctrl)
 
 		// argo manager
 		argo := &Argo{}
@@ -322,8 +322,8 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 	t.Run("Status Updater - Application not found", func(t *testing.T) {
 		// mocks
 		apiMock := newArgoApiMock(ctrl)
-		metricsMock := mock.NewMockMetricsInterface(ctrl)
-		stateMock := mock.NewMockTaskRepository(ctrl)
+		metricsMock := mocks.NewMockMetricsInterface(ctrl)
+		stateMock := mocks.NewMockTaskRepository(ctrl)
 
 		// argo manager
 		argo := &Argo{}
@@ -353,8 +353,8 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 	t.Run("Status Updater - ArgoCD unavailable", func(t *testing.T) {
 		// mocks
 		apiMock := newArgoApiMock(ctrl)
-		metricsMock := mock.NewMockMetricsInterface(ctrl)
-		stateMock := mock.NewMockTaskRepository(ctrl)
+		metricsMock := mocks.NewMockMetricsInterface(ctrl)
+		stateMock := mocks.NewMockTaskRepository(ctrl)
 
 		// argo manager
 		argo := &Argo{}
@@ -384,8 +384,8 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 	t.Run("Status Updater - Application API error", func(t *testing.T) {
 		// mocks
 		apiMock := newArgoApiMock(ctrl)
-		metricsMock := mock.NewMockMetricsInterface(ctrl)
-		stateMock := mock.NewMockTaskRepository(ctrl)
+		metricsMock := mocks.NewMockMetricsInterface(ctrl)
+		stateMock := mocks.NewMockTaskRepository(ctrl)
 
 		// argo manager
 		argo := &Argo{}
@@ -415,8 +415,8 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 	t.Run("Status Updater - Application not available", func(t *testing.T) {
 		// mocks
 		apiMock := newArgoApiMock(ctrl)
-		metricsMock := mock.NewMockMetricsInterface(ctrl)
-		stateMock := mock.NewMockTaskRepository(ctrl)
+		metricsMock := mocks.NewMockMetricsInterface(ctrl)
+		stateMock := mocks.NewMockTaskRepository(ctrl)
 
 		// argo manager
 		argo := &Argo{}
@@ -462,8 +462,8 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 	t.Run("Status Updater - Application out of Sync", func(t *testing.T) {
 		// mocks
 		apiMock := newArgoApiMock(ctrl)
-		metricsMock := mock.NewMockMetricsInterface(ctrl)
-		stateMock := mock.NewMockTaskRepository(ctrl)
+		metricsMock := mocks.NewMockMetricsInterface(ctrl)
+		stateMock := mocks.NewMockTaskRepository(ctrl)
 
 		// argo manager
 		argo := &Argo{}
@@ -513,8 +513,8 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 	t.Run("Status Updater - Application not healthy", func(t *testing.T) {
 		// mocks
 		apiMock := newArgoApiMock(ctrl)
-		metricsMock := mock.NewMockMetricsInterface(ctrl)
-		stateMock := mock.NewMockTaskRepository(ctrl)
+		metricsMock := mocks.NewMockMetricsInterface(ctrl)
+		stateMock := mocks.NewMockTaskRepository(ctrl)
 
 		// argo manager
 		argo := &Argo{}
@@ -571,8 +571,8 @@ func TestDeploymentMonitorHandleDeploymentSuccessHandlesStateError(t *testing.T)
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	metrics := mock.NewMockMetricsInterface(ctrl)
-	state := mock.NewMockTaskRepository(ctrl)
+	metrics := mocks.NewMockMetricsInterface(ctrl)
+	state := mocks.NewMockTaskRepository(ctrl)
 
 	monitor := NewDeploymentMonitor(Argo{
 		metrics: metrics,
@@ -592,8 +592,8 @@ func TestDeploymentMonitorHandleDeploymentFailureHandlesStateError(t *testing.T)
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	metrics := mock.NewMockMetricsInterface(ctrl)
-	state := mock.NewMockTaskRepository(ctrl)
+	metrics := mocks.NewMockMetricsInterface(ctrl)
+	state := mocks.NewMockTaskRepository(ctrl)
 	api := newArgoApiMock(ctrl)
 
 	monitor := NewDeploymentMonitor(Argo{
@@ -629,9 +629,9 @@ func TestDeploymentMonitorHandleDeploymentFailureEnrichesReasonFromResourceTree(
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	metrics := mock.NewMockMetricsInterface(ctrl)
-	state := mock.NewMockTaskRepository(ctrl)
-	api := mock.NewMockArgoApiInterface(ctrl)
+	metrics := mocks.NewMockMetricsInterface(ctrl)
+	state := mocks.NewMockTaskRepository(ctrl)
+	api := mocks.NewMockArgoApiInterface(ctrl)
 
 	podNode := models.ApplicationTreeNode{Kind: "Pod", Name: "app-xyz", Namespace: "demo"}
 	podNode.Health.Status = "Degraded"
@@ -675,9 +675,9 @@ func TestDeploymentMonitorHandleDeploymentFailureResourceTreeErrorIsNonFatal(t *
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	metrics := mock.NewMockMetricsInterface(ctrl)
-	state := mock.NewMockTaskRepository(ctrl)
-	api := mock.NewMockArgoApiInterface(ctrl)
+	metrics := mocks.NewMockMetricsInterface(ctrl)
+	state := mocks.NewMockTaskRepository(ctrl)
+	api := mocks.NewMockArgoApiInterface(ctrl)
 	api.EXPECT().GetResourceTree(gomock.Any(), "demo").Return(nil, errors.New("resource-tree unavailable"))
 
 	monitor := NewDeploymentMonitor(Argo{
@@ -714,8 +714,8 @@ func TestDeploymentMonitorHandleArgoAPIFailureHandlesStateError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	metrics := mock.NewMockMetricsInterface(ctrl)
-	state := mock.NewMockTaskRepository(ctrl)
+	metrics := mocks.NewMockMetricsInterface(ctrl)
+	state := mocks.NewMockTaskRepository(ctrl)
 
 	monitor := NewDeploymentMonitor(Argo{
 		metrics: metrics,
@@ -814,7 +814,7 @@ func TestGitUpdaterUpdateIfNeeded(t *testing.T) {
 	t.Run("observesLockWaitAndWritebackDurations", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
-		metrics := mock.NewMockMetricsInterface(ctrl)
+		metrics := mocks.NewMockMetricsInterface(ctrl)
 		metrics.EXPECT().ObserveGitLockWaitDuration(validTask.App, gomock.Any()).Times(1)
 		metrics.EXPECT().ObserveGitWritebackDuration(validTask.App, gomock.Any()).Times(1)
 
@@ -830,7 +830,7 @@ func TestGitUpdaterUpdateIfNeeded(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 		// Lock acquisition fails before the closure runs, so neither duration is recorded.
-		metrics := mock.NewMockMetricsInterface(ctrl)
+		metrics := mocks.NewMockMetricsInterface(ctrl)
 
 		locker := &spyLocker{err: errors.New("lock failed")}
 		updater := NewGitUpdater(locker, "/tmp/cache", metrics)
@@ -845,7 +845,7 @@ func TestGitUpdaterUpdateIfNeeded(t *testing.T) {
 		// The write-back timer is deferred so a failed (and typically slow, retried)
 		// write-back — the tail-latency case the histogram exists to surface — is still
 		// measured once the lock is acquired.
-		metrics := mock.NewMockMetricsInterface(ctrl)
+		metrics := mocks.NewMockMetricsInterface(ctrl)
 		metrics.EXPECT().ObserveGitLockWaitDuration(validTask.App, gomock.Any()).Times(1)
 		metrics.EXPECT().ObserveGitWritebackDuration(validTask.App, gomock.Any()).Times(1)
 
@@ -993,8 +993,8 @@ func TestArgoStatusUpdaterWaitForApplicationDeploymentErrors(t *testing.T) {
 
 	api := newArgoApiMock(ctrl)
 
-	metrics := mock.NewMockMetricsInterface(ctrl)
-	state := mock.NewMockTaskRepository(ctrl)
+	metrics := mocks.NewMockMetricsInterface(ctrl)
+	state := mocks.NewMockTaskRepository(ctrl)
 	locker := lock.NewInMemoryLocker()
 
 	argo := &Argo{}
@@ -1189,8 +1189,8 @@ func TestArgoStatusUpdaterStopsWhenSuperseded(t *testing.T) {
 
 	apiMock := newArgoApiMock(ctrl)
 
-	metricsMock := mock.NewMockMetricsInterface(ctrl)
-	stateMock := mock.NewMockTaskRepository(ctrl)
+	metricsMock := mocks.NewMockMetricsInterface(ctrl)
+	stateMock := mocks.NewMockTaskRepository(ctrl)
 
 	argo := &Argo{}
 	argo.Init(stateMock, apiMock, metricsMock)
@@ -1232,8 +1232,8 @@ func TestArgoStatusUpdaterStopsMidPollWhenSuperseded(t *testing.T) {
 
 	apiMock := newArgoApiMock(ctrl)
 
-	metricsMock := mock.NewMockMetricsInterface(ctrl)
-	stateMock := mock.NewMockTaskRepository(ctrl)
+	metricsMock := mocks.NewMockMetricsInterface(ctrl)
+	stateMock := mocks.NewMockTaskRepository(ctrl)
 
 	argo := &Argo{}
 	argo.Init(stateMock, apiMock, metricsMock)
@@ -1280,8 +1280,8 @@ func TestArgoStatusUpdaterAppDisappearsMidRollout(t *testing.T) {
 
 	apiMock := newArgoApiMock(ctrl)
 
-	metricsMock := mock.NewMockMetricsInterface(ctrl)
-	stateMock := mock.NewMockTaskRepository(ctrl)
+	metricsMock := mocks.NewMockMetricsInterface(ctrl)
+	stateMock := mocks.NewMockTaskRepository(ctrl)
 
 	argo := &Argo{}
 	argo.Init(stateMock, apiMock, metricsMock)
@@ -1333,8 +1333,8 @@ func TestArgoStatusUpdaterProceedsWhenStatusReadFails(t *testing.T) {
 
 	apiMock := newArgoApiMock(ctrl)
 
-	metricsMock := mock.NewMockMetricsInterface(ctrl)
-	stateMock := mock.NewMockTaskRepository(ctrl)
+	metricsMock := mocks.NewMockMetricsInterface(ctrl)
+	stateMock := mocks.NewMockTaskRepository(ctrl)
 
 	argo := &Argo{}
 	argo.Init(stateMock, apiMock, metricsMock)
@@ -1456,8 +1456,8 @@ func TestArgoStatusUpdater_processDeploymentResult(t *testing.T) {
 
 	apiMock := newArgoApiMock(ctrl)
 
-	metricsMock := mock.NewMockMetricsInterface(ctrl)
-	stateMock := mock.NewMockTaskRepository(ctrl)
+	metricsMock := mocks.NewMockMetricsInterface(ctrl)
+	stateMock := mocks.NewMockTaskRepository(ctrl)
 	mockLocker := lock.NewInMemoryLocker()
 
 	argo := &Argo{}
@@ -1543,8 +1543,8 @@ func TestArgoStatusUpdater_handleArgoAPIFailure(t *testing.T) {
 
 	apiMock := newArgoApiMock(ctrl)
 
-	metricsMock := mock.NewMockMetricsInterface(ctrl)
-	stateMock := mock.NewMockTaskRepository(ctrl)
+	metricsMock := mocks.NewMockMetricsInterface(ctrl)
+	stateMock := mocks.NewMockTaskRepository(ctrl)
 	mockLocker := lock.NewInMemoryLocker()
 
 	argo := &Argo{}
@@ -1709,14 +1709,14 @@ func TestDeploymentMonitorResolveRefresh(t *testing.T) {
 }
 
 // newFetchTestMonitor builds a monitor wired to mock API + metrics for FetchApplication tests.
-func newFetchTestMonitor(t *testing.T) (*DeploymentMonitor, *mock.MockArgoApiInterface, *mock.MockMetricsInterface) {
+func newFetchTestMonitor(t *testing.T) (*DeploymentMonitor, *mocks.MockArgoApiInterface, *mocks.MockMetricsInterface) {
 	t.Helper()
 	ctrl := gomock.NewController(t)
 	t.Cleanup(ctrl.Finish)
 
 	api := newArgoApiMock(ctrl)
 
-	metrics := mock.NewMockMetricsInterface(ctrl)
+	metrics := mocks.NewMockMetricsInterface(ctrl)
 	monitor := NewDeploymentMonitor(
 		Argo{api: api, metrics: metrics},
 		"",
