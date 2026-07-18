@@ -1,0 +1,22 @@
+# Postgres-state overlay for the state-postgres phase.
+#
+# Layered ON TOP of values/argo-watcher.yaml (`-f values/argo-watcher.yaml -f
+# values/argo-watcher-postgres.yaml`), so it inherits the full base wiring (argo
+# token, SSH write-back, webhooks, all the toggles) and changes only the state
+# backend.
+#
+# Enabling postgres does two things in the chart:
+#   * sets STATE_TYPE=postgres and wires DB_HOST/PORT/NAME/USER on the server,
+#   * runs the pre-upgrade migration Job (`argo-watcher --migrate`) that applies
+#     the schema before the server rolls.
+# DB_PASSWORD comes from the argo-watcher-db Secret (fixtures/postgres.yaml); with
+# no secretKey override the chart envFrom's the whole Secret, exposing DB_PASSWORD
+# to both the server and the migration Job. host is the in-cluster Service DNS
+# (same namespace, so the short name resolves).
+postgres:
+  enabled: true
+  host: argo-watcher-db
+  port: 5432
+  name: argo_watcher
+  user: argo_watcher
+  secretName: argo-watcher-db
