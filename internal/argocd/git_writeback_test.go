@@ -18,9 +18,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	"github.com/shini4i/argo-watcher/internal/mocks"
 	"github.com/shini4i/argo-watcher/internal/models"
 	"github.com/shini4i/argo-watcher/internal/updater"
-	updatrmock "github.com/shini4i/argo-watcher/internal/updater/mock"
 )
 
 func TestExtractManagedImages(t *testing.T) {
@@ -295,7 +295,7 @@ func TestUpdateGitImageTag(t *testing.T) {
 		t.Setenv("GIT_MAX_ATTEMPTS", "1")
 
 		ctrl := gomock.NewController(t)
-		mockHandler := updatrmock.NewMockGitHandler(ctrl)
+		mockHandler := mocks.NewMockGitHandler(ctrl)
 		mockHandler.EXPECT().
 			AddSSHKey(gomock.Any(), gomock.Any(), gomock.Any()).
 			Return(nil, errors.New("SSH key load failed"))
@@ -319,7 +319,7 @@ func TestUpdateGitImageTag(t *testing.T) {
 		t.Setenv("GIT_MAX_ATTEMPTS", "1")
 
 		ctrl := gomock.NewController(t)
-		mockHandler := updatrmock.NewMockGitHandler(ctrl)
+		mockHandler := mocks.NewMockGitHandler(ctrl)
 		mockHandler.EXPECT().AddSSHKey(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 		mockHandler.EXPECT().PlainOpen(gomock.Any()).Return(nil, gogit.ErrRepositoryNotExists)
 
@@ -400,7 +400,7 @@ func TestUpdateGitImageTag(t *testing.T) {
 		//    The recovery Clone uses PlainOpen to find it on disk at localRepoPath, then
 		//    FetchContext advances it to commit B, and the second UpdateApp succeeds.
 		ctrl := gomock.NewController(t)
-		mockHandler := updatrmock.NewMockGitHandler(ctrl)
+		mockHandler := mocks.NewMockGitHandler(ctrl)
 		mockHandler.EXPECT().AddSSHKey(gomock.Any(), gomock.Any(), gomock.Any()).
 			Return(nil, nil).AnyTimes()
 		first := mockHandler.EXPECT().PlainOpen(gomock.Any()).
@@ -462,7 +462,7 @@ func TestUpdateGitImageTag(t *testing.T) {
 		t.Setenv("GIT_OP_TIMEOUT", "5s")
 
 		ctrl := gomock.NewController(t)
-		mockHandler := updatrmock.NewMockGitHandler(ctrl)
+		mockHandler := mocks.NewMockGitHandler(ctrl)
 		mockHandler.EXPECT().AddSSHKey(gomock.Any(), gomock.Any(), gomock.Any()).
 			Return(nil, nil).AnyTimes()
 		// Both attempts fail at the clone step. Default cache-miss path on each.
@@ -506,7 +506,7 @@ func TestUpdateGitImageTag(t *testing.T) {
 		require.NoError(t, os.WriteFile(markerFile, []byte("pre-existing"), 0600))
 
 		ctrl := gomock.NewController(t)
-		mockHandler := updatrmock.NewMockGitHandler(ctrl)
+		mockHandler := mocks.NewMockGitHandler(ctrl)
 		mockHandler.EXPECT().AddSSHKey(gomock.Any(), gomock.Any(), gomock.Any()).
 			Return(nil, nil).AnyTimes()
 		// We don't care which clone path each attempt takes — the cache is
@@ -553,7 +553,7 @@ func TestUpdateGitImageTag(t *testing.T) {
 		t.Setenv("GIT_OP_TIMEOUT", "5s")
 
 		ctrl := gomock.NewController(t)
-		mockHandler := updatrmock.NewMockGitHandler(ctrl)
+		mockHandler := mocks.NewMockGitHandler(ctrl)
 		mockHandler.EXPECT().AddSSHKey(gomock.Any(), gomock.Any(), gomock.Any()).
 			Return(nil, nil).AnyTimes()
 		mockHandler.EXPECT().PlainOpen(gomock.Any()).
@@ -605,7 +605,7 @@ func TestUpdateGitImageTag(t *testing.T) {
 		t.Setenv("GIT_MAX_ATTEMPTS", "1")
 
 		ctrl := gomock.NewController(t)
-		mockHandler := updatrmock.NewMockGitHandler(ctrl)
+		mockHandler := mocks.NewMockGitHandler(ctrl)
 		mockHandler.EXPECT().AddSSHKey(gomock.Any(), gomock.Any(), gomock.Any()).
 			Return(nil, nil)
 		mockHandler.EXPECT().PlainOpen(gomock.Any()).

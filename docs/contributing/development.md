@@ -217,6 +217,7 @@ internal/
   helpers/          # Shared utility functions
   lock/             # Deployment lock logic
   migrate/          # Database migration runner
+  mocks/            # Generated gomock mocks for tests (gitignored, `task mocks`)
   models/           # Data models
   notifications/    # Webhook notification sender
   server/           # HTTP server and routes

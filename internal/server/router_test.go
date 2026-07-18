@@ -19,91 +19,89 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	"github.com/shini4i/argo-watcher/internal/argocd"
 	"github.com/shini4i/argo-watcher/internal/auth"
 	"github.com/shini4i/argo-watcher/internal/config"
+	"github.com/shini4i/argo-watcher/internal/mocks"
 	"github.com/shini4i/argo-watcher/internal/models"
 	"github.com/shini4i/argo-watcher/internal/prometheus"
 	"github.com/shini4i/argo-watcher/internal/state"
 )
 
-// mockArgoApi is a minimal mock for ArgoApiInterface used in tests.
-type mockArgoApi struct{}
-
-func (m *mockArgoApi) Init(_ *config.ServerConfig) error {
-	return nil
-}
-
-func (m *mockArgoApi) GetUserInfo() (*models.Userinfo, error) {
-	return &models.Userinfo{LoggedIn: true, Username: "test"}, nil
-}
-
-func (m *mockArgoApi) GetApplication(_ context.Context, _ string, _ bool) (*models.Application, error) {
-	return &models.Application{}, nil
-}
-
-func (m *mockArgoApi) GetResourceTree(_ context.Context, _ string) (*models.ApplicationTree, error) {
-	return &models.ApplicationTree{}, nil
-}
-
-// mockTaskRepository is a minimal mock for TaskRepository used in tests.
-// Calls to GetTasks capture the last argument set so handler-level tests can
-// assert that query params are forwarded to the repository.
-type mockTaskRepository struct {
+// repoCapture records the arguments of the most recent GetTasks call so
+// handler-level tests can assert that query params are forwarded to the
+// repository.
+type repoCapture struct {
 	lastApp    string
 	lastStatus string
 	lastLimit  int
 	lastOffset int
 }
 
-func (m *mockTaskRepository) Connect(_ *config.ServerConfig) error {
-	return nil
+// newRepo returns a permissive TaskRepository mock plus the capture struct its
+// GetTasks stub writes to. GetTasks always returns an empty result (its return
+// value is never customized in these tests); Connect, SetTaskStatus,
+// CancelInProgressTasks and ProcessObsoleteTasks are permissive no-ops. Tests
+// that exercise Check, GetTask or AddTask add those expectations themselves.
+func newRepo(ctrl *gomock.Controller) (*mocks.MockTaskRepository, *repoCapture) {
+	repo := mocks.NewMockTaskRepository(ctrl)
+	capture := &repoCapture{}
+	repo.EXPECT().Connect(gomock.Any()).Return(nil).AnyTimes()
+	repo.EXPECT().GetTasks(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_, _ float64, app, status string, limit, offset int) ([]models.Task, int64) {
+			capture.lastApp = app
+			capture.lastStatus = status
+			capture.lastLimit = limit
+			capture.lastOffset = offset
+			return []models.Task{}, 0
+		}).AnyTimes()
+	repo.EXPECT().SetTaskStatus(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	repo.EXPECT().CancelInProgressTasks(gomock.Any(), gomock.Any(), gomock.Any()).Return(int64(0), nil).AnyTimes()
+	repo.EXPECT().ProcessObsoleteTasks(gomock.Any()).AnyTimes()
+	return repo, capture
 }
 
-func (m *mockTaskRepository) AddTask(task models.Task) (*models.Task, error) {
-	return &task, nil
+// newArgoAPI returns an ArgoApiInterface mock whose calls all succeed with
+// empty/logged-in values, so it can stand in as a passive dependency for
+// handlers that never touch ArgoCD.
+func newArgoAPI(ctrl *gomock.Controller) *mocks.MockArgoApiInterface {
+	api := mocks.NewMockArgoApiInterface(ctrl)
+	api.EXPECT().Init(gomock.Any()).Return(nil).AnyTimes()
+	api.EXPECT().GetUserInfo().Return(&models.Userinfo{LoggedIn: true, Username: "test"}, nil).AnyTimes()
+	api.EXPECT().GetApplication(gomock.Any(), gomock.Any(), gomock.Any()).Return(&models.Application{}, nil).AnyTimes()
+	api.EXPECT().GetResourceTree(gomock.Any(), gomock.Any()).Return(&models.ApplicationTree{}, nil).AnyTimes()
+	return api
 }
 
-func (m *mockTaskRepository) GetTasks(_, _ float64, app, status string, limit, offset int) ([]models.Task, int64) {
-	m.lastApp = app
-	m.lastStatus = status
-	m.lastLimit = limit
-	m.lastOffset = offset
-	return []models.Task{}, 0
+// newMetrics returns a MetricsInterface mock with permissive no-op expectations
+// for every metric, so it can be passed to argo.Init without each test having
+// to anticipate which counters a handler touches.
+func newMetrics(ctrl *gomock.Controller) *mocks.MockMetricsInterface {
+	metrics := mocks.NewMockMetricsInterface(ctrl)
+	metrics.EXPECT().AddProcessedDeployment(gomock.Any()).AnyTimes()
+	metrics.EXPECT().AddFailedDeployment(gomock.Any()).AnyTimes()
+	metrics.EXPECT().ResetFailedDeployment(gomock.Any()).AnyTimes()
+	metrics.EXPECT().SetArgoUnavailable(gomock.Any()).AnyTimes()
+	metrics.EXPECT().AddInProgressTask().AnyTimes()
+	metrics.EXPECT().RemoveInProgressTask().AnyTimes()
+	metrics.EXPECT().ObserveRefreshDuration(gomock.Any(), gomock.Any()).AnyTimes()
+	metrics.EXPECT().ObserveGitWritebackDuration(gomock.Any(), gomock.Any()).AnyTimes()
+	metrics.EXPECT().ObserveGitLockWaitDuration(gomock.Any(), gomock.Any()).AnyTimes()
+	metrics.EXPECT().ObserveDeploymentDuration(gomock.Any(), gomock.Any()).AnyTimes()
+	return metrics
 }
 
-func (m *mockTaskRepository) GetTask(_ string) (*models.Task, error) {
-	return &models.Task{}, nil
+// newAuthStrategy returns an AuthStrategy mock whose Validate always yields the
+// given result, callable any number of times (some strategies are skipped when
+// their header does not match the request).
+func newAuthStrategy(t testing.TB, valid bool, err error) *mocks.MockAuthStrategy {
+	t.Helper()
+	strategy := mocks.NewMockAuthStrategy(gomock.NewController(t))
+	strategy.EXPECT().Validate(gomock.Any()).Return(valid, err).AnyTimes()
+	return strategy
 }
-
-func (m *mockTaskRepository) SetTaskStatus(_, _, _ string) error {
-	return nil
-}
-
-func (m *mockTaskRepository) CancelInProgressTasks(_ string, _ []models.Image, _ string) (int64, error) {
-	return 0, nil
-}
-
-func (m *mockTaskRepository) Check() bool {
-	return true
-}
-
-func (m *mockTaskRepository) ProcessObsoleteTasks(_ uint) {}
-
-// mockMetrics is a minimal mock for MetricsInterface used in tests.
-type mockMetrics struct{}
-
-func (m *mockMetrics) AddProcessedDeployment(_ string)                 {}
-func (m *mockMetrics) AddFailedDeployment(_ string)                    {}
-func (m *mockMetrics) ResetFailedDeployment(_ string)                  {}
-func (m *mockMetrics) SetArgoUnavailable(_ bool)                       {}
-func (m *mockMetrics) AddInProgressTask()                              {}
-func (m *mockMetrics) RemoveInProgressTask()                           {}
-func (m *mockMetrics) ObserveRefreshDuration(_ string, _ float64)      {}
-func (m *mockMetrics) ObserveGitWritebackDuration(_ string, _ float64) {}
-func (m *mockMetrics) ObserveGitLockWaitDuration(_ string, _ float64)  {}
-func (m *mockMetrics) ObserveDeploymentDuration(_ string, _ float64)   {}
 
 func TestGetVersion(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -339,8 +337,10 @@ func TestGetStateInvalidQueryParams(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	// Set up Argo with mock dependencies
+	ctrl := gomock.NewController(t)
+	repo, _ := newRepo(ctrl)
 	argo := &argocd.Argo{}
-	argo.Init(&mockTaskRepository{}, &mockArgoApi{}, &mockMetrics{})
+	argo.Init(repo, newArgoAPI(ctrl), newMetrics(ctrl))
 
 	env := &Env{
 		argo:   argo,
@@ -406,9 +406,10 @@ func TestGetStateInvalidQueryParams(t *testing.T) {
 func TestGetStateForwardsFilters(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	repo := &mockTaskRepository{}
+	ctrl := gomock.NewController(t)
+	repo, capture := newRepo(ctrl)
 	argo := &argocd.Argo{}
-	argo.Init(repo, &mockArgoApi{}, &mockMetrics{})
+	argo.Init(repo, newArgoAPI(ctrl), newMetrics(ctrl))
 
 	env := &Env{argo: argo, config: &config.ServerConfig{}}
 
@@ -426,8 +427,8 @@ func TestGetStateForwardsFilters(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Equal(t, "checkout-api", repo.lastApp)
-	assert.Equal(t, "in progress", repo.lastStatus)
+	assert.Equal(t, "checkout-api", capture.lastApp)
+	assert.Equal(t, "in progress", capture.lastStatus)
 }
 
 // TestGetStateRejectsUnknownStatus verifies that getState returns 400 when
@@ -435,9 +436,10 @@ func TestGetStateForwardsFilters(t *testing.T) {
 func TestGetStateRejectsUnknownStatus(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	repo := &mockTaskRepository{}
+	ctrl := gomock.NewController(t)
+	repo, _ := newRepo(ctrl)
 	argo := &argocd.Argo{}
-	argo.Init(repo, &mockArgoApi{}, &mockMetrics{})
+	argo.Init(repo, newArgoAPI(ctrl), newMetrics(ctrl))
 	env := &Env{argo: argo, config: &config.ServerConfig{}}
 
 	router := gin.Default()
@@ -492,9 +494,10 @@ func TestGetStateClampsLimit(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			repo := &mockTaskRepository{}
+			ctrl := gomock.NewController(t)
+			repo, capture := newRepo(ctrl)
 			argo := &argocd.Argo{}
-			argo.Init(repo, &mockArgoApi{}, &mockMetrics{})
+			argo.Init(repo, newArgoAPI(ctrl), newMetrics(ctrl))
 			env := &Env{argo: argo, config: &config.ServerConfig{}}
 
 			router := gin.Default()
@@ -511,7 +514,7 @@ func TestGetStateClampsLimit(t *testing.T) {
 			router.ServeHTTP(w, req)
 
 			assert.Equal(t, http.StatusOK, w.Code)
-			assert.Equal(t, tc.expected, repo.lastLimit)
+			assert.Equal(t, tc.expected, capture.lastLimit)
 		})
 	}
 }
@@ -1662,38 +1665,16 @@ func TestPrometheusHandler(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
-// mockTaskRepositoryWithHealth allows configuring health check response.
-type mockTaskRepositoryWithHealth struct {
-	mockTaskRepository
-	healthy   bool
-	taskError error
-}
-
-func (m *mockTaskRepositoryWithHealth) Check() bool {
-	return m.healthy
-}
-
-func (m *mockTaskRepositoryWithHealth) GetTask(id string) (*models.Task, error) {
-	if m.taskError != nil {
-		return nil, m.taskError
-	}
-	return &models.Task{
-		Id:           id,
-		App:          "test-app",
-		Author:       "test-author",
-		Project:      "test-project",
-		Status:       "deployed",
-		StatusReason: "",
-	}, nil
-}
-
 // TestHealthzEndpoint tests the healthz endpoint.
 func TestHealthzEndpoint(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	t.Run("returns up when healthy", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		repo, _ := newRepo(ctrl)
+		repo.EXPECT().Check().Return(true).AnyTimes()
 		argo := &argocd.Argo{}
-		argo.Init(&mockTaskRepositoryWithHealth{healthy: true}, &mockArgoApi{}, &mockMetrics{})
+		argo.Init(repo, newArgoAPI(ctrl), newMetrics(ctrl))
 
 		env := &Env{argo: argo}
 
@@ -1709,8 +1690,11 @@ func TestHealthzEndpoint(t *testing.T) {
 	})
 
 	t.Run("returns down when unhealthy", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		repo, _ := newRepo(ctrl)
+		repo.EXPECT().Check().Return(false).AnyTimes()
 		argo := &argocd.Argo{}
-		argo.Init(&mockTaskRepositoryWithHealth{healthy: false}, &mockArgoApi{}, &mockMetrics{})
+		argo.Init(repo, newArgoAPI(ctrl), newMetrics(ctrl))
 
 		env := &Env{argo: argo}
 
@@ -1756,8 +1740,20 @@ func TestGetTaskStatusEndpoint(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	t.Run("returns task when found", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		repo, _ := newRepo(ctrl)
+		repo.EXPECT().GetTask(gomock.Any()).DoAndReturn(func(id string) (*models.Task, error) {
+			return &models.Task{
+				Id:           id,
+				App:          "test-app",
+				Author:       "test-author",
+				Project:      "test-project",
+				Status:       "deployed",
+				StatusReason: "",
+			}, nil
+		}).AnyTimes()
 		argo := &argocd.Argo{}
-		argo.Init(&mockTaskRepositoryWithHealth{healthy: true}, &mockArgoApi{}, &mockMetrics{})
+		argo.Init(repo, newArgoAPI(ctrl), newMetrics(ctrl))
 
 		env := &Env{argo: argo}
 
@@ -1774,11 +1770,11 @@ func TestGetTaskStatusEndpoint(t *testing.T) {
 	})
 
 	t.Run("returns 404 when task not found", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		repo, _ := newRepo(ctrl)
+		repo.EXPECT().GetTask(gomock.Any()).Return(nil, state.ErrTaskNotFound).AnyTimes()
 		argo := &argocd.Argo{}
-		argo.Init(&mockTaskRepositoryWithHealth{
-			healthy:   true,
-			taskError: state.ErrTaskNotFound,
-		}, &mockArgoApi{}, &mockMetrics{})
+		argo.Init(repo, newArgoAPI(ctrl), newMetrics(ctrl))
 
 		env := &Env{argo: argo}
 
@@ -1795,11 +1791,11 @@ func TestGetTaskStatusEndpoint(t *testing.T) {
 	})
 
 	t.Run("returns 500 on backend failure", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		repo, _ := newRepo(ctrl)
+		repo.EXPECT().GetTask(gomock.Any()).Return(nil, fmt.Errorf("connection refused")).AnyTimes()
 		argo := &argocd.Argo{}
-		argo.Init(&mockTaskRepositoryWithHealth{
-			healthy:   true,
-			taskError: fmt.Errorf("connection refused"),
-		}, &mockArgoApi{}, &mockMetrics{})
+		argo.Init(repo, newArgoAPI(ctrl), newMetrics(ctrl))
 
 		env := &Env{argo: argo}
 
@@ -1860,32 +1856,6 @@ func TestValidateTokenWithStrategies(t *testing.T) {
 	})
 }
 
-// mockAuthStrategy is a configurable mock for auth.AuthStrategy.
-type mockAuthStrategy struct {
-	valid bool
-	err   error
-}
-
-func (m *mockAuthStrategy) Validate(_ string) (bool, error) {
-	return m.valid, m.err
-}
-
-// mockTaskRepositoryForAddTask extends mockTaskRepositoryWithHealth with AddTask support.
-type mockTaskRepositoryForAddTask struct {
-	mockTaskRepositoryWithHealth
-	addTaskError error
-	addedTask    *models.Task
-}
-
-func (m *mockTaskRepositoryForAddTask) AddTask(task models.Task) (*models.Task, error) {
-	if m.addTaskError != nil {
-		return nil, m.addTaskError
-	}
-	task.Id = "generated-task-id"
-	m.addedTask = &task
-	return &task, nil
-}
-
 // TestAddTaskEndpoint tests the addTask endpoint.
 func TestAddTaskEndpoint(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -1933,7 +1903,7 @@ func TestAddTaskEndpoint(t *testing.T) {
 		// can show the user something actionable (e.g. "deploy token is invalid").
 		lockdown, _ := NewLockdown("")
 		strategies := make(map[string]auth.AuthStrategy)
-		strategies["Authorization"] = &mockAuthStrategy{valid: false, err: fmt.Errorf("deploy token is invalid")}
+		strategies["Authorization"] = newAuthStrategy(t, false, fmt.Errorf("deploy token is invalid"))
 
 		env := &Env{
 			lockdown:      lockdown,
@@ -1959,11 +1929,12 @@ func TestAddTaskEndpoint(t *testing.T) {
 		lockdown, _ := NewLockdown("")
 		strategies := make(map[string]auth.AuthStrategy)
 
+		ctrl := gomock.NewController(t)
+		repo, _ := newRepo(ctrl)
+		repo.EXPECT().Check().Return(true).AnyTimes()
+		repo.EXPECT().AddTask(gomock.Any()).Return(nil, fmt.Errorf("argo unavailable")).AnyTimes()
 		argo := &argocd.Argo{}
-		argo.Init(&mockTaskRepositoryForAddTask{
-			mockTaskRepositoryWithHealth: mockTaskRepositoryWithHealth{healthy: true},
-			addTaskError:                 fmt.Errorf("argo unavailable"),
-		}, &mockArgoApi{}, &mockMetrics{})
+		argo.Init(repo, newArgoAPI(ctrl), newMetrics(ctrl))
 
 		env := &Env{
 			lockdown:      lockdown,
@@ -1997,7 +1968,7 @@ func TestSetDeployLockWithKeycloak(t *testing.T) {
 		// can distinguish "wrong token" from "expired token" etc.
 		lockdown, _ := NewLockdown("")
 		strategies := make(map[string]auth.AuthStrategy)
-		strategies[keycloakHeader] = &mockAuthStrategy{valid: false, err: fmt.Errorf("token expired")}
+		strategies[keycloakHeader] = newAuthStrategy(t, false, fmt.Errorf("token expired"))
 
 		env := &Env{
 			lockdown:      lockdown,
@@ -2026,7 +1997,7 @@ func TestSetDeployLockWithKeycloak(t *testing.T) {
 		// authentication is required, rather than implying a wrong token.
 		lockdown, _ := NewLockdown("")
 		strategies := make(map[string]auth.AuthStrategy)
-		strategies[keycloakHeader] = &mockAuthStrategy{valid: false, err: nil}
+		strategies[keycloakHeader] = newAuthStrategy(t, false, nil)
 
 		env := &Env{
 			lockdown:      lockdown,
@@ -2052,7 +2023,7 @@ func TestSetDeployLockWithKeycloak(t *testing.T) {
 	t.Run("sets lock when token is valid", func(t *testing.T) {
 		lockdown, _ := NewLockdown("")
 		strategies := make(map[string]auth.AuthStrategy)
-		strategies[keycloakHeader] = &mockAuthStrategy{valid: true, err: nil}
+		strategies[keycloakHeader] = newAuthStrategy(t, true, nil)
 
 		env := &Env{
 			lockdown:      lockdown,
@@ -2087,7 +2058,7 @@ func TestReleaseDeployLockWithKeycloak(t *testing.T) {
 		lockdown, _ := NewLockdown("")
 		lockdown.SetLock()
 		strategies := make(map[string]auth.AuthStrategy)
-		strategies[keycloakHeader] = &mockAuthStrategy{valid: false, err: fmt.Errorf("token expired")}
+		strategies[keycloakHeader] = newAuthStrategy(t, false, fmt.Errorf("token expired"))
 
 		env := &Env{
 			lockdown:      lockdown,
@@ -2114,7 +2085,7 @@ func TestReleaseDeployLockWithKeycloak(t *testing.T) {
 		lockdown, _ := NewLockdown("")
 		lockdown.SetLock()
 		strategies := make(map[string]auth.AuthStrategy)
-		strategies[keycloakHeader] = &mockAuthStrategy{valid: true, err: nil}
+		strategies[keycloakHeader] = newAuthStrategy(t, true, nil)
 
 		env := &Env{
 			lockdown:      lockdown,
@@ -2145,7 +2116,7 @@ func TestValidateTokenWithAllowedStrategy(t *testing.T) {
 
 	t.Run("validates successfully with matching strategy", func(t *testing.T) {
 		strategies := make(map[string]auth.AuthStrategy)
-		strategies[keycloakHeader] = &mockAuthStrategy{valid: true, err: nil}
+		strategies[keycloakHeader] = newAuthStrategy(t, true, nil)
 
 		env := &Env{
 			strategies:    strategies,
@@ -2164,7 +2135,7 @@ func TestValidateTokenWithAllowedStrategy(t *testing.T) {
 
 	t.Run("strips Bearer prefix from token", func(t *testing.T) {
 		strategies := make(map[string]auth.AuthStrategy)
-		strategies[keycloakHeader] = &mockAuthStrategy{valid: true, err: nil}
+		strategies[keycloakHeader] = newAuthStrategy(t, true, nil)
 
 		env := &Env{
 			strategies:    strategies,
@@ -2184,7 +2155,7 @@ func TestValidateTokenWithAllowedStrategy(t *testing.T) {
 	t.Run("returns error from strategy validation", func(t *testing.T) {
 		expectedErr := fmt.Errorf("token expired")
 		strategies := make(map[string]auth.AuthStrategy)
-		strategies[keycloakHeader] = &mockAuthStrategy{valid: false, err: expectedErr}
+		strategies[keycloakHeader] = newAuthStrategy(t, false, expectedErr)
 
 		env := &Env{
 			strategies:    strategies,
@@ -2203,8 +2174,8 @@ func TestValidateTokenWithAllowedStrategy(t *testing.T) {
 
 	t.Run("skips strategies with non-matching headers", func(t *testing.T) {
 		strategies := make(map[string]auth.AuthStrategy)
-		strategies["Authorization"] = &mockAuthStrategy{valid: true, err: nil}
-		strategies[keycloakHeader] = &mockAuthStrategy{valid: false, err: nil}
+		strategies["Authorization"] = newAuthStrategy(t, true, nil)
+		strategies[keycloakHeader] = newAuthStrategy(t, false, nil)
 
 		env := &Env{
 			strategies:    strategies,

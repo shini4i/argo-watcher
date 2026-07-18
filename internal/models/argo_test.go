@@ -10,7 +10,7 @@ import (
 
 func TestListSyncResultResources(t *testing.T) {
 	// Read the JSON data file
-	jsonData, err := os.ReadFile("../../testdata/failed-deployment.json")
+	jsonData, err := os.ReadFile("testdata/failed-deployment.json")
 	if err != nil {
 		t.Fatalf("Failed to read JSON data file: %s", err)
 	}
@@ -37,7 +37,7 @@ func TestListSyncResultResources(t *testing.T) {
 
 func TestListUnhealthyResources(t *testing.T) {
 	// Read the JSON data file
-	jsonData, err := os.ReadFile("../../testdata/failed-deployment.json")
+	jsonData, err := os.ReadFile("testdata/failed-deployment.json")
 	if err != nil {
 		t.Fatalf("Failed to read JSON data file: %s", err)
 	}

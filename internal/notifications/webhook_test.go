@@ -10,29 +10,18 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	"github.com/shini4i/argo-watcher/internal/config"
+	"github.com/shini4i/argo-watcher/internal/mocks"
 	"github.com/shini4i/argo-watcher/internal/models"
 )
-
-// MockHTTPClient is a mock implementation of the HTTPClient interface for testing.
-type MockHTTPClient struct {
-	DoFunc func(req *http.Request) (*http.Response, error)
-}
-
-// Do calls the underlying DoFunc.
-func (m *MockHTTPClient) Do(req *http.Request) (*http.Response, error) {
-	if m.DoFunc != nil {
-		return m.DoFunc(req)
-	}
-	// Default behavior if DoFunc is not set
-	return nil, errors.New("DoFunc is not implemented")
-}
 
 // TestNewWebhookStrategy tests the constructor for WebhookStrategy.
 func TestNewWebhookStrategy(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		// arrange
+		ctrl := gomock.NewController(t)
 		cfg := &config.WebhookConfig{
 			Enabled:              true,
 			Url:                  "http://localhost/webhook",
@@ -42,7 +31,7 @@ func TestNewWebhookStrategy(t *testing.T) {
 			Token:                "secret",
 			AllowedResponseCodes: []int{200, 201},
 		}
-		client := &MockHTTPClient{}
+		client := mocks.NewMockHTTPClient(ctrl)
 
 		// act
 		service, err := NewWebhookStrategy(cfg, client)
@@ -76,11 +65,12 @@ func TestNewWebhookStrategy(t *testing.T) {
 	})
 
 	t.Run("Empty Format", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
 		cfg := &config.WebhookConfig{
 			Enabled: true,
 			Format:  "   ",
 		}
-		client := &MockHTTPClient{}
+		client := mocks.NewMockHTTPClient(ctrl)
 
 		service, err := NewWebhookStrategy(cfg, client)
 
@@ -90,8 +80,9 @@ func TestNewWebhookStrategy(t *testing.T) {
 	})
 
 	t.Run("Disabled Config", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
 		cfg := &config.WebhookConfig{Enabled: false}
-		client := &MockHTTPClient{}
+		client := mocks.NewMockHTTPClient(ctrl)
 
 		service, err := NewWebhookStrategy(cfg, client)
 
@@ -101,7 +92,8 @@ func TestNewWebhookStrategy(t *testing.T) {
 	})
 
 	t.Run("Nil Config", func(t *testing.T) {
-		client := &MockHTTPClient{}
+		ctrl := gomock.NewController(t)
+		client := mocks.NewMockHTTPClient(ctrl)
 
 		service, err := NewWebhookStrategy(nil, client)
 
@@ -121,23 +113,23 @@ func TestSend(t *testing.T) {
 
 	t.Run("Successful Webhook", func(t *testing.T) {
 		// arrange
-		mockClient := &MockHTTPClient{
-			DoFunc: func(req *http.Request) (*http.Response, error) {
-				// Assert request details
-				assert.Equal(t, http.MethodPost, req.Method)
-				assert.Equal(t, "http://testhost/hook", req.URL.String())
-				assert.Equal(t, "application/json", req.Header.Get("Content-Type"))
-				assert.Equal(t, "secret-token", req.Header.Get("X-Auth"))
+		ctrl := gomock.NewController(t)
+		mockClient := mocks.NewMockHTTPClient(ctrl)
+		mockClient.EXPECT().Do(gomock.Any()).DoAndReturn(func(req *http.Request) (*http.Response, error) {
+			// Assert request details
+			assert.Equal(t, http.MethodPost, req.Method)
+			assert.Equal(t, "http://testhost/hook", req.URL.String())
+			assert.Equal(t, "application/json", req.Header.Get("Content-Type"))
+			assert.Equal(t, "secret-token", req.Header.Get("X-Auth"))
 
-				body, _ := io.ReadAll(req.Body)
-				assert.JSONEq(t, `{"id":"test-task-123"}`, string(body))
+			body, _ := io.ReadAll(req.Body)
+			assert.JSONEq(t, `{"id":"test-task-123"}`, string(body))
 
-				return &http.Response{
-					StatusCode: http.StatusOK,
-					Body:       io.NopCloser(strings.NewReader("")),
-				}, nil
-			},
-		}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader("")),
+			}, nil
+		})
 
 		service := &WebhookStrategy{
 			url:                  "http://testhost/hook",
@@ -191,11 +183,9 @@ func TestSend(t *testing.T) {
 
 	t.Run("Client Throws Error", func(t *testing.T) {
 		// arrange
-		mockClient := &MockHTTPClient{
-			DoFunc: func(req *http.Request) (*http.Response, error) {
-				return nil, errors.New("network error")
-			},
-		}
+		ctrl := gomock.NewController(t)
+		mockClient := mocks.NewMockHTTPClient(ctrl)
+		mockClient.EXPECT().Do(gomock.Any()).Return(nil, errors.New("network error"))
 
 		service := &WebhookStrategy{
 			url:      "http://testhost/hook",
@@ -213,14 +203,12 @@ func TestSend(t *testing.T) {
 
 	t.Run("Non-Allowed Status Code", func(t *testing.T) {
 		// arrange
-		mockClient := &MockHTTPClient{
-			DoFunc: func(req *http.Request) (*http.Response, error) {
-				return &http.Response{
-					StatusCode: http.StatusInternalServerError,
-					Body:       io.NopCloser(strings.NewReader(`{"error":"internal server error"}`)),
-				}, nil
-			},
-		}
+		ctrl := gomock.NewController(t)
+		mockClient := mocks.NewMockHTTPClient(ctrl)
+		mockClient.EXPECT().Do(gomock.Any()).Return(&http.Response{
+			StatusCode: http.StatusInternalServerError,
+			Body:       io.NopCloser(strings.NewReader(`{"error":"internal server error"}`)),
+		}, nil)
 
 		service := &WebhookStrategy{
 			url:                  "http://testhost/hook",
@@ -239,17 +227,15 @@ func TestSend(t *testing.T) {
 
 	t.Run("Non-Allowed Status Code with Body Read Error", func(t *testing.T) {
 		// arrange
+		ctrl := gomock.NewController(t)
 		// Custom reader that returns an error on Read
 		errorReader := &errorReader{err: errors.New("read error")}
 
-		mockClient := &MockHTTPClient{
-			DoFunc: func(req *http.Request) (*http.Response, error) {
-				return &http.Response{
-					StatusCode: http.StatusForbidden,
-					Body:       io.NopCloser(errorReader),
-				}, nil
-			},
-		}
+		mockClient := mocks.NewMockHTTPClient(ctrl)
+		mockClient.EXPECT().Do(gomock.Any()).Return(&http.Response{
+			StatusCode: http.StatusForbidden,
+			Body:       io.NopCloser(errorReader),
+		}, nil)
 
 		service := &WebhookStrategy{
 			url:                  "http://testhost/hook",

@@ -8,9 +8,21 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 
 	"github.com/shini4i/argo-watcher/internal/config"
+	"github.com/shini4i/argo-watcher/internal/mocks"
 )
+
+// acceptAnyToken returns a MockAuthStrategy that validates any token. It is used
+// in tests where the strategy may never be reached (nil request, empty token,
+// unmatched header); AnyTimes permits zero calls.
+func acceptAnyToken(t *testing.T) *mocks.MockAuthStrategy {
+	t.Helper()
+	m := mocks.NewMockAuthStrategy(gomock.NewController(t))
+	m.EXPECT().Validate(gomock.Any()).Return(true, nil).AnyTimes()
+	return m
+}
 
 func TestNewKeycloakAuthService(t *testing.T) {
 	t.Run("should initialize with valid config", func(t *testing.T) {
@@ -83,11 +95,12 @@ func TestAuthenticatorValidateWithBearerPrefix(t *testing.T) {
 
 	request.Header.Set("Authorization", "Bearer trimmed-token")
 
+	// The "Bearer " prefix must be stripped before the strategy sees the token.
+	strategy := mocks.NewMockAuthStrategy(gomock.NewController(t))
+	strategy.EXPECT().Validate("trimmed-token").Return(true, nil).AnyTimes()
+
 	authenticator := NewAuthenticator(map[string]AuthStrategy{
-		"Authorization": &stubStrategy{
-			expectedToken: "trimmed-token",
-			valid:         true,
-		},
+		"Authorization": strategy,
 	})
 
 	valid, validateErr := authenticator.Validate(request)
@@ -102,11 +115,12 @@ func TestAuthenticatorValidateReturnsLastError(t *testing.T) {
 
 	request.Header.Set("Authorization", "token")
 
+	strategyErr := errors.New("strategy error")
+	strategy := mocks.NewMockAuthStrategy(gomock.NewController(t))
+	strategy.EXPECT().Validate("token").Return(false, strategyErr).AnyTimes()
+
 	authenticator := NewAuthenticator(map[string]AuthStrategy{
-		"Authorization": &stubStrategy{
-			expectedToken: "token",
-			err:           errors.New("strategy error"),
-		},
+		"Authorization": strategy,
 	})
 
 	valid, validateErr := authenticator.Validate(request)
@@ -143,7 +157,7 @@ func TestAuthenticatorValidateStrategy(t *testing.T) {
 
 	t.Run("returns false when request is nil", func(t *testing.T) {
 		authenticator := NewAuthenticator(map[string]AuthStrategy{
-			"Authorization": &stubStrategy{valid: true},
+			"Authorization": acceptAnyToken(t),
 		})
 
 		valid, validateErr := authenticator.ValidateStrategy(nil, "Authorization")
@@ -153,7 +167,7 @@ func TestAuthenticatorValidateStrategy(t *testing.T) {
 
 	t.Run("returns false when strategy not found", func(t *testing.T) {
 		authenticator := NewAuthenticator(map[string]AuthStrategy{
-			"Authorization": &stubStrategy{valid: true},
+			"Authorization": acceptAnyToken(t),
 		})
 
 		request, err := http.NewRequest(http.MethodGet, "http://example.com", http.NoBody)
@@ -167,7 +181,7 @@ func TestAuthenticatorValidateStrategy(t *testing.T) {
 
 	t.Run("returns false when token is empty", func(t *testing.T) {
 		authenticator := NewAuthenticator(map[string]AuthStrategy{
-			"Authorization": &stubStrategy{valid: true},
+			"Authorization": acceptAnyToken(t),
 		})
 
 		request, err := http.NewRequest(http.MethodGet, "http://example.com", http.NoBody)
@@ -180,9 +194,16 @@ func TestAuthenticatorValidateStrategy(t *testing.T) {
 	})
 
 	t.Run("validates with matching strategy and valid token", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		authStrategy := mocks.NewMockAuthStrategy(ctrl)
+		authStrategy.EXPECT().Validate("jwt-token").Return(true, nil).AnyTimes()
+		// The deploy-token strategy is registered but targeting "Authorization"
+		// must not reach it; a bare mock (no expectation) fails if it is called.
+		deployStrategy := mocks.NewMockAuthStrategy(ctrl)
+
 		authenticator := NewAuthenticator(map[string]AuthStrategy{
-			"Authorization":             &stubStrategy{expectedToken: "jwt-token", valid: true},
-			"ARGO_WATCHER_DEPLOY_TOKEN": &stubStrategy{expectedToken: "deploy-token", valid: true},
+			"Authorization":             authStrategy,
+			"ARGO_WATCHER_DEPLOY_TOKEN": deployStrategy,
 		})
 
 		request, err := http.NewRequest(http.MethodGet, "http://example.com", http.NoBody)
@@ -195,8 +216,11 @@ func TestAuthenticatorValidateStrategy(t *testing.T) {
 	})
 
 	t.Run("strips Bearer prefix before validation", func(t *testing.T) {
+		strategy := mocks.NewMockAuthStrategy(gomock.NewController(t))
+		strategy.EXPECT().Validate("actual-token").Return(true, nil).AnyTimes()
+
 		authenticator := NewAuthenticator(map[string]AuthStrategy{
-			"Authorization": &stubStrategy{expectedToken: "actual-token", valid: true},
+			"Authorization": strategy,
 		})
 
 		request, err := http.NewRequest(http.MethodGet, "http://example.com", http.NoBody)
@@ -210,7 +234,7 @@ func TestAuthenticatorValidateStrategy(t *testing.T) {
 
 	t.Run("returns false when token is only Bearer prefix", func(t *testing.T) {
 		authenticator := NewAuthenticator(map[string]AuthStrategy{
-			"Authorization": &stubStrategy{valid: true},
+			"Authorization": acceptAnyToken(t),
 		})
 
 		request, err := http.NewRequest(http.MethodGet, "http://example.com", http.NoBody)
@@ -224,8 +248,11 @@ func TestAuthenticatorValidateStrategy(t *testing.T) {
 
 	t.Run("returns error from strategy", func(t *testing.T) {
 		expectedErr := errors.New("token expired")
+		strategy := mocks.NewMockAuthStrategy(gomock.NewController(t))
+		strategy.EXPECT().Validate(gomock.Any()).Return(false, expectedErr).AnyTimes()
+
 		authenticator := NewAuthenticator(map[string]AuthStrategy{
-			"Authorization": &stubStrategy{err: expectedErr},
+			"Authorization": strategy,
 		})
 
 		request, err := http.NewRequest(http.MethodGet, "http://example.com", http.NoBody)
@@ -238,9 +265,16 @@ func TestAuthenticatorValidateStrategy(t *testing.T) {
 	})
 
 	t.Run("ignores other registered strategies", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		// Targeting ARGO_WATCHER_DEPLOY_TOKEN must not evaluate the Authorization
+		// strategy; a bare mock (no expectation) fails if it is called.
+		authStrategy := mocks.NewMockAuthStrategy(ctrl)
+		deployStrategy := mocks.NewMockAuthStrategy(ctrl)
+		deployStrategy.EXPECT().Validate("deploy-token").Return(true, nil).AnyTimes()
+
 		authenticator := NewAuthenticator(map[string]AuthStrategy{
-			"Authorization":             &stubStrategy{expectedToken: "jwt-token", valid: false, err: errors.New("should not be called")},
-			"ARGO_WATCHER_DEPLOY_TOKEN": &stubStrategy{expectedToken: "deploy-token", valid: true},
+			"Authorization":             authStrategy,
+			"ARGO_WATCHER_DEPLOY_TOKEN": deployStrategy,
 		})
 
 		request, err := http.NewRequest(http.MethodGet, "http://example.com", http.NoBody)
@@ -257,7 +291,7 @@ func TestAuthenticatorValidateStrategy(t *testing.T) {
 
 func TestAuthenticatorValidateBearerOnlyPrefix(t *testing.T) {
 	authenticator := NewAuthenticator(map[string]AuthStrategy{
-		"Authorization": &stubStrategy{valid: true},
+		"Authorization": acceptAnyToken(t),
 	})
 
 	request, err := http.NewRequest(http.MethodGet, "http://example.com", http.NoBody)
@@ -328,7 +362,7 @@ func TestAuthenticatorValidateNilReceiver(t *testing.T) {
 
 func TestAuthenticatorValidateNilRequest(t *testing.T) {
 	authenticator := NewAuthenticator(map[string]AuthStrategy{
-		"Authorization": &stubStrategy{valid: true},
+		"Authorization": acceptAnyToken(t),
 	})
 
 	valid, validateErr := authenticator.Validate(nil)
@@ -342,22 +376,4 @@ func TestAuthenticatorStrategyNilReceiver(t *testing.T) {
 	strategy, ok := authenticator.Strategy("Authorization")
 	assert.Nil(t, strategy)
 	assert.False(t, ok)
-}
-
-type stubStrategy struct {
-	expectedToken string
-	valid         bool
-	err           error
-}
-
-func (s *stubStrategy) Validate(token string) (bool, error) {
-	if s.expectedToken != "" && token != s.expectedToken {
-		return false, errors.New("token mismatch")
-	}
-
-	if s.err != nil {
-		return false, s.err
-	}
-
-	return s.valid, nil
 }

@@ -20,7 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
-	"github.com/shini4i/argo-watcher/internal/updater/mock"
+	"github.com/shini4i/argo-watcher/internal/mocks"
 )
 
 // newTestRepo creates a valid GitRepo instance for testing purposes.
@@ -223,7 +223,7 @@ func TestMergeParameters(t *testing.T) {
 
 func TestClone(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockHandler := mock.NewMockGitHandler(ctrl)
+	mockHandler := mocks.NewMockGitHandler(ctrl)
 	repo := newTestRepo(t, mockHandler)
 
 	mockHandler.EXPECT().AddSSHKey(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
@@ -699,7 +699,7 @@ func TestCorruptedGitRepo_ErrorPaths(t *testing.T) {
 	require.NoError(t, err)
 
 	ctrl := gomock.NewController(t)
-	mockHandler := mock.NewMockGitHandler(ctrl)
+	mockHandler := mocks.NewMockGitHandler(ctrl)
 	repo := newTestRepo(t, mockHandler)
 
 	mockHandler.EXPECT().AddSSHKey(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
