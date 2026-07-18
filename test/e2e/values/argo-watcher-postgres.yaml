@@ -9,7 +9,7 @@
 #   * sets STATE_TYPE=postgres and wires DB_HOST/PORT/NAME/USER on the server,
 #   * runs the pre-upgrade migration Job (`argo-watcher --migrate`) that applies
 #     the schema before the server rolls.
-# DB_PASSWORD comes from the argo-watcher-db Secret (fixtures/postgres.yaml); with
+# DB_PASSWORD comes from the argo-watcher-db Secret (fixtures/postgres/); with
 # no secretKey override the chart envFrom's the whole Secret, exposing DB_PASSWORD
 # to both the server and the migration Job. host is the in-cluster Service DNS
 # (same namespace, so the short name resolves).

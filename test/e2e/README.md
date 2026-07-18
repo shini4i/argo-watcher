@@ -144,7 +144,7 @@ Reach any component with `kubectl port-forward` (there is no ingress), e.g.
   running a parallel stack.** The base lab is single-replica in-memory; every
   functional phase before this one validates that backend. `state-postgres` then
   helm-upgrades the SAME release with `values/argo-watcher-postgres.yaml` (the
-  chart bundles no database, so `fixtures/postgres.yaml` supplies an in-cluster
+  chart bundles no database, so `fixtures/postgres/` supplies an in-cluster
   Postgres first) and asserts the Postgres-only properties — the migration Job,
   the deploy loop, a task record surviving a pod restart, and supersession under
   contention. It runs *before* `failure-diagnostics` so it deploys against

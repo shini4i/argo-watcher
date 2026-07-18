@@ -4,7 +4,7 @@
 # The rest of the lab runs argo-watcher on in-memory state; every functional phase
 # before this one has already validated that backend. This phase flips the SAME
 # release to STATE_TYPE=postgres (against the in-cluster Postgres from
-# fixtures/postgres.yaml) and asserts the things only Postgres can demonstrate:
+# fixtures/postgres/) and asserts the things only Postgres can demonstrate:
 #
 #   1. the chart's pre-upgrade migration Job applies the schema and the server
 #      boots reporting state_type=postgres (GET /config),
@@ -156,14 +156,18 @@ echo "=== supersession under git contention on Postgres ==="
 # Gitea forward for the commit check. Runs on app1, independent of app4 above.
 # Wait for app1 to be Healthy first (as the `race` task does) so the baseline reset
 # deploys from a known-good state — matters when this phase is run standalone.
+h=""
 for _ in $(seq 1 40); do
-  [[ "$(kubectl -n argocd get application app1 -o jsonpath='{.status.health.status}' 2>/dev/null)" == "Healthy" ]] && break
+  h=$(kubectl -n argocd get application app1 -o jsonpath='{.status.health.status}' 2>/dev/null || true)
+  [[ "$h" == "Healthy" ]] && break
   sleep 3
 done
+[[ "$h" == "Healthy" ]] || { echo "STATE-POSTGRES: FAIL — app1 never reached Healthy (last: ${h:-unknown})"; exit 1; }
 kubectl -n gitea port-forward svc/gitea-http "${GITEA_PORT}:3000" >/dev/null 2>&1 &
 for _ in $(seq 1 15); do curl -s -m 3 -o /dev/null "localhost:${GITEA_PORT}" && break; sleep 1; done
 
 if ! DEPLOY_TOKEN="${DEPLOY_TOKEN}" BASE_URL="http://localhost:${PORT}" \
+   CLIENT_BIN="${CLIENT_BIN}" \
    GITEA_REPO_URL="http://${GITEA_ADMIN}:${GITEA_PW}@localhost:${GITEA_PORT}/e2e/gitops.git" \
    "${here}/race-supersede.sh"; then
   echo "STATE-POSTGRES: FAIL — supersession under contention failed on Postgres"

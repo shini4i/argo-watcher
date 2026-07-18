@@ -45,14 +45,19 @@ if [[ "$BASE_TAG" == "$OLD_TAG" || "$BASE_TAG" == "$NEW_TAG" || "$OLD_TAG" == "$
   exit 1
 fi
 
-# Build the client once so both deploys launch a prebuilt binary — a per-invocation
-# `go run` compile would blow the sub-second submission ordering the race needs.
-bin_dir="$(mktemp -d)"
+# Use a prebuilt client so both deploys launch a binary — a per-invocation `go run`
+# compile would blow the sub-second submission ordering the race needs. A caller
+# (e.g. state-postgres.sh) can pass CLIENT_BIN to reuse its already-built binary;
+# otherwise build our own into a temp dir we own and clean up.
+bin_dir=""
 base_out="$(mktemp)"; old_out="$(mktemp)"; new_out="$(mktemp)"; clone_dir="$(mktemp -d)"
-CLIENT_BIN="${bin_dir}/aw-client"
 comp_pid=""
-trap '[ -n "$comp_pid" ] && kill "$comp_pid" 2>/dev/null; rm -rf "$bin_dir" "$clone_dir" "$base_out" "$old_out" "$new_out"' EXIT
-( cd "$root" && go build -o "$CLIENT_BIN" ./cmd/client ) || { echo "race: FAIL — client build failed" >&2; exit 1; }
+trap '[[ -n "$comp_pid" ]] && kill "$comp_pid" 2>/dev/null; rm -rf "$bin_dir" "$clone_dir" "$base_out" "$old_out" "$new_out"' EXIT
+if [[ -z "${CLIENT_BIN:-}" ]]; then
+  bin_dir="$(mktemp -d)"
+  CLIENT_BIN="${bin_dir}/aw-client"
+  ( cd "$root" && go build -o "$CLIENT_BIN" ./cmd/client ) || { echo "race: FAIL — client build failed" >&2; exit 1; }
+fi
 
 # deploy <tag> <outfile>: run the client to deploy APP:tag, blocking to a terminal
 # status. Combined stdout+stderr goes to outfile; the client's exit code propagates.
