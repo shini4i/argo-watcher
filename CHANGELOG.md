@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-07-20
+
 ### Changed
 
 - Required configuration variables are now rejected when set to an empty
@@ -329,7 +331,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bumped the Go toolchain to `1.25.11`, resolving a `net/textproto` standard
   library vulnerability present in `go1.25.9`.
 
-[Unreleased]: https://github.com/shini4i/argo-watcher/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/shini4i/argo-watcher/compare/v0.12.1...HEAD
+[0.12.1]: https://github.com/shini4i/argo-watcher/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/shini4i/argo-watcher/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/shini4i/argo-watcher/compare/v0.10.7...v0.11.0
 [0.10.7]: https://github.com/shini4i/argo-watcher/compare/v0.10.6...v0.10.7
