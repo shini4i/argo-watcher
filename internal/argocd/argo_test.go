@@ -118,6 +118,47 @@ func TestArgoCheck(t *testing.T) {
 	})
 }
 
+func TestArgoIsAvailable(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	t.Run("defaults to available after Init", func(t *testing.T) {
+		argo := &Argo{}
+		argo.Init(mocks.NewMockTaskRepository(ctrl), newArgoApiMock(ctrl), mocks.NewMockMetricsInterface(ctrl))
+		// Optimistic default avoids a spurious "unreachable" banner before the
+		// first liveness probe runs.
+		assert.True(t, argo.IsAvailable())
+	})
+
+	t.Run("Check flips the cached state and mirrors the gauge", func(t *testing.T) {
+		api := newArgoApiMock(ctrl)
+		metrics := mocks.NewMockMetricsInterface(ctrl)
+		state := mocks.NewMockTaskRepository(ctrl)
+
+		// A failing Check must mark ArgoCD unavailable (gauge 1 / cache false),
+		// a passing one must restore it (gauge 0 / cache true).
+		gomock.InOrder(
+			state.EXPECT().Check().Return(true),
+			api.EXPECT().GetUserInfo().Return(nil, fmt.Errorf("boom")),
+			metrics.EXPECT().SetArgoUnavailable(true),
+			state.EXPECT().Check().Return(true),
+			api.EXPECT().GetUserInfo().Return(&models.Userinfo{LoggedIn: true}, nil),
+			metrics.EXPECT().SetArgoUnavailable(false),
+		)
+
+		argo := &Argo{}
+		argo.Init(state, api, metrics)
+
+		_, err := argo.Check()
+		assert.Error(t, err)
+		assert.False(t, argo.IsAvailable())
+
+		_, err = argo.Check()
+		assert.NoError(t, err)
+		assert.True(t, argo.IsAvailable())
+	})
+}
+
 func TestArgoAddTask(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -128,14 +169,13 @@ func TestArgoAddTask(t *testing.T) {
 		metrics := mocks.NewMockMetricsInterface(ctrl)
 		state := mocks.NewMockTaskRepository(ctrl)
 
-		// mock calls
-		state.EXPECT().Check().Return(true)
-		api.EXPECT().GetUserInfo().Return(nil, fmt.Errorf("unexpected login error"))
-		metrics.EXPECT().SetArgoUnavailable(true)
-
 		// argo manager
 		argo := &Argo{}
 		argo.Init(state, api, metrics)
+		// Simulate a cached outage: AddTask must reject fast, without a live
+		// probe (no Check/GetUserInfo calls) so the client is not held on the
+		// retry budget (issue #498).
+		argo.available.Store(false)
 		task := models.Task{} // empty task
 		newTask, err := argo.AddTask(task)
 
@@ -149,14 +189,6 @@ func TestArgoAddTask(t *testing.T) {
 		api := newArgoApiMock(ctrl)
 		metrics := mocks.NewMockMetricsInterface(ctrl)
 		state := mocks.NewMockTaskRepository(ctrl)
-
-		// mock calls
-		state.EXPECT().Check().Return(true)
-		user := &models.Userinfo{
-			LoggedIn: true,
-		}
-		api.EXPECT().GetUserInfo().Return(user, nil)
-		metrics.EXPECT().SetArgoUnavailable(false)
 
 		// argo manager
 		argo := &Argo{}
@@ -174,14 +206,6 @@ func TestArgoAddTask(t *testing.T) {
 		api := newArgoApiMock(ctrl)
 		metrics := mocks.NewMockMetricsInterface(ctrl)
 		state := mocks.NewMockTaskRepository(ctrl)
-
-		// mock calls
-		state.EXPECT().Check().Return(true)
-		user := &models.Userinfo{
-			LoggedIn: true,
-		}
-		api.EXPECT().GetUserInfo().Return(user, nil)
-		metrics.EXPECT().SetArgoUnavailable(false)
 
 		// argo manager
 		argo := &Argo{}
@@ -203,14 +227,6 @@ func TestArgoAddTask(t *testing.T) {
 		api := newArgoApiMock(ctrl)
 		metrics := mocks.NewMockMetricsInterface(ctrl)
 		state := mocks.NewMockTaskRepository(ctrl)
-
-		// mock calls
-		state.EXPECT().Check().Return(true)
-		user := &models.Userinfo{
-			LoggedIn: true,
-		}
-		api.EXPECT().GetUserInfo().Return(user, nil)
-		metrics.EXPECT().SetArgoUnavailable(false)
 
 		// mock calls to add task
 		stateError := fmt.Errorf("database error")
@@ -241,12 +257,6 @@ func TestArgoAddTask(t *testing.T) {
 		state := mocks.NewMockTaskRepository(ctrl)
 
 		// mock calls
-		state.EXPECT().Check().Return(true)
-		user := &models.Userinfo{
-			LoggedIn: true,
-		}
-		api.EXPECT().GetUserInfo().Return(user, nil)
-		metrics.EXPECT().SetArgoUnavailable(false)
 		metrics.EXPECT().AddProcessedDeployment("test-app")
 
 		// tasks
@@ -293,9 +303,6 @@ func TestArgoAddTask(t *testing.T) {
 		metrics := mocks.NewMockMetricsInterface(ctrl)
 		state := mocks.NewMockTaskRepository(ctrl)
 
-		state.EXPECT().Check().Return(true)
-		api.EXPECT().GetUserInfo().Return(&models.Userinfo{LoggedIn: true}, nil)
-		metrics.EXPECT().SetArgoUnavailable(false)
 		metrics.EXPECT().AddProcessedDeployment("test-app")
 
 		task := models.Task{App: "test-app", Images: []models.Image{{Tag: taskImageTag}}}
@@ -320,9 +327,6 @@ func TestArgoAddTask(t *testing.T) {
 		metrics := mocks.NewMockMetricsInterface(ctrl)
 		state := mocks.NewMockTaskRepository(ctrl)
 
-		state.EXPECT().Check().Return(true)
-		api.EXPECT().GetUserInfo().Return(&models.Userinfo{LoggedIn: true}, nil)
-		metrics.EXPECT().SetArgoUnavailable(false)
 		metrics.EXPECT().AddProcessedDeployment("test-app")
 
 		// History ordered created DESC: current is v2, an earlier task (target) ran v1.
@@ -355,9 +359,6 @@ func TestArgoAddTask(t *testing.T) {
 		metrics := mocks.NewMockMetricsInterface(ctrl)
 		state := mocks.NewMockTaskRepository(ctrl)
 
-		state.EXPECT().Check().Return(true)
-		api.EXPECT().GetUserInfo().Return(&models.Userinfo{LoggedIn: true}, nil)
-		metrics.EXPECT().SetArgoUnavailable(false)
 		metrics.EXPECT().AddProcessedDeployment("test-app")
 
 		// Deploying a brand-new version (v3) with no earlier match: not a rollback.

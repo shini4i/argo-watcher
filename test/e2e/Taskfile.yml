@@ -93,6 +93,11 @@ tasks:
       # failing PreSync hook injected into the SHARED chart values) and pushes directly to the
       # gitops repo, so running it before load/race would perturb those pristine-state soak gates.
       - task: failure-diagnostics
+      # argocd-unreachable severs ArgoCD (scales argocd-server to 0) then restores it,
+      # so it must run after the phases that need a healthy ArgoCD. It is self-contained
+      # (its cleanup trap always scales ArgoCD back), and its tokenless deploys have no
+      # lasting side effect, so it sits safely between failure-diagnostics and shutdown-drain.
+      - task: argocd-unreachable
       # shutdown-drain runs LAST (before down): it deletes the argo-watcher pod to exercise
       # graceful shutdown, so nothing but `down` should depend on the server afterwards.
       - task: shutdown-drain
@@ -223,6 +228,11 @@ tasks:
     desc: "Assert graceful shutdown drains in-flight WebSocket connections (GoingAway) with no race/panic"
     cmds:
       - ./scripts/shutdown-drain.sh
+
+  argocd-unreachable:
+    desc: "Assert the ArgoCD-unreachable signal (#498): scale ArgoCD down, assert /argocd-status flips + WS argocd_down + POST fast-fails 503, then recover"
+    cmds:
+      - ./scripts/argocd-unreachable.sh
 
   notifications:
     desc: "Assert the generic webhook fires (start + result) with the correct payload against a real receiver"
