@@ -27,9 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `connect_timeout` (new `DB_CONNECT_TIMEOUT` env var, default `10` seconds) and
   log a `Connecting to PostgreSQL database...` line before dialing, so an
   unreachable database fails fast with a diagnostic signal instead of blocking on
-  the OS TCP timeout with no logs. Deployments with high-latency links to Postgres
-  may need to raise `DB_CONNECT_TIMEOUT`; a non-positive value is rejected at
-  config-load time on both paths.
+  the OS TCP timeout with no logs. The timeout is enforced even when `DB_DSN` is
+  supplied explicitly. Deployments with high-latency links to Postgres may need to
+  raise `DB_CONNECT_TIMEOUT`; a non-positive value is rejected at config-load time
+  on both paths.
+- The `--migrate` command now emits structured JSON logs honoring `LOG_LEVEL`,
+  consistent with the server, instead of the previous plain-text output.
 
 ## [0.12.1] - 2026-07-20
 

@@ -28,7 +28,7 @@ type DatabaseConfig struct {
 	// It is honored by both the pgx driver (server path) and libpq (migrations).
 	ConnectTimeout int    `env:"DB_CONNECT_TIMEOUT" envDefault:"10"`
 	TimeZone       string `env:"DB_TIMEZONE" envDefault:"UTC"`
-	DSN            string `env:"DB_DSN,expand" envDefault:"host=${DB_HOST} port=${DB_PORT} user=${DB_USER} password=${DB_PASSWORD} dbname=${DB_NAME} sslmode=${DB_SSL_MODE} TimeZone=${DB_TIMEZONE} connect_timeout=${DB_CONNECT_TIMEOUT}"`
+	DSN            string `env:"DB_DSN,expand" envDefault:"host=${DB_HOST} port=${DB_PORT} user=${DB_USER} password=${DB_PASSWORD} dbname=${DB_NAME} sslmode=${DB_SSL_MODE} TimeZone=${DB_TIMEZONE}"`
 }
 
 type WebhookConfig struct {
@@ -98,7 +98,32 @@ func NewServerConfig() (*ServerConfig, error) {
 		return nil, err
 	}
 
+	// Enforce the connect timeout even when DB_DSN is supplied explicitly (which
+	// bypasses the default template), so an unreachable Postgres always fails fast
+	// instead of blocking on the OS TCP timeout.
+	if config.StateType == "postgres" {
+		config.Db.DSN = ensureConnectTimeout(config.Db.DSN, config.Db.ConnectTimeout)
+	}
+
 	return &config, nil
+}
+
+// ensureConnectTimeout appends a connect_timeout parameter (in seconds) to a
+// PostgreSQL DSN when it does not already specify one. An operator-provided
+// connect_timeout is left untouched. Both the URI form (postgres://...) and the
+// keyword/value form (host=... port=...) are supported.
+func ensureConnectTimeout(dsn string, timeout int) string {
+	if strings.Contains(dsn, "connect_timeout=") {
+		return dsn
+	}
+	if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
+		separator := "?"
+		if strings.Contains(dsn, "?") {
+			separator = "&"
+		}
+		return fmt.Sprintf("%s%sconnect_timeout=%d", dsn, separator, timeout)
+	}
+	return fmt.Sprintf("%s connect_timeout=%d", dsn, timeout)
 }
 
 // validateServerConfig checks the semantic rules that env parsing cannot

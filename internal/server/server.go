@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -17,6 +16,7 @@ import (
 	"github.com/shini4i/argo-watcher/internal/argocd"
 	"github.com/shini4i/argo-watcher/internal/config"
 	"github.com/shini4i/argo-watcher/internal/lock"
+	"github.com/shini4i/argo-watcher/internal/logging"
 	prom "github.com/shini4i/argo-watcher/internal/prometheus"
 	"github.com/shini4i/argo-watcher/internal/state"
 )
@@ -34,7 +34,7 @@ type Server struct {
 // NewServer creates a new server instance with the given configuration and prometheus registerer.
 func NewServer(serverConfig *config.ServerConfig, reg prometheus.Registerer) (*Server, error) {
 	// initialize logs
-	initLogs(serverConfig.LogLevel)
+	logging.Init(serverConfig.LogLevel)
 
 	// initialize metrics on the provided prometheus registry
 	metrics := prom.NewMetrics(reg)
@@ -178,39 +178,4 @@ func (s *Server) Run() {
 	s.env.Shutdown()
 
 	slog.Info("server exited")
-}
-
-// logLevelVar holds the active log level for the default logger so initLogs can
-// adjust it at runtime.
-var logLevelVar = new(slog.LevelVar)
-
-// initLogs configures the global slog logger to emit JSON to stderr at the
-// level parsed from logLevel. An unparseable level is logged as a warning and
-// leaves the logger at its default (info) level.
-func initLogs(logLevel string) {
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: logLevelVar})))
-	if lvl, err := parseLogLevel(logLevel); err != nil {
-		slog.Warn("couldn't parse log level, using default", "error", err)
-	} else {
-		logLevelVar.Set(lvl)
-		slog.Debug("configured log level", "level", lvl)
-	}
-}
-
-// parseLogLevel maps a textual log level to its slog equivalent. It accepts the
-// level names previously handled by zerolog (including the trace/fatal/panic
-// aliases) so existing LOG_LEVEL values keep working; unknown values error.
-func parseLogLevel(level string) (slog.Level, error) {
-	switch strings.ToLower(strings.TrimSpace(level)) {
-	case "trace", "debug":
-		return slog.LevelDebug, nil
-	case "", "info":
-		return slog.LevelInfo, nil
-	case "warn", "warning":
-		return slog.LevelWarn, nil
-	case "error", "fatal", "panic":
-		return slog.LevelError, nil
-	default:
-		return slog.LevelInfo, fmt.Errorf("unknown log level %q", level)
-	}
 }
