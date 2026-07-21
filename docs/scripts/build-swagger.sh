@@ -14,7 +14,7 @@ DOCS_OUT="${REPO_ROOT}/docs/reference/swagger.json"
 
 if command -v swag >/dev/null 2>&1; then
   SWAG_BIN="swag"
-elif [ -x "$(go env GOPATH)/bin/swag" ]; then
+elif [[ -x "$(go env GOPATH)/bin/swag" ]]; then
   SWAG_BIN="$(go env GOPATH)/bin/swag"
 else
   echo "error: 'swag' binary not found on PATH or in \$(go env GOPATH)/bin" >&2

@@ -605,7 +605,10 @@ const ProjectReference = ({ project }: { project?: string | null }) => {
     return <Typography variant="body1">{project}</Typography>;
   }
 
-  const label = project.replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  let label = project.replace(/^https?:\/\//, '');
+  while (label.endsWith('/')) {
+    label = label.slice(0, -1);
+  }
   return (
     <Link href={project} target="_blank" rel="noopener noreferrer">
       {label}

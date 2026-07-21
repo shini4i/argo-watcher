@@ -59,7 +59,7 @@ jobs:
         id: govulncheck
         continue-on-error: true
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
           "$(go env GOPATH)/bin/govulncheck" ./...
 
       - name: Fail if any Go scanner failed

@@ -9,6 +9,8 @@ import (
 
 	"github.com/avast/retry-go/v4"
 	"github.com/google/uuid"
+
+	// Registers the "postgres" SQL driver used by the database/sql-based tooling.
 	_ "github.com/lib/pq"
 	"gorm.io/datatypes"
 	"gorm.io/driver/postgres"
@@ -142,7 +144,7 @@ func (state *PostgresState) GetTask(id string) (*models.Task, error) {
 // It takes the task ID, new status, and status reason as input parameters.
 // The updated field is set to the current UTC time.
 // Returns an error if the task ID is not found.
-func (state *PostgresState) SetTaskStatus(id string, status string, reason string) error {
+func (state *PostgresState) SetTaskStatus(id, status, reason string) error {
 	uuidv4, err := uuid.Parse(id)
 	if err != nil {
 		return err
