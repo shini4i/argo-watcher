@@ -43,7 +43,10 @@ export const describeProject = (project: string): ProjectLinkInfo => {
   if (!isUrl) {
     return { isUrl: false, label: project };
   }
-  const stripped = project.replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  let stripped = project.replace(/^https?:\/\//, '');
+  while (stripped.endsWith('/')) {
+    stripped = stripped.slice(0, -1);
+  }
   const parts = stripped.split('/').filter(Boolean);
   const host = parts[0] ?? stripped;
   const lastPath = parts.length > 1 ? parts[parts.length - 1] : '';
