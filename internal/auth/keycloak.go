@@ -90,7 +90,6 @@ func (k *KeycloakAuthService) Validate(token string) (bool, error) {
 		}
 	}(resp.Body)
 
-	// Read and parse the response body
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		slog.Error("keycloak: error reading userinfo response body", "error", err)

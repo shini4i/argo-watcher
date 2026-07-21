@@ -121,7 +121,6 @@ func (env *Env) handleWebSocketConnection(c *gin.Context) {
 	env.connWg.Add(1)
 	defer env.connWg.Done()
 
-	// Create wrapper with pre-hijacked connection
 	wrappedWriter := &wsResponseWriter{
 		ResponseWriter: c.Writer,
 		conn:           netConn,
@@ -175,11 +174,8 @@ func (env *Env) checkConnection(c *websocket.Conn) {
 	}
 }
 
-// notifyWebSocketClients is a function that sends a message to all active WebSocket clients.
-// It iterates over the global connections slice, which contains all active WebSocket connections,
-// and sends the provided message to each connection using the wsjson.Write function.
-// If an error occurs while sending the message to a connection (for example, if the connection has been closed),
-// it removes the connection from the connections slice to prevent further attempts to send messages to it.
+// notifyWebSocketClients sends message to every active WebSocket connection.
+// A connection that fails the write is closed and removed from the slice.
 func notifyWebSocketClients(message string) {
 	var wg sync.WaitGroup
 
@@ -211,11 +207,8 @@ func notifyWebSocketClients(message string) {
 	wg.Wait()
 }
 
-// removeWebSocketConnection is a helper function that removes a WebSocket connection
-// from the global connections slice. It is used to clean up connections that are no longer active.
-// The function takes a WebSocket connection as an argument and removes it from the connections slice.
-// It uses a mutex to prevent concurrent access to the connections slice, ensuring thread safety.
-// Note: Callers are responsible for closing the connection before calling this function.
+// removeWebSocketConnection removes conn from the global connections slice under
+// the mutex. Callers are responsible for closing the connection first.
 func removeWebSocketConnection(conn *websocket.Conn) {
 	connectionsMutex.Lock()
 	defer connectionsMutex.Unlock()

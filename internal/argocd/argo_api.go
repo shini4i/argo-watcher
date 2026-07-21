@@ -46,28 +46,24 @@ func NewArgoApi() *ArgoApi {
 
 func (api *ArgoApi) Init(serverConfig *config.ServerConfig) error {
 	slog.Debug("Initializing argo-watcher client...")
-	// set base url
 	api.baseUrl = serverConfig.ArgoUrl
 
-	// create cookie jar
 	jar, err := api.cookieJarFn(nil)
 	if err != nil {
 		return err
 	}
-	// prepare cookie token. This is an outbound request cookie sent to the
-	// ArgoCD API through the client's cookie jar, not a Set-Cookie response to a
-	// browser, so G124's Secure/HttpOnly/SameSite attributes do not apply — they
-	// are browser-storage directives the Go HTTP client ignores when sending.
+	// This is an outbound request cookie sent to the ArgoCD API through the
+	// client's cookie jar, not a Set-Cookie response to a browser, so G124's
+	// Secure/HttpOnly/SameSite attributes do not apply — the Go HTTP client
+	// ignores those browser-storage directives when sending.
 	cookie := &http.Cookie{ // #nosec G124
 		Name:  "argocd.token",
 		Value: serverConfig.ArgoToken,
 	}
-	// set cookies
 	jar.SetCookies(&api.baseUrl, []*http.Cookie{cookie})
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: serverConfig.SkipTlsVerify}, // #nosec G402
 	}
-	// create http client
 	api.client = &http.Client{
 		Transport: transport,
 		Jar:       jar,
@@ -76,7 +72,6 @@ func (api *ArgoApi) Init(serverConfig *config.ServerConfig) error {
 
 	slog.Debug("Timeout for ArgoCD API calls set", "timeout", api.client.Timeout)
 
-	// configure retry attempts for transient transport errors
 	api.maxRetries = serverConfig.ArgoApiRetries
 	slog.Debug("Max API retries set", "max_retries", api.maxRetries)
 

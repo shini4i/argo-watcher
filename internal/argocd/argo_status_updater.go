@@ -91,7 +91,7 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 	updater.monitor.BeginTracking()
 	defer updater.monitor.EndTracking()
 
-	// notify about the deployment start
+	// notify: deployment started
 	sendNotification(task, updater.notifier)
 
 	// start bounds the deployment-duration metric: a monotonic in-process clock over the
@@ -100,7 +100,6 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 	// task.Created (whose stored unit differs across state backends).
 	start := time.Now()
 
-	// wait for application to get into deployed status or timeout
 	application, err := updater.waitForApplicationDeployment(task)
 
 	switch {
@@ -111,10 +110,8 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 		slog.Info("Deployment superseded by a newer deployment for the same app; stopping.", "id", task.Id)
 		task.Status = models.StatusCancelledMessage
 	case err != nil:
-		// handle application failure
 		updater.monitor.HandleArgoAPIFailure(&task, err)
 	default:
-		// process deployment result
 		updater.monitor.ProcessDeploymentResult(&task, application)
 	}
 
@@ -125,7 +122,7 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 		updater.monitor.ObserveDeploymentDuration(task.App, time.Since(start).Seconds())
 	}
 
-	// send webhook event about the deployment result
+	// notify: deployment finished
 	sendNotification(task, updater.notifier)
 }
 
@@ -145,7 +142,6 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 		return nil, err
 	}
 
-	// Save the initial application status
 	if err := updater.monitor.StoreInitialAppStatus(&task, app); err != nil {
 		return nil, err
 	}
@@ -163,7 +159,6 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 		return nil, err
 	}
 
-	// Wait for rollout completion
 	return updater.monitor.WaitRollout(task)
 }
 

@@ -38,9 +38,7 @@ type Task struct {
 	SavedAppStatus   SavedAppStatus `json:"-"`
 }
 
-// ListImages returns a list of strings representing the images of the task.
-// Each string in the list is in the format "{image}:{tag}".
-// The list is generated based on the Task's Images field.
+// ListImages returns the task's images formatted as "{image}:{tag}".
 func (task *Task) ListImages() []string {
 	list := make([]string, len(task.Images))
 	for index := range task.Images {
@@ -49,13 +47,12 @@ func (task *Task) ListImages() []string {
 	return list
 }
 
-// IsAppNotFoundError check if app not found error.
+// IsAppNotFoundError reports whether err means ArgoCD does not have this app.
 func (task *Task) IsAppNotFoundError(err error) bool {
 	var appNotFoundError = fmt.Sprintf("applications.argoproj.io \"%s\" not found", task.App)
 
-	// starting from ArgoCD 2.6.7 we are affected by this issue: https://github.com/argoproj/argo-cd/issues/13000
-	// although it is closed as completed, it is not fixed, so it seems to be a mistake
-	// from now on we consider "permission denied" as app not found error as this is what argocd returns in such cases
+	// Since ArgoCD 2.6.7 a missing app can also surface as "permission denied"
+	// (argoproj/argo-cd#13000, closed but not actually fixed), so treat both as not-found.
 	return strings.Contains(err.Error(), appNotFoundError) || strings.Contains(err.Error(), "permission denied")
 }
 

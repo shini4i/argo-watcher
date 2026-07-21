@@ -157,7 +157,6 @@ func (monitor *DeploymentMonitor) WaitRollout(task models.Task) (*models.Applica
 		}
 		application = app
 
-		// Early return for fire and forget mode
 		if app.IsFireAndForgetModeActive() {
 			slog.Debug("Fire and forget mode is active, skipping checks...", "id", task.Id)
 			return nil

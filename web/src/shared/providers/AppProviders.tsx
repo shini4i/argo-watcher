@@ -11,8 +11,8 @@ interface AppProvidersProps {
 }
 
 /**
- * Hosts global React providers required by the React-admin workspace.
- * Future phases will extend this with Keycloak, deploy-lock, and notification contexts.
+ * Hosts the global React providers (theme, timezone, ArgoCD-status, deploy-lock)
+ * that wrap the React-admin workspace.
  */
 export const AppProviders = ({ children }: AppProvidersProps) => (
   <ThemeModeProvider>

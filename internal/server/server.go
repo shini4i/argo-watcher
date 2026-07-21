@@ -33,31 +33,26 @@ type Server struct {
 
 // NewServer creates a new server instance with the given configuration and prometheus registerer.
 func NewServer(serverConfig *config.ServerConfig, reg prometheus.Registerer) (*Server, error) {
-	// initialize logs
 	logging.Init(serverConfig.LogLevel)
-
-	// initialize metrics on the provided prometheus registry
 	metrics := prom.NewMetrics(reg)
 
-	// create API client
 	api := argocd.NewArgoApi()
 	if err := api.Init(serverConfig); err != nil {
 		return nil, err
 	}
 
-	// create state management
 	s, err := state.NewState(serverConfig)
 	if err != nil {
 		return nil, err
 	}
-	// start cleanup go routine
+	// Background cleanup of obsolete tasks.
 	go s.ProcessObsoleteTasks(0)
 
-	// initialize argo client
 	argo := &argocd.Argo{}
 	argo.Init(s, api, metrics)
 
-	// Create the locker instance based on the state type
+	// The distributed Postgres locker requires the Postgres state; otherwise fall
+	// back to an in-memory lock (single-instance only).
 	var locker lock.Locker
 	if serverConfig.StateType == "postgres" {
 		pgState, ok := s.(*state.PostgresState)
@@ -75,7 +70,6 @@ func NewServer(serverConfig *config.ServerConfig, reg prometheus.Registerer) (*S
 		slog.Warn("Using in-memory lock. This is not suitable for HA setups.")
 	}
 
-	// initialize argo updater
 	updater := &argocd.ArgoStatusUpdater{}
 	err = updater.Init(*argo, argocd.ArgoStatusUpdaterConfig{
 		RetryAttempts:    serverConfig.GetRetryAttempts(),
@@ -92,13 +86,11 @@ func NewServer(serverConfig *config.ServerConfig, reg prometheus.Registerer) (*S
 		return nil, fmt.Errorf("failed to initialize the argo updater: %w", err)
 	}
 
-	// create environment
 	env, err := NewEnv(serverConfig, argo, metrics, updater)
 	if err != nil {
 		return nil, err
 	}
 
-	// create router
 	router := env.CreateRouter()
 
 	// Keep the argocd_unavailable metric fresh via a background probe. The task
@@ -135,7 +127,6 @@ func (s *Server) Run() {
 	// or hide the "ArgoCD unreachable" banner (issue #498).
 	s.env.StartArgoWatcher()
 
-	// Start server in goroutine
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("failed to start server", "error", err)

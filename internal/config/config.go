@@ -153,10 +153,8 @@ func validateServerConfig(config *ServerConfig) error {
 		strings.Join(problems, "\n"))
 }
 
-// GetRetryAttempts calculates the number of retry attempts based on the Deployment timeout value in the server configuration.
-// It divides it by 15 to determine the number of 15-second intervals.
-// The calculated value is incremented by 1 to account for the initial attempt.
-// It returns the number of retry attempts as an unsigned integer.
+// GetRetryAttempts returns the number of 15-second poll attempts that fit in
+// DeploymentTimeout, plus one for the initial attempt.
 func (config *ServerConfig) GetRetryAttempts() uint {
 	return config.DeploymentTimeout/15 + 1
 }

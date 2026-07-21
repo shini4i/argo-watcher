@@ -52,7 +52,6 @@ func NewWatcher(baseUrl string, debugMode bool, timeout time.Duration) *Watcher 
 // addTask adds a given task to the watcher, using either JWT or a DeployToken for authorization.
 // It returns the task ID or an error.
 func (watcher *Watcher) addTask(task models.Task, authMethod, token string) (string, error) {
-	// Marshal the task into JSON
 	requestBody, err := json.Marshal(task)
 	if err != nil {
 		return "", err
@@ -60,7 +59,6 @@ func (watcher *Watcher) addTask(task models.Task, authMethod, token string) (str
 
 	url := fmt.Sprintf("%s/api/v1/tasks", watcher.baseUrl)
 
-	// Create a new HTTP request with the JSON responseBody
 	request, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(requestBody))
 	if err != nil {
 		return "", err
@@ -68,7 +66,6 @@ func (watcher *Watcher) addTask(task models.Task, authMethod, token string) (str
 
 	request.Header.Set("Content-Type", "application/json; charset=UTF-8")
 
-	// Set the deploy token header if provided
 	if authMethod != "" && token != "" {
 		switch authMethod {
 		case "JWT":
@@ -92,7 +89,6 @@ func (watcher *Watcher) addTask(task models.Task, authMethod, token string) (str
 		log.Printf("Adding task to argo-watcher. Equivalent cURL command: %s\n", curlCommand)
 	}
 
-	// Send the HTTP request
 	response, err := watcher.client.Do(request)
 	if err != nil {
 		return "", err
@@ -109,7 +105,6 @@ func (watcher *Watcher) addTask(task models.Task, authMethod, token string) (str
 		return "", err
 	}
 
-	// Check the HTTP status code for success
 	if response.StatusCode != http.StatusAccepted {
 		return "", serverErrorFromResponse(response.StatusCode, responseBody)
 	}

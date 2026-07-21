@@ -30,17 +30,14 @@ type InMemoryState struct {
 
 var _ TaskRepository = (*InMemoryState)(nil)
 
-// Connect is a placeholder method that does not establish any connection.
-// It logs a debug message indicating that the InMemoryState does not connect to anything and skips the connection process.
-// This method exists to fulfill the TaskRepository interface requirement and has no functional value.
+// Connect is a no-op that exists only to satisfy the TaskRepository interface.
 func (state *InMemoryState) Connect(serverConfig *config.ServerConfig) error {
 	slog.Debug("InMemoryState does not connect to anything. Skipping.")
 	return nil
 }
 
-// AddTask adds a new task to the in-memory repository.
-// It takes a models.Task parameter, updates timestamps and status, and appends the task to the list of tracked tasks.
-// The method returns the newly created task and a nil error because the in-memory implementation does not surface persistence failures.
+// AddTask assigns an id, timestamps, and in-progress status, then appends the
+// task. The error is always nil; in-memory storage has no persistence failure.
 func (state *InMemoryState) AddTask(task models.Task) (*models.Task, error) {
 	state.mu.Lock()
 	defer state.mu.Unlock()
@@ -118,10 +115,7 @@ func (state *InMemoryState) GetTasks(startTime float64, endTime float64, app str
 	return paginate(tasks, limit, offset), int64(len(tasks))
 }
 
-// GetTask retrieves a task from the in-memory state based on the provided task ID.
-// It takes a string parameter for the task ID.
-// The method iterates over the tasks in the in-memory state and returns the task if a matching ID is found.
-// If no task with the given ID is found, it returns ErrTaskNotFound.
+// GetTask returns the task with the given id, or ErrTaskNotFound if none matches.
 func (state *InMemoryState) GetTask(id string) (*models.Task, error) {
 	state.mu.RLock()
 	defer state.mu.RUnlock()
@@ -134,10 +128,8 @@ func (state *InMemoryState) GetTask(id string) (*models.Task, error) {
 	return nil, ErrTaskNotFound
 }
 
-// SetTaskStatus updates the status and status reason of a task in the in-memory state based on the provided task ID.
-// It takes a string parameter for the task ID, status, and reason.
-// The method iterates over the tasks in the in-memory state and updates the task with the matching ID.
-// Returns an error if the task ID is not found.
+// SetTaskStatus updates the status and status reason of the task with the given
+// id, or returns an error if no task matches.
 func (state *InMemoryState) SetTaskStatus(id, status, reason string) error {
 	state.mu.Lock()
 	defer state.mu.Unlock()
@@ -176,16 +168,14 @@ func (state *InMemoryState) CancelInProgressTasks(app string, images []models.Im
 	return count, nil
 }
 
-// Check is a placeholder method that implements the Check() bool interface.
-// It always returns true and does not perform any actual state checking.
-// This method exists to fulfill the TaskRepository interface requirement and has no functional value.
+// Check always returns true; in-memory storage is always available.
 func (state *InMemoryState) Check() bool {
 	return true
 }
 
-// ProcessObsoleteTasks scans the in-memory tasks for obsolete tasks and updates their status.
-// It starts a process to watch for obsolete tasks by invoking the `processInMemoryObsoleteTasks` function.
-// The function uses the `retry` package to periodically retry the task processing with a fixed delay of 60 minutes.
+// ProcessObsoleteTasks runs processInMemoryObsoleteTasks every
+// ObsoleteTaskCheckInterval. retryTimes bounds the number of runs; 0 means run
+// forever (the production case). It is meant to run in its own goroutine.
 func (state *InMemoryState) ProcessObsoleteTasks(retryTimes uint) {
 	slog.Debug("Starting watching for obsolete tasks...")
 	err := retry.Do(
@@ -204,13 +194,8 @@ func (state *InMemoryState) ProcessObsoleteTasks(retryTimes uint) {
 	}
 }
 
-// processInMemoryObsoleteTasks processes a list of tasks and updates their status based on specific conditions.
-// It takes a slice of models.Task as input and returns a new slice of updated tasks.
-// The function iterates over the tasks and checks for specific status conditions.
-// If a task has a status of "app not found", it is skipped and excluded from the updated tasks.
-// If a task has a status of "in progress" and the updated timestamp plus 3600 seconds is less than the current Unix timestamp,
-// the task's status is updated to "aborted".
-// The function collects the updated tasks and returns them as a new slice.
+// processInMemoryObsoleteTasks returns tasks with "app not found" entries dropped
+// and "in progress" entries older than TaskStaleThresholdSeconds marked "aborted".
 func processInMemoryObsoleteTasks(tasks []models.Task) []models.Task {
 	var updatedTasks []models.Task
 	for _, task := range tasks {
