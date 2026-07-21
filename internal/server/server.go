@@ -131,6 +131,10 @@ func (s *Server) Run() {
 	// otherwise learn about (scheduled state is evaluated lazily).
 	s.env.StartLockdownWatcher()
 
+	// Notify clients when ArgoCD reachability changes so the frontend can show
+	// or hide the "ArgoCD unreachable" banner (issue #498).
+	s.env.StartArgoWatcher()
+
 	// Start server in goroutine
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

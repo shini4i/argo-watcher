@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/shini4i/argo-watcher/internal/helpers"
@@ -44,6 +45,13 @@ type Argo struct {
 	metrics prometheus.MetricsInterface
 	api     ArgoApiInterface
 	State   state.TaskRepository
+	// available caches the most recent ArgoCD reachability observed by Check so
+	// it can be read synchronously (IsAvailable) off any request path. The
+	// background liveness probe keeps it fresh; AddTask gates on it and the
+	// frontend "ArgoCD unreachable" banner is driven by it (issue #498). It is a
+	// pointer so the value copies of Argo held by the updater and deployment
+	// monitor (which never read it) stay freely copyable; Init allocates it.
+	available *atomic.Bool
 }
 
 // Init initializes the Argo controller with its dependencies.
@@ -51,6 +59,14 @@ func (argo *Argo) Init(state state.TaskRepository, api ArgoApiInterface, metrics
 	argo.api = api
 	argo.State = state
 	argo.metrics = metrics
+	// Assume ArgoCD is reachable until the first Check proves otherwise. Starting
+	// unavailable instead was considered and rejected: it would flash the
+	// "unreachable" banner and reject deploys on every healthy startup (crying
+	// wolf), for the sub-second until the first probe runs. This optimistic
+	// default only briefly mis-reports during a genuine startup-time outage,
+	// which the liveness probe corrects within ~one probe cycle.
+	argo.available = &atomic.Bool{}
+	argo.available.Store(true)
 }
 
 // Check performs a health check on ArgoCD and the state backend.
@@ -59,22 +75,37 @@ func (argo *Argo) Check() (string, error) {
 	userLoggedIn, loginError := argo.api.GetUserInfo()
 
 	if !connectionActive {
-		argo.metrics.SetArgoUnavailable(true)
+		argo.setAvailable(false)
 		return "down", errors.New(models.StatusConnectionUnavailable)
 	}
 
 	if loginError != nil {
-		argo.metrics.SetArgoUnavailable(true)
+		argo.setAvailable(false)
 		return "down", errors.New(models.StatusArgoCDUnavailableMessage)
 	}
 
 	if userLoggedIn == nil || !userLoggedIn.LoggedIn {
-		argo.metrics.SetArgoUnavailable(true)
+		argo.setAvailable(false)
 		return "down", errors.New(models.StatusArgoCDFailedLogin)
 	}
 
-	argo.metrics.SetArgoUnavailable(false)
+	argo.setAvailable(true)
 	return "up", nil
+}
+
+// setAvailable records the latest ArgoCD reachability in one place, keeping the
+// synchronously-readable cache (IsAvailable) and the argocd_unavailable gauge in
+// lockstep. The gauge tracks unavailability, so it is set to the negation.
+func (argo *Argo) setAvailable(available bool) {
+	argo.available.Store(available)
+	argo.metrics.SetArgoUnavailable(!available)
+}
+
+// IsAvailable reports the most recently observed ArgoCD reachability without
+// performing a live probe. The background liveness probe (StartLivenessProbe)
+// keeps this current, so reads never block on a live ArgoCD call.
+func (argo *Argo) IsAvailable() bool {
+	return argo.available.Load()
 }
 
 // StartLivenessProbe periodically runs Check() so the argocd_unavailable metric
@@ -109,8 +140,14 @@ func (argo *Argo) StartLivenessProbe(ctx context.Context, interval time.Duration
 
 // AddTask validates a new deployment task and adds it to the task repository.
 func (argo *Argo) AddTask(task models.Task) (*models.Task, error) {
-	if _, err := argo.Check(); err != nil {
-		return nil, err
+	// Gate on the cached reachability instead of a live Check(): a deploy
+	// attempted during an ArgoCD outage then fails fast with a clear error
+	// rather than blocking on the full API retry budget (ARGO_API_RETRIES ×
+	// ARGO_API_TIMEOUT) until the client's own HTTP timeout fires and masks the
+	// cause as a bare "context deadline exceeded" (issue #498). The liveness
+	// probe keeps this state fresh.
+	if !argo.IsAvailable() {
+		return nil, errors.New(models.StatusArgoCDUnavailableMessage)
 	}
 
 	if task.Images == nil || len(task.Images) == 0 {
@@ -199,10 +236,12 @@ func imageSignature(task models.Task) string {
 // is unavailable (e.g. a DNS/network outage): coupling the read to a live
 // ArgoCD `session/userinfo` call would otherwise make the whole list hang on the
 // API retry budget and then hide existing tasks behind an error. Write paths
-// (AddTask) keep the Check() gate because creating a deployment genuinely
-// requires ArgoCD to be up; that gate — not this read — is now the only place
-// the argocd_unavailable metric is refreshed. Note the /healthz endpoint probes
-// only the state backend (SimpleHealthCheck), not ArgoCD.
+// (AddTask) no longer run a live Check() either: they gate on the cached
+// reachability (IsAvailable) so a deploy fails fast during an outage. The
+// background liveness probe (StartLivenessProbe) is therefore the single place
+// the argocd_unavailable metric and the cached state are refreshed. Note the
+// /healthz endpoint probes only the state backend (SimpleHealthCheck), not
+// ArgoCD.
 func (argo *Argo) GetTasks(startTime float64, endTime float64, app string, status string, limit int, offset int) models.TasksResponse {
 	tasks, total := argo.State.GetTasks(startTime, endTime, app, status, limit, offset)
 

@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The Web UI now shows a prominent "ArgoCD unreachable" banner whenever Argo
+  Watcher cannot reach Argo CD (or its state backend), so operators can tell an
+  outage apart from "no recent deployments" without reading server logs or
+  scraping Prometheus. The banner appears and clears live via the existing
+  WebSocket. A read-only `GET /api/v1/argocd-status` endpoint exposes the same
+  cached reachability as a plain boolean for external polling.
+
+### Changed
+
+- Submitting a deployment (`POST /api/v1/tasks`) while Argo CD is unreachable now
+  fails fast with `503 {"status":"down"}` using the cached reachability state,
+  instead of blocking on the full Argo CD API retry budget until the client's own
+  HTTP timeout fired and masked the cause as an opaque `context deadline
+  exceeded`.
+
 ## [0.12.1] - 2026-07-20
 
 ### Changed
