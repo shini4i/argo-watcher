@@ -69,15 +69,20 @@ post_task() {
 }
 
 # status_is <true|false> -> succeeds when GET /argocd-status equals the argument.
-status_is() { curl -s -m 10 "${base}/argocd-status" | jq -e ". == $1" >/dev/null 2>&1; }
+status_is() {
+  local want="$1"
+  curl -s -m 10 "${base}/argocd-status" | jq -e ". == ${want}" >/dev/null 2>&1
+}
 # wait_status <true|false> <attempts> -> polls status_is on a 5s tick.
 wait_status() {
-  for _ in $(seq 1 "$2"); do status_is "$1" && return 0; sleep 5; done
+  local want="$1" attempts="$2"
+  for _ in $(seq 1 "$attempts"); do status_is "$want" && return 0; sleep 5; done
   return 1
 }
 # wait_ws <message> -> waits up to ~30s for wsprobe to capture `MSG <message>`.
 wait_ws() {
-  for _ in $(seq 1 6); do grep -q "^MSG $1\$" "$probe_out" && return 0; sleep 5; done
+  local message="$1"
+  for _ in $(seq 1 6); do grep -q "^MSG ${message}\$" "$probe_out" && return 0; sleep 5; done
   return 1
 }
 
