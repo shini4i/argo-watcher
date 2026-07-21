@@ -2,9 +2,6 @@ import type { PaletteMode, ThemeOptions } from '@mui/material';
 import { createTheme, lighten } from '@mui/material/styles';
 import { tokens } from './tokens';
 
-/**
- * Reuses the legacy UI branding tokens so both frontends stay visually aligned.
- */
 /** Derives the design tokens (palette, typography, overrides) for the requested palette mode. */
 const getDesignTokens = (mode: PaletteMode): ThemeOptions => ({
   palette: {

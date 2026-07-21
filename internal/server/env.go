@@ -14,22 +14,14 @@ import (
 
 // Env reference: https://www.alexedwards.net/blog/organising-database-access
 type Env struct {
-	// environment configurations
-	config *config.ServerConfig
-	// argo argo
-	argo *argocd.Argo
-	// argo updater
-	updater *argocd.ArgoStatusUpdater
-	// metrics
-	metrics *prometheus.Metrics
-	// deploy lock
-	lockdown *Lockdown
-	// enabled auth strategies
-	strategies map[string]auth.AuthStrategy
-	// authenticator orchestrates registered strategies
+	config        *config.ServerConfig
+	argo          *argocd.Argo
+	updater       *argocd.ArgoStatusUpdater
+	metrics       *prometheus.Metrics
+	lockdown      *Lockdown
+	strategies    map[string]auth.AuthStrategy
 	authenticator *auth.Authenticator
-	// shutdownCh signals graceful shutdown to all WebSocket goroutines.
-	// Using a channel instead of storing context.Context follows Go best practices.
+	// shutdownCh is closed to signal graceful shutdown to all WebSocket goroutines.
 	shutdownCh chan struct{}
 	// shutdownOnce ensures Shutdown() can be called multiple times safely.
 	shutdownOnce sync.Once
@@ -148,8 +140,8 @@ func (env *Env) Shutdown() {
 	}
 }
 
-// NewEnv initializes a new Env instance.
-// This function is used to set up the environment for the application's main operation, including setting configurations, initializing Argo service, and metrics.
+// NewEnv wires up an Env from the server config: lockdown schedules and the
+// enabled auth strategies (deploy token, optional Keycloak, optional JWT).
 func NewEnv(serverConfig *config.ServerConfig, argo *argocd.Argo, metrics *prometheus.Metrics, updater *argocd.ArgoStatusUpdater) (*Env, error) {
 	var env *Env
 	var err error

@@ -129,14 +129,7 @@ func (repo *GitRepo) Clone(ctx context.Context) error {
 			}
 		}
 
-		// Depth:1 makes this a shallow clone: only the branch tip commit is
-		// fetched, not the repository's full history. argo-watcher only ever reads
-		// the tip and commits one file on top of it, so history is dead weight. On a
-		// deep-history GitOps repo (100k+ commits) a full clone is minutes of work,
-		// and it runs while holding the distributed per-repo advisory lock — so it
-		// blocks every other replica's write-back to that repo. A shallow clone caps
-		// that to seconds. Tags:NoTags likewise skips fetching tag refs, which a
-		// large repo may have thousands of and which are never used here.
+		// Shallow, single-branch, no tags — see the Clone doc comment for why.
 		repo.localRepo, err = repo.GitHandler.PlainClone(ctx, repo.localRepoPath, false, &git.CloneOptions{
 			URL:           repo.RepoURL,
 			ReferenceName: plumbing.ReferenceName("refs/heads/" + repo.BranchName),
@@ -150,10 +143,8 @@ func (repo *GitRepo) Clone(ctx context.Context) error {
 
 	// If we get here, the cache is valid and has an 'origin' remote.
 	slog.Debug("Successfully opened cached repository", "path", repo.localRepoPath)
-	// Depth:1 keeps the cache shallow across warm fetches too: only the new tip
-	// is fetched, never the intervening history. Without it go-git would deepen
-	// the shallow clone toward full history on the first fetch, undoing the cold
-	// clone's win on a deep-history repo. Tags:NoTags mirrors the clone.
+	// Keep the fetch shallow too; otherwise go-git deepens the clone toward full
+	// history on the first fetch, undoing the shallow clone's win.
 	err = repo.localRepo.FetchContext(ctx, &git.FetchOptions{
 		RemoteName: "origin",
 		Auth:       repo.sshAuth,
@@ -267,7 +258,6 @@ func assertInsideRoot(root, path string) error {
 // merges the new parameter overrides into it. If no file exists, it returns the
 // new content directly.
 func (repo *GitRepo) mergeOverrideFileContent(fullPath string, overrideContent *ArgoOverrideFile) (*ArgoOverrideFile, error) {
-	// If the file doesn't exist, there's nothing to merge.
 	existingContent, err := os.ReadFile(fullPath) // #nosec G304 -- path already validated by assertInsideRoot in UpdateApp
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -276,13 +266,11 @@ func (repo *GitRepo) mergeOverrideFileContent(fullPath string, overrideContent *
 		return nil, fmt.Errorf("failed to read existing override file: %w", err)
 	}
 
-	// Unmarshal the YAML content into a struct.
 	existingOverrideFile := ArgoOverrideFile{}
 	if err := yaml.Unmarshal(existingContent, &existingOverrideFile); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal existing override file: %w", err)
 	}
 
-	// Merge the new parameters into the existing ones.
 	mergeParameters(&existingOverrideFile, overrideContent)
 
 	return &existingOverrideFile, nil
@@ -298,26 +286,21 @@ func (repo *GitRepo) commitAndPush(ctx context.Context, fullPath, commitMsg stri
 		return err
 	}
 
-	// Marshal the final merged content.
 	contentBytes, err := yaml.Marshal(overrideContent)
 	if err != nil {
 		return err
 	}
 
-	// Detect "nothing to commit" with a single-file byte compare instead of a
-	// full-worktree scan. Clone() hard-resets the worktree to origin HEAD before every
-	// attempt, and this override file is the only path argo-watcher ever writes, so the
-	// on-disk bytes equalling what we are about to write is equivalent to
-	// worktree.Status().IsClean() for our purposes — but O(1 file) instead of O(entire
-	// repo). On a large GitOps repo that whole-tree scan dominates the per-task cost, and
-	// it is paid serially for every concurrent task holding the per-repo lock in turn.
+	// Detect "nothing to commit" with a single-file byte compare instead of
+	// worktree.Status(). Clone() hard-resets to origin HEAD and this override file is
+	// the only path we write, so equal bytes mean a clean worktree — but O(1 file)
+	// instead of scanning the whole repo, which dominates the cost on a large repo.
 	// #nosec G304 -- path already validated by assertInsideRoot in UpdateApp
 	if existing, readErr := os.ReadFile(fullPath); readErr == nil && bytes.Equal(existing, contentBytes) {
 		slog.Debug("No changes detected. Skipping commit.")
 		return nil
 	}
 
-	// Write the final merged content to the override file.
 	if err := os.WriteFile(fullPath, contentBytes, 0600); err != nil {
 		return fmt.Errorf("failed to write override file: %w", err)
 	}
@@ -334,7 +317,6 @@ func (repo *GitRepo) commitAndPush(ctx context.Context, fullPath, commitMsg stri
 		return err
 	}
 
-	// Commit the changes with the configured author details.
 	commitOpts := &git.CommitOptions{
 		Author: &object.Signature{
 			Name:  repo.gitConfig.SshCommitUser,

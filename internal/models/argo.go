@@ -110,35 +110,32 @@ type ApplicationSource struct {
 
 // GetRolloutStatus calculates application rollout status depending on the expected images and proxy configuration.
 func (app *Application) GetRolloutStatus(rolloutImages []string, registryProxyUrl string, acceptSuspended bool) string {
-	// check if all the images rolled out
 	for _, image := range rolloutImages {
 		if !helpers.ImagesContains(app.Status.Summary.Images, image, registryProxyUrl) {
 			return ArgoRolloutAppNotAvailable
 		}
 	}
 
-	// if an application reached the degraded status, we can stop processing the task
+	// A degraded app is terminal and worth reporting, unless it is also OutOfSync
+	// (a sync is still pending and may recover).
 	if app.Status.Health.Status == "Degraded" && app.Status.Sync.Status != "OutOfSync" {
 		return ArgoRolloutAppDegraded
 	}
 
-	// verify app sync status
 	if app.Status.Sync.Status != "Synced" {
 		return ArgoRolloutAppNotSynced
 	}
 
-	// an optional check that helps when we are dealing with Rollout object that can be in a suspended state
-	// during the rollout process
+	// A Rollout object can sit in Suspended mid-rollout; treat that as success when
+	// the operator opted in via acceptSuspended.
 	if app.Status.Health.Status == "Suspended" && app.Status.Sync.Status == "Synced" && acceptSuspended {
 		return ArgoRolloutAppSuccess
 	}
 
-	// verify app health status
 	if app.Status.Health.Status != "Healthy" {
 		return ArgoRolloutAppNotHealthy
 	}
 
-	// all good
 	return ArgoRolloutAppSuccess
 }
 
@@ -152,9 +149,8 @@ func (app *Application) GetRolloutStatus(rolloutImages []string, registryProxyUr
 // are appended to both the "not available" and "not healthy"/"degraded" failures so on-call
 // users don't have to context-switch into the ArgoCD UI regardless of how the rollout failed.
 func (app *Application) GetRolloutMessage(status string, rolloutImages []string, tree *ApplicationTree) string {
-	// handle application sync failure
 	switch status {
-	// not all images were deployed to the application
+	// not all expected images were deployed
 	case ArgoRolloutAppNotAvailable:
 		// Image-mismatch is the bare minimum we always show, then append any diagnostics.
 		base := fmt.Sprintf(
@@ -167,9 +163,8 @@ func (app *Application) GetRolloutMessage(status string, rolloutImages []string,
 		)
 		// Base message has no resource listing, so fall back to Status.Resources when no tree.
 		return appendDiagnostics(base, app.buildFailureDiagnostics(tree, true))
-	// application sync status wasn't valid
+	// sync status was not "Synced"
 	case ArgoRolloutAppNotSynced:
-		// display sync status and last sync message
 		return fmt.Sprintf(
 			"App status \"%s\"\n"+
 				"App message \"%s\"\n"+
@@ -179,7 +174,7 @@ func (app *Application) GetRolloutMessage(status string, rolloutImages []string,
 			app.Status.OperationState.Message,
 			strings.Join(app.ListSyncResultResources(), "\n\t"),
 		)
-	// application is not in a healthy status
+	// app is unhealthy or degraded
 	case ArgoRolloutAppNotHealthy, ArgoRolloutAppDegraded:
 		// display current health of the top-level resources, then append the same
 		// diagnostics as the "not available" path — a stalled rollout caused by a
@@ -198,7 +193,6 @@ func (app *Application) GetRolloutMessage(status string, rolloutImages []string,
 		return appendDiagnostics(base, app.buildFailureDiagnostics(tree, false))
 	}
 
-	// handle unexpected status
 	return fmt.Sprintf(
 		"received unexpected rollout status \"%s\"",
 		status,
@@ -221,10 +215,8 @@ func formatSyncResultResource(r ApplicationOperationResource) string {
 	return fmt.Sprintf("%s(%s) %s %s with message %s", r.Kind, r.Name, r.HookType, r.HookPhase, r.Message)
 }
 
-// ListSyncResultResources returns a list of strings representing the sync result resources of the application.
-// Each string in the list contains information about the resource's kind, name, hook type, hook phase, and message.
-// The information is formatted as "{kind}({name}) {hookType} {hookPhase} with message {message}".
-// The list is generated based on the Application's status and its operation state's sync result resources.
+// ListSyncResultResources returns one formatted line per sync-result resource
+// (see formatSyncResultResource for the format).
 func (app *Application) ListSyncResultResources() []string {
 	list := make([]string, len(app.Status.OperationState.SyncResult.Resources))
 	for index := range app.Status.OperationState.SyncResult.Resources {
@@ -243,11 +235,8 @@ func formatHealthResource(r ApplicationResource) string {
 	return line
 }
 
-// ListUnhealthyResources returns a list of strings representing the unhealthy resources of the application.
-// Each string in the list contains information about the resource's kind, name, and health status.
-// If available, the resource's health message is also included in the string.
-// The format of each string is "{kind}({name}) {status}" or "{kind}({name}) {status} with message {message}".
-// The list is generated based on the Application's status and its resources with non-empty health status.
+// ListUnhealthyResources returns one formatted line per resource with a non-empty
+// health status (see formatHealthResource for the format).
 func (app *Application) ListUnhealthyResources() []string {
 	var list []string
 
@@ -376,8 +365,7 @@ func (app *Application) buildFailureDiagnostics(tree *ApplicationTree, allowStat
 	return strings.Join(sections, "\n\n")
 }
 
-// IsManagedByWatcher checks if the application is managed by the watcher.
-// It checks if the application's metadata contains the "argo-watcher/managed" annotation with the value "true".
+// IsManagedByWatcher reports whether the app carries the "argo-watcher/managed=true" annotation.
 func (app *Application) IsManagedByWatcher() bool {
 	if app.Metadata.Annotations == nil {
 		return false

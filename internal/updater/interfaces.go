@@ -78,15 +78,12 @@ func (GitClient) AddSSHKey(user, path, passphrase string) (*ssh.PublicKeys, erro
 // validateSSHKeyFile validates that the SSH key file exists, is readable,
 // is not empty, and contains a valid SSH private key format.
 func validateSSHKeyFile(path string) error {
-	// Check if path is provided
 	if path == "" {
 		return ErrSSHKeyNotProvided
 	}
 
-	// Normalize the path to prevent directory traversal attacks
 	path = filepath.Clean(path)
 
-	// Check if file exists
 	info, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -95,29 +92,24 @@ func validateSSHKeyFile(path string) error {
 		return fmt.Errorf("failed to stat SSH key file: %w", err)
 	}
 
-	// Check if path points to a file (not a directory)
 	if info.IsDir() {
 		return fmt.Errorf("SSH key path is a directory, not a file: %s", path)
 	}
 
-	// Check if file is not empty
 	if info.Size() == 0 {
 		return fmt.Errorf("%w: %s", ErrSSHKeyEmpty, path)
 	}
 
-	// Read and validate key format
 	keyData, err := os.ReadFile(path) // #nosec G304
 	if err != nil {
 		return fmt.Errorf("failed to read SSH key file: %w", err)
 	}
 
-	// Attempt to parse the private key to validate its format
 	_, err = cryptossh.ParsePrivateKey(keyData)
 	if err != nil {
-		// Check if it's a passphrase-protected key
+		// An encrypted key is valid; the passphrase is applied later at clone time.
 		var passphraseErr *cryptossh.PassphraseMissingError
 		if errors.As(err, &passphraseErr) {
-			// Key is valid but encrypted - this is OK, the passphrase will be used later
 			return nil
 		}
 		return fmt.Errorf("invalid SSH key format: %w", err)

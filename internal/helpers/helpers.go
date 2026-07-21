@@ -10,10 +10,8 @@ import (
 	"crypto/sha256"
 )
 
-// ImagesContains checks whether a given list of images contains a specific image.
-// It takes into account an optional registry proxy and checks both the image with
-// and without the proxy to ensure compatibility with mutating webhooks.
-// The function returns true if the image is found in the list, considering the proxy if specified; otherwise, it returns false.
+// ImagesContains reports whether images contains image. When a registry proxy is
+// set it matches the image both with and without the proxy prefix.
 func ImagesContains(images []string, image string, registryProxy string) bool {
 	if registryProxy != "" {
 		imageWithProxy := registryProxy + "/" + image
@@ -25,12 +23,10 @@ func ImagesContains(images []string, image string, registryProxy string) bool {
 	}
 }
 
-// CurlCommandFromRequest generates a cURL command string from an HTTP request,
-// including the request method, headers, request body, and URL.
-// The value of any header whose name matches redactHeaders (case-insensitively)
-// is replaced with "<redacted>" so secrets such as auth tokens are not written
-// to logs; the header name itself is kept for troubleshooting.
-// It handles any errors during the process and returns the formatted cURL command or an error if encountered.
+// CurlCommandFromRequest renders an HTTP request as an equivalent cURL command
+// (method, headers, body, URL). The value of any header whose name matches
+// redactHeaders (case-insensitively) is replaced with "<redacted>" so secrets
+// such as auth tokens are not written to logs; the header name is kept.
 func CurlCommandFromRequest(request *http.Request, redactHeaders ...string) (string, error) {
 	clonedRequest, err := httputil.DumpRequest(request, true)
 	if err != nil {
@@ -39,7 +35,6 @@ func CurlCommandFromRequest(request *http.Request, redactHeaders ...string) (str
 
 	cmd := "curl -X " + request.Method
 
-	// Iterate over request headers and add them to the cURL command
 	for key, values := range request.Header {
 		if headerMatches(key, redactHeaders) {
 			cmd += fmt.Sprintf(" -H '%s: <redacted>'", shellEscapeSingleQuote(key))
@@ -50,9 +45,8 @@ func CurlCommandFromRequest(request *http.Request, redactHeaders ...string) (str
 		}
 	}
 
-	// Add request body to cURL command
 	if len(clonedRequest) > 0 {
-		// Exclude the request line and headers when adding the body
+		// Skip past the request line and headers to the body.
 		headerEndIndex := strings.Index(string(clonedRequest), "\r\n\r\n")
 		if headerEndIndex != -1 && headerEndIndex+4 <= len(clonedRequest) {
 			body := string(clonedRequest[headerEndIndex+4:])
@@ -62,7 +56,6 @@ func CurlCommandFromRequest(request *http.Request, redactHeaders ...string) (str
 		}
 	}
 
-	// Add request URL to cURL command
 	cmd += " '" + shellEscapeSingleQuote(request.URL.String()) + "'"
 
 	return cmd, nil
@@ -88,12 +81,10 @@ func shellEscapeSingleQuote(s string) string {
 	return strings.ReplaceAll(s, "'", `'\''`)
 }
 
-// GenerateHash generates a SHA256 hash from a given string.
-// It handles any errors during the process and returns the hash as []byte or an error if encountered.
+// GenerateHash returns the SHA-256 digest of s.
 func GenerateHash(s string) []byte {
 	hash := sha256.New()
-	// we intentionally ignore the error here because it will never return one
-	// if you know a way to make this return an error, please open an issue
+	// hash.Write is documented never to return an error.
 	hash.Write([]byte(s))
 	return hash.Sum(nil)
 }

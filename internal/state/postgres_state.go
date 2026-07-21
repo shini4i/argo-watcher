@@ -36,7 +36,6 @@ var _ TaskRepository = (*PostgresState)(nil)
 // unreachable rather than blocking on the OS TCP timeout.
 func (state *PostgresState) Connect(serverConfig *config.ServerConfig) error {
 	slog.Info("Connecting to PostgreSQL database...")
-	// create ORM driver
 	if orm, err := gorm.Open(postgres.Open(serverConfig.Db.DSN)); err != nil {
 		return err
 	} else {
@@ -45,9 +44,7 @@ func (state *PostgresState) Connect(serverConfig *config.ServerConfig) error {
 	return nil
 }
 
-// AddTask inserts a new task into the PostgreSQL database with the provided details.
-// It takes a models.Task parameter and returns an error if the insertion fails.
-// The method executes an INSERT query to add a new record with the task details, including the current UTC time.
+// AddTask inserts a new in-progress task and returns it with the DB-generated id and creation time.
 func (state *PostgresState) AddTask(task models.Task) (*models.Task, error) {
 	ormTask := state_models.TaskModel{
 		Images:           datatypes.NewJSONSlice(task.Images),
@@ -64,7 +61,6 @@ func (state *PostgresState) AddTask(task models.Task) (*models.Task, error) {
 		return nil, fmt.Errorf("failed to create task in database")
 	}
 
-	// pass new values to the task object
 	task.Id = ormTask.Id.String()
 	task.Created = float64(ormTask.Created.UnixMilli())
 	task.Status = models.StatusInProgressMessage
@@ -116,12 +112,9 @@ func (state *PostgresState) GetTasks(startTime float64, endTime float64, app str
 	return tasks, total
 }
 
-// GetTask retrieves a task from the PostgreSQL database based on the provided task ID.
-// It returns ErrTaskNotFound when the id is malformed or no matching row exists,
-// and a wrapped error for any other retrieval failure so callers can distinguish
-// 404 from 500.
-// The method executes a SELECT query with the given task ID and scans the result into the task struct.
-// It handles converting the created and updated timestamps to float64 values and unmarshalling the images from the database.
+// GetTask retrieves a task by id. It returns ErrTaskNotFound when the id is
+// malformed or no matching row exists, and a wrapped error for any other
+// retrieval failure so callers can distinguish 404 from 500.
 func (state *PostgresState) GetTask(id string) (*models.Task, error) {
 	// The id column is a uuid, so a malformed id can never match a row. Treat it
 	// as not-found instead of letting Postgres raise a syntax error, which would
@@ -140,10 +133,8 @@ func (state *PostgresState) GetTask(id string) (*models.Task, error) {
 	return ormTask.ConvertToExternalTask(), nil
 }
 
-// SetTaskStatus updates the status, status_reason, and updated fields of a task in the PostgreSQL database.
-// It takes the task ID, new status, and status reason as input parameters.
-// The updated field is set to the current UTC time.
-// Returns an error if the task ID is not found.
+// SetTaskStatus updates a task's status and status_reason. It returns an error
+// if the id is malformed or no matching task exists.
 func (state *PostgresState) SetTaskStatus(id, status, reason string) error {
 	uuidv4, err := uuid.Parse(id)
 	if err != nil {
@@ -201,9 +192,7 @@ func (state *PostgresState) CancelInProgressTasks(app string, images []models.Im
 	return result.RowsAffected, nil
 }
 
-// Check verifies the connection to the PostgreSQL database by executing a simple test query.
-// It returns true if the database connection is successful and the test query is executed without errors.
-// It returns false if there is an error in the database connection or the test query execution.
+// Check reports whether the database connection is alive by pinging it.
 func (state *PostgresState) Check() bool {
 	connection, err := state.orm.DB()
 	if err != nil {
@@ -219,10 +208,9 @@ func (state *PostgresState) Check() bool {
 	return true
 }
 
-// ProcessObsoleteTasks monitors and handles obsolete tasks in the PostgreSQL state.
-// It initiates a process to remove tasks with a status of 'app not found' and mark tasks older than 1 hour as 'aborted'.
-// The function utilizes retry logic to handle potential errors and retry the process if necessary.
-// The retry interval is set to 60 minutes, and the retry attempts are set to 0 (no limit).
+// ProcessObsoleteTasks runs doProcessPostgresObsoleteTasks every
+// ObsoleteTaskCheckInterval. retryTimes bounds the number of runs; 0 means run
+// forever (the production case). It is meant to run in its own goroutine.
 func (state *PostgresState) ProcessObsoleteTasks(retryTimes uint) {
 	slog.Debug("Starting watching for obsolete tasks...")
 	err := retry.Do(
@@ -243,10 +231,8 @@ func (state *PostgresState) ProcessObsoleteTasks(retryTimes uint) {
 	}
 }
 
-// processPostgresObsoleteTasks processes and handles obsolete tasks in the PostgreSQL database.
-// It removes tasks with a status of 'app not found' and marks tasks older than 1 hour as 'aborted'.
-// The function expects a valid *sql.DB connection to the PostgreSQL database.
-// It returns an error if any database operation encounters an error; otherwise, it returns nil.
+// doProcessPostgresObsoleteTasks deletes "app not found" tasks older than 1 hour
+// and marks "in progress" tasks older than 1 hour as "aborted".
 func (state *PostgresState) doProcessPostgresObsoleteTasks() error {
 	slog.Debug("Removing obsolete tasks...")
 

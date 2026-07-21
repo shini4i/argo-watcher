@@ -60,7 +60,7 @@ func (env *Env) addTask(c *gin.Context) {
 		return
 	}
 
-	// we need to handle cases when deploy lock is set either manually or by cron
+	// reject deploys while a lockdown (manual or scheduled) is active
 	if env.lockdown.IsLocked() {
 		slog.Warn("deploy lock is set, rejecting the task")
 		c.JSON(http.StatusNotAcceptable, models.TaskStatus{
@@ -95,10 +95,8 @@ func (env *Env) addTask(c *gin.Context) {
 		return
 	}
 
-	// start rollout monitor
 	go env.updater.WaitForRollout(*newTask)
 
-	// return information about created task
 	c.JSON(http.StatusAccepted, models.TaskStatus{
 		Id:     newTask.Id,
 		Status: models.StatusAccepted,
