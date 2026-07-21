@@ -1,4 +1,4 @@
-import { render, screen, waitFor, act } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
@@ -78,9 +78,7 @@ describe('AppTopBar', () => {
     await screen.findByText('1.2.3');
 
     const user = userEvent.setup();
-    await act(async () => {
-      await user.click(screen.getByLabelText(/open configuration drawer/i));
-    });
+    await user.click(screen.getByLabelText(/open configuration drawer/i));
 
     await waitFor(() => {
       expect(screen.getByLabelText(/Workspace configuration drawer/i)).toBeInTheDocument();

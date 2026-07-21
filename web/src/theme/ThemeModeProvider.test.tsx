@@ -1,4 +1,4 @@
-import { render, screen, act } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ThemeModeProvider, useThemeMode } from './ThemeModeProvider';
@@ -27,9 +27,7 @@ describe('ThemeModeProvider', () => {
     );
 
     expect(screen.getByTestId('mode').textContent).toBe('light');
-    await act(async () => {
-      await user.click(screen.getByRole('button', { name: /toggle/i }));
-    });
+    await user.click(screen.getByRole('button', { name: /toggle/i }));
     expect(screen.getByTestId('mode').textContent).toBe('dark');
   });
 });

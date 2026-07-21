@@ -1,4 +1,4 @@
-import { render, screen, act } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HttpResponse } from '../../data/httpClient';
@@ -85,10 +85,8 @@ describe('ConfigDrawer', () => {
   it('toggles theme mode', async () => {
     renderDrawer();
     const user = userEvent.setup();
-    await act(async () => {
-      const toggleButton = await screen.findByRole('button', { name: /Switch to dark/i });
-      await user.click(toggleButton);
-    });
+    const toggleButton = await screen.findByRole('button', { name: /Switch to dark/i });
+    await user.click(toggleButton);
     expect(screen.getByTestId('theme-mode').textContent).toBe('dark');
   });
 
@@ -128,18 +126,14 @@ describe('ConfigDrawer', () => {
     await screen.findByRole('switch', { name: /toggle deploy lock/i });
 
     const user = userEvent.setup();
-    await act(async () => {
-      await user.click(screen.getByRole('switch', { name: /toggle deploy lock/i }));
-    });
+    await user.click(screen.getByRole('switch', { name: /toggle deploy lock/i }));
     expect(deployLockService.setLock).toHaveBeenCalled();
   });
 
   it('updates timezone preference when toggled', async () => {
     renderDrawer();
     const user = userEvent.setup();
-    await act(async () => {
-      await user.click(await screen.findByRole('button', { name: /Local/ }));
-    });
+    await user.click(await screen.findByRole('button', { name: /Local/ }));
 
     expect(globalThis.localStorage?.getItem('argo-watcher:timezone')).toBe('local');
   });
@@ -151,9 +145,7 @@ describe('ConfigDrawer', () => {
     });
     renderDrawer();
     const user = userEvent.setup();
-    await act(async () => {
-      await user.click(await screen.findByRole('switch', { name: /toggle deploy lock/i }));
-    });
+    await user.click(await screen.findByRole('switch', { name: /toggle deploy lock/i }));
 
     expect(deployLockService.releaseLock).toHaveBeenCalled();
     expect(notifyMock).toHaveBeenCalledWith('Deploy lock released.', { type: 'info' });
