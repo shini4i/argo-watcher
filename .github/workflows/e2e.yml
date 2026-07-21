@@ -61,9 +61,9 @@ jobs:
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"
-          curl -fsSL -o "$tmp/kind" "https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-amd64"
-          curl -fsSL -o "$tmp/kubectl" "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
-          curl -fsSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" | tar -xz -C "$tmp" --strip-components=1 linux-amd64/helm
+          curl --proto '=https' --tlsv1.2 -fsSL -o "$tmp/kind" "https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-amd64"
+          curl --proto '=https' --tlsv1.2 -fsSL -o "$tmp/kubectl" "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          curl --proto '=https' --tlsv1.2 -fsSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" | tar -xz -C "$tmp" --strip-components=1 linux-amd64/helm
           sudo install -m 0755 "$tmp"/kind "$tmp"/kubectl "$tmp"/helm /usr/local/bin/
 
       - name: Run e2e lab
