@@ -121,6 +121,47 @@ describe('ArgocdStatusService', () => {
     expect(listener).toHaveBeenLastCalledWith(false);
   });
 
+  it('does not let a slow REST bootstrap clobber a newer WebSocket transition', async () => {
+    // Bootstrap fetch is held pending while a WS transition lands, then resolves
+    // with the now-stale value; the WS state must win.
+    let resolveFetch: (r: Response) => void = () => {};
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      () => new Promise<Response>(resolve => { resolveFetch = resolve; }),
+    );
+    const service = new ArgocdStatusService();
+    const listener = vi.fn();
+    service.subscribe(listener); // fetchStatus is now in flight
+
+    await vi.waitUntil(() => MockWebSocket.instances.length === 1);
+    MockWebSocket.instances[0].emit('argocd_down');
+    expect(listener).toHaveBeenLastCalledWith(false);
+
+    // The stale bootstrap now resolves "reachable" — it must be discarded.
+    resolveFetch(new Response(JSON.stringify(true), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(listener).toHaveBeenLastCalledWith(false);
+  });
+
+  it('re-bootstraps on a fresh subscribe after full teardown', async () => {
+    mockFetch([{ body: true }, { body: false }]);
+    const service = new ArgocdStatusService();
+    const unsubscribe = service.subscribe(vi.fn());
+
+    await vi.waitUntil(() => (globalThis.fetch as unknown as vi.Mock).mock.calls.length === 1);
+    unsubscribe(); // last subscriber leaves -> teardown clears cached state
+
+    const listener = vi.fn();
+    service.subscribe(listener);
+    // currentStatus was reset, so a second bootstrap fetch must fire (not a replay).
+    await vi.waitUntil(() => (globalThis.fetch as unknown as vi.Mock).mock.calls.length === 2);
+    await vi.waitUntil(() => listener.mock.calls.some(c => c[0] === false));
+    expect(listener).toHaveBeenLastCalledWith(false);
+  });
+
   it('tears down websocket when the last subscriber unsubscribes', async () => {
     mockFetch([{ body: true }]);
     const service = new ArgocdStatusService();

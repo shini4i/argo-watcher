@@ -29,14 +29,32 @@ export class ArgocdStatusService {
   private readonly listeners = new Set<ArgocdStatusListener>();
   private socket: WebSocket | null = null;
   private reconnectHandle: number | null = null;
+  // Ordering guards so an out-of-order async result can never revert the banner
+  // to a stale value. Both matter because a (re)connect can have a bootstrap and
+  // an onopen fetch in flight at once, alongside live WS pushes:
+  //   fetchSeq     - only the most recently issued fetch may apply its result;
+  //                  older concurrent fetches are dropped.
+  //   wsGeneration - bumped on every WebSocket transition; a fetch is dropped if
+  //                  one landed while it was in flight, so a slow REST response
+  //                  cannot clobber a fresher live update.
+  private fetchSeq = 0;
+  private wsGeneration = 0;
 
   /**
    * Retrieves the latest reachability from the backend and notifies subscribers.
+   * The result is applied only if it is still the newest fetch AND no WebSocket
+   * transition landed while it was in flight; otherwise it is dropped so REST/WS
+   * ordering races cannot revert the banner to a stale value.
    */
   public async fetchStatus(): Promise<boolean> {
+    const seq = ++this.fetchSeq;
+    const wsGen = this.wsGeneration;
     const response = await httpClient<boolean>('/api/v1/argocd-status');
     const available = Boolean(response.data);
-    this.updateStatus(available);
+    if (seq !== this.fetchSeq || wsGen !== this.wsGeneration) {
+      return this.currentStatus ?? available;
+    }
+    this.setStatus(available);
     return available;
   }
 
@@ -67,7 +85,7 @@ export class ArgocdStatusService {
   }
 
   /** Broadcasts the new reachability to all subscribers. */
-  private updateStatus(available: boolean) {
+  private setStatus(available: boolean) {
     this.currentStatus = available;
     for (const listener of this.listeners) {
       listener(available);
@@ -96,9 +114,11 @@ export class ArgocdStatusService {
     this.socket.onmessage = event => {
       const payload = typeof event.data === 'string' ? event.data : '';
       if (payload === ARGOCD_DOWN_MESSAGE) {
-        this.updateStatus(false);
+        this.wsGeneration++;
+        this.setStatus(false);
       } else if (payload === ARGOCD_UP_MESSAGE) {
-        this.updateStatus(true);
+        this.wsGeneration++;
+        this.setStatus(true);
       }
     };
 
@@ -142,6 +162,10 @@ export class ArgocdStatusService {
 
     this.socket?.close();
     this.socket = null;
+    // Forget the cached reachability so a later re-subscribe bootstraps a fresh
+    // fetch instead of replaying a value that may have gone stale while nobody
+    // was listening.
+    this.currentStatus = null;
   }
 }
 

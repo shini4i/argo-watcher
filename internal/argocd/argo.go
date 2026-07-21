@@ -59,9 +59,12 @@ func (argo *Argo) Init(state state.TaskRepository, api ArgoApiInterface, metrics
 	argo.api = api
 	argo.State = state
 	argo.metrics = metrics
-	// Assume ArgoCD is reachable until the first Check proves otherwise, so a
-	// deploy in the brief window before the initial liveness probe runs is not
-	// rejected and the banner does not flash "unreachable" on every startup.
+	// Assume ArgoCD is reachable until the first Check proves otherwise. Starting
+	// unavailable instead was considered and rejected: it would flash the
+	// "unreachable" banner and reject deploys on every healthy startup (crying
+	// wolf), for the sub-second until the first probe runs. This optimistic
+	// default only briefly mis-reports during a genuine startup-time outage,
+	// which the liveness probe corrects within ~one probe cycle.
 	argo.available = &atomic.Bool{}
 	argo.available.Store(true)
 }
