@@ -230,30 +230,44 @@ func timeWithinSchedule(now time.Time, startDay, endDay time.Weekday, startHour,
 
 	// If it's the same day
 	if startDay == endDay {
-		isAfterStart := (currHour > startHour) || (currHour == startHour && currMin >= startMin)
-		isBeforeEnd := (currHour < endHour) || (currHour == endHour && currMin < endMin)
-
-		return (currDay == startDay) && isAfterStart && isBeforeEnd
+		return currDay == startDay &&
+			timeAtOrAfter(currHour, currMin, startHour, startMin) &&
+			timeBefore(currHour, currMin, endHour, endMin)
 	}
 
 	// For different days
-	weekdaysInOrder := endDay >= startDay
-	isInDayRange := (weekdaysInOrder && currDay >= startDay && currDay <= endDay) ||
-		(!weekdaysInOrder && (currDay >= startDay || currDay <= endDay))
-
-	if !isInDayRange {
+	if !dayInRange(currDay, startDay, endDay) {
 		return false
 	}
 
 	// Check times for start and end day
 	switch currDay {
 	case startDay:
-		return currHour > startHour || (currHour == startHour && currMin >= startMin)
+		return timeAtOrAfter(currHour, currMin, startHour, startMin)
 	case endDay:
-		return currHour < endHour || (currHour == endHour && currMin < endMin)
+		return timeBefore(currHour, currMin, endHour, endMin)
 	default:
 		return true
 	}
+}
+
+// timeAtOrAfter reports whether hour:min is at or after ref hour:min on the same day.
+func timeAtOrAfter(hour, min, refHour, refMin int) bool {
+	return hour > refHour || (hour == refHour && min >= refMin)
+}
+
+// timeBefore reports whether hour:min is strictly before ref hour:min on the same day.
+func timeBefore(hour, min, refHour, refMin int) bool {
+	return hour < refHour || (hour == refHour && min < refMin)
+}
+
+// dayInRange reports whether day falls within [start, end], wrapping to the next
+// week when end is before start (e.g. Fri→Mon).
+func dayInRange(day, start, end time.Weekday) bool {
+	if end >= start {
+		return day >= start && day <= end
+	}
+	return day >= start || day <= end
 }
 
 // dayToWeekday converts a three-letter abbreviation of a weekday (e.g., "Mon") to its corresponding time.Weekday enum value.
