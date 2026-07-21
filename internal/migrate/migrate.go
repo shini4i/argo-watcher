@@ -23,6 +23,9 @@ type Migrator struct {
 
 // NewMigrator initializes a new Migrator with a real migrate instance.
 func NewMigrator(cfg *MigrationConfig) (*Migrator, error) {
+	// migrate.New pings the database eagerly, so signal the attempt first; the
+	// DSN's connect_timeout bounds a stalled connection.
+	log.Println("Connecting to database for migrations...")
 	m, err := migrate.New(fmt.Sprintf("file://%s", cfg.MigrationsPath), cfg.DSN)
 	if err != nil {
 		return nil, fmt.Errorf("migration initialization failed: %w", err)

@@ -29,7 +29,11 @@ type PostgresState struct {
 var _ TaskRepository = (*PostgresState)(nil)
 
 // Connect establishes a connection to the PostgreSQL database using the provided server configuration.
+// It emits an INFO log before dialing (the first line at the default log level, so a stalled
+// connection is diagnosable) and relies on the DSN's connect_timeout to fail fast when Postgres is
+// unreachable rather than blocking on the OS TCP timeout.
 func (state *PostgresState) Connect(serverConfig *config.ServerConfig) error {
+	slog.Info("Connecting to PostgreSQL database...")
 	// create ORM driver
 	if orm, err := gorm.Open(postgres.Open(serverConfig.Db.DSN)); err != nil {
 		return err

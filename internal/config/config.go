@@ -22,9 +22,13 @@ type KeycloakConfig struct {
 }
 
 type DatabaseConfig struct {
-	SSLMode  string `env:"DB_SSL_MODE" envDefault:"disable"`
-	TimeZone string `env:"DB_TIMEZONE" envDefault:"UTC"`
-	DSN      string `env:"DB_DSN,expand" envDefault:"host=${DB_HOST} port=${DB_PORT} user=${DB_USER} password=${DB_PASSWORD} dbname=${DB_NAME} sslmode=${DB_SSL_MODE} TimeZone=${DB_TIMEZONE}"`
+	SSLMode string `env:"DB_SSL_MODE" envDefault:"disable"`
+	// ConnectTimeout bounds the initial connection attempt (in seconds) so an
+	// unreachable Postgres fails fast instead of blocking on the OS TCP timeout.
+	// It is honored by both the pgx driver (server path) and libpq (migrations).
+	ConnectTimeout int    `env:"DB_CONNECT_TIMEOUT" envDefault:"10"`
+	TimeZone       string `env:"DB_TIMEZONE" envDefault:"UTC"`
+	DSN            string `env:"DB_DSN,expand" envDefault:"host=${DB_HOST} port=${DB_PORT} user=${DB_USER} password=${DB_PASSWORD} dbname=${DB_NAME} sslmode=${DB_SSL_MODE} TimeZone=${DB_TIMEZONE} connect_timeout=${DB_CONNECT_TIMEOUT}"`
 }
 
 type WebhookConfig struct {
@@ -109,6 +113,11 @@ func validateServerConfig(config *ServerConfig) error {
 	}
 	if config.ArgoApiRetries < 1 || config.ArgoApiRetries > 10 {
 		problems = append(problems, fmt.Sprintf("  - ArgoApiRetries: must be between 1 and 10, got %d", config.ArgoApiRetries))
+	}
+	// A non-positive connect timeout means "wait indefinitely" for both pgx and
+	// libpq, silently defeating the fail-fast guard; only relevant for postgres.
+	if config.StateType == "postgres" && config.Db.ConnectTimeout < 1 {
+		problems = append(problems, fmt.Sprintf("  - ConnectTimeout: must be at least 1 second, got %d", config.Db.ConnectTimeout))
 	}
 
 	if len(problems) == 0 {

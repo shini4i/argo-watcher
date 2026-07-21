@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewServerConfig(t *testing.T) {
@@ -52,6 +53,58 @@ func TestNewServerConfig(t *testing.T) {
 		assert.Equal(t, "deploy-token", cfg.DeployToken)
 		assert.Equal(t, "jwt-secret", cfg.JWTSecret)
 	})
+}
+
+// TestNewServerConfig_DatabaseConnectTimeout verifies that the database DSN
+// carries a connect_timeout so an unreachable Postgres fails fast at startup
+// instead of blocking on the OS TCP timeout, and that DB_CONNECT_TIMEOUT
+// overrides the default.
+func TestNewServerConfig_DatabaseConnectTimeout(t *testing.T) {
+	t.Run("Default", func(t *testing.T) {
+		t.Setenv("ARGO_URL", "https://example.com")
+		t.Setenv("ARGO_TOKEN", "secret-token")
+		t.Setenv("STATE_TYPE", "postgres")
+
+		cfg, err := NewServerConfig()
+
+		assert.NoError(t, err)
+		assert.Equal(t, 10, cfg.Db.ConnectTimeout)
+		assert.Contains(t, cfg.Db.DSN, "connect_timeout=10")
+	})
+
+	t.Run("Override", func(t *testing.T) {
+		t.Setenv("ARGO_URL", "https://example.com")
+		t.Setenv("ARGO_TOKEN", "secret-token")
+		t.Setenv("STATE_TYPE", "postgres")
+		t.Setenv("DB_CONNECT_TIMEOUT", "3")
+
+		cfg, err := NewServerConfig()
+
+		assert.NoError(t, err)
+		assert.Equal(t, 3, cfg.Db.ConnectTimeout)
+		assert.Contains(t, cfg.Db.DSN, "connect_timeout=3")
+	})
+}
+
+// TestNewServerConfig_ConnectTimeoutValidation verifies that a non-positive
+// DB_CONNECT_TIMEOUT is rejected with a readable error, since 0 (and negatives on
+// libpq) mean "wait indefinitely" and would silently defeat the fail-fast guard.
+func TestNewServerConfig_ConnectTimeoutValidation(t *testing.T) {
+	for _, value := range []string{"0", "-1"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("ARGO_URL", "https://example.com")
+			t.Setenv("ARGO_TOKEN", "secret-token")
+			t.Setenv("STATE_TYPE", "postgres")
+			t.Setenv("DB_CONNECT_TIMEOUT", value)
+
+			cfg, err := NewServerConfig()
+
+			assert.Nil(t, cfg)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "ConnectTimeout")
+			assert.Contains(t, err.Error(), "must be at least 1 second")
+		})
+	}
 }
 
 func TestNewServerConfig_RequiredFieldsMissing(t *testing.T) {

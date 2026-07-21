@@ -23,6 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of blocking on the full Argo CD API retry budget until the client's own
   HTTP timeout fired and masked the cause as an opaque `context deadline
   exceeded`.
+- The server and `--migrate` now bound the initial PostgreSQL connection with a
+  `connect_timeout` (new `DB_CONNECT_TIMEOUT` env var, default `10` seconds) and
+  log a `Connecting to PostgreSQL database...` line before dialing, so an
+  unreachable database fails fast with a diagnostic signal instead of blocking on
+  the OS TCP timeout with no logs. Deployments with high-latency links to Postgres
+  may need to raise `DB_CONNECT_TIMEOUT`; a non-positive value is rejected at
+  config-load time on both paths.
 
 ## [0.12.1] - 2026-07-20
 
