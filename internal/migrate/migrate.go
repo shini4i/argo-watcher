@@ -4,7 +4,7 @@ package migrate
 import (
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
@@ -23,6 +23,9 @@ type Migrator struct {
 
 // NewMigrator initializes a new Migrator with a real migrate instance.
 func NewMigrator(cfg *MigrationConfig) (*Migrator, error) {
+	// migrate.New pings the database eagerly, so signal the attempt first; the
+	// DSN's connect_timeout bounds a stalled connection.
+	slog.Info("Connecting to database for migrations...")
 	m, err := migrate.New(fmt.Sprintf("file://%s", cfg.MigrationsPath), cfg.DSN)
 	if err != nil {
 		return nil, fmt.Errorf("migration initialization failed: %w", err)
@@ -39,11 +42,11 @@ func NewMigratorWithDriver(driver migrator) *Migrator {
 
 // Run applies all available 'up' migrations and returns an error on failure.
 func (m *Migrator) Run() error {
-	log.Println("Applying database migrations...")
+	slog.Info("Applying database migrations...")
 	err := m.migrator.Up()
 	if err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return fmt.Errorf("an error occurred while applying migrations: %w", err)
 	}
-	log.Println("Migrations applied successfully.")
+	slog.Info("Migrations applied successfully.")
 	return nil
 }

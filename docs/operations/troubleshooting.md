@@ -10,7 +10,7 @@ Each entry follows the same shape: **Symptom · Likely cause · How to verify ·
 **Likely causes:**
 - `ARGO_URL` or `ARGO_TOKEN` are incorrect or missing.
 - The server cannot reach the Argo CD API.
-- If using `STATE_TYPE=postgres`, the database is not accessible or migrations have not been applied.
+- If using `STATE_TYPE=postgres`, the database is not accessible or migrations have not been applied. The server (and `--migrate`) fail fast within `DB_CONNECT_TIMEOUT` seconds (default 10) instead of hanging on the OS TCP timeout; check the logs right after the `Connecting to PostgreSQL database...` line for the connection error.
 
 **How to verify:**
 - Check the server logs: `kubectl logs -f <pod-name>` or `docker logs <container-name>`.

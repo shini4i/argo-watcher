@@ -29,8 +29,26 @@ func TestNewMigrationConfig_Success(t *testing.T) {
 	require.NotNil(t, cfg)
 	assert.Equal(t, "/app/db/migrations", cfg.MigrationsPath)
 	// Verify the DSN is assembled correctly: DB_SSL_MODE flows into the sslmode
-	// segment and the password's special characters are URL-escaped.
-	assert.Equal(t, "postgres://testuser:testpassword%21%40%23@localhost:5432/testdb?sslmode=require", cfg.DSN)
+	// segment, the password's special characters are URL-escaped, and the default
+	// connect_timeout (10s) is appended so an unreachable database fails fast.
+	assert.Equal(t, "postgres://testuser:testpassword%21%40%23@localhost:5432/testdb?sslmode=require&connect_timeout=10", cfg.DSN)
+}
+
+// TestNewMigrationConfig_ConnectTimeoutOverride verifies DB_CONNECT_TIMEOUT flows
+// into the connect_timeout segment of the migration DSN.
+func TestNewMigrationConfig_ConnectTimeoutOverride(t *testing.T) {
+	t.Setenv("DB_HOST", "localhost")
+	t.Setenv("DB_PORT", "5432")
+	t.Setenv("DB_USER", "testuser")
+	t.Setenv("DB_PASSWORD", "testpassword")
+	t.Setenv("DB_NAME", "testdb")
+	t.Setenv("DB_SSL_MODE", "require")
+	t.Setenv("DB_CONNECT_TIMEOUT", "3")
+
+	cfg, err := NewMigrationConfig()
+
+	require.NoError(t, err)
+	assert.Equal(t, "postgres://testuser:testpassword@localhost:5432/testdb?sslmode=require&connect_timeout=3", cfg.DSN)
 }
 
 // TestNewMigrationConfig_CustomPath tests that a custom migration path from env vars is used.
@@ -49,6 +67,29 @@ func TestNewMigrationConfig_CustomPath(t *testing.T) {
 	// Assert
 	require.NoError(t, err)
 	assert.Equal(t, "/my/custom/path", cfg.MigrationsPath)
+}
+
+// TestNewMigrationConfig_ConnectTimeoutRejectsNonPositive verifies that a
+// non-positive DB_CONNECT_TIMEOUT is rejected, since 0 (and negatives on libpq)
+// mean "wait indefinitely" and would silently defeat the fail-fast guard.
+func TestNewMigrationConfig_ConnectTimeoutRejectsNonPositive(t *testing.T) {
+	for _, value := range []string{"0", "-1"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("DB_HOST", "localhost")
+			t.Setenv("DB_PORT", "5432")
+			t.Setenv("DB_USER", "testuser")
+			t.Setenv("DB_PASSWORD", "testpassword")
+			t.Setenv("DB_NAME", "testdb")
+			t.Setenv("DB_CONNECT_TIMEOUT", value)
+
+			cfg, err := NewMigrationConfig()
+
+			assert.Nil(t, cfg)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "DB_CONNECT_TIMEOUT")
+			assert.Contains(t, err.Error(), "must be at least 1 second")
+		})
+	}
 }
 
 // TestNewMigrationConfig_ValidationError tests the failure case where a required

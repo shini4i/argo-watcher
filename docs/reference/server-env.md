@@ -59,6 +59,7 @@ These variables are required when `STATE_TYPE` is set to `postgres`.
 | `DB_PASSWORD` | Database password |             | Conditional   |
 | `DB_SSL_MODE` | PostgreSQL SSL mode | `disable` | No            |
 | `DB_TIMEZONE` | Database timezone | `UTC`       | No            |
+| `DB_CONNECT_TIMEOUT` | Max seconds to wait for the initial DB connection before failing (must be at least 1) | `10` | No |
 
 ## Git Integration Settings
 
