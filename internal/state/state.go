@@ -41,7 +41,7 @@ type TaskRepository interface {
 	AddTask(task models.Task) (*models.Task, error)
 	GetTasks(startTime float64, endTime float64, app string, status string, limit int, offset int) ([]models.Task, int64)
 	GetTask(id string) (*models.Task, error)
-	SetTaskStatus(id string, status string, reason string) error
+	SetTaskStatus(id, status, reason string) error
 	// CancelInProgressTasks marks in-progress tasks for the given app as
 	// cancelled and returns how many were affected. A task is only cancelled when
 	// it shares at least one image name with the supplied images, so independent

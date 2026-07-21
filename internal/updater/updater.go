@@ -374,7 +374,7 @@ func (repo *GitRepo) commitAndPush(ctx context.Context, fullPath, commitMsg stri
 // mergeParameters updates the `existing` parameters with values from `newContent`.
 // If a parameter from `newContent` already exists by name in `existing`, it is overwritten.
 // If it does not exist, it is appended.
-func mergeParameters(existing *ArgoOverrideFile, newContent *ArgoOverrideFile) {
+func mergeParameters(existing, newContent *ArgoOverrideFile) {
 	for _, newParam := range newContent.Helm.Parameters {
 		found := false
 		for idx, existingParam := range existing.Helm.Parameters {

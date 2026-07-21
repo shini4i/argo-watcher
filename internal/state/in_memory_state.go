@@ -138,7 +138,7 @@ func (state *InMemoryState) GetTask(id string) (*models.Task, error) {
 // It takes a string parameter for the task ID, status, and reason.
 // The method iterates over the tasks in the in-memory state and updates the task with the matching ID.
 // Returns an error if the task ID is not found.
-func (state *InMemoryState) SetTaskStatus(id string, status string, reason string) error {
+func (state *InMemoryState) SetTaskStatus(id, status, reason string) error {
 	state.mu.Lock()
 	defer state.mu.Unlock()
 
