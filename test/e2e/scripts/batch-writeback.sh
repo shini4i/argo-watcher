@@ -41,7 +41,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 e2e_dir="$(cd "${here}/.." && pwd)"
 
 pf_pid=""
-cleanup() { kill $(jobs -p) 2>/dev/null || true; }
+cleanup() { kill $(jobs -p) 2>/dev/null || true; return; }
 trap cleanup EXIT
 
 # helm_apply reconfigures the live release from the values file + these --set args
@@ -53,6 +53,7 @@ helm_apply() {
     --version "$AW_CHART_VERSION" -n "$NS_AW" -f "${e2e_dir}/${VALUES}" --reset-values \
     --set image.tag=race "$@" >/dev/null
   kubectl -n "$NS_AW" rollout status statefulset/argo-watcher --timeout=180s >/dev/null
+  return
 }
 
 start_pf() {
@@ -60,6 +61,7 @@ start_pf() {
   kubectl -n "$NS_AW" port-forward svc/argo-watcher "${PORT}:80" >/dev/null 2>&1 &
   pf_pid=$!
   for _ in $(seq 1 15); do curl -s -m 3 -o /dev/null "localhost:${PORT}/healthz" && break; sleep 1; done
+  return
 }
 
 # Append GIT_BATCH_WRITEBACK as the next extraEnvs entry. The index is the count of
@@ -76,7 +78,7 @@ start_pf
 echo "=== waiting for the ${APPS} fixture apps to be Healthy ==="
 for i in $(seq 1 "$APPS"); do
   for _ in $(seq 1 40); do
-    [ "$(kubectl -n argocd get application "app$i" -o jsonpath='{.status.health.status}' 2>/dev/null)" = "Healthy" ] && break
+    [[ "$(kubectl -n argocd get application "app$i" -o jsonpath='{.status.health.status}' 2>/dev/null)" == "Healthy" ]] && break
     sleep 3
   done
 done
