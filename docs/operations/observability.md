@@ -12,13 +12,14 @@ scrape_configs:
 
 ## Exposed metrics
 
-The server emits nine metrics today, all defined in [`internal/prometheus/metrics.go`](https://github.com/shini4i/argo-watcher/blob/main/internal/prometheus/metrics.go).
+The server emits ten metrics today, all defined in [`internal/prometheus/metrics.go`](https://github.com/shini4i/argo-watcher/blob/main/internal/prometheus/metrics.go).
 
 | Metric | Type | Labels | Description |
 |---|---|---|---|
 | `failed_deployment` | gauge | `app` | Per-application failed deployment count since the last success. Reset to 0 when an application deploys successfully. Includes deployments aborted because Argo CD was unreachable — a deployment that could not be confirmed counts as failed regardless of cause; `argocd_unavailable` separately indicates whether Argo CD itself was the reason. |
 | `processed_deployments` | counter | `app` | Total deployments processed since server startup, per application. |
-| `argocd_unavailable` | gauge | (none) | `1` when Argo Watcher cannot reach the Argo CD API, `0` otherwise. The same cached state drives the Web UI's "ArgoCD unreachable" banner and is exposed as a plain boolean via `GET /api/v1/argocd-status` for external polling. |
+| `argocd_unavailable` | gauge | (none) | `1` when Argo Watcher cannot reach the Argo CD API, `0` otherwise. Independent of the state backend (see `state_unavailable`). |
+| `state_unavailable` | gauge | (none) | `1` when Argo Watcher cannot reach its state backend (database), `0` otherwise. Independent of Argo CD. |
 | `in_progress_tasks` | gauge | (none) | Number of tasks currently in progress (between submission and terminal state). |
 | `argocd_refresh_duration_seconds` | histogram | `app` | Duration of ArgoCD application refresh requests, to surface slow or stuck refreshes. Recorded only when the status check requests a refresh. |
 | `gitops_writeback_duration_seconds` | histogram | `app` | Time the git write-back held the per-repo lock, covering the clone/commit/push cycle plus any retries and backoff. |
@@ -27,6 +28,8 @@ The server emits nine metrics today, all defined in [`internal/prometheus/metric
 | `gitops_batch_size` | histogram | (none) | Number of applications coalesced into a single batch write-back flush. Only observed when `GIT_BATCH_WRITEBACK` is enabled; a distribution skewed toward 1 means little batching is happening (low contention). See the [GitOps Updater](../guides/gitops-updater.md#batch-write-back) guide. |
 
 In addition, the standard Go runtime metrics from the Prometheus client library are exposed (`go_*`, `process_*`).
+
+The same cached reachability that drives `argocd_unavailable` and `state_unavailable` is exposed for polling (and to bootstrap the Web UI's "unreachable" banner) via `GET /api/v1/reachability`, which returns `{"available":bool,"reason":"argocd"|"database"|"both"}` (`reason` is omitted when available). The banner uses `reason` to name which subsystem is down.
 
 ## Suggested alerts
 
@@ -103,7 +106,8 @@ A ready-made Grafana dashboard lives in the repository at
 [`monitoring/grafana/dashboards/argo-watcher.json`](https://github.com/shini4i/argo-watcher/blob/main/monitoring/grafana/dashboards/argo-watcher.json).
 It has an **Overview** row that illustrates the core metrics in aggregate
 (availability, in-progress tasks, deployment counts, failing apps) — the opt-in
-`gitops_batch_size` metric has no panel yet — and a
+`gitops_batch_size` metric and the newer `state_unavailable` metric have no panel
+yet — and a
 **Per-Application Breakdown** row driven by an `Application` template variable, so
 you can select one app (or several) and see its deployment counts, failures,
 end-to-end deployment duration, and the refresh / write-back / lock-wait latency

@@ -6,18 +6,20 @@
 # reachability, refreshed by the 30s liveness probe. This phase drives it through
 # a full outage-and-recovery cycle and asserts every observable surface:
 #
-#   1. Baseline: GET /api/v1/argocd-status reports true (ArgoCD reachable).
+#   1. Baseline: GET /api/v1/reachability reports true (ArgoCD reachable).
 #   2. Hold a WebSocket client open (tools/wsprobe) BEFORE the outage so it can
 #      capture the transition broadcasts.
 #   3. Induce the outage by scaling argocd-server to 0 replicas.
-#   4. Within a few probe cycles: GET /api/v1/argocd-status flips to false, and
-#      the watcher broadcasts "argocd_down" to the WS client.
+#   4. Within a few probe cycles: GET /api/v1/reachability flips to
+#      {"available":false,"reason":"argocd"} (only ArgoCD was scaled down, so the
+#      cause is ArgoCD, not the state backend), and the watcher broadcasts
+#      "argocd_down:argocd" to the WS client.
 #   5. POST /api/v1/tasks now fails fast with 503 {"status":"down"} off the cached
 #      state — it does NOT hang on the ArgoCD API retry budget (default
 #      ARGO_API_TIMEOUT=60 x ARGO_API_RETRIES=3 ~= 180s), which is the regression
 #      guard for the point-3 fast-fail; we assert the response returns well under
 #      that budget.
-#   6. Recover by scaling argocd-server back to 1: GET /api/v1/argocd-status
+#   6. Recover by scaling argocd-server back to 1: GET /api/v1/reachability
 #      returns to true, the watcher broadcasts "argocd_up", and POST /tasks is
 #      accepted again (202).
 #
@@ -68,10 +70,15 @@ post_task() {
   CODE="${out##*$'\n'}"; BODY="${out%$'\n'*}"
 }
 
-# status_is <true|false> -> succeeds when GET /argocd-status equals the argument.
+# status_is <true|false> -> succeeds when GET /reachability .available equals it.
 status_is() {
   local want="$1"
-  curl -s -m 10 "${base}/argocd-status" | jq -e ". == ${want}" >/dev/null 2>&1
+  curl -s -m 10 "${base}/reachability" | jq -e ".available == ${want}" >/dev/null 2>&1
+}
+# reason_is <reason> -> succeeds when GET /reachability .reason equals the arg.
+reason_is() {
+  local want="$1"
+  curl -s -m 10 "${base}/reachability" | jq -e ".reason == \"${want}\"" >/dev/null 2>&1
 }
 # wait_status <true|false> <attempts> -> polls status_is on a 5s tick.
 wait_status() {
@@ -91,9 +98,9 @@ start_pf
 
 # --- 1. Baseline ---------------------------------------------------------------
 if status_is true; then
-  echo "  OK   GET /argocd-status -> true (ArgoCD reachable at baseline)"
+  echo "  OK   GET /reachability -> true (ArgoCD reachable at baseline)"
 else
-  echo "  FAIL GET /argocd-status not true at baseline"; fail=1
+  echo "  FAIL GET /reachability not true at baseline"; fail=1
 fi
 
 # --- 2. Hold a WS client open before the outage --------------------------------
@@ -115,15 +122,22 @@ kubectl -n "$NS_ARGOCD" scale deploy/argocd-server --replicas=0 >/dev/null
 # Up to ~200s: the liveness probe runs every 30s and the watcher samples every 5s;
 # the wide margin absorbs a probe mid-cycle when the outage begins.
 if wait_status false 40; then
-  echo "  OK   GET /argocd-status -> false after the outage"
+  echo "  OK   GET /reachability -> false after the outage"
 else
-  echo "  FAIL GET /argocd-status never flipped to false during the outage"; fail=1
+  echo "  FAIL GET /reachability never flipped to false during the outage"; fail=1
+fi
+# The state backend stays up (only argocd-server was scaled down), so the cause
+# must be identified as "argocd" — not the combined "both" or a bare outage.
+if reason_is argocd; then
+  echo "  OK   GET /reachability -> reason \"argocd\" (ArgoCD-only outage)"
+else
+  echo "  FAIL GET /reachability reason not \"argocd\" during the outage"; fail=1
 fi
 if [[ "$ws_open" == "1" ]]; then
-  if wait_ws argocd_down; then
-    echo "  OK   WS client received the 'argocd_down' broadcast"
+  if wait_ws argocd_down:argocd; then
+    echo "  OK   WS client received the 'argocd_down:argocd' broadcast"
   else
-    echo "  FAIL no 'argocd_down' WS broadcast (captured: $(tr '\n' ',' <"$probe_out"))"; fail=1
+    echo "  FAIL no 'argocd_down:argocd' WS broadcast (captured: $(tr '\n' ',' <"$probe_out"))"; fail=1
   fi
 fi
 
@@ -146,9 +160,9 @@ kubectl -n "$NS_ARGOCD" scale deploy/argocd-server --replicas=1 >/dev/null
 kubectl -n "$NS_ARGOCD" rollout status deploy/argocd-server --timeout=180s >/dev/null
 
 if wait_status true 40; then
-  echo "  OK   GET /argocd-status -> true after recovery"
+  echo "  OK   GET /reachability -> true after recovery"
 else
-  echo "  FAIL GET /argocd-status never returned to true after recovery"; fail=1
+  echo "  FAIL GET /reachability never returned to true after recovery"; fail=1
 fi
 if [[ "$ws_open" == "1" ]]; then
   if wait_ws argocd_up; then

@@ -11,6 +11,7 @@ type MetricsInterface interface {
 	AddFailedDeployment(app string)
 	ResetFailedDeployment(app string)
 	SetArgoUnavailable(unavailable bool)
+	SetStateUnavailable(unavailable bool)
 	AddInProgressTask()
 	RemoveInProgressTask()
 	ObserveRefreshDuration(app string, seconds float64)
@@ -25,6 +26,7 @@ type Metrics struct {
 	FailedDeployment     *prometheus.GaugeVec
 	ProcessedDeployments *prometheus.CounterVec
 	ArgocdUnavailable    prometheus.Gauge
+	StateUnavailable     prometheus.Gauge
 	InProgressTasks      prometheus.Gauge
 	RefreshDuration      *prometheus.HistogramVec
 	GitWritebackDuration *prometheus.HistogramVec
@@ -46,7 +48,11 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		}, []string{"app"}),
 		ArgocdUnavailable: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "argocd_unavailable",
-			Help: "Whether ArgoCD is available for argo-watcher.",
+			Help: "Whether the ArgoCD API is unreachable (1) or reachable (0) for argo-watcher. Independent of the state backend (see state_unavailable).",
+		}),
+		StateUnavailable: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "state_unavailable",
+			Help: "Whether argo-watcher's state backend (database) is unreachable (1) or reachable (0). Independent of ArgoCD (see argocd_unavailable).",
 		}),
 		InProgressTasks: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "in_progress_tasks",
@@ -99,7 +105,7 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		}),
 	}
 
-	reg.MustRegister(m.FailedDeployment, m.ProcessedDeployments, m.ArgocdUnavailable, m.InProgressTasks, m.RefreshDuration, m.GitWritebackDuration, m.GitLockWaitDuration, m.DeploymentDuration, m.GitBatchSize)
+	reg.MustRegister(m.FailedDeployment, m.ProcessedDeployments, m.ArgocdUnavailable, m.StateUnavailable, m.InProgressTasks, m.RefreshDuration, m.GitWritebackDuration, m.GitLockWaitDuration, m.DeploymentDuration, m.GitBatchSize)
 
 	return m
 }
@@ -125,6 +131,15 @@ func (m *Metrics) SetArgoUnavailable(unavailable bool) {
 		m.ArgocdUnavailable.Set(1)
 	} else {
 		m.ArgocdUnavailable.Set(0)
+	}
+}
+
+// SetStateUnavailable sets the StateUnavailable gauge (state backend reachability).
+func (m *Metrics) SetStateUnavailable(unavailable bool) {
+	if unavailable {
+		m.StateUnavailable.Set(1)
+	} else {
+		m.StateUnavailable.Set(0)
 	}
 }
 

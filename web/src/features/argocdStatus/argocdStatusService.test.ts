@@ -51,27 +51,49 @@ describe('ArgocdStatusService', () => {
   };
 
   it('fetches initial reachability and notifies subscribers', async () => {
-    mockFetch([{ body: true }]);
+    mockFetch([{ body: { available: true } }]);
     const service = new ArgocdStatusService();
     const listener = vi.fn();
     service.subscribe(listener);
 
     await vi.waitUntil(() => listener.mock.calls.length > 0);
-    expect(listener).toHaveBeenCalledWith(true);
+    expect(listener).toHaveBeenCalledWith({ available: true, reason: null });
   });
 
-  it('fetches the argocd-status endpoint', async () => {
-    mockFetch([{ body: true }]);
+  it('fetches the reachability endpoint', async () => {
+    mockFetch([{ body: { available: true } }]);
     const service = new ArgocdStatusService();
     service.subscribe(vi.fn());
 
     await vi.waitUntil(() => (globalThis.fetch as unknown as vi.Mock).mock.calls.length > 0);
     const fetchCalls = (globalThis.fetch as unknown as vi.Mock).mock.calls;
-    expect(fetchCalls[0][0]).toContain('/api/v1/argocd-status');
+    expect(fetchCalls[0][0]).toContain('/api/v1/reachability');
   });
 
-  it('updates reachability on WebSocket messages', async () => {
-    mockFetch([{ body: true }]);
+  it('surfaces the unavailable reason from the bootstrap fetch', async () => {
+    mockFetch([{ body: { available: false, reason: 'database' } }]);
+    const service = new ArgocdStatusService();
+    const listener = vi.fn();
+    service.subscribe(listener);
+
+    await vi.waitUntil(() => listener.mock.calls.length > 0);
+    expect(listener).toHaveBeenCalledWith({ available: false, reason: 'database' });
+  });
+
+  it('threads a non-database reason through the bootstrap fetch', async () => {
+    // The REST bootstrap parses reason via a different input shape (body vs WS
+    // suffix), so cover a non-database cause here too.
+    mockFetch([{ body: { available: false, reason: 'both' } }]);
+    const service = new ArgocdStatusService();
+    const listener = vi.fn();
+    service.subscribe(listener);
+
+    await vi.waitUntil(() => listener.mock.calls.length > 0);
+    expect(listener).toHaveBeenCalledWith({ available: false, reason: 'both' });
+  });
+
+  it('updates reachability and cause on WebSocket messages', async () => {
+    mockFetch([{ body: { available: true } }]);
     const service = new ArgocdStatusService();
     const listener: ArgocdStatusListener = vi.fn();
 
@@ -80,15 +102,28 @@ describe('ArgocdStatusService', () => {
     await vi.waitUntil(() => MockWebSocket.instances.length === 1);
     const socket = MockWebSocket.instances[0];
 
+    // A down message carries the cause as a suffix.
+    socket.emit('argocd_down:argocd');
+    expect(listener).toHaveBeenLastCalledWith({ available: false, reason: 'argocd' });
+
+    socket.emit('argocd_down:both');
+    expect(listener).toHaveBeenLastCalledWith({ available: false, reason: 'both' });
+
+    // A bare down message (legacy / no suffix) is still an outage, reason unknown.
     socket.emit('argocd_down');
-    expect(listener).toHaveBeenLastCalledWith(false);
+    expect(listener).toHaveBeenLastCalledWith({ available: false, reason: null });
+
+    // An unrecognized cause suffix (forward-compat: backend adds a new reason)
+    // must still surface the outage, with reason narrowed to null.
+    socket.emit('argocd_down:garbage');
+    expect(listener).toHaveBeenLastCalledWith({ available: false, reason: null });
 
     socket.emit('argocd_up');
-    expect(listener).toHaveBeenLastCalledWith(true);
+    expect(listener).toHaveBeenLastCalledWith({ available: true, reason: null });
   });
 
   it('ignores unrelated WebSocket messages', async () => {
-    mockFetch([{ body: true }]);
+    mockFetch([{ body: { available: true } }]);
     const service = new ArgocdStatusService();
     const listener = vi.fn();
 
@@ -106,7 +141,7 @@ describe('ArgocdStatusService', () => {
   it('re-fetches reachability whenever the socket (re)connects', async () => {
     // A transition missed during a socket drop must be reconciled on reconnect,
     // otherwise the banner stays stale and hides a real outage.
-    mockFetch([{ body: true }, { body: false }]);
+    mockFetch([{ body: { available: true } }, { body: { available: false, reason: 'argocd' } }]);
     const service = new ArgocdStatusService();
     const listener = vi.fn();
     service.subscribe(listener);
@@ -118,7 +153,7 @@ describe('ArgocdStatusService', () => {
     MockWebSocket.instances[0].open();
 
     await vi.waitUntil(() => listener.mock.calls.length > 0);
-    expect(listener).toHaveBeenLastCalledWith(false);
+    expect(listener).toHaveBeenLastCalledWith({ available: false, reason: 'argocd' });
   });
 
   it('does not let a slow REST bootstrap clobber a newer WebSocket transition', async () => {
@@ -133,21 +168,21 @@ describe('ArgocdStatusService', () => {
     service.subscribe(listener); // fetchStatus is now in flight
 
     await vi.waitUntil(() => MockWebSocket.instances.length === 1);
-    MockWebSocket.instances[0].emit('argocd_down');
-    expect(listener).toHaveBeenLastCalledWith(false);
+    MockWebSocket.instances[0].emit('argocd_down:argocd');
+    expect(listener).toHaveBeenLastCalledWith({ available: false, reason: 'argocd' });
 
     // The stale bootstrap now resolves "reachable" — it must be discarded.
-    resolveFetch(new Response(JSON.stringify(true), {
+    resolveFetch(new Response(JSON.stringify({ available: true }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     }));
     await Promise.resolve();
     await Promise.resolve();
-    expect(listener).toHaveBeenLastCalledWith(false);
+    expect(listener).toHaveBeenLastCalledWith({ available: false, reason: 'argocd' });
   });
 
   it('re-bootstraps on a fresh subscribe after full teardown', async () => {
-    mockFetch([{ body: true }, { body: false }]);
+    mockFetch([{ body: { available: true } }, { body: { available: false, reason: 'database' } }]);
     const service = new ArgocdStatusService();
     const unsubscribe = service.subscribe(vi.fn());
 
@@ -158,12 +193,12 @@ describe('ArgocdStatusService', () => {
     service.subscribe(listener);
     // currentStatus was reset, so a second bootstrap fetch must fire (not a replay).
     await vi.waitUntil(() => (globalThis.fetch as unknown as vi.Mock).mock.calls.length === 2);
-    await vi.waitUntil(() => listener.mock.calls.some(c => c[0] === false));
-    expect(listener).toHaveBeenLastCalledWith(false);
+    await vi.waitUntil(() => listener.mock.calls.some(c => c[0].available === false));
+    expect(listener).toHaveBeenLastCalledWith({ available: false, reason: 'database' });
   });
 
   it('tears down websocket when the last subscriber unsubscribes', async () => {
-    mockFetch([{ body: true }]);
+    mockFetch([{ body: { available: true } }]);
     const service = new ArgocdStatusService();
     const listener = vi.fn();
     const unsubscribe = service.subscribe(listener);
@@ -177,7 +212,7 @@ describe('ArgocdStatusService', () => {
   });
 
   it('schedules reconnects when the socket closes with active listeners', async () => {
-    mockFetch([{ body: true }]);
+    mockFetch([{ body: { available: true } }]);
     const service = new ArgocdStatusService();
     service.subscribe(vi.fn());
     service.subscribe(vi.fn());
@@ -213,7 +248,7 @@ describe('ArgocdStatusService', () => {
   });
 
   it('logs websocket errors and closes the socket', async () => {
-    mockFetch([{ body: true }]);
+    mockFetch([{ body: { available: true } }]);
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const service = new ArgocdStatusService();
     service.subscribe(() => {});

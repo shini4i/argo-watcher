@@ -4,19 +4,38 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/shini4i/argo-watcher/internal/argocd"
 )
 
-// argoStatus godoc
-// @Summary Report ArgoCD reachability
-// @Description Report whether argo-watcher can currently reach ArgoCD. Reflects
-// @Description the cached liveness-probe state and never performs a live probe,
-// @Description so it is cheap to poll. The frontend uses it to bootstrap the
-// @Description "ArgoCD unreachable" banner on connect; live changes then arrive
-// @Description over the WebSocket. Returns true when ArgoCD is reachable.
+// ReachabilityResponse reports ArgoCD/state-backend reachability to the frontend.
+// Reason names which subsystem is unreachable (see argocd.Reason* constants) so
+// the banner can be specific; it is empty (omitted) when Available is true.
+type ReachabilityResponse struct {
+	Available bool   `json:"available"`
+	Reason    string `json:"reason,omitempty"`
+}
+
+// reachability godoc
+// @Summary Report dependency reachability
+// @Description Report whether argo-watcher can currently reach ArgoCD and its
+// @Description state backend. Reflects the cached liveness-probe state and never
+// @Description performs a live probe, so it is cheap to poll. The frontend uses
+// @Description it to bootstrap the "unreachable" banner on connect; live changes
+// @Description then arrive over the WebSocket. `available` is true when both are
+// @Description reachable; `reason` names the unreachable subsystem otherwise.
 // @Tags frontend
 // @Produce json
-// @Success 200 {boolean} boolean
-// @Router /api/v1/argocd-status [get]
-func (env *Env) argoStatus(c *gin.Context) {
-	c.JSON(http.StatusOK, env.argo.IsAvailable())
+// @Success 200 {object} ReachabilityResponse
+// @Router /api/v1/reachability [get]
+func (env *Env) reachability(c *gin.Context) {
+	// Read the cached reason once and derive availability from it, so the
+	// response is a snapshot of a single atomic load. Reading availability and
+	// the reason separately could tear across a concurrent liveness-probe update
+	// and yield an internally contradictory body to an external poller.
+	reason := env.argo.UnavailableReason()
+	c.JSON(http.StatusOK, ReachabilityResponse{
+		Available: reason == argocd.ReasonNone,
+		Reason:    reason,
+	})
 }

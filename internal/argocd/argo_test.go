@@ -35,6 +35,7 @@ func TestArgoCheck(t *testing.T) {
 		}
 		apiMock.EXPECT().GetUserInfo().Return(testUserInfo, nil)
 		metricsMock.EXPECT().SetArgoUnavailable(false)
+		metricsMock.EXPECT().SetStateUnavailable(false)
 
 		// argo manager
 		argo := &Argo{}
@@ -59,7 +60,10 @@ func TestArgoCheck(t *testing.T) {
 			Username: loggedInUsername,
 		}
 		api.EXPECT().GetUserInfo().Return(testUserInfo, nil)
-		metrics.EXPECT().SetArgoUnavailable(true)
+		// Only the state backend is down; ArgoCD stays reachable, so the two
+		// gauges must diverge.
+		metrics.EXPECT().SetArgoUnavailable(false)
+		metrics.EXPECT().SetStateUnavailable(true)
 
 		// argo manager
 		argo := &Argo{}
@@ -69,6 +73,7 @@ func TestArgoCheck(t *testing.T) {
 		// assertions
 		assert.EqualError(t, err, models.StatusConnectionUnavailable)
 		assert.Equal(t, "down", status)
+		assert.Equal(t, ReasonDatabase, argo.UnavailableReason())
 	})
 
 	t.Run("Argo Watcher - Down - Cannot login", func(t *testing.T) {
@@ -84,7 +89,9 @@ func TestArgoCheck(t *testing.T) {
 			Username: loggedInUsername,
 		}
 		api.EXPECT().GetUserInfo().Return(testUserInfo, nil)
+		// Only ArgoCD is down (login rejected); the state backend stays reachable.
 		metrics.EXPECT().SetArgoUnavailable(true)
+		metrics.EXPECT().SetStateUnavailable(false)
 
 		// argo manager
 		argo := &Argo{}
@@ -94,6 +101,7 @@ func TestArgoCheck(t *testing.T) {
 		// assertions
 		assert.EqualError(t, err, models.StatusArgoCDFailedLogin)
 		assert.Equal(t, "down", status)
+		assert.Equal(t, ReasonArgoCD, argo.UnavailableReason())
 	})
 
 	t.Run("Argo Watcher - Down - Unexpected login failure", func(t *testing.T) {
@@ -105,7 +113,9 @@ func TestArgoCheck(t *testing.T) {
 		// mock calls
 		state.EXPECT().Check().Return(true)
 		api.EXPECT().GetUserInfo().Return(nil, fmt.Errorf("unexpected login error"))
+		// Only ArgoCD is down (transport error); the state backend stays reachable.
 		metrics.EXPECT().SetArgoUnavailable(true)
+		metrics.EXPECT().SetStateUnavailable(false)
 
 		// argo manager
 		argo := &Argo{}
@@ -115,6 +125,58 @@ func TestArgoCheck(t *testing.T) {
 		// assertions
 		assert.EqualError(t, err, models.StatusArgoCDUnavailableMessage)
 		assert.Equal(t, "down", status)
+		assert.Equal(t, ReasonArgoCD, argo.UnavailableReason())
+	})
+
+	t.Run("Argo Watcher - Down - Both ArgoCD and state backend unreachable", func(t *testing.T) {
+		// mocks
+		api := newArgoApiMock(ctrl)
+		metrics := mocks.NewMockMetricsInterface(ctrl)
+		state := mocks.NewMockTaskRepository(ctrl)
+
+		// mock calls: state backend down AND ArgoCD login fails at the same time,
+		// so both gauges must be raised.
+		state.EXPECT().Check().Return(false)
+		api.EXPECT().GetUserInfo().Return(nil, fmt.Errorf("unexpected login error"))
+		metrics.EXPECT().SetArgoUnavailable(true)
+		metrics.EXPECT().SetStateUnavailable(true)
+
+		// argo manager
+		argo := &Argo{}
+		argo.Init(state, api, metrics)
+		status, err := argo.Check()
+
+		// assertions: the reason names both, and the error mentions both causes.
+		assert.Equal(t, "down", status)
+		assert.Equal(t, ReasonBoth, argo.UnavailableReason())
+		assert.ErrorContains(t, err, models.StatusConnectionUnavailable)
+		assert.ErrorContains(t, err, models.StatusArgoCDUnavailableMessage)
+	})
+
+	t.Run("Argo Watcher - Down - Both, ArgoCD login rejected", func(t *testing.T) {
+		// mocks
+		api := newArgoApiMock(ctrl)
+		metrics := mocks.NewMockMetricsInterface(ctrl)
+		state := mocks.NewMockTaskRepository(ctrl)
+
+		// State backend down AND ArgoCD reachable-but-not-logged-in (the other
+		// ArgoCD-down branch): the combined error must carry the login-rejected
+		// cause, not only the transport-error variant.
+		state.EXPECT().Check().Return(false)
+		api.EXPECT().GetUserInfo().Return(&models.Userinfo{LoggedIn: false}, nil)
+		metrics.EXPECT().SetArgoUnavailable(true)
+		metrics.EXPECT().SetStateUnavailable(true)
+
+		// argo manager
+		argo := &Argo{}
+		argo.Init(state, api, metrics)
+		status, err := argo.Check()
+
+		// assertions
+		assert.Equal(t, "down", status)
+		assert.Equal(t, ReasonBoth, argo.UnavailableReason())
+		assert.ErrorContains(t, err, models.StatusConnectionUnavailable)
+		assert.ErrorContains(t, err, models.StatusArgoCDFailedLogin)
 	})
 }
 
@@ -136,14 +198,18 @@ func TestArgoIsAvailable(t *testing.T) {
 		state := mocks.NewMockTaskRepository(ctrl)
 
 		// A failing Check must mark ArgoCD unavailable (gauge 1 / cache false),
-		// a passing one must restore it (gauge 0 / cache true).
+		// a passing one must restore it (gauge 0 / cache true). setReason sets the
+		// ArgoCD gauge before the state gauge, so the order reflects that. The
+		// state backend is reachable throughout, so its gauge stays 0.
 		gomock.InOrder(
 			state.EXPECT().Check().Return(true),
 			api.EXPECT().GetUserInfo().Return(nil, fmt.Errorf("boom")),
 			metrics.EXPECT().SetArgoUnavailable(true),
+			metrics.EXPECT().SetStateUnavailable(false),
 			state.EXPECT().Check().Return(true),
 			api.EXPECT().GetUserInfo().Return(&models.Userinfo{LoggedIn: true}, nil),
 			metrics.EXPECT().SetArgoUnavailable(false),
+			metrics.EXPECT().SetStateUnavailable(false),
 		)
 
 		argo := &Argo{}
@@ -175,7 +241,7 @@ func TestArgoAddTask(t *testing.T) {
 		// Simulate a cached outage: AddTask must reject fast, without a live
 		// probe (no Check/GetUserInfo calls) so the client is not held on the
 		// retry budget (issue #498).
-		argo.available.Store(false)
+		argo.reason.Store(ReasonArgoCD)
 		task := models.Task{} // empty task
 		newTask, err := argo.AddTask(task)
 
@@ -569,6 +635,7 @@ func TestArgoStartLivenessProbe(t *testing.T) {
 	state.EXPECT().Check().Return(true)
 	api.EXPECT().GetUserInfo().Return(&models.Userinfo{LoggedIn: true}, nil)
 	metrics.EXPECT().SetArgoUnavailable(false)
+	metrics.EXPECT().SetStateUnavailable(false)
 
 	argo := &Argo{}
 	argo.Init(state, api, metrics)
