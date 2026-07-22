@@ -62,18 +62,9 @@ func runBatchWriteBack(parentCtx context.Context, repo *updater.GitRepo, batch [
 		committed, err := runBatchAttempt(parentCtx, repo, opTimeout, active, outcomes, commitErrs)
 		if err != nil {
 			lastErr = err
-			if updater.IsPermanent(err) {
-				// A permanent clone/push failure recurs on every attempt; fail every
-				// still-unresolved app now instead of burning the budget.
-				slog.Error("Batch git update failed with permanent error; not retrying",
-					"attempt", attempt, "max_attempts", maxAttempts, "error", err)
-				failUnresolved(batch, outcomes, err)
-				break
-			}
-		} else {
-			for _, req := range committed {
-				outcomes[req] = nil
-			}
+		}
+		if recordAttempt(batch, committed, outcomes, err, attempt, maxAttempts) {
+			break // permanent failure — retrying cannot help
 		}
 
 		// Keep retrying while anything is unresolved — a failed/pending push or a
@@ -89,6 +80,25 @@ func runBatchWriteBack(parentCtx context.Context, repo *updater.GitRepo, batch [
 
 	resolveRemaining(batch, outcomes, commitErrs, lastErr, maxAttempts)
 	return outcomes
+}
+
+// recordAttempt applies one attempt's result to outcomes: on success it marks the
+// committed apps resolved; on a permanent error it fails every still-unresolved
+// app (retrying cannot help). It returns true when the retry loop must stop.
+func recordAttempt(batch, committed []*batchWriteRequest, outcomes map[*batchWriteRequest]error, err error, attempt, maxAttempts uint) bool {
+	if err == nil {
+		for _, req := range committed {
+			outcomes[req] = nil
+		}
+		return false
+	}
+	if updater.IsPermanent(err) {
+		slog.Error("Batch git update failed with permanent error; not retrying",
+			"attempt", attempt, "max_attempts", maxAttempts, "error", err)
+		failUnresolved(batch, outcomes, err)
+		return true
+	}
+	return false
 }
 
 // runBatchAttempt performs one clone + per-app commit + single push cycle. It
