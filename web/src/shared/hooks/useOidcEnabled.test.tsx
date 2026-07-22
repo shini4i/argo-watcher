@@ -6,41 +6,41 @@ vi.mock('../../data/httpClient', () => ({
 }));
 
 import { httpClient } from '../../data/httpClient';
-import { useKeycloakEnabled } from './useKeycloakEnabled';
+import { useOidcEnabled } from './useOidcEnabled';
 
 const mockHttpClient = vi.mocked(httpClient);
 
-describe('useKeycloakEnabled', () => {
+describe('useOidcEnabled', () => {
   beforeEach(() => {
     mockHttpClient.mockReset();
   });
 
-  it('returns true when server config enables keycloak', async () => {
+  it('returns true when server config enables oidc', async () => {
     mockHttpClient.mockResolvedValue({
-      data: { keycloak: { enabled: true } },
+      data: { oidc: { enabled: true } },
       status: 200,
       headers: new Headers(),
     });
 
-    const { result } = renderHook(() => useKeycloakEnabled());
+    const { result } = renderHook(() => useOidcEnabled());
     await waitFor(() => expect(result.current).toBe(true));
   });
 
-  it('returns false when keycloak is disabled', async () => {
+  it('returns false when oidc is disabled', async () => {
     mockHttpClient.mockResolvedValue({
-      data: { keycloak: { enabled: false } },
+      data: { oidc: { enabled: false } },
       status: 200,
       headers: new Headers(),
     });
 
-    const { result } = renderHook(() => useKeycloakEnabled());
+    const { result } = renderHook(() => useOidcEnabled());
     await waitFor(() => expect(result.current).toBe(false));
   });
 
   it('stays null when the request fails so callers can default-deny', async () => {
     mockHttpClient.mockRejectedValue(new Error('network'));
 
-    const { result } = renderHook(() => useKeycloakEnabled());
+    const { result } = renderHook(() => useOidcEnabled());
     // Wait one tick so the catch handler has a chance to run.
     await new Promise(resolve => setTimeout(resolve, 0));
     expect(result.current).toBeNull();

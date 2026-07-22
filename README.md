@@ -33,7 +33,7 @@ Argo Watcher introduces a control loop that monitors your Argo CD applications f
 - **Built-in GitOps Updater**: An optional, standalone service to update image tags in your GitOps repository, as an alternative to the Argo CD Image Updater.
 - **Deployment Locking**: Schedule maintenance windows or manually lock deployments to prevent unintended changes.
 - **Notifications**: Send deployment status notifications to webhooks.
-- **Authentication**: Supports JWT and Keycloak for secure access to the server and UI.
+- **Authentication**: Supports JWT and any OIDC provider (Keycloak, Authentik, …) for secure access to the server and UI.
 
 ## Architecture
 

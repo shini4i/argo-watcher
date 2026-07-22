@@ -26,10 +26,10 @@ const renderApp = () => {
   );
 };
 
-// Process any Keycloak login callback BEFORE mounting React. keycloak-js can only
-// read the `#code=...` fragment on its first init(), and the router's index
-// redirect strips that fragment as soon as the tree mounts — so initializing
-// first is what prevents the post-login redirect loop. When Keycloak is disabled
-// the bootstrap resolves immediately, so keycloak-less deployments render with no
-// added delay. `finally` guarantees the app still renders if the bootstrap throws.
+// Process any OIDC authorization-code callback BEFORE mounting React. The
+// `?code=...&state=...` params must be consumed while still on the URL — the
+// router's index redirect strips them as soon as the tree mounts — so handling
+// the callback first is what prevents a post-login redirect loop. When OIDC is
+// disabled the bootstrap resolves immediately, so auth-less deployments render
+// with no added delay. `finally` guarantees the app still renders if it throws.
 bootstrapAuth().finally(renderApp);

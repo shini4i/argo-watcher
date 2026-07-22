@@ -151,7 +151,8 @@ func (env *Env) Shutdown() {
 }
 
 // NewEnv wires up an Env from the server config: lockdown schedules and the
-// enabled auth strategies (deploy token, optional Keycloak, optional JWT).
+// enabled auth strategies (deploy token, optional OIDC — registered under both
+// the canonical and legacy Keycloak headers — and optional JWT).
 func NewEnv(serverConfig *config.ServerConfig, argo *argocd.Argo, metrics *prometheus.Metrics, updater *argocd.ArgoStatusUpdater) (*Env, error) {
 	var env *Env
 	var err error
@@ -172,12 +173,16 @@ func NewEnv(serverConfig *config.ServerConfig, argo *argocd.Argo, metrics *prome
 		"ARGO_WATCHER_DEPLOY_TOKEN": auth.NewDeployTokenAuthService(env.config.DeployToken),
 	}
 
-	if env.config.Keycloak.Enabled {
-		keycloakService, keycloakErr := auth.NewKeycloakAuthService(env.config)
-		if keycloakErr != nil {
-			return nil, fmt.Errorf("failed to initialize keycloak auth: %w", keycloakErr)
+	if env.config.OIDC.Enabled {
+		oidcService, oidcErr := auth.NewOIDCAuthService(env.config)
+		if oidcErr != nil {
+			return nil, fmt.Errorf("failed to initialize OIDC auth: %w", oidcErr)
 		}
-		env.strategies[keycloakHeader] = keycloakService
+		// Register the same strategy under both the canonical header and the
+		// deprecated Keycloak header, so existing clients that still send
+		// Keycloak-Authorization keep working.
+		env.strategies[oidcHeader] = oidcService
+		env.strategies[legacyKeycloakHeader] = oidcService
 	}
 
 	if env.config.JWTSecret != "" {

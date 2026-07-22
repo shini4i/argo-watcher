@@ -1,36 +1,45 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthProvider } from 'react-admin';
-import { HttpError } from 'react-admin';
-import * as browserUtils from '../shared/utils';
 import { getAccessToken, setAccessToken } from './tokenStore';
 
-const keycloakMock = {
-  init: vi.fn(),
-  login: vi.fn(),
-  logout: vi.fn(),
-  updateToken: vi.fn(),
-  loadUserInfo: vi.fn(),
-  token: 'token',
-  tokenParsed: {
-    sub: 'user-id',
-    email: 'user@example.com',
-    name: 'User Example',
-    groups: ['users', 'admins'],
+// Shared mock UserManager instance the module under test receives from every
+// `new UserManager(...)` call, so tests can drive its behaviour.
+const userManagerEvents = {
+  addUserLoaded: vi.fn(),
+  addUserUnloaded: vi.fn(),
+  addSilentRenewError: vi.fn(),
+  addAccessTokenExpiring: vi.fn(),
+};
+
+const userManagerMock = {
+  signinRedirect: vi.fn(),
+  signinRedirectCallback: vi.fn(),
+  signinSilent: vi.fn(),
+  getUser: vi.fn(),
+  removeUser: vi.fn(),
+  signoutRedirect: vi.fn(),
+  events: userManagerEvents,
+  metadataService: {
+    getUserInfoEndpoint: vi.fn(),
   },
 };
 
-/** Provides a constructor-safe Keycloak stub that always returns the shared mock. */
-const mockKeycloakConstructor = vi.fn(function mockKeycloakConstructor() {
-  return keycloakMock;
+const MockUserManager = vi.fn(function MockUserManager() {
+  return userManagerMock;
 });
 
-vi.mock('keycloak-js', () => ({
-  default: mockKeycloakConstructor,
+vi.mock('oidc-client-ts', () => ({
+  UserManager: MockUserManager,
+  WebStorageStateStore: class {
+    constructor(_args: unknown) {}
+  },
+  InMemoryWebStorage: class {},
+  User: class {},
 }));
 
-const loadAuthProvider = async (): Promise<AuthProvider & { __testing?: { reset: () => void } }> => {
+const loadAuthProvider = async (): Promise<AuthProvider & { __testing: { reset: () => void } }> => {
   const module = await import('./authProvider');
-  return module.authProvider as AuthProvider & { __testing?: { reset: () => void } };
+  return module.authProvider as AuthProvider & { __testing: { reset: () => void } };
 };
 
 const resetAuthProvider = async () => {
@@ -38,386 +47,220 @@ const resetAuthProvider = async () => {
   module.__testing.reset();
 };
 
-const mockConfig = (config: unknown) => {
-  vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
-    Promise.resolve(
-      new Response(JSON.stringify(config), {
+// Routes the two fetches the module makes: /api/v1/config and the provider's
+// userinfo endpoint (from which group membership is read, like the backend does).
+const mockConfig = (config: unknown, groups: string[] = ['users', 'admins']) => {
+  vi.spyOn(globalThis, 'fetch').mockImplementation((input: RequestInfo | URL) => {
+    const url = typeof input === 'string' ? input : input.toString();
+    const body = url.includes('userinfo') ? { groups } : config;
+    return Promise.resolve(
+      new Response(JSON.stringify(body), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       }),
-    ),
-  );
+    );
+  });
 };
 
-/** Ensures a browser-like window object exists when tests require DOM APIs. */
-const ensureBrowserWindow = (): Window => {
-  const browserWindow = globalThis.window;
-  if (!browserWindow) {
-    throw new Error('Browser window not available in authProvider tests.');
-  }
-  return browserWindow;
-};
+const enabledConfig = (overrides: Record<string, unknown> = {}) => ({
+  oidc: {
+    enabled: true,
+    issuer_url: 'https://idp.example.com/realms/demo',
+    client_id: 'argo',
+    privileged_groups: ['admins'],
+    ...overrides,
+  },
+});
+
+const signedInUser = (overrides: Record<string, unknown> = {}) => ({
+  access_token: 'token',
+  expired: false,
+  url_state: undefined,
+  profile: {
+    sub: 'user-id',
+    email: 'user@example.com',
+    name: 'User Example',
+    preferred_username: 'user',
+    groups: ['users', 'admins'],
+    ...overrides,
+  },
+});
 
 describe('authProvider', () => {
   beforeEach(async () => {
     vi.restoreAllMocks();
-    ensureBrowserWindow().localStorage.clear();
-    keycloakMock.init.mockReset();
-    keycloakMock.login.mockReset();
-    keycloakMock.logout.mockReset();
-    keycloakMock.updateToken.mockReset();
-    keycloakMock.loadUserInfo.mockReset();
-    keycloakMock.loadUserInfo.mockResolvedValue({ groups: ['users', 'admins'] });
+    window.localStorage.clear();
+    // Reset the URL so callback-detection starts clean for every test.
+    window.history.replaceState({}, '', '/');
+    MockUserManager.mockClear();
+    userManagerMock.signinRedirect.mockReset();
+    userManagerMock.signinRedirectCallback.mockReset();
+    userManagerMock.signinSilent.mockReset();
+    userManagerMock.getUser.mockReset();
+    userManagerMock.removeUser.mockReset();
+    userManagerMock.signoutRedirect.mockReset();
+    userManagerMock.metadataService.getUserInfoEndpoint.mockReset();
+    userManagerMock.signinRedirect.mockResolvedValue(undefined);
+    userManagerMock.removeUser.mockResolvedValue(undefined);
+    userManagerMock.signoutRedirect.mockResolvedValue(undefined);
+    userManagerMock.metadataService.getUserInfoEndpoint.mockResolvedValue('https://idp.example.com/userinfo');
     await resetAuthProvider();
   });
 
-  it('resolves auth checks when Keycloak is disabled', async () => {
-    mockConfig({ keycloak: { enabled: false } });
+  it('resolves auth checks and reports anonymous when OIDC is disabled', async () => {
+    mockConfig({ oidc: { enabled: false } });
     const provider = await loadAuthProvider();
 
     await expect(provider.checkAuth({})).resolves.toBeUndefined();
-    await expect(provider.checkAuth({})).resolves.toBeUndefined();
-    await expect(provider.getPermissions()).resolves.toEqual([]);
-    const identity = await provider.getIdentity();
+    await expect(provider.getPermissions({})).resolves.toEqual([]);
+    const identity = await provider.getIdentity!();
     expect(identity.id).toBe('anonymous');
+    expect(MockUserManager).not.toHaveBeenCalled();
   });
 
-  it('redirects to the Keycloak login page when unauthenticated, without logging out', async () => {
-    mockConfig({
-      keycloak: {
-        enabled: true,
-        url: 'https://keycloak.example.com',
-        realm: 'demo',
-        client_id: 'argo',
-        privileged_groups: ['admins'],
-      },
-    });
-    keycloakMock.init.mockResolvedValueOnce(false);
-
+  it('redirects to the provider login when unauthenticated, without rejecting checkAuth', async () => {
+    mockConfig(enabledConfig());
+    userManagerMock.getUser.mockResolvedValue(null);
     const provider = await loadAuthProvider();
 
     // checkAuth must NOT reject: a rejection makes react-admin call logout(),
-    // which would destroy a still-valid Keycloak session and loop.
+    // which would destroy a still-valid session and loop.
     await expect(provider.checkAuth({})).resolves.toBeUndefined();
-    expect(keycloakMock.init).toHaveBeenCalledWith(
-      expect.objectContaining({ onLoad: 'login-required' }),
-    );
-    expect(keycloakMock.login).toHaveBeenCalledWith(
-      expect.objectContaining({
-        redirectUri: `${ensureBrowserWindow().location.origin}/`,
-      }),
-    );
-    expect(keycloakMock.logout).not.toHaveBeenCalled();
+    expect(userManagerMock.signinRedirect).toHaveBeenCalledTimes(1);
+    expect(userManagerMock.signoutRedirect).not.toHaveBeenCalled();
   });
 
-  it('never rejects checkAuth (nor logs out) when the login redirect fails', async () => {
-    mockConfig({
-      keycloak: {
-        enabled: true,
-        url: 'https://keycloak.example.com',
-        realm: 'demo',
-        client_id: 'argo',
-        privileged_groups: [],
-      },
-    });
-    keycloakMock.init.mockResolvedValueOnce(false);
-    keycloakMock.login.mockRejectedValueOnce(new Error('redirect blocked'));
+  it('never rejects checkAuth when the login redirect fails', async () => {
+    mockConfig(enabledConfig());
+    userManagerMock.getUser.mockResolvedValue(null);
+    userManagerMock.signinRedirect.mockRejectedValueOnce(new Error('redirect blocked'));
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
     const provider = await loadAuthProvider();
 
-    // A login() failure must be swallowed: a rejected checkAuth triggers
-    // react-admin's logout(), which would reintroduce the redirect loop.
     await expect(provider.checkAuth({})).resolves.toBeUndefined();
-    expect(keycloakMock.logout).not.toHaveBeenCalled();
+    expect(userManagerMock.signoutRedirect).not.toHaveBeenCalled();
     expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Failed to initiate the Keycloak login redirect'),
+      expect.stringContaining('Failed to initiate the OIDC login redirect'),
       expect.any(Error),
     );
     warnSpy.mockRestore();
   });
 
-  it('still resolves checkAuth when init throws AND the login redirect rejects', async () => {
-    mockConfig({
-      keycloak: {
-        enabled: true,
-        url: 'https://keycloak.example.com',
-        realm: 'demo',
-        client_id: 'argo',
-        privileged_groups: [],
-      },
-    });
-    keycloakMock.init.mockRejectedValueOnce(new Error('init failure'));
-    keycloakMock.login.mockRejectedValueOnce(new Error('redirect blocked'));
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
+  it('accepts an existing valid session and stores the token', async () => {
+    mockConfig(enabledConfig());
+    userManagerMock.getUser.mockResolvedValue(signedInUser());
     const provider = await loadAuthProvider();
 
-    // Worst case for the loop-prevention invariant: both recovery mechanisms
-    // fail in one call. checkAuth must still resolve so react-admin never logs out.
     await expect(provider.checkAuth({})).resolves.toBeUndefined();
-    expect(keycloakMock.logout).not.toHaveBeenCalled();
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Keycloak initialization failed'),
-      expect.any(Error),
-    );
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Failed to initiate the Keycloak login redirect'),
-      expect.any(Error),
-    );
-    warnSpy.mockRestore();
+    expect(userManagerMock.signinRedirect).not.toHaveBeenCalled();
+    expect(getAccessToken()).toBe('token');
   });
 
-  it('initializes with login-required rather than a cross-site silent iframe', async () => {
-    mockConfig({
-      keycloak: {
-        enabled: true,
-        url: 'https://keycloak.example.com',
-        realm: 'demo',
-        client_id: 'argo',
-        privileged_groups: [],
-      },
-    });
-    keycloakMock.init.mockResolvedValueOnce(true);
-
+  it('returns group-based permissions for an authenticated user', async () => {
+    mockConfig(enabledConfig());
+    userManagerMock.getUser.mockResolvedValue(signedInUser());
     const provider = await loadAuthProvider();
-    await provider.checkAuth({});
 
-    const initOptions = keycloakMock.init.mock.calls[0]?.[0] ?? {};
-    expect(initOptions).toMatchObject({ onLoad: 'login-required', checkLoginIframe: false });
-    expect(initOptions).not.toHaveProperty('silentCheckSsoRedirectUri');
-    expect(keycloakMock.login).not.toHaveBeenCalled();
-  });
-
-  it('returns permissions when Keycloak authenticates successfully', async () => {
-    mockConfig({
-      keycloak: {
-        enabled: true,
-        url: 'https://keycloak.example.com',
-        realm: 'demo',
-        client_id: 'argo',
-        privileged_groups: ['admins'],
-      },
-    });
-    keycloakMock.init.mockResolvedValueOnce(true);
-
-    const provider = await loadAuthProvider();
-    await provider.checkAuth({});
-    expect(keycloakMock.init).toHaveBeenCalledWith(
-      expect.objectContaining({
-        onLoad: 'login-required',
-      }),
-    );
-    const permissions = (await provider.getPermissions()) as { groups: string[]; privilegedGroups: string[] };
-
-    expect(keycloakMock.loadUserInfo).toHaveBeenCalled();
+    const permissions = (await provider.getPermissions({})) as { groups: string[]; privilegedGroups: string[] };
     expect(permissions.groups).toContain('admins');
     expect(permissions.privilegedGroups).toContain('admins');
 
-    const identity = await provider.getIdentity();
+    const identity = await provider.getIdentity!();
     expect(identity.email).toBe('user@example.com');
+    expect(identity.id).toBe('user-id');
   });
 
-  it('fetches permissions by authenticating when needed', async () => {
-    mockConfig({
-      keycloak: {
-        enabled: true,
-        url: 'https://keycloak.example.com',
-        realm: 'demo',
-        client_id: 'argo',
-        privileged_groups: ['admins'],
-      },
-    });
-    keycloakMock.init.mockResolvedValueOnce(true);
-
+  it('reads groups from userinfo (the source the backend enforces on), not the ID token', async () => {
+    // ID token carries stale/no groups; userinfo is authoritative.
+    mockConfig(enabledConfig(), ['admins']);
+    userManagerMock.getUser.mockResolvedValue(signedInUser({ groups: [] }));
     const provider = await loadAuthProvider();
-    const permissions = (await provider.getPermissions()) as { groups: string[]; privilegedGroups: string[] };
 
-    expect(keycloakMock.init).toHaveBeenCalledTimes(1);
-    expect(keycloakMock.loadUserInfo).toHaveBeenCalledTimes(1);
-    expect(permissions.groups).toContain('admins');
-    expect(permissions.privilegedGroups).toContain('admins');
+    const permissions = (await provider.getPermissions({})) as { groups: string[] };
+    expect(permissions.groups).toEqual(['admins']);
+    expect(userManagerMock.metadataService.getUserInfoEndpoint).toHaveBeenCalled();
   });
 
-  it('revalidates the session at a fixed interval', async () => {
-    mockConfig({
-      keycloak: {
-        enabled: true,
-        url: 'https://keycloak.example.com',
-        realm: 'demo',
-        client_id: 'argo',
-        privileged_groups: ['admins'],
-      },
-    });
-    keycloakMock.init.mockResolvedValue(true);
-    const nowSpy = vi.spyOn(Date, 'now');
-    nowSpy.mockReturnValue(0);
-    const provider = await loadAuthProvider();
-    await provider.checkAuth({});
-    await provider.getPermissions();
-
-    keycloakMock.loadUserInfo.mockClear();
-    nowSpy.mockReturnValue(120_000);
-    await expect(provider.checkAuth({})).resolves.toBeUndefined();
-    expect(keycloakMock.loadUserInfo).toHaveBeenCalledTimes(1);
-    nowSpy.mockRestore();
-  });
-
-  it('forces logout when revalidation fails', async () => {
-    mockConfig({
-      keycloak: {
-        enabled: true,
-        url: 'https://keycloak.example.com',
-        realm: 'demo',
-        client_id: 'argo',
-        privileged_groups: ['admins'],
-      },
-    });
-    keycloakMock.init.mockResolvedValue(true);
-    const nowSpy = vi.spyOn(Date, 'now');
-    nowSpy.mockReturnValue(0);
-    const provider = await loadAuthProvider();
-    await provider.checkAuth({});
-    await provider.getPermissions();
-
-    keycloakMock.loadUserInfo.mockClear();
-    keycloakMock.loadUserInfo.mockRejectedValueOnce(new Error('disabled'));
-    nowSpy.mockReturnValue(120_000);
-
-    await expect(provider.checkAuth({})).rejects.toBeInstanceOf(HttpError);
-    nowSpy.mockRestore();
-  });
-
-  it('redirects to login (without re-initializing) when Keycloak init fails', async () => {
-    mockConfig({
-      keycloak: {
-        enabled: true,
-        url: 'https://keycloak.example.com',
-        realm: 'demo',
-        client_id: 'argo',
-        privileged_groups: [],
-      },
-    });
+  it('falls back to ID-token groups when the userinfo request fails', async () => {
+    mockConfig(enabledConfig());
+    userManagerMock.getUser.mockResolvedValue(signedInUser({ groups: ['token-only'] }));
+    // Make only the userinfo fetch fail; config fetch still succeeds.
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const initError = new Error('init failure');
-    keycloakMock.init.mockRejectedValueOnce(initError);
-
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('userinfo')) {
+        return Promise.reject(new Error('userinfo down'));
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify(enabledConfig()), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+    });
     const provider = await loadAuthProvider();
 
-    // A single init attempt (keycloak-js forbids a second init on one instance),
-    // then a top-level login redirect — never a rejection that triggers logout.
-    await expect(provider.checkAuth({})).resolves.toBeUndefined();
-    expect(keycloakMock.init).toHaveBeenCalledTimes(1);
-    expect(keycloakMock.login).toHaveBeenCalledTimes(1);
-    expect(keycloakMock.logout).not.toHaveBeenCalled();
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Keycloak initialization failed'),
-      initError,
-    );
-    warnSpy.mockRestore();
-  });
-
-  it('reuses existing tokens instead of re-initializing', async () => {
-    ensureBrowserWindow().localStorage.clear();
-    mockConfig({
-      keycloak: {
-        enabled: true,
-        url: 'https://keycloak.example.com',
-        realm: 'demo',
-        client_id: 'argo',
-        privileged_groups: [],
-      },
-    });
-    keycloakMock.init.mockResolvedValue(true);
-
-    const provider = await loadAuthProvider();
-    await expect(provider.checkAuth({})).resolves.toBeUndefined();
-    keycloakMock.init.mockClear();
-
-    await expect(provider.checkAuth({})).resolves.toBeUndefined();
-    expect(keycloakMock.init).not.toHaveBeenCalled();
-  });
-
-  it('builds absolute redirect URIs during login', async () => {
-    mockConfig({
-      keycloak: {
-        enabled: true,
-        url: 'https://keycloak.example.com',
-        realm: 'demo',
-        client_id: 'argo',
-        privileged_groups: [],
-      },
-    });
-    keycloakMock.init.mockResolvedValue(true);
-
-    const provider = await loadAuthProvider();
-    await provider.login({ redirectTo: '/history' });
-
-  expect(keycloakMock.login).toHaveBeenCalledWith(
-    expect.objectContaining({
-      redirectUri: `${ensureBrowserWindow().location.origin}/history`,
-    }),
-  );
-  });
-
-  it('returns cached groups without reloading the user profile', async () => {
-    mockConfig({
-      keycloak: {
-        enabled: true,
-        url: 'https://keycloak.example.com',
-        realm: 'demo',
-        client_id: 'argo',
-        privileged_groups: ['admins'],
-      },
-    });
-    keycloakMock.init.mockResolvedValue(true);
-    const provider = await loadAuthProvider();
-    await provider.getPermissions();
-    keycloakMock.loadUserInfo.mockReset();
-    keycloakMock.loadUserInfo.mockImplementation(() => {
-      throw new Error('should not reload');
-    });
-
-    const permissions = (await provider.getPermissions()) as { groups: string[] };
-
-    expect(keycloakMock.loadUserInfo).not.toHaveBeenCalled();
-    expect(permissions.groups).toContain('admins');
-  });
-
-  it('falls back to token groups when user info cannot be loaded', async () => {
-    mockConfig({
-      keycloak: {
-        enabled: true,
-        url: 'https://keycloak.example.com',
-        realm: 'demo',
-        client_id: 'argo',
-        privileged_groups: ['admins'],
-      },
-    });
-    keycloakMock.init.mockResolvedValue(true);
-    keycloakMock.tokenParsed.groups = ['token-only'];
-    keycloakMock.loadUserInfo.mockRejectedValueOnce(new Error('userinfo failed'));
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const provider = await loadAuthProvider();
-
-    const permissions = (await provider.getPermissions()) as { groups: string[] };
-
+    const permissions = (await provider.getPermissions({})) as { groups: string[] };
     expect(permissions.groups).toEqual(['token-only']);
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Failed to load user info'),
-      expect.any(Error),
-    );
     warnSpy.mockRestore();
   });
 
-  it('resolves redirect URIs when the browser origin is unavailable', async () => {
-    const module = await import('./authProvider');
-    const windowSpy = vi.spyOn(browserUtils, 'getBrowserWindow').mockReturnValue(undefined as unknown as Window);
+  it('reports empty groups and redirects when getPermissions finds no session', async () => {
+    mockConfig(enabledConfig());
+    userManagerMock.getUser.mockResolvedValue(null);
+    const provider = await loadAuthProvider();
 
-    expect(module.__testing.resolveRedirectUri()).toBe('/');
-    expect(module.__testing.resolveRedirectUri('history')).toBe('/history');
+    const permissions = (await provider.getPermissions({})) as { groups: string[]; privilegedGroups: string[] };
+    expect(permissions.groups).toEqual([]);
+    expect(permissions.privilegedGroups).toContain('admins');
+    expect(userManagerMock.signinRedirect).toHaveBeenCalled();
+  });
 
-    windowSpy.mockRestore();
+  it('builds a signin redirect carrying the requested return path on login', async () => {
+    mockConfig(enabledConfig());
+    const provider = await loadAuthProvider();
+
+    await provider.login({ redirectTo: '/history' });
+    expect(userManagerMock.signinRedirect).toHaveBeenCalledWith(
+      expect.objectContaining({ url_state: '/history' }),
+    );
+  });
+
+  it('clears the token and redirects to end-session on logout', async () => {
+    mockConfig(enabledConfig());
+    setAccessToken('token');
+    const provider = await loadAuthProvider();
+
+    await provider.logout({});
+    expect(getAccessToken()).toBeNull();
+    expect(userManagerMock.removeUser).toHaveBeenCalled();
+    expect(userManagerMock.signoutRedirect).toHaveBeenCalled();
+  });
+
+  it('short-circuits login when OIDC is disabled', async () => {
+    mockConfig({ oidc: { enabled: false } });
+    setAccessToken('token');
+    const provider = await loadAuthProvider();
+
+    await expect(provider.login({ redirectTo: '/history' })).resolves.toBeUndefined();
+    expect(userManagerMock.signinRedirect).not.toHaveBeenCalled();
+    expect(getAccessToken()).toBeNull();
+  });
+
+  it('clears local session on a 401 error', async () => {
+    mockConfig(enabledConfig());
+    setAccessToken('token');
+    const provider = await loadAuthProvider();
+
+    await expect(provider.checkError({ status: 401 })).rejects.toMatchObject({ status: 401 });
+    expect(getAccessToken()).toBeNull();
+  });
+
+  it('throws a 500 when required OIDC configuration fields are missing', async () => {
+    mockConfig({ oidc: { enabled: true, issuer_url: 'https://idp.example.com/realms/demo' } });
+    const provider = await loadAuthProvider();
+
+    await expect(provider.checkAuth({})).rejects.toMatchObject({ status: 500 });
   });
 
   it('propagates configuration endpoint HTTP errors', async () => {
@@ -439,174 +282,45 @@ describe('authProvider', () => {
     await expect(provider.checkAuth({})).rejects.toMatchObject({ status: 0 });
   });
 
-  it('throws when required Keycloak configuration fields are missing', async () => {
-    mockConfig({
-      keycloak: {
-        enabled: true,
-        url: 'https://keycloak.example.com',
-        realm: 'demo',
-      },
-    });
-    const provider = await loadAuthProvider();
-
-    await expect(provider.checkAuth({})).rejects.toMatchObject({ status: 500 });
-  });
-
-  it('warns when the token refresh interval cannot be scheduled', async () => {
-    mockConfig({
-      keycloak: {
-        enabled: true,
-        url: 'https://keycloak.example.com',
-        realm: 'demo',
-        client_id: 'argo',
-        privileged_groups: [],
-      },
-    });
-    keycloakMock.init.mockResolvedValue(true);
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const windowSpy = vi.spyOn(browserUtils, 'getBrowserWindow').mockReturnValue(undefined as unknown as Window);
-    const provider = await loadAuthProvider();
-
-    await provider.checkAuth({});
-
-    expect(warnSpy).toHaveBeenCalledWith(
-      '[auth] Unable to schedule token refresh because window is unavailable.',
-    );
-    windowSpy.mockRestore();
-    warnSpy.mockRestore();
-  });
-
-  it('clears the cached token when scheduled refresh fails', async () => {
-    const module = await import('./authProvider');
-    module.__testing.setCachedUserGroups(['alpha']);
-    setAccessToken('token');
-    const refreshError = new Error('refresh failed');
-    keycloakMock.updateToken.mockRejectedValueOnce(refreshError);
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const windowSpy = vi.spyOn(browserUtils, 'getBrowserWindow').mockReturnValue({
-      setInterval(handler: () => Promise<void>) {
-        handler();
-        return 42 as unknown as number;
-      },
-      clearInterval: vi.fn(),
-    } as Window);
-
-    module.__testing.scheduleTokenRefresh(keycloakMock as never);
-    await Promise.resolve();
-
-    expect(getAccessToken()).toBeNull();
-    expect(module.__testing.getCachedUserGroups()).toBeNull();
-    expect(errorSpy).toHaveBeenCalledWith('[auth] Failed to refresh token', refreshError);
-    windowSpy.mockRestore();
-    errorSpy.mockRestore();
-    module.__testing.reset();
-  });
-
-  it('short-circuits login when Keycloak is disabled', async () => {
-    mockConfig({ keycloak: { enabled: false } });
-    const provider = await loadAuthProvider();
-    setAccessToken('token');
-
-    await expect(provider.login({ redirectTo: '/history' })).resolves.toBeUndefined();
-
-    expect(keycloakMock.login).not.toHaveBeenCalled();
-    expect(getAccessToken()).toBeNull();
-  });
-
   describe('bootstrapAuth', () => {
-    it('is a no-op when Keycloak is disabled (preserves keycloak-less mode)', async () => {
-      mockConfig({ keycloak: { enabled: false } });
+    it('is a no-op when OIDC is disabled (preserves auth-less mode)', async () => {
+      mockConfig({ oidc: { enabled: false } });
       const module = await import('./authProvider');
 
-      // keycloak-less deployments must render immediately: no init, no redirect.
       await expect(module.bootstrapAuth()).resolves.toBeUndefined();
-      expect(keycloakMock.init).not.toHaveBeenCalled();
-      expect(keycloakMock.login).not.toHaveBeenCalled();
+      expect(MockUserManager).not.toHaveBeenCalled();
+      expect(userManagerMock.signinRedirect).not.toHaveBeenCalled();
     });
 
-    it('authenticates eagerly so checkAuth reuses the session without re-initializing', async () => {
-      mockConfig({
-        keycloak: {
-          enabled: true,
-          url: 'https://keycloak.example.com',
-          realm: 'demo',
-          client_id: 'argo',
-          privileged_groups: ['admins'],
-        },
-      });
-      keycloakMock.init.mockResolvedValue(true);
+    it('completes the authorization-code callback and stores the token', async () => {
+      mockConfig(enabledConfig());
+      window.history.replaceState({}, '', '/?code=abc&state=xyz');
+      userManagerMock.signinRedirectCallback.mockResolvedValue(signedInUser());
+      const replaceSpy = vi.spyOn(window.history, 'replaceState');
       const module = await import('./authProvider');
 
-      // Eager init consumes the login callback before the router strips the URL
-      // fragment, persisting the token without ever bouncing to the login page.
-      await module.bootstrapAuth();
-      expect(keycloakMock.init).toHaveBeenCalledTimes(1);
+      await expect(module.bootstrapAuth()).resolves.toBeUndefined();
+      expect(userManagerMock.signinRedirectCallback).toHaveBeenCalledTimes(1);
       expect(getAccessToken()).toBe('token');
-      expect(keycloakMock.login).not.toHaveBeenCalled();
-
-      // checkAuth now finds the persisted token and takes the cached-session path,
-      // so it never re-enters init. (The init-once guard for the unauthenticated
-      // path — where no token is set — is covered by the failed-bootstrap test below.)
-      await expect(module.authProvider.checkAuth({})).resolves.toBeUndefined();
-      expect(keycloakMock.init).toHaveBeenCalledTimes(1);
+      // The ?code&state query is stripped so a reload does not re-trigger the callback.
+      expect(replaceSpy).toHaveBeenCalled();
+      replaceSpy.mockRestore();
     });
 
-    it('redirects to the Keycloak login page when the bootstrap finds no session', async () => {
-      mockConfig({
-        keycloak: {
-          enabled: true,
-          url: 'https://keycloak.example.com',
-          realm: 'demo',
-          client_id: 'argo',
-          privileged_groups: [],
-        },
-      });
-      keycloakMock.init.mockResolvedValueOnce(false);
+    it('redirects to login when the bootstrap finds no session', async () => {
+      mockConfig(enabledConfig());
+      userManagerMock.getUser.mockResolvedValue(null);
       const module = await import('./authProvider');
 
       await expect(module.bootstrapAuth()).resolves.toBeUndefined();
-      expect(keycloakMock.login).toHaveBeenCalledWith(
-        expect.objectContaining({
-          redirectUri: `${ensureBrowserWindow().location.origin}/`,
-        }),
-      );
+      expect(userManagerMock.signinRedirect).toHaveBeenCalledTimes(1);
     });
 
-    it('recovers via login on checkAuth after a failed bootstrap, without re-initializing', async () => {
-      mockConfig({
-        keycloak: {
-          enabled: true,
-          url: 'https://keycloak.example.com',
-          realm: 'demo',
-          client_id: 'argo',
-          privileged_groups: [],
-        },
-      });
-      keycloakMock.init.mockRejectedValueOnce(new Error('bootstrap init failure'));
-      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-      const module = await import('./authProvider');
-
-      // Bootstrap swallows the init error so rendering is never blocked.
-      await expect(module.bootstrapAuth()).resolves.toBeUndefined();
-      expect(keycloakMock.init).toHaveBeenCalledTimes(1);
-
-      // The cached rejection means checkAuth must NOT call init again (keycloak-js
-      // forbids a second init on one instance); it falls through to a login redirect.
-      // login() fires twice in total — once from the failed bootstrap, once from
-      // checkAuth — but both merely (re)issue the top-level redirect, never logout.
-      await expect(module.authProvider.checkAuth({})).resolves.toBeUndefined();
-      expect(keycloakMock.init).toHaveBeenCalledTimes(1);
-      expect(keycloakMock.login).toHaveBeenCalledTimes(2);
-      expect(keycloakMock.logout).not.toHaveBeenCalled();
-      warnSpy.mockRestore();
-    });
-
-    it('resolves (never throws) when the config endpoint is unreachable, so render still runs', async () => {
+    it('resolves (never throws) when the config endpoint is unreachable', async () => {
       vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('network offline'));
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       const module = await import('./authProvider');
 
-      // A down backend must not block the SPA from mounting.
       await expect(module.bootstrapAuth()).resolves.toBeUndefined();
       expect(warnSpy).toHaveBeenCalledWith(
         expect.stringContaining('Eager authentication bootstrap failed'),

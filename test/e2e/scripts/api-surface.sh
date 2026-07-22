@@ -53,13 +53,17 @@ echo "=== config ==="
 req GET "${base}/config"
 if [[ "$CODE" != "200" ]]; then
   echo "  FAIL config: code=${CODE}"; fail=1
+elif ! echo "$BODY" | jq -e '.oidc.enabled == false' >/dev/null 2>&1; then
+  echo "  FAIL config: oidc.enabled != false (lab runs without OIDC auth)"; fail=1
 elif ! echo "$BODY" | jq -e '.keycloak.enabled == false' >/dev/null 2>&1; then
-  echo "  FAIL config: keycloak.enabled != false (lab runs without Keycloak)"; fail=1
+  # The legacy keycloak mirror must keep matching the oidc block so pre-rename
+  # consumers still work; a divergence here is a backward-compat regression.
+  echo "  FAIL config: legacy keycloak mirror missing or != oidc block"; fail=1
 elif echo "$BODY" | grep -qF "$DEPLOY_TOKEN"; then
   # A leaked secret here is the whole reason ServerConfig marks it json:"-".
   echo "  FAIL config: deploy token leaked in /config response"; fail=1
 else
-  echo "  OK   config: keycloak disabled, deploy token redacted (${CODE})"
+  echo "  OK   config: oidc disabled (+ legacy keycloak mirror), deploy token redacted (${CODE})"
 fi
 
 echo "=== task-list filters ==="

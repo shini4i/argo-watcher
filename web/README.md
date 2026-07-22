@@ -6,19 +6,19 @@ This workspace contains the Vite/React-admin rewrite of the Argo Watcher UI. The
 - share layouts, deploy-lock state, and theming logic with the Go backend
 - keep the developer workflow fast (Vite + HMR) while still producing static assets that the Go server can embed
 
-React 19, React-admin 5, Material UI 9, Emotion, TypeScript, oxlint, and Vitest/JSDOM are the primary dependencies. Keycloak is the supported identity provider, with fully anonymous mode when the backend returns `keycloak.enabled = false`.
+React 19, React-admin 5, Material UI 9, Emotion, TypeScript, oxlint, and Vitest/JSDOM are the primary dependencies. Authentication uses any OIDC provider (Keycloak, Authentik, …) via `oidc-client-ts`, with a fully anonymous mode when the backend returns `oidc.enabled = false`.
 
 ## Directory Layout
 
 | Path | Purpose |
 | ---- | ------- |
-| `src/main.tsx` | React entry point that runs `bootstrapAuth()` to consume any Keycloak login callback before mounting, then wires React Router, shared providers, and the `App` component. |
+| `src/main.tsx` | React entry point that runs `bootstrapAuth()` to consume any OIDC authorization-code callback before mounting, then wires React Router, shared providers, and the `App` component. |
 | `src/App.tsx` | Placeholder React-admin shell; extend this file with `<Admin>` resources as migration phases land. |
-| `src/auth/` | Authentication helpers. `authProvider.ts` talks to Keycloak + `/api/v1/config`, and `tokenStore.ts` persists bearer tokens. |
+| `src/auth/` | Authentication helpers. `authProvider.ts` drives the OIDC provider (via `oidc-client-ts`) using config from `/api/v1/config`, and `tokenStore.ts` holds the bearer token in memory. |
 | `src/data/` | HTTP layer and React-admin `dataProvider` implementation that targets `/api/v1/tasks` and related endpoints. |
 | `src/features/` | Feature modules (currently `tasks/` and `deployLock/`). Each folder owns its components, hooks, and service logic. |
 | `src/layout/` | Reusable React-admin layout primitives (notifications, top bar, nav, etc.). |
-| `src/shared/` | Cross-cutting hooks, context providers (timezone), and utilities (time formatting, Keycloak toggles). |
+| `src/shared/` | Cross-cutting hooks, context providers (timezone), and utilities (time formatting, OIDC toggle). |
 | `src/theme/` | Material UI theme factory plus `ThemeModeProvider` for light/dark persistence. |
 | `assets/` + `public/` | Static assets (logos, favicons) delivered verbatim by Vite. |
 | `dist/` | Build output consumed by the Go server (`STATIC_FILES_PATH`) or Docker images. Generated via `npm run build`. |
@@ -33,7 +33,7 @@ All configuration is driven through the backend plus a small set of Vite runtime
 | `VITE_API_BASE_URL` | `''` (same origin) | Prepended to every REST call executed by `httpClient`. Set this when serving the SPA from a CDN or different domain. |
 | `VITE_WS_BASE_URL` | `''` (derived from `window.location`) | Optional WebSocket origin for the deploy-lock service. Provide when tunneling through another host. |
 
-Keycloak settings (URL, realm, client_id, privileged groups, token intervals) come from `/api/v1/config`. The frontend caches the config and only attempts SSO flows when `keycloak.enabled` is true.
+OIDC settings (issuer URL, client_id, privileged groups) come from `/api/v1/config` under the `oidc` key. The frontend caches the config and only attempts SSO flows when `oidc.enabled` is true.
 
 ## Development Workflow
 
@@ -77,10 +77,10 @@ Keycloak settings (URL, realm, client_id, privileged groups, token intervals) co
 
 ## Data, Auth, and Real-time Architecture
 
-- **HTTP client (`src/data/httpClient.ts`)** – wraps `fetch`, injects `Authorization`/`Keycloak-Authorization` headers from `tokenStore`, normalises errors into `HttpError`, and provides helpers such as `buildQueryString`.
+- **HTTP client (`src/data/httpClient.ts`)** – wraps `fetch`, injects `Authorization`/`Oidc-Authorization` headers from `tokenStore`, normalises errors into `HttpError`, and provides helpers such as `buildQueryString`.
 - **React-admin `dataProvider` (`src/data/dataProvider.ts`)** – currently implements the `tasks` resource (list/detail/create) and infers pagination totals when the backend omits them. Extend this file when exposing additional Argo watcher endpoints.
-- **Auth provider (`src/auth/authProvider.ts`)** – fetches `/api/v1/config` and, when Keycloak is enabled, initializes keycloak-js eagerly via `bootstrapAuth()` (called from `main.tsx` before React mounts) so the login callback (`#code=…` fragment) is consumed before the router's index redirect can strip it. `checkAuth`/`getPermissions` reuse the already-initialized instance; init runs exactly once. It uses a top-level `login-required` redirect, periodically refreshes tokens, and exposes permissions (groups/privileged groups) to React-admin. When Keycloak is disabled, `bootstrapAuth()` is a no-op and the app renders immediately.
-- **Keycloak toggle hook (`src/shared/hooks/useKeycloakEnabled.ts`)** – tiny helper for gating UI affordances when running without identity.
+- **Auth provider (`src/auth/authProvider.ts`)** – fetches `/api/v1/config` and, when OIDC is enabled, drives an `oidc-client-ts` `UserManager` (Authorization Code + PKCE). `bootstrapAuth()` (called from `main.tsx` before React mounts) consumes the `?code=…&state=…` callback before the router's index redirect can strip it. It uses a top-level login redirect, relies on `automaticSilentRenew` for token renewal, keeps tokens in memory only, and reads group membership from the userinfo endpoint (the same source the backend enforces on) to expose permissions to React-admin. `checkAuth` never rejects for an unauthenticated user (which would trigger a logout loop) — it redirects instead. When OIDC is disabled, `bootstrapAuth()` is a no-op and the app renders immediately.
+- **OIDC toggle hook (`src/shared/hooks/useOidcEnabled.ts`)** – tiny helper for gating UI affordances when running without identity.
 - **Deploy lock service (`src/features/deployLock/deployLockService.ts`)** – shares lock state through REST endpoints plus the `/ws` channel. Automatic retries and subscriber management keep the UI in sync even if the socket drops.
 - **Global providers (`src/shared/providers/AppProviders.tsx`)** – wraps the app with the theme mode, timezone, and deploy-lock providers, plus a global banner that reflects lock status.
 
@@ -113,7 +113,7 @@ Keycloak settings (URL, realm, client_id, privileged groups, token intervals) co
 ## Troubleshooting
 
 - **Dev server cannot reach the API**: ensure `VITE_API_PROXY_TARGET` matches your backend host or export `VITE_API_BASE_URL` so the SPA calls the right origin.
-- **Endless Keycloak redirects**: verify the backend Keycloak config lists the current app origin (including any base path) as a valid redirect URI for the client. The login flow uses a top-level redirect (`onLoad: 'login-required'`), so the redirect URI must be allow-listed there. If the redirect URIs are correct and the loop only appears *after* a successful login, the callback fragment (`#code=…`) was stripped before keycloak-js could read it — this is why `bootstrapAuth()` must be awaited in `main.tsx` before React mounts; do not move Keycloak init back into the React tree.
+- **Endless OIDC redirects**: verify the provider's client lists the current app origin (including any base path) as a valid redirect URI. The login flow uses a top-level redirect, so the redirect URI must be allow-listed there. If the redirect URIs are correct and the loop only appears *after* a successful login, the callback query (`?code=…&state=…`) was stripped before `oidc-client-ts` could read it — this is why `bootstrapAuth()` must be awaited in `main.tsx` before React mounts; do not move the callback handling back into the React tree.
 - **WebSocket errors**: set `VITE_WS_BASE_URL` when proxying through TLS terminators that do not support upgrade requests, or confirm `/ws` is exposed by the Go server.
 - **Timezones look wrong**: toggle the timezone via the user menu (wired to `TimezoneProvider`). The selection lives under `argo-watcher:timezone`.
 

@@ -32,7 +32,7 @@ import { formatDuration, formatRelativeTime } from '../../../shared/utils/time';
 import { describeTaskStatus } from '../utils/statusPresentation';
 import { RollbackIndicator } from '../components/RollbackIndicator';
 import { useDeployLockState } from '../../deployLock/useDeployLockState';
-import { useKeycloakEnabled } from '../../../shared/hooks/useKeycloakEnabled';
+import { useOidcEnabled } from '../../../shared/hooks/useOidcEnabled';
 import { getBrowserWindow, hasPrivilegedAccess } from '../../../shared/utils';
 import { httpClient } from '../../../data/httpClient';
 import { getAccessToken } from '../../../auth/tokenStore';
@@ -181,7 +181,7 @@ export const TaskShow = () => {
   const notify = useNotify();
   const navigate = useNavigate();
   const deployLock = useDeployLockState();
-  const keycloakEnabled = useKeycloakEnabled();
+  const oidcEnabled = useOidcEnabled();
   const { permissions } = usePermissions();
   const { data: identity } = useGetIdentity();
   const { formatDate } = useTimezone();
@@ -231,7 +231,7 @@ export const TaskShow = () => {
   const privilegedGroups: readonly string[] =
     (permissions as { privilegedGroups?: string[] })?.privilegedGroups ?? [];
   const userIsPrivileged = hasPrivilegedAccess(groups, privilegedGroups);
-  const showRollbackButton = keycloakEnabled && userIsPrivileged;
+  const showRollbackButton = oidcEnabled && userIsPrivileged;
   const descriptor = describeTaskStatus(status);
   const createdTimestamp = normalizeTimestamp(data?.created);
   const updatedTimestamp = normalizeTimestamp(data?.updated);
@@ -308,8 +308,8 @@ export const TaskShow = () => {
       setRollbackLoading(true);
       const headers: Record<string, string> = {};
       const token = getAccessToken();
-      if (keycloakEnabled && token) {
-        headers['Keycloak-Authorization'] = `Bearer ${token}`;
+      if (oidcEnabled && token) {
+        headers['Oidc-Authorization'] = `Bearer ${token}`;
       }
 
       await httpClient('/api/v1/tasks', {
@@ -330,7 +330,7 @@ export const TaskShow = () => {
     } finally {
       setRollbackLoading(false);
     }
-  }, [data, identityEmail, keycloakEnabled, navigate, notify]);
+  }, [data, identityEmail, oidcEnabled, navigate, notify]);
 
   if (!id) {
     return (

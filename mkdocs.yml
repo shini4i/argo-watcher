@@ -59,7 +59,7 @@ nav:
     - Installation: 'guides/install.md'
     - GitOps Updater: 'guides/gitops-updater.md'
     - Notifications: 'guides/notifications.md'
-    - Keycloak: 'guides/keycloak.md'
+    - OIDC / SSO: 'guides/oidc.md'
   - Reference:
     - Overview: 'reference/index.md'
     - API Reference: 'reference/api.md'
@@ -116,7 +116,8 @@ plugins:
         installation.md: guides/install.md
         git-integration.md: guides/gitops-updater.md
         notifications.md: guides/notifications.md
-        keycloak.md: guides/keycloak.md
+        keycloak.md: guides/oidc.md
+        guides/keycloak.md: guides/oidc.md
         api.md: reference/api.md
         development.md: contributing/development.md
         concepts.md: getting-started/concepts.md
@@ -144,7 +145,7 @@ plugins:
           - guides/install.md: Installing the server and client.
           - guides/gitops-updater.md: Configuring the GitOps Updater to commit image tag changes.
           - guides/notifications.md: Sending deployment notifications.
-          - guides/keycloak.md: Securing the Web UI with Keycloak/OIDC.
+          - guides/oidc.md: Securing the Web UI with OIDC (Keycloak, Authentik, or any OIDC provider).
         Reference:
           - reference/index.md: Index of technical reference material.
           - reference/api.md: REST API endpoints, authentication, and examples.

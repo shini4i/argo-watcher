@@ -1,10 +1,14 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
+	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	envConfig "github.com/caarlos0/env/v11"
@@ -12,13 +16,17 @@ import (
 	"github.com/shini4i/argo-watcher/internal/helpers"
 )
 
-type KeycloakConfig struct {
-	Enabled                 bool     `env:"KEYCLOAK_ENABLED" json:"enabled"`
-	Url                     string   `env:"KEYCLOAK_URL" json:"url,omitempty"`
-	Realm                   string   `env:"KEYCLOAK_REALM" json:"realm,omitempty"`
-	ClientId                string   `env:"KEYCLOAK_CLIENT_ID" json:"client_id,omitempty"`
-	TokenValidationInterval int      `env:"KEYCLOAK_TOKEN_VALIDATION_INTERVAL" envDefault:"10000" json:"token_validation_interval"`
-	PrivilegedGroups        []string `env:"KEYCLOAK_PRIVILEGED_GROUPS" json:"privileged_groups,omitempty"`
+// OIDCConfig holds the settings for the generic OIDC authentication provider.
+// IssuerURL is the provider's issuer (e.g. "https://kc/realms/foo" for Keycloak
+// or "https://authentik/application/o/argo-watcher/" for Authentik); the backend
+// discovers the userinfo endpoint from it at runtime. The deprecated KEYCLOAK_*
+// variables are mapped onto these fields by applyKeycloakCompat.
+type OIDCConfig struct {
+	Enabled                 bool     `env:"OIDC_ENABLED" json:"enabled"`
+	IssuerURL               string   `env:"OIDC_ISSUER_URL" json:"issuer_url,omitempty"`
+	ClientId                string   `env:"OIDC_CLIENT_ID" json:"client_id,omitempty"`
+	TokenValidationInterval int      `env:"OIDC_TOKEN_VALIDATION_INTERVAL" envDefault:"10000" json:"token_validation_interval"`
+	PrivilegedGroups        []string `env:"OIDC_PRIVILEGED_GROUPS" json:"privileged_groups,omitempty"`
 }
 
 type DatabaseConfig struct {
@@ -68,13 +76,105 @@ type ServerConfig struct {
 	DeployToken        string           `env:"ARGO_WATCHER_DEPLOY_TOKEN" json:"-"`
 	JWTSecret          string           `env:"JWT_SECRET" json:"-"`
 	Db                 DatabaseConfig   `json:"-"`
-	Keycloak           KeycloakConfig   `json:"keycloak,omitempty"`
+	OIDC               OIDCConfig       `json:"oidc,omitempty"`
 	LockdownSchedule   string           `env:"LOCKDOWN_SCHEDULE" json:"lockdown_schedule,omitempty"`
 	Webhook            WebhookConfig    `json:"webhook,omitempty"`
 	Mattermost         MattermostConfig `json:"mattermost,omitempty"`
 	DevEnvironment     bool             `env:"DEV_ENVIRONMENT" envDefault:"false" json:"devEnvironment"` // Whether a set of dev specific setting should be turned on, do not touch unless you know what you are doing
 	ArgoApiRetries     uint             `env:"ARGO_API_RETRIES" envDefault:"3" json:"argo_api_retries"`  // Total attempts (including initial); passed to retry.Attempts()
 	RepoCachePath      string           `env:"REPO_CACHE_PATH" envDefault:"/data" json:"-"`
+}
+
+// MarshalJSON emits the OIDC block under both the canonical "oidc" key and a
+// legacy "keycloak" key with identical content. The mirror preserves backward
+// compatibility for older API consumers (and the e2e api-surface check) that
+// still read config.keycloak.* after the rename from Keycloak-only auth. The
+// `type alias` indirection drops ServerConfig's own MarshalJSON to avoid
+// infinite recursion while keeping every field's json tag intact.
+func (config ServerConfig) MarshalJSON() ([]byte, error) {
+	type alias ServerConfig
+	return json.Marshal(struct {
+		alias
+		Keycloak OIDCConfig `json:"keycloak"`
+	}{
+		alias:    alias(config),
+		Keycloak: config.OIDC,
+	})
+}
+
+// applyKeycloakCompat maps the deprecated KEYCLOAK_* environment variables onto
+// the generic OIDC config whenever their OIDC_* counterparts are unset, so
+// existing Keycloak deployments keep working unchanged after the rename. A
+// single deprecation warning is logged when any KEYCLOAK_* variable is present.
+//
+// The Keycloak issuer is synthesized as "<KEYCLOAK_URL>/realms/<KEYCLOAK_REALM>"
+// — exactly the issuer a Keycloak realm advertises — so OIDC discovery against
+// it resolves the same userinfo endpoint the Keycloak-specific code targeted
+// before.
+func applyKeycloakCompat(cfg *ServerConfig) {
+	kcVars := []string{
+		"KEYCLOAK_ENABLED", "KEYCLOAK_URL", "KEYCLOAK_REALM", "KEYCLOAK_CLIENT_ID",
+		"KEYCLOAK_TOKEN_VALIDATION_INTERVAL", "KEYCLOAK_PRIVILEGED_GROUPS",
+	}
+	used := false
+	for _, v := range kcVars {
+		if _, ok := os.LookupEnv(v); ok {
+			used = true
+			break
+		}
+	}
+	if !used {
+		return
+	}
+
+	slog.Warn("KEYCLOAK_* environment variables are deprecated; use OIDC_* instead " +
+		"(see docs/reference/server-env.md). They remain honored for backward compatibility.")
+
+	if _, ok := os.LookupEnv("OIDC_ENABLED"); !ok {
+		if val, ok := os.LookupEnv("KEYCLOAK_ENABLED"); ok {
+			if parsed, err := strconv.ParseBool(strings.TrimSpace(val)); err == nil {
+				cfg.OIDC.Enabled = parsed
+			} else {
+				slog.Warn("ignoring unparseable KEYCLOAK_ENABLED; auth stays disabled", "value", val)
+			}
+		}
+	}
+
+	if _, ok := os.LookupEnv("OIDC_ISSUER_URL"); !ok {
+		kcURL := strings.TrimSpace(os.Getenv("KEYCLOAK_URL"))
+		kcRealm := strings.TrimSpace(os.Getenv("KEYCLOAK_REALM"))
+		if kcURL != "" && kcRealm != "" {
+			cfg.OIDC.IssuerURL = strings.TrimRight(kcURL, "/") + "/realms/" + kcRealm
+		}
+	}
+
+	if _, ok := os.LookupEnv("OIDC_CLIENT_ID"); !ok {
+		if val, ok := os.LookupEnv("KEYCLOAK_CLIENT_ID"); ok {
+			cfg.OIDC.ClientId = val
+		}
+	}
+
+	if _, ok := os.LookupEnv("OIDC_TOKEN_VALIDATION_INTERVAL"); !ok {
+		if val, ok := os.LookupEnv("KEYCLOAK_TOKEN_VALIDATION_INTERVAL"); ok {
+			if parsed, err := strconv.Atoi(strings.TrimSpace(val)); err == nil {
+				cfg.OIDC.TokenValidationInterval = parsed
+			} else {
+				slog.Warn("ignoring unparseable KEYCLOAK_TOKEN_VALIDATION_INTERVAL; using default", "value", val)
+			}
+		}
+	}
+
+	if _, ok := os.LookupEnv("OIDC_PRIVILEGED_GROUPS"); !ok {
+		if val, ok := os.LookupEnv("KEYCLOAK_PRIVILEGED_GROUPS"); ok {
+			var groups []string
+			for _, g := range strings.Split(val, ",") {
+				if trimmed := strings.TrimSpace(g); trimmed != "" {
+					groups = append(groups, trimmed)
+				}
+			}
+			cfg.OIDC.PrivilegedGroups = groups
+		}
+	}
 }
 
 // NewServerConfig parses the server configuration from environment variables.
@@ -93,6 +193,10 @@ func NewServerConfig() (*ServerConfig, error) {
 	config.DeployToken = strings.TrimSpace(config.DeployToken)
 	config.JWTSecret = strings.TrimSpace(config.JWTSecret)
 	config.Mattermost.Token = strings.TrimSpace(config.Mattermost.Token)
+
+	// Map deprecated KEYCLOAK_* vars onto the generic OIDC config before
+	// validation, so a synthesized Keycloak issuer is validated like any other.
+	applyKeycloakCompat(&config)
 
 	if err := validateServerConfig(&config); err != nil {
 		return nil, err
@@ -143,6 +247,16 @@ func validateServerConfig(config *ServerConfig) error {
 	// libpq, silently defeating the fail-fast guard; only relevant for postgres.
 	if config.StateType == "postgres" && config.Db.ConnectTimeout < 1 {
 		problems = append(problems, fmt.Sprintf("  - ConnectTimeout: must be at least 1 second, got %d", config.Db.ConnectTimeout))
+	}
+	// When OIDC auth is enabled the issuer and client id are mandatory; discovery
+	// and the login redirect cannot proceed without them.
+	if config.OIDC.Enabled {
+		if strings.TrimSpace(config.OIDC.IssuerURL) == "" {
+			problems = append(problems, "  - OIDC.IssuerURL: must be set when OIDC auth is enabled (OIDC_ISSUER_URL, or legacy KEYCLOAK_URL + KEYCLOAK_REALM)")
+		}
+		if strings.TrimSpace(config.OIDC.ClientId) == "" {
+			problems = append(problems, "  - OIDC.ClientId: must be set when OIDC auth is enabled (OIDC_CLIENT_ID, or legacy KEYCLOAK_CLIENT_ID)")
+		}
 	}
 
 	if len(problems) == 0 {

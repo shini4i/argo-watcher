@@ -17,7 +17,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useNotify, usePermissions } from 'react-admin';
 import { useThemeMode } from '../../theme';
 import { useDeployLock } from '../../features/deployLock/DeployLockProvider';
-import { useKeycloakEnabled } from '../../shared/hooks/useKeycloakEnabled';
+import { useOidcEnabled } from '../../shared/hooks/useOidcEnabled';
 import { hasPrivilegedAccess } from '../../shared/utils/permissions';
 import { useTimezone } from '../../shared/providers/TimezoneProvider';
 
@@ -37,24 +37,24 @@ export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
   const browserZone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'local', []);
   const notify = useNotify();
   const { locked: deployLock, setLock, releaseLock } = useDeployLock();
-  const keycloakEnabled = useKeycloakEnabled();
+  const oidcEnabled = useOidcEnabled();
   const { permissions } = usePermissions();
 
   const groups: readonly string[] = (permissions as { groups?: string[] })?.groups ?? [];
   const privilegedGroups: readonly string[] =
     (permissions as { privilegedGroups?: string[] })?.privilegedGroups ?? [];
   const privileged = hasPrivilegedAccess(groups, privilegedGroups);
-  // The manual toggle is only shown when Keycloak is enabled: without an auth
+  // The manual toggle is only shown when OIDC auth is enabled: without an auth
   // backend the server does not expose the deploy-lock write endpoints, so there
   // is nothing to toggle (mirrors the rollback button). Default-deny while
-  // keycloakEnabled is unknown (null = config still loading or the request failed).
-  const showLockToggle = keycloakEnabled === true;
-  const canToggleLock = keycloakEnabled === true && privileged;
+  // oidcEnabled is unknown (null = config still loading or the request failed).
+  const showLockToggle = oidcEnabled === true;
+  const canToggleLock = oidcEnabled === true && privileged;
   let lockHelperText: string | null = null;
-  if (keycloakEnabled === null) {
+  if (oidcEnabled === null) {
     lockHelperText = 'Checking permissions…';
-  } else if (keycloakEnabled === false) {
-    lockHelperText = 'Manual deploy lock requires Keycloak.';
+  } else if (oidcEnabled === false) {
+    lockHelperText = 'Manual deploy lock requires authentication.';
   } else if (!privileged) {
     lockHelperText = 'Deploy lock requires privileged access.';
   }

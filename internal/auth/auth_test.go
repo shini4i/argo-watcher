@@ -24,46 +24,43 @@ func acceptAnyToken(t *testing.T) *mocks.MockAuthStrategy {
 	return m
 }
 
-func TestNewKeycloakAuthService(t *testing.T) {
+func TestNewOIDCAuthService(t *testing.T) {
 	t.Run("should initialize with valid config", func(t *testing.T) {
 		conf := &config.ServerConfig{
-			Keycloak: config.KeycloakConfig{
-				Url:              "http://localhost:8080",
-				Realm:            "master",
+			OIDC: config.OIDCConfig{
+				IssuerURL:        "http://localhost:8080/realms/master",
 				ClientId:         "test",
 				PrivilegedGroups: []string{"group1", "group2"},
 			},
 		}
 
-		keycloakAuthService, err := NewKeycloakAuthService(conf)
+		oidcAuthService, err := NewOIDCAuthService(conf)
 
 		assert.NoError(t, err)
-		assert.Equal(t, keycloakAuthService.Url, conf.Keycloak.Url)
-		assert.Equal(t, keycloakAuthService.Realm, conf.Keycloak.Realm)
-		assert.Equal(t, keycloakAuthService.ClientId, conf.Keycloak.ClientId)
-		assert.Equal(t, keycloakAuthService.PrivilegedGroups, conf.Keycloak.PrivilegedGroups)
+		assert.Equal(t, oidcAuthService.IssuerURL, conf.OIDC.IssuerURL)
+		assert.Equal(t, oidcAuthService.ClientId, conf.OIDC.ClientId)
+		assert.Equal(t, oidcAuthService.PrivilegedGroups, conf.OIDC.PrivilegedGroups)
 	})
 
 	t.Run("should return error for nil config", func(t *testing.T) {
-		keycloakAuthService, err := NewKeycloakAuthService(nil)
+		oidcAuthService, err := NewOIDCAuthService(nil)
 
 		assert.Error(t, err)
-		assert.Nil(t, keycloakAuthService)
+		assert.Nil(t, oidcAuthService)
 		assert.Contains(t, err.Error(), "server config must not be nil")
 	})
 
 	t.Run("should return error for invalid URL", func(t *testing.T) {
 		conf := &config.ServerConfig{
-			Keycloak: config.KeycloakConfig{
-				Url:   "://invalid",
-				Realm: "master",
+			OIDC: config.OIDCConfig{
+				IssuerURL: "://invalid",
 			},
 		}
 
-		keycloakAuthService, err := NewKeycloakAuthService(conf)
+		oidcAuthService, err := NewOIDCAuthService(conf)
 
 		assert.Error(t, err)
-		assert.Nil(t, keycloakAuthService)
+		assert.Nil(t, oidcAuthService)
 	})
 }
 

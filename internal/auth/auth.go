@@ -114,23 +114,22 @@ func (a *Authenticator) Strategy(header string) (AuthStrategy, bool) {
 	return strategy, ok
 }
 
-// NewKeycloakAuthService initializes a new Keycloak authentication service using the given server config.
-// It validates the Keycloak URL and returns an error if the config is nil or the URL is malformed.
-func NewKeycloakAuthService(config *config.ServerConfig) (*KeycloakAuthService, error) {
+// NewOIDCAuthService initializes a new OIDC authentication service using the given server config.
+// It validates the issuer URL and returns an error if the config is nil or the URL is malformed.
+func NewOIDCAuthService(config *config.ServerConfig) (*OIDCAuthService, error) {
 	if config == nil {
 		return nil, fmt.Errorf("server config must not be nil")
 	}
 
-	keycloakAuthService := &KeycloakAuthService{}
-	if err := keycloakAuthService.Init(
-		config.Keycloak.Url,
-		config.Keycloak.Realm,
-		config.Keycloak.ClientId,
-		config.Keycloak.PrivilegedGroups,
+	oidcAuthService := &OIDCAuthService{}
+	if err := oidcAuthService.Init(
+		config.OIDC.IssuerURL,
+		config.OIDC.ClientId,
+		config.OIDC.PrivilegedGroups,
 	); err != nil {
 		return nil, err
 	}
-	return keycloakAuthService, nil
+	return oidcAuthService, nil
 }
 
 // NewDeployTokenAuthService initializes a new deploy token authentication service.
@@ -150,7 +149,7 @@ func NewJWTAuthService(secret string) *JWTAuthService {
 }
 
 var (
-	_ AuthStrategy = (*KeycloakAuthService)(nil)
+	_ AuthStrategy = (*OIDCAuthService)(nil)
 	_ AuthStrategy = (*DeployTokenAuthService)(nil)
 	_ AuthStrategy = (*JWTAuthService)(nil)
 )

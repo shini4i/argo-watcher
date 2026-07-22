@@ -255,7 +255,7 @@ The Web UI lockdown banner updates automatically (within about a minute) when a 
 ### Manual Lockdown
 
 !!! note
-    Manual locking requires Keycloak (`KEYCLOAK_ENABLED=true`). Without an auth backend the server does not register the `POST`/`DELETE /api/v1/deploy-lock` endpoints (requests return `404 Not Found`) and the Web UI does not show the lock toggle. The read-only lock status and scheduled lockdown (above) work regardless of Keycloak.
+    Manual locking requires OIDC authentication (`OIDC_ENABLED=true`; the legacy `KEYCLOAK_ENABLED=true` still works). Without an auth backend the server does not register the `POST`/`DELETE /api/v1/deploy-lock` endpoints (requests return `404 Not Found`) and the Web UI does not show the lock toggle. The read-only lock status and scheduled lockdown (above) work regardless of authentication. See [OIDC / SSO Integration](oidc.md).
 
 #### Via API
 
@@ -272,7 +272,7 @@ curl -X DELETE https://argo-watcher.example.com/api/v1/deploy-lock
 ```
 
 !!! note
-    When Keycloak integration is enabled, a valid Keycloak token (i.e., any authenticated user) is required to use the deploy lock API endpoints.
+    When OIDC authentication is enabled, a valid OIDC token (i.e., any authenticated user) is required to use the deploy lock API endpoints, sent via the `Oidc-Authorization` header (the legacy `Keycloak-Authorization` header is still accepted).
 
 #### Via Web UI
 
@@ -281,7 +281,7 @@ Click the **Argo Watcher** logo in the Web UI and toggle the **Lockdown Mode** s
 ![Deployment Lock UI](https://raw.githubusercontent.com/shini4i/assets/main/src/argo-watcher/deployment-lock.png)
 
 !!! note
-    When Keycloak integration is enabled, you must be authenticated to manage the deployment lock.
+    When OIDC authentication is enabled, you must be authenticated to manage the deployment lock.
 
 ## Migrating from Argo CD Image Updater
 

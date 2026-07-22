@@ -9,13 +9,13 @@ import (
 
 // SetDeployLock godoc
 // @Summary Set deploy lock
-// @Description Set deploy lock. Only available when Keycloak is enabled; requires a valid Keycloak session.
+// @Description Set deploy lock. Only available when OIDC auth is enabled; requires a valid OIDC session.
 // @Tags frontend
 // @Success 200 {string} string
 // @Failure 401 {object} models.TaskStatus
 // @Router /api/v1/deploy-lock [post]
 func (env *Env) SetDeployLock(c *gin.Context) {
-	if !env.requireKeycloakAuth(c) {
+	if !env.requireOIDCAuth(c) {
 		return
 	}
 
@@ -30,13 +30,13 @@ func (env *Env) SetDeployLock(c *gin.Context) {
 
 // ReleaseDeployLock godoc
 // @Summary Release deploy lock
-// @Description Release deploy lock. Only available when Keycloak is enabled; requires a valid Keycloak session.
+// @Description Release deploy lock. Only available when OIDC auth is enabled; requires a valid OIDC session.
 // @Tags frontend
 // @Success 200 {string} string
 // @Failure 401 {object} models.TaskStatus
 // @Router /api/v1/deploy-lock [delete]
 func (env *Env) ReleaseDeployLock(c *gin.Context) {
-	if !env.requireKeycloakAuth(c) {
+	if !env.requireOIDCAuth(c) {
 		return
 	}
 

@@ -9,7 +9,7 @@ const mockUseNotify = vi.fn();
 const mockUsePermissions = vi.fn();
 const mockUseGetIdentity = vi.fn();
 const mockUseDeployLockState = vi.fn();
-const mockUseKeycloakEnabled = vi.fn();
+const mockUseOidcEnabled = vi.fn();
 const mockHttpClient = vi.fn();
 const mockGetAccessToken = vi.fn();
 let configResponse: Record<string, unknown>;
@@ -30,8 +30,8 @@ vi.mock('../../deployLock/useDeployLockState', () => ({
   useDeployLockState: () => mockUseDeployLockState(),
 }));
 
-vi.mock('../../../shared/hooks/useKeycloakEnabled', () => ({
-  useKeycloakEnabled: () => mockUseKeycloakEnabled(),
+vi.mock('../../../shared/hooks/useOidcEnabled', () => ({
+  useOidcEnabled: () => mockUseOidcEnabled(),
 }));
 
 vi.mock('../../../data/httpClient', () => ({
@@ -83,7 +83,7 @@ describe('TaskShow', () => {
       isLoading: false,
     });
     mockUseDeployLockState.mockReturnValue(false);
-    mockUseKeycloakEnabled.mockReturnValue(true);
+    mockUseOidcEnabled.mockReturnValue(true);
     mockHttpClient.mockReset();
     configResponse = {};
     mockHttpClient.mockImplementation((url: string) => {
@@ -292,7 +292,7 @@ describe('TaskShow', () => {
       author: 'user@example.com',
     });
     expect((options as { headers?: Record<string, string> }).headers).toMatchObject({
-      'Keycloak-Authorization': 'Bearer token',
+      'Oidc-Authorization': 'Bearer token',
     });
   });
 

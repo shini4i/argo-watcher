@@ -1,19 +1,18 @@
-import Keycloak, { type KeycloakInitOptions, type KeycloakInstance } from 'keycloak-js';
+import { InMemoryWebStorage, User, UserManager, WebStorageStateStore } from 'oidc-client-ts';
 import type { AuthProvider, Identifier } from 'react-admin';
 import { HttpError } from 'react-admin';
 import { getBrowserWindow } from '../shared/utils';
-import { clearAccessToken, getAccessToken, setAccessToken } from './tokenStore';
+import { clearAccessToken, setAccessToken } from './tokenStore';
 
-interface KeycloakConfig {
+interface OidcConfig {
   enabled: boolean;
-  url?: string;
-  realm?: string;
+  issuer_url?: string;
   client_id?: string;
   privileged_groups?: string[];
 }
 
 interface ServerConfig {
-  keycloak: KeycloakConfig;
+  oidc: OidcConfig;
 }
 
 interface Permissions {
@@ -23,112 +22,79 @@ interface Permissions {
 
 let serverConfigPromise: Promise<ServerConfig> | null = null;
 let serverConfig: ServerConfig | null = null;
-let keycloakInstance: KeycloakInstance | null = null;
-let initPromise: Promise<boolean> | null = null;
-let refreshInterval: number | null = null;
+let userManager: UserManager | null = null;
 let cachedUserGroups: string[] | null = null;
-let userGroupsLoadedFromProfile = false;
-let lastSessionValidation = 0;
 
-const SESSION_REVALIDATION_INTERVAL_MS = 60_000;
-
-type GroupSource = 'token' | 'profile';
-
-/**
- * Stores the latest Keycloak group membership along with its data source (token vs userinfo).
- */
-const updateUserGroupsCache = (groups?: unknown, source: GroupSource = 'token') => {
-  cachedUserGroups = Array.isArray(groups) ? [...groups] : null;
-  userGroupsLoadedFromProfile = source === 'profile' && Array.isArray(groups);
+/** Reads the `groups` claim from a signed-in user's ID-token profile, defaulting to []. */
+const extractProfileGroups = (user: User): string[] => {
+  const groups = (user.profile as { groups?: unknown }).groups;
+  return Array.isArray(groups) ? [...(groups as string[])] : [];
 };
 
-/**
- * Clears cached user groups and resets session validation timers.
- */
+/** Clears cached group membership (e.g. on logout, token renewal, or auth failure). */
 const clearUserGroupsCache = () => {
   cachedUserGroups = null;
-  userGroupsLoadedFromProfile = false;
-  lastSessionValidation = 0;
 };
-
-/** Clears the scheduled token refresh interval when it exists. */
-const clearRefreshInterval = () => {
-  if (!refreshInterval) {
-    return;
-  }
-  const browserWindow = getBrowserWindow();
-  if (browserWindow) {
-    browserWindow.clearInterval(refreshInterval);
-  }
-  refreshInterval = null;
-};
-
-interface EnsureGroupsOptions {
-  forceReload?: boolean;
-  strict?: boolean;
-}
 
 /**
- * Ensures Keycloak group membership is available, optionally forcing a reload via userinfo.
+ * Resolves the user's group membership from the provider's userinfo endpoint —
+ * the SAME source the backend uses for its privileged-group check — so the UI's
+ * button gating always agrees with server-side enforcement. This does not depend
+ * on a requested scope or on groups being present in the ID token. Falls back to
+ * the ID-token `groups` claim if the userinfo call fails (mirrors the previous
+ * keycloak-js loadUserInfo() behaviour and its fallback).
  */
-const ensureUserGroupsLoaded = async (
-  keycloak: KeycloakInstance,
-  options: EnsureGroupsOptions = {},
-): Promise<string[]> => {
-  const needsReload = options.forceReload || !userGroupsLoadedFromProfile || !cachedUserGroups;
-  if (!needsReload && Array.isArray(cachedUserGroups)) {
+const loadGroups = async (manager: UserManager, user: User): Promise<string[]> => {
+  try {
+    const userinfoEndpoint = await manager.metadataService.getUserInfoEndpoint();
+    const response = await fetch(userinfoEndpoint, {
+      headers: {
+        Authorization: `Bearer ${user.access_token}`,
+        Accept: 'application/json',
+      },
+    });
+    if (response.ok) {
+      const info = (await response.json()) as { groups?: unknown };
+      if (Array.isArray(info.groups)) {
+        return [...(info.groups as string[])];
+      }
+    }
+  } catch (error) {
+    console.warn('[auth] Failed to load groups from userinfo; falling back to token claims.', error);
+  }
+  return extractProfileGroups(user);
+};
+
+/** Returns cached groups or resolves them once from userinfo and caches the result. */
+const ensureGroups = async (manager: UserManager, user: User): Promise<string[]> => {
+  if (cachedUserGroups) {
     return cachedUserGroups;
   }
-  try {
-    const profile = (await keycloak.loadUserInfo()) as { groups?: unknown };
-    const profileGroups = Array.isArray(profile?.groups) ? (profile.groups as string[]) : undefined;
-    const groups = profileGroups ?? keycloak.tokenParsed?.groups ?? [];
-    updateUserGroupsCache(groups, 'profile');
-    return cachedUserGroups ?? [];
-  } catch (error) {
-    if (options.strict) {
-      throw error;
-    }
-    console.warn('[auth] Failed to load user info; falling back to token groups.', error);
-    const fallback = keycloak.tokenParsed?.groups ?? [];
-    updateUserGroupsCache(fallback, 'token');
-    return fallback;
-  }
+  cachedUserGroups = await loadGroups(manager, user);
+  return cachedUserGroups;
 };
 
 /**
- * Periodically revalidates the Keycloak session to capture disabled accounts or group changes.
+ * Resolves the app's base URL (origin + Vite BASE_URL), used as the OIDC
+ * redirect and post-logout URIs. When no browser window is available (SSR/tests)
+ * it returns the normalized base path alone.
  */
-const ensureSessionValidation = async (keycloak: KeycloakInstance) => {
-  const now = Date.now();
-  if (now - lastSessionValidation < SESSION_REVALIDATION_INTERVAL_MS) {
-    return;
-  }
-
-  await ensureUserGroupsLoaded(keycloak, { forceReload: true, strict: true });
-  lastSessionValidation = now;
-};
-
-/**
- * Resolves the final redirect URI for Keycloak login/logout flows.
- */
-const resolveRedirectUri = (redirectTo?: string) => {
+const appBaseUrl = (): string => {
   const base = import.meta.env.BASE_URL ?? '/';
-  const normalizedBasePath = base.startsWith('/') ? base : `/${base}`;
-  const relativeBase = normalizedBasePath.endsWith('/') ? normalizedBasePath : `${normalizedBasePath}/`;
+  const normalizedBase = base.startsWith('/') ? base : `/${base}`;
+  const relativeBase = normalizedBase.endsWith('/') ? normalizedBase : `${normalizedBase}/`;
   const browserWindow = getBrowserWindow();
   const origin = browserWindow?.location.origin;
-  if (!origin) {
-    if (!redirectTo) {
-      return relativeBase;
-    }
-    return `${relativeBase}${redirectTo.replace(/^\//, '')}`;
+  return origin ? new URL(relativeBase, origin).toString() : relativeBase;
+};
+
+/** Returns the current in-app path (pathname + search) to restore after login. */
+const currentPath = (): string | undefined => {
+  const browserWindow = getBrowserWindow();
+  if (!browserWindow) {
+    return undefined;
   }
-  const baseUrl = new URL(relativeBase, origin);
-  if (!redirectTo) {
-    return baseUrl.toString();
-  }
-  return new URL(redirectTo, baseUrl).toString();
+  return `${browserWindow.location.pathname}${browserWindow.location.search}`;
 };
 
 /**
@@ -160,237 +126,200 @@ const fetchServerConfig = async (): Promise<ServerConfig> => {
 };
 
 /**
- * Verifies that the Keycloak config contains the minimum required fields.
+ * Verifies that the OIDC config contains the minimum fields required to build a
+ * UserManager (issuer and client id).
  */
-const assertKeycloakFields = (config: KeycloakConfig) => {
-  if (!config.url || !config.realm || !config.client_id) {
-    throw new HttpError('Keycloak configuration is incomplete', 500, config);
+const assertOidcFields = (config: OidcConfig) => {
+  if (!config.issuer_url || !config.client_id) {
+    throw new HttpError('OIDC configuration is incomplete', 500, config);
   }
 };
 
 /**
- * Lazily constructs the singleton Keycloak instance when SSO is enabled server-side.
+ * Lazily constructs the singleton UserManager when OIDC is enabled server-side.
+ *
+ * Tokens are held in an in-memory store (never localStorage) to preserve the
+ * original security posture: on a full page reload the in-memory user is gone and
+ * the session is silently recovered through the IdP's SSO cookie. The default
+ * state store (localStorage) still carries the PKCE state across the login
+ * redirect, which is what the authorization-code exchange requires.
  */
-const ensureKeycloakInstance = async (): Promise<KeycloakInstance | null> => {
+const ensureUserManager = async (): Promise<UserManager | null> => {
   const config = await fetchServerConfig();
-  if (!config.keycloak?.enabled) {
+  if (!config.oidc?.enabled) {
     return null;
   }
 
-  assertKeycloakFields(config.keycloak);
+  assertOidcFields(config.oidc);
 
-  keycloakInstance ??= new Keycloak({
-    url: config.keycloak.url!,
-    realm: config.keycloak.realm!,
-    clientId: config.keycloak.client_id!,
-  });
+  if (!userManager) {
+    const redirectUri = appBaseUrl();
+    userManager = new UserManager({
+      authority: config.oidc.issuer_url!,
+      client_id: config.oidc.client_id!,
+      redirect_uri: redirectUri,
+      post_logout_redirect_uri: redirectUri,
+      response_type: 'code',
+      // Request only universally-valid standard scopes. Requesting a `groups`
+      // scope would break login on any provider (e.g. a Keycloak client without
+      // a registered `groups` client scope) that rejects unknown scopes with
+      // invalid_scope. Group membership is read from the ID token `groups` claim
+      // (populated by the provider's group mapper, as the OIDC guide requires);
+      // the backend independently enforces groups via the userinfo endpoint.
+      scope: 'openid profile email',
+      automaticSilentRenew: true,
+      userStore: new WebStorageStateStore({ store: new InMemoryWebStorage() }),
+    });
 
-  return keycloakInstance;
+    // A successful (initial or silently renewed) login persists the fresh token
+    // and invalidates cached groups so the next permission check re-reads them
+    // from userinfo (membership may have changed across a renewal).
+    userManager.events.addUserLoaded(user => {
+      setAccessToken(user.access_token);
+      clearUserGroupsCache();
+    });
+    userManager.events.addUserUnloaded(() => {
+      clearAccessToken();
+      clearUserGroupsCache();
+    });
+    userManager.events.addSilentRenewError(error => {
+      console.error('[auth] Silent token renewal failed', error);
+    });
+  }
+
+  return userManager;
 };
 
-/**
- * Installs an interval that keeps the Keycloak token fresh and updates cached groups.
- */
-const scheduleTokenRefresh = (keycloak: KeycloakInstance) => {
-  clearRefreshInterval();
+/** True when the current URL carries an OIDC authorization-code callback. */
+const isRedirectCallback = (): boolean => {
   const browserWindow = getBrowserWindow();
   if (!browserWindow) {
-    console.warn('[auth] Unable to schedule token refresh because window is unavailable.');
-    return;
+    return false;
   }
-
-  refreshInterval = browserWindow.setInterval(async () => {
-    try {
-      const refreshed = await keycloak.updateToken(30);
-      if (refreshed) {
-        setAccessToken(keycloak.token ?? null);
-        updateUserGroupsCache(keycloak.tokenParsed?.groups, 'token');
-        lastSessionValidation = Date.now();
-      }
-    } catch (error) {
-      console.error('[auth] Failed to refresh token', error);
-      clearAccessToken();
-      clearUserGroupsCache();
-    }
-  }, 60_000);
+  const params = new URLSearchParams(browserWindow.location.search);
+  return params.has('code') && params.has('state');
 };
 
 /**
- * Creates the Keycloak init options for the login flow.
- *
- * Uses `login-required` so an unauthenticated user is sent to Keycloak through a
- * top-level navigation, which carries the SSO session cookie. The previous
- * `check-sso` flow probed the session inside a cross-site hidden iframe; modern
- * browsers strip third-party cookies from such iframes, so Keycloak answered
- * `login_required` even for users holding a valid session, which triggered an
- * infinite redirect loop between the app and the Keycloak logout endpoint.
+ * Completes an authorization-code login: exchanges the code for tokens, persists
+ * them, and strips the `?code&state` query so a reload does not re-trigger the
+ * callback. Navigation returns to the pre-login path encoded in `url_state`.
  */
-const buildInitOptions = (): KeycloakInitOptions => ({
-  onLoad: 'login-required',
-  checkLoginIframe: false,
-  pkceMethod: 'S256',
-});
+const completeSignin = async (manager: UserManager) => {
+  const user = await manager.signinRedirectCallback();
+  setAccessToken(user.access_token);
+  clearUserGroupsCache();
 
-/**
- * Executes keycloak.init with the provided options and wires token persistence.
- */
-const runKeycloakInit = async (keycloak: KeycloakInstance, options: KeycloakInitOptions) => {
-  const authenticated = await keycloak.init(options);
-  if (authenticated) {
-    setAccessToken(keycloak.token ?? null);
-    updateUserGroupsCache(keycloak.tokenParsed?.groups, 'token');
-    lastSessionValidation = Date.now();
-    scheduleTokenRefresh(keycloak);
-  } else {
-    clearAccessToken();
-    clearUserGroupsCache();
+  const browserWindow = getBrowserWindow();
+  if (browserWindow) {
+    const target = (typeof user.url_state === 'string' && user.url_state) || appBaseUrl();
+    browserWindow.history.replaceState({}, browserWindow.document.title, target);
   }
-  return authenticated;
 };
 
 /**
- * Runs keycloak.init exactly once for the singleton instance and caches the result.
+ * Ensures the user is authenticated, redirecting to the provider's login page
+ * when no valid session exists.
  *
- * keycloak-js forbids calling init() twice on one instance, and only the first
- * init consumes the login callback (`#state=...&code=...`). The eager bootstrap
- * and the later checkAuth/getPermissions paths both funnel through here, so the
- * callback is processed once and the instance is never re-initialized.
+ * It deliberately NEVER rejects for an unauthenticated user: a rejected checkAuth
+ * makes React-admin call authProvider.logout(), which would terminate a still-valid
+ * SSO session and bounce the browser between the app and the login page. An
+ * unauthenticated user is redirected instead, and the call still resolves.
  */
-const ensureInitialized = (keycloak: KeycloakInstance): Promise<boolean> => {
-  initPromise ??= runKeycloakInit(keycloak, buildInitOptions());
-  return initPromise;
-};
-
-/**
- * Central authentication path used by the authProvider to ensure the user session is valid.
- *
- * When no local token exists, this initializes Keycloak with `login-required`,
- * which redirects an unauthenticated user to the Keycloak login page through a
- * top-level navigation. It deliberately never rejects for an unauthenticated
- * user: a rejected `checkAuth` makes React-admin call `authProvider.logout()`,
- * which would terminate a still-valid Keycloak session and bounce the browser
- * between the app and the logout endpoint.
- */
-const authenticate = async () => {
-  const keycloak = await ensureKeycloakInstance();
-  if (!keycloak) {
-    setAccessToken(null);
-    clearUserGroupsCache();
+const ensureAuthenticated = async (manager: UserManager): Promise<boolean> => {
+  const user = await manager.getUser();
+  if (user && !user.expired) {
+    setAccessToken(user.access_token);
     return true;
   }
 
-  if (getAccessToken()) {
-    try {
-      await ensureSessionValidation(keycloak);
-    } catch (validationError) {
-      clearAccessToken();
-      clearUserGroupsCache();
-      throw new HttpError('Authentication required', 401, { cause: validationError });
-    }
-    return true;
-  }
+  clearAccessToken();
+  clearUserGroupsCache();
 
-  let authenticated = false;
   try {
-    authenticated = await ensureInitialized(keycloak);
+    await manager.signinRedirect({ url_state: currentPath() });
   } catch (error) {
-    console.warn('[auth] Keycloak initialization failed; redirecting to the login page.', error);
-    clearAccessToken();
-    clearUserGroupsCache();
-  }
-
-  if (authenticated) {
-    return true;
-  }
-
-  // Unauthenticated: hand off to Keycloak's login page through a top-level
-  // redirect. The navigation carries the SSO session cookie, so a user with an
-  // active session is bounced straight back with an authorization code without
-  // ever seeing a login form.
-  //
-  // A login() rejection must not propagate: an unauthenticated checkAuth that
-  // rejects makes React-admin call logout(), reintroducing the redirect loop
-  // through a different trigger. Swallow it and let the redirect (or the next
-  // checkAuth) drive recovery instead.
-  try {
-    await keycloak.login({ redirectUri: resolveRedirectUri() });
-  } catch (loginError) {
-    console.warn('[auth] Failed to initiate the Keycloak login redirect.', loginError);
+    console.warn('[auth] Failed to initiate the OIDC login redirect.', error);
   }
   return true;
 };
 
 /**
- * Collects group-based permission metadata for React-admin consumers.
- */
-const resolvePermissions = (): Permissions => {
-  const config = serverConfig?.keycloak;
-  const privilegedGroups = config?.privileged_groups ?? [];
-  const groups = cachedUserGroups ?? keycloakInstance?.tokenParsed?.groups ?? [];
-  return { groups, privilegedGroups };
-};
-
-/**
- * Eagerly initializes authentication before the React tree is mounted.
+ * Eagerly processes authentication before the React tree is mounted.
  *
- * keycloak-js parses the login callback (the `#state=...&code=...` fragment) the
- * first time init() runs. The SPA router performs its default index redirect
- * (`/` -> `/tasks`) the moment it mounts, which strips that fragment. Running
- * init lazily inside checkAuth therefore raced the router and lost the code,
- * leaving Keycloak to redirect to login again -> an endless login loop.
- * Initializing here, before render, consumes the callback while the fragment is
- * still present.
+ * The authorization-code callback (`?code=...&state=...`) must be consumed while
+ * it is still on the URL: the SPA router performs its default index redirect
+ * (`/` -> `/tasks`) the moment it mounts, which would strip those params. Handling
+ * the callback here, before render, exchanges the code reliably.
  *
- * Keycloak is OPTIONAL: when SSO is disabled server-side, authenticate() returns
- * without initializing Keycloak or redirecting, so keycloak-less deployments
- * render exactly as before with no added delay. Bootstrap failures are swallowed
- * so rendering is never blocked; checkAuth re-runs the same path on mount.
+ * OIDC is OPTIONAL: when disabled server-side, this returns without building a
+ * UserManager or redirecting, so auth-less deployments render exactly as before.
+ * Bootstrap failures are swallowed so rendering is never blocked; checkAuth re-runs
+ * the same path on mount.
  */
 export const bootstrapAuth = async (): Promise<void> => {
   try {
-    await authenticate();
+    const manager = await ensureUserManager();
+    if (!manager) {
+      setAccessToken(null);
+      clearUserGroupsCache();
+      return;
+    }
+
+    if (isRedirectCallback()) {
+      await completeSignin(manager);
+    } else {
+      await ensureAuthenticated(manager);
+    }
   } catch (error) {
     console.warn('[auth] Eager authentication bootstrap failed; deferring to checkAuth.', error);
   }
 };
 
 /**
- * React-admin AuthProvider implementation backed by Keycloak for login, logout, and permissions.
+ * React-admin AuthProvider implementation backed by a generic OIDC provider for
+ * login, logout, permissions, and identity.
  */
 export const authProvider: AuthProvider = {
   async login(params) {
-    const keycloak = await ensureKeycloakInstance();
-    if (!keycloak) {
+    const manager = await ensureUserManager();
+    if (!manager) {
       setAccessToken(null);
       clearUserGroupsCache();
       return;
     }
-
-    const redirectUri = resolveRedirectUri(params?.redirectTo);
-    await keycloak.login({ redirectUri });
-    setAccessToken(keycloak.token ?? null);
+    await manager.signinRedirect({ url_state: params?.redirectTo });
   },
 
-  async logout(params) {
-    const keycloak = await ensureKeycloakInstance();
-    clearRefreshInterval();
+  async logout() {
+    const manager = await ensureUserManager();
     clearAccessToken();
     clearUserGroupsCache();
 
-    if (!keycloak) {
+    if (!manager) {
       return;
     }
 
-    const redirectUri = resolveRedirectUri(params?.redirectTo);
-    await keycloak.logout({ redirectUri });
+    try {
+      await manager.removeUser();
+      await manager.signoutRedirect();
+    } catch (error) {
+      // A provider without an end-session endpoint must not break local logout.
+      console.warn('[auth] Provider sign-out redirect failed; cleared local session.', error);
+    }
   },
 
   async checkAuth() {
-    // authenticate() resolves for a valid or redirecting session and throws only
-    // for genuine failures (config errors, a revoked/disabled session). It never
-    // resolves "unauthenticated" — an unauthenticated user is redirected to the
-    // Keycloak login page instead — so there is no false case to guard here.
-    await authenticate();
+    // Resolves for a valid or redirecting session; throws only for genuine
+    // failures (config errors, unreachable backend). An unauthenticated user is
+    // redirected rather than rejected — see ensureAuthenticated.
+    const manager = await ensureUserManager();
+    if (!manager) {
+      setAccessToken(null);
+      clearUserGroupsCache();
+      return;
+    }
+    await ensureAuthenticated(manager);
   },
 
   async checkError(error) {
@@ -404,59 +333,52 @@ export const authProvider: AuthProvider = {
 
   async getPermissions() {
     const config = await fetchServerConfig();
-    if (!config.keycloak?.enabled) {
+    if (!config.oidc?.enabled) {
       return [];
     }
 
-    const keycloak = await ensureKeycloakInstance();
-    if (!keycloak) {
+    const manager = await ensureUserManager();
+    if (!manager) {
       return [];
     }
 
-    await authenticate();
+    const privilegedGroups = config.oidc.privileged_groups ?? [];
+    const user = await manager.getUser();
+    if (!user || user.expired) {
+      // No usable session — kick off the login redirect and report empty groups.
+      await ensureAuthenticated(manager);
+      return { groups: [], privilegedGroups } satisfies Permissions;
+    }
 
-    await ensureUserGroupsLoaded(keycloak);
-
-    const { groups, privilegedGroups } = resolvePermissions();
-    return { groups, privilegedGroups };
+    const groups = await ensureGroups(manager, user);
+    return { groups, privilegedGroups } satisfies Permissions;
   },
 
   async getIdentity(): Promise<{ id: Identifier; fullName?: string; email?: string }> {
-    const keycloak = await ensureKeycloakInstance();
-    if (!keycloak) {
+    const manager = await ensureUserManager();
+    if (!manager) {
       return { id: 'anonymous', fullName: 'Anonymous', email: undefined };
     }
 
-    const token = keycloak.tokenParsed ?? {};
-    const id = (token.sub as Identifier) ?? 'unknown';
-    const fullName = (token.name as string) ?? token.preferred_username ?? undefined;
-    const email = (token.email as string) ?? undefined;
+    const user = await manager.getUser();
+    const profile = user?.profile ?? {};
+    const id = (profile.sub as Identifier) ?? 'unknown';
+    const fullName = (profile.name as string) ?? (profile.preferred_username as string) ?? undefined;
+    const email = (profile.email as string) ?? undefined;
 
     return { id, fullName, email };
   },
 };
 
 export const __testing = {
-  /** Resets cached Keycloak state for unit tests so each test starts fresh. */
+  /** Resets cached OIDC state for unit tests so each test starts fresh. */
   reset() {
     serverConfigPromise = null;
     serverConfig = null;
-    clearRefreshInterval();
-    keycloakInstance = null;
-    initPromise = null;
+    userManager = null;
     clearAccessToken();
     clearUserGroupsCache();
   },
-  /** Allows tests to seed cached user groups without hitting Keycloak. */
-  setCachedUserGroups(groups: string[] | null) {
-    updateUserGroupsCache(groups ?? undefined);
-  },
-  /** Provides a snapshot of the cached groups for validation in tests. */
-  getCachedUserGroups() {
-    return cachedUserGroups ? [...cachedUserGroups] : null;
-  },
-  /** Exposes redirect resolution for direct verification in tests. */
-  resolveRedirectUri,
-  /** Exposes the token refresh scheduler for deterministic timer testing. */
-  scheduleTokenRefresh,
+  /** Exposes base-URL resolution for direct verification in tests. */
+  appBaseUrl,
 };

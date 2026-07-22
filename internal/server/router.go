@@ -84,12 +84,12 @@ func (env *Env) CreateRouter() *gin.Engine {
 		// privileged action and mirrors the cached liveness-probe state without a
 		// live probe.
 		v1.GET("/reachability", env.reachability)
-		// The state-changing deploy-lock endpoints are only registered when Keycloak
-		// is enabled: without an auth backend they cannot be protected, so exposing
-		// them would leave an unauthenticated deploy-freeze switch reachable by anyone
-		// who can reach the server (including via a victim's browser). The read-only
-		// GET stays available so the banner and scheduled lockdown keep working.
-		if env.config.Keycloak.Enabled {
+		// The state-changing deploy-lock endpoints are only registered when OIDC
+		// auth is enabled: without an auth backend they cannot be protected, so
+		// exposing them would leave an unauthenticated deploy-freeze switch reachable
+		// by anyone who can reach the server (including via a victim's browser). The
+		// read-only GET stays available so the banner and scheduled lockdown keep working.
+		if env.config.OIDC.Enabled {
 			v1.POST(deployLockEndpoint, env.SetDeployLock)
 			v1.DELETE(deployLockEndpoint, env.ReleaseDeployLock)
 		}
@@ -142,7 +142,7 @@ func (env *Env) StartRouter(router *gin.Engine) *http.Server {
 func (env *Env) corsConfig() cors.Config {
 	config := cors.Config{
 		AllowMethods:           []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions},
-		AllowHeaders:           []string{"Origin", "Content-Type", "Accept", "Authorization", keycloakHeader, "ARGO_WATCHER_DEPLOY_TOKEN"},
+		AllowHeaders:           []string{"Origin", "Content-Type", "Accept", "Authorization", oidcHeader, legacyKeycloakHeader, "ARGO_WATCHER_DEPLOY_TOKEN"},
 		ExposeHeaders:          []string{"Content-Length"},
 		AllowWebSockets:        true,
 		AllowBrowserExtensions: true,

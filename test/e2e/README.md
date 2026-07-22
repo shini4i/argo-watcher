@@ -94,7 +94,7 @@ Reach any component with `kubectl port-forward` (there is no ingress), e.g.
 | `values/argo-watcher-postgres.yaml` | overlay layered over `values/argo-watcher.yaml` that enables `postgres` (sets `STATE_TYPE=postgres`, wires `DB_*`, triggers the migration Job) |
 | `scripts/hook-fixture.sh` | add/remove a failing PreSync hook via the chart's `rawObject` |
 | `scripts/notifications.sh` | assert the generic webhook fires start + result with the templated payload and auth header |
-| `scripts/api-surface.sh` | assert the read-only HTTP surface to contract: version/config (secrets redacted), task-list filters + invalid-status 400, unknown-task 404, deploy-lock POST/DELETE 404 when Keycloak is off |
+| `scripts/api-surface.sh` | assert the read-only HTTP surface to contract: version/config (secrets redacted), task-list filters + invalid-status 400, unknown-task 404, deploy-lock POST/DELETE 404 when OIDC auth is off |
 | `scripts/client-knobs.sh` | assert client env knobs via the real client: `TASK_REFRESH=false` still deploys, `DEBUG=true` cURL log redacts the deploy token |
 | `scripts/jwt-auth.sh` | assert the JWT (`BEARER_TOKEN`) auth path: mint an HS256 token, deploy with no deploy token, prove the authenticated write-back reaches deployed |
 | `tools/mintjwt/` | tiny Go HS256 JWT minter (signs with the server's own jwt library; avoids an openssl dependency) |

@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   per flush, and the new `gitops_batch_size` metric reports how many were coalesced.
 - `state_unavailable` metric: `1` when argo-watcher cannot reach its state backend
   (database), `0` otherwise. It tracks the state backend independently of ArgoCD.
+- Support for any OpenID Connect provider (e.g. Authentik) for Web UI login and
+  privileged-group authorization, not just Keycloak. Configure it with
+  `OIDC_ISSUER_URL`, `OIDC_CLIENT_ID`, and `OIDC_PRIVILEGED_GROUPS`; the backend
+  discovers the userinfo endpoint automatically from the issuer's
+  `.well-known/openid-configuration`. See the new OIDC / SSO Integration guide.
 
 ### Changed
 
@@ -35,6 +40,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `{"available":bool,"reason":"argocd"|"database"|"both"}` (`reason` omitted when
   available) instead of a bare boolean. The WebSocket outage broadcast now carries
   the cause as `argocd_down:<reason>`; recovery is still `argocd_up`.
+- `GET /api/v1/config` now exposes the authentication settings under an `oidc` key.
+  The legacy `keycloak` key is still emitted with identical content for backward
+  compatibility. Privileged requests (rollback, deploy-lock) may use the
+  `Oidc-Authorization` header; the legacy `Keycloak-Authorization` header is still
+  accepted.
+
+### Deprecated
+
+- The `KEYCLOAK_*` environment variables are deprecated in favour of their `OIDC_*`
+  equivalents (`OIDC_ENABLED`, `OIDC_ISSUER_URL`, `OIDC_CLIENT_ID`,
+  `OIDC_TOKEN_VALIDATION_INTERVAL`, `OIDC_PRIVILEGED_GROUPS`). They remain fully
+  honored, so existing Keycloak deployments need no changes — the issuer is
+  synthesized from `KEYCLOAK_URL` + `KEYCLOAK_REALM`.
 
 ### Fixed
 
