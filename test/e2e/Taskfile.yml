@@ -39,6 +39,11 @@ vars:
   WS_CLIENTS: 10
   SOAK: 5m
   SOAK_SECONDS: 300
+  # Shorter dedicated soak for the batch-writeback phase (it re-runs the same
+  # contention load with GIT_BATCH_WRITEBACK on); 10 workers on one repo coalesce
+  # quickly, so a 2m window is ample to observe batching without doubling the run.
+  BATCH_SOAK: 2m
+  BATCH_SOAK_SECONDS: 120
   # Competitor push interval (seconds) for the soak: realistic sustained
   # contention that argo-watcher's retry should survive with 0 failures. The
   # `race` scenario deliberately over-drives this (1s) to force the ordering
@@ -82,6 +87,10 @@ tasks:
       - task: lockdown
       - task: notifications
       - task: load
+      # batch-writeback re-runs the contention soak with GIT_BATCH_WRITEBACK on and
+      # reverts before returning, so it must run AFTER the default-path soak (load)
+      # and is otherwise self-contained; placed here before race.
+      - task: batch-writeback
       - task: race
       # state-postgres flips the release to STATE_TYPE=postgres and asserts the Postgres-only
       # properties (schema migration, deploy loop, task-survives-restart, supersession under
@@ -275,6 +284,18 @@ tasks:
         wait $comp 2>/dev/null || true
         ./scripts/collect.sh "$summary"; col=$?
         [ "$drv" -eq 0 ] && [ "$col" -eq 0 ]
+
+  batch-writeback:
+    desc: "Assert GIT_BATCH_WRITEBACK coalesces concurrent write-backs under contention with zero lost updates"
+    deps: [apply-apps]
+    cmds:
+      # Toggles GIT_BATCH_WRITEBACK on the live release, re-runs the contention
+      # soak, gates on zero lost updates + real coalescing, then reverts. Needs the
+      # chart coordinates to helm-upgrade in place.
+      - AW_CHART_REPO={{.AW_CHART_REPO}} AW_CHART_VERSION={{.AW_CHART_VERSION}}
+        DEPLOY_TOKEN={{.DEPLOY_TOKEN}} APPS={{.APPS}} WORKERS={{.WORKERS}} WS_CLIENTS={{.WS_CLIENTS}}
+        SOAK={{.BATCH_SOAK}} SOAK_SECONDS={{.BATCH_SOAK_SECONDS}} COMPETITOR_INTERVAL={{.COMPETITOR_INTERVAL}}
+        ./scripts/batch-writeback.sh
 
   argo-watcher:
     desc: "Mint ARGO_TOKEN and install argo-watcher on the race image"
