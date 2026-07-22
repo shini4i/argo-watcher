@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Optional batch write-back mode for the GitOps updater (`GIT_BATCH_WRITEBACK`,
+  off by default). When enabled, concurrent write-backs to the same repository are
+  coalesced into a single clone and a single push — one commit per application —
+  instead of each taking the per-repository lock in turn, cutting the tail latency
+  seen when many applications deploy to one GitOps repo at once. Batching is
+  contention-driven, so it adds no latency when a repository is idle.
+  `GIT_BATCH_MAX_SIZE` (default `20`) bounds how many applications are committed
+  per flush, and the new `gitops_batch_size` metric reports how many were coalesced.
+
 ### Fixed
 
 - Argo CD connectivity failures during a deployment check — request timeouts, DNS

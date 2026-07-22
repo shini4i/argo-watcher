@@ -40,6 +40,36 @@ type GitConfig struct {
 	GitMaxAttempts uint `env:"GIT_MAX_ATTEMPTS" envDefault:"5"`
 }
 
+// BatchConfig holds the settings for the optional contention-coalescing batch
+// write-back mode. It is parsed independently of GitConfig because it must be
+// readable at server startup, whereas GitConfig requires SSH_KEY_PATH which is
+// only set on deployments that actually use git write-back.
+type BatchConfig struct {
+	// Enabled turns on batch write-back. When false (the default) each app is
+	// written back on its own, preserving the original serialized behaviour.
+	Enabled bool `env:"GIT_BATCH_WRITEBACK" envDefault:"false"`
+	// MaxSize bounds the number of applications committed in a single batch
+	// flush. The pending queue keeps accumulating across flushes until drained,
+	// so this caps one flush's commit count, not the total in-flight work.
+	MaxSize uint `env:"GIT_BATCH_MAX_SIZE" envDefault:"20"`
+}
+
+// NewBatchConfig loads BatchConfig from environment variables. It has no
+// required fields, so it is safe to call at server startup even when git
+// write-back is not configured. When batching is enabled, MaxSize must be > 0.
+func NewBatchConfig() (*BatchConfig, error) {
+	config, err := envConfig.ParseAs[BatchConfig]()
+	if err != nil {
+		return nil, helpers.PrettifyEnvError(err, "invalid argo-watcher batch write-back configuration:")
+	}
+
+	if config.Enabled && config.MaxSize == 0 {
+		return nil, fmt.Errorf("GIT_BATCH_MAX_SIZE must be > 0 when GIT_BATCH_WRITEBACK is enabled")
+	}
+
+	return &config, nil
+}
+
 // NewGitConfig loads GitConfig from environment variables and applies the
 // backward-compat mapping for the deprecated GIT_TIMEOUT variable.
 //

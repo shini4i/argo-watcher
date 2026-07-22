@@ -172,14 +172,16 @@ func (repo *GitRepo) Clone(ctx context.Context) error {
 	})
 }
 
-// generateOverrideFileName determines the name of the override file. If a specific
-// FileName is provided in the configuration, it is used; otherwise, a default name
-// is generated based on the application name.
-func (repo *GitRepo) generateOverrideFileName(appName string) string {
-	if repo.FileName == "" {
-		return fmt.Sprintf("%s/.argocd-source-%s.yaml", repo.Path, appName)
+// generateOverrideFileNameForApp builds the override file path from an explicit
+// path and fileName. If fileName is empty a default name is derived from the
+// application name; otherwise fileName is used verbatim. The path and fileName
+// are passed explicitly (rather than read from the GitRepo) because in batch
+// write-back many apps share one clone yet each has its own write-back location.
+func generateOverrideFileNameForApp(path, fileName, appName string) string {
+	if fileName == "" {
+		return fmt.Sprintf("%s/.argocd-source-%s.yaml", path, appName)
 	}
-	return fmt.Sprintf("%s/%s", repo.Path, repo.FileName)
+	return fmt.Sprintf("%s/%s", path, fileName)
 }
 
 // generateCommitMessage creates the commit message for the update. It uses a
@@ -210,15 +212,32 @@ func (repo *GitRepo) generateCommitMessage(appName string, tmplData any) string 
 }
 
 // UpdateApp is the main entry point for updating an application's manifest file.
-// It orchestrates merging the new content with any existing override file,
-// and then handles the git commit and push operations. The provided ctx bounds
-// the push.
+// It merges the new content with any existing override file, commits the change
+// locally, and pushes it. The provided ctx bounds the push. It is the single-app
+// path; batch write-back instead calls CommitAppLocal for each app and Push once.
 func (repo *GitRepo) UpdateApp(ctx context.Context, appName string, overrideContent *ArgoOverrideFile, tmplData any) error {
-	overrideFileName := repo.generateOverrideFileName(appName)
+	committed, err := repo.CommitAppLocal(appName, repo.Path, repo.FileName, overrideContent, tmplData)
+	if err != nil {
+		return err
+	}
+	if !committed {
+		return nil
+	}
+	return repo.push(ctx)
+}
+
+// CommitAppLocal merges an app's override file with the new content and commits
+// the change into the local clone WITHOUT pushing. It reports whether a commit
+// was actually created (false when the on-disk content already matches, so there
+// is nothing to push). path and fileName are the app's write-back location; they
+// are passed explicitly because in batch write-back many apps share one clone yet
+// each has its own location. tmplData is forwarded to the commit-message template.
+func (repo *GitRepo) CommitAppLocal(appName, path, fileName string, overrideContent *ArgoOverrideFile, tmplData any) (bool, error) {
+	overrideFileName := generateOverrideFileNameForApp(path, fileName, appName)
 	fullPath := filepath.Join(repo.localRepoPath, overrideFileName)
 
 	if err := assertInsideRoot(repo.localRepoPath, fullPath); err != nil {
-		return err
+		return false, err
 	}
 
 	commitMsg := repo.generateCommitMessage(appName, tmplData)
@@ -227,14 +246,17 @@ func (repo *GitRepo) UpdateApp(ctx context.Context, appName string, overrideCont
 
 	finalContent, err := repo.mergeOverrideFileContent(fullPath, overrideContent)
 	if err != nil {
-		return err
+		return false, err
 	}
 
-	if err := repo.commitAndPush(ctx, fullPath, commitMsg, finalContent); err != nil {
-		return err
-	}
+	return repo.commitLocal(fullPath, commitMsg, finalContent)
+}
 
-	return nil
+// Push publishes all locally-committed changes to the remote, bounded by ctx.
+// In batch write-back it is called once after every app in the batch has been
+// committed via CommitAppLocal, collapsing N pushes into one.
+func (repo *GitRepo) Push(ctx context.Context) error {
+	return repo.push(ctx)
 }
 
 // assertInsideRoot returns an error when path is not within root. It protects
@@ -276,33 +298,32 @@ func (repo *GitRepo) mergeOverrideFileContent(fullPath string, overrideContent *
 	return &existingOverrideFile, nil
 }
 
-// commitAndPush handles the git workflow: writing changes, adding to stage,
-// committing, and pushing to the remote. If the override file already contains
-// exactly the content to be written, it skips the commit and push. ctx bounds
-// the push.
-func (repo *GitRepo) commitAndPush(ctx context.Context, fullPath, commitMsg string, overrideContent *ArgoOverrideFile) error {
+// commitLocal writes the override file, stages it, and creates a local commit.
+// It reports whether a commit was actually created: if the file already contains
+// exactly the content to be written, it skips the commit and returns (false, nil).
+func (repo *GitRepo) commitLocal(fullPath, commitMsg string, overrideContent *ArgoOverrideFile) (bool, error) {
 	worktree, err := repo.localRepo.Worktree()
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	contentBytes, err := yaml.Marshal(overrideContent)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	// Detect "nothing to commit" with a single-file byte compare instead of
 	// worktree.Status(). Clone() hard-resets to origin HEAD and this override file is
 	// the only path we write, so equal bytes mean a clean worktree — but O(1 file)
 	// instead of scanning the whole repo, which dominates the cost on a large repo.
-	// #nosec G304 -- path already validated by assertInsideRoot in UpdateApp
+	// #nosec G304 -- path already validated by assertInsideRoot in CommitAppLocal
 	if existing, readErr := os.ReadFile(fullPath); readErr == nil && bytes.Equal(existing, contentBytes) {
 		slog.Debug("No changes detected. Skipping commit.")
-		return nil
+		return false, nil
 	}
 
 	if err := os.WriteFile(fullPath, contentBytes, 0600); err != nil {
-		return fmt.Errorf("failed to write override file: %w", err)
+		return false, fmt.Errorf("failed to write override file: %w", err)
 	}
 
 	// Add the file to the staging area. SkipStatus avoids the full-worktree Status()
@@ -311,10 +332,10 @@ func (repo *GitRepo) commitAndPush(ctx context.Context, fullPath, commitMsg stri
 	relativePath, err := filepath.Rel(repo.localRepoPath, fullPath)
 	if err != nil {
 		// This is a programmatic error, should not happen in practice.
-		return fmt.Errorf("could not determine relative path: %w", err)
+		return false, fmt.Errorf("could not determine relative path: %w", err)
 	}
 	if err := worktree.AddWithOptions(&git.AddOptions{Path: relativePath, SkipStatus: true}); err != nil {
-		return err
+		return false, err
 	}
 
 	commitOpts := &git.CommitOptions{
@@ -325,32 +346,34 @@ func (repo *GitRepo) commitAndPush(ctx context.Context, fullPath, commitMsg stri
 		},
 	}
 	if _, err = worktree.Commit(commitMsg, commitOpts); err != nil {
-		return err
+		return false, err
 	}
 
+	return true, nil
+}
+
+// push publishes local commits to the remote, bounded by ctx. Any error is
+// returned as-is; the retry loop in the caller decides whether to retry. It does
+// not classify push-race vs other failures because the retry loop treats all
+// transient errors uniformly.
+//
+// Note: a local commit created before this call becomes an orphan if the budget
+// check below fails. That is intentional and safe — the next Clone hard-resets to
+// origin, discarding the orphan before the retry attempt builds a fresh commit on
+// top of the refreshed tip. In batch write-back the whole batch's commits are
+// discarded and re-applied together on retry.
+func (repo *GitRepo) push(ctx context.Context) error {
 	// Bail early if the budget is already exhausted — no point issuing a push
 	// that is guaranteed to fail with "context deadline exceeded".
-	// Note: the local commit created above becomes an orphan if we return here.
-	// That is intentional and safe: the next Clone call hard-resets to origin,
-	// discarding the orphan before the retry attempt builds a new commit on top
-	// of the refreshed tip.
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("budget exhausted before push: %w", err)
 	}
 
-	// Push the changes to the remote repository, bounded by the caller's ctx.
-	// Any error is returned as-is; the retry loop in the caller decides whether
-	// to retry. We deliberately do not classify push-race vs other failures here
-	// because the retry loop treats all transient errors uniformly.
 	pushOpts := &git.PushOptions{
 		Auth:       repo.sshAuth,
 		RemoteName: "origin",
 	}
-	if err = repo.localRepo.PushContext(ctx, pushOpts); err != nil {
-		return err
-	}
-
-	return nil
+	return repo.localRepo.PushContext(ctx, pushOpts)
 }
 
 // mergeParameters updates the `existing` parameters with values from `newContent`.

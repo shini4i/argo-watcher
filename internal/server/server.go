@@ -19,6 +19,7 @@ import (
 	"github.com/shini4i/argo-watcher/internal/logging"
 	prom "github.com/shini4i/argo-watcher/internal/prometheus"
 	"github.com/shini4i/argo-watcher/internal/state"
+	"github.com/shini4i/argo-watcher/internal/updater"
 )
 
 type Server struct {
@@ -70,8 +71,15 @@ func NewServer(serverConfig *config.ServerConfig, reg prometheus.Registerer) (*S
 		slog.Warn("Using in-memory lock. This is not suitable for HA setups.")
 	}
 
-	updater := &argocd.ArgoStatusUpdater{}
-	err = updater.Init(*argo, argocd.ArgoStatusUpdaterConfig{
+	// Batch write-back settings are parsed independently of the full git config so
+	// servers that do not use git write-back (no SSH_KEY_PATH) still start.
+	batchConfig, err := updater.NewBatchConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	statusUpdater := &argocd.ArgoStatusUpdater{}
+	err = statusUpdater.Init(*argo, argocd.ArgoStatusUpdaterConfig{
 		RetryAttempts:    serverConfig.GetRetryAttempts(),
 		RetryDelay:       argocd.ArgoSyncRetryDelay,
 		RegistryProxyURL: serverConfig.RegistryProxyUrl,
@@ -81,12 +89,14 @@ func NewServer(serverConfig *config.ServerConfig, reg prometheus.Registerer) (*S
 		WebhookConfig:    &serverConfig.Webhook,
 		MattermostConfig: &serverConfig.Mattermost,
 		Locker:           locker,
+		BatchWriteBack:   batchConfig.Enabled,
+		BatchMaxSize:     batchConfig.MaxSize,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize the argo updater: %w", err)
 	}
 
-	env, err := NewEnv(serverConfig, argo, metrics, updater)
+	env, err := NewEnv(serverConfig, argo, metrics, statusUpdater)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +117,7 @@ func NewServer(serverConfig *config.ServerConfig, reg prometheus.Registerer) (*S
 		config:      serverConfig,
 		argo:        argo,
 		metrics:     metrics,
-		updater:     updater,
+		updater:     statusUpdater,
 		env:         env,
 		probeCancel: probeCancel,
 	}, nil
@@ -167,6 +177,12 @@ func (s *Server) Run() {
 	// Now that the listener is closed, signal the WebSocket connection
 	// goroutines to stop and wait for them to finish.
 	s.env.Shutdown()
+
+	// Drain any in-flight batch write-backs so queued commits are not abandoned
+	// mid-flush. No-op when batch mode is disabled.
+	if s.updater != nil {
+		s.updater.Close()
+	}
 
 	slog.Info("server exited")
 }

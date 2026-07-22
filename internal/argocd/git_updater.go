@@ -18,15 +18,29 @@ type GitUpdater struct {
 	// metrics records lock-wait and write-back durations. May be nil in tests, in which
 	// case observation is skipped.
 	metrics prometheus.MetricsInterface
+	// batcher coalesces concurrent write-backs to the same repo into a single
+	// clone + push. When nil (the default) each app is written back on its own via
+	// the serialized per-repo-lock path.
+	batcher *Batcher
 }
 
 // NewGitUpdater creates a GitUpdater instance. metrics may be nil, in which case
-// duration observation is skipped.
-func NewGitUpdater(locker lock.Locker, repoCachePath string, metrics prometheus.MetricsInterface) *GitUpdater {
+// duration observation is skipped. batcher may be nil to use the serialized
+// single-app write-back path; when non-nil, write-backs are routed through it.
+func NewGitUpdater(locker lock.Locker, repoCachePath string, metrics prometheus.MetricsInterface, batcher *Batcher) *GitUpdater {
 	return &GitUpdater{
 		locker:        locker,
 		repoCachePath: repoCachePath,
 		metrics:       metrics,
+		batcher:       batcher,
+	}
+}
+
+// Close releases resources held by the updater, draining any in-flight batch
+// write-backs. It is a no-op when batching is disabled.
+func (gitUpdater *GitUpdater) Close() {
+	if gitUpdater.batcher != nil {
+		gitUpdater.batcher.Close()
 	}
 }
 
@@ -60,6 +74,13 @@ func (gitUpdater *GitUpdater) UpdateIfNeeded(app *models.Application, task model
 		return err
 	}
 
+	// Batch mode routes the write-back through the coalescing batcher instead of
+	// taking the per-repo lock directly. The batcher owns the lock, clone, commit,
+	// and push for the whole batch.
+	if gitUpdater.batcher != nil {
+		return gitUpdater.updateViaBatcher(app, &task, &gitopsRepo, isSuperseded...)
+	}
+
 	// Timed from just before the lock request so lock-wait captures the full queueing
 	// delay behind concurrent write-backs to the same repo, and the write-back timer
 	// captures only the work done once the lock is held.
@@ -78,6 +99,31 @@ func (gitUpdater *GitUpdater) UpdateIfNeeded(app *models.Application, task model
 		return err
 	}
 
+	return nil
+}
+
+// updateViaBatcher enqueues the write-back into the coalescing batcher and blocks
+// until the batch it is folded into has been flushed, returning that app's
+// individual outcome. task is passed by pointer; it stays alive for the duration
+// of this call, which does not return until the batcher delivers the result.
+func (gitUpdater *GitUpdater) updateViaBatcher(app *models.Application, task *models.Task, gitopsRepo *models.GitopsRepo, isSuperseded ...func() bool) error {
+	var supersededCheck func() bool
+	if len(isSuperseded) > 0 {
+		supersededCheck = isSuperseded[0]
+	}
+
+	req := &batchWriteRequest{
+		app:          app,
+		task:         task,
+		gitopsRepo:   gitopsRepo,
+		isSuperseded: supersededCheck,
+		resultCh:     make(chan error, 1),
+	}
+
+	if err := gitUpdater.batcher.Submit(req); err != nil {
+		slog.Error("Failed batch git repo update", "app", task.App, "error", err, "id", task.Id)
+		return err
+	}
 	return nil
 }
 

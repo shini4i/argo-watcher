@@ -189,6 +189,43 @@ See the [Installation](install.md#client-setup) guide for complete CI/CD pipelin
 !!! warning
     Argo Watcher uses the provided image tag value as-is, without validation. Ensure the tag is valid and corresponds to an image that exists in the registry.
 
+## Batch Write-Back
+
+By default, each application's write-back is serialized behind a per-repository lock: when many applications deploy to the **same** GitOps repository at once, each one clones, commits, and pushes on its own, one after another. Under heavy concurrency (for example, ten simultaneous deployments to a shared repo) this serialized tail can grow to minutes.
+
+Batch write-back is an **opt-in** mode that coalesces concurrent write-backs to the same repository into a single clone and a single push. Enable it with:
+
+```yaml
+extraEnvs:
+  - name: GIT_BATCH_WRITEBACK
+    value: "true"
+  - name: GIT_BATCH_MAX_SIZE   # optional, default 20
+    value: "20"
+```
+
+### How it works
+
+Batching is **contention-driven**, so it adds no latency when there is no contention:
+
+- A write-back for an **idle** repository flushes immediately, exactly as before.
+- Write-backs that arrive while a flush for the same repository is already in flight — cloning, pushing, or waiting on the lock — are queued and flushed **together** the moment the current flush completes.
+
+Each flush produces **one commit per application** (preserving per-app history and your `COMMIT_MESSAGE_FORMAT`), followed by a **single push**. `GIT_BATCH_MAX_SIZE` bounds how many applications are committed in one flush; anything beyond it is carried into the next flush.
+
+### Reliability
+
+Batching does not change the correctness guarantees of the write-back:
+
+- Each application writes its own override file (`.argocd-source-<app>.yaml`), so applications in a batch never conflict with each other.
+- A misconfigured application fails on its own without affecting the rest of the batch.
+- A deployment superseded by a newer one for the same app is dropped from the batch and never commits a stale tag.
+- If the push loses a race with an external commit, the whole batch re-clones onto the new remote tip, re-applies, and re-pushes — the same no-clobber recovery used by the serialized path.
+- The retry budget (`GIT_OP_TIMEOUT`, `GIT_MAX_ATTEMPTS`) applies to the batch as a whole.
+
+In a high-availability (multi-replica) deployment, each replica coalesces its own in-flight write-backs; the cross-replica Postgres advisory lock still serializes pushes between replicas, so correctness is unchanged.
+
+The `gitops_batch_size` metric records how many applications were coalesced into each flush — a distribution skewed toward `1` means little batching is happening (low contention).
+
 ## Deployment Locking
 
 Argo Watcher supports a deployment lock mechanism to prevent changes during maintenance windows or other critical periods. When a lock is active, all new deployment tasks are rejected.
