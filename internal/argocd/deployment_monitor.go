@@ -247,12 +247,8 @@ func (monitor *DeploymentMonitor) taskSuperseded(id string) bool {
 // the caller, keeping the outgoing failure notification in sync with the stored
 // status (mirroring handleDeploymentSuccess/handleDeploymentFailure).
 func (monitor *DeploymentMonitor) HandleArgoAPIFailure(task *models.Task, err error) {
+	monitor.argo.metrics.AddFailedDeployment(task.App)
 	finalStatus := determineFailureStatus(*task, err)
-	// An abort means ArgoCD was unreachable, not that the app failed; the
-	// ArgocdUnavailable metric covers that, so don't count it as a failure.
-	if finalStatus != models.StatusAborted {
-		monitor.argo.metrics.AddFailedDeployment(task.App)
-	}
 	reason := fmt.Sprintf(ArgoAPIErrorTemplate, err.Error())
 	slog.Warn("Deployment not completed", "status", finalStatus, "reason", reason, "id", task.Id)
 

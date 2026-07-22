@@ -27,7 +27,7 @@ A task in Argo Watcher moves through the following states:
 3. **Deployed** — Deployment succeeded; application is healthy and synced.
 4. **Failed** — Deployment did not become healthy and synced before `DEPLOYMENT_TIMEOUT` elapsed, or Argo CD reported a health/sync failure.
 5. **App Not Found** — Argo CD has no application with the requested name (or the token lacks permission to see it).
-6. **Aborted** — Argo CD (or a proxy in front of it) was unreachable during the check: connection refused, DNS failure, TLS error, a timed-out API request, or a 5xx response. The application's own state is unknown, so this is not counted as a deployment failure — `failed_deployment` is not incremented (see `argocd_unavailable` in [Observability](../operations/observability.md)).
+6. **Aborted** — Argo Watcher could not confirm the deployment's outcome: Argo CD (or a proxy in front of it) was unreachable during the check (connection refused, DNS failure, TLS error, a timed-out API request, or a 5xx response), or the task remained in progress past the staleness window. The status reason records the cause. An aborted deployment still counts as a failure (`failed_deployment`); the `argocd_unavailable` gauge indicates when Argo CD itself was the reason.
 7. **Cancelled** — Superseded by a newer deployment of one of the same images before reaching a final state; polling stops. Only in-progress tasks that share an image with the new deployment are cancelled, so independent per-image deployments of the same application do not cancel each other. Unlike Failed, a cancelled task is not counted as a deployment failure.
 
 ## Deployment Locking

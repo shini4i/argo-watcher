@@ -373,11 +373,10 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		}
 
 		// mock calls
-		// An abort must NOT increment AddFailedDeployment: ArgoCD being unreachable
-		// is not an application failure (the ArgocdUnavailable metric covers it).
 		unavailableErr := &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connect: connection refused")}
 		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(nil, unavailableErr)
 		metricsMock.EXPECT().AddInProgressTask()
+		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusAborted, "ArgoCD API Error: dial tcp: connect: connection refused")
 
@@ -736,10 +735,10 @@ func TestDeploymentMonitorHandleArgoAPIFailureHandlesStateError(t *testing.T) {
 	monitor.HandleArgoAPIFailure(&task, fmt.Errorf("boom"))
 }
 
-// TestDeploymentMonitorHandleArgoAPIFailureAbortSkipsFailureMetric verifies that an
-// unreachable-ArgoCD error is stored as aborted without incrementing the failure
-// metric (the strict mock fails if AddFailedDeployment is called).
-func TestDeploymentMonitorHandleArgoAPIFailureAbortSkipsFailureMetric(t *testing.T) {
+// TestDeploymentMonitorHandleArgoAPIFailureAbortCountsAsFailure verifies that an
+// unreachable-ArgoCD error is stored as aborted and still counted in the failure
+// metric, so the failed deployment stays visible regardless of cause.
+func TestDeploymentMonitorHandleArgoAPIFailureAbortCountsAsFailure(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -753,6 +752,7 @@ func TestDeploymentMonitorHandleArgoAPIFailureAbortSkipsFailureMetric(t *testing
 
 	task := models.Task{Id: "task-id", App: "demo"}
 
+	metrics.EXPECT().AddFailedDeployment(task.App)
 	state.EXPECT().SetTaskStatus(task.Id, models.StatusAborted, gomock.Any())
 
 	monitor.HandleArgoAPIFailure(&task, context.DeadlineExceeded)
