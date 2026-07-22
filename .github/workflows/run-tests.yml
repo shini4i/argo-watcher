@@ -141,7 +141,10 @@ jobs:
       - name: Run integration tests
         # SSH_KEY_PATH and GIT_TIMEOUT are set per-test via t.Setenv inside
         # setupGitea / each test function; no workflow-level env needed here.
-        run: go test -race -tags=integration -count=1 -timeout=5m ./internal/models/...
+        # internal/argocd holds the git write-back integration suite (push-race,
+        # shallow-clone, batch write-back); it moved there in #478 and must be
+        # listed explicitly or those tests silently never run.
+        run: go test -race -tags=integration -count=1 -timeout=10m ./internal/models/... ./internal/argocd/...
 
   frontend_test:
     name: Frontend Tests

@@ -147,8 +147,15 @@ func setupToxiproxy(t *testing.T) *toxiclient.Proxy {
 	t.Helper()
 	waitForToxiproxy(t, 30*time.Second)
 	cli := toxiclient.NewClient(toxiproxyAdmin)
-	// ResetState clears any stale proxies left by a previous test.
+	// ResetState only re-enables proxies and removes toxics — it does NOT delete
+	// proxies. A run interrupted before t.Cleanup leaves the "gitea-ssh" proxy
+	// behind, so CreateProxy would then fail with 409. Delete it explicitly first
+	// (ignore the error when it does not exist) to make the suite robust to a
+	// prior aborted run against the same (shared) toxiproxy container.
 	require.NoError(t, cli.ResetState())
+	if existing, err := cli.Proxy("gitea-ssh"); err == nil {
+		require.NoError(t, existing.Delete())
+	}
 	proxy, err := cli.CreateProxy("gitea-ssh", proxiedSSHListen, toxiproxyUpstrm)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = proxy.Delete() })
