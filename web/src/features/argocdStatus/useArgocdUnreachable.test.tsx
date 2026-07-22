@@ -15,6 +15,7 @@ vi.mock('./argocdStatusService', () => ({
 }));
 
 import { ArgocdStatusProvider } from './ArgocdStatusProvider';
+import type { ArgocdStatus } from './argocdStatusService';
 import { useArgocdUnreachable } from './useArgocdUnreachable';
 
 let subscribeMock: vi.Mock;
@@ -26,7 +27,7 @@ beforeAll(async () => {
 
 describe('useArgocdUnreachable', () => {
   it('reflects reachability updates from the service subscription', () => {
-    let listener: ((available: boolean) => void) | null = null;
+    let listener: ((status: ArgocdStatus) => void) | null = null;
     subscribeMock.mockImplementation(cb => {
       listener = cb;
       return () => undefined;
@@ -40,10 +41,10 @@ describe('useArgocdUnreachable', () => {
     // Available by default -> not unreachable.
     expect(result.current).toBe(false);
 
-    act(() => listener?.(false));
+    act(() => listener?.({ available: false, reason: 'argocd' }));
     expect(result.current).toBe(true);
 
-    act(() => listener?.(true));
+    act(() => listener?.({ available: true, reason: null }));
     expect(result.current).toBe(false);
   });
 });

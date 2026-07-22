@@ -54,7 +54,7 @@ task batch-writeback      # toggle GIT_BATCH_WRITEBACK on, re-run the contention
 task race                 # same-app supersession: a newer deploy must win over an older retrying one
 task state-postgres       # flip the release to Postgres state: assert migration, deploy loop, task survives a pod restart, supersession under contention
 task failure-diagnostics  # assert failure reasons carry the real cause (pod ImagePullBackOff, failed hooks)
-task argocd-unreachable   # scale ArgoCD down: assert /argocd-status flips + the watcher broadcasts "argocd_down" + POST fast-fails 503, then recovers
+task argocd-unreachable   # scale ArgoCD down: assert /reachability flips (reason "argocd") + the watcher broadcasts "argocd_down:argocd" + POST fast-fails 503, then recovers
 task shutdown-drain       # assert graceful shutdown drains in-flight WebSocket connections (GoingAway) with no race/panic
 task down                 # destroy the cluster
 ```
@@ -110,8 +110,8 @@ Reach any component with `kubectl port-forward` (there is no ingress), e.g.
 | `fixtures/proxy-app.yaml` | `proxyapp`: reuses the shared chart with the image repository overridden to `mirror.gcr.io/traefik/whoami` |
 | `scripts/lockdown.sh` | assert scheduled lockdown: toggles `LOCKDOWN_SCHEDULE` on the release (window opening ~3 min out) and reverts, asserting in-window deploys are rejected (406), `GET /deploy-lock` reports `true`, and the watcher broadcasts `"locked"` on the transition |
 | `scripts/shutdown-drain.sh` | assert graceful shutdown: hold WebSocket clients open, delete the pod, and assert every client sees a `1001 "server shutdown"` close and the logs show the ordered drain with no data race / panic / drain timeout |
-| `scripts/argocd-unreachable.sh` | assert the ArgoCD-unreachable signal (#498): scale `argocd-server` to 0, assert `GET /argocd-status` flips to `false`, the watcher broadcasts `"argocd_down"`, and `POST /tasks` fast-fails `503 {"status":"down"}` (well under the retry budget); then scale back up and assert recovery (`true`, `"argocd_up"`, `202`) |
-| `tools/wsprobe/` | tiny Go WebSocket probe used by `lockdown` (grep for the `"locked"` broadcast), `shutdown-drain` (assert the graceful GoingAway close), and `argocd-unreachable` (grep for `"argocd_down"`/`"argocd_up"`), streaming `MSG`/`CLOSED` events one per line |
+| `scripts/argocd-unreachable.sh` | assert the ArgoCD-unreachable signal (#498): scale `argocd-server` to 0, assert `GET /reachability` flips to `{"available":false,"reason":"argocd"}` (state backend stays up), the watcher broadcasts `"argocd_down:argocd"`, and `POST /tasks` fast-fails `503 {"status":"down"}` (well under the retry budget); then scale back up and assert recovery (`available:true`, `"argocd_up"`, `202`) |
+| `tools/wsprobe/` | tiny Go WebSocket probe used by `lockdown` (grep for the `"locked"` broadcast), `shutdown-drain` (assert the graceful GoingAway close), and `argocd-unreachable` (grep for `"argocd_down:argocd"`/`"argocd_up"`), streaming `MSG`/`CLOSED` events one per line |
 
 ## Gotchas (why the scripts exist)
 

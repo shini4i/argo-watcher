@@ -1,36 +1,54 @@
 import { Alert, Snackbar } from '@mui/material';
 import type { SxProps, Theme } from '@mui/material/styles';
-import { useArgocdUnreachable } from './useArgocdUnreachable';
+import { useArgocdStatus } from './ArgocdStatusProvider';
+import type { ArgocdUnavailableReason } from './argocdStatusService';
 
-// Anchored to the top so it does not overlap the bottom-anchored deploy-lock
-// banner when both are visible.
+// Anchored to the bottom for consistency with every other error surfaced by the
+// app. It shares this slot with the deploy-lock banner, which yields to it (see
+// DeployLockBanner), so the two never overlap.
 const snackbarPosition: SxProps<Theme> = theme => ({
   '&.MuiSnackbar-root': {
-    top: `calc(${theme.spacing(3)} + env(safe-area-inset-top))`,
+    bottom: `calc(${theme.spacing(3)} + env(safe-area-inset-bottom))`,
     zIndex: theme.zIndex.snackbar,
   },
 });
 
-/** Displays an error banner at the top of the viewport when ArgoCD is unreachable. */
-export const ArgocdUnreachableBanner = () => {
-  const unreachable = useArgocdUnreachable();
+/**
+ * Picks banner wording that names the exact unreachable subsystem. A null reason
+ * (legacy signal without a cause) falls back to naming both, matching the
+ * combined `both` message.
+ */
+const messageForReason = (reason: ArgocdUnavailableReason): string => {
+  switch (reason) {
+    case 'argocd':
+      return 'argo-watcher cannot reach ArgoCD — deployments are not being processed. Check argo-watcher and ArgoCD connectivity.';
+    case 'database':
+      return 'argo-watcher cannot reach its state backend (database) — deployments are not being processed. Check database connectivity.';
+    default:
+      return 'argo-watcher cannot reach ArgoCD or its state backend — deployments are not being processed. Check argo-watcher, ArgoCD, and database connectivity.';
+  }
+};
 
-  if (!unreachable) {
+/** Displays an error banner at the bottom of the viewport when ArgoCD or its state backend is unreachable. */
+export const ArgocdUnreachableBanner = () => {
+  const { available, reason } = useArgocdStatus();
+
+  // Gate on availability, not reason: a legacy down signal can leave reason null
+  // while still being a real outage, which must still show the (fallback) banner.
+  if (available) {
     return null;
   }
 
   return (
     <Snackbar
       open
-      anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       autoHideDuration={null}
       sx={snackbarPosition}
     >
       <Alert severity="error" variant="filled" sx={{ minWidth: 320, alignItems: 'center' }}>
         <output aria-live="assertive" style={{ display: 'block', width: '100%' }}>
-          {/* The underlying signal also trips when the state backend is down, so
-              the wording names both causes rather than blaming ArgoCD alone. */}
-          argo-watcher cannot reach ArgoCD or its state backend — deployments are not being processed. Check argo-watcher, ArgoCD, and database connectivity.
+          {messageForReason(reason)}
         </output>
       </Alert>
     </Snackbar>

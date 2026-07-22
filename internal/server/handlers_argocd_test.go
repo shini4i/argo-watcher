@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -18,7 +19,7 @@ import (
 )
 
 // TestArgoStatus verifies the read-only reachability endpoint reflects the
-// cached ArgoCD availability as a bare JSON boolean.
+// cached availability and names the unreachable subsystem in its JSON body.
 func TestArgoStatus(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctrl := gomock.NewController(t)
@@ -27,8 +28,8 @@ func TestArgoStatus(t *testing.T) {
 	serve := func(argo *argocd.Argo) *httptest.ResponseRecorder {
 		env := &Env{argo: argo}
 		router := gin.New()
-		router.GET("/api/v1/argocd-status", env.argoStatus)
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/argocd-status", nil)
+		router.GET("/api/v1/reachability", env.reachability)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/reachability", nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 		return w
@@ -41,12 +42,14 @@ func TestArgoStatus(t *testing.T) {
 		w := serve(argo)
 
 		assert.Equal(t, http.StatusOK, w.Code)
-		assert.Equal(t, "true", w.Body.String())
+		assert.JSONEq(t, `{"available":true}`, w.Body.String())
 	})
 
-	t.Run("reports unavailable after a failed check", func(t *testing.T) {
+	t.Run("reports unavailable and names the state backend after a failed check", func(t *testing.T) {
 		repo := mocks.NewMockTaskRepository(ctrl)
 		repo.EXPECT().Check().Return(false)
+		// ArgoCD stays reachable (newArgoAPI returns a logged-in user), so only
+		// the state backend is down and the reason must be "database".
 		argo := &argocd.Argo{}
 		argo.Init(repo, newArgoAPI(ctrl), newMetrics(ctrl))
 
@@ -56,7 +59,26 @@ func TestArgoStatus(t *testing.T) {
 		w := serve(argo)
 
 		assert.Equal(t, http.StatusOK, w.Code)
-		assert.Equal(t, "false", w.Body.String())
+		assert.JSONEq(t, `{"available":false,"reason":"database"}`, w.Body.String())
+	})
+
+	t.Run("reports unavailable and names ArgoCD after a failed login", func(t *testing.T) {
+		repo := mocks.NewMockTaskRepository(ctrl)
+		repo.EXPECT().Check().Return(true)
+		// State backend is up but ArgoCD login fails, so only ArgoCD is down and
+		// the reason must serialize as "argocd" at the HTTP layer.
+		api := mocks.NewMockArgoApiInterface(ctrl)
+		api.EXPECT().GetUserInfo().Return(nil, fmt.Errorf("login boom"))
+		argo := &argocd.Argo{}
+		argo.Init(repo, api, newMetrics(ctrl))
+
+		_, err := argo.Check()
+		assert.Error(t, err)
+
+		w := serve(argo)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.JSONEq(t, `{"available":false,"reason":"argocd"}`, w.Body.String())
 	})
 }
 
@@ -88,12 +110,12 @@ func TestArgoStatusEndpointRegistration(t *testing.T) {
 		return env.CreateRouter()
 	}
 
-	const statusPath = "/api/v1/argocd-status"
+	const statusPath = "/api/v1/reachability"
 
 	for _, keycloakEnabled := range []bool{false, true} {
 		routes := newRouter(t, keycloakEnabled).Routes()
 		assert.True(t, hasRoute(routes, http.MethodGet, statusPath),
-			"GET argocd-status must be registered regardless of Keycloak (enabled=%v)", keycloakEnabled)
+			"GET reachability must be registered regardless of Keycloak (enabled=%v)", keycloakEnabled)
 	}
 }
 
@@ -140,31 +162,44 @@ func TestWatchArgoTransitions(t *testing.T) {
 		}
 	}
 
-	t.Run("notifies on reachability transitions", func(t *testing.T) {
-		var available atomic.Bool
-		available.Store(true)
+	// reasonSource is a concurrency-safe string holder standing in for
+	// Argo.UnavailableReason; the watcher samples its load function.
+	newReasonSource := func(initial string) (*atomic.Value, func() string) {
+		var v atomic.Value
+		v.Store(initial)
+		return &v, func() string { return v.Load().(string) }
+	}
+
+	t.Run("notifies on reachability transitions and cause switches", func(t *testing.T) {
+		reason, load := newReasonSource(argocd.ReasonNone)
 		stop := make(chan struct{})
 		defer close(stop)
 
 		msgs := make(chan string, 4)
-		go watchArgoTransitions(stop, 5*time.Millisecond, available.Load, func(m string) { msgs <- m })
+		go watchArgoTransitions(stop, 5*time.Millisecond, load, func(m string) { msgs <- m })
 		time.Sleep(20 * time.Millisecond) // allow the watcher to capture its baseline
 
-		available.Store(false)
-		assert.Equal(t, argoDownMessage, recv(t, msgs))
+		// Reachable -> database down: down message carries the cause.
+		reason.Store(argocd.ReasonDatabase)
+		assert.Equal(t, argoDownMessage+":"+argocd.ReasonDatabase, recv(t, msgs))
 
-		available.Store(true)
+		// database down -> both down: a cause switch also pushes an update so the
+		// banner wording stays accurate.
+		reason.Store(argocd.ReasonBoth)
+		assert.Equal(t, argoDownMessage+":"+argocd.ReasonBoth, recv(t, msgs))
+
+		// Recovery clears the banner with the plain up message.
+		reason.Store(argocd.ReasonNone)
 		assert.Equal(t, argoUpMessage, recv(t, msgs))
 	})
 
 	t.Run("does not notify without a transition", func(t *testing.T) {
-		var available atomic.Bool
-		available.Store(true)
+		_, load := newReasonSource(argocd.ReasonNone)
 		stop := make(chan struct{})
 		defer close(stop)
 
 		msgs := make(chan string, 1)
-		go watchArgoTransitions(stop, 5*time.Millisecond, available.Load, func(m string) { msgs <- m })
+		go watchArgoTransitions(stop, 5*time.Millisecond, load, func(m string) { msgs <- m })
 
 		select {
 		case m := <-msgs:
@@ -175,13 +210,12 @@ func TestWatchArgoTransitions(t *testing.T) {
 	})
 
 	t.Run("stops when stop channel is closed", func(t *testing.T) {
-		var available atomic.Bool
-		available.Store(true)
+		_, load := newReasonSource(argocd.ReasonNone)
 		stop := make(chan struct{})
 		done := make(chan struct{})
 
 		go func() {
-			watchArgoTransitions(stop, 5*time.Millisecond, available.Load, func(string) {})
+			watchArgoTransitions(stop, 5*time.Millisecond, load, func(string) {})
 			close(done)
 		}()
 

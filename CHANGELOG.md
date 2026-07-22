@@ -17,6 +17,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   contention-driven, so it adds no latency when a repository is idle.
   `GIT_BATCH_MAX_SIZE` (default `20`) bounds how many applications are committed
   per flush, and the new `gitops_batch_size` metric reports how many were coalesced.
+- `state_unavailable` metric: `1` when argo-watcher cannot reach its state backend
+  (database), `0` otherwise. It tracks the state backend independently of ArgoCD.
+
+### Changed
+
+- The Web UI "unreachable" banner now names exactly which dependency is down —
+  ArgoCD, the state backend (database), or both — instead of always hedging with
+  "ArgoCD or its state backend". It is also anchored to the bottom of the page for
+  consistency with every other error; the deploy-lock banner yields to it when
+  both conditions apply.
+- The `argocd_unavailable` metric is now raised **only** for ArgoCD outages. A
+  state-backend (database) outage is reported by the new `state_unavailable`
+  metric instead — previously either outage raised `argocd_unavailable`.
+- **Breaking (frontend / polling API):** the read-only reachability endpoint moved
+  from `GET /api/v1/argocd-status` to `GET /api/v1/reachability` and now returns
+  `{"available":bool,"reason":"argocd"|"database"|"both"}` (`reason` omitted when
+  available) instead of a bare boolean. The WebSocket outage broadcast now carries
+  the cause as `argocd_down:<reason>`; recovery is still `argocd_up`.
 
 ### Fixed
 

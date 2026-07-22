@@ -239,7 +239,7 @@ tasks:
       - ./scripts/shutdown-drain.sh
 
   argocd-unreachable:
-    desc: "Assert the ArgoCD-unreachable signal (#498): scale ArgoCD down, assert /argocd-status flips + WS argocd_down + POST fast-fails 503, then recover"
+    desc: "Assert the ArgoCD-unreachable signal (#498): scale ArgoCD down, assert /reachability flips (reason argocd) + WS argocd_down:argocd + POST fast-fails 503, then recover"
     cmds:
       - ./scripts/argocd-unreachable.sh
 

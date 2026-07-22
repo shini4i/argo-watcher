@@ -53,11 +53,23 @@ func (env *Env) StartLockdownWatcher() {
 
 // WebSocket messages pushed when ArgoCD reachability changes. Clients treat
 // argoDownMessage as "show the unreachable banner" and argoUpMessage as "clear
-// it". Kept in sync with the frontend argocdStatus feature (issue #498).
+// it". A down message carries the cause as a suffix ("argocd_down:<reason>", see
+// argoStatusMessage) so the banner can name which subsystem is unreachable.
+// Kept in sync with the frontend argocdStatus feature (issue #498).
 const (
 	argoUpMessage   = "argocd_up"
 	argoDownMessage = "argocd_down"
 )
+
+// argoStatusMessage builds the WebSocket payload for a reachability reason:
+// argoUpMessage when everything is reachable, otherwise "argocd_down:<reason>"
+// so clients learn which subsystem is down (see argocd.Reason* constants).
+func argoStatusMessage(reason string) string {
+	if reason == argocd.ReasonNone {
+		return argoUpMessage
+	}
+	return argoDownMessage + ":" + reason
+}
 
 // argoWatchInterval is how often the ArgoCD-availability watcher samples the
 // cached reachability to detect a transition. The liveness probe refreshes that
@@ -70,42 +82,40 @@ const argoWatchInterval = 5 * time.Second
 // clients when ArgoCD reachability changes, so the frontend can show or hide the
 // "ArgoCD unreachable" banner (issue #498). The cached reachability is refreshed
 // by the liveness probe; this watcher only observes it and pushes transitions.
-// Clients connecting mid-outage learn the current state via the argocd-status
+// Clients connecting mid-outage learn the current state via the reachability
 // endpoint instead. The goroutine is tracked by connWg and stops when the
 // shutdown channel is closed.
 func (env *Env) StartArgoWatcher() {
 	env.connWg.Add(1)
 	go func() {
 		defer env.connWg.Done()
-		watchArgoTransitions(env.shutdownCh, argoWatchInterval, env.argo.IsAvailable, notifyWebSocketClients)
+		watchArgoTransitions(env.shutdownCh, argoWatchInterval, env.argo.UnavailableReason, notifyWebSocketClients)
 	}()
 }
 
-// watchArgoTransitions samples isAvailable on the given interval and invokes
-// notify with argoUpMessage/argoDownMessage whenever reachability changes. The
-// initial state is recorded without notifying, so only genuine transitions
-// produce a message. It runs until stop is closed. Dependencies are parameters
-// so the transition logic can be unit-tested in isolation.
-func watchArgoTransitions(stop <-chan struct{}, interval time.Duration, isAvailable func() bool, notify func(string)) {
+// watchArgoTransitions samples the unavailability reason on the given interval
+// and invokes notify with the matching payload (see argoStatusMessage) whenever
+// it changes. Sampling the reason rather than a bare boolean means a switch
+// between causes (e.g. database-only to both) also pushes an update, so the
+// banner wording stays accurate. The initial state is recorded without
+// notifying, so only genuine transitions produce a message. It runs until stop
+// is closed. Dependencies are parameters so the logic can be unit-tested.
+func watchArgoTransitions(stop <-chan struct{}, interval time.Duration, reason func() string, notify func(string)) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	last := isAvailable()
+	last := reason()
 	for {
 		select {
 		case <-stop:
 			return
 		case <-ticker.C:
-			current := isAvailable()
+			current := reason()
 			if current == last {
 				continue
 			}
 			last = current
-			if current {
-				notify(argoUpMessage)
-			} else {
-				notify(argoDownMessage)
-			}
+			notify(argoStatusMessage(current))
 		}
 	}
 }

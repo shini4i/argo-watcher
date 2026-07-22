@@ -30,6 +30,17 @@ var (
 // is an accepted simplification to keep the per-deployment lookup cheap.
 const rollbackHistoryWindow = 100
 
+// Unavailability reasons reported by Check and UnavailableReason. They identify
+// which subsystem is unreachable so the frontend banner can name the exact cause
+// (ArgoCD vs the state backend) instead of hedging with "one or the other". An
+// empty reason means everything is reachable.
+const (
+	ReasonNone     = ""         // Everything reachable.
+	ReasonArgoCD   = "argocd"   // ArgoCD API is unreachable or login failed.
+	ReasonDatabase = "database" // The state backend (database) is unreachable.
+	ReasonBoth     = "both"     // ArgoCD and the state backend are both unreachable.
+)
+
 const (
 	// ArgoAPIErrorTemplate is the template for ArgoCD API errors.
 	ArgoAPIErrorTemplate = "ArgoCD API Error: %s"
@@ -43,13 +54,15 @@ type Argo struct {
 	metrics prometheus.MetricsInterface
 	api     ArgoApiInterface
 	State   state.TaskRepository
-	// available caches the most recent ArgoCD reachability observed by Check so
-	// it can be read synchronously (IsAvailable) off any request path. The
-	// background liveness probe keeps it fresh; AddTask gates on it and the
-	// frontend "ArgoCD unreachable" banner is driven by it (issue #498). It is a
-	// pointer so the value copies of Argo held by the updater and deployment
-	// monitor (which never read it) stay freely copyable; Init allocates it.
-	available *atomic.Bool
+	// reason caches which subsystem, if any, was unreachable at the most recent
+	// Check so it can be read synchronously (IsAvailable / UnavailableReason) off
+	// any request path. An empty reason (ReasonNone) means everything is
+	// reachable. The background liveness probe keeps it fresh; AddTask gates on it
+	// and the frontend "unreachable" banner names the cause from it (issue #498).
+	// It is a pointer so the value copies of Argo held by the updater and
+	// deployment monitor (which never read it) stay freely copyable; Init
+	// allocates it. The stored value is always a string, so Load can assert it.
+	reason *atomic.Value
 }
 
 // Init initializes the Argo controller with its dependencies.
@@ -63,47 +76,69 @@ func (argo *Argo) Init(state state.TaskRepository, api ArgoApiInterface, metrics
 	// wolf), for the sub-second until the first probe runs. This optimistic
 	// default only briefly mis-reports during a genuine startup-time outage,
 	// which the liveness probe corrects within ~one probe cycle.
-	argo.available = &atomic.Bool{}
-	argo.available.Store(true)
+	argo.reason = &atomic.Value{}
+	argo.reason.Store(ReasonNone)
 }
 
-// Check performs a health check on ArgoCD and the state backend.
+// Check performs a health check on ArgoCD and the state backend. Both subsystems
+// are evaluated independently so a simultaneous outage is reported as
+// ReasonBoth rather than letting the database check mask an ArgoCD problem.
 func (argo *Argo) Check() (string, error) {
-	connectionActive := argo.State.Check()
+	databaseUp := argo.State.Check()
 	userLoggedIn, loginError := argo.api.GetUserInfo()
 
-	if !connectionActive {
-		argo.setAvailable(false)
+	// Resolve the ArgoCD side to a specific error (nil when reachable) before
+	// combining it with the database result.
+	var argoErr error
+	switch {
+	case loginError != nil:
+		argoErr = errors.New(models.StatusArgoCDUnavailableMessage)
+	case userLoggedIn == nil || !userLoggedIn.LoggedIn:
+		argoErr = errors.New(models.StatusArgoCDFailedLogin)
+	}
+
+	databaseDown := !databaseUp
+	argocdDown := argoErr != nil
+
+	switch {
+	case databaseDown && argocdDown:
+		argo.setReason(ReasonBoth)
+		return "down", fmt.Errorf("%s; %w", models.StatusConnectionUnavailable, argoErr)
+	case databaseDown:
+		argo.setReason(ReasonDatabase)
 		return "down", errors.New(models.StatusConnectionUnavailable)
+	case argocdDown:
+		argo.setReason(ReasonArgoCD)
+		return "down", argoErr
+	default:
+		argo.setReason(ReasonNone)
+		return "up", nil
 	}
-
-	if loginError != nil {
-		argo.setAvailable(false)
-		return "down", errors.New(models.StatusArgoCDUnavailableMessage)
-	}
-
-	if userLoggedIn == nil || !userLoggedIn.LoggedIn {
-		argo.setAvailable(false)
-		return "down", errors.New(models.StatusArgoCDFailedLogin)
-	}
-
-	argo.setAvailable(true)
-	return "up", nil
 }
 
-// setAvailable records the latest ArgoCD reachability in one place, keeping the
-// synchronously-readable cache (IsAvailable) and the argocd_unavailable gauge in
-// lockstep. The gauge tracks unavailability, so it is set to the negation.
-func (argo *Argo) setAvailable(available bool) {
-	argo.available.Store(available)
-	argo.metrics.SetArgoUnavailable(!available)
+// setReason records the latest unavailability cause in one place, keeping the
+// synchronously-readable cache (IsAvailable / UnavailableReason) and the two
+// per-subsystem gauges in lockstep. The gauges are independent: a state-backend
+// outage must NOT raise argocd_unavailable, and vice versa, so a ReasonBoth
+// raises both while a single-cause reason raises only its own.
+func (argo *Argo) setReason(reason string) {
+	argo.reason.Store(reason)
+	argo.metrics.SetArgoUnavailable(reason == ReasonArgoCD || reason == ReasonBoth)
+	argo.metrics.SetStateUnavailable(reason == ReasonDatabase || reason == ReasonBoth)
 }
 
-// IsAvailable reports the most recently observed ArgoCD reachability without
-// performing a live probe. The background liveness probe (StartLivenessProbe)
-// keeps this current, so reads never block on a live ArgoCD call.
+// IsAvailable reports whether everything was reachable at the most recent Check,
+// without performing a live probe. The background liveness probe
+// (StartLivenessProbe) keeps this current, so reads never block on a live call.
 func (argo *Argo) IsAvailable() bool {
-	return argo.available.Load()
+	return argo.UnavailableReason() == ReasonNone
+}
+
+// UnavailableReason reports which subsystem was unreachable at the most recent
+// Check (ReasonArgoCD or ReasonDatabase), or ReasonNone when everything was
+// reachable. It lets the frontend banner name the exact cause.
+func (argo *Argo) UnavailableReason() string {
+	return argo.reason.Load().(string)
 }
 
 // StartLivenessProbe periodically runs Check() so the argocd_unavailable metric

@@ -94,6 +94,31 @@ func TestMetrics_SetArgoUnavailable(t *testing.T) {
 	}
 }
 
+func TestMetrics_SetStateUnavailable(t *testing.T) {
+	testCases := []struct {
+		name          string
+		unavailable   bool
+		expectedValue float64
+	}{
+		{"Set to unavailable", true, 1},
+		{"Set to available", false, 0},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Arrange
+			reg := prometheus.NewRegistry()
+			m := NewMetrics(reg)
+
+			// Act
+			m.SetStateUnavailable(tc.unavailable)
+
+			// Assert
+			assert.Equal(t, tc.expectedValue, testutil.ToFloat64(m.StateUnavailable))
+		})
+	}
+}
+
 // histogramSampleForApp reads the sample count and sum recorded for a given app label
 // on a HistogramVec, so tests can assert the exact value that was observed.
 func histogramSampleForApp(t *testing.T, vec *prometheus.HistogramVec, app string) (count uint64, sum float64) {

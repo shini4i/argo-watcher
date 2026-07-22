@@ -1,9 +1,11 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { argocdStatusService } from './argocdStatusService';
+import { argocdStatusService, type ArgocdStatus, type ArgocdUnavailableReason } from './argocdStatusService';
 
 export interface ArgocdStatusContextValue {
-  /** True when argo-watcher can currently reach ArgoCD. */
+  /** True when argo-watcher can currently reach ArgoCD and its state backend. */
   available: boolean;
+  /** Which subsystem is unreachable when `available` is false; null otherwise. */
+  reason: ArgocdUnavailableReason;
 }
 
 const ArgocdStatusContext = createContext<ArgocdStatusContextValue | undefined>(undefined);
@@ -12,16 +14,19 @@ const ArgocdStatusContext = createContext<ArgocdStatusContextValue | undefined>(
 export const ArgocdStatusProvider = ({ children }: { children: ReactNode }) => {
   // Default to available so the banner never flashes before the initial fetch
   // resolves; the service corrects this within one round-trip.
-  const [available, setAvailable] = useState(true);
+  const [status, setStatus] = useState<ArgocdStatus>({ available: true, reason: null });
 
   useEffect(() => {
-    const unsubscribe = argocdStatusService.subscribe(status => {
-      setAvailable(status);
+    const unsubscribe = argocdStatusService.subscribe(next => {
+      setStatus(next);
     });
     return () => unsubscribe();
   }, []);
 
-  const value = useMemo<ArgocdStatusContextValue>(() => ({ available }), [available]);
+  const value = useMemo<ArgocdStatusContextValue>(
+    () => ({ available: status.available, reason: status.reason }),
+    [status],
+  );
 
   return <ArgocdStatusContext.Provider value={value}>{children}</ArgocdStatusContext.Provider>;
 };

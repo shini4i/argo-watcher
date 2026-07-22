@@ -1,25 +1,47 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('./useArgocdUnreachable', () => ({
-  useArgocdUnreachable: vi.fn(),
+vi.mock('./ArgocdStatusProvider', () => ({
+  useArgocdStatus: vi.fn(),
 }));
 
-import { useArgocdUnreachable } from './useArgocdUnreachable';
+import { useArgocdStatus } from './ArgocdStatusProvider';
 import { ArgocdUnreachableBanner } from './ArgocdUnreachableBanner';
 
+const mockStatus = (status: { available: boolean; reason: string | null }) => {
+  (useArgocdStatus as unknown as vi.Mock).mockReturnValue(status);
+};
+
 describe('ArgocdUnreachableBanner', () => {
-  it('renders banner when ArgoCD is unreachable', () => {
-    (useArgocdUnreachable as unknown as vi.Mock).mockReturnValue(true);
+  it('names ArgoCD when only ArgoCD is unreachable', () => {
+    mockStatus({ available: false, reason: 'argocd' });
     render(<ArgocdUnreachableBanner />);
-    // <output> has an implicit role of "status"; aria-live escalates urgency.
     const statusOutput = screen.getByRole('status');
     expect(statusOutput.tagName).toBe('OUTPUT');
     expect(statusOutput).toHaveAttribute('aria-live', 'assertive');
+    expect(statusOutput.textContent).toContain('cannot reach ArgoCD —');
   });
 
-  it('renders nothing when ArgoCD is reachable', () => {
-    (useArgocdUnreachable as unknown as vi.Mock).mockReturnValue(false);
+  it('names the state backend when only the database is unreachable', () => {
+    mockStatus({ available: false, reason: 'database' });
+    render(<ArgocdUnreachableBanner />);
+    expect(screen.getByRole('status').textContent).toContain('state backend (database)');
+  });
+
+  it('names both when both are unreachable', () => {
+    mockStatus({ available: false, reason: 'both' });
+    render(<ArgocdUnreachableBanner />);
+    expect(screen.getByRole('status').textContent).toContain('ArgoCD or its state backend');
+  });
+
+  it('falls back to naming both when the cause is unknown', () => {
+    mockStatus({ available: false, reason: null });
+    render(<ArgocdUnreachableBanner />);
+    expect(screen.getByRole('status').textContent).toContain('ArgoCD or its state backend');
+  });
+
+  it('renders nothing when everything is reachable', () => {
+    mockStatus({ available: true, reason: null });
     const { container } = render(<ArgocdUnreachableBanner />);
     expect(container).toBeEmptyDOMElement();
   });

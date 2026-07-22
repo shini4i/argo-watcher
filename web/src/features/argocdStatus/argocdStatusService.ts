@@ -3,19 +3,62 @@ import { resolveWebSocketUrl } from '../../data/webSocketUrl';
 import { getBrowserWindow } from '../../shared/utils';
 
 /**
- * Subscribed listener signature invoked whenever ArgoCD reachability changes.
- * `available` is true when argo-watcher can reach ArgoCD.
+ * Which subsystem argo-watcher cannot reach, when unavailable. Mirrors the
+ * backend argocd.Reason* constants (internal/argocd/argo.go); `null` means the
+ * cause is unknown (e.g. a legacy down message without a suffix).
  */
-export type ArgocdStatusListener = (available: boolean) => void;
+export type ArgocdUnavailableReason = 'argocd' | 'database' | 'both' | null;
+
+/**
+ * Reachability snapshot broadcast to subscribers. `available` is true when
+ * argo-watcher can reach both ArgoCD and its state backend; otherwise `reason`
+ * names the unreachable subsystem so the banner can be specific.
+ */
+export interface ArgocdStatus {
+  available: boolean;
+  reason: ArgocdUnavailableReason;
+}
+
+/** Subscribed listener signature invoked whenever reachability changes. */
+export type ArgocdStatusListener = (status: ArgocdStatus) => void;
+
+/** Shape of the /api/v1/reachability response body (reason omitted when up). */
+interface ArgocdStatusResponse {
+  available?: boolean;
+  reason?: string;
+}
 
 const WS_RETRY_DELAY_MS = 5000;
 
 /**
- * WebSocket messages the server pushes on reachability transitions. Kept in sync
+ * WebSocket messages the server pushes on reachability transitions. A down
+ * message may carry the cause as a suffix ("argocd_down:<reason>"). Kept in sync
  * with the backend (internal/server/env.go).
  */
 const ARGOCD_DOWN_MESSAGE = 'argocd_down';
 const ARGOCD_UP_MESSAGE = 'argocd_up';
+const ARGOCD_DOWN_PREFIX = `${ARGOCD_DOWN_MESSAGE}:`;
+
+/** Canonical "everything reachable" snapshot, reused to avoid re-allocation. */
+const AVAILABLE_STATUS: ArgocdStatus = { available: true, reason: null };
+
+/** Narrows an arbitrary reason string to a known ArgocdUnavailableReason. */
+const parseReason = (raw: string | undefined | null): ArgocdUnavailableReason => {
+  switch (raw) {
+    case 'argocd':
+    case 'database':
+    case 'both':
+      return raw;
+    default:
+      return null;
+  }
+};
+
+/** Builds a status snapshot from the reachability endpoint response body. */
+const toStatus = (data: ArgocdStatusResponse | null | undefined): ArgocdStatus =>
+  data?.available
+    ? AVAILABLE_STATUS
+    : { available: false, reason: parseReason(data?.reason) };
 
 /**
  * ArgocdStatusService mirrors the deploy-lock service for a different signal: it
@@ -25,7 +68,7 @@ const ARGOCD_UP_MESSAGE = 'argocd_up';
  * actions, unlike the deploy-lock service.
  */
 export class ArgocdStatusService {
-  private currentStatus: boolean | null = null;
+  private currentStatus: ArgocdStatus | null = null;
   private readonly listeners = new Set<ArgocdStatusListener>();
   private socket: WebSocket | null = null;
   private reconnectHandle: number | null = null;
@@ -46,16 +89,16 @@ export class ArgocdStatusService {
    * transition landed while it was in flight; otherwise it is dropped so REST/WS
    * ordering races cannot revert the banner to a stale value.
    */
-  public async fetchStatus(): Promise<boolean> {
+  public async fetchStatus(): Promise<ArgocdStatus> {
     const seq = ++this.fetchSeq;
     const wsGen = this.wsGeneration;
-    const response = await httpClient<boolean>('/api/v1/argocd-status');
-    const available = Boolean(response.data);
+    const response = await httpClient<ArgocdStatusResponse>('/api/v1/reachability');
+    const status = toStatus(response.data);
     if (seq !== this.fetchSeq || wsGen !== this.wsGeneration) {
-      return this.currentStatus ?? available;
+      return this.currentStatus ?? status;
     }
-    this.setStatus(available);
-    return available;
+    this.setStatus(status);
+    return status;
   }
 
   /**
@@ -84,11 +127,11 @@ export class ArgocdStatusService {
     };
   }
 
-  /** Broadcasts the new reachability to all subscribers. */
-  private setStatus(available: boolean) {
-    this.currentStatus = available;
+  /** Broadcasts the new reachability snapshot to all subscribers. */
+  private setStatus(status: ArgocdStatus) {
+    this.currentStatus = status;
     for (const listener of this.listeners) {
-      listener(available);
+      listener(status);
     }
   }
 
@@ -113,12 +156,15 @@ export class ArgocdStatusService {
 
     this.socket.onmessage = event => {
       const payload = typeof event.data === 'string' ? event.data : '';
-      if (payload === ARGOCD_DOWN_MESSAGE) {
+      if (payload === ARGOCD_UP_MESSAGE) {
         this.wsGeneration++;
-        this.setStatus(false);
-      } else if (payload === ARGOCD_UP_MESSAGE) {
+        this.setStatus(AVAILABLE_STATUS);
+      } else if (payload === ARGOCD_DOWN_MESSAGE || payload.startsWith(ARGOCD_DOWN_PREFIX)) {
         this.wsGeneration++;
-        this.setStatus(true);
+        const reason = payload.startsWith(ARGOCD_DOWN_PREFIX)
+          ? parseReason(payload.slice(ARGOCD_DOWN_PREFIX.length))
+          : null;
+        this.setStatus({ available: false, reason });
       }
     };
 

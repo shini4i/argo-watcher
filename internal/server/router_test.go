@@ -84,6 +84,7 @@ func newMetrics(ctrl *gomock.Controller) *mocks.MockMetricsInterface {
 	metrics.EXPECT().AddFailedDeployment(gomock.Any()).AnyTimes()
 	metrics.EXPECT().ResetFailedDeployment(gomock.Any()).AnyTimes()
 	metrics.EXPECT().SetArgoUnavailable(gomock.Any()).AnyTimes()
+	metrics.EXPECT().SetStateUnavailable(gomock.Any()).AnyTimes()
 	metrics.EXPECT().AddInProgressTask().AnyTimes()
 	metrics.EXPECT().RemoveInProgressTask().AnyTimes()
 	metrics.EXPECT().ObserveRefreshDuration(gomock.Any(), gomock.Any()).AnyTimes()

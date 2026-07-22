@@ -79,10 +79,11 @@ func (env *Env) CreateRouter() *gin.Engine {
 		v1.GET("/tasks/:id", env.getTaskStatus)
 		v1.GET("/version", env.getVersion)
 		v1.GET("/config", env.getConfig)
-		// Read-only ArgoCD reachability for the frontend "unreachable" banner
-		// (issue #498). Always registered: it exposes no privileged action and
-		// mirrors the cached liveness-probe state without a live probe.
-		v1.GET("/argocd-status", env.argoStatus)
+		// Read-only ArgoCD + state-backend reachability for the frontend
+		// "unreachable" banner (issue #498). Always registered: it exposes no
+		// privileged action and mirrors the cached liveness-probe state without a
+		// live probe.
+		v1.GET("/reachability", env.reachability)
 		// The state-changing deploy-lock endpoints are only registered when Keycloak
 		// is enabled: without an auth backend they cannot be protected, so exposing
 		// them would leave an unauthenticated deploy-freeze switch reachable by anyone

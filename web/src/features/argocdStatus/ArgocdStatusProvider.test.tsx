@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { ArgocdStatusProvider, useArgocdStatus } from './ArgocdStatusProvider';
-import { argocdStatusService } from './argocdStatusService';
+import { argocdStatusService, type ArgocdStatus } from './argocdStatusService';
 
 vi.mock('./argocdStatusService', () => ({
   argocdStatusService: {
@@ -11,7 +11,7 @@ vi.mock('./argocdStatusService', () => ({
 
 describe('ArgocdStatusProvider', () => {
   it('subscribes to the status service and updates state', async () => {
-    const listeners: Array<(state: boolean) => void> = [];
+    const listeners: Array<(status: ArgocdStatus) => void> = [];
     vi.mocked(argocdStatusService.subscribe).mockImplementation(listener => {
       listeners.push(listener);
       return () => {
@@ -28,13 +28,15 @@ describe('ArgocdStatusProvider', () => {
 
     // Optimistic default before the first update arrives.
     expect(result.current.available).toBe(true);
+    expect(result.current.reason).toBeNull();
 
     await act(async () => {
       for (const callback of listeners) {
-        callback(false);
+        callback({ available: false, reason: 'database' });
       }
     });
     await waitFor(() => expect(result.current.available).toBe(false));
+    expect(result.current.reason).toBe('database');
 
     unmount();
     expect(listeners).toHaveLength(0);
