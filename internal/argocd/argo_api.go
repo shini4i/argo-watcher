@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -132,23 +131,35 @@ func (api *ArgoApi) doGet(ctx context.Context, reqURL string) ([]byte, int, erro
 	return body, resp.StatusCode, nil
 }
 
-// parseArgoErrorResponse extracts an error from a non-200 ArgoCD API response body.
+// ArgoAPIError is a non-2xx HTTP response from the ArgoCD API. It carries the
+// status code so callers can tell a 5xx outage from a 4xx application error.
+// Error returns ArgoCD's message so IsAppNotFoundError keeps working.
+type ArgoAPIError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *ArgoAPIError) Error() string {
+	return e.Message
+}
+
+// parseArgoErrorResponse builds an *ArgoAPIError from a non-200 ArgoCD API response.
 // It checks the message field first, then the error field, and falls back to the raw body.
-func parseArgoErrorResponse(body []byte) error {
+func parseArgoErrorResponse(statusCode int, body []byte) error {
 	var argoErrorResponse models.ArgoApiErrorResponse
 	if err := json.Unmarshal(body, &argoErrorResponse); err != nil {
-		return fmt.Errorf("could not parse json error response: %s", body)
+		return &ArgoAPIError{StatusCode: statusCode, Message: fmt.Sprintf("could not parse json error response: %s", body)}
 	}
 
 	if argoErrorResponse.Message != "" {
-		return errors.New(argoErrorResponse.Message)
+		return &ArgoAPIError{StatusCode: statusCode, Message: argoErrorResponse.Message}
 	}
 
 	if argoErrorResponse.Error != "" {
-		return errors.New(argoErrorResponse.Error)
+		return &ArgoAPIError{StatusCode: statusCode, Message: argoErrorResponse.Error}
 	}
 
-	return fmt.Errorf("failed parsing argocd API response: %s", string(body))
+	return &ArgoAPIError{StatusCode: statusCode, Message: fmt.Sprintf("failed parsing argocd API response: %s", string(body))}
 }
 
 func (api *ArgoApi) GetUserInfo() (*models.Userinfo, error) {
@@ -160,7 +171,7 @@ func (api *ArgoApi) GetUserInfo() (*models.Userinfo, error) {
 	}
 
 	if statusCode != http.StatusOK {
-		return nil, parseArgoErrorResponse(body)
+		return nil, parseArgoErrorResponse(statusCode, body)
 	}
 
 	var userInfo models.Userinfo
@@ -188,7 +199,7 @@ func (api *ArgoApi) GetApplication(ctx context.Context, app string, refresh bool
 	}
 
 	if statusCode != http.StatusOK {
-		return nil, parseArgoErrorResponse(body)
+		return nil, parseArgoErrorResponse(statusCode, body)
 	}
 
 	var argoApp models.Application
@@ -216,7 +227,7 @@ func (api *ArgoApi) GetResourceTree(ctx context.Context, app string) (*models.Ap
 	}
 
 	if statusCode != http.StatusOK {
-		return nil, parseArgoErrorResponse(body)
+		return nil, parseArgoErrorResponse(statusCode, body)
 	}
 
 	var tree models.ApplicationTree

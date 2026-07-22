@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -371,11 +373,13 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		}
 
 		// mock calls
-		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(nil, fmt.Errorf(argoUnavailableErrorMessage))
+		// An abort must NOT increment AddFailedDeployment: ArgoCD being unreachable
+		// is not an application failure (the ArgocdUnavailable metric covers it).
+		unavailableErr := &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connect: connection refused")}
+		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(nil, unavailableErr)
 		metricsMock.EXPECT().AddInProgressTask()
-		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
-		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusAborted, "ArgoCD API Error: connect: connection refused")
+		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusAborted, "ArgoCD API Error: dial tcp: connect: connection refused")
 
 		// run the rollout
 		updater.WaitForRollout(task)
@@ -730,6 +734,29 @@ func TestDeploymentMonitorHandleArgoAPIFailureHandlesStateError(t *testing.T) {
 		Return(errors.New("persist failed"))
 
 	monitor.HandleArgoAPIFailure(&task, fmt.Errorf("boom"))
+}
+
+// TestDeploymentMonitorHandleArgoAPIFailureAbortSkipsFailureMetric verifies that an
+// unreachable-ArgoCD error is stored as aborted without incrementing the failure
+// metric (the strict mock fails if AddFailedDeployment is called).
+func TestDeploymentMonitorHandleArgoAPIFailureAbortSkipsFailureMetric(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	metrics := mocks.NewMockMetricsInterface(ctrl)
+	state := mocks.NewMockTaskRepository(ctrl)
+
+	monitor := NewDeploymentMonitor(Argo{
+		metrics: metrics,
+		State:   state,
+	}, "", []retry.Option{retry.DelayType(zeroDelay), retry.LastErrorOnly(true)}, false, time.Millisecond)
+
+	task := models.Task{Id: "task-id", App: "demo"}
+
+	state.EXPECT().SetTaskStatus(task.Id, models.StatusAborted, gomock.Any())
+
+	monitor.HandleArgoAPIFailure(&task, context.DeadlineExceeded)
+	assert.Equal(t, models.StatusAborted, task.Status)
 }
 
 func TestGitUpdaterUpdateIfNeeded(t *testing.T) {
@@ -1168,13 +1195,14 @@ func TestDeploymentMonitorWaitRolloutSurfacesErrorWhenNoFetchSucceeds(t *testing
 	)
 	task := models.Task{Id: "test-id", App: "demo", Timeout: 1}
 
+	unavailableErr := &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connect: connection refused")}
 	api.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).
-		Return(nil, errors.New(argoUnavailableErrorMessage)).MinTimes(1)
+		Return(nil, unavailableErr).MinTimes(1)
 
 	received, err := monitor.WaitRollout(task)
 	require.Error(t, err)
 	assert.Nil(t, received)
-	assert.Contains(t, err.Error(), argoUnavailableErrorMessage,
+	assert.ErrorIs(t, err, unavailableErr,
 		"the underlying cause must survive so determineFailureStatus can classify it")
 }
 
@@ -1765,4 +1793,40 @@ func TestDeploymentMonitorFetchApplicationNoRefresh(t *testing.T) {
 	app, err := monitor.FetchApplication(context.Background(), "demo", false)
 	require.NoError(t, err)
 	assert.Same(t, wantApp, app)
+}
+
+// TestDetermineFailureStatus verifies that unreachable-ArgoCD errors (transport
+// failures and 5xx responses) are classified as aborted, while genuine
+// application/API errors are classified as failed.
+func TestDetermineFailureStatus(t *testing.T) {
+	task := models.Task{App: "demo"}
+
+	// *net.OpError is the type net returns for a refused dial; constructing it keeps
+	// the table hermetic and fast.
+	connRefused := &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connect: connection refused")}
+
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"app not found", &ArgoAPIError{StatusCode: http.StatusNotFound, Message: `applications.argoproj.io "demo" not found`}, models.StatusAppNotFoundMessage},
+		{"permission denied", &ArgoAPIError{StatusCode: http.StatusForbidden, Message: "permission denied"}, models.StatusAppNotFoundMessage},
+		{"client timeout", context.DeadlineExceeded, models.StatusAborted},
+		{"context canceled", context.Canceled, models.StatusAborted},
+		{"connection refused", connRefused, models.StatusAborted},
+		{"dns failure", &net.DNSError{Err: "no such host", Name: "argocd.invalid", IsNotFound: true}, models.StatusAborted},
+		{"url.Error wrapping deadline", &url.Error{Op: "Get", URL: "https://argocd", Err: context.DeadlineExceeded}, models.StatusAborted},
+		{"argocd 503", &ArgoAPIError{StatusCode: http.StatusServiceUnavailable, Message: "upstream unavailable"}, models.StatusAborted},
+		{"argocd 500", &ArgoAPIError{StatusCode: http.StatusInternalServerError, Message: "internal error"}, models.StatusAborted},
+		{"wrapped argocd 503", fmt.Errorf("waiting for rollout: %w", &ArgoAPIError{StatusCode: http.StatusServiceUnavailable, Message: "upstream unavailable"}), models.StatusAborted},
+		{"argocd 400", &ArgoAPIError{StatusCode: http.StatusBadRequest, Message: "bad request"}, models.StatusFailedMessage},
+		{"generic error", errors.New("something else"), models.StatusFailedMessage},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, determineFailureStatus(task, tt.err))
+		})
+	}
 }

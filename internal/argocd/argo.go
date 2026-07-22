@@ -33,8 +33,6 @@ const rollbackHistoryWindow = 100
 const (
 	// ArgoAPIErrorTemplate is the template for ArgoCD API errors.
 	ArgoAPIErrorTemplate = "ArgoCD API Error: %s"
-	// argoUnavailableErrorMessage is the specific error message for a refused connection.
-	argoUnavailableErrorMessage = "connect: connection refused"
 	// supersededTaskReason is the status reason stored on a deployment that was
 	// cancelled because a newer deployment of the same image superseded it.
 	supersededTaskReason = "superseded by a newer deployment for the same image"

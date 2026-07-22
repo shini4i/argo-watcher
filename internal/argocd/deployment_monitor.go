@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"strings"
 	"time"
 
@@ -246,10 +247,14 @@ func (monitor *DeploymentMonitor) taskSuperseded(id string) bool {
 // the caller, keeping the outgoing failure notification in sync with the stored
 // status (mirroring handleDeploymentSuccess/handleDeploymentFailure).
 func (monitor *DeploymentMonitor) HandleArgoAPIFailure(task *models.Task, err error) {
-	monitor.argo.metrics.AddFailedDeployment(task.App)
 	finalStatus := determineFailureStatus(*task, err)
+	// An abort means ArgoCD was unreachable, not that the app failed; the
+	// ArgocdUnavailable metric covers that, so don't count it as a failure.
+	if finalStatus != models.StatusAborted {
+		monitor.argo.metrics.AddFailedDeployment(task.App)
+	}
 	reason := fmt.Sprintf(ArgoAPIErrorTemplate, err.Error())
-	slog.Warn("Deployment failed; aborting", "status", finalStatus, "reason", reason, "id", task.Id)
+	slog.Warn("Deployment not completed", "status", finalStatus, "reason", reason, "id", task.Id)
 
 	if err := monitor.argo.State.SetTaskStatus(task.Id, finalStatus, reason); err != nil {
 		slog.Error("Failed to change task status", "error", err, "id", task.Id)
@@ -336,8 +341,26 @@ func determineFailureStatus(task models.Task, err error) string {
 	if task.IsAppNotFoundError(err) {
 		return models.StatusAppNotFoundMessage
 	}
-	if strings.Contains(err.Error(), argoUnavailableErrorMessage) {
+	if isArgoUnavailable(err) {
 		return models.StatusAborted
 	}
 	return models.StatusFailedMessage
+}
+
+// isArgoUnavailable reports whether err means ArgoCD (or a proxy in front of it)
+// was unreachable, so the rollout is aborted rather than blamed on the app.
+func isArgoUnavailable(err error) bool {
+	// Transport failure (timeout, connection refused, DNS, TLS, reset): the HTTP
+	// client returns these as *url.Error, which implements net.Error.
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return true
+	}
+	// Context cancellation surfaced bare by the retry loop, not wrapped in url.Error.
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	// ArgoCD responded with a server error: the app state is unknown.
+	var apiErr *ArgoAPIError
+	return errors.As(err, &apiErr) && apiErr.StatusCode >= 500
 }

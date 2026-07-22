@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- A deployment is no longer counted in the `failed_deployment` metric when it is
+  aborted because Argo CD itself was unreachable; that case is tracked by
+  `argocd_unavailable` instead, so alerts built on `failed_deployment` no longer
+  fire on infrastructure outages.
+
+### Fixed
+
+- Deployments now report the `aborted` status (rather than `failed`) for the full
+  range of Argo CD connectivity failures — request timeouts, DNS and TLS errors,
+  and `5xx` responses from Argo CD or a proxy in front of it — not only a refused
+  TCP connection. Previously these transient outages were misrecorded as
+  application deployment failures.
+
 ## [0.12.2] - 2026-07-21
 
 ### Added

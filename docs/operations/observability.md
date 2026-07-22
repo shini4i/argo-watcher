@@ -16,7 +16,7 @@ The server emits eight metrics today, all defined in [`internal/prometheus/metri
 
 | Metric | Type | Labels | Description |
 |---|---|---|---|
-| `failed_deployment` | gauge | `app` | Per-application failed deployment count since the last success. Reset to 0 when an application deploys successfully. |
+| `failed_deployment` | gauge | `app` | Per-application failed deployment count since the last success. Reset to 0 when an application deploys successfully. Deployments aborted because Argo CD itself was unreachable (connection refused, timeout, DNS/TLS failure, or a 5xx response) are excluded — those are tracked via `argocd_unavailable` instead. |
 | `processed_deployments` | counter | `app` | Total deployments processed since server startup, per application. |
 | `argocd_unavailable` | gauge | (none) | `1` when Argo Watcher cannot reach the Argo CD API, `0` otherwise. The same cached state drives the Web UI's "ArgoCD unreachable" banner and is exposed as a plain boolean via `GET /api/v1/argocd-status` for external polling. |
 | `in_progress_tasks` | gauge | (none) | Number of tasks currently in progress (between submission and terminal state). |

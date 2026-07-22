@@ -535,11 +535,12 @@ func TestArgoApiGetApplicationErrors(t *testing.T) {
 	require.NoError(t, err)
 
 	testCases := []struct {
-		name    string
-		api     *ArgoApi
-		setup   func(t *testing.T, api *ArgoApi)
-		wantErr bool
-		wantMsg string
+		name           string
+		api            *ArgoApi
+		setup          func(t *testing.T, api *ArgoApi)
+		wantErr        bool
+		wantMsg        string
+		wantStatusCode int
 	}{
 		{
 			name: "requestCreationError",
@@ -625,8 +626,28 @@ func TestArgoApiGetApplicationErrors(t *testing.T) {
 				}
 				return a
 			}(),
-			wantErr: true,
-			wantMsg: "boom",
+			wantErr:        true,
+			wantMsg:        "boom",
+			wantStatusCode: http.StatusBadRequest,
+		},
+		{
+			name: "non200ServiceUnavailable",
+			api: func() *ArgoApi {
+				a := NewArgoApi()
+				a.baseUrl = *baseURL
+				a.client = &http.Client{
+					Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+						return &http.Response{
+							StatusCode: http.StatusServiceUnavailable,
+							Body:       &stubBody{data: []byte(`upstream unavailable`)},
+							Header:     make(http.Header),
+						}, nil
+					}),
+				}
+				return a
+			}(),
+			wantErr:        true,
+			wantStatusCode: http.StatusServiceUnavailable,
 		},
 		{
 			name: "non200WithInvalidJSON",
@@ -662,8 +683,9 @@ func TestArgoApiGetApplicationErrors(t *testing.T) {
 				}
 				return a
 			}(),
-			wantErr: true,
-			wantMsg: "permission denied",
+			wantErr:        true,
+			wantMsg:        "permission denied",
+			wantStatusCode: http.StatusForbidden,
 		},
 		{
 			name: "non200WithEmptyMessage",
@@ -720,6 +742,11 @@ func TestArgoApiGetApplicationErrors(t *testing.T) {
 				assert.Nil(t, app)
 				if tc.wantMsg != "" {
 					assert.EqualError(t, err, tc.wantMsg)
+				}
+				if tc.wantStatusCode != 0 {
+					var apiErr *ArgoAPIError
+					require.ErrorAs(t, err, &apiErr)
+					assert.Equal(t, tc.wantStatusCode, apiErr.StatusCode)
 				}
 			} else {
 				assert.NoError(t, err)
