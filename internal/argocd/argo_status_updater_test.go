@@ -782,7 +782,7 @@ func TestGitUpdaterUpdateIfNeeded(t *testing.T) {
 
 	t.Run("skipsWhenAppNotManaged", func(t *testing.T) {
 		locker := &spyLocker{}
-		updater := NewGitUpdater(locker, "/tmp/cache", nil)
+		updater := NewGitUpdater(locker, "/tmp/cache", nil, nil)
 		err := updater.UpdateIfNeeded(makeApp(false), validTask)
 		assert.NoError(t, err)
 		assert.False(t, locker.called)
@@ -790,7 +790,7 @@ func TestGitUpdaterUpdateIfNeeded(t *testing.T) {
 
 	t.Run("skipsWhenTaskNotValidated", func(t *testing.T) {
 		locker := &spyLocker{}
-		updater := NewGitUpdater(locker, "/tmp/cache", nil)
+		updater := NewGitUpdater(locker, "/tmp/cache", nil, nil)
 		task := validTask
 		task.Validated = false
 		err := updater.UpdateIfNeeded(makeApp(true), task)
@@ -800,7 +800,7 @@ func TestGitUpdaterUpdateIfNeeded(t *testing.T) {
 
 	t.Run("failsWhenRepoInvalid", func(t *testing.T) {
 		locker := &spyLocker{}
-		updater := NewGitUpdater(locker, "/tmp/cache", nil)
+		updater := NewGitUpdater(locker, "/tmp/cache", nil, nil)
 		app := makeApp(true)
 		app.Spec.Source.RepoURL = ""
 
@@ -811,7 +811,7 @@ func TestGitUpdaterUpdateIfNeeded(t *testing.T) {
 
 	t.Run("returnsLockerError", func(t *testing.T) {
 		locker := &spyLocker{err: errors.New("lock failed")}
-		updater := NewGitUpdater(locker, "/tmp/cache", nil)
+		updater := NewGitUpdater(locker, "/tmp/cache", nil, nil)
 
 		err := updater.UpdateIfNeeded(makeApp(true), validTask)
 		assert.EqualError(t, err, "lock failed")
@@ -820,7 +820,7 @@ func TestGitUpdaterUpdateIfNeeded(t *testing.T) {
 
 	t.Run("propagatesUpdateError", func(t *testing.T) {
 		locker := &spyLocker{}
-		updater := NewGitUpdater(locker, "/tmp/cache", nil)
+		updater := NewGitUpdater(locker, "/tmp/cache", nil, nil)
 		app := makeApp(true)
 		app.Metadata.Annotations["argo-watcher/managed-images"] = "broken"
 
@@ -831,7 +831,7 @@ func TestGitUpdaterUpdateIfNeeded(t *testing.T) {
 
 	t.Run("succeedsWhenNoUpdateNeeded", func(t *testing.T) {
 		locker := &spyLocker{}
-		updater := NewGitUpdater(locker, "/tmp/cache", nil)
+		updater := NewGitUpdater(locker, "/tmp/cache", nil, nil)
 
 		err := updater.UpdateIfNeeded(makeApp(true), validTask)
 		assert.NoError(t, err)
@@ -846,7 +846,7 @@ func TestGitUpdaterUpdateIfNeeded(t *testing.T) {
 		metrics.EXPECT().ObserveGitWritebackDuration(validTask.App, gomock.Any()).Times(1)
 
 		locker := &spyLocker{}
-		updater := NewGitUpdater(locker, "/tmp/cache", metrics)
+		updater := NewGitUpdater(locker, "/tmp/cache", metrics, nil)
 
 		err := updater.UpdateIfNeeded(makeApp(true), validTask)
 		assert.NoError(t, err)
@@ -860,7 +860,7 @@ func TestGitUpdaterUpdateIfNeeded(t *testing.T) {
 		metrics := mocks.NewMockMetricsInterface(ctrl)
 
 		locker := &spyLocker{err: errors.New("lock failed")}
-		updater := NewGitUpdater(locker, "/tmp/cache", metrics)
+		updater := NewGitUpdater(locker, "/tmp/cache", metrics, nil)
 
 		err := updater.UpdateIfNeeded(makeApp(true), validTask)
 		assert.EqualError(t, err, "lock failed")
@@ -877,13 +877,50 @@ func TestGitUpdaterUpdateIfNeeded(t *testing.T) {
 		metrics.EXPECT().ObserveGitWritebackDuration(validTask.App, gomock.Any()).Times(1)
 
 		locker := &spyLocker{}
-		updater := NewGitUpdater(locker, "/tmp/cache", metrics)
+		updater := NewGitUpdater(locker, "/tmp/cache", metrics, nil)
 		app := makeApp(true)
 		app.Metadata.Annotations["argo-watcher/managed-images"] = "broken"
 
 		err := updater.UpdateIfNeeded(app, validTask)
 		assert.Error(t, err)
 		assert.True(t, locker.called)
+	})
+
+	t.Run("routesThroughBatcherWhenEnabled", func(t *testing.T) {
+		// With a batcher configured, UpdateIfNeeded must enqueue the request and
+		// return that app's individual outcome — not take the per-repo lock itself.
+		locker := &spyLocker{}
+		batcher := NewBatcher(locker, "/tmp/cache", 20, nil)
+
+		var captured *batchWriteRequest
+		wantErr := errors.New("batched write-back failed")
+		batcher.flushFn = func(batch []*batchWriteRequest) {
+			for _, req := range batch {
+				captured = req
+				req.resultCh <- wantErr
+			}
+		}
+
+		updater := NewGitUpdater(locker, "/tmp/cache", nil, batcher)
+		err := updater.UpdateIfNeeded(makeApp(true), validTask)
+
+		assert.ErrorIs(t, err, wantErr, "batch outcome must propagate to the caller")
+		require.NotNil(t, captured, "request must reach the batcher")
+		assert.Equal(t, validTask.Id, captured.task.Id)
+		assert.False(t, locker.called, "batch mode must not take the per-repo lock directly")
+	})
+
+	t.Run("batcherSuccessReturnsNil", func(t *testing.T) {
+		locker := &spyLocker{}
+		batcher := NewBatcher(locker, "/tmp/cache", 20, nil)
+		batcher.flushFn = func(batch []*batchWriteRequest) {
+			for _, req := range batch {
+				req.resultCh <- nil
+			}
+		}
+
+		updater := NewGitUpdater(locker, "/tmp/cache", nil, batcher)
+		assert.NoError(t, updater.UpdateIfNeeded(makeApp(true), validTask))
 	})
 }
 
@@ -897,7 +934,7 @@ func TestGitUpdaterUpdateGitRepo(t *testing.T) {
 	repo := &models.GitopsRepo{Path: "some/path"}
 
 	t.Run("returnsNilWhenNoOverrides", func(t *testing.T) {
-		updater := NewGitUpdater(lock.NewInMemoryLocker(), "/tmp/cache", nil)
+		updater := NewGitUpdater(lock.NewInMemoryLocker(), "/tmp/cache", nil, nil)
 		app := &models.Application{}
 		app.Metadata.Annotations = map[string]string{"argo-watcher/managed": "true"}
 
@@ -906,7 +943,7 @@ func TestGitUpdaterUpdateGitRepo(t *testing.T) {
 	})
 
 	t.Run("propagatesOverrideError", func(t *testing.T) {
-		updater := NewGitUpdater(lock.NewInMemoryLocker(), "/tmp/cache", nil)
+		updater := NewGitUpdater(lock.NewInMemoryLocker(), "/tmp/cache", nil, nil)
 		app := &models.Application{}
 		app.Metadata.Annotations = map[string]string{
 			"argo-watcher/managed":        "true",

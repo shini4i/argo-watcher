@@ -17,6 +17,7 @@ type MetricsInterface interface {
 	ObserveGitWritebackDuration(app string, seconds float64)
 	ObserveGitLockWaitDuration(app string, seconds float64)
 	ObserveDeploymentDuration(app string, seconds float64)
+	ObserveGitBatchSize(size int)
 }
 
 // Metrics contains all the prometheus collectors.
@@ -29,6 +30,7 @@ type Metrics struct {
 	GitWritebackDuration *prometheus.HistogramVec
 	GitLockWaitDuration  *prometheus.HistogramVec
 	DeploymentDuration   *prometheus.HistogramVec
+	GitBatchSize         prometheus.Histogram
 }
 
 // NewMetrics creates and registers the metrics with the provided Registerer.
@@ -85,9 +87,19 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 			Help:    "Wall-clock time a successful deployment took, from the start of monitoring until the app reached the deployed state.",
 			Buckets: []float64{1, 2.5, 5, 10, 30, 60, 120, 300, 600},
 		}, []string{"app"}),
+		// GitBatchSize records how many applications were coalesced into a single
+		// batch write-back flush (one clone + one push). It is only observed when
+		// batch mode is enabled; a distribution skewed toward 1 means little
+		// coalescing is happening (low contention), while higher values show the
+		// batcher collapsing concurrent write-backs to the same repo.
+		GitBatchSize: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Name:    "gitops_batch_size",
+			Help:    "Number of applications committed in a single batch write-back flush.",
+			Buckets: []float64{1, 2, 5, 10, 20, 50, 100},
+		}),
 	}
 
-	reg.MustRegister(m.FailedDeployment, m.ProcessedDeployments, m.ArgocdUnavailable, m.InProgressTasks, m.RefreshDuration, m.GitWritebackDuration, m.GitLockWaitDuration, m.DeploymentDuration)
+	reg.MustRegister(m.FailedDeployment, m.ProcessedDeployments, m.ArgocdUnavailable, m.InProgressTasks, m.RefreshDuration, m.GitWritebackDuration, m.GitLockWaitDuration, m.DeploymentDuration, m.GitBatchSize)
 
 	return m
 }
@@ -147,4 +159,10 @@ func (m *Metrics) ObserveGitLockWaitDuration(app string, seconds float64) {
 // measured from the start of rollout monitoring until the app reached the deployed state.
 func (m *Metrics) ObserveDeploymentDuration(app string, seconds float64) {
 	m.DeploymentDuration.WithLabelValues(app).Observe(seconds)
+}
+
+// ObserveGitBatchSize records how many applications were coalesced into a single
+// batch write-back flush.
+func (m *Metrics) ObserveGitBatchSize(size int) {
+	m.GitBatchSize.Observe(float64(size))
 }

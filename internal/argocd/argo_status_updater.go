@@ -34,6 +34,10 @@ type ArgoStatusUpdaterConfig struct {
 	WebhookConfig    *config.WebhookConfig
 	MattermostConfig *config.MattermostConfig
 	Locker           lock.Locker
+	// BatchWriteBack enables the contention-coalescing batch write-back mode.
+	BatchWriteBack bool
+	// BatchMaxSize bounds the number of apps committed in a single batch flush.
+	BatchMaxSize uint
 }
 
 // Init initializes the ArgoStatusUpdater with the provided configuration
@@ -50,7 +54,13 @@ func (updater *ArgoStatusUpdater) Init(argo Argo, cfg ArgoStatusUpdaterConfig) e
 	updater.monitor = NewDeploymentMonitor(argo, cfg.RegistryProxyURL, retryOptions, cfg.AcceptSuspended, cfg.RetryDelay)
 	updater.monitor.defaultAttempts = cfg.RetryAttempts
 	updater.monitor.refreshApp = cfg.RefreshApp
-	updater.gitUpdater = NewGitUpdater(cfg.Locker, cfg.RepoCachePath, argo.metrics)
+
+	var batcher *Batcher
+	if cfg.BatchWriteBack {
+		batcher = NewBatcher(cfg.Locker, cfg.RepoCachePath, cfg.BatchMaxSize, argo.metrics)
+		slog.Info("Git write-back batch mode enabled", "max_batch_size", cfg.BatchMaxSize)
+	}
+	updater.gitUpdater = NewGitUpdater(cfg.Locker, cfg.RepoCachePath, argo.metrics, batcher)
 
 	var strategies []notifications.NotificationStrategy
 
@@ -82,6 +92,15 @@ func (updater *ArgoStatusUpdater) Init(argo Argo, cfg ArgoStatusUpdaterConfig) e
 
 	updater.notifier = notifications.NewNotifier(strategies...)
 	return nil
+}
+
+// Close releases resources held by the updater, draining any in-flight batch
+// write-backs (bounded by ctx) so a graceful shutdown does not abandon queued
+// commits nor overrun its deadline. It is a no-op when batching is disabled.
+func (updater *ArgoStatusUpdater) Close(ctx context.Context) {
+	if updater.gitUpdater != nil {
+		updater.gitUpdater.Close(ctx)
+	}
 }
 
 // WaitForRollout is the main entry point for tracking an application deployment

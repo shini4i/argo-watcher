@@ -27,7 +27,7 @@ the competitor writer. All pinned tool/chart versions are in `Taskfile.yml`.
 ## Usage
 
 ```sh
-task e2e     # one-shot per-release run: up → api-surface → smoke → client-knobs → jwt-auth → fire-and-forget → commit-format → multi-image → accept-suspended → docker-proxy → lockdown → notifications → load → race → state-postgres → failure-diagnostics → argocd-unreachable → shutdown-drain → down
+task e2e     # one-shot per-release run: up → api-surface → smoke → client-knobs → jwt-auth → fire-and-forget → commit-format → multi-image → accept-suspended → docker-proxy → lockdown → notifications → load → batch-writeback → race → state-postgres → failure-diagnostics → argocd-unreachable → shutdown-drain → down
 ```
 
 `task e2e` walks the whole flow. It stops on the first failing step, so a failed
@@ -50,6 +50,7 @@ task docker-proxy         # assert DOCKER_IMAGES_PROXY matches a bare image name
 task lockdown             # assert LOCKDOWN_SCHEDULE freezes deploys in-window (406) and the watcher broadcasts "locked"
 task notifications        # assert the generic webhook fires (start + result) with the correct payload
 task load                 # git-conflict soak: competitor + concurrent deploys, strict 0-failed
+task batch-writeback      # toggle GIT_BATCH_WRITEBACK on, re-run the contention soak: assert 0 lost updates + real coalescing (mean batch size > 1), then revert
 task race                 # same-app supersession: a newer deploy must win over an older retrying one
 task state-postgres       # flip the release to Postgres state: assert migration, deploy loop, task survives a pod restart, supersession under contention
 task failure-diagnostics  # assert failure reasons carry the real cause (pod ImagePullBackOff, failed hooks)
@@ -59,7 +60,8 @@ task down                 # destroy the cluster
 ```
 
 Tunable soak knobs are `Taskfile.yml` vars (`APPS`, `WORKERS`, `WS_CLIENTS`,
-`SOAK`, `SOAK_SECONDS`, `COMPETITOR_INTERVAL`), overridable on the CLI, e.g.
+`SOAK`, `SOAK_SECONDS`, `COMPETITOR_INTERVAL`, plus `BATCH_SOAK` / `BATCH_SOAK_SECONDS`
+for the batch-writeback phase), overridable on the CLI, e.g.
 `task e2e SOAK=10m WORKERS=20`.
 
 ## CI
@@ -87,6 +89,7 @@ Reach any component with `kubectl port-forward` (there is no ingress), e.g.
 | `scripts/failure-diagnostics.sh` | table-driven failure-reason assertions, driven through the real client (add a case = one table entry) |
 | `scripts/race-supersede.sh` | same-app supersession assertion: real client, newer deploy wins, older is superseded |
 | `scripts/state-postgres.sh` | flip the release to `STATE_TYPE=postgres` and assert the Postgres-only path: schema migration Job, real deploy loop, task history surviving a pod restart (in-memory loses it), and supersession under contention (the hand-written `CancelInProgressTasks` SQL) |
+| `scripts/batch-writeback.sh` | toggle `GIT_BATCH_WRITEBACK=true` on the release, re-run the contention soak, and revert; reuses `collect.sh` (with `BATCH_MODE`) to gate on zero lost updates and real coalescing (`gitops_batch_size` mean > 1) |
 | `fixtures/postgres/` | in-cluster Postgres (Secret + Service + StatefulSet, one resource per file) the `state-postgres` phase points the release at; the chart bundles no database |
 | `values/argo-watcher-postgres.yaml` | overlay layered over `values/argo-watcher.yaml` that enables `postgres` (sets `STATE_TYPE=postgres`, wires `DB_*`, triggers the migration Job) |
 | `scripts/hook-fixture.sh` | add/remove a failing PreSync hook via the chart's `rawObject` |

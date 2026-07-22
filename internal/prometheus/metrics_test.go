@@ -133,6 +133,22 @@ func TestMetrics_ObserveGitLockWaitDuration(t *testing.T) {
 	assert.Equal(t, float64(12), sum)
 }
 
+func TestMetrics_ObserveGitBatchSize(t *testing.T) {
+	// Arrange
+	reg := prometheus.NewRegistry()
+	m := NewMetrics(reg)
+
+	// Act
+	m.ObserveGitBatchSize(3)
+
+	// Assert: exactly one observation of value 3. GitBatchSize is a plain
+	// Histogram (no per-app label), so read it directly rather than via a Vec.
+	var metric dto.Metric
+	require.NoError(t, m.GitBatchSize.Write(&metric))
+	assert.Equal(t, uint64(1), metric.GetHistogram().GetSampleCount())
+	assert.Equal(t, float64(3), metric.GetHistogram().GetSampleSum())
+}
+
 func TestMetrics_ObserveDeploymentDuration(t *testing.T) {
 	// Arrange
 	reg := prometheus.NewRegistry()

@@ -12,7 +12,7 @@ scrape_configs:
 
 ## Exposed metrics
 
-The server emits eight metrics today, all defined in [`internal/prometheus/metrics.go`](https://github.com/shini4i/argo-watcher/blob/main/internal/prometheus/metrics.go).
+The server emits nine metrics today, all defined in [`internal/prometheus/metrics.go`](https://github.com/shini4i/argo-watcher/blob/main/internal/prometheus/metrics.go).
 
 | Metric | Type | Labels | Description |
 |---|---|---|---|
@@ -24,6 +24,7 @@ The server emits eight metrics today, all defined in [`internal/prometheus/metri
 | `gitops_writeback_duration_seconds` | histogram | `app` | Time the git write-back held the per-repo lock, covering the clone/commit/push cycle plus any retries and backoff. |
 | `gitops_lock_wait_duration_seconds` | histogram | `app` | Time spent waiting to acquire the per-repository git write-back lock. High values mean tasks are queued behind concurrent write-backs to the same repo. |
 | `deployment_duration_seconds` | histogram | `app` | End-to-end wall-clock time of a successful deployment, from the start of rollout monitoring until the app reached the deployed state. Only successful deployments are observed (a failure's duration is dominated by the timeout). |
+| `gitops_batch_size` | histogram | (none) | Number of applications coalesced into a single batch write-back flush. Only observed when `GIT_BATCH_WRITEBACK` is enabled; a distribution skewed toward 1 means little batching is happening (low contention). See the [GitOps Updater](../guides/gitops-updater.md#batch-write-back) guide. |
 
 In addition, the standard Go runtime metrics from the Prometheus client library are exposed (`go_*`, `process_*`).
 
@@ -100,8 +101,9 @@ groups:
 
 A ready-made Grafana dashboard lives in the repository at
 [`monitoring/grafana/dashboards/argo-watcher.json`](https://github.com/shini4i/argo-watcher/blob/main/monitoring/grafana/dashboards/argo-watcher.json).
-It has an **Overview** row that illustrates every exposed metric in aggregate
-(availability, in-progress tasks, deployment counts, failing apps) and a
+It has an **Overview** row that illustrates the core metrics in aggregate
+(availability, in-progress tasks, deployment counts, failing apps) — the opt-in
+`gitops_batch_size` metric has no panel yet — and a
 **Per-Application Breakdown** row driven by an `Application` template variable, so
 you can select one app (or several) and see its deployment counts, failures,
 end-to-end deployment duration, and the refresh / write-back / lock-wait latency

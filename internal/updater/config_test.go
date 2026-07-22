@@ -108,6 +108,48 @@ func TestNewGitConfig(t *testing.T) {
 	})
 }
 
+func TestNewBatchConfig(t *testing.T) {
+	t.Run("Defaults to disabled with MaxSize 20", func(t *testing.T) {
+		config, err := NewBatchConfig()
+
+		require.NoError(t, err)
+		require.NotNil(t, config)
+		assert.False(t, config.Enabled)
+		assert.Equal(t, uint(20), config.MaxSize)
+	})
+
+	t.Run("Reads enabled and custom MaxSize", func(t *testing.T) {
+		t.Setenv("GIT_BATCH_WRITEBACK", "true")
+		t.Setenv("GIT_BATCH_MAX_SIZE", "5")
+
+		config, err := NewBatchConfig()
+
+		require.NoError(t, err)
+		assert.True(t, config.Enabled)
+		assert.Equal(t, uint(5), config.MaxSize)
+	})
+
+	t.Run("Failure - Zero MaxSize when enabled", func(t *testing.T) {
+		t.Setenv("GIT_BATCH_WRITEBACK", "true")
+		t.Setenv("GIT_BATCH_MAX_SIZE", "0")
+
+		config, err := NewBatchConfig()
+
+		require.Error(t, err)
+		assert.Nil(t, config)
+		assert.Contains(t, err.Error(), "GIT_BATCH_MAX_SIZE")
+	})
+
+	t.Run("Zero MaxSize allowed when disabled", func(t *testing.T) {
+		t.Setenv("GIT_BATCH_MAX_SIZE", "0")
+
+		config, err := NewBatchConfig()
+
+		require.NoError(t, err)
+		assert.False(t, config.Enabled)
+	})
+}
+
 // TestLegacyGitTimeoutMapping covers the backward-compat shim that maps the
 // deprecated GIT_TIMEOUT directly to GIT_OP_TIMEOUT (1:1, no division), so
 // the per-attempt budget is unchanged for operators that have not migrated.
