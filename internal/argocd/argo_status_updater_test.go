@@ -1206,6 +1206,38 @@ func TestDeploymentMonitorWaitRolloutSurfacesErrorWhenNoFetchSucceeds(t *testing
 		"the underlying cause must survive so determineFailureStatus can classify it")
 }
 
+// TestDeploymentMonitorWaitRolloutSurfacesArgoAPIError verifies that a 5xx
+// *ArgoAPIError survives WaitRollout's error wrapping intact, so errors.As can
+// still recover the status code downstream and classify the outage as aborted.
+func TestDeploymentMonitorWaitRolloutSurfacesArgoAPIError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	api := newArgoApiMock(ctrl)
+
+	monitor := NewDeploymentMonitor(
+		Argo{api: api, State: notSupersededState(ctrl)},
+		"",
+		[]retry.Option{retry.DelayType(retry.FixedDelay), retry.LastErrorOnly(true)},
+		false,
+		time.Millisecond,
+	)
+	task := models.Task{Id: "test-id", App: "demo", Timeout: 1}
+
+	apiErr := &ArgoAPIError{StatusCode: http.StatusServiceUnavailable, Message: "upstream unavailable"}
+	api.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).
+		Return(nil, apiErr).MinTimes(1)
+
+	received, err := monitor.WaitRollout(task)
+	require.Error(t, err)
+	assert.Nil(t, received)
+
+	var got *ArgoAPIError
+	require.ErrorAs(t, err, &got, "the *ArgoAPIError must survive wrapping for downstream classification")
+	assert.Equal(t, http.StatusServiceUnavailable, got.StatusCode)
+	assert.Equal(t, models.StatusAborted, determineFailureStatus(task, err))
+}
+
 // TestArgoStatusUpdaterStopsWhenSuperseded verifies that once a newer deployment
 // has marked the task "cancelled" in the shared state, the poll loop stops before
 // making any ArgoCD call and does not overwrite the cancelled status. Because the
