@@ -90,6 +90,7 @@ describe('authProvider', () => {
   beforeEach(async () => {
     vi.restoreAllMocks();
     window.localStorage.clear();
+    window.sessionStorage.clear();
     // Reset the URL so callback-detection starts clean for every test.
     window.history.replaceState({}, '', '/');
     MockUserManager.mockClear();
@@ -314,6 +315,29 @@ describe('authProvider', () => {
 
       await expect(module.bootstrapAuth()).resolves.toBeUndefined();
       expect(userManagerMock.signinRedirect).toHaveBeenCalledTimes(1);
+    });
+
+    it('consumes a provider error callback instead of looping back to the provider', async () => {
+      mockConfig(enabledConfig());
+      window.history.replaceState({}, '', '/?error=access_denied&state=xyz');
+      userManagerMock.signinRedirectCallback.mockRejectedValue(new Error('access_denied'));
+      userManagerMock.getUser.mockResolvedValue(null);
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const module = await import('./authProvider');
+
+      // The error response is recognized as a callback and consumed — not turned
+      // into a fresh sign-in.
+      await expect(module.bootstrapAuth()).resolves.toBeUndefined();
+      expect(userManagerMock.signinRedirect).not.toHaveBeenCalled();
+
+      // The immediate follow-up auth check also refuses to redirect (loop broken).
+      await expect(module.authProvider.checkAuth!({})).resolves.toBeUndefined();
+      expect(userManagerMock.signinRedirect).not.toHaveBeenCalled();
+
+      // A later check re-attempts cleanly once the one-shot guard is cleared.
+      await module.authProvider.checkAuth!({});
+      expect(userManagerMock.signinRedirect).toHaveBeenCalledTimes(1);
+      warnSpy.mockRestore();
     });
 
     it('resolves (never throws) when the config endpoint is unreachable', async () => {

@@ -111,70 +111,92 @@ func (config ServerConfig) MarshalJSON() ([]byte, error) {
 // — exactly the issuer a Keycloak realm advertises — so OIDC discovery against
 // it resolves the same userinfo endpoint the Keycloak-specific code targeted
 // before.
-func applyKeycloakCompat(cfg *ServerConfig) {
-	kcVars := []string{
-		"KEYCLOAK_ENABLED", "KEYCLOAK_URL", "KEYCLOAK_REALM", "KEYCLOAK_CLIENT_ID",
-		"KEYCLOAK_TOKEN_VALIDATION_INTERVAL", "KEYCLOAK_PRIVILEGED_GROUPS",
-	}
-	used := false
-	for _, v := range kcVars {
-		if _, ok := os.LookupEnv(v); ok {
-			used = true
-			break
-		}
-	}
-	if !used {
-		return
+func applyKeycloakCompat(cfg *ServerConfig) error {
+	if !anyKeycloakVarSet() {
+		return nil
 	}
 
 	slog.Warn("KEYCLOAK_* environment variables are deprecated; use OIDC_* instead " +
 		"(see docs/reference/server-env.md). They remain honored for backward compatibility.")
 
-	if _, ok := os.LookupEnv("OIDC_ENABLED"); !ok {
-		if val, ok := os.LookupEnv("KEYCLOAK_ENABLED"); ok {
-			if parsed, err := strconv.ParseBool(strings.TrimSpace(val)); err == nil {
-				cfg.OIDC.Enabled = parsed
-			} else {
-				slog.Warn("ignoring unparseable KEYCLOAK_ENABLED; auth stays disabled", "value", val)
-			}
+	if val, ok := legacyValue("OIDC_ENABLED", "KEYCLOAK_ENABLED"); ok {
+		// A malformed legacy value must fail startup rather than silently leave
+		// auth disabled — a typo must never quietly drop the protected routes.
+		parsed, err := strconv.ParseBool(strings.TrimSpace(val))
+		if err != nil {
+			return fmt.Errorf("invalid KEYCLOAK_ENABLED value %q: must be a boolean", val)
 		}
+		cfg.OIDC.Enabled = parsed
 	}
 
 	if _, ok := os.LookupEnv("OIDC_ISSUER_URL"); !ok {
-		kcURL := strings.TrimSpace(os.Getenv("KEYCLOAK_URL"))
-		kcRealm := strings.TrimSpace(os.Getenv("KEYCLOAK_REALM"))
-		if kcURL != "" && kcRealm != "" {
-			cfg.OIDC.IssuerURL = strings.TrimRight(kcURL, "/") + "/realms/" + kcRealm
+		if issuer := keycloakIssuer(); issuer != "" {
+			cfg.OIDC.IssuerURL = issuer
 		}
 	}
 
-	if _, ok := os.LookupEnv("OIDC_CLIENT_ID"); !ok {
-		if val, ok := os.LookupEnv("KEYCLOAK_CLIENT_ID"); ok {
-			cfg.OIDC.ClientId = val
-		}
+	if val, ok := legacyValue("OIDC_CLIENT_ID", "KEYCLOAK_CLIENT_ID"); ok {
+		cfg.OIDC.ClientId = val
 	}
 
-	if _, ok := os.LookupEnv("OIDC_TOKEN_VALIDATION_INTERVAL"); !ok {
-		if val, ok := os.LookupEnv("KEYCLOAK_TOKEN_VALIDATION_INTERVAL"); ok {
-			if parsed, err := strconv.Atoi(strings.TrimSpace(val)); err == nil {
-				cfg.OIDC.TokenValidationInterval = parsed
-			} else {
-				slog.Warn("ignoring unparseable KEYCLOAK_TOKEN_VALIDATION_INTERVAL; using default", "value", val)
-			}
+	if val, ok := legacyValue("OIDC_TOKEN_VALIDATION_INTERVAL", "KEYCLOAK_TOKEN_VALIDATION_INTERVAL"); ok {
+		parsed, err := strconv.Atoi(strings.TrimSpace(val))
+		if err != nil {
+			return fmt.Errorf("invalid KEYCLOAK_TOKEN_VALIDATION_INTERVAL value %q: must be an integer", val)
 		}
+		cfg.OIDC.TokenValidationInterval = parsed
 	}
 
-	if _, ok := os.LookupEnv("OIDC_PRIVILEGED_GROUPS"); !ok {
-		if val, ok := os.LookupEnv("KEYCLOAK_PRIVILEGED_GROUPS"); ok {
-			var groups []string
-			for _, g := range strings.Split(val, ",") {
-				if trimmed := strings.TrimSpace(g); trimmed != "" {
-					groups = append(groups, trimmed)
-				}
-			}
-			cfg.OIDC.PrivilegedGroups = groups
+	if val, ok := legacyValue("OIDC_PRIVILEGED_GROUPS", "KEYCLOAK_PRIVILEGED_GROUPS"); ok {
+		cfg.OIDC.PrivilegedGroups = splitGroups(val)
+	}
+
+	return nil
+}
+
+// anyKeycloakVarSet reports whether any deprecated KEYCLOAK_* variable is present.
+func anyKeycloakVarSet() bool {
+	for _, v := range []string{
+		"KEYCLOAK_ENABLED", "KEYCLOAK_URL", "KEYCLOAK_REALM", "KEYCLOAK_CLIENT_ID",
+		"KEYCLOAK_TOKEN_VALIDATION_INTERVAL", "KEYCLOAK_PRIVILEGED_GROUPS",
+	} {
+		if _, ok := os.LookupEnv(v); ok {
+			return true
 		}
 	}
+	return false
+}
+
+// legacyValue returns the deprecated legacyKey's value, but only when the
+// canonical primaryKey is unset (the OIDC_* variable always wins). It returns
+// ("", false) when the primary is set or the legacy variable is absent.
+func legacyValue(primaryKey, legacyKey string) (string, bool) {
+	if _, ok := os.LookupEnv(primaryKey); ok {
+		return "", false
+	}
+	return os.LookupEnv(legacyKey)
+}
+
+// keycloakIssuer synthesizes the OIDC issuer a Keycloak realm advertises from the
+// deprecated KEYCLOAK_URL + KEYCLOAK_REALM pair, or "" if either is missing.
+func keycloakIssuer() string {
+	url := strings.TrimSpace(os.Getenv("KEYCLOAK_URL"))
+	realm := strings.TrimSpace(os.Getenv("KEYCLOAK_REALM"))
+	if url == "" || realm == "" {
+		return ""
+	}
+	return strings.TrimRight(url, "/") + "/realms/" + realm
+}
+
+// splitGroups parses a comma-separated privileged-groups list, trimming blanks.
+func splitGroups(val string) []string {
+	var groups []string
+	for _, g := range strings.Split(val, ",") {
+		if trimmed := strings.TrimSpace(g); trimmed != "" {
+			groups = append(groups, trimmed)
+		}
+	}
+	return groups
 }
 
 // NewServerConfig parses the server configuration from environment variables.
@@ -196,7 +218,10 @@ func NewServerConfig() (*ServerConfig, error) {
 
 	// Map deprecated KEYCLOAK_* vars onto the generic OIDC config before
 	// validation, so a synthesized Keycloak issuer is validated like any other.
-	applyKeycloakCompat(&config)
+	// A malformed legacy value fails startup rather than silently disabling auth.
+	if err := applyKeycloakCompat(&config); err != nil {
+		return nil, fmt.Errorf("invalid argo-watcher server configuration: %w", err)
+	}
 
 	if err := validateServerConfig(&config); err != nil {
 		return nil, err

@@ -190,30 +190,53 @@ const ensureUserManager = async (): Promise<UserManager | null> => {
   return userManager;
 };
 
-/** True when the current URL carries an OIDC authorization-code callback. */
+// One-shot marker (per browser session) recording that the last interactive
+// sign-in came back as a provider error, so ensureAuthenticated does not
+// immediately redirect back to the provider and create a tight redirect loop.
+const SIGNIN_ERROR_FLAG = 'argo-watcher:oidc-signin-error';
+
+/**
+ * True when the current URL carries an OIDC redirect callback — either a
+ * successful authorization code (`code`) or a provider error (`error`), both
+ * paired with `state`. Recognizing the error form is essential: otherwise an
+ * error response (denied consent, `login_required`, …) is not consumed and
+ * bootstrap starts a fresh sign-in, bouncing between the app and the provider.
+ */
 const isRedirectCallback = (): boolean => {
   const browserWindow = getBrowserWindow();
   if (!browserWindow) {
     return false;
   }
   const params = new URLSearchParams(browserWindow.location.search);
-  return params.has('code') && params.has('state');
+  return params.has('state') && (params.has('code') || params.has('error'));
+};
+
+/** Rewrites the URL to `target`, dropping the callback query params. */
+const replaceUrl = (target: string) => {
+  const browserWindow = getBrowserWindow();
+  if (browserWindow) {
+    browserWindow.history.replaceState({}, browserWindow.document.title, target);
+  }
 };
 
 /**
- * Completes an authorization-code login: exchanges the code for tokens, persists
- * them, and strips the `?code&state` query so a reload does not re-trigger the
- * callback. Navigation returns to the pre-login path encoded in `url_state`.
+ * Completes an OIDC redirect callback: on success it exchanges the code for
+ * tokens and returns to the pre-login path encoded in `url_state`; on a provider
+ * error it consumes the response (stripping the query so a reload cannot
+ * re-trigger it) and records a one-shot flag so the next auth check does not
+ * immediately redirect back — breaking the error → redirect → error loop.
  */
 const completeSignin = async (manager: UserManager) => {
-  const user = await manager.signinRedirectCallback();
-  setAccessToken(user.access_token);
-  clearUserGroupsCache();
-
-  const browserWindow = getBrowserWindow();
-  if (browserWindow) {
-    const target = (typeof user.url_state === 'string' && user.url_state) || appBaseUrl();
-    browserWindow.history.replaceState({}, browserWindow.document.title, target);
+  try {
+    const user = await manager.signinRedirectCallback();
+    setAccessToken(user.access_token);
+    clearUserGroupsCache();
+    getBrowserWindow()?.sessionStorage.removeItem(SIGNIN_ERROR_FLAG);
+    replaceUrl((typeof user.url_state === 'string' && user.url_state) || appBaseUrl());
+  } catch (error) {
+    console.warn('[auth] OIDC sign-in callback returned an error; not retrying automatically.', error);
+    getBrowserWindow()?.sessionStorage.setItem(SIGNIN_ERROR_FLAG, '1');
+    replaceUrl(appBaseUrl());
   }
 };
 
@@ -235,6 +258,15 @@ const ensureAuthenticated = async (manager: UserManager): Promise<boolean> => {
 
   clearAccessToken();
   clearUserGroupsCache();
+
+  // If the last interactive sign-in just came back as a provider error, do not
+  // immediately redirect again (that is the loop). Consume the one-shot flag and
+  // resolve unauthenticated for now; a later navigation re-attempts cleanly.
+  const browserWindow = getBrowserWindow();
+  if (browserWindow?.sessionStorage.getItem(SIGNIN_ERROR_FLAG)) {
+    browserWindow.sessionStorage.removeItem(SIGNIN_ERROR_FLAG);
+    return true;
+  }
 
   try {
     await manager.signinRedirect({ url_state: currentPath() });

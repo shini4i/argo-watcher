@@ -342,22 +342,38 @@ func TestNewServerConfig_KeycloakPartialIssuer(t *testing.T) {
 	assert.Contains(t, err.Error(), "OIDC.IssuerURL")
 }
 
-// TestNewServerConfig_KeycloakMalformedValuesIgnored pins the lenient behavior of
-// the deprecated shim: an unparseable KEYCLOAK_ENABLED leaves auth disabled and an
-// unparseable interval keeps the default, rather than failing startup. (A warning
-// is logged in both cases so a legacy typo is not fully silent.)
-func TestNewServerConfig_KeycloakMalformedValuesIgnored(t *testing.T) {
-	t.Setenv("ARGO_URL", "https://example.com")
-	t.Setenv("ARGO_TOKEN", "secret-token")
-	t.Setenv("STATE_TYPE", "in-memory")
-	t.Setenv("KEYCLOAK_ENABLED", "yes")
-	t.Setenv("KEYCLOAK_TOKEN_VALIDATION_INTERVAL", "soon")
+// TestNewServerConfig_KeycloakMalformedValuesRejected verifies that a malformed
+// deprecated value fails startup rather than silently disabling auth: a typo like
+// KEYCLOAK_ENABLED=yes must never quietly drop the protected OIDC routes from an
+// otherwise healthy deployment (fail closed, not open).
+func TestNewServerConfig_KeycloakMalformedValuesRejected(t *testing.T) {
+	t.Run("malformed KEYCLOAK_ENABLED", func(t *testing.T) {
+		t.Setenv("ARGO_URL", "https://example.com")
+		t.Setenv("ARGO_TOKEN", "secret-token")
+		t.Setenv("STATE_TYPE", "in-memory")
+		t.Setenv("KEYCLOAK_ENABLED", "yes")
 
-	cfg, err := NewServerConfig()
+		_, err := NewServerConfig()
 
-	require.NoError(t, err)
-	assert.False(t, cfg.OIDC.Enabled)
-	assert.Equal(t, 10000, cfg.OIDC.TokenValidationInterval)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "KEYCLOAK_ENABLED")
+	})
+
+	t.Run("malformed KEYCLOAK_TOKEN_VALIDATION_INTERVAL", func(t *testing.T) {
+		t.Setenv("ARGO_URL", "https://example.com")
+		t.Setenv("ARGO_TOKEN", "secret-token")
+		t.Setenv("STATE_TYPE", "in-memory")
+		t.Setenv("KEYCLOAK_ENABLED", "true")
+		t.Setenv("KEYCLOAK_URL", "https://kc.example.com")
+		t.Setenv("KEYCLOAK_REALM", "demo")
+		t.Setenv("KEYCLOAK_CLIENT_ID", "argo-watcher")
+		t.Setenv("KEYCLOAK_TOKEN_VALIDATION_INTERVAL", "soon")
+
+		_, err := NewServerConfig()
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "KEYCLOAK_TOKEN_VALIDATION_INTERVAL")
+	})
 }
 
 // TestNewServerConfig_OIDCPrecedence verifies that OIDC_* takes precedence over
