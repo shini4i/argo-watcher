@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   count toward `failed_deployment` (a deployment that could not be confirmed is
   still a failure); the `argocd_unavailable` metric indicates when Argo CD itself
   was the cause.
+- The CLI client now reports the `aborted` status with a clear message ("The
+  deployment could not be confirmed because ArgoCD was unreachable") instead of
+  the misleading "unexpected deployment status … the client may be out of date".
+  The non-zero exit code is unchanged.
 
 ## [0.12.2] - 2026-07-21
 

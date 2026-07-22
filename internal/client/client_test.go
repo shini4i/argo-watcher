@@ -26,6 +26,7 @@ var (
 	appNotFoundId       = "be8c42c0-a645-11ec-8ea5-f2c4bb72758c"
 	argocdUnavailableId = "be8c42c0-a645-11ec-8ea5-f2c4bb72758d"
 	cancelledTaskId     = "be8c42c0-a645-11ec-8ea5-f2c4bb72758e"
+	abortedTaskId       = "be8c42c0-a645-11ec-8ea5-f2c4bb727590"
 	unhandledStatusId   = "be8c42c0-a645-11ec-8ea5-f2c4bb72758f"
 )
 
@@ -78,8 +79,10 @@ func getTaskStatusHandler(w http.ResponseWriter, r *http.Request) {
 		status = models.StatusFailedMessage
 	case cancelledTaskId:
 		status = models.StatusCancelledMessage
-	case unhandledStatusId:
+	case abortedTaskId:
 		status = models.StatusAborted
+	case unhandledStatusId:
+		status = "some-unknown-status"
 	}
 
 	if err := json.NewEncoder(w).Encode(models.TaskStatus{
@@ -443,6 +446,11 @@ func TestWaitForDeployment(t *testing.T) {
 			name:          "Cancelled deployment",
 			taskId:        cancelledTaskId,
 			expectedError: "The deployment was cancelled because a newer deployment superseded it.",
+		},
+		{
+			name:          "Aborted deployment",
+			taskId:        abortedTaskId,
+			expectedError: "The deployment could not be confirmed because ArgoCD was unreachable.",
 		},
 		{
 			name:          "Unhandled status exits instead of busy-looping",
