@@ -34,6 +34,7 @@ Each entry follows the same shape: **Symptom · Likely cause · How to verify ·
 - The `IMAGES` or `IMAGE_TAG` do not correspond to the built image.
 - The client timed out waiting for the deployment to complete.
 - Argo CD (or the state backend) is unreachable — the server now fails the submission fast with a `503` `{"status":"down"}` response instead of hanging until the client's own HTTP timeout, and the Web UI shows an "ArgoCD unreachable" banner until connectivity is restored.
+- Argo CD became unreachable *during* the deployment check (timeout, DNS/TLS error, connection refused, or a `5xx` response). The task is recorded as `aborted` and the client logs `The deployment was aborted before its outcome could be confirmed. See the reason below.` followed by the task's status reason (e.g. `ArgoCD API Error: ...`). The application itself may be healthy — check Argo CD directly before blaming the deployment.
 - A newer deployment of one of the same images was submitted while this one was still in progress, so the server cancelled this task (client logs `The deployment was cancelled because a newer deployment superseded it`). Only tasks sharing an image with the newer deployment are cancelled; independent per-image deployments of the same application do not cancel each other. This is by design, not a real failure — confirm the newer deployment succeeded; no other action is needed.
 
 **How to verify:**

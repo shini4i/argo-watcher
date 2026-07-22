@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Argo CD connectivity failures during a deployment check — request timeouts, DNS
+  and TLS errors, and `5xx` responses from Argo CD or a proxy in front of it — are
+  now consistently reported with the `aborted` status and a descriptive reason,
+  matching the existing behaviour for a refused TCP connection. Previously only a
+  refused connection was recognised and the other outages surfaced as a generic
+  `failed` status that blamed the application. Aborted deployments continue to
+  count toward `failed_deployment` (a deployment that could not be confirmed is
+  still a failure); the `argocd_unavailable` metric indicates when Argo CD itself
+  was the cause.
+- The CLI client now reports the `aborted` status with a clear message and the
+  task's status reason, instead of the misleading "unexpected deployment status …
+  the client may be out of date". The non-zero exit code is unchanged.
+- Stale in-progress tasks aborted by the obsolete-task sweep now record a status
+  reason ("did not complete within the staleness window"), distinguishing them
+  from deployments aborted because Argo CD was unreachable.
+
 ## [0.12.2] - 2026-07-21
 
 ### Added

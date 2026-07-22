@@ -304,6 +304,7 @@ func TestPostgresState_ProcessObsoleteTasks(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, task)
 	assert.Equal(t, models.StatusAborted, task.Status)
+	assert.Equal(t, StaleTaskAbortReason, task.StatusReason)
 }
 
 func TestPostgresState_Check(t *testing.T) {

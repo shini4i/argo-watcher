@@ -19,6 +19,9 @@ const (
 	TaskStaleThresholdSeconds = 3600
 	// ObsoleteTaskCheckInterval is the interval between checks for obsolete tasks.
 	ObsoleteTaskCheckInterval = 60 * time.Minute
+	// StaleTaskAbortReason is the status reason set when an in-progress task is
+	// aborted for exceeding the staleness window (distinct from an ArgoCD outage).
+	StaleTaskAbortReason = "Deployment did not complete within the staleness window; marked aborted by argo-watcher."
 )
 
 // InMemoryState provides a thread-safe in-memory implementation of task storage.
@@ -204,6 +207,7 @@ func processInMemoryObsoleteTasks(tasks []models.Task) []models.Task {
 		}
 		if task.Status == models.StatusInProgressMessage && task.Updated+TaskStaleThresholdSeconds < float64(time.Now().Unix()) {
 			task.Status = models.StatusAborted
+			task.StatusReason = StaleTaskAbortReason
 		}
 		updatedTasks = append(updatedTasks, task)
 	}
