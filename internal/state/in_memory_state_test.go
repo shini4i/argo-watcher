@@ -376,10 +376,11 @@ func TestInMemoryState_ProcessObsoleteTasks(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, models.StatusInProgressMessage, retrievedFresh.Status)
 
-	// Verify the stale task was marked as aborted
+	// Verify the stale task was marked as aborted with the stale-task reason
 	retrievedStale, err := state.GetTask(staleTask.Id)
 	require.NoError(t, err)
 	assert.Equal(t, models.StatusAborted, retrievedStale.Status)
+	assert.Equal(t, StaleTaskAbortReason, retrievedStale.StatusReason)
 }
 
 // TestInMemoryState_ProcessObsoleteTasks_RemovesAppNotFound verifies that tasks with

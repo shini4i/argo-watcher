@@ -169,7 +169,7 @@ func (watcher *Watcher) waitForDeployment(id, appName, version string) error {
 		case models.StatusArgoCDUnavailableMessage:
 			return fmt.Errorf("ArgoCD is unavailable. Please investigate.\n%s", taskInfo.StatusReason)
 		case models.StatusAborted:
-			return fmt.Errorf("The deployment could not be confirmed because ArgoCD was unreachable. Check ArgoCD and argo-watcher rather than the application.\n%s", taskInfo.StatusReason)
+			return fmt.Errorf("The deployment was aborted before its outcome could be confirmed. See the reason below.\n%s", taskInfo.StatusReason)
 		case models.StatusDeployedMessage:
 			log.Printf("The deployment of %s version is done.", version)
 			return nil

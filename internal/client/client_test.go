@@ -450,7 +450,7 @@ func TestWaitForDeployment(t *testing.T) {
 		{
 			name:          "Aborted deployment",
 			taskId:        abortedTaskId,
-			expectedError: "The deployment could not be confirmed because ArgoCD was unreachable.",
+			expectedError: "The deployment was aborted before its outcome could be confirmed.",
 		},
 		{
 			name:          "Unhandled status exits instead of busy-looping",
