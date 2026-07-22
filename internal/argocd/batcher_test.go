@@ -1,6 +1,7 @@
 package argocd
 
 import (
+	"context"
 	"errors"
 	"sync"
 	"testing"
@@ -228,9 +229,11 @@ func TestBatcher_CloseDrainsPendingAndUnblocksWaiters(t *testing.T) {
 	waitForPendingLen(t, b, key, 2)
 
 	// Release flushes, then Close must wait for the in-flight loop to drain every
-	// queued request before returning.
+	// queued request before returning (generous deadline: it should not fire).
 	close(release)
-	b.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	b.Close(ctx)
 
 	for i := 0; i < 3; i++ {
 		select {
@@ -242,6 +245,34 @@ func TestBatcher_CloseDrainsPendingAndUnblocksWaiters(t *testing.T) {
 	}
 }
 
+func TestBatcher_CloseIsBoundedWhenFlushStuck(t *testing.T) {
+	b := NewBatcher(nil, "", 20, nil)
+
+	// A flush that never returns (e.g. stuck on the lock or an unreachable remote).
+	stuck := make(chan struct{})
+	defer close(stuck) // release the goroutine at test end so it does not leak
+	b.flushFn = func(batch []*batchWriteRequest) {
+		<-stuck
+		for _, req := range batch {
+			req.resultCh <- nil
+		}
+	}
+
+	go func() { _ = b.Submit(newBatchReq("repo", "main")) }()
+	// Give the flush a moment to start, then Close with a short deadline: it must
+	// return when the deadline expires rather than blocking on the stuck flush.
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+
+	returned := make(chan struct{})
+	go func() { b.Close(ctx); close(returned) }()
+	select {
+	case <-returned:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Close did not return despite its context deadline — drain wait is unbounded")
+	}
+}
+
 func TestBatcher_SubmitAfterCloseIsRejected(t *testing.T) {
 	b := NewBatcher(nil, "", 20, nil)
 	b.flushFn = func(batch []*batchWriteRequest) {
@@ -250,7 +281,7 @@ func TestBatcher_SubmitAfterCloseIsRejected(t *testing.T) {
 		}
 	}
 
-	b.Close()
+	b.Close(context.Background())
 
 	err := b.Submit(newBatchReq("repo", "main"))
 	require.ErrorIs(t, err, errBatcherClosed)
@@ -265,7 +296,11 @@ func (e *stringError) Error() string { return e.s }
 // acquire, that error is fanned out to every submitter rather than leaving them
 // blocked on their result channels.
 func TestBatcher_FlushDeliversLockError(t *testing.T) {
-	t.Setenv("SSH_KEY_PATH", "/dev/null") // lets updater.NewGitRepo load its config
+	// SSH_KEY_PATH only needs to be SET so updater.NewGitRepo can load its config;
+	// the key file is never opened here because the spyLocker fails the lock before
+	// flush ever reaches Clone/AddSSHKey. A non-existent path is therefore fine and
+	// makes explicit that the lock error — not a key-validation error — is asserted.
+	t.Setenv("SSH_KEY_PATH", "/nonexistent/key")
 
 	ctrl := gomock.NewController(t)
 	metrics := mocks.NewMockMetricsInterface(ctrl)

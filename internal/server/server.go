@@ -179,9 +179,12 @@ func (s *Server) Run() {
 	s.env.Shutdown()
 
 	// Drain any in-flight batch write-backs so queued commits are not abandoned
-	// mid-flush. No-op when batch mode is disabled.
+	// mid-flush, bounded so a flush stuck on the lock or an unreachable remote
+	// cannot push shutdown past its grace period. No-op when batch mode is disabled.
 	if s.updater != nil {
-		s.updater.Close()
+		drainCtx, drainCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		s.updater.Close(drainCtx)
+		drainCancel()
 	}
 
 	slog.Info("server exited")

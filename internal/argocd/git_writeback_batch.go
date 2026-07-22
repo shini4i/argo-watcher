@@ -28,17 +28,25 @@ type batchWriteRequest struct {
 // one outcome in the returned map:
 //   - nil                        — committed and pushed, or nothing to write;
 //   - ErrDeploymentSuperseded    — a newer deployment for that app won;
-//   - a generation/commit error  — that app's config is invalid (isolated: it does
+//   - a generation error         — that app's config is invalid (isolated: it does
 //     not fail the rest of the batch);
+//   - a per-app commit error      — that app's commit failed on every attempt;
 //   - the shared push error      — the batch's push ultimately failed.
 //
 // The push is the only contended operation; N apps therefore cost one clone plus
-// one push instead of N of each. On a transient push failure the whole attempt is
-// retried: Clone hard-resets to the remote tip (discarding the batch's local
-// commits) and every still-unresolved app is re-checked, re-applied, and re-pushed
-// together — reusing the existing reclone-reapply-repush recovery.
+// one push instead of N of each. The loop retries until every request is resolved
+// or the attempt budget is exhausted: a transient push failure reclones and
+// re-applies the whole surviving batch, and a transient per-app commit failure is
+// left unresolved so the next attempt retries just that app — matching the
+// single-app path, where a commit failure also consumes the retry budget. A
+// permanently misconfigured app (e.g. path-traversal write-back location) fails
+// only itself after the budget is spent, never blocking the others.
 func runBatchWriteBack(parentCtx context.Context, repo *updater.GitRepo, batch []*batchWriteRequest) map[*batchWriteRequest]error {
 	outcomes := make(map[*batchWriteRequest]error, len(batch))
+	// commitErrs holds each app's most recent per-app commit error while it is still
+	// being retried; consulted only when resolving a leftover unresolved request so
+	// it reports its own cause rather than a generic batch error.
+	commitErrs := make(map[*batchWriteRequest]error, len(batch))
 	maxAttempts := repo.GitMaxAttempts()
 	opTimeout := repo.GitOpTimeout()
 
@@ -51,52 +59,46 @@ func runBatchWriteBack(parentCtx context.Context, repo *updater.GitRepo, batch [
 
 		invalidateBatchCacheOnFinalAttempt(repo, len(active), attempt, maxAttempts)
 
-		committed, err := runBatchAttempt(parentCtx, repo, opTimeout, active, outcomes)
-		if err == nil {
-			// Clone succeeded and (if anything was committed) the push succeeded.
+		committed, err := runBatchAttempt(parentCtx, repo, opTimeout, active, outcomes, commitErrs)
+		if err != nil {
+			lastErr = err
+			if updater.IsPermanent(err) {
+				// A permanent clone/push failure recurs on every attempt; fail every
+				// still-unresolved app now instead of burning the budget.
+				slog.Error("Batch git update failed with permanent error; not retrying",
+					"attempt", attempt, "max_attempts", maxAttempts, "error", err)
+				failUnresolved(batch, outcomes, err)
+				break
+			}
+		} else {
 			for _, req := range committed {
 				outcomes[req] = nil
 			}
-			break
-		}
-		lastErr = err
-
-		if updater.IsPermanent(err) {
-			// A permanent clone/push failure will recur on every attempt; stop and
-			// fail every app that is not already terminally resolved.
-			slog.Error("Batch git update failed with permanent error; not retrying",
-				"attempt", attempt, "max_attempts", maxAttempts, "error", err)
-			for _, req := range unresolvedRequests(batch, outcomes) {
-				outcomes[req] = err
-			}
-			break
 		}
 
-		if waitErr := backoffBeforeBatchRetry(parentCtx, err, attempt, maxAttempts); waitErr != nil {
+		// Keep retrying while anything is unresolved — a failed/pending push or a
+		// per-app commit error awaiting another attempt. Stop once all are resolved.
+		if len(unresolvedRequests(batch, outcomes)) == 0 {
+			break
+		}
+		if waitErr := backoffBeforeBatchRetry(parentCtx, attempt, maxAttempts); waitErr != nil {
 			lastErr = waitErr
 			break
 		}
 	}
 
-	// Resolve anything still pending (clone failures, exhausted retries, or a
-	// cancelled backoff) with the last error seen.
-	for _, req := range batch {
-		if _, ok := outcomes[req]; !ok {
-			outcomes[req] = fmt.Errorf("batch git update failed after %d attempts: %w", maxAttempts, lastErr)
-		}
-	}
-
+	resolveRemaining(batch, outcomes, commitErrs, lastErr, maxAttempts)
 	return outcomes
 }
 
 // runBatchAttempt performs one clone + per-app commit + single push cycle. It
-// resolves outcomes[req] for terminally-resolved apps (superseded, generation or
-// commit error, or nothing-to-write) and returns the requests that produced a
-// local commit this attempt, whose fate depends on the push. The returned error
-// is non-nil when the clone or push failed; the caller decides whether it is
-// permanent or retriable. On a nil error every returned committed request pushed
-// successfully.
-func runBatchAttempt(parentCtx context.Context, repo *updater.GitRepo, opTimeout time.Duration, active []*batchWriteRequest, outcomes map[*batchWriteRequest]error) ([]*batchWriteRequest, error) {
+// resolves outcomes[req] for terminally-resolved apps and records retriable per-app
+// commit errors in commitErrs (leaving those requests unresolved), returning the
+// requests that produced a local commit this attempt — whose fate depends on the
+// push. The returned error is non-nil when the clone or push failed; the caller
+// decides whether it is permanent or retriable. On a nil error every returned
+// committed request pushed successfully.
+func runBatchAttempt(parentCtx context.Context, repo *updater.GitRepo, opTimeout time.Duration, active []*batchWriteRequest, outcomes, commitErrs map[*batchWriteRequest]error) ([]*batchWriteRequest, error) {
 	ctx, cancel := context.WithTimeout(parentCtx, opTimeout)
 	defer cancel()
 
@@ -106,55 +108,13 @@ func runBatchAttempt(parentCtx context.Context, repo *updater.GitRepo, opTimeout
 
 	var committed []*batchWriteRequest
 	for _, req := range active {
-		// Re-check supersede every attempt so a task that keeps retrying under
-		// contention aborts the moment a newer deployment for the same app wins.
-		if req.isSuperseded != nil && req.isSuperseded() {
-			slog.Info("Git update aborted: task superseded by a newer deployment", "id", req.task.Id)
-			outcomes[req] = ErrDeploymentSuperseded
-			continue
+		if applyRequest(repo, req, outcomes, commitErrs) {
+			committed = append(committed, req)
 		}
-
-		// An unsupported configuration or missing managed images is a success with
-		// nothing to write — mirrors the single-app UpdateGitImageTag early returns.
-		if req.gitopsRepo.Path == "" {
-			slog.Warn("No path found for app, unsupported Application configuration", "app", req.app.Metadata.Name, "id", req.task.Id)
-			outcomes[req] = nil
-			continue
-		}
-		content, genErr := generateOverrideFileContent(req.app.Metadata.Annotations, req.task)
-		if genErr != nil {
-			// A per-app misconfiguration must not poison the rest of the batch.
-			outcomes[req] = genErr
-			continue
-		}
-		if content == nil {
-			slog.Warn("No release overrides found for app", "app", req.app.Metadata.Name, "id", req.task.Id)
-			outcomes[req] = nil
-			continue
-		}
-
-		didCommit, commitErr := repo.CommitAppLocal(req.app.Metadata.Name, req.gitopsRepo.Path, req.gitopsRepo.Filename, content, req.task)
-		if commitErr != nil {
-			// A per-app commit error (e.g. a path-traversal-rejected write-back
-			// location) is resolved terminally rather than retried, deliberately
-			// diverging from the single-app path: it isolates one misconfigured app
-			// so it cannot block or destabilise the rest of the batch, and the retry
-			// loop cannot heal it anyway — Clone already reset the worktree cleanly
-			// at the top of this attempt, so a failing local commit is a per-app or
-			// environment problem, not transient contention.
-			outcomes[req] = commitErr
-			continue
-		}
-		if !didCommit {
-			// On-disk content already matches: nothing to push for this app.
-			outcomes[req] = nil
-			continue
-		}
-		committed = append(committed, req)
 	}
 
 	if len(committed) == 0 {
-		// Everything resolved terminally; no push needed.
+		// Everything resolved terminally (or is awaiting a commit retry); no push.
 		return nil, nil
 	}
 
@@ -162,6 +122,83 @@ func runBatchAttempt(parentCtx context.Context, repo *updater.GitRepo, opTimeout
 		return committed, fmt.Errorf("push failed: %w", err)
 	}
 	return committed, nil
+}
+
+// applyRequest resolves one request within a single attempt. It returns true when
+// the request produced a local commit (its fate then rides on the shared push).
+// Terminal outcomes are set for superseded / unsupported / generation cases; a
+// per-app commit error is recorded in commitErrs and the request is left
+// unresolved so the next attempt retries it — mirroring the single-app path, where
+// a commit failure is also retriable rather than fatal.
+func applyRequest(repo *updater.GitRepo, req *batchWriteRequest, outcomes, commitErrs map[*batchWriteRequest]error) bool {
+	// Re-check supersede every attempt so a task that keeps retrying under
+	// contention aborts the moment a newer deployment for the same app wins.
+	if req.isSuperseded != nil && req.isSuperseded() {
+		slog.Info("Git update aborted: task superseded by a newer deployment", "id", req.task.Id)
+		outcomes[req] = ErrDeploymentSuperseded
+		return false
+	}
+
+	// An unsupported configuration or missing managed images is a success with
+	// nothing to write — mirrors the single-app UpdateGitImageTag early returns.
+	if req.gitopsRepo.Path == "" {
+		slog.Warn("No path found for app, unsupported Application configuration", "app", req.app.Metadata.Name, "id", req.task.Id)
+		outcomes[req] = nil
+		return false
+	}
+	content, genErr := generateOverrideFileContent(req.app.Metadata.Annotations, req.task)
+	if genErr != nil {
+		// A per-app misconfiguration is permanent; resolve it terminally so it does
+		// not poison the rest of the batch.
+		outcomes[req] = genErr
+		return false
+	}
+	if content == nil {
+		slog.Warn("No release overrides found for app", "app", req.app.Metadata.Name, "id", req.task.Id)
+		outcomes[req] = nil
+		return false
+	}
+
+	didCommit, commitErr := repo.CommitAppLocal(req.app.Metadata.Name, req.gitopsRepo.Path, req.gitopsRepo.Filename, content, req.task)
+	if commitErr != nil {
+		// Retriable per-app failure: record it and leave the request unresolved so
+		// the next attempt reclones and re-applies just this app. A transient
+		// filesystem/worktree error can then recover; a persistent one surfaces via
+		// resolveRemaining once the budget is spent — without blocking other apps.
+		commitErrs[req] = commitErr
+		return false
+	}
+	if !didCommit {
+		// On-disk content already matches: nothing to push for this app.
+		outcomes[req] = nil
+		return false
+	}
+	delete(commitErrs, req) // committed cleanly; drop any earlier recorded error
+	return true
+}
+
+// failUnresolved assigns err as the terminal outcome of every request without one.
+func failUnresolved(batch []*batchWriteRequest, outcomes map[*batchWriteRequest]error, err error) {
+	for _, req := range unresolvedRequests(batch, outcomes) {
+		outcomes[req] = err
+	}
+}
+
+// resolveRemaining assigns a final error to every request still unresolved after
+// the retry loop ends (exhausted attempts or a cancelled backoff). A per-app commit
+// error takes precedence over the batch-level error so a persistently
+// misconfigured app reports its own cause.
+func resolveRemaining(batch []*batchWriteRequest, outcomes, commitErrs map[*batchWriteRequest]error, lastErr error, maxAttempts uint) {
+	for _, req := range batch {
+		if _, ok := outcomes[req]; ok {
+			continue
+		}
+		cause := lastErr
+		if ce, ok := commitErrs[req]; ok {
+			cause = ce
+		}
+		outcomes[req] = fmt.Errorf("batch git update failed after %d attempts: %w", maxAttempts, cause)
+	}
 }
 
 // unresolvedRequests returns the requests in batch that do not yet have an outcome.
@@ -196,13 +233,13 @@ func invalidateBatchCacheOnFinalAttempt(repo *updater.GitRepo, batchSize int, at
 // cancelled during the wait, signalling the caller to stop retrying. It reuses
 // gitUpdateBackoff so batch and single-app retries share the same anti-thundering-
 // herd behaviour.
-func backoffBeforeBatchRetry(parentCtx context.Context, attemptErr error, attempt, maxAttempts uint) error {
+func backoffBeforeBatchRetry(parentCtx context.Context, attempt, maxAttempts uint) error {
 	if attempt >= maxAttempts {
 		return nil
 	}
 	backoff := gitUpdateBackoff(attempt)
-	slog.Warn("Batch git update attempt failed; retrying",
-		"attempt", attempt, "max_attempts", maxAttempts, "backoff", backoff, "error", attemptErr)
+	slog.Warn("Batch git update attempt left work unresolved; retrying",
+		"attempt", attempt, "max_attempts", maxAttempts, "backoff", backoff)
 	select {
 	case <-parentCtx.Done():
 		return fmt.Errorf("batch git update cancelled during backoff: %w", parentCtx.Err())

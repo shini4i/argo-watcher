@@ -3,6 +3,7 @@ package argocd
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"sync"
 
 	"github.com/shini4i/argo-watcher/internal/lock"
@@ -177,13 +178,30 @@ func (b *Batcher) deliverAll(batch []*batchWriteRequest, err error) {
 	}
 }
 
-// Close stops accepting new requests and blocks until every in-flight flush
-// goroutine has drained its pending queue and delivered all results. Requests
-// already enqueued before Close are still flushed; new Submit calls return
-// errBatcherClosed.
-func (b *Batcher) Close() {
+// Close stops accepting new requests and waits — bounded by ctx — for in-flight
+// flush goroutines to drain their pending queues and deliver all results. New
+// Submit calls return errBatcherClosed immediately.
+//
+// The wait is bounded so shutdown cannot exceed the caller's grace period: a flush
+// stuck on the per-repo lock or retrying an unreachable remote could otherwise run
+// for GIT_OP_TIMEOUT × GIT_MAX_ATTEMPTS, well past a typical shutdown deadline and
+// risking a SIGKILL. When ctx expires first, Close returns and the still-running
+// flushes are abandoned (they end when the process does) — the same outcome a hung
+// unbounded drain would force, but without blocking termination.
+func (b *Batcher) Close(ctx context.Context) {
 	b.mu.Lock()
 	b.closed = true
 	b.mu.Unlock()
-	b.wg.Wait()
+
+	done := make(chan struct{})
+	go func() {
+		b.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-ctx.Done():
+		slog.Warn("git write-back batch drain did not finish before the shutdown deadline; abandoning in-flight flushes", "error", ctx.Err())
+	}
 }

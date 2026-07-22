@@ -37,10 +37,10 @@ func NewGitUpdater(locker lock.Locker, repoCachePath string, metrics prometheus.
 }
 
 // Close releases resources held by the updater, draining any in-flight batch
-// write-backs. It is a no-op when batching is disabled.
-func (gitUpdater *GitUpdater) Close() {
+// write-backs bounded by ctx. It is a no-op when batching is disabled.
+func (gitUpdater *GitUpdater) Close(ctx context.Context) {
 	if gitUpdater.batcher != nil {
-		gitUpdater.batcher.Close()
+		gitUpdater.batcher.Close(ctx)
 	}
 }
 

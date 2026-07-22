@@ -124,6 +124,39 @@ func TestRunBatchWriteBack_MixedPerAppOutcomes(t *testing.T) {
 		"a misconfigured app fails only itself")
 }
 
+// TestRunBatchWriteBack_CommitErrorIsRetried verifies that a per-app commit error
+// is retried across attempts (mirroring the single-app path) rather than failing
+// the app on the first attempt. A path-traversal write-back filename makes
+// CommitAppLocal fail on every attempt; the app must consume the full retry budget
+// (clone runs GIT_MAX_ATTEMPTS times) and then surface its own cause.
+func TestRunBatchWriteBack_CommitErrorIsRetried(t *testing.T) {
+	t.Setenv("SSH_KEY_PATH", "/nonexistent/key")
+	t.Setenv("GIT_OP_TIMEOUT", "5s")
+	t.Setenv("GIT_MAX_ATTEMPTS", "2")
+
+	// Clone succeeds every attempt; the commit failure (not clone/push) drives the
+	// retries, so the handler must see one clone per attempt — Times(2).
+	h := retryingGitHandler(gomock.NewController(t), nil, 2)
+	repo := newBatchTestRepo(t, h)
+
+	badApp := newAppWithImages("app-bad")
+	req := &batchWriteRequest{
+		app:  badApp,
+		task: newImageTask(),
+		// A malicious write-back-filename escapes the repo root; CommitAppLocal
+		// rejects it (before touching the worktree) on every attempt.
+		gitopsRepo: &models.GitopsRepo{BranchName: "main", Path: "apps", Filename: "../../../../etc/passwd"},
+		resultCh:   make(chan error, 1),
+	}
+
+	outcomes := runBatchWriteBack(context.Background(), repo, []*batchWriteRequest{req})
+
+	require.Len(t, outcomes, 1)
+	require.Error(t, outcomes[req])
+	assert.Contains(t, outcomes[req].Error(), "not inside repository root", "the app's own commit error must surface")
+	assert.Contains(t, outcomes[req].Error(), "after 2 attempts", "the commit error must be retried, not terminal on attempt 1")
+}
+
 // TestRunBatchWriteBack_CancelledDuringBackoffResolvesEveryRequest verifies that a
 // context cancelled during the inter-attempt backoff stops the loop early and still
 // resolves every request with the cancellation error (never leaving one hanging).

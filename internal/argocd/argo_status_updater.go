@@ -95,11 +95,11 @@ func (updater *ArgoStatusUpdater) Init(argo Argo, cfg ArgoStatusUpdaterConfig) e
 }
 
 // Close releases resources held by the updater, draining any in-flight batch
-// write-backs so a graceful shutdown does not abandon queued commits. It is a
-// no-op when batching is disabled.
-func (updater *ArgoStatusUpdater) Close() {
+// write-backs (bounded by ctx) so a graceful shutdown does not abandon queued
+// commits nor overrun its deadline. It is a no-op when batching is disabled.
+func (updater *ArgoStatusUpdater) Close(ctx context.Context) {
 	if updater.gitUpdater != nil {
-		updater.gitUpdater.Close()
+		updater.gitUpdater.Close(ctx)
 	}
 }
 
