@@ -14,7 +14,7 @@ vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
 const httpClientMock = vi.fn();
 const notifyMock = vi.fn();
 const permissionsMock = vi.fn();
-const keycloakEnabledMock = vi.fn();
+const oidcEnabledMock = vi.fn();
 
 vi.mock('../../data/httpClient', () => ({
   httpClient: (...args: unknown[]) => httpClientMock(...args),
@@ -28,8 +28,8 @@ vi.mock('../../features/deployLock/deployLockService', () => ({
   },
 }));
 
-vi.mock('../../shared/hooks/useKeycloakEnabled', () => ({
-  useKeycloakEnabled: () => keycloakEnabledMock(),
+vi.mock('../../shared/hooks/useOidcEnabled', () => ({
+  useOidcEnabled: () => oidcEnabledMock(),
 }));
 
 vi.mock('react-admin', async () => {
@@ -46,8 +46,8 @@ describe('AppTopBar', () => {
     httpClientMock.mockReset();
     notifyMock.mockReset();
     permissionsMock.mockReset();
-    keycloakEnabledMock.mockReset();
-    keycloakEnabledMock.mockReturnValue(true);
+    oidcEnabledMock.mockReset();
+    oidcEnabledMock.mockReturnValue(true);
     permissionsMock.mockReturnValue({
       permissions: { groups: ['devops'], privilegedGroups: ['devops'] },
       isLoading: false,

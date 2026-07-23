@@ -36,11 +36,11 @@ describe('httpClient', () => {
     const [, init] = mockFetch.mock.calls[0];
     expect(init?.headers).toMatchObject({
       Authorization: 'Bearer token-abc',
-      'Keycloak-Authorization': 'Bearer token-abc',
+      'Oidc-Authorization': 'Bearer token-abc',
     });
   });
 
-  it('respects explicit Authorization headers and mirrors them to Keycloak header', async () => {
+  it('respects explicit Authorization headers and mirrors them to the OIDC header', async () => {
     mockFetch.mockResolvedValue(
       new Response(JSON.stringify({ status: 'ok' }), {
         status: 200,
@@ -55,7 +55,7 @@ describe('httpClient', () => {
     const [, init] = mockFetch.mock.calls[0];
     expect(init?.headers).toMatchObject({
       Authorization: 'Custom foo',
-      'Keycloak-Authorization': 'Custom foo',
+      'Oidc-Authorization': 'Custom foo',
     });
   });
 

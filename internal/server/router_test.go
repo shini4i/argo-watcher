@@ -183,7 +183,7 @@ func TestDeployLock(t *testing.T) {
 }
 
 // TestDeployLockEndpointRegistration verifies that the state-changing deploy-lock
-// endpoints only exist when Keycloak is enabled. Without an auth backend they cannot
+// endpoints only exist when OIDC auth is enabled. Without an auth backend they cannot
 // be protected, so they must not be exposed; the read-only GET stays available so the
 // banner and scheduled lockdown keep working.
 func TestDeployLockEndpointRegistration(t *testing.T) {
@@ -198,11 +198,11 @@ func TestDeployLockEndpointRegistration(t *testing.T) {
 		return false
 	}
 
-	newRouter := func(t *testing.T, keycloakEnabled bool) *gin.Engine {
+	newRouter := func(t *testing.T, oidcEnabled bool) *gin.Engine {
 		t.Helper()
 		serverConfig := &config.ServerConfig{
 			StaticFilePath: t.TempDir(),
-			Keycloak:       config.KeycloakConfig{Enabled: keycloakEnabled},
+			OIDC:           config.OIDCConfig{Enabled: oidcEnabled},
 		}
 		env := &Env{config: serverConfig}
 		var err error
@@ -213,14 +213,14 @@ func TestDeployLockEndpointRegistration(t *testing.T) {
 
 	const lockPath = "/api/v1/deploy-lock"
 
-	t.Run("registers lock write endpoints when Keycloak is enabled", func(t *testing.T) {
+	t.Run("registers lock write endpoints when OIDC is enabled", func(t *testing.T) {
 		routes := newRouter(t, true).Routes()
 		assert.True(t, hasRoute(routes, http.MethodPost, lockPath))
 		assert.True(t, hasRoute(routes, http.MethodDelete, lockPath))
 		assert.True(t, hasRoute(routes, http.MethodGet, lockPath))
 	})
 
-	t.Run("omits lock write endpoints when Keycloak is disabled", func(t *testing.T) {
+	t.Run("omits lock write endpoints when OIDC is disabled", func(t *testing.T) {
 		routes := newRouter(t, false).Routes()
 		assert.False(t, hasRoute(routes, http.MethodPost, lockPath),
 			"POST deploy-lock must not be registered without an auth backend")
@@ -277,11 +277,10 @@ func TestNewEnv(t *testing.T) {
 		Host:        "localhost",
 		Port:        "8080",
 		DeployToken: "deployToken",
-		Keycloak: config.KeycloakConfig{
-			Enabled:  true,
-			Url:      "http://localhost:8080",
-			Realm:    "test",
-			ClientId: "test",
+		OIDC: config.OIDCConfig{
+			Enabled:   true,
+			IssuerURL: "http://localhost:8080/realms/test",
+			ClientId:  "test",
 		},
 		JWTSecret: "jwtSecret",
 	}
@@ -298,37 +297,39 @@ func TestNewEnv(t *testing.T) {
 	assert.Equal(t, env.metrics, metrics)
 	assert.Equal(t, env.updater, updater)
 
-	expectedKeycloak, keycloakErr := auth.NewKeycloakAuthService(serverConfig)
-	assert.NoError(t, keycloakErr)
+	expectedOIDC, oidcErr := auth.NewOIDCAuthService(serverConfig)
+	assert.NoError(t, oidcErr)
 
+	// The OIDC strategy is registered under both the canonical and the legacy
+	// Keycloak header for backward compatibility.
 	expectedStrategies := map[string]auth.AuthStrategy{
 		"ARGO_WATCHER_DEPLOY_TOKEN": auth.NewDeployTokenAuthService(serverConfig.DeployToken),
 		"Authorization":             auth.NewJWTAuthService(serverConfig.JWTSecret),
-		keycloakHeader:              expectedKeycloak,
+		oidcHeader:                  expectedOIDC,
+		legacyKeycloakHeader:        expectedOIDC,
 	}
 
 	assert.Equal(t, expectedStrategies, env.strategies)
 	assert.NotNil(t, env.authenticator)
 }
 
-// TestNewEnvInvalidKeycloakURL verifies that NewEnv returns an error when Keycloak is
-// enabled but the URL is invalid.
-func TestNewEnvInvalidKeycloakURL(t *testing.T) {
+// TestNewEnvInvalidOIDCURL verifies that NewEnv returns an error when OIDC is
+// enabled but the issuer URL is invalid.
+func TestNewEnvInvalidOIDCURL(t *testing.T) {
 	serverConfig := &config.ServerConfig{
 		Host:        "localhost",
 		Port:        "8080",
 		DeployToken: "deployToken",
-		Keycloak: config.KeycloakConfig{
-			Enabled: true,
-			Url:     "ftp://invalid:8080",
-			Realm:   "test",
+		OIDC: config.OIDCConfig{
+			Enabled:   true,
+			IssuerURL: "ftp://invalid:8080",
 		},
 	}
 
 	env, err := NewEnv(serverConfig, &argocd.Argo{}, &prometheus.Metrics{}, &argocd.ArgoStatusUpdater{})
 
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to initialize keycloak auth")
+	assert.Contains(t, err.Error(), "failed to initialize OIDC auth")
 	assert.Nil(t, env)
 }
 
@@ -1969,14 +1970,14 @@ func TestSetDeployLockWithKeycloak(t *testing.T) {
 		// can distinguish "wrong token" from "expired token" etc.
 		lockdown, _ := NewLockdown("")
 		strategies := make(map[string]auth.AuthStrategy)
-		strategies[keycloakHeader] = newAuthStrategy(t, false, fmt.Errorf("token expired"))
+		strategies[oidcHeader] = newAuthStrategy(t, false, fmt.Errorf("token expired"))
 
 		env := &Env{
 			lockdown:      lockdown,
 			strategies:    strategies,
 			authenticator: auth.NewAuthenticator(strategies),
 			config: &config.ServerConfig{
-				Keycloak: config.KeycloakConfig{Enabled: true},
+				OIDC: config.OIDCConfig{Enabled: true},
 			},
 		}
 
@@ -1984,7 +1985,7 @@ func TestSetDeployLockWithKeycloak(t *testing.T) {
 		router.POST("/api/v1/deploy-lock", env.SetDeployLock)
 
 		req, _ := http.NewRequest(http.MethodPost, "/api/v1/deploy-lock", nil)
-		req.Header.Set(keycloakHeader, "Bearer invalid-token")
+		req.Header.Set(oidcHeader, "Bearer invalid-token")
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
@@ -1998,14 +1999,14 @@ func TestSetDeployLockWithKeycloak(t *testing.T) {
 		// authentication is required, rather than implying a wrong token.
 		lockdown, _ := NewLockdown("")
 		strategies := make(map[string]auth.AuthStrategy)
-		strategies[keycloakHeader] = newAuthStrategy(t, false, nil)
+		strategies[oidcHeader] = newAuthStrategy(t, false, nil)
 
 		env := &Env{
 			lockdown:      lockdown,
 			strategies:    strategies,
 			authenticator: auth.NewAuthenticator(strategies),
 			config: &config.ServerConfig{
-				Keycloak: config.KeycloakConfig{Enabled: true},
+				OIDC: config.OIDCConfig{Enabled: true},
 			},
 		}
 
@@ -2024,14 +2025,14 @@ func TestSetDeployLockWithKeycloak(t *testing.T) {
 	t.Run("sets lock when token is valid", func(t *testing.T) {
 		lockdown, _ := NewLockdown("")
 		strategies := make(map[string]auth.AuthStrategy)
-		strategies[keycloakHeader] = newAuthStrategy(t, true, nil)
+		strategies[oidcHeader] = newAuthStrategy(t, true, nil)
 
 		env := &Env{
 			lockdown:      lockdown,
 			strategies:    strategies,
 			authenticator: auth.NewAuthenticator(strategies),
 			config: &config.ServerConfig{
-				Keycloak: config.KeycloakConfig{Enabled: true},
+				OIDC: config.OIDCConfig{Enabled: true},
 			},
 		}
 
@@ -2039,13 +2040,102 @@ func TestSetDeployLockWithKeycloak(t *testing.T) {
 		router.POST("/api/v1/deploy-lock", env.SetDeployLock)
 
 		req, _ := http.NewRequest(http.MethodPost, "/api/v1/deploy-lock", nil)
-		req.Header.Set(keycloakHeader, "Bearer valid-token")
+		req.Header.Set(oidcHeader, "Bearer valid-token")
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
 		assert.Equal(t, http.StatusOK, w.Code)
 		assert.Contains(t, w.Body.String(), "deploy lock is set")
 		assert.True(t, lockdown.IsLocked())
+	})
+}
+
+// TestSetDeployLockAcceptsLegacyKeycloakHeader verifies backward compatibility:
+// a client still sending the deprecated Keycloak-Authorization header (instead of
+// the canonical Oidc-Authorization) is authenticated exactly as before.
+func TestSetDeployLockAcceptsLegacyKeycloakHeader(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	lockdown, _ := NewLockdown("")
+	strategies := make(map[string]auth.AuthStrategy)
+	strategies[legacyKeycloakHeader] = newAuthStrategy(t, true, nil)
+
+	env := &Env{
+		lockdown:      lockdown,
+		strategies:    strategies,
+		authenticator: auth.NewAuthenticator(strategies),
+		config: &config.ServerConfig{
+			OIDC: config.OIDCConfig{Enabled: true},
+		},
+	}
+
+	router := gin.New()
+	router.POST("/api/v1/deploy-lock", env.SetDeployLock)
+
+	req, _ := http.NewRequest(http.MethodPost, "/api/v1/deploy-lock", nil)
+	req.Header.Set(legacyKeycloakHeader, "Bearer valid-token")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.True(t, lockdown.IsLocked())
+}
+
+// TestRequireOIDCAuthHeaderPrecedence pins the two-header loop semantics in
+// requireOIDCAuth: the legacy header is a full alias (invalid tokens on it still
+// surface a 401 with the reason), and a rejected canonical header returns
+// immediately without falling through to the legacy header.
+func TestRequireOIDCAuthHeaderPrecedence(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("invalid token on the legacy header surfaces the reason as 401", func(t *testing.T) {
+		lockdown, _ := NewLockdown("")
+		strategies := map[string]auth.AuthStrategy{
+			legacyKeycloakHeader: newAuthStrategy(t, false, fmt.Errorf("token expired")),
+		}
+		env := &Env{
+			lockdown:      lockdown,
+			strategies:    strategies,
+			authenticator: auth.NewAuthenticator(strategies),
+			config:        &config.ServerConfig{OIDC: config.OIDCConfig{Enabled: true}},
+		}
+		router := gin.New()
+		router.POST("/api/v1/deploy-lock", env.SetDeployLock)
+
+		req, _ := http.NewRequest(http.MethodPost, "/api/v1/deploy-lock", nil)
+		req.Header.Set(legacyKeycloakHeader, "Bearer invalid-token")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusUnauthorized, w.Code)
+		assert.Contains(t, w.Body.String(), "token expired")
+	})
+
+	t.Run("a rejected canonical header does not fall through to the legacy header", func(t *testing.T) {
+		lockdown, _ := NewLockdown("")
+		legacy := mocks.NewMockAuthStrategy(gomock.NewController(t))
+		legacy.EXPECT().Validate(gomock.Any()).Times(0) // must never be consulted
+		strategies := map[string]auth.AuthStrategy{
+			oidcHeader:           newAuthStrategy(t, false, fmt.Errorf("canonical rejected")),
+			legacyKeycloakHeader: legacy,
+		}
+		env := &Env{
+			lockdown:      lockdown,
+			strategies:    strategies,
+			authenticator: auth.NewAuthenticator(strategies),
+			config:        &config.ServerConfig{OIDC: config.OIDCConfig{Enabled: true}},
+		}
+		router := gin.New()
+		router.POST("/api/v1/deploy-lock", env.SetDeployLock)
+
+		req, _ := http.NewRequest(http.MethodPost, "/api/v1/deploy-lock", nil)
+		req.Header.Set(oidcHeader, "Bearer bad")
+		req.Header.Set(legacyKeycloakHeader, "Bearer also-bad")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusUnauthorized, w.Code)
+		assert.Contains(t, w.Body.String(), "canonical rejected")
 	})
 }
 
@@ -2059,14 +2149,14 @@ func TestReleaseDeployLockWithKeycloak(t *testing.T) {
 		lockdown, _ := NewLockdown("")
 		lockdown.SetLock()
 		strategies := make(map[string]auth.AuthStrategy)
-		strategies[keycloakHeader] = newAuthStrategy(t, false, fmt.Errorf("token expired"))
+		strategies[oidcHeader] = newAuthStrategy(t, false, fmt.Errorf("token expired"))
 
 		env := &Env{
 			lockdown:      lockdown,
 			strategies:    strategies,
 			authenticator: auth.NewAuthenticator(strategies),
 			config: &config.ServerConfig{
-				Keycloak: config.KeycloakConfig{Enabled: true},
+				OIDC: config.OIDCConfig{Enabled: true},
 			},
 		}
 
@@ -2074,7 +2164,7 @@ func TestReleaseDeployLockWithKeycloak(t *testing.T) {
 		router.DELETE("/api/v1/deploy-lock", env.ReleaseDeployLock)
 
 		req, _ := http.NewRequest(http.MethodDelete, "/api/v1/deploy-lock", nil)
-		req.Header.Set(keycloakHeader, "Bearer invalid-token")
+		req.Header.Set(oidcHeader, "Bearer invalid-token")
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
@@ -2086,14 +2176,14 @@ func TestReleaseDeployLockWithKeycloak(t *testing.T) {
 		lockdown, _ := NewLockdown("")
 		lockdown.SetLock()
 		strategies := make(map[string]auth.AuthStrategy)
-		strategies[keycloakHeader] = newAuthStrategy(t, true, nil)
+		strategies[oidcHeader] = newAuthStrategy(t, true, nil)
 
 		env := &Env{
 			lockdown:      lockdown,
 			strategies:    strategies,
 			authenticator: auth.NewAuthenticator(strategies),
 			config: &config.ServerConfig{
-				Keycloak: config.KeycloakConfig{Enabled: true},
+				OIDC: config.OIDCConfig{Enabled: true},
 			},
 		}
 
@@ -2101,7 +2191,7 @@ func TestReleaseDeployLockWithKeycloak(t *testing.T) {
 		router.DELETE("/api/v1/deploy-lock", env.ReleaseDeployLock)
 
 		req, _ := http.NewRequest(http.MethodDelete, "/api/v1/deploy-lock", nil)
-		req.Header.Set(keycloakHeader, "Bearer valid-token")
+		req.Header.Set(oidcHeader, "Bearer valid-token")
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
@@ -2117,7 +2207,7 @@ func TestValidateTokenWithAllowedStrategy(t *testing.T) {
 
 	t.Run("validates successfully with matching strategy", func(t *testing.T) {
 		strategies := make(map[string]auth.AuthStrategy)
-		strategies[keycloakHeader] = newAuthStrategy(t, true, nil)
+		strategies[oidcHeader] = newAuthStrategy(t, true, nil)
 
 		env := &Env{
 			strategies:    strategies,
@@ -2127,16 +2217,16 @@ func TestValidateTokenWithAllowedStrategy(t *testing.T) {
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
 		c.Request, _ = http.NewRequest(http.MethodPost, "/test", nil)
-		c.Request.Header.Set(keycloakHeader, "Bearer valid-token")
+		c.Request.Header.Set(oidcHeader, "Bearer valid-token")
 
-		valid, err := env.validateToken(c, keycloakHeader)
+		valid, err := env.validateToken(c, oidcHeader)
 		assert.True(t, valid)
 		assert.NoError(t, err)
 	})
 
 	t.Run("strips Bearer prefix from token", func(t *testing.T) {
 		strategies := make(map[string]auth.AuthStrategy)
-		strategies[keycloakHeader] = newAuthStrategy(t, true, nil)
+		strategies[oidcHeader] = newAuthStrategy(t, true, nil)
 
 		env := &Env{
 			strategies:    strategies,
@@ -2146,9 +2236,9 @@ func TestValidateTokenWithAllowedStrategy(t *testing.T) {
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
 		c.Request, _ = http.NewRequest(http.MethodPost, "/test", nil)
-		c.Request.Header.Set(keycloakHeader, "Bearer my-token")
+		c.Request.Header.Set(oidcHeader, "Bearer my-token")
 
-		valid, err := env.validateToken(c, keycloakHeader)
+		valid, err := env.validateToken(c, oidcHeader)
 		assert.True(t, valid)
 		assert.NoError(t, err)
 	})
@@ -2156,7 +2246,7 @@ func TestValidateTokenWithAllowedStrategy(t *testing.T) {
 	t.Run("returns error from strategy validation", func(t *testing.T) {
 		expectedErr := fmt.Errorf("token expired")
 		strategies := make(map[string]auth.AuthStrategy)
-		strategies[keycloakHeader] = newAuthStrategy(t, false, expectedErr)
+		strategies[oidcHeader] = newAuthStrategy(t, false, expectedErr)
 
 		env := &Env{
 			strategies:    strategies,
@@ -2166,9 +2256,9 @@ func TestValidateTokenWithAllowedStrategy(t *testing.T) {
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
 		c.Request, _ = http.NewRequest(http.MethodPost, "/test", nil)
-		c.Request.Header.Set(keycloakHeader, "Bearer expired-token")
+		c.Request.Header.Set(oidcHeader, "Bearer expired-token")
 
-		valid, err := env.validateToken(c, keycloakHeader)
+		valid, err := env.validateToken(c, oidcHeader)
 		assert.False(t, valid)
 		assert.Equal(t, expectedErr, err)
 	})
@@ -2176,7 +2266,7 @@ func TestValidateTokenWithAllowedStrategy(t *testing.T) {
 	t.Run("skips strategies with non-matching headers", func(t *testing.T) {
 		strategies := make(map[string]auth.AuthStrategy)
 		strategies["Authorization"] = newAuthStrategy(t, true, nil)
-		strategies[keycloakHeader] = newAuthStrategy(t, false, nil)
+		strategies[oidcHeader] = newAuthStrategy(t, false, nil)
 
 		env := &Env{
 			strategies:    strategies,
@@ -2188,8 +2278,8 @@ func TestValidateTokenWithAllowedStrategy(t *testing.T) {
 		c.Request, _ = http.NewRequest(http.MethodPost, "/test", nil)
 		c.Request.Header.Set("Authorization", "Bearer token")
 
-		// Only keycloakHeader is allowed, so Authorization should be skipped
-		valid, err := env.validateToken(c, keycloakHeader)
+		// Only oidcHeader is allowed, so Authorization should be skipped
+		valid, err := env.validateToken(c, oidcHeader)
 		assert.False(t, valid)
 		assert.NoError(t, err)
 	})

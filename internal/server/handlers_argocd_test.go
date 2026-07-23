@@ -83,7 +83,7 @@ func TestArgoStatus(t *testing.T) {
 }
 
 // TestArgoStatusEndpointRegistration verifies the read-only reachability route
-// is registered unconditionally (unlike the Keycloak-gated deploy-lock writes),
+// is registered unconditionally (unlike the OIDC-gated deploy-lock writes),
 // so the frontend banner can always bootstrap its state.
 func TestArgoStatusEndpointRegistration(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -97,11 +97,11 @@ func TestArgoStatusEndpointRegistration(t *testing.T) {
 		return false
 	}
 
-	newRouter := func(t *testing.T, keycloakEnabled bool) *gin.Engine {
+	newRouter := func(t *testing.T, oidcEnabled bool) *gin.Engine {
 		t.Helper()
 		serverConfig := &config.ServerConfig{
 			StaticFilePath: t.TempDir(),
-			Keycloak:       config.KeycloakConfig{Enabled: keycloakEnabled},
+			OIDC:           config.OIDCConfig{Enabled: oidcEnabled},
 		}
 		env := &Env{config: serverConfig}
 		var err error
@@ -112,10 +112,10 @@ func TestArgoStatusEndpointRegistration(t *testing.T) {
 
 	const statusPath = "/api/v1/reachability"
 
-	for _, keycloakEnabled := range []bool{false, true} {
-		routes := newRouter(t, keycloakEnabled).Routes()
+	for _, oidcEnabled := range []bool{false, true} {
+		routes := newRouter(t, oidcEnabled).Routes()
 		assert.True(t, hasRoute(routes, http.MethodGet, statusPath),
-			"GET reachability must be registered regardless of Keycloak (enabled=%v)", keycloakEnabled)
+			"GET reachability must be registered regardless of OIDC (enabled=%v)", oidcEnabled)
 	}
 }
 

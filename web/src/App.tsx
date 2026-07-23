@@ -13,9 +13,9 @@ import { useThemeMode } from './theme';
  * Root React-admin application wiring data/auth providers, resources, and custom routes.
  *
  * `loginPage={false}` disables React-admin's built-in username/password login form.
- * This app authenticates exclusively via a top-level Keycloak redirect (see
+ * This app authenticates exclusively via a top-level OIDC redirect (see
  * authProvider), so the stock form is never a valid entry point; leaving it enabled
- * only surfaced it as a misleading fallback when Keycloak was misconfigured.
+ * only surfaced it as a misleading fallback when the provider was misconfigured.
  */
 export const App = () => {
   const { theme } = useThemeMode();

@@ -80,29 +80,34 @@ func keycloakToken(t *testing.T, username, password string) string {
 	return out.AccessToken
 }
 
-// newKeycloakEnv builds an Env wired with the real Keycloak auth strategy (which
-// calls the live Keycloak userinfo endpoint) plus a fresh lockdown — the only
-// collaborators the deploy-lock handlers touch.
+// newKeycloakEnv builds an Env wired with the real OIDC auth strategy pointed at
+// the live Keycloak. The issuer is synthesized as "<url>/realms/<realm>" — exactly
+// what the KEYCLOAK_* backward-compat shim produces — so this test also proves
+// that OIDC discovery against a real Keycloak resolves the same userinfo endpoint
+// the pre-refactor code targeted directly.
 func newKeycloakEnv(t *testing.T) *Env {
 	t.Helper()
 	cfg := &config.ServerConfig{
 		StateType: "in-memory",
-		Keycloak: config.KeycloakConfig{
+		OIDC: config.OIDCConfig{
 			Enabled:          true,
-			Url:              keycloakBaseURL,
-			Realm:            keycloakRealm,
+			IssuerURL:        keycloakBaseURL + "/realms/" + keycloakRealm,
 			ClientId:         keycloakClientID,
 			PrivilegedGroups: []string{"privileged"},
 		},
 	}
 
-	keycloakService, err := auth.NewKeycloakAuthService(cfg)
+	oidcService, err := auth.NewOIDCAuthService(cfg)
 	require.NoError(t, err)
 
 	lockdown, err := NewLockdown("")
 	require.NoError(t, err)
 
-	strategies := map[string]auth.AuthStrategy{keycloakHeader: keycloakService}
+	// Register under both headers, mirroring production wiring (NewEnv).
+	strategies := map[string]auth.AuthStrategy{
+		oidcHeader:           oidcService,
+		legacyKeycloakHeader: oidcService,
+	}
 
 	return &Env{
 		config:        cfg,
@@ -112,8 +117,8 @@ func newKeycloakEnv(t *testing.T) *Env {
 	}
 }
 
-// deployLockServer exposes the Keycloak-gated deploy-lock handlers over real
-// HTTP so the test drives the full request → requireKeycloakAuth → Keycloak path.
+// deployLockServer exposes the OIDC-gated deploy-lock handlers over real HTTP so
+// the test drives the full request → requireOIDCAuth → provider userinfo path.
 func deployLockServer(t *testing.T, env *Env) *httptest.Server {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -128,13 +133,14 @@ func deployLockServer(t *testing.T, env *Env) *httptest.Server {
 }
 
 // callDeployLock issues a deploy-lock request, optionally carrying a token in the
-// Keycloak-Authorization header, and returns the HTTP status code.
+// deprecated Keycloak-Authorization header — proving the legacy header still
+// authenticates end to end — and returns the HTTP status code.
 func callDeployLock(t *testing.T, srv *httptest.Server, method, token string) int {
 	t.Helper()
 	req, err := http.NewRequest(method, srv.URL+"/api/v1/deploy-lock", nil)
 	require.NoError(t, err)
 	if token != "" {
-		req.Header.Set(keycloakHeader, "Bearer "+token)
+		req.Header.Set(legacyKeycloakHeader, "Bearer "+token)
 	}
 
 	resp, err := http.DefaultClient.Do(req)
@@ -147,7 +153,7 @@ func callDeployLock(t *testing.T, srv *httptest.Server, method, token string) in
 // Keycloak (docker-compose `integration` profile). It proves the userinfo
 // round-trip and group-based authorization that the unit tests only mock.
 //
-// Status mapping reflects current server behavior (requireKeycloakAuth, router.go):
+// Status mapping reflects current server behavior (requireOIDCAuth, router.go):
 // every rejection — a strategy error (unprivileged user, garbage/expired token,
 // Keycloak unreachable) or a missing token — is mapped to 401. The error case
 // surfaces the strategy's sanitized reason; the missing-token case reports that

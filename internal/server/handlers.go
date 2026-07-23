@@ -23,7 +23,11 @@ const maxTaskListLimit = 1000
 
 const (
 	unauthorizedMessage = "You are not authorized to perform this action"
-	keycloakHeader      = "Keycloak-Authorization"
+	// oidcHeader is the canonical header carrying the OIDC bearer token for
+	// privileged (deploy-lock/rollback) requests. legacyKeycloakHeader is the
+	// deprecated alias still accepted for backward compatibility.
+	oidcHeader           = "Oidc-Authorization"
+	legacyKeycloakHeader = "Keycloak-Authorization"
 )
 
 // getVersion godoc
@@ -230,41 +234,43 @@ func (env *Env) getConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, env.config)
 }
 
-// requireKeycloakAuth validates the Keycloak token when Keycloak is enabled.
-// It returns true if validation passes (or Keycloak is disabled). On failure
-// the response distinguishes:
+// requireOIDCAuth validates the OIDC token when OIDC auth is enabled. It returns
+// true if validation passes (or OIDC is disabled). The canonical Oidc-Authorization
+// header is tried first, then the deprecated Keycloak-Authorization alias. On
+// failure the response distinguishes:
 //   - 401 with "authentication required" when no auth header was sent.
 //   - 401 with the strategy's reason when the token was rejected.
 //
-// Strategy transport/parse failures (e.g. Keycloak unreachable) are also
+// Strategy transport/parse failures (e.g. the provider unreachable) are also
 // returned as 401 with a sanitized "token validation failed" message; full
 // details land in the server log only.
-func (env *Env) requireKeycloakAuth(c *gin.Context) bool {
-	if !env.config.Keycloak.Enabled {
+func (env *Env) requireOIDCAuth(c *gin.Context) bool {
+	if !env.config.OIDC.Enabled {
 		return true
 	}
 
-	valid, err := env.validateToken(c, keycloakHeader)
-	if valid {
-		return true
+	for _, header := range []string{oidcHeader, legacyKeycloakHeader} {
+		valid, err := env.validateToken(c, header)
+		if valid {
+			return true
+		}
+		if err != nil {
+			// A header was present and the strategy rejected the token. Surface the reason.
+			slog.Warn("rejected request with invalid token",
+				"method", c.Request.Method, "url", c.Request.URL, "error", err)
+			c.JSON(http.StatusUnauthorized, models.TaskStatus{
+				Status: unauthorizedMessage,
+				Error:  err.Error(),
+			})
+			return false
+		}
 	}
 
-	if err != nil {
-		// Strategy was invoked and rejected the token. Surface the reason.
-		slog.Warn("rejected request with invalid token",
-			"method", c.Request.Method, "url", c.Request.URL, "error", err)
-		c.JSON(http.StatusUnauthorized, models.TaskStatus{
-			Status: unauthorizedMessage,
-			Error:  err.Error(),
-		})
-		return false
-	}
-
-	// (false, nil): no auth header sent at all.
+	// No auth header sent on either the canonical or the legacy name.
 	slog.Warn("rejected unauthenticated request", "method", c.Request.Method, "url", c.Request.URL)
 	c.JSON(http.StatusUnauthorized, models.TaskStatus{
 		Status: unauthorizedMessage,
-		Error:  "authentication required (set " + keycloakHeader + " header)",
+		Error:  "authentication required (set " + oidcHeader + " header)",
 	})
 	return false
 }

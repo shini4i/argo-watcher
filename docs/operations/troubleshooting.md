@@ -114,7 +114,7 @@ Each entry follows the same shape: **Symptom · Likely cause · How to verify ·
 **Fix:**
 1. Wait for the lock to expire naturally, or manually update the `until` timestamp to an earlier time.
 2. If you have API access, delete the lock: `curl -X DELETE -H "Authorization: Bearer $BEARER_TOKEN" $ARGO_WATCHER_URL/api/v1/locks/<lock_id>`.
-3. If using Keycloak, ensure your user has the required groups/permissions to manage locks.
+3. If using OIDC authentication, ensure your user has the required groups/permissions to manage locks.
 
 ---
 

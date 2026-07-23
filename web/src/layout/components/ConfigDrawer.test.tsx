@@ -11,7 +11,7 @@ import { TimezoneProvider } from '../../shared/providers/TimezoneProvider';
 vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
 
 const notifyMock = vi.fn();
-const keycloakEnabledMock = vi.fn();
+const oidcEnabledMock = vi.fn();
 const permissionsMock = vi.fn();
 
 vi.mock('../../features/deployLock/deployLockService', () => ({
@@ -22,8 +22,8 @@ vi.mock('../../features/deployLock/deployLockService', () => ({
   },
 }));
 
-vi.mock('../../shared/hooks/useKeycloakEnabled', () => ({
-  useKeycloakEnabled: () => keycloakEnabledMock(),
+vi.mock('../../shared/hooks/useOidcEnabled', () => ({
+  useOidcEnabled: () => oidcEnabledMock(),
 }));
 
 vi.mock('react-admin', async () => {
@@ -59,9 +59,9 @@ describe('ConfigDrawer', () => {
     vi.mocked(deployLockService.setLock).mockReset();
     vi.mocked(deployLockService.releaseLock).mockReset();
     vi.mocked(deployLockService.subscribe).mockReset();
-    keycloakEnabledMock.mockReset();
+    oidcEnabledMock.mockReset();
     permissionsMock.mockReset();
-    keycloakEnabledMock.mockReturnValue(true);
+    oidcEnabledMock.mockReturnValue(true);
     permissionsMock.mockReturnValue({
       permissions: { groups: ['devops'], privilegedGroups: ['devops'] },
       isLoading: false,
@@ -103,18 +103,18 @@ describe('ConfigDrawer', () => {
     expect(toggles[0]).toBeDisabled();
   });
 
-  it('hides the deploy lock toggle when Keycloak is disabled', async () => {
-    keycloakEnabledMock.mockReturnValue(false);
+  it('hides the deploy lock toggle when OIDC is disabled', async () => {
+    oidcEnabledMock.mockReturnValue(false);
     renderDrawer();
 
     expect(screen.queryByRole('switch', { name: /toggle deploy lock/i })).toBeNull();
-    expect(screen.getByText(/manual deploy lock requires keycloak/i)).toBeInTheDocument();
+    expect(screen.getByText(/manual deploy lock requires authentication/i)).toBeInTheDocument();
   });
 
-  it('hides the deploy lock toggle while Keycloak status is unknown', async () => {
+  it('hides the deploy lock toggle while OIDC status is unknown', async () => {
     // Default-deny during the config-loading / request-failed window: the toggle
-    // must not be rendered until Keycloak status is known.
-    keycloakEnabledMock.mockReturnValue(null);
+    // must not be rendered until OIDC status is known.
+    oidcEnabledMock.mockReturnValue(null);
     renderDrawer();
 
     expect(screen.queryByRole('switch', { name: /toggle deploy lock/i })).toBeNull();
