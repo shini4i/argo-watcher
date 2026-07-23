@@ -17,13 +17,17 @@ When OIDC integration is enabled:
 
 You need a fully configured OIDC provider with a **public** client application (Authorization Code + PKCE) set up for Argo Watcher. Provider configuration is outside the scope of this guide — refer to your provider's documentation.
 
-The key requirement is that the token **and** the userinfo response must include a `groups` claim. Argo Watcher uses this claim to determine group membership for privilege checks.
+### The `groups` claim
+
+Every provider must satisfy one requirement: emit a `groups` claim in **both** the ID token and the **userinfo** response (the Web UI reads it from the token to gate buttons; the backend independently enforces it via userinfo). The claim must be gated behind a scope Argo Watcher actually requests. Argo Watcher only ever requests `openid profile email`, so the claim must be bound to `profile` or `email` (or the base `openid` scope) — a claim gated behind a separate `groups` scope is never evaluated, and group membership comes back empty.
+
+The steps below are the same requirement expressed in each provider's configuration model.
 
 !!! tip "Keycloak"
-    Add a `groups` claim by creating a **Group Membership** protocol mapper in the client configuration. Set the **Token Claim Name** to `groups` and enable it for the userinfo endpoint.
+    Create a **Group Membership** protocol mapper in the client configuration. Set the **Token Claim Name** to `groups` and enable **Add to userinfo**. Attach the mapper to the client directly or to a default client scope (`profile`/`email`) so it is always included.
 
 !!! tip "Authentik"
-    Create a **Scope Mapping** that emits a `groups` claim and attach it to one of the scopes Argo Watcher actually requests — `profile` or `email`. Argo Watcher only ever requests `openid profile email`, so a mapping gated behind a separate `groups` scope is never evaluated and group membership will come back empty.
+    Create a **Scope Mapping** that emits a `groups` claim and attach it to the `profile` or `email` scope. Do **not** put it behind a dedicated `groups` scope: Authentik only evaluates a scope mapping when its scope is requested, and Argo Watcher never requests a `groups` scope, so the claim would never be emitted.
 
 ## Configuration
 
