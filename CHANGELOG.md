@@ -72,6 +72,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reason ("did not complete within the staleness window"), distinguishing them
   from deployments aborted because Argo CD was unreachable.
 
+### Security
+
+- Update frontend dependencies to clear the actionable Dependabot advisories: bump
+  `postcss` to 8.5.23 (path traversal via the `sourceMappingURL` previous-source-map
+  auto-loader; build-time only) and the `dompurify` pin to 3.4.12 (elements allowed
+  through `CUSTOM_ELEMENT_HANDLING` bypassed the `afterSanitizeElements` hook).
+  `react-router` deliberately stays on 7.18.1: the advisory affects only the
+  unstable RSC APIs, which the Web UI does not use, and the fix ships in 8.3.0 —
+  outside the range React Admin supports.
+
 ## [0.12.2] - 2026-07-21
 
 ### Added

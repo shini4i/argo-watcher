@@ -1,0 +1,7 @@
+# react-router: RSC Mode CSRF Bypass (GHSA-qwww-vcr4-c8h2)
+# Not exploitable here: the advisory covers only the unstable RSC
+# APIs, which the Vite SPA does not use. No 7.x patch exists
+# (fixed in 8.3.0) and react-admin peer-requires
+# react-router ^6.28.1 || ^7.1.1, so v8 is out of range.
+# Revisit when react-admin supports react-router 8.
+GHSA-qwww-vcr4-c8h2
