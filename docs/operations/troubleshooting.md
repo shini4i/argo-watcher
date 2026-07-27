@@ -98,6 +98,25 @@ Each entry follows the same shape: **Symptom · Likely cause · How to verify ·
 
 ---
 
+## Web UI does not update without a refresh
+
+**Symptom:** The Web UI loads, but task status and deploy-lock changes only appear after a manual page refresh.
+
+**Likely cause:** A reverse proxy or load balancer in front of the server is stripping the `Upgrade` and `Connection` headers, so the WebSocket handshake on `/ws` never happens and the server answers 400.
+
+**How to verify:**
+- Set `LOG_LEVEL=debug` and look for `non-upgrade request to /ws`. It logs the `upgrade` and `connection` header values that actually arrived — an empty `upgrade` means the proxy dropped it before the request reached Argo Watcher.
+
+**Fix:**
+1. Enable WebSocket support on the proxy. For nginx, forward the headers explicitly:
+   ```nginx
+   proxy_set_header Upgrade $http_upgrade;
+   proxy_set_header Connection "upgrade";
+   ```
+2. On an nginx Ingress, confirm the read/send timeouts are long enough to keep the connection open (`nginx.ingress.kubernetes.io/proxy-read-timeout`).
+
+---
+
 ## Lock will not release
 
 **Symptom:** An application is locked for deployment, but the lock cannot be removed.

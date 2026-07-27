@@ -40,6 +40,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `{"available":bool,"reason":"argocd"|"database"|"both"}` (`reason` omitted when
   available) instead of a bare boolean. The WebSocket outage broadcast now carries
   the cause as `argocd_down:<reason>`; recovery is still `argocd_up`.
+- `LOG_LEVEL=debug` no longer logs a line for every request to the `/ws` WebSocket
+  endpoint, which previously drowned out the rest of the debug output. Requests
+  that fail to upgrade are still logged, together with the `Upgrade` and
+  `Connection` headers that actually arrived, so a reverse proxy stripping them
+  stays diagnosable — see the new troubleshooting entry for a Web UI that does not
+  update without a refresh.
 - `GET /api/v1/config` now exposes the authentication settings under an `oidc` key.
   The legacy `keycloak` key is still emitted with identical content for backward
   compatibility. Privileged requests (rollback, deploy-lock) may use the

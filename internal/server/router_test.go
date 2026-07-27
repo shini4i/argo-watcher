@@ -2,8 +2,10 @@ package server
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -634,6 +636,57 @@ func TestStaticFileServing(t *testing.T) {
 	})
 }
 
+// logBuffer collects log output written from request-handling goroutines while
+// the test goroutine reads it, so both sides must hold the lock.
+type logBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *logBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+// String returns everything captured so far.
+func (b *logBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+func (b *logBuffer) reset() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.buf.Reset()
+}
+
+// captureDebugLogs redirects the global slog logger into a buffer at debug level
+// for the duration of the test and returns that buffer. It proves the capture is
+// live before handing the buffer back, so a test whose only assertion is
+// NotContains or Empty cannot pass because logging was silently broken.
+//
+// Not safe under t.Parallel: it swaps the process-global default logger.
+//
+// Call it after registering any cleanup that logs (env.Shutdown does): t.Cleanup
+// runs LIFO, so registering the capture last restores the real logger before
+// that shutdown logging runs, keeping it out of the buffer.
+func captureDebugLogs(t *testing.T) *logBuffer {
+	t.Helper()
+
+	logs := &logBuffer{}
+	previous := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	slog.SetDefault(slog.New(slog.NewJSONHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
+
+	slog.Debug("capture-live")
+	require.Contains(t, logs.String(), "capture-live", "debug log capture is not working")
+	logs.reset()
+
+	return logs
+}
+
 func TestWebSocketInterceptor(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -661,6 +714,53 @@ func TestWebSocketInterceptor(t *testing.T) {
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 		assert.Contains(t, w.Body.String(), "WebSocket upgrade required")
 	})
+
+	// The 400 is otherwise silent, and a proxy that strips or rewrites
+	// Upgrade/Connection is the usual cause; the log is what makes that
+	// diagnosable, so it must report the header values that actually arrived.
+	nonUpgradeCases := []struct {
+		name       string
+		upgrade    string
+		connection string
+		wantAttrs  []string
+	}{
+		{
+			name:       "header stripped entirely",
+			connection: "keep-alive",
+			wantAttrs:  []string{`"upgrade":""`, `"connection":"keep-alive"`},
+		},
+		{
+			name:       "upgrade rewritten to another protocol",
+			upgrade:    "h2c",
+			connection: "Upgrade",
+			wantAttrs:  []string{`"upgrade":"h2c"`, `"connection":"Upgrade"`},
+		},
+	}
+
+	for _, tc := range nonUpgradeCases {
+		t.Run("non-upgrade GET to /ws logs the received headers at debug: "+tc.name, func(t *testing.T) {
+			logs := captureDebugLogs(t)
+
+			req, _ := http.NewRequest(http.MethodGet, "/ws", nil)
+			if tc.upgrade != "" {
+				req.Header.Set("Upgrade", tc.upgrade)
+			}
+			req.Header.Set("Connection", tc.connection)
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+
+			assert.Equal(t, http.StatusBadRequest, w.Code)
+			assert.Contains(t, w.Body.String(), "WebSocket upgrade required")
+
+			assert.Contains(t, logs.String(), "non-upgrade request to /ws")
+			for _, attr := range tc.wantAttrs {
+				assert.Contains(t, logs.String(), attr)
+			}
+			// Debug specifically: at info this would be back to polluting the
+			// default log level, which is the problem the change exists to fix.
+			assert.Contains(t, logs.String(), `"level":"DEBUG"`)
+		})
+	}
 
 	t.Run("case-insensitive Upgrade header check", func(t *testing.T) {
 		// Test with different case variations - all should be intercepted by the WebSocket handler
@@ -728,6 +828,11 @@ func TestWebSocketConnectionIntegration(t *testing.T) {
 		connectionsMutex.Unlock()
 	})
 
+	// Capture debug output around the handshake: a successful upgrade must not
+	// log the non-upgrade diagnostic, otherwise every reconnecting browser tab
+	// floods debug output again.
+	logs := captureDebugLogs(t)
+
 	// Convert http:// to ws://
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws"
 
@@ -745,6 +850,11 @@ func TestWebSocketConnectionIntegration(t *testing.T) {
 
 	// Connection succeeded - the pre-hijack wrapper works
 	t.Log("WebSocket connection established successfully")
+
+	// Empty, not just "no diagnostic": the upgrade path must emit no per-request
+	// logging at all, so a differently-worded line added later is caught too. If
+	// a legitimate success-path log is ever added, make the exception here.
+	assert.Empty(t, logs.String(), "a successful /ws upgrade must not log per-request")
 }
 
 func TestWsResponseWriterHijackNilConn(t *testing.T) {
