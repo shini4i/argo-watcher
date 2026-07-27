@@ -32,11 +32,6 @@ func (env *Env) CreateRouter() *gin.Engine {
 	// CORS middleware writes headers that interfere with WebSocket hijacking
 	router.Use(func(c *gin.Context) {
 		if c.Request.URL.Path == "/ws" {
-			slog.Debug("WebSocket request received",
-				"upgrade", c.Request.Header.Get("Upgrade"),
-				"connection", c.Request.Header.Get("Connection"),
-				"written", c.Writer.Written())
-
 			if strings.EqualFold(c.Request.Header.Get("Upgrade"), "websocket") {
 				env.handleWebSocketConnection(c)
 				c.Abort()
@@ -48,8 +43,16 @@ func (env *Env) CreateRouter() *gin.Engine {
 
 	router.Use(cors.New(env.corsConfig()))
 
-	// Keep the route registered for non-upgrade requests to /ws (will return 400)
+	// Keep the route registered for non-upgrade requests to /ws (will return 400).
+	// Reaching here means the interceptor above saw no "Upgrade: websocket"
+	// header, which usually means a proxy in front of argo-watcher stripped it.
+	// Log the headers we did receive so that is diagnosable. Requests that do
+	// upgrade are handled by the interceptor above and are deliberately not
+	// logged, since every browser tab hits /ws and reconnects.
 	router.GET("/ws", func(c *gin.Context) {
+		slog.Debug("non-upgrade request to /ws",
+			"upgrade", c.Request.Header.Get("Upgrade"),
+			"connection", c.Request.Header.Get("Connection"))
 		c.String(http.StatusBadRequest, "WebSocket upgrade required")
 	})
 
