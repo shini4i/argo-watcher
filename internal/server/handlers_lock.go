@@ -5,6 +5,8 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/shini4i/argo-watcher/internal/models"
 )
 
 // SetDeployLock godoc
@@ -13,13 +15,22 @@ import (
 // @Tags frontend
 // @Success 200 {string} string
 // @Failure 401 {object} models.TaskStatus
+// @Failure 500 {object} models.TaskStatus
 // @Router /api/v1/deploy-lock [post]
 func (env *Env) SetDeployLock(c *gin.Context) {
 	if !env.requireOIDCAuth(c) {
 		return
 	}
 
-	env.lockdown.SetLock()
+	if err := env.lockdown.SetLock(); err != nil {
+		// The caller must not believe deployments are frozen when they are not.
+		slog.Error("failed to set deploy lock", "error", err)
+		c.JSON(http.StatusInternalServerError, models.TaskStatus{
+			Status: "failed to set deploy lock",
+			Error:  "internal server error",
+		})
+		return
+	}
 
 	slog.Debug("deploy lock is set")
 
@@ -34,13 +45,21 @@ func (env *Env) SetDeployLock(c *gin.Context) {
 // @Tags frontend
 // @Success 200 {string} string
 // @Failure 401 {object} models.TaskStatus
+// @Failure 500 {object} models.TaskStatus
 // @Router /api/v1/deploy-lock [delete]
 func (env *Env) ReleaseDeployLock(c *gin.Context) {
 	if !env.requireOIDCAuth(c) {
 		return
 	}
 
-	env.lockdown.ReleaseLock()
+	if err := env.lockdown.ReleaseLock(); err != nil {
+		slog.Error("failed to release deploy lock", "error", err)
+		c.JSON(http.StatusInternalServerError, models.TaskStatus{
+			Status: "failed to release deploy lock",
+			Error:  "internal server error",
+		})
+		return
+	}
 
 	slog.Debug("deploy lock is released")
 

@@ -1,12 +1,56 @@
 package server
 
 import (
+	"errors"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/shini4i/argo-watcher/internal/lock"
 )
+
+// newTestLockdown builds a Lockdown backed by an in-memory store, mirroring how
+// a single-replica deployment is wired.
+func newTestLockdown(t *testing.T, schedules string) *Lockdown {
+	t.Helper()
+
+	l, err := NewLockdown(schedules, lock.NewInMemoryDeployLockStore())
+	require.NoError(t, err)
+	return l
+}
+
+// scheduleAround builds a one-off schedule window offset from now, so tests can
+// reproduce a scheduled lockdown that is still open or already closed. The wide
+// margins keep the window on the correct side of "now" across hour/day/week
+// boundaries.
+func scheduleAround(startOffset, endOffset time.Duration) LockdownSchedule {
+	now := time.Now()
+	start := now.Add(startOffset)
+	end := now.Add(endOffset)
+	return LockdownSchedule{
+		StartDay:  start.Weekday(),
+		StartHour: start.Hour(),
+		StartMin:  start.Minute(),
+		EndDay:    end.Weekday(),
+		EndHour:   end.Hour(),
+		EndMin:    end.Minute(),
+	}
+}
+
+// failingDeployLockStore is a DeployLockStore whose reads always fail, used to
+// verify that an unreadable lock state is treated as locked.
+type failingDeployLockStore struct{}
+
+func (failingDeployLockStore) State() (lock.DeployLockState, error) {
+	return lock.DeployLockState{}, errors.New("database is unreachable")
+}
+func (failingDeployLockStore) Lock() error { return errors.New("database is unreachable") }
+func (failingDeployLockStore) Release(_ time.Time) error {
+	return errors.New("database is unreachable")
+}
 
 func TestLockdown_Parse(t *testing.T) {
 	var testCases = []struct {
@@ -43,21 +87,21 @@ func TestLockdown_Parse(t *testing.T) {
 func TestLockdown_SetLock_ReleaseLock(t *testing.T) {
 	testCases := []struct {
 		name         string
-		action       func(l *Lockdown)
+		action       func(t *testing.T, l *Lockdown)
 		expectedLock bool
 	}{
 		{
 			name: "test setting the lock",
-			action: func(l *Lockdown) {
-				l.SetLock()
+			action: func(t *testing.T, l *Lockdown) {
+				require.NoError(t, l.SetLock())
 			},
 			expectedLock: true,
 		},
 		{
 			name: "test releasing the lock",
-			action: func(l *Lockdown) {
-				l.SetLock()
-				l.ReleaseLock()
+			action: func(t *testing.T, l *Lockdown) {
+				require.NoError(t, l.SetLock())
+				require.NoError(t, l.ReleaseLock())
 			},
 			expectedLock: false,
 		},
@@ -65,12 +109,65 @@ func TestLockdown_SetLock_ReleaseLock(t *testing.T) {
 
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
-			l := &Lockdown{}
-			tt.action(l)
+			l := newTestLockdown(t, "")
+			tt.action(t, l)
 			isLocked := l.IsLocked()
 			assert.Equal(t, tt.expectedLock, isLocked)
 		})
 	}
+}
+
+// TestLockdown_ReleaseLockOverride covers the temporary override that releasing
+// the lock creates while a scheduled lockdown is active, and its expiry.
+func TestLockdown_ReleaseLockOverride(t *testing.T) {
+	t.Run("release overrides an active scheduled lockdown", func(t *testing.T) {
+		l := newTestLockdown(t, "")
+		l.Schedules = []LockdownSchedule{scheduleAround(-2*time.Minute, 2*time.Minute)}
+		require.True(t, l.IsLocked(), "the schedule should lock the system")
+
+		require.NoError(t, l.ReleaseLock())
+		assert.False(t, l.IsLocked(), "the release should suppress the scheduled lockdown")
+	})
+
+	t.Run("the schedule takes effect again once the override expires", func(t *testing.T) {
+		l := newTestLockdown(t, "")
+		l.Schedules = []LockdownSchedule{scheduleAround(-2*time.Minute, 2*time.Minute)}
+		l.overrideDuration = 10 * time.Millisecond
+
+		require.NoError(t, l.ReleaseLock())
+		require.False(t, l.IsLocked())
+
+		time.Sleep(20 * time.Millisecond)
+		assert.True(t, l.IsLocked(), "the scheduled lockdown should resume after the override deadline")
+	})
+
+	t.Run("no override is created without an active schedule", func(t *testing.T) {
+		l := newTestLockdown(t, "")
+		require.NoError(t, l.SetLock())
+		require.NoError(t, l.ReleaseLock())
+
+		state, err := l.store.State()
+		require.NoError(t, err)
+		assert.True(t, state.OverrideUntil.IsZero())
+	})
+
+	t.Run("setting the lock again drops the override", func(t *testing.T) {
+		l := newTestLockdown(t, "")
+		l.Schedules = []LockdownSchedule{scheduleAround(-2*time.Minute, 2*time.Minute)}
+
+		require.NoError(t, l.ReleaseLock())
+		require.False(t, l.IsLocked())
+
+		require.NoError(t, l.SetLock())
+		assert.True(t, l.IsLocked())
+	})
+}
+
+// TestLockdown_IsLockedFailsClosed verifies that an unreadable shared lock state
+// rejects deployments instead of silently letting them through during a freeze.
+func TestLockdown_IsLockedFailsClosed(t *testing.T) {
+	l := &Lockdown{store: failingDeployLockStore{}, overrideDuration: defaultOverrideDuration}
+	assert.True(t, l.IsLocked())
 }
 
 func TestTimeWithinSchedule(t *testing.T) {
@@ -268,7 +365,7 @@ func TestNewLockdown(t *testing.T) {
 
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := NewLockdown(tt.schedules)
+			_, err := NewLockdown(tt.schedules, lock.NewInMemoryDeployLockStore())
 			if tt.hasError {
 				assert.Error(t, err)
 			} else {
@@ -280,7 +377,7 @@ func TestNewLockdown(t *testing.T) {
 
 // TestLockdown_ConcurrentAccess verifies that the lockdown struct is thread-safe.
 func TestLockdown_ConcurrentAccess(t *testing.T) {
-	l := &Lockdown{}
+	l := newTestLockdown(t, "")
 	var wg sync.WaitGroup
 
 	// Multiple goroutines setting and releasing locks
@@ -288,10 +385,12 @@ func TestLockdown_ConcurrentAccess(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			// assert, not require: require calls t.FailNow, which is only
+			// valid on the goroutine running the test.
 			for j := 0; j < 100; j++ {
-				l.SetLock()
+				assert.NoError(t, l.SetLock())
 				_ = l.IsLocked()
-				l.ReleaseLock()
+				assert.NoError(t, l.ReleaseLock())
 				_ = l.IsLocked()
 			}
 		}()
@@ -320,40 +419,51 @@ func TestLockdown_WatchTransitions(t *testing.T) {
 	}
 
 	t.Run("notifies on lock state transitions", func(t *testing.T) {
-		l := &Lockdown{}
+		l := newTestLockdown(t, "")
 		stop := make(chan struct{})
 		defer close(stop)
 
 		// Establish a locked baseline, then let the watcher record it before
 		// mutating state, so the transitions below are detected deterministically.
-		l.SetLock()
+		require.NoError(t, l.SetLock())
 
 		msgs := make(chan string, 4)
 		go l.WatchTransitions(stop, 5*time.Millisecond, func(m string) { msgs <- m })
 		time.Sleep(20 * time.Millisecond) // allow the watcher to capture its baseline
 
-		l.ReleaseLock()
+		require.NoError(t, l.ReleaseLock())
 		assert.Equal(t, "unlocked", recv(t, msgs))
 
-		l.SetLock()
+		require.NoError(t, l.SetLock())
 		assert.Equal(t, "locked", recv(t, msgs))
 	})
 
+	t.Run("notifies when another replica releases the lock", func(t *testing.T) {
+		// The watcher is how clients connected to a replica that did not serve
+		// the request learn about a lock change: it observes only the shared
+		// state, not the local call.
+		store := lock.NewInMemoryDeployLockStore()
+		l, err := NewLockdown("", store)
+		require.NoError(t, err)
+		require.NoError(t, store.Lock())
+
+		stop := make(chan struct{})
+		defer close(stop)
+
+		msgs := make(chan string, 4)
+		go l.WatchTransitions(stop, 5*time.Millisecond, func(m string) { msgs <- m })
+		time.Sleep(20 * time.Millisecond) // allow the watcher to capture its locked baseline
+
+		require.NoError(t, store.Release(time.Time{}))
+
+		assert.Equal(t, "unlocked", recv(t, msgs))
+	})
+
 	t.Run("notifies on a schedule-derived transition", func(t *testing.T) {
-		// Build a schedule window spanning four minutes around now so IsLocked
-		// is true via the schedule (not ManualLock) at baseline. The wide margin
-		// keeps the window covering "now" across hour/day/week boundaries.
-		now := time.Now()
-		start := now.Add(-2 * time.Minute)
-		end := now.Add(2 * time.Minute)
-		l := &Lockdown{Schedules: []LockdownSchedule{{
-			StartDay:  start.Weekday(),
-			StartHour: start.Hour(),
-			StartMin:  start.Minute(),
-			EndDay:    end.Weekday(),
-			EndHour:   end.Hour(),
-			EndMin:    end.Minute(),
-		}}}
+		// A schedule window spanning four minutes around now locks the system
+		// without a manual lock, so the transition below is schedule-derived.
+		l := newTestLockdown(t, "")
+		l.Schedules = []LockdownSchedule{scheduleAround(-2*time.Minute, 2*time.Minute)}
 		assert.True(t, l.IsLocked(), "schedule should lock the system at baseline")
 
 		stop := make(chan struct{})
@@ -363,17 +473,14 @@ func TestLockdown_WatchTransitions(t *testing.T) {
 		go l.WatchTransitions(stop, 5*time.Millisecond, func(m string) { msgs <- m })
 		time.Sleep(20 * time.Millisecond) // allow the watcher to capture its locked baseline
 
-		// Enabling override mode makes isLockedInternal return false without
-		// touching ManualLock, simulating a scheduled window boundary.
-		l.mu.Lock()
-		l.OverrideMode = true
-		l.mu.Unlock()
+		// An override suppresses the scheduled window, simulating its boundary.
+		require.NoError(t, l.ReleaseLock())
 
 		assert.Equal(t, "unlocked", recv(t, msgs))
 	})
 
 	t.Run("does not notify without a transition", func(t *testing.T) {
-		l := &Lockdown{}
+		l := newTestLockdown(t, "")
 		stop := make(chan struct{})
 		defer close(stop)
 
@@ -388,8 +495,27 @@ func TestLockdown_WatchTransitions(t *testing.T) {
 		}
 	})
 
+	t.Run("does not notify while the lock state is unreadable", func(t *testing.T) {
+		// Enforcement fails closed on a read error, but the watcher must not
+		// treat "unknown" as a transition — that would flap the banner between
+		// locked and unlocked on every transient database error.
+		l := &Lockdown{store: failingDeployLockStore{}, overrideDuration: defaultOverrideDuration}
+		stop := make(chan struct{})
+		defer close(stop)
+
+		msgs := make(chan string, 1)
+		go l.WatchTransitions(stop, 5*time.Millisecond, func(m string) { msgs <- m })
+
+		select {
+		case m := <-msgs:
+			t.Fatalf("unexpected notification while the store was failing: %q", m)
+		case <-time.After(50 * time.Millisecond):
+			// staying silent is the expected outcome
+		}
+	})
+
 	t.Run("stops when stop channel is closed", func(t *testing.T) {
-		l := &Lockdown{}
+		l := newTestLockdown(t, "")
 		stop := make(chan struct{})
 		done := make(chan struct{})
 
@@ -409,83 +535,61 @@ func TestLockdown_WatchTransitions(t *testing.T) {
 	})
 }
 
-// TestLockdown_ExpireOverride verifies that once the override window ends, the
-// system re-notifies clients with "locked" only when it is genuinely still
-// locked, and stays silent when the lock has meanwhile been lifted.
-func TestLockdown_ExpireOverride(t *testing.T) {
-	// scheduleAround builds a one-off schedule window offset from now, so tests
-	// can reproduce a scheduled lockdown that is still open or already closed.
-	// The wide margins keep the window on the correct side of "now" across
-	// hour/day/week boundaries.
-	scheduleAround := func(startOffset, endOffset time.Duration) LockdownSchedule {
-		now := time.Now()
-		start := now.Add(startOffset)
-		end := now.Add(endOffset)
-		return LockdownSchedule{
-			StartDay:  start.Weekday(),
-			StartHour: start.Hour(),
-			StartMin:  start.Minute(),
-			EndDay:    end.Weekday(),
-			EndHour:   end.Hour(),
-			EndMin:    end.Minute(),
-		}
+// TestLockdown_IsLockedWith covers how the shared state and the local schedules
+// combine into the resolved lock state.
+func TestLockdown_IsLockedWith(t *testing.T) {
+	now := time.Now()
+	openWindow := scheduleAround(-2*time.Minute, 2*time.Minute)
+	closedWindow := scheduleAround(-4*time.Minute, -2*time.Minute)
+
+	testCases := []struct {
+		name      string
+		schedules []LockdownSchedule
+		state     lock.DeployLockState
+		expected  bool
+	}{
+		{
+			name:     "locked when the manual lock is set",
+			state:    lock.DeployLockState{ManualLock: true},
+			expected: true,
+		},
+		{
+			name:      "unlocked while an override is pending",
+			schedules: []LockdownSchedule{openWindow},
+			state:     lock.DeployLockState{OverrideUntil: now.Add(time.Minute)},
+			expected:  false,
+		},
+		{
+			name:      "the manual lock outranks a pending override",
+			schedules: []LockdownSchedule{openWindow},
+			state:     lock.DeployLockState{ManualLock: true, OverrideUntil: now.Add(time.Minute)},
+			expected:  true,
+		},
+		{
+			name:      "the schedule takes effect again once the override expired",
+			schedules: []LockdownSchedule{openWindow},
+			state:     lock.DeployLockState{OverrideUntil: now.Add(-time.Minute)},
+			expected:  true,
+		},
+		{
+			// The override deadline is not a promise to re-lock: if the window
+			// closed meanwhile, the system stays unlocked.
+			name:      "unlocked when the schedule window closed during the override",
+			schedules: []LockdownSchedule{closedWindow},
+			state:     lock.DeployLockState{OverrideUntil: now.Add(-time.Minute)},
+			expected:  false,
+		},
+		{
+			name:     "unlocked with no manual lock and no schedule",
+			expected: false,
+		},
 	}
 
-	t.Run("notifies locked when the scheduled window is still open", func(t *testing.T) {
-		// Mirrors the production path: ReleaseLock clears ManualLock, so the only
-		// way the system is still locked after the override expires is an active
-		// schedule window. Once OverrideMode clears, that window must re-notify.
-		l := &Lockdown{OverrideMode: true, Schedules: []LockdownSchedule{
-			scheduleAround(-2*time.Minute, 2*time.Minute),
-		}}
-
-		msgs := make(chan string, 1)
-		l.expireOverride(time.Millisecond, func(m string) { msgs <- m })
-
-		assert.False(t, l.OverrideMode, "override should be cleared")
-		select {
-		case m := <-msgs:
-			assert.Equal(t, "locked", m)
-		case <-time.After(time.Second):
-			t.Fatal("expected a 'locked' notification")
-		}
-	})
-
-	t.Run("stays silent when the scheduled window closed during the override", func(t *testing.T) {
-		// The exact bug scenario: the schedule window elapsed while the override
-		// was active, so once OverrideMode clears the system is unlocked and no
-		// stale "locked" message must be sent.
-		l := &Lockdown{OverrideMode: true, Schedules: []LockdownSchedule{
-			scheduleAround(-4*time.Minute, -2*time.Minute),
-		}}
-
-		msgs := make(chan string, 1)
-		l.expireOverride(time.Millisecond, func(m string) { msgs <- m })
-
-		assert.False(t, l.OverrideMode, "override should be cleared")
-		select {
-		case m := <-msgs:
-			t.Fatalf("unexpected notification: %q", m)
-		case <-time.After(50 * time.Millisecond):
-			// no notification is the expected outcome
-		}
-	})
-}
-
-// TestLockdown_IsLockedInternal tests the internal lock checking logic.
-func TestLockdown_IsLockedInternal(t *testing.T) {
-	t.Run("returns true when ManualLock is set", func(t *testing.T) {
-		l := &Lockdown{ManualLock: true}
-		assert.True(t, l.IsLocked())
-	})
-
-	t.Run("returns false when OverrideMode is set without ManualLock", func(t *testing.T) {
-		l := &Lockdown{OverrideMode: true}
-		assert.False(t, l.IsLocked())
-	})
-
-	t.Run("ManualLock takes precedence over OverrideMode", func(t *testing.T) {
-		l := &Lockdown{ManualLock: true, OverrideMode: true}
-		assert.True(t, l.IsLocked())
-	})
+	for _, tt := range testCases {
+		t.Run(tt.name, func(t *testing.T) {
+			l := newTestLockdown(t, "")
+			l.Schedules = tt.schedules
+			assert.Equal(t, tt.expected, l.isLockedWith(tt.state, now))
+		})
+	}
 }

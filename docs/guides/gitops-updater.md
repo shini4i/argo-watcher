@@ -250,7 +250,7 @@ scheduledLockdown:
 
 In this example, deployments are blocked between Wednesday 20:00 and Thursday 08:00, and between Friday 20:00 and Monday 08:00.
 
-The Web UI lockdown banner updates automatically (within about a minute) when a scheduled window begins or ends — no page refresh is needed.
+The Web UI lockdown banner updates automatically (within a few seconds) when a scheduled window begins or ends — no page refresh is needed.
 
 ### Manual Lockdown
 
@@ -272,7 +272,7 @@ curl -X DELETE https://argo-watcher.example.com/api/v1/deploy-lock
 ```
 
 !!! note
-    When OIDC authentication is enabled, a valid OIDC token (i.e., any authenticated user) is required to use the deploy lock API endpoints, sent via the `Oidc-Authorization` header (the legacy `Keycloak-Authorization` header is still accepted).
+    When OIDC authentication is enabled, the deploy lock API endpoints require a token from a user in one of the `OIDC_PRIVILEGED_GROUPS`, sent via the `Oidc-Authorization` header (the legacy `Keycloak-Authorization` header is still accepted).
 
 #### Via Web UI
 
@@ -282,6 +282,19 @@ Click the **Argo Watcher** logo in the Web UI and toggle the **Lockdown Mode** s
 
 !!! note
     When OIDC authentication is enabled, you must be authenticated to manage the deployment lock.
+
+#### Releasing a Lock During a Scheduled Window
+
+Releasing the lock while a scheduled lockdown window is open does not cancel the schedule: it suppresses it for 15 minutes, after which the window takes effect again (unless it has closed meanwhile). Setting the lock again clears a pending suppression.
+
+### Behaviour With Multiple Replicas
+
+With `STATE_TYPE=postgres`, the manual lock and its temporary suppression are stored in the database, so a lock set through any replica rejects deployments on all of them, and it survives a restart. Enforcement is immediate: every deploy request resolves the lock state at that moment, so a lock set on one replica rejects the next deploy that reaches any other replica. Web UI clients connected to a replica that did not serve the lock request see the banner update within a few seconds, when that replica's watcher next samples the state.
+
+With `STATE_TYPE=in-memory` the lock lives in the process that served the request. That is correct for a single replica — the only supported configuration for in-memory state — but the lock is lost on restart.
+
+!!! warning
+    If the database is unreachable, the lock state cannot be read and deployments are rejected as if a lock were active. Rejecting a deployment during an outage is recoverable; letting one through during a freeze is not.
 
 ## Migrating from Argo CD Image Updater
 

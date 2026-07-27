@@ -4,7 +4,7 @@ When `STATE_TYPE=postgres` is set, Argo Watcher persists task data in PostgreSQL
 
 ## Schema overview
 
-There is a single table, `tasks`, that stores every deployment task and its status. Indexes are tuned for the two access patterns the Web UI uses: listing recent tasks and looking up a task by ID.
+There are two tables. `tasks` stores every deployment task and its status; indexes are tuned for the two access patterns the Web UI uses: listing recent tasks and looking up a task by ID.
 
 | Column | Type | Notes |
 |---|---|---|
@@ -19,6 +19,14 @@ There is a single table, `tasks`, that stores every deployment task and its stat
 | `app` | `varchar(255) NOT NULL` | Argo CD application name. |
 | `author` | `varchar(255) NOT NULL` | Deployment author identifier. |
 | `project` | `varchar(255) NOT NULL` | Business project identifier. |
+
+`deploy_lock` holds the [manual deploy lock](../guides/gitops-updater.md#deployment-locking) so it applies to every replica and survives restarts. It is seeded by the migration and always holds exactly one row.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `int` | Primary key, pinned to `1` by a `CHECK` constraint so a second row cannot exist. |
+| `manual_lock` | `boolean NOT NULL DEFAULT false` | `true` while an operator-set lockdown is active. |
+| `override_until` | `timestamptz` | Deadline of a temporary override of a scheduled lockdown; `NULL` when none is active. |
 
 ## Migrations
 

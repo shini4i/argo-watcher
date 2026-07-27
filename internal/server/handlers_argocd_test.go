@@ -15,6 +15,7 @@ import (
 
 	"github.com/shini4i/argo-watcher/internal/argocd"
 	"github.com/shini4i/argo-watcher/internal/config"
+	"github.com/shini4i/argo-watcher/internal/lock"
 	"github.com/shini4i/argo-watcher/internal/mocks"
 )
 
@@ -105,7 +106,7 @@ func TestArgoStatusEndpointRegistration(t *testing.T) {
 		}
 		env := &Env{config: serverConfig}
 		var err error
-		env.lockdown, err = NewLockdown("")
+		env.lockdown, err = NewLockdown("", lock.NewInMemoryDeployLockStore())
 		require.NoError(t, err)
 		return env.CreateRouter()
 	}

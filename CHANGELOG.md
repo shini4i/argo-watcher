@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   per flush, and the new `gitops_batch_size` metric reports how many were coalesced.
 - `state_unavailable` metric: `1` when argo-watcher cannot reach its state backend
   (database), `0` otherwise. It tracks the state backend independently of ArgoCD.
+- The manual deploy lock is now shared across replicas when `STATE_TYPE=postgres`.
+  It is stored in a new `deploy_lock` table (migration `000006`), so a lock set
+  through any replica rejects deployments on all of them and survives a restart —
+  previously it lived in the process that served the request. With
+  `STATE_TYPE=in-memory` the lock stays process-local, which remains correct for
+  the single replica that backend supports.
 - Support for any OpenID Connect provider (e.g. Authentik) for Web UI login and
   privileged-group authorization, not just Keycloak. Configure it with
   `OIDC_ISSUER_URL`, `OIDC_CLIENT_ID`, and `OIDC_PRIVILEGED_GROUPS`; the backend
@@ -27,6 +33,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Releasing the deploy lock during a scheduled lockdown window now records a
+  15-minute override deadline in shared state instead of an in-process timer, so
+  the suppression ends at the same instant on every replica and survives a
+  restart. Setting the lock again clears a pending suppression.
+- If the deploy lock state cannot be read (database unreachable, or migrations not
+  applied), the server now rejects deployments as if a lock were active rather
+  than letting them through. The Web UI lockdown banner also reacts within a few
+  seconds instead of up to a minute.
+- The `POST` and `DELETE /api/v1/deploy-lock` endpoints now return `500` when the
+  lock state cannot be persisted, instead of reporting success.
 - The Web UI "unreachable" banner now names exactly which dependency is down —
   ArgoCD, the state backend (database), or both — instead of always hedging with
   "ArgoCD or its state backend". It is also anchored to the bottom of the page for

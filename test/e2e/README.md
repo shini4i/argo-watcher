@@ -52,7 +52,7 @@ task notifications        # assert the generic webhook fires (start + result) wi
 task load                 # git-conflict soak: competitor + concurrent deploys, strict 0-failed
 task batch-writeback      # toggle GIT_BATCH_WRITEBACK on, re-run the contention soak: assert 0 lost updates + real coalescing (mean batch size > 1), then revert
 task race                 # same-app supersession: a newer deploy must win over an older retrying one
-task state-postgres       # flip the release to Postgres state: assert migration, deploy loop, task survives a pod restart, supersession under contention
+task state-postgres       # flip the release to Postgres state: assert migration, deploy loop, task survives a pod restart, the shared deploy lock, supersession under contention
 task failure-diagnostics  # assert failure reasons carry the real cause (pod ImagePullBackOff, failed hooks)
 task argocd-unreachable   # scale ArgoCD down: assert /reachability flips (reason "argocd") + the watcher broadcasts "argocd_down:argocd" + POST fast-fails 503, then recovers
 task shutdown-drain       # assert graceful shutdown drains in-flight WebSocket connections (GoingAway) with no race/panic
@@ -88,7 +88,7 @@ Reach any component with `kubectl port-forward` (there is no ingress), e.g.
 | `scripts/mint-argo-token.sh` | mint `ARGO_TOKEN` into `argo-watcher-secret` |
 | `scripts/failure-diagnostics.sh` | table-driven failure-reason assertions, driven through the real client (add a case = one table entry) |
 | `scripts/race-supersede.sh` | same-app supersession assertion: real client, newer deploy wins, older is superseded |
-| `scripts/state-postgres.sh` | flip the release to `STATE_TYPE=postgres` and assert the Postgres-only path: schema migration Job, real deploy loop, task history surviving a pod restart (in-memory loses it), and supersession under contention (the hand-written `CancelInProgressTasks` SQL) |
+| `scripts/state-postgres.sh` | flip the release to `STATE_TYPE=postgres` and assert the Postgres-only path: schema migration Job, real deploy loop, task history surviving a pod restart (in-memory loses it), the shared deploy lock (a lock row written by another writer rejects deploys here), and supersession under contention (the hand-written `CancelInProgressTasks` SQL) |
 | `scripts/batch-writeback.sh` | toggle `GIT_BATCH_WRITEBACK=true` on the release, re-run the contention soak, and revert; reuses `collect.sh` (with `BATCH_MODE`) to gate on zero lost updates and real coalescing (`gitops_batch_size` mean > 1) |
 | `fixtures/postgres/` | in-cluster Postgres (Secret + Service + StatefulSet, one resource per file) the `state-postgres` phase points the release at; the chart bundles no database |
 | `values/argo-watcher-postgres.yaml` | overlay layered over `values/argo-watcher.yaml` that enables `postgres` (sets `STATE_TYPE=postgres`, wires `DB_*`, triggers the migration Job) |

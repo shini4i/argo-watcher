@@ -60,14 +60,12 @@ Each entry follows the same shape: **Symptom · Likely cause · How to verify ·
 **Likely causes:**
 - The default `DEPLOYMENT_TIMEOUT` (900 seconds / 15 minutes) is too short for the workload.
 - Argo CD is not detecting the image update.
-- The lock is set on the application, blocking the deployment.
 - When relying on the built-in GitOps updater: the task was submitted without a valid deploy token or JWT, so the write-back was silently skipped and Argo CD never received the new tag. (If image tags are committed by other means — Argo CD Image Updater, your CI — this is expected and not the cause.)
 
 **How to verify:**
 - Check the Argo CD UI to confirm the application is syncing and the new image is being deployed.
 - Verify that the image tag annotation was correctly set: `kubectl describe app <ARGO_APP> -o yaml | grep -A5 argo-watcher`.
 - Confirm the CI job actually supplied `ARGO_WATCHER_DEPLOY_TOKEN` or `BEARER_TOKEN`; with `LOG_LEVEL=debug` a skipped write-back logs "Skipping git repo update".
-- Check if the application is locked: `curl -H "Authorization: Bearer $BEARER_TOKEN" $ARGO_WATCHER_URL/api/v1/locks | jq '.[] | select(.app == "<ARGO_APP>")'`.
 
 **Fix:**
 1. Increase `DEPLOYMENT_TIMEOUT` to accommodate your typical rollout duration.
@@ -117,23 +115,45 @@ Each entry follows the same shape: **Symptom · Likely cause · How to verify ·
 
 ---
 
-## Lock will not release
+## All deployments rejected as locked, but nobody set a lock
 
-**Symptom:** An application is locked for deployment, but the lock cannot be removed.
+**Symptom:** Every deployment is rejected with `406` and `lockdown is active, deployments are not accepted`, while no manual lock was set and no scheduled window is open.
 
-**Likely causes:**
-- The lock was created with a future `until` timestamp and has not yet expired.
-- Insufficient permissions to remove the lock.
-- The API endpoint was called with incorrect parameters.
+**Likely causes:** With `STATE_TYPE=postgres` the lock state lives in the database. If it cannot be read, the server fails closed and treats the unknown state as locked. Two different problems produce that:
+
+- The database is unreachable.
+- The `deploy_lock` table does not exist because migration `000006` has not been applied — the database itself is perfectly healthy.
 
 **How to verify:**
-- Retrieve the lock details: `curl -H "Authorization: Bearer $BEARER_TOKEN" $ARGO_WATCHER_URL/api/v1/locks | jq '.[] | select(.app == "<ARGO_APP>")'`.
-- Check the `until` timestamp and `created_by` fields.
+- `GET /api/v1/deploy-lock` returns `true`.
+- The server log contains `failed to read deploy lock state, assuming locked`. The error on that line tells the two causes apart: a connection error for an outage, `relation "deploy_lock" does not exist` for a missing migration.
+- `/reachability` reports the `database` reason only for a genuine outage. A healthy `/reachability` alongside a permanent lock points at the migration.
+
+**Fix:** Restore database connectivity, or [apply the migrations](database.md#migrations). Lock resolution returns to normal on the next successful read; no manual intervention on the lock itself is needed.
+
+---
+
+## Lock will not release
+
+**Symptom:** Deployments stay blocked after releasing the deploy lock. The lock is server-global — there is no per-application lock.
+
+**Likely causes:**
+- A [scheduled lockdown](../guides/gitops-updater.md#scheduled-lockdown) window is open. Releasing the lock during a window only suppresses it for 15 minutes, after which it takes effect again.
+- The `DELETE` never reached the server: the state-changing endpoints are only registered when OIDC is enabled (otherwise `404`), and they require a token from a user in one of the `OIDC_PRIVILEGED_GROUPS` (otherwise `401`).
+- The lock state cannot be read at all — see [All deployments rejected as locked, but nobody set a lock](#all-deployments-rejected-as-locked-but-nobody-set-a-lock).
+
+**How to verify:**
+- Read the current state: `curl $ARGO_WATCHER_URL/api/v1/deploy-lock` (no authentication needed).
+- Check the response code of the release itself:
+  ```bash
+  curl -i -X DELETE -H "Oidc-Authorization: $OIDC_TOKEN" $ARGO_WATCHER_URL/api/v1/deploy-lock
+  ```
+  `404` means OIDC is disabled, `401` means the token was rejected or the user is not in a privileged group, and `500` means the lock state could not be persisted (the reason is in the server log).
+- Check whether `LOCKDOWN_SCHEDULE` covers the current time. The server evaluates schedules in its own timezone, which is UTC in the published container image unless `TZ` is set.
 
 **Fix:**
-1. Wait for the lock to expire naturally, or manually update the `until` timestamp to an earlier time.
-2. If you have API access, delete the lock: `curl -X DELETE -H "Authorization: Bearer $BEARER_TOKEN" $ARGO_WATCHER_URL/api/v1/locks/<lock_id>`.
-3. If using OIDC authentication, ensure your user has the required groups/permissions to manage locks.
+1. Re-issue the `DELETE` with a token belonging to a privileged group.
+2. If a scheduled window is the cause, either wait for it to close or remove the window from `LOCKDOWN_SCHEDULE` — a release cannot cancel a schedule, only suppress it for 15 minutes at a time.
 
 ---
 
