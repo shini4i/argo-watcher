@@ -212,18 +212,22 @@ db/
   migrations/       # PostgreSQL migration files
 docs/               # MkDocs documentation source
 internal/
-  argocd/           # Argo CD API client
-  auth/             # Authentication (JWT, deploy token)
+  argocd/           # Argo CD API client and git write-back
+  auth/             # Authentication (OIDC, JWT, deploy token)
+  client/           # CLI client logic
+  config/           # Environment-variable configuration
   helpers/          # Shared utility functions
   lock/             # Deployment lock logic
+  logging/          # slog setup
   migrate/          # Database migration runner
   mocks/            # Generated gomock mocks for tests (gitignored, `task mocks`)
   models/           # Data models
   notifications/    # Webhook notification sender
+  prometheus/       # Metrics definitions
   server/           # HTTP server and routes
   state/            # State management (in-memory and PostgreSQL)
-pkg/
-  client/           # CLI client logic
   updater/          # GitOps updater logic
+test/
+  e2e/              # Disposable kind-based end-to-end lab
 web/                # React/TypeScript frontend
 ```
