@@ -60,6 +60,7 @@ scenario_client() {
     IMAGES="$image" COMMIT_AUTHOR="$author" PROJECT_NAME="$project" \
     TASK_TIMEOUT="$timeout" \
     "${token_env[@]+"${token_env[@]}"}"
+  return
 }
 
 # restore_good_tag <app>: bump the app back to a pullable tag so the lab stays

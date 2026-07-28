@@ -248,6 +248,35 @@ PROM
   assert_equal "$attempts" "1"
 }
 
+# --- exit-status propagation --------------------------------------------------
+# Every helper ends with an explicit `return` (shelldre:S7682). A bare `return`
+# forwards the last command's status, but writing `return 0` — or reordering so
+# something else runs last — would silently swallow a failure. run_client's status IS
+# the assertion in six phases, so pin the contract rather than trusting it.
+
+@test "run_client propagates a non-zero client exit code" {
+  CLIENT_BIN="$(command -v false)"
+  run ! run_client app1 v1
+}
+
+@test "run_client propagates a zero client exit code" {
+  CLIENT_BIN="$(command -v true)"
+  run run_client app1 v1
+  assert_success
+}
+
+@test "wait_url propagates failure when nothing answers" {
+  run ! wait_url "http://127.0.0.1:1/nope" 1
+}
+
+@test "ok and note succeed; bad succeeds but counts the failure" {
+  E2E_FAILS=0
+  run ok "fine";  assert_success
+  run note "hmm"; assert_success
+  bad "broken"
+  assert_equal "$E2E_FAILS" "1"
+}
+
 # --- assertion accumulator ---------------------------------------------------
 
 @test "phase_end exits 0 when nothing failed" {

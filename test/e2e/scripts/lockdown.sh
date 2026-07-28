@@ -79,7 +79,9 @@ wait_service || die "argo-watcher never came back after enabling the schedule"
 
 # lock_is <true|false> -> succeeds when GET /deploy-lock equals it.
 lock_is() {
-  curl -s -m 10 "${AW_API}/deploy-lock" | jq -e ". == $1" >/dev/null 2>&1
+  local want="$1"
+  curl -s -m 10 "${AW_API}/deploy-lock" | jq -e ". == ${want}" >/dev/null 2>&1
+  return
 }
 
 # --- 2. Confirm we booted pre-window, then hold a WS client open ---------------

@@ -78,7 +78,7 @@ echo "deleting pod ${pod} (grace 60s) to trigger graceful shutdown"
 kubectl -n "$NS_AW" delete pod "$pod" --grace-period=60 --wait=false >/dev/null
 
 # --- 3. Every WS client must observe the graceful GoingAway close --------------
-gone() { ! kill -0 "$1" 2>/dev/null; }
+gone() { local pid="$1"; ! kill -0 "$pid" 2>/dev/null; }
 for i in $(seq 1 "$WS_CLIENTS"); do
   # wsprobe exits when its connection closes; bound the wait so a hung client fails.
   retry 30 1 gone "${probe_pids[$((i - 1))]}" || true

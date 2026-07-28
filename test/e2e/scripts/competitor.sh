@@ -17,7 +17,7 @@ INTERVAL="${INTERVAL:-1}"
 
 # Explicit -f predicate rather than wait_url: Gitea's healthz has no 503-by-design
 # case, so "answers at all" would let a 5xx during startup through.
-gitea_up() { curl -sf -m 3 -o /dev/null "${GITEA_URL}/api/healthz"; }
+gitea_up() { curl -sf -m 3 -o /dev/null "${GITEA_URL}/api/healthz"; return; }
 retry 20 1 gitea_up || die "gitea not healthy on ${GITEA_URL}"
 
 work="$(mktemp -d)"

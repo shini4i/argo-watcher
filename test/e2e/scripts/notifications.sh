@@ -70,6 +70,7 @@ both_captured() {
       | { status: $b.status, app: $b.app, tag: ($b.images[0].tag // ""),
           auth: ([ $r.headers[] | select((.name|ascii_downcase) == ($hdr|ascii_downcase)) | .value ] | first // "") } ]')
   [[ "$(jq 'length' <<<"$events")" -ge 2 ]]
+  return
 }
 retry 15 2 both_captured
 echo "captured events for task ${id}: ${events}"

@@ -64,6 +64,7 @@ ip=""
 drained() {
   ip=$(metric_raw in_progress_tasks)
   [[ "${ip:-1}" == "0" ]]
+  return
 }
 retry 15 1 drained
 

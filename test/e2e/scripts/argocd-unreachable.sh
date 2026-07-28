@@ -60,11 +60,15 @@ TASK="$(task_json app1 v1.10.2)"
 
 # status_is <true|false> -> succeeds when GET /reachability .available equals it.
 status_is() {
-  curl -s -m 10 "${AW_API}/reachability" | jq -e ".available == $1" >/dev/null 2>&1
+  local want="$1"
+  curl -s -m 10 "${AW_API}/reachability" | jq -e ".available == ${want}" >/dev/null 2>&1
+  return
 }
 # reason_is <reason> -> succeeds when GET /reachability .reason equals the arg.
 reason_is() {
-  curl -s -m 10 "${AW_API}/reachability" | jq -e ".reason == \"$1\"" >/dev/null 2>&1
+  local want="$1"
+  curl -s -m 10 "${AW_API}/reachability" | jq -e ".reason == \"${want}\"" >/dev/null 2>&1
+  return
 }
 
 wait_service || die "argo-watcher not reachable on ${AW_URL}"

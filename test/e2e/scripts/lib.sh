@@ -52,17 +52,18 @@ IMAGE="${IMAGE:-traefik/whoami}"
 # --- assertions --------------------------------------------------------------
 E2E_FAILS=0
 
-ok()   { echo "  OK   $*"; }
-bad()  { echo "  FAIL $*"; E2E_FAILS=$((E2E_FAILS + 1)); }
-note() { echo "  NOTE $*"; }
+ok()   { echo "  OK   $*"; return; }
+bad()  { echo "  FAIL $*"; E2E_FAILS=$((E2E_FAILS + 1)); return; }
+note() { echo "  NOTE $*"; return; }
 
 # phase_end <PHASE-NAME>: print the verdict and exit 1 if any bad() fired.
 phase_end() {
+  local name="$1"
   if [[ "$E2E_FAILS" -eq 0 ]]; then
-    echo "${1}: PASS"
+    echo "${name}: PASS"
     exit 0
   fi
-  echo "${1}: FAIL (${E2E_FAILS} failed assertion(s))"
+  echo "${name}: FAIL (${E2E_FAILS} failed assertion(s))"
   exit 1
 }
 
@@ -97,13 +98,17 @@ retry() {
 # the argocd-unreachable phase induces on purpose and the shutdown-drain phase can
 # observe on a fresh pod. A `curl -f` here would hang in exactly those phases.
 wait_service() {
-  retry "${1:-30}" 2 curl -s -m 3 -o /dev/null "${AW_URL}/healthz"
+  local attempts="${1:-30}"
+  retry "$attempts" 2 curl -s -m 3 -o /dev/null "${AW_URL}/healthz"
+  return
 }
 
 # wait_url <url> [attempts]: block until <url> answers at all (see wait_service on
 # why the status code is not checked).
 wait_url() {
-  retry "${2:-15}" 2 curl -s -m 3 -o /dev/null "$1"
+  local url="$1" attempts="${2:-15}"
+  retry "$attempts" 2 curl -s -m 3 -o /dev/null "$url"
+  return
 }
 
 # wait_app <app> <want> [attempts]: poll an Argo Application until its
@@ -129,15 +134,19 @@ wait_app() {
 # last observed state if it never gets there. Deploy phases open with this so they
 # deploy from a known-good baseline.
 require_app_synced() {
-  wait_app "$1" "Synced/Healthy" "${2:-40}" \
-    || die "${1} never reached Synced/Healthy (last: ${APP_STATE:-unknown})"
+  local app="$1" attempts="${2:-40}"
+  wait_app "$app" "Synced/Healthy" "$attempts" \
+    || die "${app} never reached Synced/Healthy (last: ${APP_STATE:-unknown})"
+  return
 }
 
 # wait_ws <file> <message> [attempts]: wait for a wsprobe capture file to contain
 # `MSG <message>`. The lockdown watcher polls every 5s, so the default ~30s window
 # covers a broadcast triggered just after the previous tick.
 wait_ws() {
-  retry "${3:-6}" 5 grep -q "^MSG ${2}\$" "$1"
+  local file="$1" message="$2" attempts="${3:-6}"
+  retry "$attempts" 5 grep -q "^MSG ${message}\$" "$file"
+  return
 }
 
 # wait_ws_open <file> [attempts]: wait for a wsprobe to report its connection is
@@ -145,7 +154,9 @@ wait_ws() {
 # a one-shot broadcast is missed entirely if the handshake is still in flight, and
 # a fixed sleep raced it on a loaded host.
 wait_ws_open() {
-  retry "${2:-20}" 1 grep -q '^OPEN$' "$1"
+  local file="$1" attempts="${2:-20}"
+  retry "$attempts" 1 grep -q '^OPEN$' "$file"
+  return
 }
 
 # --- HTTP --------------------------------------------------------------------
@@ -160,12 +171,15 @@ req() {
     -X "$method" "$@" "$url")
   TIME="${out##*$'\n'}"; out="${out%$'\n'*}"
   CODE="${out##*$'\n'}"; BODY="${out%$'\n'*}"
+  return
 }
 
 # task_json <app> <tag> [author] [project] [image]: a POST /tasks payload.
 task_json() {
+  local app="$1" tag="$2" author="${3:-e2e}" project="${4:-lab}" image="${5:-$IMAGE}"
   printf '{"app":"%s","author":"%s","project":"%s","images":[{"image":"%s","tag":"%s"}]}' \
-    "$1" "${3:-e2e}" "${4:-lab}" "${5:-$IMAGE}" "$2"
+    "$app" "$author" "$project" "$image" "$tag"
+  return
 }
 
 # post_task <json> [curl-args...]: POST a deploy task, setting CODE/BODY/TIME.
@@ -176,6 +190,7 @@ post_task() {
   local json="$1"
   shift
   req POST "${AW_API}/tasks" -H 'Content-Type: application/json' -d "$json" "$@"
+  return
 }
 
 # metric_sum <metric> [metrics-text]: sum the value column across every series of
@@ -187,6 +202,7 @@ metric_sum() {
   local metric="$1" text="${2-}"
   [[ -n "$text" ]] || text="$(curl -s -m 10 "${AW_URL}/metrics")"
   awk -v k="^${metric}[ {]" '$0 ~ k {s+=$NF} END{print s+0}' <<<"$text"
+  return
 }
 
 # metric_raw <metric> [metrics-text]: the value of a single unlabelled series, or
@@ -200,6 +216,7 @@ metric_raw() {
   local metric="$1" text="${2-}"
   [[ -n "$text" ]] || text="$(curl -s -m 10 "${AW_URL}/metrics")"
   awk -v k="^${metric} " '$0 ~ k {print $NF}' <<<"$text"
+  return
 }
 
 # --- Go binaries -------------------------------------------------------------
@@ -216,14 +233,17 @@ build_bin() {
   local _dir="$1" _pkg="$2"
   BIN="${_dir}/$(basename "$_pkg")"
   ( cd "$E2E_ROOT" && go build -o "$BIN" "$_pkg" )
+  return
 }
 
 # build_client <dir>: build the real cmd/client binary, setting CLIENT_BIN for
 # run_client. The tool users actually run, so the deploy phases drive it rather
 # than a hand-rolled HTTP call.
 build_client() {
-  build_bin "$1" ./cmd/client || return 1
+  local dir="$1"
+  build_bin "$dir" ./cmd/client || return 1
   CLIENT_BIN="$BIN"
+  return
 }
 
 # run_client <app> <tag> [extra env KEY=VAL...]: run the real cmd/client binary for
@@ -244,13 +264,16 @@ run_client() {
       COMMIT_AUTHOR="e2e" PROJECT_NAME="lab" \
       RETRY_INTERVAL="5s" TASK_TIMEOUT="180" \
       "$@" "$CLIENT_BIN" 2>&1
+  return
 }
 
 # --- gitops repo -------------------------------------------------------------
 # gitops_clone <dir>: clone the lab's shared gitops repo (every fixture app renders
 # from it, which is what makes their write-back pushes contend) into <dir>.
 gitops_clone() {
-  git clone -q "$GITOPS_REPO_URL" "$1" || die "gitops clone failed"
+  local dir="$1"
+  git clone -q "$GITOPS_REPO_URL" "$dir" || die "gitops clone failed"
+  return
 }
 
 # override_param <file> <param>: read one helm parameter's value out of an
@@ -266,14 +289,16 @@ gitops_clone() {
 # `appXimageYtag` would match. Escaping them is not an option either, because awk's
 # -v processes escape sequences and turns `\.` back into a plain dot.
 override_param() {
-  awk -v want="$2" '
+  local file="$1" param="$2"
+  awk -v want="$param" '
     # A name line, e.g. `    - name: app.image.tag`; the value is on a later line.
     /(^|[[:space:]])name:[[:space:]]/ {
       n = $NF; gsub(/"/, "", n)
       if (n == want) { f = 1 }
     }
     f && /value:/ { v = $NF; gsub(/"/, "", v); print v; exit }
-  ' "$1"
+  ' "$file"
+  return
 }
 
 # other_tag <app>: echo a pullable tag DIFFERENT from the one <app> currently runs,
@@ -281,9 +306,10 @@ override_param() {
 # skipped (#472), which would make a write-back assertion pass vacuously — and
 # earlier phases leave apps on varying tags, so this cannot be hardcoded.
 other_tag() {
-  local cur
-  cur=$(kubectl -n "$NS_ARGOCD" get application "$1" -o jsonpath='{.status.summary.images}' 2>/dev/null || true)
+  local app="$1" cur
+  cur=$(kubectl -n "$NS_ARGOCD" get application "$app" -o jsonpath='{.status.summary.images}' 2>/dev/null || true)
   if [[ "$cur" == *v1.10.2* ]]; then echo "v1.10.1"; else echo "v1.10.2"; fi
+  return
 }
 
 # --- helm --------------------------------------------------------------------
@@ -293,12 +319,14 @@ other_tag() {
 # count to the extraEnvs block (between "extraEnvs:" and the next top-level key),
 # so a same-indented "- name:" added to another section cannot silently shift it.
 extra_envs_index() {
+  local file="$1"
   awk '
     /^extraEnvs:/ { f = 1; next }
     f && /^[^[:space:]#]/ { f = 0 }
     f && /^  - name:/ { c++ }
     END { print c + 0 }
-  ' "$1"
+  ' "$file"
+  return
 }
 
 # helm_apply_aw [extra --set args...]: reconfigure the LIVE argo-watcher release
@@ -320,4 +348,5 @@ helm_apply_aw() {
     -n "$NS_AW" -f "${E2E_DIR}/values/argo-watcher.yaml" --reset-values \
     --set image.tag=race "$@" >/dev/null
   kubectl -n "$NS_AW" rollout status statefulset/argo-watcher --timeout=180s >/dev/null
+  return
 }

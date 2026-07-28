@@ -59,7 +59,9 @@ wait_service || die "argo-watcher not reachable on ${AW_URL}"
 # deploy <tag> <outfile>: run the client to deploy APP:tag, blocking to a terminal
 # status. Combined stdout+stderr goes to outfile; the client's exit code propagates.
 deploy() {
-  run_client "$APP" "$1" ARGO_WATCHER_DEPLOY_TOKEN="$DEPLOY_TOKEN" >"$2"
+  local tag="$1" out="$2"
+  run_client "$APP" "$tag" ARGO_WATCHER_DEPLOY_TOKEN="$DEPLOY_TOKEN" >"$out"
+  return
 }
 
 # 1) Baseline: pin the app to BASE_TAG (no competitor yet, so this is fast) so the
