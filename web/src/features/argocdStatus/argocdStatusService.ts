@@ -210,7 +210,9 @@ export class ArgocdStatusService {
     this.socket = null;
     // Forget the cached reachability so a later re-subscribe bootstraps a fresh
     // fetch instead of replaying a value that may have gone stale while nobody
-    // was listening.
+    // was listening. Bumping fetchSeq invalidates any fetch issued before the
+    // teardown, which would otherwise repopulate the cache as it resolves.
+    this.fetchSeq++;
     this.currentStatus = null;
   }
 }

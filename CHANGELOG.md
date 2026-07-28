@@ -108,6 +108,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a lock change now see the banner within one poll interval (a few seconds) instead
   of instantly, which is the delay every other replica already had; the operator who
   made the change still sees their own result immediately.
+- The Web UI no longer replays a stale banner state after every listener has
+  detached and a new one subscribes. A reachability or deploy-lock request already
+  in flight at that moment repopulated the cache the detach had just cleared, so the
+  next subscriber was handed a value read before the gap instead of a fresh one —
+  which could show ArgoCD as reachable during a real outage. In production the
+  providers mount once, but React's development double-mount hit this on every
+  reload.
 
 ### Security
 

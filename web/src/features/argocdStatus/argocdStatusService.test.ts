@@ -197,6 +197,40 @@ describe('ArgocdStatusService', () => {
     expect(listener).toHaveBeenLastCalledWith({ available: false, reason: 'database' });
   });
 
+  it('discards a fetch that resolves after teardown', async () => {
+    // A fetch still in flight when the last subscriber leaves must not repopulate
+    // the cache teardown just cleared, or the next subscribe replays that value
+    // instead of bootstrapping — which can leave a stale "available" banner during
+    // a real outage (issue #498).
+    mockFetch([{ body: { available: true } }]);
+    const service = new ArgocdStatusService();
+    const unsubscribe = service.subscribe(vi.fn());
+    await vi.waitUntil(() => (globalThis.fetch as unknown as vi.Mock).mock.calls.length === 1);
+
+    let resolveFetch: (r: Response) => void = () => {};
+    let markStarted: () => void = () => {};
+    const started = new Promise<void>(resolve => { markStarted = resolve; });
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      () => new Promise<Response>(resolve => { resolveFetch = resolve; markStarted(); }),
+    );
+    const pending = service.fetchStatus();
+    await started;
+
+    unsubscribe();
+    resolveFetch(new Response(JSON.stringify({ available: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    await pending; // the stale result has now been fully processed (or dropped)
+
+    mockFetch([{ body: { available: false, reason: 'database' } }]);
+    const listener = vi.fn();
+    service.subscribe(listener);
+
+    await vi.waitUntil(() => listener.mock.calls.length > 0);
+    expect(listener).toHaveBeenLastCalledWith({ available: false, reason: 'database' });
+  });
+
   it('tears down websocket when the last subscriber unsubscribes', async () => {
     mockFetch([{ body: { available: true } }]);
     const service = new ArgocdStatusService();
