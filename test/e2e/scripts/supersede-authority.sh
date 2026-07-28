@@ -59,7 +59,8 @@ submit() {
 
 # task_status <id>: the task's current status, "?" if unreadable.
 task_status() {
-  curl -s -m 10 "${AW_API}/tasks/$1" | jq -r '.status // "?"'
+  local id="$1"
+  curl -s -m 10 "${AW_API}/tasks/${id}" | jq -r '.status // "?"'
   return
 }
 
@@ -81,6 +82,7 @@ refute_cancelled() {
         bad "${label} status was unreadable; cannot refute cancellation"
         return 1
         ;;
+      *) ;;
     esac
     sleep 2
   done
@@ -117,7 +119,10 @@ echo "=== an anonymous task still supersedes another anonymous one (#353 intact)
 anon_c=$(submit "$TAG_C") || exit 1
 echo "  anonymous task ${anon_c}: ${APP} -> ${IMAGE}:${TAG_C}"
 
-anon_cancelled() { [[ "$(task_status "$anon_b")" == "cancelled" ]]; }
+anon_cancelled() {
+  [[ "$(task_status "$anon_b")" == "cancelled" ]]
+  return
+}
 if retry 10 2 anon_cancelled; then
   ok "the earlier anonymous task was superseded by the newer anonymous one"
 else
@@ -148,7 +153,10 @@ echo "=== a credentialed task supersedes an uncredentialed one (and drains the l
 # already live so the write-back is a no-op fast path, and a credentialed task may
 # supersede an uncredentialed one — which is the last direction left to assert.
 cleanup=$(submit "$TAG_A" -H "ARGO_WATCHER_DEPLOY_TOKEN: ${DEPLOY_TOKEN}") || exit 1
-anon_c_cancelled() { [[ "$(task_status "$anon_c")" == "cancelled" ]]; }
+anon_c_cancelled() {
+  [[ "$(task_status "$anon_c")" == "cancelled" ]]
+  return
+}
 if retry 10 2 anon_c_cancelled; then
   ok "the anonymous task was superseded by a credentialed one"
 else
