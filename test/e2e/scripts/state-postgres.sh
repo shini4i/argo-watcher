@@ -60,7 +60,10 @@ probe_pid=""
 # Set to 1 while the deploy-lock assertion holds the shared lock (see below).
 lock_set=0
 
-psql_db() { kubectl -n "$NS_AW" exec argo-watcher-db-0 -- psql -qtAX -U argo_watcher -d argo_watcher -c "$1"; }
+psql_db() {
+  local sql="$1"
+  kubectl -n "$NS_AW" exec argo-watcher-db-0 -- psql -qtAX -U argo_watcher -d argo_watcher -c "$sql"
+}
 
 cleanup() {
   # The deploy lock lives in the shared database, so a lock left set by an
@@ -68,6 +71,9 @@ cleanup() {
   if [[ "$lock_set" == 1 ]]; then
     psql_db "UPDATE deploy_lock SET manual_lock = false" >/dev/null 2>&1 || true
   fi
+  # jobs -p prints one PID per line; splitting them into separate arguments is
+  # the point, and they are always bare digits.
+  # shellcheck disable=SC2046
   kill $(jobs -p) 2>/dev/null || true
   rm -rf "$bin_dir" "$probe_out"
 }
