@@ -56,21 +56,29 @@ ok()   { echo "  OK   $*"; return; }
 bad()  { echo "  FAIL $*"; E2E_FAILS=$((E2E_FAILS + 1)); return; }
 note() { echo "  NOTE $*"; return; }
 
-# phase_end <PHASE-NAME>: print the verdict and exit 1 if any bad() fired.
+# phase_end <PHASE-NAME>: print the verdict, then exit 0 on a clean run or 1 if any
+# bad() fired. Never returns to the caller.
 phase_end() {
-  local name="$1"
+  local name="$1" code=0
   if [[ "$E2E_FAILS" -eq 0 ]]; then
     echo "${name}: PASS"
-    exit 0
+  else
+    echo "${name}: FAIL (${E2E_FAILS} failed assertion(s))"
+    code=1
   fi
-  echo "${name}: FAIL (${E2E_FAILS} failed assertion(s))"
-  exit 1
+  exit "$code"
+  # Unreachable, and deliberately so: SonarCloud's shelldre:S7682 wants every
+  # function to end in an explicit return, while shellcheck then flags it as
+  # unreachable. The two disagree; this keeps both quiet.
+  # shellcheck disable=SC2317
+  return
 }
 
 # die <message...>: abort the phase immediately. For preconditions a phase cannot
 # proceed without (a fixture never synced, a build failed) as opposed to a failed
 # assertion, which is bad() + phase_end.
-die() { echo "FAIL: $*" >&2; exit 1; }
+# shellcheck disable=SC2317  # the trailing return is unreachable; see phase_end
+die() { echo "FAIL: $*" >&2; exit 1; return; }
 
 # --- polling -----------------------------------------------------------------
 # retry <attempts> <delay-seconds> <cmd...>: run cmd until it succeeds. Returns 0
