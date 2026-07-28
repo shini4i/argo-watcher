@@ -8,16 +8,21 @@
 # Usage: hook-fixture.sh <add|remove> [app]
 set -euo pipefail
 
-ACTION="${1:?usage: hook-fixture.sh <add|remove> [app]}"
-ORG="${ORG:-e2e}"; REPO="${REPO:-gitops}"; PORT="${GITEA_PORT:-13030}"
-GITEA_ADMIN="${GITEA_ADMIN:-gitea_admin}"; GITEA_PW="${GITEA_PW:-gitea_admin_pw1}"
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./lib.sh
+. "${here}/lib.sh"
 
-kubectl -n gitea port-forward svc/gitea-http "${PORT}:3000" >/dev/null 2>&1 &
-pf=$!; trap 'kill $pf 2>/dev/null || true; rm -rf "${work:-}"' EXIT
-for _ in $(seq 1 20); do curl -sf -m3 -u "${GITEA_ADMIN}:${GITEA_PW}" "http://localhost:${PORT}/api/v1/version" >/dev/null 2>&1 && break; sleep 1; done
+ACTION="${1:?usage: hook-fixture.sh <add|remove> [app]}"
 
 work="$(mktemp -d)"
-git -C "$work" clone -q "http://${GITEA_ADMIN}:${GITEA_PW}@localhost:${PORT}/${ORG}/${REPO}.git" r
+trap 'rm -rf "$work"' EXIT
+
+gitea_ready() {
+  curl -sf -m3 -u "${GITEA_ADMIN}:${GITEA_PW}" "${GITEA_API}/version" >/dev/null 2>&1
+}
+retry 20 1 gitea_ready || die "gitea API not reachable on ${GITEA_URL}"
+
+gitops_clone "${work}/r"
 
 values="$work/r/chart/values.yaml"
 case "$ACTION" in

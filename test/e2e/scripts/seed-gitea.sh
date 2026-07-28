@@ -9,50 +9,43 @@
 # SSH with the deploy key. Idempotent: safe to re-run.
 set -euo pipefail
 
-ORG="${ORG:-e2e}"
-REPO="${REPO:-gitops}"
-NS_AW="${NS_AW:-argo-watcher}"
-GITEA_ADMIN="${GITEA_ADMIN:-gitea_admin}"
-GITEA_PW="${GITEA_PW:-gitea_admin_pw1}"
-HTTP_PORT="${HTTP_PORT:-13000}"
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./lib.sh
+. "${here}/lib.sh"
+
 # known_hosts entry label for Gitea SSH. Bracketed [host]:port form because
 # Gitea's rootless SSH binds 2222 (non-standard). Must match the host:port in
 # the write-back-repo annotation in fixtures/application.yaml.tmpl.
 SSH_HOST="[gitea-ssh.gitea.svc.cluster.local]:2222"
 
-here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-chart_src="${here}/../fixtures/chart"
-ffcron_src="${here}/../fixtures/fire-and-forget-chart"
-multiimage_src="${here}/../fixtures/multi-image"
-rollout_src="${here}/../fixtures/rollout-chart"
+chart_src="${E2E_DIR}/fixtures/chart"
+ffcron_src="${E2E_DIR}/fixtures/fire-and-forget-chart"
+multiimage_src="${E2E_DIR}/fixtures/multi-image"
+rollout_src="${E2E_DIR}/fixtures/rollout-chart"
 work="$(mktemp -d)"
-trap 'rm -rf "$work"; kill $(jobs -p) 2>/dev/null || true' EXIT
+trap 'rm -rf "$work"' EXIT
 
-# --- port-forward (HTTP API + git push) --------------------------------------
-kubectl -n gitea port-forward svc/gitea-http "${HTTP_PORT}:3000" >/dev/null 2>&1 &
-api="http://localhost:${HTTP_PORT}/api/v1"
-ready=false
-for _ in $(seq 1 30); do
-  curl -sf -m 3 -u "${GITEA_ADMIN}:${GITEA_PW}" "${api}/version" >/dev/null 2>&1 && { ready=true; break; }
-  sleep 1
-done
-[[ "$ready" == true ]] || { echo "gitea API never became ready" >&2; exit 1; }
+# --- wait for the Gitea API --------------------------------------------------
+gitea_ready() {
+  curl -sf -m 3 -u "${GITEA_ADMIN}:${GITEA_PW}" "${GITEA_API}/version" >/dev/null 2>&1
+}
+retry 30 1 gitea_ready || die "gitea API never became ready on ${GITEA_URL}"
 
 gapi() { curl -sf -m 10 -u "${GITEA_ADMIN}:${GITEA_PW}" -H 'Content-Type: application/json' "$@"; }
 
 # --- org + repo (ignore "already exists") ------------------------------------
-gapi -X POST "${api}/orgs" -d "{\"username\":\"${ORG}\"}" >/dev/null 2>&1 || true
-gapi -X POST "${api}/orgs/${ORG}/repos" \
-  -d "{\"name\":\"${REPO}\",\"private\":false,\"auto_init\":false}" >/dev/null 2>&1 || true
+gapi -X POST "${GITEA_API}/orgs" -d "{\"username\":\"${GITEA_ORG}\"}" >/dev/null 2>&1 || true
+gapi -X POST "${GITEA_API}/orgs/${GITEA_ORG}/repos" \
+  -d "{\"name\":\"${GITEA_REPO}\",\"private\":false,\"auto_init\":false}" >/dev/null 2>&1 || true
 
 # --- SSH keypair (RSA PEM: parsed by go-git without surprises) ---------------
 ssh-keygen -t rsa -b 4096 -m PEM -N '' -C 'argo-watcher-e2e' -f "${work}/id_rsa" >/dev/null
 
 # register public key as a WRITE deploy key (delete stale one first)
-for id in $(gapi "${api}/repos/${ORG}/${REPO}/keys" | jq -r '.[]|select(.title=="argo-watcher")|.id' 2>/dev/null); do
-  gapi -X DELETE "${api}/repos/${ORG}/${REPO}/keys/${id}" >/dev/null 2>&1 || true
+for id in $(gapi "${GITEA_API}/repos/${GITEA_ORG}/${GITEA_REPO}/keys" | jq -r '.[]|select(.title=="argo-watcher")|.id' 2>/dev/null); do
+  gapi -X DELETE "${GITEA_API}/repos/${GITEA_ORG}/${GITEA_REPO}/keys/${id}" >/dev/null 2>&1 || true
 done
-gapi -X POST "${api}/repos/${ORG}/${REPO}/keys" \
+gapi -X POST "${GITEA_API}/repos/${GITEA_ORG}/${GITEA_REPO}/keys" \
   -d "{\"title\":\"argo-watcher\",\"read_only\":false,\"key\":\"$(cat "${work}/id_rsa.pub")\"}" >/dev/null
 
 # --- push the fixture chart over HTTP ----------------------------------------
@@ -78,8 +71,7 @@ mkdir -p "${work}/rollout-chart"
 cp -r "${rollout_src}/." "${work}/rollout-chart/"
 git -C "$work" -c user.name=seed -c user.email=seed@e2e add chart fire-and-forget-chart multi-image rollout-chart
 git -C "$work" -c user.name=seed -c user.email=seed@e2e commit -qm 'seed fixture chart, fire-and-forget, multi-image, and rollout charts'
-git -C "$work" push -q --force \
-  "http://${GITEA_ADMIN}:${GITEA_PW}@localhost:${HTTP_PORT}/${ORG}/${REPO}.git" main
+git -C "$work" push -q --force "$GITOPS_REPO_URL" main
 
 # --- k8s secret (private key) + known-hosts configmap ------------------------
 kubectl create namespace "$NS_AW" --dry-run=client -o yaml | kubectl apply -f -
@@ -88,13 +80,13 @@ kubectl -n "$NS_AW" create secret generic argo-watcher-ssh \
   --dry-run=client -o yaml | kubectl apply -f -
 
 # Read Gitea's SSH host public key straight from the pod (its built-in Go SSH
-# server does not answer ssh-keyscan cleanly through a port-forward). The key is
+# server does not answer ssh-keyscan cleanly from outside the cluster). The key is
 # per-server, so we prefix it with the in-cluster hostname argo-watcher uses.
-gitea_pod="$(kubectl -n gitea get pod -l app.kubernetes.io/name=gitea -o name | head -1)"
-hostkey="$(kubectl -n gitea exec "$gitea_pod" -- cat /data/ssh/gitea.rsa.pub)"
-[[ -n "$hostkey" ]] || { echo "failed to read gitea host key" >&2; exit 1; }
+gitea_pod="$(kubectl -n "$NS_GITEA" get pod -l app.kubernetes.io/name=gitea -o name | head -1)"
+hostkey="$(kubectl -n "$NS_GITEA" exec "$gitea_pod" -- cat /data/ssh/gitea.rsa.pub)"
+[[ -n "$hostkey" ]] || die "failed to read gitea host key"
 kubectl -n "$NS_AW" create configmap e2e-ssh-known-hosts \
   --from-literal=ssh_known_hosts="${SSH_HOST} ${hostkey}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
-echo "seeded ${ORG}/${REPO}, deploy key + ssh secret + known-hosts ready"
+echo "seeded ${GITEA_ORG}/${GITEA_REPO}, deploy key + ssh secret + known-hosts ready"

@@ -29,89 +29,62 @@
 # check has no lasting side effect beyond a short-lived rollout monitor.
 set -euo pipefail
 
-NS_AW="${NS_AW:-argo-watcher}"
-NS_ARGOCD="${NS_ARGOCD:-argocd}"
-PORT="${PORT:-18094}"
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./lib.sh
+. "${here}/lib.sh"
+
 # Fast-fail budget guard: the cached path does zero network I/O, so a POST during
 # the outage returns in well under a second; anything under this bound proves we
 # did not fall back to a live ArgoCD check + retry budget.
 MAX_FASTFAIL_SECONDS="${MAX_FASTFAIL_SECONDS:-10}"
-
-here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-root="$(cd "${here}/../../.." && pwd)"
+# The POST during the outage must be allowed to run long enough to PROVE it is not
+# waiting out the ArgoCD retry budget, so this timeout sits above the guard.
+REQ_TIMEOUT=30
 
 bin_dir="$(mktemp -d)"
 probe_out="$(mktemp)"
-pf_pid=""
 cleanup() {
+  # jobs -p prints one PID per line; splitting them into separate arguments is the
+  # point, and they are always bare digits.
+  # shellcheck disable=SC2046
   kill $(jobs -p) 2>/dev/null || true
   # Safety net: always bring ArgoCD back, even on an early failure exit.
   kubectl -n "$NS_ARGOCD" scale deploy/argocd-server --replicas=1 >/dev/null 2>&1 || true
   rm -rf "$bin_dir" "$probe_out"
 }
 trap cleanup EXIT
-( cd "$root" && go build -o "${bin_dir}/wsprobe" ./test/e2e/tools/wsprobe )
+build_bin "$bin_dir" ./test/e2e/tools/wsprobe || die "wsprobe build failed"
+wsprobe="$BIN"
 
-start_pf() {
-  [[ -n "$pf_pid" ]] && kill "$pf_pid" 2>/dev/null || true
-  kubectl -n "$NS_AW" port-forward svc/argo-watcher "${PORT}:80" >/dev/null 2>&1 &
-  pf_pid=$!
-  for _ in $(seq 1 15); do curl -s -m 3 -o /dev/null "localhost:${PORT}/healthz" && break; sleep 1; done
-}
-
-base="http://localhost:${PORT}/api/v1"
-task_json='{"app":"app1","author":"e2e","project":"lab","images":[{"image":"traefik/whoami","tag":"v1.10.2"}]}'
-# post_task -> sets CODE, BODY and TIME for a tokenless POST /api/v1/tasks.
-post_task() {
-  local out
-  out=$(curl -s -m 30 -w $'\n%{http_code}\n%{time_total}' -X POST -H 'Content-Type: application/json' \
-    -d "$task_json" "${base}/tasks")
-  TIME="${out##*$'\n'}"; out="${out%$'\n'*}"
-  CODE="${out##*$'\n'}"; BODY="${out%$'\n'*}"
-}
+TASK="$(task_json app1 v1.10.2)"
 
 # status_is <true|false> -> succeeds when GET /reachability .available equals it.
 status_is() {
-  local want="$1"
-  curl -s -m 10 "${base}/reachability" | jq -e ".available == ${want}" >/dev/null 2>&1
+  curl -s -m 10 "${AW_API}/reachability" | jq -e ".available == $1" >/dev/null 2>&1
 }
 # reason_is <reason> -> succeeds when GET /reachability .reason equals the arg.
 reason_is() {
-  local want="$1"
-  curl -s -m 10 "${base}/reachability" | jq -e ".reason == \"${want}\"" >/dev/null 2>&1
-}
-# wait_status <true|false> <attempts> -> polls status_is on a 5s tick.
-wait_status() {
-  local want="$1" attempts="$2"
-  for _ in $(seq 1 "$attempts"); do status_is "$want" && return 0; sleep 5; done
-  return 1
-}
-# wait_ws <message> -> waits up to ~30s for wsprobe to capture `MSG <message>`.
-wait_ws() {
-  local message="$1"
-  for _ in $(seq 1 6); do grep -q "^MSG ${message}\$" "$probe_out" && return 0; sleep 5; done
-  return 1
+  curl -s -m 10 "${AW_API}/reachability" | jq -e ".reason == \"$1\"" >/dev/null 2>&1
 }
 
-fail=0
-start_pf
+wait_service || die "argo-watcher not reachable on ${AW_URL}"
 
 # --- 1. Baseline ---------------------------------------------------------------
 if status_is true; then
-  echo "  OK   GET /reachability -> true (ArgoCD reachable at baseline)"
+  ok "GET /reachability -> true (ArgoCD reachable at baseline)"
 else
-  echo "  FAIL GET /reachability not true at baseline"; fail=1
+  bad "GET /reachability not true at baseline"
 fi
 
 # --- 2. Hold a WS client open before the outage --------------------------------
 # DURATION comfortably exceeds the whole outage+recovery walk (each reachability
 # poll below is bounded to ~200s) so the probe never hits its own deadline before
 # we have observed both transitions.
-WS_URL="ws://localhost:${PORT}/ws" DURATION=900s "${bin_dir}/wsprobe" >"$probe_out" 2>/dev/null &
-ws_open=0
-for _ in $(seq 1 20); do grep -q '^OPEN$' "$probe_out" && { ws_open=1; break; }; sleep 1; done
-if [[ "$ws_open" != "1" ]]; then
-  echo "  FAIL WS probe never connected before the outage"; fail=1
+WS_URL="$AW_WS_URL" DURATION=900s "$wsprobe" >"$probe_out" 2>/dev/null &
+ws_open=1
+if ! wait_ws_open "$probe_out"; then
+  bad "WS probe never connected before the outage"
+  ws_open=0
 fi
 
 # --- 3. Induce the outage ------------------------------------------------------
@@ -121,37 +94,37 @@ kubectl -n "$NS_ARGOCD" scale deploy/argocd-server --replicas=0 >/dev/null
 # --- 4. Reachability flips to false + argocd_down broadcast --------------------
 # Up to ~200s: the liveness probe runs every 30s and the watcher samples every 5s;
 # the wide margin absorbs a probe mid-cycle when the outage begins.
-if wait_status false 40; then
-  echo "  OK   GET /reachability -> false after the outage"
+if retry 40 5 status_is false; then
+  ok "GET /reachability -> false after the outage"
 else
-  echo "  FAIL GET /reachability never flipped to false during the outage"; fail=1
+  bad "GET /reachability never flipped to false during the outage"
 fi
 # The state backend stays up (only argocd-server was scaled down), so the cause
 # must be identified as "argocd" — not the combined "both" or a bare outage.
 if reason_is argocd; then
-  echo "  OK   GET /reachability -> reason \"argocd\" (ArgoCD-only outage)"
+  ok "GET /reachability -> reason \"argocd\" (ArgoCD-only outage)"
 else
-  echo "  FAIL GET /reachability reason not \"argocd\" during the outage"; fail=1
+  bad "GET /reachability reason not \"argocd\" during the outage"
 fi
 if [[ "$ws_open" == "1" ]]; then
-  if wait_ws argocd_down:argocd; then
-    echo "  OK   WS client received the 'argocd_down:argocd' broadcast"
+  if wait_ws "$probe_out" argocd_down:argocd; then
+    ok "WS client received the 'argocd_down:argocd' broadcast"
   else
-    echo "  FAIL no 'argocd_down:argocd' WS broadcast (captured: $(tr '\n' ',' <"$probe_out"))"; fail=1
+    bad "no 'argocd_down:argocd' WS broadcast (captured: $(tr '\n' ',' <"$probe_out"))"
   fi
 fi
 
 # --- 5. POST fails fast off the cached state -----------------------------------
-post_task
-if [[ "$CODE" == "503" ]] && echo "$BODY" | jq -e '.status == "down"' >/dev/null 2>&1; then
-  echo "  OK   POST /tasks -> 503 {\"status\":\"down\"} during the outage"
+post_task "$TASK"
+if [[ "$CODE" == "503" ]] && jq -e '.status == "down"' <<<"$BODY" >/dev/null 2>&1; then
+  ok "POST /tasks -> 503 {\"status\":\"down\"} during the outage"
 else
-  echo "  FAIL POST /tasks during outage: code=${CODE} body=${BODY} (want 503 down)"; fail=1
+  bad "POST /tasks during outage: code=${CODE} body=${BODY} (want 503 down)"
 fi
 if awk -v t="$TIME" -v m="$MAX_FASTFAIL_SECONDS" 'BEGIN{exit !(t+0 < m+0)}'; then
-  echo "  OK   POST /tasks returned in ${TIME}s (< ${MAX_FASTFAIL_SECONDS}s: cached fast-fail, no retry budget)"
+  ok "POST /tasks returned in ${TIME}s (< ${MAX_FASTFAIL_SECONDS}s: cached fast-fail, no retry budget)"
 else
-  echo "  FAIL POST /tasks took ${TIME}s (>= ${MAX_FASTFAIL_SECONDS}s: looks like a live ArgoCD check + retry)"; fail=1
+  bad "POST /tasks took ${TIME}s (>= ${MAX_FASTFAIL_SECONDS}s: looks like a live ArgoCD check + retry)"
 fi
 
 # --- 6. Recover ----------------------------------------------------------------
@@ -159,23 +132,23 @@ echo "  ...  scaling argocd-server back to 1 replica"
 kubectl -n "$NS_ARGOCD" scale deploy/argocd-server --replicas=1 >/dev/null
 kubectl -n "$NS_ARGOCD" rollout status deploy/argocd-server --timeout=180s >/dev/null
 
-if wait_status true 40; then
-  echo "  OK   GET /reachability -> true after recovery"
+if retry 40 5 status_is true; then
+  ok "GET /reachability -> true after recovery"
 else
-  echo "  FAIL GET /reachability never returned to true after recovery"; fail=1
+  bad "GET /reachability never returned to true after recovery"
 fi
 if [[ "$ws_open" == "1" ]]; then
-  if wait_ws argocd_up; then
-    echo "  OK   WS client received the 'argocd_up' broadcast"
+  if wait_ws "$probe_out" argocd_up; then
+    ok "WS client received the 'argocd_up' broadcast"
   else
-    echo "  FAIL no 'argocd_up' WS broadcast (captured: $(tr '\n' ',' <"$probe_out"))"; fail=1
+    bad "no 'argocd_up' WS broadcast (captured: $(tr '\n' ',' <"$probe_out"))"
   fi
 fi
-post_task
+post_task "$TASK"
 if [[ "$CODE" == "202" ]]; then
-  echo "  OK   POST /tasks -> 202 accepted (deploys resumed)"
+  ok "POST /tasks -> 202 accepted (deploys resumed)"
 else
-  echo "  FAIL POST /tasks after recovery: code=${CODE} body=${BODY} (want 202)"; fail=1
+  bad "POST /tasks after recovery: code=${CODE} body=${BODY} (want 202)"
 fi
 
-if [[ "$fail" -eq 0 ]]; then echo "ARGOCD-UNREACHABLE: PASS"; else echo "ARGOCD-UNREACHABLE: FAIL"; exit 1; fi
+phase_end ARGOCD-UNREACHABLE

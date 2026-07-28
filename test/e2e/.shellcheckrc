@@ -1,0 +1,6 @@
+# SC2329 ("function is never invoked") does not see the three indirect-invocation
+# patterns the lab is built on: EXIT-trap cleanups, predicates passed to retry(),
+# and the scenario/teardown functions failure-diagnostics.sh dispatches by name from
+# its SCENARIOS table. Every hit here is one of those.
+disable=SC2329
+source-path=SCRIPTDIR

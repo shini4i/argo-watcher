@@ -14,50 +14,33 @@
 # Usage: DEPLOY_TOKEN=... accept-suspended.sh
 set -euo pipefail
 
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./lib.sh
+. "${here}/lib.sh"
+
 APP="suspendapp"
-IMAGE="${IMAGE:-traefik/whoami}"
 # A tag different from the chart's revision-1 tag (v1.10.1) so the write-back
 # triggers a second Rollout revision, which is what pauses at the canary step.
 TAG="${TAG:-v1.10.2}"
-NS_AW="${NS_AW:-argo-watcher}"
-DEPLOY_TOKEN="${DEPLOY_TOKEN:-e2e-deploy-token}"
-PORT="${PORT:-18098}"
-here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-root="$(cd "${here}/../../.." && pwd)"
 
 bin_dir="$(mktemp -d)"
-trap 'kill $(jobs -p) 2>/dev/null || true; rm -rf "$bin_dir"' EXIT
-( cd "$root" && go build -o "${bin_dir}/aw-client" ./cmd/client )
+trap 'rm -rf "$bin_dir"' EXIT
+build_client "$bin_dir" || die "client build failed"
 
 # Apply the Rollout fixture and wait for revision 1 to roll out Healthy (the
 # initial revision skips the canary steps).
-kubectl apply -f "${here}/../fixtures/suspended-app.yaml"
-for _ in $(seq 1 60); do
-  s=$(kubectl -n argocd get application "$APP" -o jsonpath='{.status.sync.status}/{.status.health.status}' 2>/dev/null || true)
-  [[ "$s" == "Synced/Healthy" ]] && break
-  sleep 5
-done
-[[ "$s" == "Synced/Healthy" ]] || { echo "ACCEPT-SUSPENDED: FAIL — ${APP} rev1 never reached Synced/Healthy (last: ${s:-unknown})"; exit 1; }
-echo "suspendapp revision 1 status: ${s:-unknown}"
+kubectl apply -f "${E2E_DIR}/fixtures/suspended-app.yaml"
+require_app_synced "$APP" 60
+echo "suspendapp revision 1 status: ${APP_STATE}"
 
-kubectl -n "$NS_AW" port-forward svc/argo-watcher "${PORT}:80" >/dev/null 2>&1 &
-for _ in $(seq 1 15); do curl -s -m 3 -o /dev/null "localhost:${PORT}/healthz" && break; sleep 1; done
+wait_service || die "argo-watcher never answered on ${AW_URL}"
 
 echo "deploying ${APP} -> ${IMAGE}:${TAG} (write-back triggers a paused canary revision)"
 
 # With a token the write-back bumps image.tag, triggering revision 2 -> canary
 # pause -> Suspended. TASK_TIMEOUT covers write-back + sync + the rollout reaching
 # the pause; a regression (Suspended not accepted) fails once the timeout elapses.
-if ARGO_WATCHER_URL="http://localhost:${PORT}" \
-   IMAGES="${IMAGE}" \
-   IMAGE_TAG="${TAG}" \
-   ARGO_APP="${APP}" \
-   COMMIT_AUTHOR="e2e" \
-   PROJECT_NAME="lab" \
-   ARGO_WATCHER_DEPLOY_TOKEN="${DEPLOY_TOKEN}" \
-   RETRY_INTERVAL="5s" \
-   TASK_TIMEOUT="180" \
-   "${bin_dir}/aw-client"; then
+if run_client "$APP" "$TAG" ARGO_WATCHER_DEPLOY_TOKEN="$DEPLOY_TOKEN"; then
   echo "ACCEPT-SUSPENDED: PASS (paused Rollout accepted as deployed)"
   exit 0
 fi

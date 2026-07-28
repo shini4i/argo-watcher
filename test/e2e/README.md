@@ -17,21 +17,40 @@ Unlike the unit and integration suites, ArgoCD here is **not mocked**.
 
 ## Prerequisites
 
-`kind`, `kubectl`, `helm`, `go`, `git`, `jq`, `curl`, `task`, and **podman** as
-the kind provider (`KIND_EXPERIMENTAL_PROVIDER=podman`). The image-load step uses
-`podman exec` against the kind node, so a podman-backed cluster is required; a
-`docker` CLI that is a podman shim works, a real docker-provider cluster does
-not. `go` builds the client binary and runs the load driver, and `git` drives
-the competitor writer. All pinned tool/chart versions are in `Taskfile.yml`.
+`kind`, `kubectl`, `helm`, `go`, `git`, `jq`, `yq`, `curl`, `task`, `bats`, and
+**podman** as the kind provider (`KIND_EXPERIMENTAL_PROVIDER=podman`). The
+image-load step uses `podman exec` against the kind node, so a podman-backed
+cluster is required; a `docker` CLI that is a podman shim works, a real
+docker-provider cluster does not. `go` builds the client binary and runs the load
+driver, and `git` drives the competitor writer. Pinned tool/chart versions are in
+`Taskfile.yml`.
+
+`nix develop` provides the lint tooling (`shellcheck`, `bats`, `yq`) — enough for
+`task lint`. The cluster tools (`kind`, `kubectl`, `helm`, `jq`, `task`) are not in
+the dev shell and must be on `PATH` to run the lab itself.
+
+The lab creates and deletes a kind cluster, which writes to your **kubeconfig**.
+Point `KUBECONFIG` at a throwaway file first if your default one holds contexts you
+care about.
 
 ## Usage
 
 ```sh
-task e2e     # one-shot per-release run: up → api-surface → smoke → client-knobs → jwt-auth → fire-and-forget → commit-format → multi-image → accept-suspended → docker-proxy → lockdown → notifications → load → batch-writeback → race → state-postgres → failure-diagnostics → argocd-unreachable → shutdown-drain → down
+task e2e     # one-shot per-release run: boot the lab, run every phase, tear it down
 ```
 
-`task e2e` walks the whole flow. It stops on the first failing step, so a failed
-run leaves the cluster up for debugging; a fully green run tears it down.
+`task e2e` is `up` → `phases` → `down`. The phases run under **bats**
+(`phases.bats`, one test per phase, order documented there). Once a phase fails the
+remaining ones are skipped and `down` never runs, so the cluster is left up for
+debugging; a fully green run tears it down. A per-phase JUnit report lands in
+`reports/`.
+
+```sh
+task phases                    # re-run every phase against a lab that is already up
+bats --filter lockdown phases.bats          # one phase by name
+bats --filter-status failed phases.bats     # only what failed last run
+task lint                      # shellcheck + the offline bats suites (no cluster)
+```
 
 Individual steps (for iterating or debugging):
 
@@ -74,15 +93,29 @@ on a hosted `ubuntu-latest` runner, where kind uses the **docker** provider —
 `load-race-image.sh` takes its `kind load` fast path there and falls back to the
 podman `ctr import` locally, so the lab runs unchanged in both places.
 
-Reach any component with `kubectl port-forward` (there is no ingress), e.g.
-`kubectl -n argo-watcher port-forward svc/argo-watcher 8080:80`.
+## Reaching the lab
+
+Four services are published on fixed **localhost** ports (no ingress, no
+port-forward): argo-watcher `30080`, webhook-tester `30081`, Gitea `30300`, ArgoCD
+`30443`. `fixtures/nodeports/` assigns the node ports and `kind-config.yaml`
+maps them to the host; kind requires the two to use the same number, which
+`ports.bats` asserts. The URLs are exported by `scripts/lib.sh` (`AW_URL`,
+`GITEA_URL`, …), so a phase that restarts the server just waits for it to answer
+again instead of re-establishing a forward.
 
 ## Layout
 
 | Path | Purpose |
 |---|---|
 | `Dockerfile.server.race` | argo-watcher built with `-race` on a glibc distroless base |
-| `kind-config.yaml` | single-node cluster |
+| `kind-config.yaml` | single-node cluster + the host port mappings for the NodePorts below |
+| `fixtures/nodeports/` | fixed NodePort Services for the four components phases talk to from the host (one per file, matching `fixtures/postgres/`) |
+| `phases.bats` | the per-release phase suite: one test per phase, with the ordering constraints |
+| `ports.bats` | offline assertions on the kind-config ↔ nodeports port coupling |
+| `scripts/lib.sh` | shared phase helpers: endpoint URLs, `retry`/`wait_*`, `req`, `run_client`, `metric_sum`, `helm_apply_aw`, `ok`/`bad`/`phase_end` |
+| `scripts/lib.bats` | unit tests for lib.sh's pure text-processing helpers (no cluster needed) |
+| `scripts/soak.sh` | the git-conflict soak: competitor + concurrent deploys, then the `collect.sh` gates |
+| `scripts/verify.sh` | post-`up` gate: healthz 200 and `argocd_unavailable` 0 |
 | `values/` | pinned Helm values for argocd / argo-watcher / gitea / webhook-tester |
 | `scripts/load-race-image.sh` | load a local image into the kind node |
 | `scripts/mint-argo-token.sh` | mint `ARGO_TOKEN` into `argo-watcher-secret` |
@@ -115,6 +148,10 @@ Reach any component with `kubectl port-forward` (there is no ingress), e.g.
 
 ## Gotchas (why the scripts exist)
 
+- **`/healthz` returns 503 while ArgoCD is unreachable**, so `wait_service` checks
+  only that a response arrives, never that it is 2xx. A `curl -f` there would hang
+  forever in `argocd-unreachable` (which severs ArgoCD on purpose) and can misfire in
+  `shutdown-drain` on a freshly-booted pod.
 - **`kind load docker-image` is broken with podman + containerd 2.x** — kind
   passes `--all-platforms` to `ctr import`, which fails on a single-arch image
   ("no unpack platforms defined"). `load-race-image.sh` imports via `ctr` with

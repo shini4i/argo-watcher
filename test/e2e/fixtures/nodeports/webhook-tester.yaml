@@ -1,0 +1,22 @@
+# Fixed NodePort for the webhook receiver's capture API, which the notifications phase
+# reads back to assert what argo-watcher actually delivered. See
+# nodeports/argo-watcher.yaml for why these are standalone Services.
+#
+# nodePort MUST equal the matching containerPort in kind-config.yaml.
+apiVersion: v1
+kind: Service
+metadata:
+  name: webhook-tester-nodeport
+  namespace: webhook-tester
+spec:
+  type: NodePort
+  # The receiver runs under the generic `app` chart, hence name=app.
+  selector:
+    app.kubernetes.io/name: app
+    app.kubernetes.io/instance: webhook-tester
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      nodePort: 30081
+      protocol: TCP

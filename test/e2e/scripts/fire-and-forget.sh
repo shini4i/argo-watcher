@@ -16,61 +16,45 @@
 # Usage: DEPLOY_TOKEN=... fire-and-forget.sh
 set -euo pipefail
 
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./lib.sh
+. "${here}/lib.sh"
+
 APP="ffapp"
-IMAGE="${IMAGE:-traefik/whoami}"
 # A tag different from the chart's default (v1.10.1) so the write-back is a real
 # change; never actually runs (no pod until the far-future schedule).
 TAG="${TAG:-v1.10.2}"
-NS_AW="${NS_AW:-argo-watcher}"
-DEPLOY_TOKEN="${DEPLOY_TOKEN:-e2e-deploy-token}"
-PORT="${PORT:-18095}"
-here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-root="$(cd "${here}/../../.." && pwd)"
 
 bin_dir="$(mktemp -d)"
-trap 'kill $(jobs -p) 2>/dev/null || true; rm -rf "$bin_dir"' EXIT
-( cd "$root" && go build -o "${bin_dir}/aw-client" ./cmd/client )
+trap 'rm -rf "$bin_dir"' EXIT
+build_client "$bin_dir" || die "client build failed"
 
 # Apply the managed CronJob fixture and wait for its initial sync. A CronJob app
 # becomes Synced/Healthy once the CronJob exists (no pod required).
-kubectl apply -f "${here}/../fixtures/fire-and-forget-app.yaml"
-for _ in $(seq 1 60); do
-  s=$(kubectl -n argocd get application "$APP" -o jsonpath='{.status.sync.status}/{.status.health.status}' 2>/dev/null || true)
-  [[ "$s" == "Synced/Healthy" ]] && break
-  sleep 5
-done
-[[ "$s" == "Synced/Healthy" ]] || { echo "FIRE-AND-FORGET: FAIL — ${APP} never reached Synced/Healthy (last: ${s:-unknown})"; exit 1; }
-
-kubectl -n "$NS_AW" port-forward svc/argo-watcher "${PORT}:80" >/dev/null 2>&1 &
-for _ in $(seq 1 15); do curl -s -m 3 -o /dev/null "localhost:${PORT}/healthz" && break; sleep 1; done
+kubectl apply -f "${E2E_DIR}/fixtures/fire-and-forget-app.yaml"
+require_app_synced "$APP" 60
+wait_service || die "argo-watcher never answered on ${AW_URL}"
 
 echo "deploying ${APP} (managed CronJob) -> ${IMAGE}:${TAG} in fire-and-forget mode"
 
 # With the token the write-back bumps the CronJob's image tag. TASK_TIMEOUT is kept
 # short so a regression (fire-and-forget NOT honoured) fails fast at "not available"
 # rather than hanging for the full default window.
-if ! ARGO_WATCHER_URL="http://localhost:${PORT}" \
-   IMAGES="${IMAGE}" \
-   IMAGE_TAG="${TAG}" \
-   ARGO_APP="${APP}" \
-   COMMIT_AUTHOR="e2e" \
-   PROJECT_NAME="lab" \
-   ARGO_WATCHER_DEPLOY_TOKEN="${DEPLOY_TOKEN}" \
-   RETRY_INTERVAL="5s" \
-   TASK_TIMEOUT="60" \
-   "${bin_dir}/aw-client"; then
+if ! run_client "$APP" "$TAG" \
+     ARGO_WATCHER_DEPLOY_TOKEN="$DEPLOY_TOKEN" \
+     TASK_TIMEOUT="60"; then
   echo "FIRE-AND-FORGET: FAIL (client exited non-zero — the rollout wait was NOT skipped)"
   exit 1
 fi
 
 # Confirm the write-back actually reached the tracked workload: the live CronJob
 # must now run the deployed tag (ArgoCD synced argo-watcher's override).
-for _ in $(seq 1 20); do
-  img=$(kubectl -n "$APP" get cronjob ffapp-cron -o jsonpath='{.spec.jobTemplate.spec.template.spec.containers[0].image}' 2>/dev/null || true)
-  [[ "$img" == "${IMAGE}:${TAG}" ]] && break
-  sleep 3
-done
-if [[ "$img" == "${IMAGE}:${TAG}" ]]; then
+cronjob_on_tag() {
+  img=$(kubectl -n "$APP" get cronjob ffapp-cron \
+    -o jsonpath='{.spec.jobTemplate.spec.template.spec.containers[0].image}' 2>/dev/null || true)
+  [[ "$img" == "${IMAGE}:${TAG}" ]]
+}
+if retry 20 3 cronjob_on_tag; then
   echo "FIRE-AND-FORGET: PASS (write-back updated the CronJob to ${TAG}; deploy reported done without the image running)"
   exit 0
 fi

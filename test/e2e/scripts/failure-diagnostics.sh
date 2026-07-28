@@ -19,31 +19,25 @@
 # Usage: DEPLOY_TOKEN=... failure-diagnostics.sh
 set -uo pipefail
 
-NS_AW="${NS_AW:-argo-watcher}"
-DEPLOY_TOKEN="${DEPLOY_TOKEN:-e2e-deploy-token}"
-PORT="${PORT:-18095}"
-IMAGE="${IMAGE:-traefik/whoami}"
-GOOD_TAG="${GOOD_TAG:-v1.10.1}"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-root="$(cd "${here}/../../.." && pwd)"
+# shellcheck source=./lib.sh
+. "${here}/lib.sh"
+
+GOOD_TAG="${GOOD_TAG:-v1.10.1}"
 
 # Build the client once; every scenario runs the same binary (deterministic, no
 # per-invocation `go run` compile).
 bin_dir="$(mktemp -d)"
-CLIENT_BIN="${bin_dir}/aw-client"
-( cd "$root" && go build -o "$CLIENT_BIN" ./cmd/client ) || { echo "failure-diagnostics: FAIL — client build failed" >&2; exit 1; }
+trap 'rm -rf "$bin_dir"' EXIT
+build_client "$bin_dir" || die "client build failed"
 
-# Register cleanup before starting the port-forward so an exit in the tiny window
-# between the two can never orphan it.
-trap 'kill $(jobs -p) 2>/dev/null || true; rm -rf "$bin_dir"' EXIT
-kubectl -n "$NS_AW" port-forward svc/argo-watcher "${PORT}:80" >/dev/null 2>&1 &
-for _ in $(seq 1 15); do curl -s -m3 -o /dev/null "localhost:${PORT}/healthz" && break; sleep 1; done
+wait_service || die "argo-watcher not reachable on ${AW_URL}"
 
 # --- helpers ----------------------------------------------------------------
-# run_client <task-json> <use_token>: runs the client binary for the deploy
+# scenario_client <task-json> <use_token>: runs the client binary for the deploy
 # described by the JSON. Prints the client's combined stdout+stderr; returns the
 # client's exit code (0 = deployed, non-zero = failed/cancelled/etc.).
-run_client() {
+scenario_client() {
   local payload="$1" use_token="$2" token_env=()
   local app author project image tag timeout
   app=$(jq -r '.app' <<<"$payload")
@@ -62,20 +56,17 @@ run_client() {
     token_env=(ARGO_WATCHER_DEPLOY_TOKEN= BEARER_TOKEN=)
   fi
   # "${token_env[@]+...}" guards the empty-array expansion under `set -u` on bash < 4.4.
-  env ARGO_WATCHER_URL="http://localhost:${PORT}" \
-      IMAGES="$image" IMAGE_TAG="$tag" ARGO_APP="$app" \
-      COMMIT_AUTHOR="$author" PROJECT_NAME="$project" \
-      RETRY_INTERVAL="5s" TASK_TIMEOUT="$timeout" \
-      "${token_env[@]+"${token_env[@]}"}" \
-      "$CLIENT_BIN" 2>&1
-  return
+  run_client "$app" "$tag" \
+    IMAGES="$image" COMMIT_AUTHOR="$author" PROJECT_NAME="$project" \
+    TASK_TIMEOUT="$timeout" \
+    "${token_env[@]+"${token_env[@]}"}"
 }
 
 # restore_good_tag <app>: bump the app back to a pullable tag so the lab stays
 # reusable. Best-effort — a restore hiccup must not fail the suite.
 restore_good_tag() {
   local app="$1"
-  run_client "{\"app\":\"${app}\",\"author\":\"e2e\",\"project\":\"lab\",\"timeout\":120,\"images\":[{\"image\":\"${IMAGE}\",\"tag\":\"${GOOD_TAG}\"}]}" 1 >/dev/null 2>&1 || true
+  scenario_client "{\"app\":\"${app}\",\"author\":\"e2e\",\"project\":\"lab\",\"timeout\":120,\"images\":[{\"image\":\"${IMAGE}\",\"tag\":\"${GOOD_TAG}\"}]}" 1 >/dev/null 2>&1 || true
   return
 }
 
@@ -136,7 +127,6 @@ SCENARIOS=(
 )
 
 # --- runner -----------------------------------------------------------------
-overall=0
 for scenario in "${SCENARIOS[@]}"; do
   echo "=== ${scenario#scenario_} ==="
   spec="$($scenario)"
@@ -148,23 +138,21 @@ for scenario in "${SCENARIOS[@]}"; do
 
   [[ -n "$setup" ]] && { echo "  setup: $setup"; "$setup"; }
 
-  out=$(run_client "$task" "$token"); rc=$?
+  out=$(scenario_client "$task" "$token"); rc=$?
   echo "  client exit=${rc}"
   # shellcheck disable=SC2001  # per-line prefix needs a regex anchor; ${//} can't do it
   echo "  client output: $(sed 's/^/    | /' <<<"$out")"
 
-  ok=1
-  [[ "$rc" -ne 0 ]] || { echo "  FAIL: expected the client to exit non-zero, got ${rc}"; ok=0; }
+  [[ "$rc" -ne 0 ]] || bad "expected the client to exit non-zero, got ${rc}"
   for want in "${expects[@]}"; do
     if grep -qF -- "$want" <<<"$out"; then
-      echo "  OK: client output contains «${want}»"
+      ok "client output contains «${want}»"
     else
-      echo "  FAIL: client output missing «${want}»"; ok=0
+      bad "client output missing «${want}»"
     fi
   done
 
   [[ -n "$teardown" ]] && { echo "  teardown: $teardown"; "$teardown"; }
-  [[ "$ok" -eq 1 ]] || overall=1
 done
 
-if [[ "$overall" -eq 0 ]]; then echo "FAILURE-DIAGNOSTICS: PASS"; else echo "FAILURE-DIAGNOSTICS: FAIL"; exit 1; fi
+phase_end FAILURE-DIAGNOSTICS

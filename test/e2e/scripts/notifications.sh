@@ -13,58 +13,46 @@
 # Usage: DEPLOY_TOKEN=... WEBHOOK_UUID=... notifications.sh
 set -uo pipefail
 
-NS_AW="${NS_AW:-argo-watcher}"
-NS_WHT="${NS_WHT:-webhook-tester}"
-DEPLOY_TOKEN="${DEPLOY_TOKEN:-e2e-deploy-token}"
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./lib.sh
+. "${here}/lib.sh"
+
 # Must match the fixed UUID baked into WEBHOOK_URL (values/argo-watcher.yaml).
 WEBHOOK_UUID="${WEBHOOK_UUID:-11111111-1111-1111-1111-111111111111}"
 APP="${APP:-app1}"
-IMAGE="${IMAGE:-traefik/whoami}"
 # A pullable tag that differs from smoke's (v1.10.2) so this forces a real
 # rollout to "deployed" rather than a no-op.
 TAG="${TAG:-v1.10.1}"
 # Must match WEBHOOK_AUTHORIZATION_HEADER_* in values/argo-watcher.yaml.
 AUTH_HEADER="${AUTH_HEADER:-X-E2E-Token}"
 AUTH_VALUE="${AUTH_VALUE:-e2e-webhook-secret}"
-AW_PORT="${AW_PORT:-18096}"
-WHT_PORT="${WHT_PORT:-18097}"
 
-kubectl -n "$NS_AW"  port-forward svc/argo-watcher   "${AW_PORT}:80"  >/dev/null 2>&1 &
-kubectl -n "$NS_WHT" port-forward svc/webhook-tester "${WHT_PORT}:80" >/dev/null 2>&1 &
-trap 'kill $(jobs -p) 2>/dev/null || true' EXIT
-# Wait for each port-forward to actually answer; fail loudly if it never does,
-# so a forwarding problem does not masquerade as a later "no task id" error.
-wait_ready() { # <name> <healthz-url>
-  local name="$1" url="$2"
-  for _ in $(seq 1 15); do curl -s -m3 -o /dev/null "$url" && return 0; sleep 1; done
-  echo "FAIL: port-forward to ${name} not ready"; exit 1
-}
-wait_ready argo-watcher   "localhost:${AW_PORT}/healthz"
-wait_ready webhook-tester "localhost:${WHT_PORT}/healthz"
+# Fail loudly if either service never answers, so an unreachable endpoint does not
+# masquerade as a later "no task id" error.
+wait_service || die "argo-watcher not reachable on ${AW_URL}"
+wait_url "${WHT_URL}/healthz" || die "webhook-tester not reachable on ${WHT_URL}"
 
-wht="localhost:${WHT_PORT}/api/session/${WEBHOOK_UUID}"
+wht="${WHT_URL}/api/session/${WEBHOOK_UUID}"
 
 # Start from a clean session so we assert on this deploy alone. A no-op if the
 # session does not exist yet (the first webhook auto-creates it).
 curl -s -m10 -X DELETE "${wht}/requests" >/dev/null 2>&1 || true
 
 # Fire one authenticated deploy: validated -> real write-back -> "deployed".
-id=$(curl -s -m15 -X POST "localhost:${AW_PORT}/api/v1/tasks" \
-  -H 'Content-Type: application/json' -H "ARGO_WATCHER_DEPLOY_TOKEN: ${DEPLOY_TOKEN}" \
-  -d "{\"app\":\"${APP}\",\"author\":\"e2e\",\"project\":\"lab\",\"images\":[{\"image\":\"${IMAGE}\",\"tag\":\"${TAG}\"}]}" \
-  | jq -r '.id')
+post_task "$(task_json "$APP" "$TAG")" -H "ARGO_WATCHER_DEPLOY_TOKEN: ${DEPLOY_TOKEN}"
+id=$(jq -r '.id' <<<"$BODY")
 echo "task ${id}: deploying ${APP} -> ${IMAGE}:${TAG}"
-[[ -n "$id" && "$id" != "null" ]] || { echo "FAIL: no task id returned"; exit 1; }
+[[ -n "$id" && "$id" != "null" ]] || die "no task id returned (code=${CODE} body=${BODY})"
 
 # Wait for the terminal result so both webhooks (start + result) have fired.
 status=""
-for _ in $(seq 1 48); do
-  status=$(curl -s -m10 "localhost:${AW_PORT}/api/v1/tasks/${id}" | jq -r '.status // "?"')
-  case "$status" in deployed|failed|aborted) break ;; *) ;; esac # non-terminal: keep polling
-  sleep 5
-done
+terminal() {
+  status=$(curl -s -m10 "${AW_API}/tasks/${id}" | jq -r '.status // "?"')
+  case "$status" in deployed | failed | aborted) return 0 ;; *) return 1 ;; esac
+}
+retry 48 5 terminal
 echo "task status=${status}"
-[[ "$status" == "deployed" ]] || { echo "FAIL: expected terminal 'deployed', got '${status}'"; exit 1; }
+[[ "$status" == "deployed" ]] || die "expected terminal 'deployed', got '${status}'"
 
 # Pull captured requests for THIS task id. The capture-API shape below
 # (GET .../requests, body in .request_payload_base64, headers as [{name,value}])
@@ -73,7 +61,7 @@ echo "task status=${status}"
 # match is case-insensitive (Go canonicalizes header names on send/receive).
 # Retry briefly — the result webhook lands right around terminal status.
 events='[]'
-for _ in $(seq 1 15); do
+both_captured() {
   events=$(curl -s -m10 "${wht}/requests" | jq -c --arg id "$id" --arg hdr "$AUTH_HEADER" '
     [ .[]
       | . as $r
@@ -81,19 +69,19 @@ for _ in $(seq 1 15); do
       | select($b != null and $b.id == $id)
       | { status: $b.status, app: $b.app, tag: ($b.images[0].tag // ""),
           auth: ([ $r.headers[] | select((.name|ascii_downcase) == ($hdr|ascii_downcase)) | .value ] | first // "") } ]')
-  [[ "$(jq 'length' <<<"$events")" -ge 2 ]] && break
-  sleep 2
-done
+  [[ "$(jq 'length' <<<"$events")" -ge 2 ]]
+}
+retry 15 2 both_captured
 echo "captured events for task ${id}: ${events}"
 
 count=$(jq 'length' <<<"$events")
 [[ "$count" -ge 2 ]] \
-  || { echo "FAIL: expected >=2 webhook deliveries (start + result), got ${count}"; exit 1; }
+  || die "expected >=2 webhook deliveries (start + result), got ${count}"
 jq -e --arg a "$APP" 'any(.[]; .status == "in progress" and .app == $a)' <<<"$events" >/dev/null \
-  || { echo "FAIL: missing 'in progress' start event for app=${APP}"; exit 1; }
+  || die "missing 'in progress' start event for app=${APP}"
 jq -e --arg a "$APP" --arg t "$TAG" 'any(.[]; .status == "deployed" and .app == $a and .tag == $t)' <<<"$events" >/dev/null \
-  || { echo "FAIL: missing 'deployed' result event for app=${APP} tag=${TAG}"; exit 1; }
+  || die "missing 'deployed' result event for app=${APP} tag=${TAG}"
 jq -e --arg v "$AUTH_VALUE" 'all(.[]; .auth == $v)' <<<"$events" >/dev/null \
-  || { echo "FAIL: authorization header ${AUTH_HEADER} missing or wrong on a delivery"; exit 1; }
+  || die "authorization header ${AUTH_HEADER} missing or wrong on a delivery"
 
 echo "NOTIFICATIONS: PASS"

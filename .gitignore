@@ -47,3 +47,6 @@ site/
 
 # sandbox directory for experiments and scratch work
 sandbox/
+
+# per-phase JUnit reports written by the e2e lab's bats run
+test/e2e/reports/

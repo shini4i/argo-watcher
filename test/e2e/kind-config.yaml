@@ -1,7 +1,40 @@
 # Single-node kind cluster for the argo-watcher e2e lab.
-# Services are reached via `kubectl port-forward`, so no ingress / port mappings
-# are needed here.
+#
+# The lab's services are reached on FIXED host ports rather than through
+# `kubectl port-forward`: each hostPort below maps to the node port that
+# fixtures/nodeports/ publishes for one service. kind requires the node
+# `containerPort` and the Service's `nodePort` to be equal, so the two files must
+# agree — the numbers are duplicated there on purpose, with a pointer back here.
+#
+# Why not port-forward: a forward is a child process that dies with the pod it
+# targets, so every phase had to start one, poll it, and re-establish it after any
+# rollout or pod deletion (several phases delete the pod deliberately). A NodePort
+# URL stays valid across restarts and needs no process at all.
+#
+# listenAddress pins the mappings to loopback so a lab run never exposes ArgoCD or
+# Gitea (both with throwaway admin credentials) to the local network.
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
   - role: control-plane
+    extraPortMappings:
+      # argo-watcher HTTP API + WebSocket (svc port 80 -> container 8080)
+      - containerPort: 30080
+        hostPort: 30080
+        listenAddress: "127.0.0.1"
+        protocol: TCP
+      # webhook-tester capture API (the notifications phase reads it back)
+      - containerPort: 30081
+        hostPort: 30081
+        listenAddress: "127.0.0.1"
+        protocol: TCP
+      # Gitea HTTP (git push/clone + the admin API the seed script drives)
+      - containerPort: 30300
+        hostPort: 30300
+        listenAddress: "127.0.0.1"
+        protocol: TCP
+      # ArgoCD API, TLS (only the ARGO_TOKEN mint talks to it)
+      - containerPort: 30443
+        hostPort: 30443
+        listenAddress: "127.0.0.1"
+        protocol: TCP

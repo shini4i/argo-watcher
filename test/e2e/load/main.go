@@ -73,8 +73,10 @@ func envInt(k string, def int) int {
 func loadConfig() config {
 	dur, _ := time.ParseDuration(env("DURATION", "5m"))
 	return config{
-		baseURL:    strings.TrimRight(env("BASE_URL", "http://localhost:8080"), "/"),
-		wsURL:      env("WS_URL", "ws://localhost:8080/ws"),
+		// Defaults are the lab's published NodePort (fixtures/nodeports/); the
+		// soak phases pass these explicitly from lib.sh.
+		baseURL:    strings.TrimRight(env("BASE_URL", "http://localhost:30080"), "/"),
+		wsURL:      env("WS_URL", "ws://localhost:30080/ws"),
 		token:      env("DEPLOY_TOKEN", "e2e-deploy-token"),
 		apps:       envInt("APPS", 5),
 		workers:    envInt("WORKERS", 10),

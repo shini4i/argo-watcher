@@ -1,0 +1,31 @@
+# Fixed NodePort for the argo-watcher HTTP API + WebSocket, so phase scripts reach it
+# on a stable localhost URL that survives a pod restart (no port-forward).
+#
+# This is an ADDITIONAL Service alongside the chart's ClusterIP one, which the
+# in-cluster DNS names argo-watcher is configured with keep using.
+#
+# Why standalone rather than `service.type=NodePort` in the chart values: the
+# argo-watcher chart renders no `nodePort` field, so it could only get a RANDOM node
+# port — and kind needs a fixed one to map. A standalone Service also survives the
+# `helm upgrade --reset-values` the lockdown / batch-writeback / state-postgres phases
+# use to reconfigure the release in place.
+#
+# nodePort MUST equal the matching containerPort in kind-config.yaml (ports.bats
+# asserts this). The selector matches what the pinned chart renders; re-check it when
+# bumping AW_CHART_VERSION in Taskfile.yml.
+apiVersion: v1
+kind: Service
+metadata:
+  name: argo-watcher-nodeport
+  namespace: argo-watcher
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: argo-watcher
+    app.kubernetes.io/instance: argo-watcher
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      nodePort: 30080
+      protocol: TCP

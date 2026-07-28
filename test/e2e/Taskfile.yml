@@ -13,6 +13,8 @@ silent: true
 vars:
   CLUSTER: aw-e2e
   RACE_IMAGE: ghcr.io/shini4i/argo-watcher:race
+  # bats writes the per-phase JUnit report here (gitignored).
+  REPORT_DIR: reports
   # Pinned chart versions for reproducibility.
   ARGOCD_CHART_VERSION: 9.1.3
   # argo-rollouts provides the Rollout CRD + controller for the accept-suspended phase.
@@ -60,6 +62,10 @@ tasks:
       - task: argo-rollouts
       - task: load-race-image
       - task: gitea
+      # NodePorts come before `seed`, which is the first step to reach a service
+      # (Gitea) from the host. A Service may exist before it has any endpoints, so
+      # publishing all four up front is safe and keeps them in one place.
+      - task: nodeports
       - task: seed
       - task: webhook-tester
       - task: argo-watcher
@@ -67,50 +73,35 @@ tasks:
       - task: verify
 
   e2e:
-    desc: "One-shot per-release run: boot the lab, run every phase in order, tear it down (see README Usage for the full step list)"
+    desc: "One-shot per-release run: boot the lab, run every phase in order, tear it down"
     cmds:
-      # Runs the whole flow. Stops on the first failing step, so a failed run
-      # leaves the cluster up for debugging; a fully green run tears it down.
       - task: up
-      - task: api-surface
-      - task: smoke
-      - task: client-knobs
-      - task: jwt-auth
-      - task: fire-and-forget
-      - task: commit-format
-      - task: multi-image
-      - task: accept-suspended
-      - task: docker-proxy
-      # lockdown toggles LOCKDOWN_SCHEDULE on the release and reverts before it
-      # returns (ending unlocked), so it must run BEFORE the soak but is otherwise
-      # self-contained; placed here after the light deploy phases.
-      - task: lockdown
-      - task: notifications
-      - task: load
-      # batch-writeback re-runs the contention soak with GIT_BATCH_WRITEBACK on and
-      # reverts before returning, so it must run AFTER the default-path soak (load)
-      # and is otherwise self-contained; placed here before race.
-      - task: batch-writeback
-      - task: race
-      # state-postgres flips the release to STATE_TYPE=postgres and asserts the Postgres-only
-      # properties (schema migration, deploy loop, task-survives-restart, supersession under
-      # contention). Placed after the in-memory phases (which validate that backend) and BEFORE
-      # failure-diagnostics so it deploys against pristine apps. Everything after runs on
-      # Postgres — both remaining phases are backend-agnostic, so that is a free bonus.
-      - task: state-postgres
-      # failure-diagnostics runs after the soak: it deliberately breaks apps (bad images, a
-      # failing PreSync hook injected into the SHARED chart values) and pushes directly to the
-      # gitops repo, so running it before load/race would perturb those pristine-state soak gates.
-      - task: failure-diagnostics
-      # argocd-unreachable severs ArgoCD (scales argocd-server to 0) then restores it,
-      # so it must run after the phases that need a healthy ArgoCD. It is self-contained
-      # (its cleanup trap always scales ArgoCD back), and its tokenless deploys have no
-      # lasting side effect, so it sits safely between failure-diagnostics and shutdown-drain.
-      - task: argocd-unreachable
-      # shutdown-drain runs LAST (before down): it deletes the argo-watcher pod to exercise
-      # graceful shutdown, so nothing but `down` should depend on the server afterwards.
-      - task: shutdown-drain
+      - task: phases
       - task: down
+
+  phases:
+    desc: "Run every phase in order against a lab that is already up (see phases.bats)"
+    cmds:
+      # The JUnit report gives CI a case per phase instead of one opaque exit code.
+      # Phase ORDER, and the skip-the-rest-after-a-failure behaviour, live in phases.bats.
+      - mkdir -p {{.REPORT_DIR}}
+      # Soak-only knobs are passed as SOAK_* / BATCH_* and applied by phases.bats to
+      # the soak phases alone. They must NOT be exported suite-wide: several phases
+      # read the same names (COMPETITOR_INTERVAL, WS_CLIENTS) and rely on their own
+      # tuned defaults, which a global value would silently override.
+      - AW_CHART_REPO={{.AW_CHART_REPO}} AW_CHART_VERSION={{.AW_CHART_VERSION}}
+        DEPLOY_TOKEN={{.DEPLOY_TOKEN}} JWT_SECRET={{.JWT_SECRET}} WEBHOOK_UUID={{.WEBHOOK_UUID}}
+        SOAK_APPS={{.APPS}} SOAK_WORKERS={{.WORKERS}} SOAK_WS_CLIENTS={{.WS_CLIENTS}}
+        SOAK_DURATION={{.SOAK}} SOAK_SECONDS={{.SOAK_SECONDS}}
+        SOAK_COMPETITOR_INTERVAL={{.COMPETITOR_INTERVAL}}
+        BATCH_SOAK={{.BATCH_SOAK}} BATCH_SOAK_SECONDS={{.BATCH_SOAK_SECONDS}}
+        bats --timing --report-formatter junit --output {{.REPORT_DIR}} phases.bats
+
+  lint:
+    desc: "Lint the lab's bash (shellcheck) and run the offline bats suites (no cluster needed)"
+    cmds:
+      - shellcheck -x scripts/*.sh
+      - bats scripts/lib.bats ports.bats
 
   cluster:
     desc: "Create the kind cluster if it does not exist"
@@ -133,6 +124,18 @@ tasks:
     desc: "Load the race image into the kind node"
     cmds:
       - ./scripts/load-race-image.sh {{.RACE_IMAGE}} {{.CLUSTER}}
+
+  nodeports:
+    desc: "Publish argo-watcher / gitea / argocd / webhook-tester on the fixed NodePorts kind maps to localhost"
+    cmds:
+      # The namespaces are created up front so the Services can be applied in one
+      # shot, before the releases that will eventually back them exist. Each is
+      # idempotent, and the install tasks create them the same way.
+      - kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+      - kubectl create namespace gitea --dry-run=client -o yaml | kubectl apply -f -
+      - kubectl create namespace argo-watcher --dry-run=client -o yaml | kubectl apply -f -
+      - kubectl create namespace webhook-tester --dry-run=client -o yaml | kubectl apply -f -
+      - kubectl apply -f fixtures/nodeports/
 
   argocd:
     desc: "Install ArgoCD"
@@ -182,8 +185,6 @@ tasks:
   api-surface:
     desc: "Assert the read-only HTTP surface (version/config/task-list/deploy-lock) to contract"
     cmds:
-      # Pure curl/jq, touches no state — runs right after `up`, before the deploy
-      # phases, as a fast contract check of the endpoints no other phase exercises.
       - DEPLOY_TOKEN={{.DEPLOY_TOKEN}} ./scripts/api-surface.sh
 
   smoke:
@@ -229,8 +230,6 @@ tasks:
   lockdown:
     desc: "Assert LOCKDOWN_SCHEDULE freezes deploys in-window (406) and the watcher broadcasts 'locked'"
     cmds:
-      # Toggles LOCKDOWN_SCHEDULE on the live release for its own duration and
-      # reverts before returning; needs the chart coordinates to helm-upgrade.
       - AW_CHART_REPO={{.AW_CHART_REPO}} AW_CHART_VERSION={{.AW_CHART_VERSION}} ./scripts/lockdown.sh
 
   shutdown-drain:
@@ -246,9 +245,6 @@ tasks:
   notifications:
     desc: "Assert the generic webhook fires (start + result) with the correct payload against a real receiver"
     cmds:
-      # Runs on a clean state (right after smoke, before load/race dirty things)
-      # and asserts on its own uniquely-tagged deploy, so later soak traffic to
-      # the shared receiver is irrelevant to the assertion.
       - DEPLOY_TOKEN={{.DEPLOY_TOKEN}} WEBHOOK_UUID={{.WEBHOOK_UUID}} ./scripts/notifications.sh
 
   failure-diagnostics:
@@ -260,38 +256,16 @@ tasks:
     desc: "Git-conflict soak: competitor writer + concurrent deploys + collect/assert"
     deps: [apply-apps]
     cmds:
-      - |
-        set -uo pipefail
-        # Wait for all fixture apps to be Healthy so the driver never races a
-        # cold app (which would surface as a spurious "app not found").
-        for i in $(seq 1 {{.APPS}}); do
-          for _ in $(seq 1 40); do
-            [ "$(kubectl -n argocd get application app$i -o jsonpath='{.status.health.status}' 2>/dev/null)" = "Healthy" ] && break
-            sleep 3
-          done
-        done
-        kubectl -n argo-watcher port-forward svc/argo-watcher 8080:80 >/dev/null 2>&1 &
-        pf=$!; trap 'kill $pf 2>/dev/null || true' EXIT
-        for _ in $(seq 1 15); do curl -s -m3 -o /dev/null localhost:8080/healthz && break; sleep 1; done
-        SECONDS_TOTAL={{.SOAK_SECONDS}} INTERVAL={{.COMPETITOR_INTERVAL}} ./scripts/competitor.sh & comp=$!
-        summary=$(mktemp)
-        # Redirect (not pipe): go-task's POSIX shell has no PIPESTATUS. Driver
-        # JSON summary -> file; its logs stay on stderr in the task output.
-        APPS={{.APPS}} WORKERS={{.WORKERS}} WS_CLIENTS={{.WS_CLIENTS}} DURATION={{.SOAK}} \
-          DEPLOY_TOKEN={{.DEPLOY_TOKEN}} BASE_URL=http://localhost:8080 WS_URL=ws://localhost:8080/ws \
-          go run ./load >"$summary"; drv=$?
-        cat "$summary"
-        wait $comp 2>/dev/null || true
-        ./scripts/collect.sh "$summary"; col=$?
-        [ "$drv" -eq 0 ] && [ "$col" -eq 0 ]
+      # In a script, not inline: it needs real bash, and go-task's interpreter is not.
+      - APPS={{.APPS}} WORKERS={{.WORKERS}} WS_CLIENTS={{.WS_CLIENTS}}
+        SOAK={{.SOAK}} SOAK_SECONDS={{.SOAK_SECONDS}}
+        COMPETITOR_INTERVAL={{.COMPETITOR_INTERVAL}} DEPLOY_TOKEN={{.DEPLOY_TOKEN}}
+        ./scripts/soak.sh
 
   batch-writeback:
     desc: "Assert GIT_BATCH_WRITEBACK coalesces concurrent write-backs under contention with zero lost updates"
     deps: [apply-apps]
     cmds:
-      # Toggles GIT_BATCH_WRITEBACK on the live release, re-runs the contention
-      # soak, gates on zero lost updates + real coalescing, then reverts. Needs the
-      # chart coordinates to helm-upgrade in place.
       - AW_CHART_REPO={{.AW_CHART_REPO}} AW_CHART_VERSION={{.AW_CHART_VERSION}}
         DEPLOY_TOKEN={{.DEPLOY_TOKEN}} APPS={{.APPS}} WORKERS={{.WORKERS}} WS_CLIENTS={{.WS_CLIENTS}}
         SOAK={{.BATCH_SOAK}} SOAK_SECONDS={{.BATCH_SOAK_SECONDS}} COMPETITOR_INTERVAL={{.COMPETITOR_INTERVAL}}
@@ -309,16 +283,7 @@ tasks:
   verify:
     desc: "Assert argo-watcher is up and reaching real Argo (argocd_unavailable == 0)"
     cmds:
-      - |
-        kubectl -n argo-watcher port-forward svc/argo-watcher 18090:80 >/dev/null 2>&1 &
-        pf=$!; trap 'kill $pf 2>/dev/null || true' EXIT
-        for _ in $(seq 1 15); do
-          curl -s -m 3 -o /dev/null localhost:18090/healthz && break; sleep 1
-        done
-        code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' localhost:18090/healthz)
-        unavail=$(curl -s -m 10 localhost:18090/metrics | awk '/^argocd_unavailable /{print $2}')
-        echo "healthz=$code argocd_unavailable=$unavail"
-        test "$code" = "200" && test "$unavail" = "0"
+      - ./scripts/verify.sh
 
   state-postgres:
     desc: "Flip the release to Postgres state and assert migration, deploy, task-survives-restart, supersession"
@@ -331,23 +296,7 @@ tasks:
     desc: "Same-app supersession race: a newer deploy must win over an older retrying one"
     deps: [apply-apps]
     cmds:
-      - |
-        set -uo pipefail
-        for _ in $(seq 1 40); do
-          [ "$(kubectl -n argocd get application app1 -o jsonpath='{.status.health.status}' 2>/dev/null)" = "Healthy" ] && break
-          sleep 3
-        done
-        kubectl -n argo-watcher port-forward svc/argo-watcher 8080:80 >/dev/null 2>&1 & awpf=$!
-        kubectl -n gitea port-forward svc/gitea-http 13000:3000 >/dev/null 2>&1 & gpf=$!
-        trap 'kill $awpf $gpf 2>/dev/null || true' EXIT
-        for _ in $(seq 1 15); do curl -s -m3 -o /dev/null localhost:8080/healthz && break; sleep 1; done
-        # race-supersede.sh is self-contained: it resets the app to a baseline tag,
-        # starts its own competitor writer (deliberately over-driven at INTERVAL=1
-        # to force the ordering window — the script's default), then runs the race.
-        ga=gitea_admin; gp=gitea_admin_pw1   # throwaway lab creds; kept out of a literal user:pass@ URL
-        DEPLOY_TOKEN={{.DEPLOY_TOKEN}} BASE_URL=http://localhost:8080 \
-          GITEA_REPO_URL="http://${ga}:${gp}@localhost:13000/e2e/gitops.git" \
-          ./scripts/race-supersede.sh
+      - DEPLOY_TOKEN={{.DEPLOY_TOKEN}} ./scripts/race-supersede.sh
 
   down:
     desc: "Destroy the kind cluster"
