@@ -1,0 +1,24 @@
+# Fixed NodePort for the ArgoCD API. Only the ARGO_TOKEN mint talks to it from the
+# host. See nodeports/argo-watcher.yaml for why these are standalone Services.
+#
+# argocd-server serves both HTTP and HTTPS off container port 8080 (it sniffs the
+# connection), so this mirrors the chart Service's 443 -> 8080 mapping and callers keep
+# using https:// with -k against the self-signed cert.
+#
+# nodePort MUST equal the matching containerPort in kind-config.yaml.
+apiVersion: v1
+kind: Service
+metadata:
+  name: argocd-server-nodeport
+  namespace: argocd
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: argocd-server
+    app.kubernetes.io/instance: argocd
+  ports:
+    - name: https
+      port: 443
+      targetPort: 8080
+      nodePort: 30443
+      protocol: TCP

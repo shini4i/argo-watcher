@@ -33,29 +33,22 @@
 # are backend-agnostic assertions, so that is a free bonus, not lost coverage.
 #
 # Required env: AW_CHART_REPO, AW_CHART_VERSION (to helm-upgrade the release).
-# Optional env: DEPLOY_TOKEN, IMAGE, APP, PORT, GITEA_PORT, GITEA_ADMIN, GITEA_PW.
+# Optional env: DEPLOY_TOKEN, IMAGE, APP.
 set -euo pipefail
 
-NS_AW="${NS_AW:-argo-watcher}"
-DEPLOY_TOKEN="${DEPLOY_TOKEN:-e2e-deploy-token}"
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./lib.sh
+. "${here}/lib.sh"
+
 AW_CHART_REPO="${AW_CHART_REPO:?AW_CHART_REPO required (chart repo URL)}"
 AW_CHART_VERSION="${AW_CHART_VERSION:?AW_CHART_VERSION required (pinned chart version)}"
-IMAGE="${IMAGE:-traefik/whoami}"
 # Persistence deploy runs against app4 — untouched by the earlier deploy phases
 # (smoke/commit-format/race use app1/app3), so its newest task is unambiguously
 # the one we create here.
 APP="${APP:-app4}"
-PORT="${PORT:-18098}"
-GITEA_PORT="${GITEA_PORT:-13004}"
-GITEA_ADMIN="${GITEA_ADMIN:-gitea_admin}"
-GITEA_PW="${GITEA_PW:-gitea_admin_pw1}"
-here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-root="$(cd "${here}/../../.." && pwd)"
 
 bin_dir="$(mktemp -d)"
-CLIENT_BIN="${bin_dir}/aw-client"
 probe_out="$(mktemp)"
-pf_pid=""
 probe_pid=""
 # Set to 1 while the deploy-lock assertion holds the shared lock (see below).
 lock_set=0
@@ -79,63 +72,31 @@ cleanup() {
 }
 trap cleanup EXIT
 
-base="http://localhost:${PORT}/api/v1"
-
 # start_probe: hold a WebSocket client open and block until it has connected, so a
 # broadcast triggered afterwards cannot be missed by a slow handshake. A pod
-# restart kills the socket, so call this again after each forward. Any previous
+# restart kills the socket, so call this again after each restart. Any previous
 # probe is killed first: it would otherwise keep appending to the same file that
 # this one truncates, mixing the old capture into the new assertion.
 start_probe() {
   [[ -n "$probe_pid" ]] && kill "$probe_pid" 2>/dev/null || true
   : >"$probe_out"
-  WS_URL="ws://localhost:${PORT}/ws" DURATION=300s "${bin_dir}/wsprobe" >"$probe_out" 2>/dev/null &
+  WS_URL="$AW_WS_URL" DURATION=300s "${bin_dir}/wsprobe" >"$probe_out" 2>/dev/null &
   probe_pid=$!
-  for _ in $(seq 1 20); do
-    grep -q '^OPEN$' "$probe_out" && return 0
-    sleep 1
-  done
-  echo "STATE-POSTGRES: FAIL — WS probe never connected on :${PORT}"
-  exit 1
-}
-
-# wait_ws <message>: wait up to ~30s (6x the 5s lockdown poll interval) for the
-# lockdown watcher to broadcast <message> to the probe.
-wait_ws() {
-  local message="$1"
-  for _ in $(seq 1 6); do
-    grep -q "^MSG ${message}\$" "$probe_out" && return 0
-    sleep 5
-  done
-  return 1
-}
-
-# forward: (re)establish a port-forward to the argo-watcher service and block until
-# /healthz answers. Called again after the restart, since deleting the pod kills
-# the previous forward.
-forward() {
-  [[ -n "$pf_pid" ]] && kill "$pf_pid" 2>/dev/null || true
-  kubectl -n "$NS_AW" port-forward svc/argo-watcher "${PORT}:80" >/dev/null 2>&1 &
-  pf_pid=$!
-  for _ in $(seq 1 30); do
-    curl -s -m 3 -o /dev/null "localhost:${PORT}/healthz" && return 0
-    sleep 1
-  done
-  echo "STATE-POSTGRES: FAIL — argo-watcher /healthz never came up on :${PORT}"
-  exit 1
+  wait_ws_open "$probe_out" || die "WS probe never connected on ${AW_WS_URL}"
 }
 
 echo "=== provisioning in-cluster Postgres ==="
-kubectl apply -f "${here}/../fixtures/postgres/"
+kubectl apply -f "${E2E_DIR}/fixtures/postgres/"
 kubectl -n "$NS_AW" rollout status statefulset/argo-watcher-db --timeout=180s
 
 echo "=== flipping the release to STATE_TYPE=postgres (runs the migration Job) ==="
-# --wait blocks on the pre-upgrade migration hook AND the rolled StatefulSet; the
-# hook (argo-watcher --migrate) applies the schema before the server starts.
+# Not helm_apply_aw: this apply layers a SECOND values file (the postgres overlay)
+# and needs --wait to block on the pre-upgrade migration hook, which
+# helm_apply_aw's single-file + --reset-values shape does not cover.
 helm upgrade --install argo-watcher argo-watcher --repo "$AW_CHART_REPO" \
   --version "$AW_CHART_VERSION" -n "$NS_AW" \
-  -f "${here}/../values/argo-watcher.yaml" \
-  -f "${here}/../values/argo-watcher-postgres.yaml" \
+  -f "${E2E_DIR}/values/argo-watcher.yaml" \
+  -f "${E2E_DIR}/values/argo-watcher-postgres.yaml" \
   --set image.tag=race --wait --timeout 5m
 kubectl -n "$NS_AW" rollout status statefulset/argo-watcher --timeout=180s
 
@@ -144,70 +105,50 @@ kubectl -n "$NS_AW" rollout status statefulset/argo-watcher --timeout=180s
 # already implies the hook ran to completion.
 if kubectl -n "$NS_AW" get job/argo-watcher-migration >/dev/null 2>&1; then
   kubectl -n "$NS_AW" wait --for=condition=complete job/argo-watcher-migration --timeout=120s \
-    || { echo "STATE-POSTGRES: FAIL — migration Job did not complete"; exit 1; }
-  echo "  OK   migration Job completed"
+    || die "migration Job did not complete"
+  ok "migration Job completed"
 fi
 
-forward
+wait_service || die "argo-watcher /healthz never came up on ${AW_URL}"
 
 echo "=== asserting the server is actually on Postgres ==="
-st="$(curl -s -m 10 "${base}/config" | jq -r '.state_type')"
-if [[ "$st" != "postgres" ]]; then
-  echo "STATE-POSTGRES: FAIL — /config state_type=${st:-<none>}, want postgres"
-  exit 1
-fi
-echo "  OK   /config reports state_type=postgres"
+st="$(curl -s -m 10 "${AW_API}/config" | jq -r '.state_type')"
+[[ "$st" == "postgres" ]] || die "/config state_type=${st:-<none>}, want postgres"
+ok "/config reports state_type=postgres"
 
 echo "=== deploying ${APP} on Postgres (real write-back loop) ==="
-( cd "$root" && go build -o "$CLIENT_BIN" ./cmd/client ) \
-  || { echo "STATE-POSTGRES: FAIL — client build failed"; exit 1; }
-( cd "$root" && go build -o "${bin_dir}/wsprobe" ./test/e2e/tools/wsprobe ) \
-  || { echo "STATE-POSTGRES: FAIL — wsprobe build failed"; exit 1; }
+build_client "$bin_dir" || die "client build failed"
+build_bin "$bin_dir" ./test/e2e/tools/wsprobe || die "wsprobe build failed"
 
 # Wait for the app's baseline sync, then deploy a tag different from its current one
 # so the write-back actually commits (an unchanged tag is byte-compared and skipped).
-for _ in $(seq 1 40); do
-  s=$(kubectl -n argocd get application "$APP" -o jsonpath='{.status.sync.status}/{.status.health.status}' 2>/dev/null || true)
-  [[ "$s" == "Synced/Healthy" ]] && break
-  sleep 5
-done
-[[ "$s" == "Synced/Healthy" ]] || { echo "STATE-POSTGRES: FAIL — ${APP} never reached Synced/Healthy (last: ${s:-unknown})"; exit 1; }
+require_app_synced "$APP"
+TAG="$(other_tag "$APP")"
 
-cur=$(kubectl -n argocd get application "$APP" -o jsonpath='{.status.summary.images}' 2>/dev/null || true)
-if [[ "$cur" == *v1.10.2* ]]; then TAG="v1.10.1"; else TAG="v1.10.2"; fi
-
-if ! ARGO_WATCHER_URL="http://localhost:${PORT}" \
-   IMAGES="${IMAGE}" IMAGE_TAG="${TAG}" ARGO_APP="${APP}" \
-   COMMIT_AUTHOR="e2e-pg" PROJECT_NAME="lab" \
-   ARGO_WATCHER_DEPLOY_TOKEN="${DEPLOY_TOKEN}" \
-   RETRY_INTERVAL="5s" TASK_TIMEOUT="180" \
-   "$CLIENT_BIN"; then
-  echo "STATE-POSTGRES: FAIL — deploy of ${APP}:${TAG} did not reach 'deployed'"
-  exit 1
-fi
-echo "  OK   ${APP}:${TAG} deployed on Postgres"
+run_client "$APP" "$TAG" \
+  COMMIT_AUTHOR="e2e-pg" \
+  ARGO_WATCHER_DEPLOY_TOKEN="$DEPLOY_TOKEN" \
+  || die "deploy of ${APP}:${TAG} did not reach 'deployed'"
+ok "${APP}:${TAG} deployed on Postgres"
 
 # Capture the task we just created: the newest task for this app.
-id=$(curl -s -m 10 "${base}/tasks?from_timestamp=0&app=${APP}" | jq -r '.tasks | sort_by(.created) | last | .id')
-if [[ -z "$id" || "$id" == "null" ]]; then
-  echo "STATE-POSTGRES: FAIL — could not read the created task id from the task list"
-  exit 1
-fi
+id=$(curl -s -m 10 "${AW_API}/tasks?from_timestamp=0&app=${APP}" | jq -r '.tasks | sort_by(.created) | last | .id')
+[[ -n "$id" && "$id" != "null" ]] || die "could not read the created task id from the task list"
 echo "  task id=${id}"
 
 echo "=== restarting the server; the task must survive (Postgres persistence) ==="
 kubectl -n "$NS_AW" delete pod argo-watcher-0 --wait=true
 kubectl -n "$NS_AW" rollout status statefulset/argo-watcher --timeout=180s
-forward   # the previous forward died with the pod
+# No forward to re-establish: the NodePort URL is unaffected by the pod swap.
+wait_service || die "argo-watcher /healthz never came back after the restart"
 
-code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' "${base}/tasks/${id}")
-status_after=$(curl -s -m 10 "${base}/tasks/${id}" | jq -r '.status')
-if [[ "$code" != "200" || "$status_after" != "deployed" ]]; then
-  echo "STATE-POSTGRES: FAIL — task ${id} did not survive the restart (http=${code} status=${status_after:-<none>})"
+req GET "${AW_API}/tasks/${id}"
+status_after=$(jq -r '.status' <<<"$BODY")
+if [[ "$CODE" != "200" || "$status_after" != "deployed" ]]; then
   echo "  (in-memory loses history here; Postgres must return 200 'deployed')"
-  exit 1
+  die "task ${id} did not survive the restart (http=${CODE} status=${status_after:-<none>})"
 fi
-echo "  OK   task ${id} still present as 'deployed' after the restart"
+ok "task ${id} still present as 'deployed' after the restart"
 
 echo "=== shared deploy lock: a lock written by another writer is honored ==="
 # The manual lock API needs OIDC (heavy tier), so write the shared row directly —
@@ -225,27 +166,16 @@ start_probe
 psql_db "UPDATE deploy_lock SET manual_lock = true, override_until = NULL" >/dev/null
 lock_set=1
 
-if ! curl -s -m 10 "${base}/deploy-lock" | jq -e '. == true' >/dev/null 2>&1; then
-  echo "STATE-POSTGRES: FAIL — GET /deploy-lock did not report the shared lock"
-  exit 1
-fi
+curl -s -m 10 "${AW_API}/deploy-lock" | jq -e '. == true' >/dev/null 2>&1 \
+  || die "GET /deploy-lock did not report the shared lock"
 
-if wait_ws locked; then
-  echo "  OK   the watcher broadcast 'locked' for a lock written by another writer"
-else
-  echo "STATE-POSTGRES: FAIL — no 'locked' WS broadcast (captured: $(tr '\n' ',' <"$probe_out"))"
-  exit 1
-fi
+wait_ws "$probe_out" locked \
+  || die "no 'locked' WS broadcast (captured: $(tr '\n' ',' <"$probe_out"))"
+ok "the watcher broadcast 'locked' for a lock written by another writer"
 
-code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -X POST "${base}/tasks" \
-  -H 'Content-Type: application/json' \
-  -H "ARGO_WATCHER_DEPLOY_TOKEN: ${DEPLOY_TOKEN}" \
-  -d "{\"app\":\"${APP}\",\"author\":\"e2e-pg\",\"project\":\"lab\",\"images\":[{\"image\":\"${IMAGE}\",\"tag\":\"v1.10.3\"}]}")
-if [[ "$code" != "406" ]]; then
-  echo "STATE-POSTGRES: FAIL — deploy during a shared lock returned ${code}, want 406"
-  exit 1
-fi
-echo "  OK   shared lock rejects deployments (406) on a replica that never set it"
+post_task "$(task_json "$APP" v1.10.3 e2e-pg)" -H "ARGO_WATCHER_DEPLOY_TOKEN: ${DEPLOY_TOKEN}"
+[[ "$CODE" == "406" ]] || die "deploy during a shared lock returned ${CODE}, want 406"
+ok "shared lock rejects deployments (406) on a replica that never set it"
 
 # The lock must also OUTLIVE the process that would have held it in memory: the
 # old implementation lost it on restart, which is the other half of why it moved
@@ -253,64 +183,34 @@ echo "  OK   shared lock rejects deployments (406) on a replica that never set i
 echo "  restarting the server; the lock must still be in effect"
 kubectl -n "$NS_AW" delete pod argo-watcher-0 --wait=true
 kubectl -n "$NS_AW" rollout status statefulset/argo-watcher --timeout=180s
-forward
+wait_service || die "argo-watcher /healthz never came back after the second restart"
 
-if ! curl -s -m 10 "${base}/deploy-lock" | jq -e '. == true' >/dev/null 2>&1; then
-  echo "STATE-POSTGRES: FAIL — the shared lock did not survive the restart"
-  exit 1
-fi
+curl -s -m 10 "${AW_API}/deploy-lock" | jq -e '. == true' >/dev/null 2>&1 \
+  || die "the shared lock did not survive the restart"
 
-code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -X POST "${base}/tasks" \
-  -H 'Content-Type: application/json' \
-  -H "ARGO_WATCHER_DEPLOY_TOKEN: ${DEPLOY_TOKEN}" \
-  -d "{\"app\":\"${APP}\",\"author\":\"e2e-pg\",\"project\":\"lab\",\"images\":[{\"image\":\"${IMAGE}\",\"tag\":\"v1.10.3\"}]}")
-if [[ "$code" != "406" ]]; then
-  echo "STATE-POSTGRES: FAIL — deploy after the restart returned ${code}, want 406 (lock lost)"
-  exit 1
-fi
-echo "  OK   the lock survived the restart and still rejects deployments"
+post_task "$(task_json "$APP" v1.10.3 e2e-pg)" -H "ARGO_WATCHER_DEPLOY_TOKEN: ${DEPLOY_TOKEN}"
+[[ "$CODE" == "406" ]] || die "deploy after the restart returned ${CODE}, want 406 (lock lost)"
+ok "the lock survived the restart and still rejects deployments"
 
-# The restart above killed the previous socket along with its port-forward, so the
-# release needs a probe reconnected to the new pod.
+# The restart above killed the previous socket, so the release needs a probe
+# reconnected to the new pod.
 start_probe
 psql_db "UPDATE deploy_lock SET manual_lock = false" >/dev/null
 lock_set=0
-if ! curl -s -m 10 "${base}/deploy-lock" | jq -e '. == false' >/dev/null 2>&1; then
-  echo "STATE-POSTGRES: FAIL — GET /deploy-lock still locked after the shared release"
-  exit 1
-fi
-echo "  OK   releasing the shared lock unblocks deployments again"
+curl -s -m 10 "${AW_API}/deploy-lock" | jq -e '. == false' >/dev/null 2>&1 \
+  || die "GET /deploy-lock still locked after the shared release"
+ok "releasing the shared lock unblocks deployments again"
 
-if wait_ws unlocked; then
-  echo "  OK   the watcher broadcast 'unlocked' for the shared release"
-else
-  echo "STATE-POSTGRES: FAIL — no 'unlocked' WS broadcast (captured: $(tr '\n' ',' <"$probe_out"))"
-  exit 1
-fi
+wait_ws "$probe_out" unlocked \
+  || die "no 'unlocked' WS broadcast (captured: $(tr '\n' ',' <"$probe_out"))"
+ok "the watcher broadcast 'unlocked' for the shared release"
 
 echo "=== supersession under git contention on Postgres ==="
-# race-supersede.sh is self-contained (resets its app to a baseline, runs its own
-# competitor) and drives CancelInProgressTasks — the one deploy-flow query whose
-# SQL differs from the in-memory path. Give it the already-forwarded API plus a
-# Gitea forward for the commit check. Runs on app1, independent of app4 above.
-# Wait for app1 to be Healthy first (as the `race` task does) so the baseline reset
-# deploys from a known-good state — matters when this phase is run standalone.
-h=""
-for _ in $(seq 1 40); do
-  h=$(kubectl -n argocd get application app1 -o jsonpath='{.status.health.status}' 2>/dev/null || true)
-  [[ "$h" == "Healthy" ]] && break
-  sleep 3
-done
-[[ "$h" == "Healthy" ]] || { echo "STATE-POSTGRES: FAIL — app1 never reached Healthy (last: ${h:-unknown})"; exit 1; }
-kubectl -n gitea port-forward svc/gitea-http "${GITEA_PORT}:3000" >/dev/null 2>&1 &
-for _ in $(seq 1 15); do curl -s -m 3 -o /dev/null "localhost:${GITEA_PORT}" && break; sleep 1; done
-
-if ! DEPLOY_TOKEN="${DEPLOY_TOKEN}" BASE_URL="http://localhost:${PORT}" \
-   CLIENT_BIN="${CLIENT_BIN}" \
-   GITEA_REPO_URL="http://${GITEA_ADMIN}:${GITEA_PW}@localhost:${GITEA_PORT}/e2e/gitops.git" \
-   "${here}/race-supersede.sh"; then
-  echo "STATE-POSTGRES: FAIL — supersession under contention failed on Postgres"
-  exit 1
-fi
+# race-supersede.sh drives CancelInProgressTasks — the one deploy-flow query whose
+# SQL differs from the in-memory path. It is self-contained (waits for its app,
+# resets it to a baseline, runs its own competitor) and runs on app1, independent of
+# app4 above; reuses the client binary built here.
+CLIENT_BIN="$CLIENT_BIN" DEPLOY_TOKEN="$DEPLOY_TOKEN" "${here}/race-supersede.sh" \
+  || die "supersession under contention failed on Postgres"
 
 echo "STATE-POSTGRES: PASS (migrated, deployed, survived restart, shared deploy lock, superseded under contention)"

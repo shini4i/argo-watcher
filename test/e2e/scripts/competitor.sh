@@ -8,24 +8,21 @@
 # renders, so it advances the branch HEAD without disturbing the deployed apps.
 set -uo pipefail
 
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./lib.sh
+. "${here}/lib.sh"
+
 SECONDS_TOTAL="${SECONDS_TOTAL:-300}"
 INTERVAL="${INTERVAL:-1}"
-ORG="${ORG:-e2e}"
-REPO="${REPO:-gitops}"
-HTTP_PORT="${HTTP_PORT:-13000}"
-GITEA_ADMIN="${GITEA_ADMIN:-gitea_admin}"
-GITEA_PW="${GITEA_PW:-gitea_admin_pw1}"
 
-kubectl -n gitea port-forward svc/gitea-http "${HTTP_PORT}:3000" >/dev/null 2>&1 &
-trap 'kill $(jobs -p) 2>/dev/null || true' EXIT
-for _ in $(seq 1 20); do
-  curl -sf -m 2 "http://localhost:${HTTP_PORT}/api/healthz" >/dev/null 2>&1 && break; sleep 1
-done
+# Explicit -f predicate rather than wait_url: Gitea's healthz has no 503-by-design
+# case, so "answers at all" would let a 5xx during startup through.
+gitea_up() { curl -sf -m 3 -o /dev/null "${GITEA_URL}/api/healthz"; return; }
+retry 20 1 gitea_up || die "gitea not healthy on ${GITEA_URL}"
 
 work="$(mktemp -d)"
-url="http://${GITEA_ADMIN}:${GITEA_PW}@localhost:${HTTP_PORT}/${ORG}/${REPO}.git"
-git clone -q "$url" "${work}/r" || { echo "competitor: clone failed" >&2; exit 1; }
-cd "${work}/r"
+gitops_clone "${work}/r"
+cd "${work}/r" || die "could not enter the clone"
 git config user.name competitor
 git config user.email competitor@e2e
 
@@ -36,7 +33,7 @@ while [[ "$(date +%s)" -lt "$end" ]]; do
   n=$((n + 1))
   echo "$n $(date +%s)" >> competitor.log
   git add competitor.log && git commit -q -m "competitor ${n}"
-  if git push -q "$url" HEAD:main 2>/dev/null; then
+  if git push -q "$GITOPS_REPO_URL" HEAD:main 2>/dev/null; then
     pushes=$((pushes + 1))
   else
     conflicts=$((conflicts + 1))   # argo-watcher pushed first; re-sync next loop

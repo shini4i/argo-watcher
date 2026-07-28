@@ -1,0 +1,25 @@
+# Fixed NodePort for Gitea HTTP: the seed script's admin API calls, and the git
+# clone/push the phases and the competitor writer do. See nodeports/argo-watcher.yaml
+# for why these are standalone Services.
+#
+# Gitea's SSH port is deliberately NOT exposed — argo-watcher writes back over SSH
+# from inside the cluster, so only in-cluster DNS needs to reach it.
+#
+# nodePort MUST equal the matching containerPort in kind-config.yaml.
+apiVersion: v1
+kind: Service
+metadata:
+  name: gitea-http-nodeport
+  namespace: gitea
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: gitea
+    app.kubernetes.io/instance: gitea
+  ports:
+    - name: http
+      port: 3000
+      # Named port: the gitea container declares http=3000.
+      targetPort: http
+      nodePort: 30300
+      protocol: TCP

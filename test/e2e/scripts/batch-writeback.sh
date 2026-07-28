@@ -21,15 +21,18 @@
 #
 # Required env: AW_CHART_REPO, AW_CHART_VERSION (to helm-upgrade the release).
 # Optional env: DEPLOY_TOKEN, APPS, WORKERS, WS_CLIENTS, SOAK, SOAK_SECONDS,
-#   COMPETITOR_INTERVAL, PORT, VALUES.
+#   COMPETITOR_INTERVAL.
 set -uo pipefail
 
-NS_AW="${NS_AW:-argo-watcher}"
-PORT="${PORT:-18094}"
-VALUES="${VALUES:-values/argo-watcher.yaml}"
-AW_CHART_REPO="${AW_CHART_REPO:?AW_CHART_REPO required (chart repo URL)}"
-AW_CHART_VERSION="${AW_CHART_VERSION:?AW_CHART_VERSION required (pinned chart version)}"
-DEPLOY_TOKEN="${DEPLOY_TOKEN:-e2e-deploy-token}"
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./lib.sh
+. "${here}/lib.sh"
+
+# Required by helm_apply_aw; asserted up front rather than mid-soak.
+: "${AW_CHART_REPO:?AW_CHART_REPO is required}" "${AW_CHART_VERSION:?AW_CHART_VERSION is required}"
+# Not configurable: extra_envs_index must count entries in the SAME file
+# helm_apply_aw applies, or the appended --set would overwrite a real entry.
+VALUES="${E2E_DIR}/values/argo-watcher.yaml"
 APPS="${APPS:-5}"
 WORKERS="${WORKERS:-10}"
 WS_CLIENTS="${WS_CLIENTS:-10}"
@@ -37,60 +40,36 @@ SOAK="${SOAK:-2m}"
 SOAK_SECONDS="${SOAK_SECONDS:-120}"
 COMPETITOR_INTERVAL="${COMPETITOR_INTERVAL:-2}"
 
-here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-e2e_dir="$(cd "${here}/.." && pwd)"
-
-pf_pid=""
-cleanup() { kill $(jobs -p) 2>/dev/null || true; return; }
+cleanup() {
+  # jobs -p prints one PID per line; splitting them into separate arguments is the
+  # point, and they are always bare digits.
+  # shellcheck disable=SC2046
+  kill $(jobs -p) 2>/dev/null || true
+  return
+}
 trap cleanup EXIT
 
-# helm_apply reconfigures the live release from the values file + these --set args
-# alone. --reset-values makes each apply deterministic: without it a prior
-# `--set extraEnvs[N]` would carry forward, so the revert (values-file only) would
-# NOT drop the injected GIT_BATCH_WRITEBACK. Same mechanism as lockdown.sh.
-helm_apply() {
-  helm upgrade --install argo-watcher argo-watcher --repo "$AW_CHART_REPO" \
-    --version "$AW_CHART_VERSION" -n "$NS_AW" -f "${e2e_dir}/${VALUES}" --reset-values \
-    --set image.tag=race "$@" >/dev/null
-  kubectl -n "$NS_AW" rollout status statefulset/argo-watcher --timeout=180s >/dev/null
-  return
-}
-
-start_pf() {
-  [[ -n "$pf_pid" ]] && kill "$pf_pid" 2>/dev/null || true
-  kubectl -n "$NS_AW" port-forward svc/argo-watcher "${PORT}:80" >/dev/null 2>&1 &
-  pf_pid=$!
-  for _ in $(seq 1 15); do curl -s -m 3 -o /dev/null "localhost:${PORT}/healthz" && break; sleep 1; done
-  return
-}
-
-# Append GIT_BATCH_WRITEBACK as the next extraEnvs entry. The index is the count of
-# entries in the values file's extraEnvs block (read from the file, not the live
-# release), scoped to the block so an unrelated same-indented "- name:" cannot shift
-# it — identical to lockdown.sh.
-idx=$(awk '/^extraEnvs:/{f=1;next} f&&/^[^[:space:]#]/{f=0} f&&/^  - name:/{c++} END{print c+0}' "${e2e_dir}/${VALUES}")
+# Append GIT_BATCH_WRITEBACK as the next free extraEnvs entry (see extra_envs_index
+# in lib.sh); helm_apply_aw handles the --reset-values determinism.
+idx=$(extra_envs_index "$VALUES")
 
 echo "=== enabling GIT_BATCH_WRITEBACK on the live release (extraEnvs[${idx}]) ==="
-helm_apply --set-string "extraEnvs[${idx}].name=GIT_BATCH_WRITEBACK" \
-           --set-string "extraEnvs[${idx}].value=true"
-start_pf
+helm_apply_aw --set-string "extraEnvs[${idx}].name=GIT_BATCH_WRITEBACK" \
+              --set-string "extraEnvs[${idx}].value=true"
+wait_service || die "argo-watcher never came back after enabling batch write-back"
 
 echo "=== waiting for the ${APPS} fixture apps to be Healthy ==="
 for i in $(seq 1 "$APPS"); do
-  for _ in $(seq 1 40); do
-    [[ "$(kubectl -n argocd get application "app$i" -o jsonpath='{.status.health.status}' 2>/dev/null)" == "Healthy" ]] && break
-    sleep 3
-  done
+  wait_app "app$i" Healthy 40 || die "app$i never became Healthy (last: ${APP_STATE:-unknown})"
 done
 
 echo "=== batch soak: ${WORKERS} workers x ${APPS} apps for ${SOAK}, competitor@${COMPETITOR_INTERVAL}s ==="
 summary="$(mktemp)"
-drv=1
 (
-  cd "$e2e_dir" || exit 1
+  cd "$E2E_DIR" || exit 1
   SECONDS_TOTAL="$SOAK_SECONDS" INTERVAL="$COMPETITOR_INTERVAL" ./scripts/competitor.sh & comp=$!
   APPS="$APPS" WORKERS="$WORKERS" WS_CLIENTS="$WS_CLIENTS" DURATION="$SOAK" \
-    DEPLOY_TOKEN="$DEPLOY_TOKEN" BASE_URL="http://localhost:${PORT}" WS_URL="ws://localhost:${PORT}/ws" \
+    DEPLOY_TOKEN="$DEPLOY_TOKEN" BASE_URL="$AW_URL" WS_URL="$AW_WS_URL" \
     go run ./load >"$summary"
   rc=$?
   wait $comp 2>/dev/null || true
@@ -106,8 +85,8 @@ BATCH_MODE=1 "${here}/collect.sh" "$summary"
 col=$?
 
 echo "=== reverting GIT_BATCH_WRITEBACK (restore the default serialized path) ==="
-helm_apply
-start_pf
+helm_apply_aw
+wait_service || die "argo-watcher never came back after reverting batch write-back"
 
 if [[ "$drv" -eq 0 && "$col" -eq 0 ]]; then
   echo "BATCH-WRITEBACK: PASS"

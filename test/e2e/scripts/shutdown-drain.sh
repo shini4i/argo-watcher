@@ -23,44 +23,46 @@
 # poller, not shutdown. This phase asserts the shutdown/drain contract only.
 set -euo pipefail
 
-NS_AW="${NS_AW:-argo-watcher}"
-PORT="${PORT:-18094}"
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./lib.sh
+. "${here}/lib.sh"
+
 WS_CLIENTS="${WS_CLIENTS:-3}"
 STS="${STS:-argo-watcher}"
-here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-root="$(cd "${here}/../../.." && pwd)"
 
 bin_dir="$(mktemp -d)"
 work="$(mktemp -d)"
 log_out="${work}/pod.log"
-pf_pid=""; log_pid=""
-cleanup() { kill $(jobs -p) 2>/dev/null || true; rm -rf "$bin_dir" "$work"; }
+log_pid=""
+cleanup() {
+  # jobs -p prints one PID per line; splitting them into separate arguments is the
+  # point, and they are always bare digits.
+  # shellcheck disable=SC2046
+  kill $(jobs -p) 2>/dev/null || true
+  rm -rf "$bin_dir" "$work"
+}
 trap cleanup EXIT
-( cd "$root" && go build -o "${bin_dir}/wsprobe" ./test/e2e/tools/wsprobe )
+build_bin "$bin_dir" ./test/e2e/tools/wsprobe || die "wsprobe build failed"
+wsprobe="$BIN"
 
 pod="${STS}-0"
 old_uid=$(kubectl -n "$NS_AW" get pod "$pod" -o jsonpath='{.metadata.uid}')
 
-kubectl -n "$NS_AW" port-forward svc/argo-watcher "${PORT}:80" >/dev/null 2>&1 &
-pf_pid=$!
-for _ in $(seq 1 15); do curl -s -m 3 -o /dev/null "localhost:${PORT}/healthz" && break; sleep 1; done
+wait_service || die "argo-watcher not reachable on ${AW_URL}"
 
 # --- 1. Hold WebSocket clients open through the shutdown -----------------------
 echo "opening ${WS_CLIENTS} WebSocket client(s)"
 probe_pids=()
 for i in $(seq 1 "$WS_CLIENTS"); do
-  WS_URL="ws://localhost:${PORT}/ws" DURATION=120s "${bin_dir}/wsprobe" >"${work}/probe${i}.out" 2>/dev/null &
+  WS_URL="$AW_WS_URL" DURATION=120s "$wsprobe" >"${work}/probe${i}.out" 2>/dev/null &
   probe_pids+=($!)
 done
 # Wait until every probe reports OPEN before triggering shutdown, so the
 # connections are provably registered in the server's set — a fixed sleep raced
 # the handshake on a loaded host and left the drain with nothing to observe.
 for i in $(seq 1 "$WS_CLIENTS"); do
-  opened=0
-  for _ in $(seq 1 20); do grep -q '^OPEN$' "${work}/probe${i}.out" && { opened=1; break; }; sleep 1; done
-  if [[ "$opened" != "1" ]]; then
-    echo "  FAIL client ${i} never established its WebSocket connection"; exit 1
-  fi
+  wait_ws_open "${work}/probe${i}.out" \
+    || die "client ${i} never established its WebSocket connection"
 done
 
 # --- 2. Capture logs, then trigger a graceful pod termination ------------------
@@ -75,30 +77,29 @@ echo "deleting pod ${pod} (grace 60s) to trigger graceful shutdown"
 # 10s) completes before SIGKILL; --wait=false returns so we can watch the clients.
 kubectl -n "$NS_AW" delete pod "$pod" --grace-period=60 --wait=false >/dev/null
 
-fail=0
-
 # --- 3. Every WS client must observe the graceful GoingAway close --------------
+gone() { local pid="$1"; ! kill -0 "$pid" 2>/dev/null; }
 for i in $(seq 1 "$WS_CLIENTS"); do
   # wsprobe exits when its connection closes; bound the wait so a hung client fails.
-  for _ in $(seq 1 30); do kill -0 "${probe_pids[$((i-1))]}" 2>/dev/null || break; sleep 1; done
+  retry 30 1 gone "${probe_pids[$((i - 1))]}" || true
   out="${work}/probe${i}.out"
   if grep -q '^CLOSED code=1001 reason=server shutdown$' "$out"; then
-    echo "  OK   client ${i} drained gracefully (1001 server shutdown)"
+    ok "client ${i} drained gracefully (1001 server shutdown)"
   else
-    echo "  FAIL client ${i} did not see a graceful close: $(tr '\n' ',' <"$out")"; fail=1
+    bad "client ${i} did not see a graceful close: $(tr '\n' ',' <"$out")"
   fi
 done
 
 # --- 4. The captured shutdown logs must show the clean ordered path ------------
-for _ in $(seq 1 30); do kill -0 "$log_pid" 2>/dev/null || break; sleep 1; done
+retry 30 1 gone "$log_pid" || true
 kill "$log_pid" 2>/dev/null || true
 assert_log() {  # pattern human-label want(present|absent)
   local pattern="$1" label="$2" want="$3" found
   if grep -qF "$pattern" "$log_out"; then found=1; else found=0; fi
   if { [[ "$want" == present && "$found" == 1 ]] || [[ "$want" == absent && "$found" == 0 ]]; }; then
-    echo "  OK   log ${want}: ${label}"
+    ok "log ${want}: ${label}"
   else
-    echo "  FAIL log ${want} expected but not: ${label}"; fail=1
+    bad "log ${want} expected but not: ${label}"
   fi
 }
 assert_log "shutting down server..."                   "shutdown initiated"        present
@@ -113,27 +114,25 @@ assert_log "panic:"                                    "no panic during shutdown
 
 # --- 5. The recreated pod must come back Ready and reach Argo ------------------
 echo "waiting for ${pod} to be recreated and Ready"
-ready=0
-for _ in $(seq 1 60); do
+recreated_ready() {
+  local uid rdy
   uid=$(kubectl -n "$NS_AW" get pod "$pod" -o jsonpath='{.metadata.uid}' 2>/dev/null || true)
   rdy=$(kubectl -n "$NS_AW" get pod "$pod" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)
-  if [[ -n "$uid" && "$uid" != "$old_uid" && "$rdy" == "True" ]]; then ready=1; break; fi
-  sleep 3
-done
-if [[ "$ready" != "1" ]]; then
-  echo "  FAIL ${pod} did not come back Ready after shutdown"; fail=1
+  [[ -n "$uid" && "$uid" != "$old_uid" && "$rdy" == "True" ]]
+}
+if ! retry 60 3 recreated_ready; then
+  bad "${pod} did not come back Ready after shutdown"
 else
-  kill "$pf_pid" 2>/dev/null || true
-  kubectl -n "$NS_AW" port-forward svc/argo-watcher "${PORT}:80" >/dev/null 2>&1 &
-  pf_pid=$!
-  for _ in $(seq 1 15); do curl -s -m 3 -o /dev/null "localhost:${PORT}/healthz" && break; sleep 1; done
-  code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' "localhost:${PORT}/healthz")
-  unavail=$(curl -s -m 10 "localhost:${PORT}/metrics" | awk '/^argocd_unavailable /{print $2}')
+  # No port-forward to re-establish: the NodePort URL survived the pod swap.
+  wait_service || die "argo-watcher never answered after the pod came back"
+  code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' "${AW_URL}/healthz")
+  # metric_raw, not metric_sum: an ABSENT gauge must fail this gate, not read as 0.
+  unavail=$(metric_raw argocd_unavailable)
   if [[ "$code" == "200" && "$unavail" == "0" ]]; then
-    echo "  OK   recreated pod healthy and reaching Argo (healthz=200 argocd_unavailable=0)"
+    ok "recreated pod healthy and reaching Argo (healthz=200 argocd_unavailable=0)"
   else
-    echo "  FAIL recreated pod not healthy: healthz=${code} argocd_unavailable=${unavail}"; fail=1
+    bad "recreated pod not healthy: healthz=${code} argocd_unavailable=${unavail:-<absent>}"
   fi
 fi
 
-if [[ "$fail" -eq 0 ]]; then echo "SHUTDOWN-DRAIN: PASS"; else echo "SHUTDOWN-DRAIN: FAIL"; exit 1; fi
+phase_end SHUTDOWN-DRAIN

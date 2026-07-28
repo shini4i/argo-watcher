@@ -28,50 +28,33 @@
 # handlers stay silent.
 set -euo pipefail
 
-NS_AW="${NS_AW:-argo-watcher}"
-PORT="${PORT:-18093}"
-# Helm coordinates for the in-place toggle (passed from the Taskfile).
-AW_CHART_REPO="${AW_CHART_REPO:?AW_CHART_REPO is required}"
-AW_CHART_VERSION="${AW_CHART_VERSION:?AW_CHART_VERSION is required}"
-VALUES="${VALUES:-values/argo-watcher.yaml}"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-root="$(cd "${here}/../../.." && pwd)"
+# shellcheck source=./lib.sh
+. "${here}/lib.sh"
+
+# Required by helm_apply_aw; asserted here so a missing value fails on line 1 rather
+# than part-way through the schedule arithmetic.
+: "${AW_CHART_REPO:?AW_CHART_REPO is required}" "${AW_CHART_VERSION:?AW_CHART_VERSION is required}"
+# Not configurable: extra_envs_index must count entries in the SAME file
+# helm_apply_aw applies, or the appended --set would overwrite a real entry.
+VALUES="${E2E_DIR}/values/argo-watcher.yaml"
 
 bin_dir="$(mktemp -d)"
 probe_out="$(mktemp)"
-pf_pid=""
-cleanup() { kill $(jobs -p) 2>/dev/null || true; rm -rf "$bin_dir" "$probe_out"; }
+cleanup() {
+  # jobs -p prints one PID per line; splitting them into separate arguments is the
+  # point, and they are always bare digits.
+  # shellcheck disable=SC2046
+  kill $(jobs -p) 2>/dev/null || true
+  rm -rf "$bin_dir" "$probe_out"
+}
 trap cleanup EXIT
-( cd "$root" && go build -o "${bin_dir}/wsprobe" ./test/e2e/tools/wsprobe )
+build_bin "$bin_dir" ./test/e2e/tools/wsprobe || die "wsprobe build failed"
+wsprobe="$BIN"
 
-# (re)start the port-forward after a rollout swaps the pod out.
-start_pf() {
-  [[ -n "$pf_pid" ]] && kill "$pf_pid" 2>/dev/null || true
-  kubectl -n "$NS_AW" port-forward svc/argo-watcher "${PORT}:80" >/dev/null 2>&1 &
-  pf_pid=$!
-  for _ in $(seq 1 15); do curl -s -m 3 -o /dev/null "localhost:${PORT}/healthz" && break; sleep 1; done
-}
-
-helm_apply() {  # extra --set args reconfigure the release in place
-  # --reset-values makes each apply deterministic from the values file + these
-  # --set args alone: without it helm carries a prior `--set extraEnvs[N]` forward,
-  # so the revert (values file only) would NOT drop the injected LOCKDOWN_SCHEDULE.
-  helm upgrade --install argo-watcher argo-watcher --repo "$AW_CHART_REPO" \
-    --version "$AW_CHART_VERSION" -n "$NS_AW" -f "$VALUES" --reset-values \
-    --set image.tag=race "$@" >/dev/null
-  kubectl -n "$NS_AW" rollout status statefulset/argo-watcher --timeout=180s >/dev/null
-}
-
-base="http://localhost:${PORT}/api/v1"
-task_json='{"app":"app1","author":"e2e","project":"lab","images":[{"image":"traefik/whoami","tag":"v1.10.2"}]}'
-# post_task -> sets CODE and BODY for a tokenless POST /api/v1/tasks.
-post_task() {
-  local out
-  out=$(curl -s -m 10 -w $'\n%{http_code}' -X POST -H 'Content-Type: application/json' \
-    -d "$task_json" "${base}/tasks")
-  CODE="${out##*$'\n'}"; BODY="${out%$'\n'*}"
-}
-fail=0
+# A tokenless task: accepted (202) and skips write-back, so the checks below have no
+# lasting side effect.
+TASK="$(task_json app1 v1.10.2)"
 
 # --- 1. Enable a schedule whose window opens ~3 min out ------------------------
 # date arithmetic (GNU date) rolls days/weeks over cleanly, so the window is
@@ -87,79 +70,73 @@ end_day=$(LC_ALL=C date -u -d '+12 hours' +%a);      end_hm=$(date -u -d '+12 ho
 schedule="${start_day} ${start_hm} - ${end_day} ${end_hm}"
 echo "lockdown window: ${schedule} (opens ~180s from now)"
 
-# Append LOCKDOWN_SCHEDULE as the next extraEnvs entry. The index is the count of
-# entries in the values file's extraEnvs block — read from the file, not the live
-# release, so it is independent of release state. The awk scopes the count to the
-# extraEnvs block (between "extraEnvs:" and the next top-level key), so a same-
-# indented "- name:" added to some other section can't silently shift the index.
-idx=$(awk '/^extraEnvs:/{f=1;next} f&&/^[^[:space:]#]/{f=0} f&&/^  - name:/{c++} END{print c+0}' "$VALUES")
-helm_apply --set-string "extraEnvs[${idx}].name=LOCKDOWN_SCHEDULE" \
-           --set-string "extraEnvs[${idx}].value=${schedule}"
-start_pf
+# Append LOCKDOWN_SCHEDULE as the next free extraEnvs entry (see extra_envs_index
+# in lib.sh for why the index is counted from the values file).
+idx=$(extra_envs_index "$VALUES")
+helm_apply_aw --set-string "extraEnvs[${idx}].name=LOCKDOWN_SCHEDULE" \
+              --set-string "extraEnvs[${idx}].value=${schedule}"
+wait_service || die "argo-watcher never came back after enabling the schedule"
+
+# lock_is <true|false> -> succeeds when GET /deploy-lock equals it.
+lock_is() {
+  local want="$1"
+  curl -s -m 10 "${AW_API}/deploy-lock" | jq -e ". == ${want}" >/dev/null 2>&1
+  return
+}
 
 # --- 2. Confirm we booted pre-window, then hold a WS client open ---------------
 assert_ws=1
-if curl -s -m 10 "${base}/deploy-lock" | jq -e '. == false' >/dev/null 2>&1; then
-  echo "  OK   booted unlocked (pre-window); watching for the scheduled 'locked' broadcast"
-  WS_URL="ws://localhost:${PORT}/ws" DURATION=400s "${bin_dir}/wsprobe" >"$probe_out" 2>/dev/null &
-  # Wait for the probe to actually connect (OPEN) before the window opens, so a
-  # slow handshake can't miss the one-shot "locked" broadcast — same guard as
-  # shutdown-drain.sh. The window is still ~180s out, so 20s is ample.
-  ws_open=0
-  for _ in $(seq 1 20); do grep -q '^OPEN$' "$probe_out" && { ws_open=1; break; }; sleep 1; done
-  if [[ "$ws_open" != "1" ]]; then
-    echo "  FAIL WS probe never connected before the window opened"; fail=1; assert_ws=0
+if lock_is false; then
+  ok "booted unlocked (pre-window); watching for the scheduled 'locked' broadcast"
+  WS_URL="$AW_WS_URL" DURATION=400s "$wsprobe" >"$probe_out" 2>/dev/null &
+  # The window is still ~180s out, so the default ~20s connect window is ample.
+  if ! wait_ws_open "$probe_out"; then
+    bad "WS probe never connected before the window opened"
+    assert_ws=0
   fi
 else
-  echo "  NOTE rollout booted in-window; skipping the WS-transition sub-check (not a failure)"
+  note "rollout booted in-window; skipping the WS-transition sub-check (not a failure)"
   assert_ws=0
 fi
 
 # --- 3. Wait for the window to open, then assert the locked behaviour ----------
-locked=0
-for _ in $(seq 1 60); do   # up to ~300s: window opens at +180s, then evaluated live
-  if curl -s -m 10 "${base}/deploy-lock" | jq -e '. == true' >/dev/null 2>&1; then locked=1; break; fi
-  sleep 5
-done
-if [[ "$locked" == "1" ]]; then
-  echo "  OK   GET /deploy-lock -> true (window open)"
+# Up to ~300s: the window opens at +180s and is then evaluated live per request.
+if retry 60 5 lock_is true; then
+  ok "GET /deploy-lock -> true (window open)"
 else
-  echo "  FAIL GET /deploy-lock never reported locked"; fail=1
+  bad "GET /deploy-lock never reported locked"
 fi
 
-post_task
-if [[ "$CODE" == "406" ]] && echo "$BODY" | jq -e '.status == "rejected" and .error == "lockdown is active, deployments are not accepted"' >/dev/null 2>&1; then
-  echo "  OK   POST /tasks -> 406 rejected (deploys frozen)"
+post_task "$TASK"
+if [[ "$CODE" == "406" ]] &&
+   jq -e '.status == "rejected" and .error == "lockdown is active, deployments are not accepted"' <<<"$BODY" >/dev/null 2>&1; then
+  ok "POST /tasks -> 406 rejected (deploys frozen)"
 else
-  echo "  FAIL POST /tasks during lockdown: code=${CODE} body=${BODY} (want 406 rejected)"; fail=1
+  bad "POST /tasks during lockdown: code=${CODE} body=${BODY} (want 406 rejected)"
 fi
 
 if [[ "$assert_ws" == "1" ]]; then
-  ws_ok=0
-  for _ in $(seq 1 16); do   # up to ~80s: watcher polls once a minute
-    if grep -q '^MSG locked$' "$probe_out"; then ws_ok=1; break; fi
-    sleep 5
-  done
-  if [[ "$ws_ok" == "1" ]]; then
-    echo "  OK   WS client received the 'locked' broadcast on the schedule transition"
+  # Up to ~80s: the watcher polls once a minute.
+  if wait_ws "$probe_out" locked 16; then
+    ok "WS client received the 'locked' broadcast on the schedule transition"
   else
-    echo "  FAIL no 'locked' WS broadcast (captured: $(tr '\n' ',' <"$probe_out"))"; fail=1
+    bad "no 'locked' WS broadcast (captured: $(tr '\n' ',' <"$probe_out"))"
   fi
 fi
 
 # --- 4. Revert the schedule and prove deploys are accepted again ---------------
-helm_apply   # values file only -> LOCKDOWN_SCHEDULE dropped -> unlocked
-start_pf
-if curl -s -m 10 "${base}/deploy-lock" | jq -e '. == false' >/dev/null 2>&1; then
-  echo "  OK   GET /deploy-lock -> false after revert"
+helm_apply_aw   # values file only -> LOCKDOWN_SCHEDULE dropped -> unlocked
+wait_service || die "argo-watcher never came back after reverting the schedule"
+if lock_is false; then
+  ok "GET /deploy-lock -> false after revert"
 else
-  echo "  FAIL GET /deploy-lock still true after revert"; fail=1
+  bad "GET /deploy-lock still true after revert"
 fi
-post_task   # tokenless task is accepted (202) and skips write-back: no side effect
+post_task "$TASK"
 if [[ "$CODE" == "202" ]]; then
-  echo "  OK   POST /tasks -> 202 accepted (deploys unfrozen)"
+  ok "POST /tasks -> 202 accepted (deploys unfrozen)"
 else
-  echo "  FAIL POST /tasks after revert: code=${CODE} body=${BODY} (want 202)"; fail=1
+  bad "POST /tasks after revert: code=${CODE} body=${BODY} (want 202)"
 fi
 
-if [[ "$fail" -eq 0 ]]; then echo "LOCKDOWN: PASS"; else echo "LOCKDOWN: FAIL"; exit 1; fi
+phase_end LOCKDOWN

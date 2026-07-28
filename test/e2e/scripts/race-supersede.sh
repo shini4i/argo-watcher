@@ -19,30 +19,25 @@
 # and is never superseded. It then starts the competitor itself so contention is
 # active before the race fires.
 #
-# Required env: GITEA_REPO_URL (gitops repo clone URL, creds inline).
-# Optional env: BASE_URL, DEPLOY_TOKEN, APP, BASE_TAG, OLD_TAG, NEW_TAG, IMAGE,
-#               COMPETITOR_INTERVAL, COMPETITOR_SECONDS, COMPETITOR_HTTP_PORT.
+# Optional env: DEPLOY_TOKEN, APP, BASE_TAG, OLD_TAG, NEW_TAG, IMAGE,
+#               COMPETITOR_INTERVAL, COMPETITOR_SECONDS, CLIENT_BIN.
 set -uo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./lib.sh
+. "${here}/lib.sh"
 
 APP="${APP:-app1}"
 BASE_TAG="${BASE_TAG:-v1.10.2}"
 OLD_TAG="${OLD_TAG:-v1.10.1}"
 NEW_TAG="${NEW_TAG:-v1.10.3}"
-IMAGE="${IMAGE:-traefik/whoami}"
-DEPLOY_TOKEN="${DEPLOY_TOKEN:-e2e-deploy-token}"
-BASE_URL="${BASE_URL:-http://localhost:8080}"
-GITEA_REPO_URL="${GITEA_REPO_URL:?GITEA_REPO_URL required (gitops repo clone URL)}"
 COMPETITOR_INTERVAL="${COMPETITOR_INTERVAL:-1}"
 COMPETITOR_SECONDS="${COMPETITOR_SECONDS:-90}"
-COMPETITOR_HTTP_PORT="${COMPETITOR_HTTP_PORT:-13010}"
-here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-root="$(cd "${here}/../../.." && pwd)"
 
 # BASE_TAG, OLD_TAG, NEW_TAG must all differ: BASE ≠ OLD/NEW so both race deploys
 # force a real write-back; OLD ≠ NEW so NEW genuinely supersedes OLD.
 if [[ "$BASE_TAG" == "$OLD_TAG" || "$BASE_TAG" == "$NEW_TAG" || "$OLD_TAG" == "$NEW_TAG" ]]; then
-  echo "race: BASE_TAG/OLD_TAG/NEW_TAG must all differ (base=${BASE_TAG} old=${OLD_TAG} new=${NEW_TAG})" >&2
-  exit 1
+  die "BASE_TAG/OLD_TAG/NEW_TAG must all differ (base=${BASE_TAG} old=${OLD_TAG} new=${NEW_TAG})"
 fi
 
 # Use a prebuilt client so both deploys launch a binary — a per-invocation `go run`
@@ -55,20 +50,17 @@ comp_pid=""
 trap '[[ -n "$comp_pid" ]] && kill "$comp_pid" 2>/dev/null; rm -rf "$bin_dir" "$clone_dir" "$base_out" "$old_out" "$new_out"' EXIT
 if [[ -z "${CLIENT_BIN:-}" ]]; then
   bin_dir="$(mktemp -d)"
-  CLIENT_BIN="${bin_dir}/aw-client"
-  ( cd "$root" && go build -o "$CLIENT_BIN" ./cmd/client ) || { echo "race: FAIL — client build failed" >&2; exit 1; }
+  build_client "$bin_dir" || die "client build failed"
 fi
+
+wait_app "$APP" Healthy || die "${APP} never reached Healthy (last: ${APP_STATE:-unknown})"
+wait_service || die "argo-watcher not reachable on ${AW_URL}"
 
 # deploy <tag> <outfile>: run the client to deploy APP:tag, blocking to a terminal
 # status. Combined stdout+stderr goes to outfile; the client's exit code propagates.
 deploy() {
   local tag="$1" out="$2"
-  env ARGO_WATCHER_URL="$BASE_URL" \
-      IMAGES="$IMAGE" IMAGE_TAG="$tag" ARGO_APP="$APP" \
-      COMMIT_AUTHOR="e2e" PROJECT_NAME="lab" \
-      ARGO_WATCHER_DEPLOY_TOKEN="$DEPLOY_TOKEN" \
-      RETRY_INTERVAL="5s" TASK_TIMEOUT="180" \
-      "$CLIENT_BIN" >"$out" 2>&1
+  run_client "$APP" "$tag" ARGO_WATCHER_DEPLOY_TOKEN="$DEPLOY_TOKEN" >"$out"
   return
 }
 
@@ -83,7 +75,7 @@ fi
 
 # 2) Start the competitor to force write-back contention, and give it a moment to
 #    clone and begin advancing origin/main before the race deploys run.
-HTTP_PORT="$COMPETITOR_HTTP_PORT" SECONDS_TOTAL="$COMPETITOR_SECONDS" INTERVAL="$COMPETITOR_INTERVAL" \
+SECONDS_TOTAL="$COMPETITOR_SECONDS" INTERVAL="$COMPETITOR_INTERVAL" \
   "${here}/competitor.sh" & comp_pid=$!
 sleep 5
 
@@ -99,30 +91,26 @@ echo "OLD ${OLD_TAG}: exit=${old_rc}"; sed 's/^/  | /' "$old_out"
 echo "NEW ${NEW_TAG}: exit=${new_rc}"; sed 's/^/  | /' "$new_out"
 
 # Read the tag currently committed in the app's override file.
-git clone -q "$GITEA_REPO_URL" "$clone_dir" || { echo "race: FAIL — gitops clone failed" >&2; exit 1; }
+gitops_clone "$clone_dir"
 override="${clone_dir}/chart/.argocd-source-${APP}.yaml"
-# The file is small controlled YAML (helm.parameters: [{name, value, forceString}]).
-# awk keeps this yq-free (yq is not on GitHub runners): after the app.image.tag
-# name line, take the value on the next `value:` line, stripping any quotes.
-committed=$(awk '/name:[[:space:]]*app\.image\.tag/{f=1} f&&/value:/{v=$NF; gsub(/"/,"",v); print v; exit}' "$override")
-# Distinguish a parse failure (key renamed / file missing / non-consecutive lines)
-# from a genuine supersede violation — an empty result would otherwise masquerade
-# as "committed tag <none> is not the newer tag" below.
+committed=$(override_param "$override" app.image.tag)
+# Distinguish a parse failure (key renamed / file missing) from a genuine supersede
+# violation — an empty result would otherwise masquerade as "committed tag <none> is
+# not the newer tag" below.
 if [[ -z "$committed" ]]; then
-  echo "race: FAIL — could not read app.image.tag from ${override} (parse failure, not a supersede result)" >&2
-  exit 1
+  die "could not read app.image.tag from ${override} (parse failure, not a supersede result)"
 fi
 echo "race: committed git tag=${committed}"
 
-rc=0
-[[ "$new_rc" -eq 0 ]] || { echo "race: FAIL — NEW ${NEW_TAG} client exited ${new_rc}, expected 0 (deployed)"; rc=1; }
-[[ "$old_rc" -ne 0 ]] || { echo "race: FAIL — OLD ${OLD_TAG} client exited 0, expected non-zero (superseded)"; rc=1; }
-if ! grep -qiE "supersed|cancel" "$old_out"; then
-  echo "race: FAIL — OLD client output did not report the deploy was superseded/cancelled"; rc=1
-fi
-[[ "$committed" == "$NEW_TAG" ]] || { echo "race: FAIL — committed tag ${committed:-<none>} is not the newer ${NEW_TAG} (superseded task may have clobbered the winner)"; rc=1; }
+[[ "$new_rc" -eq 0 ]] || bad "NEW ${NEW_TAG} client exited ${new_rc}, expected 0 (deployed)"
+[[ "$old_rc" -ne 0 ]] || bad "OLD ${OLD_TAG} client exited 0, expected non-zero (superseded)"
+grep -qiE "supersed|cancel" "$old_out" \
+  || bad "OLD client output did not report the deploy was superseded/cancelled"
+[[ "$committed" == "$NEW_TAG" ]] \
+  || bad "committed tag ${committed:-<none>} is not the newer ${NEW_TAG} (superseded task may have clobbered the winner)"
 
-if [[ "$rc" -eq 0 ]]; then
+if [[ "$E2E_FAILS" -eq 0 ]]; then
   echo "race OK: newer tag ${NEW_TAG} won; older ${OLD_TAG} was superseded and did not clobber it"
+  exit 0
 fi
-exit "$rc"
+phase_end RACE-SUPERSEDE

@@ -14,46 +14,31 @@
 # Usage: docker-proxy.sh
 set -euo pipefail
 
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./lib.sh
+. "${here}/lib.sh"
+
 APP="proxyapp"
-# The BARE image name the client requests; the app runs mirror.gcr.io/<this>.
-IMAGE="${IMAGE:-traefik/whoami}"
+# IMAGE (lib.sh) is the BARE image name the client requests; the app runs
+# mirror.gcr.io/<it>.
 # Must match the tag proxyapp runs (the shared chart's default).
 TAG="${TAG:-v1.10.1}"
-NS_AW="${NS_AW:-argo-watcher}"
-PORT="${PORT:-18099}"
-here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-root="$(cd "${here}/../../.." && pwd)"
 
 bin_dir="$(mktemp -d)"
-trap 'kill $(jobs -p) 2>/dev/null || true; rm -rf "$bin_dir"' EXIT
-( cd "$root" && go build -o "${bin_dir}/aw-client" ./cmd/client )
+trap 'rm -rf "$bin_dir"' EXIT
+build_client "$bin_dir" || die "client build failed"
 
 # Apply the proxy-prefixed fixture and wait for its initial sync (the proxied image
 # pulls through mirror.gcr.io and runs, so the app becomes Healthy).
-kubectl apply -f "${here}/../fixtures/proxy-app.yaml"
-for _ in $(seq 1 60); do
-  s=$(kubectl -n argocd get application "$APP" -o jsonpath='{.status.sync.status}/{.status.health.status}' 2>/dev/null || true)
-  [[ "$s" == "Synced/Healthy" ]] && break
-  sleep 5
-done
-[[ "$s" == "Synced/Healthy" ]] || { echo "DOCKER-PROXY: FAIL — ${APP} never reached Synced/Healthy (last: ${s:-unknown})"; exit 1; }
-
-kubectl -n "$NS_AW" port-forward svc/argo-watcher "${PORT}:80" >/dev/null 2>&1 &
-for _ in $(seq 1 15); do curl -s -m 3 -o /dev/null "localhost:${PORT}/healthz" && break; sleep 1; done
+kubectl apply -f "${E2E_DIR}/fixtures/proxy-app.yaml"
+require_app_synced "$APP" 60
+wait_service || die "argo-watcher never answered on ${AW_URL}"
 
 echo "deploying ${APP} -> bare ${IMAGE}:${TAG} (app runs mirror.gcr.io/${IMAGE})"
 
 # No deploy token: unvalidated, no write-back. TASK_TIMEOUT kept short so a
 # regression (proxy match not applied) fails fast instead of hanging.
-if ARGO_WATCHER_URL="http://localhost:${PORT}" \
-   IMAGES="${IMAGE}" \
-   IMAGE_TAG="${TAG}" \
-   ARGO_APP="${APP}" \
-   COMMIT_AUTHOR="e2e" \
-   PROJECT_NAME="lab" \
-   RETRY_INTERVAL="5s" \
-   TASK_TIMEOUT="60" \
-   "${bin_dir}/aw-client"; then
+if run_client "$APP" "$TAG" TASK_TIMEOUT="60"; then
   echo "DOCKER-PROXY: PASS (bare image matched the proxy-prefixed running image)"
   exit 0
 fi
