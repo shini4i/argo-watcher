@@ -118,6 +118,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- A deployment can no longer cancel one that was submitted with more authority than
+  itself. Task submission without a credential is accepted by design (the rollout is
+  tracked, but not written back to git), but superseding let such a task cancel any
+  in-flight deployment for the same application and image name — and a cancelled
+  task aborts its pending git write-back, so a credentialed deployment's image tag
+  never landed. Superseding now also requires that the in-flight task presented no
+  more authority than the new one, which needs no configuration and leaves
+  token-less setups behaving exactly as before. Whether a task was credentialed is
+  persisted (migration `000007`); tasks already in flight during the upgrade read as
+  uncredentialed until they finish. Task creation fails with `503` until that
+  migration has been applied, so it must run before or alongside the new server image
+  — which is what the Helm chart's pre-upgrade migration Job already guarantees. The
+  flag is now neither accepted from nor emitted in API payloads — with the in-memory
+  state backend, task listings previously echoed a `validated` key.
 - Update frontend dependencies to clear the actionable Dependabot advisories: bump
   `postcss` to 8.5.23 (path traversal via the `sourceMappingURL` previous-source-map
   auto-loader; build-time only) and the `dompurify` pin to 3.4.12 (elements allowed

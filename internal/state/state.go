@@ -17,6 +17,13 @@ var errDesiredRetry = errors.New("desired retry error")
 // silently reported as a missing task.
 var ErrTaskNotFound = errors.New("task not found")
 
+// maySupersede reports whether a deployment may cancel an in-flight task, by
+// comparing the credential each one presented. Only the uncredentialed-cancels-
+// credentialed direction is refused.
+func maySupersede(newTaskValidated, inFlightValidated bool) bool {
+	return newTaskValidated || !inFlightValidated
+}
+
 // imageNamesOverlap reports whether the two image slices share at least one
 // image name (the repository, ignoring the tag). It is used to decide whether a
 // new deployment supersedes an in-progress one for the same app.
@@ -50,7 +57,11 @@ type TaskRepository interface {
 	// supersede the older in-flight rollout. Operating on the shared state makes
 	// the cancellation visible to every replica, not just the one handling the new
 	// deployment.
-	CancelInProgressTasks(app string, images []models.Image, reason string) (int64, error)
+	//
+	// newTaskValidated is the superseding deployment's own authority: an
+	// uncredentialed task never cancels a credentialed one, which would otherwise
+	// let an anonymous request abort a credentialed rollout's git write-back.
+	CancelInProgressTasks(app string, images []models.Image, reason string, newTaskValidated bool) (int64, error)
 	Check() bool
 	ProcessObsoleteTasks(retryTimes uint)
 }

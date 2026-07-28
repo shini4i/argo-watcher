@@ -213,4 +213,11 @@ echo "=== supersession under git contention on Postgres ==="
 CLIENT_BIN="$CLIENT_BIN" DEPLOY_TOKEN="$DEPLOY_TOKEN" "${here}/race-supersede.sh" \
   || die "supersession under contention failed on Postgres"
 
-echo "STATE-POSTGRES: PASS (migrated, deployed, survived restart, shared deploy lock, superseded under contention)"
+echo "=== supersede authority on Postgres ==="
+# The authority check filters candidates in Go over rows read back from Postgres, so
+# it only holds here if migration 000007 added the `validated` column and AddTask
+# persists it. Runs on app2, independent of the apps used above.
+DEPLOY_TOKEN="$DEPLOY_TOKEN" "${here}/supersede-authority.sh" \
+  || die "supersede authority failed on Postgres"
+
+echo "STATE-POSTGRES: PASS (migrated, deployed, survived restart, shared deploy lock, superseded under contention, supersede authority)"

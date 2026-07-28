@@ -9,6 +9,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestTask_ValidatedIsNeverSerialized pins both halves of the invariant behind the
+// `json:"-"` tag: the flag decides what a task may supersede, so it must neither be
+// accepted from a request body nor appear in an API payload. The tag is the only
+// thing enforcing the outbound half for the in-memory backend, which returns
+// models.Task verbatim.
+func TestTask_ValidatedIsNeverSerialized(t *testing.T) {
+	out, err := json.Marshal(Task{App: "app", Validated: true})
+	require.NoError(t, err)
+	assert.NotContains(t, string(out), "validated")
+
+	var in Task
+	require.NoError(t, json.Unmarshal([]byte(`{"app":"app","validated":true}`), &in))
+	assert.False(t, in.Validated, "a caller must not be able to assert its own authority")
+}
+
 // TestTask_RefreshUnmarshal verifies the per-task refresh override (issue #334) is optional and
 // backward compatible: a payload from an old client (no "refresh" field) yields a nil pointer, while
 // explicit true/false round-trip as set. A nil pointer lets the server fall back to its instance default.

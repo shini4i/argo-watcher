@@ -298,6 +298,12 @@ tasks:
     cmds:
       - DEPLOY_TOKEN={{.DEPLOY_TOKEN}} ./scripts/race-supersede.sh
 
+  supersede-authority:
+    desc: "Assert an uncredentialed task cannot cancel a credentialed in-flight deploy"
+    deps: [apply-apps]
+    cmds:
+      - DEPLOY_TOKEN={{.DEPLOY_TOKEN}} ./scripts/supersede-authority.sh
+
   down:
     desc: "Destroy the kind cluster"
     cmds:

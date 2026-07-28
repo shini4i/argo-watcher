@@ -261,7 +261,7 @@ func TestInMemoryState_CancelInProgressTasks(t *testing.T) {
 
 	// A new deployment of image-a for app-a supersedes only the in-progress
 	// image-a task.
-	count, err := state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-a", Tag: "v2"}}, "superseded")
+	count, err := state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-a", Tag: "v2"}}, "superseded", false)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), count, "only the in-progress app-a task sharing image-a should be cancelled")
 
@@ -304,7 +304,7 @@ func TestInMemoryState_CancelInProgressTasks_MultiImageOverlap(t *testing.T) {
 	require.NoError(t, err)
 
 	// New deployment shares only image-b with the first task and nothing with the second.
-	count, err := state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-b", Tag: "v2"}, {Image: "image-e", Tag: "v1"}}, "superseded")
+	count, err := state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-b", Tag: "v2"}, {Image: "image-e", Tag: "v1"}}, "superseded", false)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), count, "only the task sharing an image name should be cancelled")
 
@@ -329,12 +329,12 @@ func TestInMemoryState_CancelInProgressTasks_Count(t *testing.T) {
 	require.NoError(t, err)
 
 	// No overlap: nothing is cancelled and both tasks stay in progress.
-	count, err := state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-z", Tag: "v1"}}, "superseded")
+	count, err := state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-z", Tag: "v1"}}, "superseded", false)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), count, "a deployment sharing no image should cancel nothing")
 
 	// Overlap: both in-progress tasks sharing image-a are cancelled.
-	count, err = state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-a", Tag: "v2"}}, "superseded")
+	count, err = state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-a", Tag: "v2"}}, "superseded", false)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), count, "every matching in-progress task must be cancelled")
 
@@ -344,6 +344,80 @@ func TestInMemoryState_CancelInProgressTasks_Count(t *testing.T) {
 	gotSecond, err := state.GetTask(second.Id)
 	require.NoError(t, err)
 	assert.Equal(t, models.StatusCancelledMessage, gotSecond.Status)
+}
+
+// TestInMemoryState_CancelInProgressTasks_Authority locks the rule that a task
+// may only supersede in-flight work carrying no more authority than itself: an
+// uncredentialed (unvalidated) deployment must never cancel a credentialed one.
+// That is what stops an anonymous request from aborting a credentialed
+// deployment's pending git write-back. Every other combination still supersedes,
+// so token-less setups keep behaving exactly as before.
+func TestInMemoryState_CancelInProgressTasks_Authority(t *testing.T) {
+	tests := []struct {
+		name             string
+		victimValidated  bool
+		newTaskValidated bool
+		wantCancelled    bool
+	}{
+		{"unvalidated must not cancel validated", true, false, false},
+		{"validated cancels validated", true, true, true},
+		{"unvalidated cancels unvalidated", false, false, true},
+		{"validated cancels unvalidated", false, true, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			state := InMemoryState{}
+
+			victim := taskWithImage("app-a", "image-a")
+			victim.Validated = tt.victimValidated
+			inFlight, err := state.AddTask(victim)
+			require.NoError(t, err)
+
+			count, err := state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-a", Tag: "v2"}}, "superseded", tt.newTaskValidated)
+			require.NoError(t, err)
+
+			got, err := state.GetTask(inFlight.Id)
+			require.NoError(t, err)
+
+			if tt.wantCancelled {
+				assert.Equal(t, int64(1), count)
+				assert.Equal(t, models.StatusCancelledMessage, got.Status)
+				return
+			}
+			assert.Equal(t, int64(0), count)
+			assert.Equal(t, models.StatusInProgressMessage, got.Status)
+		})
+	}
+}
+
+// TestInMemoryState_CancelInProgressTasks_AuthorityMixedFleet covers the setup
+// that motivates a per-task rule rather than an instance-wide one: a single app
+// with both a credentialed and an uncredentialed rollout in flight. An anonymous
+// deployment supersedes only the uncredentialed one and leaves the credentialed
+// rollout running.
+func TestInMemoryState_CancelInProgressTasks_AuthorityMixedFleet(t *testing.T) {
+	state := InMemoryState{}
+
+	credentialed := taskWithImage("app-a", "image-a")
+	credentialed.Validated = true
+	credentialedTask, err := state.AddTask(credentialed)
+	require.NoError(t, err)
+
+	anonymousTask, err := state.AddTask(taskWithImage("app-a", "image-a"))
+	require.NoError(t, err)
+
+	count, err := state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-a", Tag: "v2"}}, "superseded", false)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), count, "only the uncredentialed rollout may be superseded")
+
+	gotCredentialed, err := state.GetTask(credentialedTask.Id)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusInProgressMessage, gotCredentialed.Status)
+
+	gotAnonymous, err := state.GetTask(anonymousTask.Id)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusCancelledMessage, gotAnonymous.Status)
 }
 
 // TestInMemoryState_ProcessObsoleteTasks verifies that stale in-progress tasks

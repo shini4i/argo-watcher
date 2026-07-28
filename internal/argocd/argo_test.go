@@ -297,7 +297,7 @@ func TestArgoAddTask(t *testing.T) {
 		// mock calls to add task
 		stateError := fmt.Errorf("database error")
 		state.EXPECT().GetTasks(gomock.Any(), gomock.Any(), "test-app", models.StatusDeployedMessage, gomock.Any(), gomock.Any()).Return([]models.Task{}, int64(0))
-		state.EXPECT().CancelInProgressTasks("test-app", gomock.Any(), gomock.Any()).Return(int64(0), nil)
+		state.EXPECT().CancelInProgressTasks("test-app", gomock.Any(), gomock.Any(), gomock.Any()).Return(int64(0), nil)
 		state.EXPECT().AddTask(gomock.Any()).Return(nil, stateError)
 
 		// argo manager
@@ -316,52 +316,60 @@ func TestArgoAddTask(t *testing.T) {
 		assert.EqualError(t, err, stateError.Error())
 	})
 
-	t.Run("Argo - Task added", func(t *testing.T) {
-		// mocks
-		api := newArgoApiMock(ctrl)
-		metrics := mocks.NewMockMetricsInterface(ctrl)
-		state := mocks.NewMockTaskRepository(ctrl)
+	// Run for both authorities: pinning only the validated case would let a
+	// regression that hardcodes `true` at the cancel call site pass, restoring the
+	// vulnerability the authority rule closes.
+	for _, validated := range []bool{true, false} {
+		t.Run(fmt.Sprintf("Argo - Task added (validated=%t)", validated), func(t *testing.T) {
+			// mocks
+			api := newArgoApiMock(ctrl)
+			metrics := mocks.NewMockMetricsInterface(ctrl)
+			state := mocks.NewMockTaskRepository(ctrl)
 
-		// mock calls
-		metrics.EXPECT().AddProcessedDeployment("test-app")
+			// mock calls
+			metrics.EXPECT().AddProcessedDeployment("test-app")
 
-		// tasks
-		task := models.Task{
-			App: "test-app",
-			Images: []models.Image{
-				{Tag: taskImageTag},
-			},
-		}
-		newTask := models.Task{
-			Id:  uuid.NewString(),
-			App: "test-app",
-			Images: []models.Image{
-				{Tag: taskImageTag},
-			},
-		}
+			// tasks
+			task := models.Task{
+				App: "test-app",
+				Images: []models.Image{
+					{Tag: taskImageTag},
+				},
+				Validated: validated,
+			}
+			newTask := models.Task{
+				Id:  uuid.NewString(),
+				App: "test-app",
+				Images: []models.Image{
+					{Tag: taskImageTag},
+				},
+			}
 
-		// mock calls to add task. In-progress deployments for the app MUST be
-		// cancelled before the new task is persisted; otherwise the new task would
-		// match the cancel filter and cancel itself. gomock.InOrder locks that.
-		state.EXPECT().GetTasks(gomock.Any(), gomock.Any(), "test-app", models.StatusDeployedMessage, gomock.Any(), gomock.Any()).Return([]models.Task{}, int64(0))
-		gomock.InOrder(
-			// The task's images MUST be forwarded to the cancel call so superseding
-			// is scoped to matching images, not the whole app.
-			state.EXPECT().CancelInProgressTasks("test-app", gomock.Eq(task.Images), supersededTaskReason).Return(int64(0), nil),
-			state.EXPECT().AddTask(gomock.Any()).Return(&newTask, nil),
-		)
+			// mock calls to add task. In-progress deployments for the app MUST be
+			// cancelled before the new task is persisted; otherwise the new task would
+			// match the cancel filter and cancel itself. gomock.InOrder locks that.
+			state.EXPECT().GetTasks(gomock.Any(), gomock.Any(), "test-app", models.StatusDeployedMessage, gomock.Any(), gomock.Any()).Return([]models.Task{}, int64(0))
+			gomock.InOrder(
+				// The task's images MUST be forwarded to the cancel call so superseding
+				// is scoped to matching images, not the whole app. Its own Validated flag
+				// MUST be forwarded verbatim: that is what stops an uncredentialed
+				// deployment from cancelling a credentialed one.
+				state.EXPECT().CancelInProgressTasks("test-app", gomock.Eq(task.Images), supersededTaskReason, gomock.Eq(validated)).Return(int64(0), nil),
+				state.EXPECT().AddTask(gomock.Any()).Return(&newTask, nil),
+			)
 
-		// argo manager
-		argo := &Argo{}
-		argo.Init(state, api, metrics)
-		newTaskReturned, err := argo.AddTask(task)
+			// argo manager
+			argo := &Argo{}
+			argo.Init(state, api, metrics)
+			newTaskReturned, err := argo.AddTask(task)
 
-		// assertions
-		assert.Nil(t, err)
-		assert.NotNil(t, newTaskReturned)
-		uuidRegexp := regexp.MustCompile("^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-4[a-fA-F0-9]{3}-[8|9|aA|bB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}$")
-		assert.Regexp(t, uuidRegexp, newTaskReturned.Id, "Must match Regexp for uuid v4")
-	})
+			// assertions
+			assert.Nil(t, err)
+			assert.NotNil(t, newTaskReturned)
+			uuidRegexp := regexp.MustCompile("^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-4[a-fA-F0-9]{3}-[8|9|aA|bB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}$")
+			assert.Regexp(t, uuidRegexp, newTaskReturned.Id, "Must match Regexp for uuid v4")
+		})
+	}
 
 	t.Run("Argo - Cancel failure does not block new deployment", func(t *testing.T) {
 		// mocks
@@ -377,7 +385,7 @@ func TestArgoAddTask(t *testing.T) {
 		// Cancelling prior in-progress tasks is best-effort: a failure here must not
 		// block the new deployment from being persisted.
 		state.EXPECT().GetTasks(gomock.Any(), gomock.Any(), "test-app", models.StatusDeployedMessage, gomock.Any(), gomock.Any()).Return([]models.Task{}, int64(0))
-		state.EXPECT().CancelInProgressTasks("test-app", gomock.Any(), supersededTaskReason).Return(int64(0), fmt.Errorf("cancel failed"))
+		state.EXPECT().CancelInProgressTasks("test-app", gomock.Any(), supersededTaskReason, gomock.Any()).Return(int64(0), fmt.Errorf("cancel failed"))
 		state.EXPECT().AddTask(gomock.Any()).Return(&newTask, nil)
 
 		argo := &Argo{}
@@ -404,7 +412,7 @@ func TestArgoAddTask(t *testing.T) {
 
 		// Capture the task actually handed to the repository.
 		var captured models.Task
-		state.EXPECT().CancelInProgressTasks("test-app", gomock.Any(), gomock.Any()).Return(int64(0), nil)
+		state.EXPECT().CancelInProgressTasks("test-app", gomock.Any(), gomock.Any(), gomock.Any()).Return(int64(0), nil)
 		state.EXPECT().AddTask(gomock.Any()).DoAndReturn(func(task models.Task) (*models.Task, error) {
 			captured = task
 			task.Id = uuid.NewString()
@@ -434,7 +442,7 @@ func TestArgoAddTask(t *testing.T) {
 		state.EXPECT().GetTasks(gomock.Any(), gomock.Any(), "test-app", models.StatusDeployedMessage, gomock.Any(), gomock.Any()).Return(deployed, int64(len(deployed)))
 
 		var captured models.Task
-		state.EXPECT().CancelInProgressTasks("test-app", gomock.Any(), gomock.Any()).Return(int64(0), nil)
+		state.EXPECT().CancelInProgressTasks("test-app", gomock.Any(), gomock.Any(), gomock.Any()).Return(int64(0), nil)
 		state.EXPECT().AddTask(gomock.Any()).DoAndReturn(func(task models.Task) (*models.Task, error) {
 			captured = task
 			task.Id = uuid.NewString()

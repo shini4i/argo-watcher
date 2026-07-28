@@ -21,12 +21,20 @@ type TaskModel struct {
 	StatusReason     sql.NullString                    `gorm:"column:status_reason;"`
 	IsRollback       bool                              `gorm:"column:is_rollback;not null;default:false;"`
 	RollbackTargetId string                            `gorm:"column:rollback_target_id;not null;default:'';"`
+	// Validated is persisted because CancelInProgressTasks weighs it against the
+	// superseding task, which may be handled by another replica.
+	Validated bool `gorm:"column:validated;not null;default:false;"`
 }
 
 func (TaskModel) TableName() string {
 	return "tasks"
 }
 
+// ConvertToExternalTask maps the row onto the API-facing task. Validated is
+// deliberately not mapped: nothing re-reads a task to decide its write-back today
+// (WaitForRollout is fed the in-process task from addTask). A future task-resumption
+// path — HA handoff — MUST map it, or a resumed task reads as uncredentialed and
+// UpdateIfNeeded skips its write-back silently.
 func (ormTask *TaskModel) ConvertToExternalTask() *models.Task {
 	return &models.Task{
 		Id:               ormTask.Id.String(),
