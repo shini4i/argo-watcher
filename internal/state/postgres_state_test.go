@@ -11,6 +11,7 @@ import (
 
 	"github.com/shini4i/argo-watcher/internal/config"
 	"github.com/shini4i/argo-watcher/internal/models"
+	"github.com/shini4i/argo-watcher/internal/state/state_models"
 )
 
 type postgresTestEnv struct {
@@ -52,6 +53,16 @@ func (env *postgresTestEnv) addTask(t *testing.T, task models.Task) *models.Task
 	result, err := env.state.AddTask(task)
 	require.NoError(t, err)
 	return result
+}
+
+// storedModel reads the persisted row directly so tests can assert on columns
+// that are deliberately not surfaced on the external task (notably validated,
+// which is kept out of API responses).
+func (env *postgresTestEnv) storedModel(t *testing.T, id string) state_models.TaskModel {
+	t.Helper()
+	var stored state_models.TaskModel
+	require.NoError(t, env.state.orm.Take(&stored, "id = ?", id).Error)
+	return stored
 }
 
 // sampleTask builds a reusable task definition for integration tests.
@@ -204,7 +215,7 @@ func TestPostgresState_CancelInProgressTasks(t *testing.T) {
 	finished := env.addTask(t, taskWithImage("app-a", "image-a"))
 	require.NoError(t, env.state.SetTaskStatus(finished.Id, models.StatusDeployedMessage, ""))
 
-	count, err := env.state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-a", Tag: "v2"}}, "superseded")
+	count, err := env.state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-a", Tag: "v2"}}, "superseded", false)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), count, "only the in-progress app-a task sharing image-a should be cancelled")
 
@@ -241,7 +252,7 @@ func TestPostgresState_CancelInProgressTasks_MultiImageOverlap(t *testing.T) {
 	disjoint.Images = []models.Image{{Image: "image-c", Tag: "v1"}, {Image: "image-d", Tag: "v1"}}
 	disjointTask := env.addTask(t, disjoint)
 
-	count, err := env.state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-b", Tag: "v2"}, {Image: "image-e", Tag: "v1"}}, "superseded")
+	count, err := env.state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-b", Tag: "v2"}, {Image: "image-e", Tag: "v1"}}, "superseded", false)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), count, "only the task sharing an image name should be cancelled")
 
@@ -263,11 +274,11 @@ func TestPostgresState_CancelInProgressTasks_Count(t *testing.T) {
 	first := env.addTask(t, taskWithImage("app-a", "image-a"))
 	second := env.addTask(t, taskWithImage("app-a", "image-a"))
 
-	count, err := env.state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-z", Tag: "v1"}}, "superseded")
+	count, err := env.state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-z", Tag: "v1"}}, "superseded", false)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), count, "a deployment sharing no image should cancel nothing")
 
-	count, err = env.state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-a", Tag: "v2"}}, "superseded")
+	count, err = env.state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-a", Tag: "v2"}}, "superseded", false)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), count, "every matching in-progress task must be cancelled")
 
@@ -277,6 +288,88 @@ func TestPostgresState_CancelInProgressTasks_Count(t *testing.T) {
 	gotSecond, err := env.state.GetTask(second.Id)
 	require.NoError(t, err)
 	assert.Equal(t, models.StatusCancelledMessage, gotSecond.Status)
+}
+
+// TestPostgresState_ValidatedFlagPersists locks the storage contract the
+// authority rule depends on: whether a task presented a credential must survive
+// the round trip, because CancelInProgressTasks reads it back from the row of a
+// task that may have been created by another replica.
+func TestPostgresState_ValidatedFlagPersists(t *testing.T) {
+	env := newPostgresTestEnv(t)
+
+	t.Run("validated is stored and read back", func(t *testing.T) {
+		task := sampleTask("Credentialed")
+		task.Validated = true
+		inserted := env.addTask(t, task)
+
+		assert.True(t, env.storedModel(t, inserted.Id).Validated)
+	})
+
+	t.Run("defaults to false when no credential was presented", func(t *testing.T) {
+		inserted := env.addTask(t, sampleTask("Anonymous"))
+
+		assert.False(t, env.storedModel(t, inserted.Id).Validated)
+	})
+
+	t.Run("is not mapped back onto the external task", func(t *testing.T) {
+		task := sampleTask("Credentialed")
+		task.Validated = true
+		inserted := env.addTask(t, task)
+
+		stored, err := env.state.GetTask(inserted.Id)
+		require.NoError(t, err)
+		assert.False(t, stored.Validated,
+			"a re-read task must not claim authority; write-back reads the in-process task, not this one")
+	})
+}
+
+// TestPostgresState_CancelInProgressTasks_Authority mirrors the in-memory
+// authority test against real Postgres: an uncredentialed deployment must not
+// cancel a credentialed in-flight rollout, while every other combination still
+// supersedes. Running it here matters because the Postgres path filters
+// candidates in Go after reading them back, so the column must be selected.
+func TestPostgresState_CancelInProgressTasks_Authority(t *testing.T) {
+	tests := []struct {
+		name             string
+		victimValidated  bool
+		newTaskValidated bool
+		wantCancelled    bool
+	}{
+		{"unvalidated must not cancel validated", true, false, false},
+		{"validated cancels validated", true, true, true},
+		{"unvalidated cancels unvalidated", false, false, true},
+		{"validated cancels unvalidated", false, true, true},
+	}
+
+	// Guard at the top level so an unconfigured database reports SKIP for this test
+	// rather than PASS with four skipped children — this is the only unit-level
+	// cover for the Postgres half of the rule, and a green no-op would hide that.
+	// Each case still builds its own env, which truncates tasks for isolation.
+	newPostgresTestEnv(t)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env := newPostgresTestEnv(t)
+
+			victim := taskWithImage("app-a", "image-a")
+			victim.Validated = tt.victimValidated
+			inFlight := env.addTask(t, victim)
+
+			count, err := env.state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-a", Tag: "v2"}}, "superseded", tt.newTaskValidated)
+			require.NoError(t, err)
+
+			got, err := env.state.GetTask(inFlight.Id)
+			require.NoError(t, err)
+
+			if tt.wantCancelled {
+				assert.Equal(t, int64(1), count)
+				assert.Equal(t, models.StatusCancelledMessage, got.Status)
+				return
+			}
+			assert.Equal(t, int64(0), count)
+			assert.Equal(t, models.StatusInProgressMessage, got.Status)
+		})
+	}
 }
 
 func TestPostgresState_ProcessObsoleteTasks(t *testing.T) {

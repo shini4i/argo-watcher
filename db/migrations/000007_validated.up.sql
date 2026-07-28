@@ -1,0 +1,1 @@
+ALTER TABLE tasks ADD COLUMN validated BOOLEAN NOT NULL DEFAULT false;

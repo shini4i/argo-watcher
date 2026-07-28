@@ -204,7 +204,7 @@ func (argo *Argo) AddTask(task models.Task) (*models.Task, error) {
 	// from cancelling each other. This runs against the shared state, so in an HA
 	// setup it also cancels rollouts being watched by other replicas. Best-effort:
 	// a failure here must not block the new deployment.
-	if cancelled, err := argo.State.CancelInProgressTasks(task.App, task.Images, supersededTaskReason); err != nil {
+	if cancelled, err := argo.State.CancelInProgressTasks(task.App, task.Images, supersededTaskReason, task.Validated); err != nil {
 		slog.Warn("Failed to cancel in-progress deployments for the app", "error", err, "app", task.App)
 	} else if cancelled > 0 {
 		slog.Info("Cancelled in-progress deployment(s) superseded by the new task", "cancelled", cancelled, "app", task.App)

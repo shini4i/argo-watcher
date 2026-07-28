@@ -54,6 +54,7 @@ func (state *PostgresState) AddTask(task models.Task) (*models.Task, error) {
 		Project:          sql.NullString{String: task.Project, Valid: true},
 		IsRollback:       task.IsRollback,
 		RollbackTargetId: task.RollbackTargetId,
+		Validated:        task.Validated,
 	}
 
 	if err := state.orm.Create(&ormTask).Error; err != nil {
@@ -155,12 +156,12 @@ func (state *PostgresState) SetTaskStatus(id, status, reason string) error {
 // CancelInProgressTasks marks in-progress tasks for the given app as cancelled
 // and returns how many rows were affected. A task is only cancelled when it
 // shares at least one image name with the supplied images (tags ignored), so
-// independent per-image deployments of the same app do not cancel each other.
-// Because the image match is evaluated in Go, the in-progress tasks are first
-// fetched, filtered by image overlap, then updated by id. The UPDATE re-checks
-// the in-progress status so a task that finished between the two queries is not
-// clobbered.
-func (state *PostgresState) CancelInProgressTasks(app string, images []models.Image, reason string) (int64, error) {
+// independent per-image deployments of the same app do not cancel each other,
+// and only when it carries no more authority than the superseding deployment.
+// Because both checks are evaluated in Go, the in-progress tasks are first
+// fetched, filtered, then updated by id. The UPDATE re-checks the in-progress
+// status so a task that finished between the two queries is not clobbered.
+func (state *PostgresState) CancelInProgressTasks(app string, images []models.Image, reason string, newTaskValidated bool) (int64, error) {
 	var candidates []state_models.TaskModel
 	if err := state.orm.Model(&state_models.TaskModel{}).
 		Where(`"tasks"."app" = ?`, app).
@@ -171,7 +172,7 @@ func (state *PostgresState) CancelInProgressTasks(app string, images []models.Im
 
 	var ids []uuid.UUID
 	for _, candidate := range candidates {
-		if imageNamesOverlap(candidate.Images, images) {
+		if maySupersede(newTaskValidated, candidate.Validated) && imageNamesOverlap(candidate.Images, images) {
 			ids = append(ids, candidate.Id)
 		}
 	}

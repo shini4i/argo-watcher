@@ -151,8 +151,9 @@ func (state *InMemoryState) SetTaskStatus(id, status, reason string) error {
 // CancelInProgressTasks marks in-progress tasks for the given app as cancelled
 // and returns how many were updated. A task is only cancelled when it shares at
 // least one image name with the supplied images (tags ignored), so independent
-// per-image deployments of the same app do not cancel each other.
-func (state *InMemoryState) CancelInProgressTasks(app string, images []models.Image, reason string) (int64, error) {
+// per-image deployments of the same app do not cancel each other, and only when
+// it carries no more authority than the superseding deployment.
+func (state *InMemoryState) CancelInProgressTasks(app string, images []models.Image, reason string, newTaskValidated bool) (int64, error) {
 	state.mu.Lock()
 	defer state.mu.Unlock()
 
@@ -161,6 +162,7 @@ func (state *InMemoryState) CancelInProgressTasks(app string, images []models.Im
 	for idx := range state.tasks {
 		if state.tasks[idx].App == app &&
 			state.tasks[idx].Status == models.StatusInProgressMessage &&
+			maySupersede(newTaskValidated, state.tasks[idx].Validated) &&
 			imageNamesOverlap(state.tasks[idx].Images, images) {
 			state.tasks[idx].Status = models.StatusCancelledMessage
 			state.tasks[idx].StatusReason = reason

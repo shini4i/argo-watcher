@@ -126,6 +126,12 @@ phase() {
   phase race-supersede.sh
 }
 
+@test "supersede-authority: an uncredentialed task cannot cancel a credentialed one" {
+  # Pairs with the race phase above: that one proves supersession works, this one
+  # proves it cannot be driven by an anonymous caller. Self-contained on app2.
+  phase supersede-authority.sh
+}
+
 @test "state-postgres: migration, deploy loop, task survives restart, shared lock" {
   # Flips the release to Postgres and asserts the Postgres-only properties. Placed
   # after the in-memory phases (which validate that backend) and BEFORE

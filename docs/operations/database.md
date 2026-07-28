@@ -16,6 +16,7 @@ There are two tables. `tasks` stores every deployment task and its status; index
 | `status_reason` | `text` | Human-readable failure reason; empty on success. |
 | `is_rollback` | `boolean NOT NULL DEFAULT false` | `true` when this task's image set was previously deployed for the app. |
 | `rollback_target_id` | `text NOT NULL DEFAULT ''` | ID of the earlier task this deployment rolls back to; empty when not a rollback. |
+| `validated` | `boolean NOT NULL DEFAULT false` | `true` when the request that created the task presented a valid credential. Gates the git write-back and what the task may supersede; never exposed through the API. |
 | `app` | `varchar(255) NOT NULL` | Argo CD application name. |
 | `author` | `varchar(255) NOT NULL` | Deployment author identifier. |
 | `project` | `varchar(255) NOT NULL` | Business project identifier. |

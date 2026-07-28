@@ -25,9 +25,12 @@ type Task struct {
 	Images       []Image `json:"images" binding:"required"`
 	Status       string  `json:"status,omitempty"`
 	StatusReason string  `json:"status_reason,omitempty"`
-	Validated    bool    `json:"validated,omitempty"`
-	Timeout      int     `json:"timeout,omitempty"`
-	IsRollback   bool    `json:"is_rollback,omitempty"`
+	// Validated records whether the request that created this task presented a valid
+	// credential. It gates the git write-back and, since it also decides what a task
+	// may supersede, it is never accepted from or served over the API.
+	Validated  bool `json:"-"`
+	Timeout    int  `json:"timeout,omitempty"`
+	IsRollback bool `json:"is_rollback,omitempty"`
 	// Refresh optionally overrides the instance-wide ARGO_REFRESH_APP setting for this task.
 	// A nil pointer (field omitted) keeps the instance default, so old clients are unaffected;
 	// an explicit true/false forces a refresh on or off for this deployment (issue #334).

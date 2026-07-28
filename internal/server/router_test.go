@@ -62,7 +62,7 @@ func newRepo(ctrl *gomock.Controller) (*mocks.MockTaskRepository, *repoCapture) 
 			return []models.Task{}, 0
 		}).AnyTimes()
 	repo.EXPECT().SetTaskStatus(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
-	repo.EXPECT().CancelInProgressTasks(gomock.Any(), gomock.Any(), gomock.Any()).Return(int64(0), nil).AnyTimes()
+	repo.EXPECT().CancelInProgressTasks(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(int64(0), nil).AnyTimes()
 	repo.EXPECT().ProcessObsoleteTasks(gomock.Any()).AnyTimes()
 	return repo, capture
 }
@@ -2227,6 +2227,93 @@ func TestAddTaskEndpoint(t *testing.T) {
 		assert.Contains(t, w.Body.String(), "down")
 	})
 
+	// Validated gates the git write-back AND what a task may supersede, so a caller
+	// must never be able to assert it. This pins the handler's unconditional
+	// assignment from the auth result; the inbound json:"-" half is pinned by
+	// models.TestTask_ValidatedIsNeverSerialized.
+	t.Run("a validated flag in the request body is ignored", func(t *testing.T) {
+		lockdown, _ := NewLockdown("", lock.NewInMemoryDeployLockStore())
+		strategies := make(map[string]auth.AuthStrategy)
+
+		ctrl := gomock.NewController(t)
+		repo, _ := newRepo(ctrl)
+		repo.EXPECT().Check().Return(true).AnyTimes()
+
+		// Capture the task, then fail the insert: the success path would spawn the
+		// handler's real WaitForRollout goroutine, which this Env has no updater for.
+		// The flag is already decided by the time AddTask is called.
+		var stored models.Task
+		repo.EXPECT().AddTask(gomock.Any()).DoAndReturn(func(task models.Task) (*models.Task, error) {
+			stored = task
+			return nil, fmt.Errorf("stop before the rollout goroutine")
+		})
+		argo := &argocd.Argo{}
+		argo.Init(repo, newArgoAPI(ctrl), newMetrics(ctrl))
+
+		env := &Env{
+			lockdown:      lockdown,
+			strategies:    strategies,
+			authenticator: auth.NewAuthenticator(strategies),
+			argo:          argo,
+		}
+
+		router := gin.New()
+		router.POST("/api/v1/tasks", env.addTask)
+
+		taskJSON := `{"app": "test-app", "author": "test-author", "project": "test-project", "images": [{"image": "test", "tag": "v1"}], "validated": true}`
+		req, _ := http.NewRequest(http.MethodPost, "/api/v1/tasks", strings.NewReader(taskJSON))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.False(t, stored.Validated, "a body-supplied validated flag must not grant authority")
+	})
+
+	// The mirrored positive case. Without it, mutating the assignment to
+	// `task.Validated = false` keeps the whole Go suite green: the state and argocd
+	// tests set Validated directly, so this handler line is the only place the
+	// authority the rule is weighed against is actually derived from auth.
+	t.Run("a valid credential marks the task validated and carries into supersession", func(t *testing.T) {
+		lockdown, _ := NewLockdown("", lock.NewInMemoryDeployLockStore())
+		strategies := map[string]auth.AuthStrategy{
+			"Authorization": newAuthStrategy(t, true, nil),
+		}
+
+		// A bare mock, not newRepo: its permissive CancelInProgressTasks stub would
+		// absorb the call before the specific expectation below could match it.
+		ctrl := gomock.NewController(t)
+		repo := mocks.NewMockTaskRepository(ctrl)
+		repo.EXPECT().GetTasks(gomock.Any(), gomock.Any(), "test-app", models.StatusDeployedMessage, gomock.Any(), gomock.Any()).Return([]models.Task{}, int64(0))
+		// The literal true ties the handler's authority to the state-layer rule.
+		repo.EXPECT().CancelInProgressTasks("test-app", gomock.Any(), gomock.Any(), true).Return(int64(0), nil)
+
+		var stored models.Task
+		repo.EXPECT().AddTask(gomock.Any()).DoAndReturn(func(task models.Task) (*models.Task, error) {
+			stored = task
+			return nil, fmt.Errorf("stop before the rollout goroutine")
+		})
+		argo := &argocd.Argo{}
+		argo.Init(repo, newArgoAPI(ctrl), newMetrics(ctrl))
+
+		env := &Env{
+			lockdown:      lockdown,
+			strategies:    strategies,
+			authenticator: auth.NewAuthenticator(strategies),
+			argo:          argo,
+		}
+
+		router := gin.New()
+		router.POST("/api/v1/tasks", env.addTask)
+
+		taskJSON := `{"app": "test-app", "author": "test-author", "project": "test-project", "images": [{"image": "test", "tag": "v1"}]}`
+		req, _ := http.NewRequest(http.MethodPost, "/api/v1/tasks", strings.NewReader(taskJSON))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "test-token")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.True(t, stored.Validated, "a valid credential must mark the task validated")
+	})
 }
 
 // TestSetDeployLockWithKeycloak tests SetDeployLock with Keycloak authentication.

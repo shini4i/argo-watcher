@@ -14,10 +14,10 @@ https://argo-watcher.example.com/api/v1
 
 Authentication is only required to authorize the built-in [GitOps Updater](../guides/gitops-updater.md)'s git write-back. Provide one of:
 
-- **Deploy token** — Pass the `ARGO_WATCHER_DEPLOY_TOKEN` value as a query parameter or header.
+- **Deploy token** — Pass the `ARGO_WATCHER_DEPLOY_TOKEN` value in the header of the same name.
 - **JWT token** — Pass the JWT in the `Authorization` header. The raw token is accepted directly (e.g. `Authorization: eyJhbGci...`); a `Bearer <token>` value is also accepted for backward compatibility.
 
-A task submitted **without** a credential is still accepted (`202 Accepted`) and its rollout is monitored normally — argo-watcher simply does not perform the git write-back. This is the expected setup when the image tag is updated by other means (e.g. Argo CD Image Updater or your CI pipeline) and argo-watcher only tracks the resulting rollout. If you instead rely on the built-in updater to commit the tag and omit the credential, the write-back is skipped and the deployment times out waiting for an image change that never arrives. A token that is **present but invalid or expired** returns `401 Unauthorized`.
+A task submitted **without** a credential is still accepted (`202 Accepted`) and its rollout is monitored normally — argo-watcher simply does not perform the git write-back. It also cannot cancel a deployment that was submitted with one: superseding only applies to in-flight tasks that presented no more authority than the new task, so an uncredentialed submission can never abort a credentialed deployment's write-back. This is the expected setup when the image tag is updated by other means (e.g. Argo CD Image Updater or your CI pipeline) and argo-watcher only tracks the resulting rollout. If you instead rely on the built-in updater to commit the tag and omit the credential, the write-back is skipped and the deployment times out waiting for an image change that never arrives. A token that is **present but invalid or expired** returns `401 Unauthorized`.
 
 The state-changing `POST`/`DELETE /api/v1/deploy-lock` endpoints are only registered when [OIDC authentication](../guides/oidc.md) is enabled, and require a session belonging to one of the `OIDC_PRIVILEGED_GROUPS` (sent via the `Oidc-Authorization` header; the legacy `Keycloak-Authorization` header is still accepted); when OIDC is disabled these endpoints are not exposed (`404 Not Found`). The read-only `GET /api/v1/deploy-lock` is always available regardless of authentication.
 
