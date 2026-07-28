@@ -9,12 +9,13 @@ import (
 	"testing"
 	"time"
 
+	"strings"
+
 	toxiclient "github.com/Shopify/toxiproxy/v2/client"
 	gogit "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	gogitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	cryptossh "golang.org/x/crypto/ssh"
-	"strings"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -95,7 +96,7 @@ func TestIntegration_BatchWriteBack_SingleCloneCommitPerApp(t *testing.T) {
 		newBatchReqFor("app-c", "v3", nil),
 	}
 
-	outcomes := runBatchWriteBack(context.Background(), repo, batch)
+	outcomes := runBatchWriteBack(context.Background(), repo, batch, nil)
 
 	for _, req := range batch {
 		assert.NoError(t, outcomes[req], "app %s should succeed", req.app.Metadata.Name)
@@ -138,7 +139,7 @@ func TestIntegration_BatchWriteBack_PartialSupersede(t *testing.T) {
 		newBatchReqFor("app-b", "v2", nil),
 	}
 
-	outcomes := runBatchWriteBack(context.Background(), repo, batch)
+	outcomes := runBatchWriteBack(context.Background(), repo, batch, nil)
 
 	assert.ErrorIs(t, outcomes[superseded], ErrDeploymentSuperseded, "superseded app must abort")
 	assert.NoError(t, outcomes[batch[0]])
@@ -182,7 +183,7 @@ func TestIntegration_BatchWriteBack_PushRaceRecovery(t *testing.T) {
 		}
 
 		done := make(chan map[*batchWriteRequest]error, 1)
-		go func() { done <- runBatchWriteBack(context.Background(), repo, batch) }()
+		go func() { done <- runBatchWriteBack(context.Background(), repo, batch, nil) }()
 
 		// Let the batch's fetch land, then land a competing commit before its push.
 		time.Sleep(2500 * time.Millisecond)

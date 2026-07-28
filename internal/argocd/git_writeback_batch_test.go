@@ -56,7 +56,7 @@ func TestRunBatchWriteBack_ExhaustsRetriesResolvesEveryRequest(t *testing.T) {
 		batchReqFor(newAppWithImages("app-b"), "apps", nil),
 	}
 
-	outcomes := runBatchWriteBack(context.Background(), repo, batch)
+	outcomes := runBatchWriteBack(context.Background(), repo, batch, nil)
 
 	require.Len(t, outcomes, len(batch), "every request must be resolved exactly once")
 	for _, req := range batch {
@@ -83,7 +83,7 @@ func TestRunBatchWriteBack_PermanentErrorFailsAllImmediately(t *testing.T) {
 		batchReqFor(newAppWithImages("app-b"), "apps", nil),
 	}
 
-	outcomes := runBatchWriteBack(context.Background(), repo, batch)
+	outcomes := runBatchWriteBack(context.Background(), repo, batch, nil)
 
 	require.Len(t, outcomes, len(batch))
 	for _, req := range batch {
@@ -114,7 +114,7 @@ func TestRunBatchWriteBack_MixedPerAppOutcomes(t *testing.T) {
 
 	batch := []*batchWriteRequest{superseded, unmanaged, misconfigured}
 
-	outcomes := runBatchWriteBack(context.Background(), repo, batch)
+	outcomes := runBatchWriteBack(context.Background(), repo, batch, nil)
 
 	require.Len(t, outcomes, 3, "each request must have exactly one outcome")
 	assert.ErrorIs(t, outcomes[superseded], ErrDeploymentSuperseded)
@@ -149,7 +149,7 @@ func TestRunBatchWriteBack_CommitErrorIsRetried(t *testing.T) {
 		resultCh:   make(chan error, 1),
 	}
 
-	outcomes := runBatchWriteBack(context.Background(), repo, []*batchWriteRequest{req})
+	outcomes := runBatchWriteBack(context.Background(), repo, []*batchWriteRequest{req}, nil)
 
 	require.Len(t, outcomes, 1)
 	require.Error(t, outcomes[req])
@@ -178,11 +178,113 @@ func TestRunBatchWriteBack_CancelledDuringBackoffResolvesEveryRequest(t *testing
 		batchReqFor(newAppWithImages("app-b"), "apps", nil),
 	}
 
-	outcomes := runBatchWriteBack(ctx, repo, batch)
+	outcomes := runBatchWriteBack(ctx, repo, batch, nil)
 
 	require.Len(t, outcomes, len(batch))
 	for _, req := range batch {
 		require.Error(t, outcomes[req])
 		assert.Contains(t, outcomes[req].Error(), "cancelled during backoff")
 	}
+}
+
+// TestRunBatchWriteBack_DrainStopHaltsRetries proves that once the batcher is
+// draining (shutdown), the retry loop stops after the attempt in flight instead of
+// spending its full budget. Without this, one flush can run
+// GIT_OP_TIMEOUT * GIT_MAX_ATTEMPTS (90s * 5 by default) and blow past the pod's
+// termination grace period, so the drain is abandoned and the deploying goroutines
+// are left blocked on their result channels with no outcome at all.
+// GIT_MAX_ATTEMPTS is 5 here but only ONE clone may happen (Times(1)).
+func TestRunBatchWriteBack_DrainStopHaltsRetries(t *testing.T) {
+	t.Setenv("SSH_KEY_PATH", "/nonexistent/key")
+	t.Setenv("GIT_OP_TIMEOUT", "5s")
+	t.Setenv("GIT_MAX_ATTEMPTS", "5")
+
+	h := retryingGitHandler(gomock.NewController(t), errors.New("transient clone failure"), 1)
+	repo := newBatchTestRepo(t, h)
+
+	drainCh := make(chan struct{})
+	close(drainCh) // already draining when the loop reaches its first backoff
+
+	batch := []*batchWriteRequest{
+		batchReqFor(newAppWithImages("app-a"), "apps", nil),
+		batchReqFor(newAppWithImages("app-b"), "apps", nil),
+	}
+
+	outcomes := runBatchWriteBack(context.Background(), repo, batch, drainCh)
+
+	require.Len(t, outcomes, len(batch), "every request must still be resolved exactly once")
+	for _, req := range batch {
+		require.Error(t, outcomes[req])
+		assert.ErrorIs(t, outcomes[req], errWritebackDraining)
+		// This message becomes the task's stored failure reason, so it must not claim
+		// the retry budget was spent when the loop stopped early on purpose.
+		assert.NotContains(t, outcomes[req].Error(), "after 5 attempts")
+	}
+}
+
+// TestBackoffBeforeBatchRetry_ReturnsOnDrain verifies the drain signal short-circuits
+// the inter-attempt wait.
+//
+// The returned error is the discriminating signal, not the elapsed time: no other
+// branch of the select can produce errWritebackDraining. A timing bound would prove
+// nothing here, because gitUpdateBackoff applies FULL jitter (uniform over
+// [0, ceiling]), so the ordinary timer branch also returns near-instantly a good
+// fraction of the time.
+func TestBackoffBeforeBatchRetry_ReturnsOnDrain(t *testing.T) {
+	drainCh := make(chan struct{})
+	close(drainCh)
+
+	require.ErrorIs(t, backoffBeforeBatchRetry(context.Background(), 3, 5, drainCh), errWritebackDraining)
+}
+
+// TestBackoffBeforeBatchRetry_NilDrainIsNotTreatedAsDraining guards the default
+// (non-shutdown) path: a nil drain channel blocks forever in the select and must not
+// be read as "draining", otherwise every production retry would abort immediately.
+// A regression that treats nil as drained returns errWritebackDraining, so NoError is
+// the discriminating assertion.
+func TestBackoffBeforeBatchRetry_NilDrainIsNotTreatedAsDraining(t *testing.T) {
+	require.NoError(t, backoffBeforeBatchRetry(context.Background(), 1, 5, nil))
+}
+
+// TestRunBatchWriteBack_DrainPreservesPerAppCommitCause covers the drain path when a
+// request carries its own commit error. Two properties must hold simultaneously, and
+// they pull in opposite directions: the reason must still name that app's own cause
+// (not a generic batch error), AND it must remain identifiable as shutdown-caused so
+// a restart is not mistaken for a genuine git failure. The second app — already
+// resolved as a no-op success before the drain — proves the drain does not retroactively
+// fail requests that were already settled.
+func TestRunBatchWriteBack_DrainPreservesPerAppCommitCause(t *testing.T) {
+	t.Setenv("SSH_KEY_PATH", "/nonexistent/key")
+	t.Setenv("GIT_OP_TIMEOUT", "5s")
+	t.Setenv("GIT_MAX_ATTEMPTS", "20")
+
+	// Clone succeeds; the per-app commit failure drives the retry, and the drain then
+	// stops the loop at the first backoff — so exactly ONE clone happens (Times(1)).
+	h := retryingGitHandler(gomock.NewController(t), nil, 1)
+	repo := newBatchTestRepo(t, h)
+
+	badReq := &batchWriteRequest{
+		app:  newAppWithImages("app-bad"),
+		task: newImageTask(),
+		// Path traversal makes CommitAppLocal fail before touching the worktree.
+		gitopsRepo: &models.GitopsRepo{BranchName: "main", Path: "apps", Filename: "../../../../etc/passwd"},
+		resultCh:   make(chan error, 1),
+	}
+	// No write-back path: resolves as a no-op success on attempt 1, before the drain.
+	settledReq := batchReqFor(newAppWithImages("app-nopath"), "", nil)
+
+	drainCh := make(chan struct{})
+	close(drainCh)
+
+	batch := []*batchWriteRequest{badReq, settledReq}
+	outcomes := runBatchWriteBack(context.Background(), repo, batch, drainCh)
+
+	require.Len(t, outcomes, len(batch), "no request may be left unresolved")
+
+	require.Error(t, outcomes[badReq])
+	assert.Contains(t, outcomes[badReq].Error(), "not inside repository root", "the app's own commit cause must survive the drain")
+	assert.ErrorIs(t, outcomes[badReq], errWritebackDraining, "a shutdown-caused failure must stay distinguishable")
+	assert.NotContains(t, outcomes[badReq].Error(), "after 20 attempts")
+
+	assert.NoError(t, outcomes[settledReq], "a request already resolved successfully must not be re-failed by the drain")
 }

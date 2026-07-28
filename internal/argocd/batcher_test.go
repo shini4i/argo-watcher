@@ -2,7 +2,12 @@ package argocd
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/pem"
 	"errors"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -10,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
+	cryptossh "golang.org/x/crypto/ssh"
 
 	"github.com/shini4i/argo-watcher/internal/mocks"
 	"github.com/shini4i/argo-watcher/internal/models"
@@ -317,4 +323,83 @@ func TestBatcher_FlushDeliversLockError(t *testing.T) {
 
 	require.EqualError(t, err, "lock boom", "lock acquisition failure must reach the submitter")
 	assert.True(t, locker.called)
+}
+
+// TestBatcher_CloseSignalsDrain verifies exactly two things: Close publishes the
+// drain signal, and repeated Close calls neither panic nor re-close the channel
+// (Run() is not the only caller — tests and future callers may Close twice). It does
+// NOT cover the wiring of that signal into the retry loop; that is
+// TestBatcher_FlushThreadsDrainIntoRetryLoop.
+func TestBatcher_CloseSignalsDrain(t *testing.T) {
+	b := NewBatcher(nil, "", 20, nil)
+
+	select {
+	case <-b.drainCh:
+		t.Fatal("drain must not be signalled before Close")
+	default:
+	}
+
+	b.Close(context.Background())
+	b.Close(context.Background()) // must not panic on a second close
+
+	select {
+	case <-b.drainCh:
+	default:
+		t.Fatal("Close must signal the drain so in-flight retry loops stop early")
+	}
+}
+
+// writeThrowawaySSHKey generates an ed25519 key in a temp dir and returns its path.
+// The real flush path loads the key before it can reach Clone, and a MISSING key is
+// classified permanent by updater.IsPermanent — which would short-circuit the retry
+// loop before any backoff and silently make the drain untestable. A valid key is
+// therefore required to exercise the retry boundary at all.
+func writeThrowawaySSHKey(t *testing.T) string {
+	t.Helper()
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	pemBlock, err := cryptossh.MarshalPrivateKey(priv, "")
+	require.NoError(t, err)
+	keyPath := filepath.Join(t.TempDir(), "id_ed25519")
+	require.NoError(t, os.WriteFile(keyPath, pem.EncodeToMemory(pemBlock), 0600))
+	return keyPath
+}
+
+// TestBatcher_FlushThreadsDrainIntoRetryLoop covers the one production link between
+// Close and the retry loop: b.flush passing b.drainCh to runBatchWriteBack. Every
+// other drain test either overrides flushFn or injects its own channel, so replacing
+// that argument with nil would leave them all green while the feature is dead in
+// production.
+//
+// The real flush runs (flushFn is NOT overridden) against a closed local port, which
+// yields a retriable dial error, and the drain is signalled before Submit so the
+// first backoff observes it. With GIT_MAX_ATTEMPTS=20 the two outcomes are far apart:
+// wired, one attempt and "stopped early"; unwired, twenty attempts and a message
+// naming the spent budget.
+func TestBatcher_FlushThreadsDrainIntoRetryLoop(t *testing.T) {
+	t.Setenv("SSH_KEY_PATH", writeThrowawaySSHKey(t))
+	t.Setenv("GIT_OP_TIMEOUT", "5s")
+	t.Setenv("GIT_MAX_ATTEMPTS", "20")
+
+	locker := &spyLocker{}
+	b := NewBatcher(locker, t.TempDir(), 20, nil)
+
+	// Signal the drain directly rather than via Close: Close would also set the
+	// closed flag, and Submit rejects requests after that — the request has to be
+	// accepted and reach the real flush for this wiring to be observable.
+	close(b.drainCh)
+
+	// Port 1 is reserved and never listening, so the clone fails fast with a dial
+	// error (retriable), reaching the backoff where the drain is observed.
+	req := newBatchReq("ssh://git@127.0.0.1:1/test/repo.git", "main")
+	req.gitopsRepo.Path = "apps"
+	req.app = newAppWithImages("app-a")
+	req.task = newImageTask()
+
+	err := b.Submit(req)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, errWritebackDraining, "flush must pass its drain channel into the retry loop")
+	assert.NotContains(t, err.Error(), "after 20 attempts", "the retry budget must not have been spent")
+	assert.True(t, locker.called, "the real flush path must have run")
 }

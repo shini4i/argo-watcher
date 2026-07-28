@@ -2,6 +2,7 @@ package argocd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -9,6 +10,11 @@ import (
 	"github.com/shini4i/argo-watcher/internal/models"
 	"github.com/shini4i/argo-watcher/internal/updater"
 )
+
+// errWritebackDraining is the terminal cause reported when the batcher is shutting
+// down and the retry loop therefore stops early. It is distinct from a git failure:
+// the write-back may well succeed when the task is retried by whatever triggered it.
+var errWritebackDraining = errors.New("git write-back is draining for shutdown; not retrying")
 
 // batchWriteRequest is a single application's pending git write-back, queued for
 // coalesced flushing by the Batcher. Exactly one result is delivered on resultCh.
@@ -41,7 +47,14 @@ type batchWriteRequest struct {
 // single-app path, where a commit failure also consumes the retry budget. A
 // permanently misconfigured app (e.g. path-traversal write-back location) fails
 // only itself after the budget is spent, never blocking the others.
-func runBatchWriteBack(parentCtx context.Context, repo *updater.GitRepo, batch []*batchWriteRequest) map[*batchWriteRequest]error {
+//
+// drainCh is the batcher's shutdown signal: non-nil and open while running, closed
+// by Batcher.Close (nil only in tests that drive this loop directly). Closing it
+// stops the loop after the attempt in flight, because the remaining retry budget
+// would outlive the process's grace period — the requests are then resolved with
+// errWritebackDraining instead of being abandoned without a result. The attempt
+// already running is deliberately NOT interrupted; see backoffBeforeBatchRetry.
+func runBatchWriteBack(parentCtx context.Context, repo *updater.GitRepo, batch []*batchWriteRequest, drainCh <-chan struct{}) map[*batchWriteRequest]error {
 	outcomes := make(map[*batchWriteRequest]error, len(batch))
 	// commitErrs holds each app's most recent per-app commit error while it is still
 	// being retried; consulted only when resolving a leftover unresolved request so
@@ -51,6 +64,9 @@ func runBatchWriteBack(parentCtx context.Context, repo *updater.GitRepo, batch [
 	opTimeout := repo.GitOpTimeout()
 
 	var lastErr error
+	// drained records that the loop stopped because the batcher is shutting down,
+	// tracked separately from lastErr so the underlying git error survives.
+	var drained bool
 	for attempt := uint(1); attempt <= maxAttempts; attempt++ {
 		active := unresolvedRequests(batch, outcomes)
 		if len(active) == 0 {
@@ -72,13 +88,21 @@ func runBatchWriteBack(parentCtx context.Context, repo *updater.GitRepo, batch [
 		if len(unresolvedRequests(batch, outcomes)) == 0 {
 			break
 		}
-		if waitErr := backoffBeforeBatchRetry(parentCtx, attempt, maxAttempts); waitErr != nil {
+		if waitErr := backoffBeforeBatchRetry(parentCtx, attempt, maxAttempts, drainCh); waitErr != nil {
+			// A drain is why we stopped, not what went wrong: keep the attempt error
+			// as the cause so the task's failure reason still names the git fault
+			// (e.g. a rejected push) that made retrying necessary. resolveRemaining
+			// re-attaches the drain marker.
+			if errors.Is(waitErr, errWritebackDraining) {
+				drained = true
+				break
+			}
 			lastErr = waitErr
 			break
 		}
 	}
 
-	resolveRemaining(batch, outcomes, commitErrs, lastErr, maxAttempts)
+	resolveRemaining(batch, outcomes, commitErrs, lastErr, maxAttempts, drained)
 	return outcomes
 }
 
@@ -195,10 +219,19 @@ func failUnresolved(batch []*batchWriteRequest, outcomes map[*batchWriteRequest]
 }
 
 // resolveRemaining assigns a final error to every request still unresolved after
-// the retry loop ends (exhausted attempts or a cancelled backoff). A per-app commit
-// error takes precedence over the batch-level error so a persistently
+// the retry loop ends (exhausted attempts, a cancelled backoff, or a drain). A
+// per-app commit error takes precedence over the batch-level error so a persistently
 // misconfigured app reports its own cause.
-func resolveRemaining(batch []*batchWriteRequest, outcomes, commitErrs map[*batchWriteRequest]error, lastErr error, maxAttempts uint) {
+//
+// These errors become the task's stored failure reason, so two properties matter.
+// The attempt count is asserted only when the budget was actually spent — claiming
+// "failed after 5 attempts" for a single-attempt drain would send an operator hunting
+// a git fault that does not exist. And on a drain the marker is joined with the
+// underlying cause rather than replacing it, so the reason still names the git or
+// commit failure that made retrying necessary while errors.Is(err,
+// errWritebackDraining) remains true for every request — including one carrying its
+// own commit error.
+func resolveRemaining(batch []*batchWriteRequest, outcomes, commitErrs map[*batchWriteRequest]error, lastErr error, maxAttempts uint, drained bool) {
 	for _, req := range batch {
 		if _, ok := outcomes[req]; ok {
 			continue
@@ -206,6 +239,10 @@ func resolveRemaining(batch []*batchWriteRequest, outcomes, commitErrs map[*batc
 		cause := lastErr
 		if ce, ok := commitErrs[req]; ok {
 			cause = ce
+		}
+		if drained {
+			outcomes[req] = fmt.Errorf("batch git update stopped early: %w", errors.Join(errWritebackDraining, cause))
+			continue
 		}
 		outcomes[req] = fmt.Errorf("batch git update failed after %d attempts: %w", maxAttempts, cause)
 	}
@@ -239,11 +276,21 @@ func invalidateBatchCacheOnFinalAttempt(repo *updater.GitRepo, batchSize int, at
 }
 
 // backoffBeforeBatchRetry waits (jittered) before the next batch attempt, unless
-// this was the final one. It returns a non-nil error only if parentCtx is
-// cancelled during the wait, signalling the caller to stop retrying. It reuses
-// gitUpdateBackoff so batch and single-app retries share the same anti-thundering-
-// herd behaviour.
-func backoffBeforeBatchRetry(parentCtx context.Context, attempt, maxAttempts uint) error {
+// this was the final one. It returns a non-nil error if parentCtx is cancelled or
+// the batcher starts draining during the wait, signalling the caller to stop
+// retrying. It reuses gitUpdateBackoff so batch and single-app retries share the
+// same anti-thundering-herd behaviour.
+//
+// The drain is observed here — between attempts — rather than by cancelling the
+// per-attempt context, and that placement is the point. Cancelling mid-push would
+// abort a push the remote may have already accepted, so the task would be reported
+// failed while its commit is live in git. Stopping only at the retry boundary keeps
+// every reported outcome truthful, at the cost of one more in-flight attempt
+// (bounded by GIT_OP_TIMEOUT) before the drain completes.
+//
+// A nil drainCh (tests that pass no signal) blocks forever in the select, so the
+// backoff behaves exactly as it did before.
+func backoffBeforeBatchRetry(parentCtx context.Context, attempt, maxAttempts uint, drainCh <-chan struct{}) error {
 	if attempt >= maxAttempts {
 		return nil
 	}
@@ -253,6 +300,10 @@ func backoffBeforeBatchRetry(parentCtx context.Context, attempt, maxAttempts uin
 	select {
 	case <-parentCtx.Done():
 		return fmt.Errorf("batch git update cancelled during backoff: %w", parentCtx.Err())
+	case <-drainCh:
+		slog.Warn("Batch git update stopped retrying: batcher is draining for shutdown",
+			"attempt", attempt, "max_attempts", maxAttempts)
+		return errWritebackDraining
 	case <-time.After(backoff):
 		return nil
 	}

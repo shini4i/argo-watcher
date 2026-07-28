@@ -18,9 +18,23 @@
 #   5. Assert the recreated pod comes back Ready and reaches real Argo.
 #
 # Scope note: in-flight *deploys* are deliberately not asserted here. A deploy's
-# write-back + Argo sync outlives the 30s HTTP drain budget by design and is
-# resumed by the poller, not the HTTP request — asserting it would test the
-# poller, not shutdown. This phase asserts the shutdown/drain contract only.
+# write-back + Argo sync outlives the HTTP drain budget by design and is resumed by
+# the poller, not the HTTP request — asserting it would test the poller, not
+# shutdown. This phase asserts the shutdown/drain contract only.
+#
+# Shutdown runs three sequential phases sharing ONE 25s budget (shutdownBudget in
+# internal/server/server.go): srv.Shutdown (<=8s) -> WebSocket drain (<=10s) ->
+# batch git write-back drain (whatever remains). The budget is sized to fit the
+# Kubernetes default terminationGracePeriodSeconds of 30s, and step 4 below asserts
+# the whole sequence actually fits it.
+#
+# KNOWN GAP (deliberate, 2026-07-29): this phase runs with GIT_BATCH_WRITEBACK off, so
+# the third phase is a no-op and the batch write-back DRAIN — retry loops stopping at
+# their next boundary on Close — is covered only by unit tests
+# (TestBatcher_FlushThreadsDrainIntoRetryLoop and friends). Covering it here would
+# mean restarting a pod mid-soak with batching on, in a phase whose value is the
+# WebSocket contract; that was judged not worth the lab runtime for a path whose unit
+# coverage is mutation-verified. Revisit if the drain logic changes again.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -73,8 +87,10 @@ kubectl -n "$NS_AW" logs -f "$pod" >"$log_out" 2>/dev/null &
 log_pid=$!
 sleep 2
 echo "deleting pod ${pod} (grace 60s) to trigger graceful shutdown"
-# --grace-period=60 overrides the spec so the drain (srv.Shutdown 30s + WS drain
-# 10s) completes before SIGKILL; --wait=false returns so we can watch the clients.
+# --grace-period=60 deliberately overrides the spec with more headroom than the 25s
+# shutdown budget needs, so a slow lab node cannot turn a real drain regression into
+# a SIGKILL that hides it; --wait=false returns so we can watch the clients.
+shutdown_started=$SECONDS
 kubectl -n "$NS_AW" delete pod "$pod" --grace-period=60 --wait=false >/dev/null
 
 # --- 3. Every WS client must observe the graceful GoingAway close --------------
@@ -92,6 +108,17 @@ done
 
 # --- 4. The captured shutdown logs must show the clean ordered path ------------
 retry 30 1 gone "$log_pid" || true
+
+# The whole sequence must fit the 25s budget it is designed around. Asserted
+# explicitly because --grace-period=60 above would otherwise hide an overrun: a
+# regression that pushes shutdown past the REAL default terminationGracePeriodSeconds
+# of 30s (which no manifest here pins) would still pass the lab silently.
+shutdown_elapsed=$((SECONDS - shutdown_started))
+if ((shutdown_elapsed < 30)); then
+  ok "shutdown completed in ${shutdown_elapsed}s (budget 25s, k8s default grace 30s)"
+else
+  bad "shutdown took ${shutdown_elapsed}s — exceeds the default 30s grace period, would be SIGKILLed in a normal deployment"
+fi
 kill "$log_pid" 2>/dev/null || true
 assert_log() {  # pattern human-label want(present|absent)
   local pattern="$1" label="$2" want="$3" found

@@ -180,6 +180,22 @@ Each entry follows the same shape: **Symptom · Likely cause · How to verify ·
 
 ---
 
+## Tasks stay "in progress" after a server restart
+
+**Symptom:** After a rolling restart or pod eviction, tasks that were deploying remain "in progress" and are only later marked "aborted", even though Argo CD shows the deployment succeeded.
+
+**Cause:** A deployment being tracked when the process exits is not handed off to another replica, and nothing waits for the tracker to persist a final status before the process terminates. The task row is later reaped by the obsolete-task sweep, which marks "in progress" rows older than one hour as "aborted" — bookkeeping only, so the recorded status can disagree with what actually happened in Argo CD.
+
+This is expected on any restart and is **not** fixed by tuning the shutdown budget. A graceful shutdown protects the git commit and stops write-backs retrying past the deadline; it does not make the task's final status durable. Until task ownership survives a pod replacement, treat the GitOps repository and Argo CD as the record of what happened, not the task status.
+
+**How to verify:**
+- Check the shutdown logs of the previous pod: `kubectl logs <pod> --previous | grep -i shutdown`.
+- The warning `git write-back batch drain did not finish before the shutdown deadline` means queued git commits were abandoned mid-flush — that part *is* tunable, below.
+
+**Fix:**
+1. Confirm in your GitOps repository whether the image tag was committed. If it was not, re-run the pipeline job — an interrupted write-back is not resumed automatically.
+2. To stop losing the commit as well: graceful shutdown needs up to 25s, so raise `terminationGracePeriodSeconds` if it is below the Kubernetes default of 30s, and keep `GIT_OP_TIMEOUT` under the shutdown budget so an in-flight attempt can finish during the drain.
+
 ## Task is stuck in "pending" state
 
 **Symptom:** A task created in Argo Watcher is stuck and does not transition to "in progress" or "failed".

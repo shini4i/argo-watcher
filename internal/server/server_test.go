@@ -3,6 +3,7 @@ package server
 import (
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
@@ -73,4 +74,22 @@ func TestNewServer_PostgresConnectionFailure(t *testing.T) {
 	assert.Error(t, err)
 	// This is the corrected, more robust assertion.
 	assert.Contains(t, err.Error(), "failed to connect to")
+}
+
+// TestShutdownBudgetFitsGracePeriod guards the invariant that makes the batch
+// write-back drain reachable. The shutdown phases run in sequence, so the earlier
+// two caps must leave the last phase a USABLE share, not merely fit inside the
+// budget: "sum < budget" alone would still pass with a 1s remainder, which is the
+// starvation this bound exists to prevent.
+//
+// The 5s floor is not enough for a fresh git attempt (GIT_OP_TIMEOUT defaults to
+// 90s) — nothing inside a 25s budget could be. It is sized for what the drain can
+// actually accomplish: letting a retry loop observe the drain signal, resolve its
+// batch, and deliver every result so no deploying goroutine is left blocked.
+func TestShutdownBudgetFitsGracePeriod(t *testing.T) {
+	assert.Less(t, shutdownBudget, 30*time.Second, "budget must fit the default pod grace period")
+
+	writebackDrainShare := shutdownBudget - (httpDrainBudget + shutdownTimeout)
+	assert.GreaterOrEqual(t, writebackDrainShare, 5*time.Second,
+		"HTTP and WebSocket drains must leave the batch write-back drain a usable share")
 }
