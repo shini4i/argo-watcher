@@ -4,12 +4,17 @@ import { DeployLockService, __testing } from './deployLockService';
 import * as sharedUtils from '../../shared/utils';
 
 class MockWebSocket {
+  public onopen: (() => void) | null = null;
   public onmessage: ((event: { data: string }) => void) | null = null;
   public onclose: (() => void) | null = null;
   public onerror: ((error: unknown) => void) | null = null;
 
   constructor(public url: string) {
     MockWebSocket.instances.push(this);
+  }
+
+  public open() {
+    this.onopen?.();
   }
 
   public close() {
@@ -48,6 +53,33 @@ describe('DeployLockService', () => {
     });
   };
 
+  const jsonResponse = (body: unknown) => new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  // Installs a fetch mock whose responses stay pending until resolved by hand, so
+  // a REST/WebSocket ordering race can be driven deterministically. Every call is
+  // recorded in order, so a test can resolve two concurrent fetches out of order.
+  const mockPendingFetch = () => {
+    const pending: Array<(r: Response) => void> = [];
+    let markStarted: () => void = () => {};
+    const started = new Promise<void>(resolve => { markStarted = resolve; });
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      () => new Promise<Response>(resolve => {
+        pending.push(resolve);
+        markStarted();
+      }),
+    );
+    return {
+      started,
+      count: () => pending.length,
+      // Resolves the nth outstanding fetch (0 = the oldest).
+      resolveNth: (index: number, body: unknown) => pending[index](jsonResponse(body)),
+      resolveWith: (body: unknown) => pending[pending.length - 1](jsonResponse(body)),
+    };
+  };
+
   it('fetches initial status and notifies subscribers', async () => {
     mockFetch([{ body: false }]);
     const service = new DeployLockService();
@@ -72,6 +104,266 @@ describe('DeployLockService', () => {
     expect(listener).toHaveBeenLastCalledWith(true);
 
     socket.emit('unlocked');
+    expect(listener).toHaveBeenLastCalledWith(false);
+  });
+
+  it('re-fetches the lock state whenever the socket (re)connects', async () => {
+    // The server only pushes on transitions, and with the shared Postgres lock a
+    // transition can be driven by another replica. A lock set while this client's
+    // socket was down (or before its bootstrap fetch failed) would otherwise stay
+    // invisible, hiding an active freeze.
+    mockFetch([{ body: false }, { body: true }]);
+    const service = new DeployLockService();
+    const listener = vi.fn();
+    service.subscribe(listener);
+
+    // Wait for the bootstrap fetch to land before clearing, so the assertion below
+    // can only be satisfied by the onopen refetch.
+    await vi.waitUntil(() => listener.mock.calls.length > 0);
+    await vi.waitUntil(() => MockWebSocket.instances.length === 1);
+    listener.mockClear();
+
+    MockWebSocket.instances[0].open();
+
+    await vi.waitUntil(() => listener.mock.calls.length > 0);
+    expect(listener).toHaveBeenLastCalledWith(true);
+  });
+
+  it('does not let a slow REST fetch clobber a newer WebSocket transition', async () => {
+    // A reconcile fetch is held pending while a WS transition lands, then resolves
+    // with the now-stale value; the WS state must win.
+    mockFetch([{ body: false }]);
+    const service = new DeployLockService();
+    const listener = vi.fn();
+    service.subscribe(listener);
+    await vi.waitUntil(() => listener.mock.calls.length > 0);
+
+    const { resolveWith, started } = mockPendingFetch();
+    const pending = service.fetchStatus();
+    await started;
+
+    MockWebSocket.instances[0].emit('locked');
+    expect(listener).toHaveBeenLastCalledWith(true);
+
+    resolveWith(false);
+    await pending;
+    expect(listener).toHaveBeenLastCalledWith(true);
+  });
+
+  it('does not let a slow REST fetch clobber a just-issued lock operation', async () => {
+    // A reconnect reconcile can be in flight when the operator hits lock; the
+    // explicit operation is newer than the fetch and must not be reverted.
+    mockFetch([{ body: false }]);
+    const service = new DeployLockService();
+    const listener = vi.fn();
+    service.subscribe(listener);
+    await vi.waitUntil(() => listener.mock.calls.length > 0);
+
+    const { resolveWith, started } = mockPendingFetch();
+    const pending = service.fetchStatus();
+    await started;
+
+    mockFetch([{ body: 'ok' }]);
+    await service.setLock();
+    expect(listener).toHaveBeenLastCalledWith(true);
+
+    resolveWith(false);
+    await pending;
+    expect(listener).toHaveBeenLastCalledWith(true);
+  });
+
+  it('re-bootstraps on a fresh subscribe after full teardown', async () => {
+    mockFetch([{ body: false }, { body: true }]);
+    const service = new DeployLockService();
+    const unsubscribe = service.subscribe(vi.fn());
+
+    await vi.waitUntil(() => (globalThis.fetch as unknown as vi.Mock).mock.calls.length === 1);
+    unsubscribe(); // last subscriber leaves -> teardown clears cached state
+
+    const listener = vi.fn();
+    service.subscribe(listener);
+    // currentStatus was reset, so a second bootstrap fetch must fire (not a replay
+    // of a value that could have gone stale while nobody was listening).
+    await vi.waitUntil(() => (globalThis.fetch as unknown as vi.Mock).mock.calls.length === 2);
+    await vi.waitUntil(() => listener.mock.calls.some(call => call[0] === true));
+    expect(listener).toHaveBeenLastCalledWith(true);
+  });
+
+  it('drops an older concurrent fetch that resolves after a newer one', async () => {
+    // A (re)connect can have the bootstrap fetch and the onopen reconcile in flight
+    // at once. If the older one resolves last it carries the pre-change value, and
+    // applying it would revert the banner — hiding an active freeze.
+    mockFetch([{ body: false }]);
+    const service = new DeployLockService();
+    const listener = vi.fn();
+    service.subscribe(listener);
+    await vi.waitUntil(() => listener.mock.calls.length > 0);
+    listener.mockClear();
+
+    const { started, count, resolveNth } = mockPendingFetch();
+    const older = service.fetchStatus();
+    await started;
+    const newer = service.fetchStatus();
+    await vi.waitUntil(() => count() === 2);
+
+    resolveNth(1, true);
+    await expect(newer).resolves.toBe(true);
+    expect(listener).toHaveBeenLastCalledWith(true);
+
+    // The older fetch must be dropped, and report the state that won rather than
+    // its own stale answer.
+    resolveNth(0, false);
+    await expect(older).resolves.toBe(true);
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not let a slow REST fetch clobber a newer WebSocket release', async () => {
+    // Mirror of the locking direction: a reconcile issued before the release
+    // resolves with manual_lock still true and would falsely re-freeze the UI.
+    mockFetch([{ body: true }]);
+    const service = new DeployLockService();
+    const listener = vi.fn();
+    service.subscribe(listener);
+    await vi.waitUntil(() => listener.mock.calls.length > 0);
+
+    const { resolveWith, started } = mockPendingFetch();
+    const pending = service.fetchStatus();
+    await started;
+
+    MockWebSocket.instances[0].emit('unlocked');
+    expect(listener).toHaveBeenLastCalledWith(false);
+
+    resolveWith(true);
+    await pending;
+    expect(listener).toHaveBeenLastCalledWith(false);
+  });
+
+  it('does not let a slow REST fetch clobber a just-issued release operation', async () => {
+    mockFetch([{ body: true }]);
+    const service = new DeployLockService();
+    const listener = vi.fn();
+    service.subscribe(listener);
+    await vi.waitUntil(() => listener.mock.calls.length > 0);
+
+    const { resolveWith, started } = mockPendingFetch();
+    const pending = service.fetchStatus();
+    await started;
+
+    mockFetch([{ body: 'ok' }]);
+    await service.releaseLock();
+    expect(listener).toHaveBeenLastCalledWith(false);
+
+    resolveWith(true);
+    await pending;
+    expect(listener).toHaveBeenLastCalledWith(false);
+  });
+
+  it('reconciles on a reconnect after the socket dropped', async () => {
+    // The hole this closes: a lock set while the browser's socket was down. Only a
+    // replacement socket's onopen can surface it, so exercise the real reconnect.
+    mockFetch([{ body: false }]);
+    const service = new DeployLockService();
+    const listener = vi.fn();
+    service.subscribe(listener);
+    await vi.waitUntil(() => listener.mock.calls.length > 0);
+    await vi.waitUntil(() => MockWebSocket.instances.length === 1);
+
+    const mockWindow = {
+      setTimeout: vi.fn((cb: () => void) => {
+        cb();
+        return 1 as unknown as number;
+      }),
+      clearTimeout: vi.fn(),
+    };
+    const windowSpy = vi.spyOn(sharedUtils, 'getBrowserWindow')
+      .mockReturnValue(mockWindow as unknown as Window);
+
+    MockWebSocket.instances[0].onclose?.();
+    await vi.waitUntil(() => MockWebSocket.instances.length === 2);
+
+    // The lock was set while the socket was down.
+    mockFetch([{ body: true }]);
+    listener.mockClear();
+    MockWebSocket.instances[1].open();
+
+    await vi.waitUntil(() => listener.mock.calls.length > 0);
+    expect(listener).toHaveBeenLastCalledWith(true);
+    windowSpy.mockRestore();
+  });
+
+  it('ignores unrelated messages on the shared socket', async () => {
+    // /ws also carries ArgoCD reachability frames, which are far more frequent than
+    // lock frames. They must neither change the lock state nor invalidate an
+    // in-flight reconcile — that would disable the reconcile during outages.
+    mockFetch([{ body: false }]);
+    const service = new DeployLockService();
+    const listener = vi.fn();
+    service.subscribe(listener);
+    await vi.waitUntil(() => listener.mock.calls.length > 0);
+    listener.mockClear();
+
+    const socket = MockWebSocket.instances[0];
+    socket.emit('argocd_down:argocd');
+    socket.emit('argocd_up');
+    socket.emit('nonsense');
+    expect(listener).not.toHaveBeenCalled();
+
+    const { resolveWith, started } = mockPendingFetch();
+    const pending = service.fetchStatus();
+    await started;
+    socket.emit('argocd_up');
+
+    resolveWith(true);
+    await pending;
+    expect(listener).toHaveBeenLastCalledWith(true);
+  });
+
+  it('keeps the last known state when a reconnect reconcile fails', async () => {
+    mockFetch([{ body: true }]);
+    const service = new DeployLockService();
+    const listener = vi.fn();
+    service.subscribe(listener);
+    await vi.waitUntil(() => listener.mock.calls.length > 0);
+    expect(listener).toHaveBeenLastCalledWith(true);
+    listener.mockClear();
+
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('boom'));
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    MockWebSocket.instances[0].open();
+
+    await vi.waitUntil(() => errorSpy.mock.calls.length > 0);
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[deploy-lock] Failed to reconcile status on connect', expect.any(Error),
+    );
+    // A failed reconcile must not clear the banner — that is the false negative the
+    // reconcile exists to prevent.
+    expect(listener).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  it('discards a fetch that resolves after teardown', async () => {
+    // A fetch still in flight when the last subscriber leaves must not repopulate
+    // the cache teardown just cleared, or the next subscribe replays that value
+    // instead of bootstrapping a fresh one.
+    mockFetch([{ body: false }]);
+    const service = new DeployLockService();
+    const unsubscribe = service.subscribe(vi.fn());
+    await vi.waitUntil(() => (globalThis.fetch as unknown as vi.Mock).mock.calls.length === 1);
+
+    const { resolveWith, started } = mockPendingFetch();
+    const pending = service.fetchStatus();
+    await started;
+
+    unsubscribe();
+    resolveWith(true);
+    await pending; // the stale result has now been fully processed (or dropped)
+
+    mockFetch([{ body: false }]);
+    const listener = vi.fn();
+    service.subscribe(listener);
+
+    await vi.waitUntil(() => listener.mock.calls.length > 0);
     expect(listener).toHaveBeenLastCalledWith(false);
   });
 

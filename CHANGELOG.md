@@ -93,6 +93,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stale in-progress tasks aborted by the obsolete-task sweep now record a status
   reason ("did not complete within the staleness window"), distinguishing them
   from deployments aborted because Argo CD was unreachable.
+- The Web UI now re-reads the deploy lock state over REST every time its WebSocket
+  (re)connects, matching what the "unreachable" banner already did. The server only
+  pushes lock changes as transitions, so a lock set while a browser's socket was
+  down — or before its initial read failed — previously stayed invisible until a
+  manual page refresh, hiding an active deployment freeze. This matters more now
+  that the lock is shared, because the transition can come from another replica.
+- The lockdown watcher is now the only thing that broadcasts deploy-lock changes to
+  Web UI clients; the `POST`/`DELETE /api/v1/deploy-lock` handlers no longer push
+  directly. Two independent notifiers could leave the watcher's idea of the last
+  broadcast state stale, so a lock re-acquired through another replica within one
+  poll interval was never announced — leaving the serving replica's clients showing
+  unlocked while deployments were in fact frozen. Clients on the replica that serves
+  a lock change now see the banner within one poll interval (a few seconds) instead
+  of instantly, which is the delay every other replica already had; the operator who
+  made the change still sees their own result immediately.
 
 ### Security
 

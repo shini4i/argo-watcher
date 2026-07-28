@@ -133,8 +133,9 @@ func (s *Server) Run() {
 
 	srv := s.env.StartRouter(s.router)
 
-	// Notify clients about scheduled lockdown transitions they wouldn't
-	// otherwise learn about (scheduled state is evaluated lazily).
+	// The only notifier of deploy-lock changes to Web UI clients — manual locks
+	// (including ones set through another replica), schedule boundaries and override
+	// expiry alike. Must always run; see StartLockdownWatcher.
 	s.env.StartLockdownWatcher()
 
 	// Notify clients when ArgoCD reachability changes so the frontend can show

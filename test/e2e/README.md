@@ -143,8 +143,9 @@ Reach any component with `kubectl port-forward` (there is no ingress), e.g.
   to observe a *scheduled* `"locked"` broadcast (the watcher notifies on state
   change, not at boot, and polls at minute granularity). The 406 + `GET`-true +
   revert-accepts checks are deterministic; the WS-transition sub-check is skipped
-  (not failed) if a slow rollout boots in-window. Manual (Keycloak) lock/unlock
-  WS notifications are a separate, deterministic trigger left to the heavy tier.
+  (not failed) if a slow rollout boots in-window. A manual lock/unlock is not a
+  separate trigger — the API handlers do not push, so it reaches clients through
+  the same watcher poll; `state-postgres` asserts that over the WebSocket.
 - **`state-postgres` flips the shared release to Postgres mid-flow rather than
   running a parallel stack.** The base lab is single-replica in-memory; every
   functional phase before this one validates that backend. `state-postgres` then

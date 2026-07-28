@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -856,6 +857,130 @@ func TestWebSocketConnectionIntegration(t *testing.T) {
 	// logging at all, so a differently-worded line added later is caught too. If
 	// a legitimate success-path log is ever added, make the exception here.
 	assert.Empty(t, logs.String(), "a successful /ws upgrade must not log per-request")
+}
+
+// readCountingStore counts State() calls so a test can wait until the lock
+// watcher has read its baseline before changing the state under it.
+type readCountingStore struct {
+	lock.DeployLockStore
+	reads atomic.Int64
+}
+
+func (s *readCountingStore) State() (lock.DeployLockState, error) {
+	s.reads.Add(1)
+	return s.DeployLockStore.State()
+}
+
+// TestDeployLockNotifiedOnlyByWatcher pins the single-notifier invariant: the
+// lock watcher is the only thing that pushes lock state to clients, and the API
+// handlers do not push directly.
+//
+// This is not about the duplicate message it avoids. WatchTransitions compares
+// each tick against the state it last broadcast, and a handler-side push it does
+// not know about desynchronizes that baseline: if a release is served here and
+// another replica re-acquires the lock before the next tick, the tick sees no
+// change against the stale baseline and stays silent — leaving this replica's
+// clients showing unlocked while the lock is active. Keeping the watcher as the
+// sole notifier makes that impossible, at the cost of the banner on this replica
+// updating within one poll interval rather than instantly.
+// Both handlers are covered: the release path is the one the desync story above
+// turns on, so pinning only the lock path would leave it free to regress.
+func TestDeployLockNotifiedOnlyByWatcher(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name        string
+		method      string
+		lockedFirst bool // state the watcher must see as its baseline
+		wantMsg     string
+	}{
+		{name: "set", method: http.MethodPost, lockedFirst: false, wantMsg: "locked"},
+		{name: "release", method: http.MethodDelete, lockedFirst: true, wantMsg: "unlocked"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			connectionsMutex.Lock()
+			connections = nil
+			closedConns = make(map[*websocket.Conn]bool)
+			connectionsMutex.Unlock()
+
+			tmpDir := t.TempDir()
+			require.NoError(t, os.WriteFile(tmpDir+"/index.html", []byte("<html></html>"), 0644))
+
+			strategies := map[string]auth.AuthStrategy{oidcHeader: newAuthStrategy(t, true, nil)}
+			store := &readCountingStore{DeployLockStore: lock.NewInMemoryDeployLockStore()}
+			if tt.lockedFirst {
+				require.NoError(t, store.Lock())
+			}
+			lockdown, err := NewLockdown("", store)
+			require.NoError(t, err)
+
+			env := &Env{
+				lockdown:      lockdown,
+				strategies:    strategies,
+				authenticator: auth.NewAuthenticator(strategies),
+				// Without this, Shutdown has no channel to close, so it waits out the
+				// full shutdownTimeout and leaves the connection goroutine running.
+				shutdownCh: make(chan struct{}),
+				config: &config.ServerConfig{
+					StaticFilePath: tmpDir,
+					DevEnvironment: true, // allow the test origin through the WS origin check
+					OIDC:           config.OIDCConfig{Enabled: true},
+				},
+			}
+
+			server := httptest.NewServer(env.CreateRouter())
+			t.Cleanup(func() {
+				env.Shutdown()
+				server.Close()
+				connectionsMutex.Lock()
+				connections = nil
+				closedConns = make(map[*websocket.Conn]bool)
+				connectionsMutex.Unlock()
+			})
+
+			dialCtx, dialCancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer dialCancel()
+			conn, _, err := websocket.Dial(dialCtx, "ws"+strings.TrimPrefix(server.URL, "http")+"/ws", nil)
+			require.NoError(t, err)
+			defer conn.Close(websocket.StatusNormalClosure, "test complete")
+
+			// Run the watcher far faster than production so the test does not wait 5s.
+			stop := make(chan struct{})
+			defer close(stop)
+			go lockdown.WatchTransitions(stop, 5*time.Millisecond, notifyWebSocketClients)
+
+			// The watcher captures its baseline on entry, and only a change against
+			// that baseline is broadcast. Wait for the baseline read before mutating,
+			// otherwise a request that wins the race makes the post-change value the
+			// baseline and nothing is ever pushed. Neither handler reads the state, so
+			// any read is the watcher's.
+			require.Eventually(t, func() bool { return store.reads.Load() > 0 },
+				5*time.Second, time.Millisecond, "lock watcher never read its baseline")
+
+			req, err := http.NewRequest(tt.method, server.URL+"/api/v1/deploy-lock", nil)
+			require.NoError(t, err)
+			req.Header.Set(oidcHeader, "Bearer valid-token")
+			resp, err := server.Client().Do(req)
+			require.NoError(t, err)
+			require.NoError(t, resp.Body.Close())
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+
+			readCtx, readCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer readCancel()
+			_, msg, err := conn.Read(readCtx)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantMsg, string(msg))
+
+			// Exactly one push: a second one would mean a notifier other than the
+			// watcher also fired, which is what desynchronizes the watcher's baseline.
+			quietCtx, quietCancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+			defer quietCancel()
+			_, extra, err := conn.Read(quietCtx)
+			assert.ErrorIs(t, err, context.DeadlineExceeded, "unexpected second push: %q", string(extra))
+		})
+	}
 }
 
 func TestWsResponseWriterHijackNilConn(t *testing.T) {

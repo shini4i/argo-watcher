@@ -37,19 +37,24 @@ type Env struct {
 // tick is well below the minute granularity of schedules. Each tick is one
 // indexed single-row read, or no I/O at all with the in-memory store.
 //
-// This bounds only how quickly the *banner* updates on replicas that did not
-// serve the request. Enforcement is not affected: every deploy request resolves
-// the lock state at that moment.
+// This bounds only how quickly the *banner* updates, including on the replica
+// that served the request. Enforcement is not affected: every deploy request
+// resolves the lock state at that moment.
 const lockdownPollInterval = 5 * time.Second
 
 // StartLockdownWatcher launches a background goroutine that notifies WebSocket
-// clients when the resolved lock state changes on its own: a scheduled window
-// opening or closing, a temporary override expiring, or — with a shared deploy
-// lock store — a lock another replica set or released. The direct notification
-// from the API handler only reaches clients connected to the replica that served
-// the request, so clients elsewhere learn about it here instead, at the cost of
-// one duplicate message on the serving replica. The goroutine is tracked by
-// connWg and stops when the shutdown channel is closed.
+// clients whenever the resolved lock state changes: an operator setting or
+// releasing the lock through any replica, a scheduled window opening or closing,
+// or a temporary override expiring.
+//
+// It is the *only* thing that pushes lock state to clients. The API handlers
+// deliberately stay silent, because the watcher compares each poll against the
+// state it last broadcast: a push from elsewhere would leave that baseline stale
+// and could swallow a later transition (see TestDeployLockNotifiedOnlyByWatcher).
+// The price is that clients on the replica serving a lock change learn about it
+// within one poll interval rather than instantly — the same delay every other
+// replica already had. The goroutine is tracked by connWg and stops when the
+// shutdown channel is closed.
 func (env *Env) StartLockdownWatcher() {
 	env.connWg.Add(1)
 	go func() {

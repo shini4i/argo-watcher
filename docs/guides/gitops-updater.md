@@ -289,7 +289,7 @@ Releasing the lock while a scheduled lockdown window is open does not cancel the
 
 ### Behaviour With Multiple Replicas
 
-With `STATE_TYPE=postgres`, the manual lock and its temporary suppression are stored in the database, so a lock set through any replica rejects deployments on all of them, and it survives a restart. Enforcement is immediate: every deploy request resolves the lock state at that moment, so a lock set on one replica rejects the next deploy that reaches any other replica. Web UI clients connected to a replica that did not serve the lock request see the banner update within a few seconds, when that replica's watcher next samples the state.
+With `STATE_TYPE=postgres`, the manual lock and its temporary suppression are stored in the database, so a lock set through any replica rejects deployments on all of them, and it survives a restart. Enforcement is immediate: every deploy request resolves the lock state at that moment, so a lock set on one replica rejects the next deploy that reaches any other replica. Web UI clients see the banner update within a few seconds, when their replica's watcher next samples the state — including on the replica that served the lock request. The operator who set or released the lock sees their own change reflected right away.
 
 With `STATE_TYPE=in-memory` the lock lives in the process that served the request. That is correct for a single replica — the only supported configuration for in-memory state — but the lock is lost on restart.
 

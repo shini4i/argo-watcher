@@ -19,8 +19,13 @@
 # broadcast is asserted only when we confirmed the pod booted before the window
 # (GET was false first): if a slow rollout boots in-window the transition already
 # happened un-observed, so that sub-check is skipped with a logged note rather
-# than flaking. Manual (Keycloak) lock/unlock WS notifications are a separate,
-# deterministic trigger covered by the heavy-tier Keycloak phase.
+# than flaking.
+#
+# A manual (Keycloak) lock/unlock is NOT a separate trigger: the API handlers do
+# not push, so it reaches clients through this same lockdown watcher and the same
+# one-poll-interval delay. state-postgres.sh asserts that path over the WS for a
+# lock written by another writer; TestDeployLockNotifiedOnlyByWatcher pins that the
+# handlers stay silent.
 set -euo pipefail
 
 NS_AW="${NS_AW:-argo-watcher}"

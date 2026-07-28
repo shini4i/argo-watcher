@@ -9,6 +9,11 @@ import (
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
+// This handler deliberately does not push the new state to WebSocket clients.
+// StartLockdownWatcher is the single notifier — it compares each poll against the
+// state it last broadcast, and a push from here would leave that baseline stale
+// (see TestDeployLockNotifiedOnlyByWatcher).
+//
 // SetDeployLock godoc
 // @Summary Set deploy lock
 // @Description Set deploy lock. Only available when OIDC auth is enabled; requires a valid OIDC session.
@@ -33,8 +38,6 @@ func (env *Env) SetDeployLock(c *gin.Context) {
 	}
 
 	slog.Debug("deploy lock is set")
-
-	notifyWebSocketClients("locked")
 
 	c.JSON(http.StatusOK, "deploy lock is set")
 }
@@ -62,8 +65,6 @@ func (env *Env) ReleaseDeployLock(c *gin.Context) {
 	}
 
 	slog.Debug("deploy lock is released")
-
-	notifyWebSocketClients("unlocked")
 
 	c.JSON(http.StatusOK, "deploy lock is released")
 }
