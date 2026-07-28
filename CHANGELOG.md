@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   per flush, and the new `gitops_batch_size` metric reports how many were coalesced.
 - `state_unavailable` metric: `1` when argo-watcher cannot reach its state backend
   (database), `0` otherwise. It tracks the state backend independently of ArgoCD.
+- The manual deploy lock is now shared across replicas when `STATE_TYPE=postgres`.
+  It is stored in a new `deploy_lock` table (migration `000006`), so a lock set
+  through any replica rejects deployments on all of them and survives a restart —
+  previously it lived in the process that served the request. With
+  `STATE_TYPE=in-memory` the lock stays process-local, which remains correct for
+  the single replica that backend supports.
 - Support for any OpenID Connect provider (e.g. Authentik) for Web UI login and
   privileged-group authorization, not just Keycloak. Configure it with
   `OIDC_ISSUER_URL`, `OIDC_CLIENT_ID`, and `OIDC_PRIVILEGED_GROUPS`; the backend
@@ -27,6 +33,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Releasing the deploy lock during a scheduled lockdown window now records a
+  15-minute override deadline in shared state instead of an in-process timer, so
+  the suppression ends at the same instant on every replica and survives a
+  restart. Setting the lock again clears a pending suppression.
+- If the deploy lock state cannot be read (database unreachable, or migrations not
+  applied), the server now rejects deployments as if a lock were active rather
+  than letting them through. The Web UI lockdown banner also reacts within a few
+  seconds instead of up to a minute.
+- The `POST` and `DELETE /api/v1/deploy-lock` endpoints now return `500` when the
+  lock state cannot be persisted, instead of reporting success.
 - The Web UI "unreachable" banner now names exactly which dependency is down —
   ArgoCD, the state backend (database), or both — instead of always hedging with
   "ArgoCD or its state backend". It is also anchored to the bottom of the page for
@@ -77,6 +93,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stale in-progress tasks aborted by the obsolete-task sweep now record a status
   reason ("did not complete within the staleness window"), distinguishing them
   from deployments aborted because Argo CD was unreachable.
+- The Web UI now re-reads the deploy lock state over REST every time its WebSocket
+  (re)connects, matching what the "unreachable" banner already did. The server only
+  pushes lock changes as transitions, so a lock set while a browser's socket was
+  down — or before its initial read failed — previously stayed invisible until a
+  manual page refresh, hiding an active deployment freeze. This matters more now
+  that the lock is shared, because the transition can come from another replica.
+- The lockdown watcher is now the only thing that broadcasts deploy-lock changes to
+  Web UI clients; the `POST`/`DELETE /api/v1/deploy-lock` handlers no longer push
+  directly. Two independent notifiers could leave the watcher's idea of the last
+  broadcast state stale, so a lock re-acquired through another replica within one
+  poll interval was never announced — leaving the serving replica's clients showing
+  unlocked while deployments were in fact frozen. Clients on the replica that serves
+  a lock change now see the banner within one poll interval (a few seconds) instead
+  of instantly, which is the delay every other replica already had; the operator who
+  made the change still sees their own result immediately.
+- The Web UI no longer replays a stale banner state after every listener has
+  detached and a new one subscribes. A reachability or deploy-lock request already
+  in flight at that moment repopulated the cache the detach had just cleared, so the
+  next subscriber was handed a value read before the gap instead of a fresh one —
+  which could show ArgoCD as reachable during a real outage. In production the
+  providers mount once, but React's development double-mount hit this on every
+  reload.
 
 ### Security
 

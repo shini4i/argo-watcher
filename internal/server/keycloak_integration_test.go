@@ -17,6 +17,7 @@ import (
 
 	"github.com/shini4i/argo-watcher/internal/auth"
 	"github.com/shini4i/argo-watcher/internal/config"
+	"github.com/shini4i/argo-watcher/internal/lock"
 )
 
 // Keycloak coordinates for the docker-compose `integration` profile. The realm,
@@ -100,7 +101,7 @@ func newKeycloakEnv(t *testing.T) *Env {
 	oidcService, err := auth.NewOIDCAuthService(cfg)
 	require.NoError(t, err)
 
-	lockdown, err := NewLockdown("")
+	lockdown, err := NewLockdown("", lock.NewInMemoryDeployLockStore())
 	require.NoError(t, err)
 
 	// Register under both headers, mirroring production wiring (NewEnv).

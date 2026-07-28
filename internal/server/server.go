@@ -52,9 +52,11 @@ func NewServer(serverConfig *config.ServerConfig, reg prometheus.Registerer) (*S
 	argo := &argocd.Argo{}
 	argo.Init(s, api, metrics)
 
-	// The distributed Postgres locker requires the Postgres state; otherwise fall
-	// back to an in-memory lock (single-instance only).
+	// The distributed Postgres locker and the shared deploy lock both require the
+	// Postgres state; otherwise fall back to in-memory equivalents, which are
+	// correct for a single replica only.
 	var locker lock.Locker
+	var deployLockStore lock.DeployLockStore
 	if serverConfig.StateType == "postgres" {
 		pgState, ok := s.(*state.PostgresState)
 		if !ok {
@@ -65,10 +67,12 @@ func NewServer(serverConfig *config.ServerConfig, reg prometheus.Registerer) (*S
 			return nil, fmt.Errorf("could not get a valid DB connection from the postgres state")
 		}
 		locker = lock.NewPostgresLocker(db)
-		slog.Info("Using Postgres advisory locks for distributed locking.")
+		deployLockStore = lock.NewPostgresDeployLockStore(db)
+		slog.Info("Using Postgres advisory locks for distributed locking and a shared deploy lock.")
 	} else {
 		locker = lock.NewInMemoryLocker()
-		slog.Warn("Using in-memory lock. This is not suitable for HA setups.")
+		deployLockStore = lock.NewInMemoryDeployLockStore()
+		slog.Warn("Using in-memory lock and deploy lock. This is not suitable for HA setups.")
 	}
 
 	// Batch write-back settings are parsed independently of the full git config so
@@ -96,7 +100,7 @@ func NewServer(serverConfig *config.ServerConfig, reg prometheus.Registerer) (*S
 		return nil, fmt.Errorf("failed to initialize the argo updater: %w", err)
 	}
 
-	env, err := NewEnv(serverConfig, argo, metrics, statusUpdater)
+	env, err := NewEnv(serverConfig, argo, metrics, statusUpdater, deployLockStore)
 	if err != nil {
 		return nil, err
 	}
@@ -129,8 +133,9 @@ func (s *Server) Run() {
 
 	srv := s.env.StartRouter(s.router)
 
-	// Notify clients about scheduled lockdown transitions they wouldn't
-	// otherwise learn about (scheduled state is evaluated lazily).
+	// The only notifier of deploy-lock changes to Web UI clients — manual locks
+	// (including ones set through another replica), schedule boundaries and override
+	// expiry alike. Must always run; see StartLockdownWatcher.
 	s.env.StartLockdownWatcher()
 
 	// Notify clients when ArgoCD reachability changes so the frontend can show

@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -26,6 +27,7 @@ import (
 	"github.com/shini4i/argo-watcher/internal/argocd"
 	"github.com/shini4i/argo-watcher/internal/auth"
 	"github.com/shini4i/argo-watcher/internal/config"
+	"github.com/shini4i/argo-watcher/internal/lock"
 	"github.com/shini4i/argo-watcher/internal/mocks"
 	"github.com/shini4i/argo-watcher/internal/models"
 	"github.com/shini4i/argo-watcher/internal/prometheus"
@@ -135,7 +137,7 @@ func TestDeployLock(t *testing.T) {
 	router := gin.Default()
 	env := &Env{config: dummyConfig}
 
-	env.lockdown, err = NewLockdown(dummyConfig.LockdownSchedule)
+	env.lockdown, err = NewLockdown(dummyConfig.LockdownSchedule, lock.NewInMemoryDeployLockStore())
 	assert.NoError(t, err)
 
 	t.Run("SetDeployLock", func(t *testing.T) {
@@ -208,7 +210,7 @@ func TestDeployLockEndpointRegistration(t *testing.T) {
 		}
 		env := &Env{config: serverConfig}
 		var err error
-		env.lockdown, err = NewLockdown("")
+		env.lockdown, err = NewLockdown("", lock.NewInMemoryDeployLockStore())
 		require.NoError(t, err)
 		return env.CreateRouter()
 	}
@@ -291,7 +293,7 @@ func TestNewEnv(t *testing.T) {
 	metrics := &prometheus.Metrics{}
 	updater := &argocd.ArgoStatusUpdater{}
 
-	env, err := NewEnv(serverConfig, argo, metrics, updater)
+	env, err := NewEnv(serverConfig, argo, metrics, updater, lock.NewInMemoryDeployLockStore())
 
 	assert.NoError(t, err)
 	assert.Equal(t, env.config, serverConfig)
@@ -328,7 +330,7 @@ func TestNewEnvInvalidOIDCURL(t *testing.T) {
 		},
 	}
 
-	env, err := NewEnv(serverConfig, &argocd.Argo{}, &prometheus.Metrics{}, &argocd.ArgoStatusUpdater{})
+	env, err := NewEnv(serverConfig, &argocd.Argo{}, &prometheus.Metrics{}, &argocd.ArgoStatusUpdater{}, lock.NewInMemoryDeployLockStore())
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to initialize OIDC auth")
@@ -550,7 +552,7 @@ func TestStaticFileServing(t *testing.T) {
 		config: serverConfig,
 	}
 
-	env.lockdown, _ = NewLockdown("")
+	env.lockdown, _ = NewLockdown("", lock.NewInMemoryDeployLockStore())
 
 	router := env.CreateRouter()
 
@@ -702,7 +704,7 @@ func TestWebSocketInterceptor(t *testing.T) {
 	env := &Env{
 		config: serverConfig,
 	}
-	env.lockdown, _ = NewLockdown("")
+	env.lockdown, _ = NewLockdown("", lock.NewInMemoryDeployLockStore())
 
 	router := env.CreateRouter()
 
@@ -812,7 +814,7 @@ func TestWebSocketConnectionIntegration(t *testing.T) {
 	}
 
 	env := &Env{config: serverConfig}
-	env.lockdown, _ = NewLockdown("")
+	env.lockdown, _ = NewLockdown("", lock.NewInMemoryDeployLockStore())
 
 	router := env.CreateRouter()
 
@@ -855,6 +857,130 @@ func TestWebSocketConnectionIntegration(t *testing.T) {
 	// logging at all, so a differently-worded line added later is caught too. If
 	// a legitimate success-path log is ever added, make the exception here.
 	assert.Empty(t, logs.String(), "a successful /ws upgrade must not log per-request")
+}
+
+// readCountingStore counts State() calls so a test can wait until the lock
+// watcher has read its baseline before changing the state under it.
+type readCountingStore struct {
+	lock.DeployLockStore
+	reads atomic.Int64
+}
+
+func (s *readCountingStore) State() (lock.DeployLockState, error) {
+	s.reads.Add(1)
+	return s.DeployLockStore.State()
+}
+
+// TestDeployLockNotifiedOnlyByWatcher pins the single-notifier invariant: the
+// lock watcher is the only thing that pushes lock state to clients, and the API
+// handlers do not push directly.
+//
+// This is not about the duplicate message it avoids. WatchTransitions compares
+// each tick against the state it last broadcast, and a handler-side push it does
+// not know about desynchronizes that baseline: if a release is served here and
+// another replica re-acquires the lock before the next tick, the tick sees no
+// change against the stale baseline and stays silent — leaving this replica's
+// clients showing unlocked while the lock is active. Keeping the watcher as the
+// sole notifier makes that impossible, at the cost of the banner on this replica
+// updating within one poll interval rather than instantly.
+// Both handlers are covered: the release path is the one the desync story above
+// turns on, so pinning only the lock path would leave it free to regress.
+func TestDeployLockNotifiedOnlyByWatcher(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name        string
+		method      string
+		lockedFirst bool // state the watcher must see as its baseline
+		wantMsg     string
+	}{
+		{name: "set", method: http.MethodPost, lockedFirst: false, wantMsg: "locked"},
+		{name: "release", method: http.MethodDelete, lockedFirst: true, wantMsg: "unlocked"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			connectionsMutex.Lock()
+			connections = nil
+			closedConns = make(map[*websocket.Conn]bool)
+			connectionsMutex.Unlock()
+
+			tmpDir := t.TempDir()
+			require.NoError(t, os.WriteFile(tmpDir+"/index.html", []byte("<html></html>"), 0644))
+
+			strategies := map[string]auth.AuthStrategy{oidcHeader: newAuthStrategy(t, true, nil)}
+			store := &readCountingStore{DeployLockStore: lock.NewInMemoryDeployLockStore()}
+			if tt.lockedFirst {
+				require.NoError(t, store.Lock())
+			}
+			lockdown, err := NewLockdown("", store)
+			require.NoError(t, err)
+
+			env := &Env{
+				lockdown:      lockdown,
+				strategies:    strategies,
+				authenticator: auth.NewAuthenticator(strategies),
+				// Without this, Shutdown has no channel to close, so it waits out the
+				// full shutdownTimeout and leaves the connection goroutine running.
+				shutdownCh: make(chan struct{}),
+				config: &config.ServerConfig{
+					StaticFilePath: tmpDir,
+					DevEnvironment: true, // allow the test origin through the WS origin check
+					OIDC:           config.OIDCConfig{Enabled: true},
+				},
+			}
+
+			server := httptest.NewServer(env.CreateRouter())
+			t.Cleanup(func() {
+				env.Shutdown()
+				server.Close()
+				connectionsMutex.Lock()
+				connections = nil
+				closedConns = make(map[*websocket.Conn]bool)
+				connectionsMutex.Unlock()
+			})
+
+			dialCtx, dialCancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer dialCancel()
+			conn, _, err := websocket.Dial(dialCtx, "ws"+strings.TrimPrefix(server.URL, "http")+"/ws", nil)
+			require.NoError(t, err)
+			defer conn.Close(websocket.StatusNormalClosure, "test complete")
+
+			// Run the watcher far faster than production so the test does not wait 5s.
+			stop := make(chan struct{})
+			defer close(stop)
+			go lockdown.WatchTransitions(stop, 5*time.Millisecond, notifyWebSocketClients)
+
+			// The watcher captures its baseline on entry, and only a change against
+			// that baseline is broadcast. Wait for the baseline read before mutating,
+			// otherwise a request that wins the race makes the post-change value the
+			// baseline and nothing is ever pushed. Neither handler reads the state, so
+			// any read is the watcher's.
+			require.Eventually(t, func() bool { return store.reads.Load() > 0 },
+				5*time.Second, time.Millisecond, "lock watcher never read its baseline")
+
+			req, err := http.NewRequest(tt.method, server.URL+"/api/v1/deploy-lock", nil)
+			require.NoError(t, err)
+			req.Header.Set(oidcHeader, "Bearer valid-token")
+			resp, err := server.Client().Do(req)
+			require.NoError(t, err)
+			require.NoError(t, resp.Body.Close())
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+
+			readCtx, readCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer readCancel()
+			_, msg, err := conn.Read(readCtx)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantMsg, string(msg))
+
+			// Exactly one push: a second one would mean a notifier other than the
+			// watcher also fired, which is what desynchronizes the watcher's baseline.
+			quietCtx, quietCancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+			defer quietCancel()
+			_, extra, err := conn.Read(quietCtx)
+			assert.ErrorIs(t, err, context.DeadlineExceeded, "unexpected second push: %q", string(extra))
+		})
+	}
 }
 
 func TestWsResponseWriterHijackNilConn(t *testing.T) {
@@ -1427,9 +1553,10 @@ func TestEnvShutdown(t *testing.T) {
 	})
 }
 
-// TestStartLockdownWatcher verifies the watcher goroutine lifecycle: it is a
-// no-op without schedules, and when schedules exist it is tracked by connWg and
-// stops when the shutdown channel is closed.
+// TestStartLockdownWatcher verifies the watcher goroutine lifecycle: it runs
+// regardless of whether schedules are configured — with a shared deploy lock
+// store it is how clients learn about a lock another replica set — and it is
+// tracked by connWg so it stops when the shutdown channel is closed.
 func TestStartLockdownWatcher(t *testing.T) {
 	// waitTracked reports whether connWg reaches zero within the timeout.
 	waitTracked := func(env *Env, timeout time.Duration) bool {
@@ -1446,21 +1573,26 @@ func TestStartLockdownWatcher(t *testing.T) {
 		}
 	}
 
-	t.Run("no-op when no schedules are configured", func(t *testing.T) {
+	t.Run("runs even when no schedules are configured", func(t *testing.T) {
 		env := &Env{shutdownCh: make(chan struct{})}
-		env.lockdown = &Lockdown{}
+		env.lockdown, _ = NewLockdown("", lock.NewInMemoryDeployLockStore())
 
 		env.StartLockdownWatcher()
 
-		// No goroutine should have been started, so connWg is already at zero.
-		assert.True(t, waitTracked(env, 100*time.Millisecond), "no watcher goroutine expected without schedules")
+		// Lock changes made on another replica are only observable by polling,
+		// so the watcher must run even without schedules.
+		assert.False(t, waitTracked(env, 100*time.Millisecond), "watcher should run without schedules")
+
+		close(env.shutdownCh)
+		assert.True(t, waitTracked(env, time.Second), "watcher should exit after shutdown channel is closed")
 	})
 
 	t.Run("tracks the watcher and stops on shutdown", func(t *testing.T) {
 		env := &Env{shutdownCh: make(chan struct{})}
-		env.lockdown = &Lockdown{Schedules: []LockdownSchedule{
+		env.lockdown, _ = NewLockdown("", lock.NewInMemoryDeployLockStore())
+		env.lockdown.Schedules = []LockdownSchedule{
 			{StartDay: time.Monday, StartHour: 0, StartMin: 0, EndDay: time.Monday, EndHour: 1, EndMin: 0},
-		}}
+		}
 
 		env.StartLockdownWatcher()
 
@@ -1487,7 +1619,7 @@ func TestStartRouter(t *testing.T) {
 	}
 
 	env := &Env{config: serverConfig}
-	env.lockdown, _ = NewLockdown("")
+	env.lockdown, _ = NewLockdown("", lock.NewInMemoryDeployLockStore())
 
 	router := env.CreateRouter()
 	srv := env.StartRouter(router)
@@ -1718,7 +1850,7 @@ func TestCreateRouterInitializesShutdownChannel(t *testing.T) {
 		config:     serverConfig,
 		shutdownCh: nil,
 	}
-	env.lockdown, _ = NewLockdown("")
+	env.lockdown, _ = NewLockdown("", lock.NewInMemoryDeployLockStore())
 
 	// CreateRouter should initialize the shutdown channel
 	_ = env.CreateRouter()
@@ -1988,8 +2120,8 @@ func TestAddTaskEndpoint(t *testing.T) {
 	})
 
 	t.Run("rejects task when lockdown is active", func(t *testing.T) {
-		lockdown, _ := NewLockdown("")
-		lockdown.SetLock()
+		lockdown, _ := NewLockdown("", lock.NewInMemoryDeployLockStore())
+		require.NoError(t, lockdown.SetLock())
 
 		env := &Env{
 			lockdown: lockdown,
@@ -2009,11 +2141,38 @@ func TestAddTaskEndpoint(t *testing.T) {
 		assert.Contains(t, w.Body.String(), "lockdown is active")
 	})
 
+	t.Run("rejects task when a lock was set through the shared store", func(t *testing.T) {
+		// The reason the lock is shared: a lock engaged elsewhere — another
+		// replica, writing the same store — must reject deploys here, without
+		// this process ever being told. Locking the store directly, rather than
+		// via the Lockdown, is what a peer replica looks like from here.
+		store := lock.NewInMemoryDeployLockStore()
+		lockdown, err := NewLockdown("", store)
+		require.NoError(t, err)
+		require.NoError(t, store.Lock())
+
+		env := &Env{
+			lockdown: lockdown,
+		}
+
+		router := gin.New()
+		router.POST("/api/v1/tasks", env.addTask)
+
+		taskJSON := `{"app": "test-app", "author": "test-author", "project": "test-project", "images": [{"image": "test", "tag": "v1"}]}`
+		req, _ := http.NewRequest(http.MethodPost, "/api/v1/tasks", strings.NewReader(taskJSON))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusNotAcceptable, w.Code)
+		assert.Contains(t, w.Body.String(), "lockdown is active")
+	})
+
 	t.Run("returns 401 with reason when token validation fails", func(t *testing.T) {
 		// A bad token is a client mistake, not a server failure — 401, not 500.
 		// The strategy's error must surface in the response body so the client
 		// can show the user something actionable (e.g. "deploy token is invalid").
-		lockdown, _ := NewLockdown("")
+		lockdown, _ := NewLockdown("", lock.NewInMemoryDeployLockStore())
 		strategies := make(map[string]auth.AuthStrategy)
 		strategies["Authorization"] = newAuthStrategy(t, false, fmt.Errorf("deploy token is invalid"))
 
@@ -2038,7 +2197,7 @@ func TestAddTaskEndpoint(t *testing.T) {
 	})
 
 	t.Run("returns error when argo.AddTask fails", func(t *testing.T) {
-		lockdown, _ := NewLockdown("")
+		lockdown, _ := NewLockdown("", lock.NewInMemoryDeployLockStore())
 		strategies := make(map[string]auth.AuthStrategy)
 
 		ctrl := gomock.NewController(t)
@@ -2078,7 +2237,7 @@ func TestSetDeployLockWithKeycloak(t *testing.T) {
 		// Strategy returned (false, err) — auth attempted but failed.
 		// The 401 body should carry the strategy's reason so the client
 		// can distinguish "wrong token" from "expired token" etc.
-		lockdown, _ := NewLockdown("")
+		lockdown, _ := NewLockdown("", lock.NewInMemoryDeployLockStore())
 		strategies := make(map[string]auth.AuthStrategy)
 		strategies[oidcHeader] = newAuthStrategy(t, false, fmt.Errorf("token expired"))
 
@@ -2107,7 +2266,7 @@ func TestSetDeployLockWithKeycloak(t *testing.T) {
 		// No auth header at all — Authenticator returns (false, nil),
 		// distinct from invalid auth. The 401 body should hint that
 		// authentication is required, rather than implying a wrong token.
-		lockdown, _ := NewLockdown("")
+		lockdown, _ := NewLockdown("", lock.NewInMemoryDeployLockStore())
 		strategies := make(map[string]auth.AuthStrategy)
 		strategies[oidcHeader] = newAuthStrategy(t, false, nil)
 
@@ -2133,7 +2292,7 @@ func TestSetDeployLockWithKeycloak(t *testing.T) {
 	})
 
 	t.Run("sets lock when token is valid", func(t *testing.T) {
-		lockdown, _ := NewLockdown("")
+		lockdown, _ := NewLockdown("", lock.NewInMemoryDeployLockStore())
 		strategies := make(map[string]auth.AuthStrategy)
 		strategies[oidcHeader] = newAuthStrategy(t, true, nil)
 
@@ -2160,13 +2319,75 @@ func TestSetDeployLockWithKeycloak(t *testing.T) {
 	})
 }
 
+// TestDeployLockStoreFailure verifies that a lock the server could not persist
+// is reported as a failure instead of a success: an operator who is told the
+// deploy lock is set must not be left with deployments still flowing. The store
+// error itself stays in the log.
+func TestDeployLockStoreFailure(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	// newEnv builds an authenticated Env whose deploy lock store always fails.
+	newEnv := func(t *testing.T) *Env {
+		t.Helper()
+
+		strategies := make(map[string]auth.AuthStrategy)
+		strategies[oidcHeader] = newAuthStrategy(t, true, nil)
+
+		return &Env{
+			lockdown:      &Lockdown{store: failingDeployLockStore{}, overrideDuration: defaultOverrideDuration},
+			strategies:    strategies,
+			authenticator: auth.NewAuthenticator(strategies),
+			config: &config.ServerConfig{
+				OIDC: config.OIDCConfig{Enabled: true},
+			},
+		}
+	}
+
+	testCases := []struct {
+		name     string
+		method   string
+		register func(*gin.Engine, *Env)
+		message  string
+	}{
+		{
+			name:     "set",
+			method:   http.MethodPost,
+			register: func(r *gin.Engine, env *Env) { r.POST("/api/v1/deploy-lock", env.SetDeployLock) },
+			message:  "failed to set deploy lock",
+		},
+		{
+			name:     "release",
+			method:   http.MethodDelete,
+			register: func(r *gin.Engine, env *Env) { r.DELETE("/api/v1/deploy-lock", env.ReleaseDeployLock) },
+			message:  "failed to release deploy lock",
+		},
+	}
+
+	for _, tt := range testCases {
+		t.Run(tt.name, func(t *testing.T) {
+			env := newEnv(t)
+			router := gin.New()
+			tt.register(router, env)
+
+			req, _ := http.NewRequest(tt.method, "/api/v1/deploy-lock", nil)
+			req.Header.Set(oidcHeader, "Bearer valid-token")
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+
+			assert.Equal(t, http.StatusInternalServerError, w.Code)
+			assert.Contains(t, w.Body.String(), tt.message)
+			assert.NotContains(t, w.Body.String(), "database is unreachable", "the store error must not reach the client")
+		})
+	}
+}
+
 // TestSetDeployLockAcceptsLegacyKeycloakHeader verifies backward compatibility:
 // a client still sending the deprecated Keycloak-Authorization header (instead of
 // the canonical Oidc-Authorization) is authenticated exactly as before.
 func TestSetDeployLockAcceptsLegacyKeycloakHeader(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	lockdown, _ := NewLockdown("")
+	lockdown, _ := NewLockdown("", lock.NewInMemoryDeployLockStore())
 	strategies := make(map[string]auth.AuthStrategy)
 	strategies[legacyKeycloakHeader] = newAuthStrategy(t, true, nil)
 
@@ -2199,7 +2420,7 @@ func TestRequireOIDCAuthHeaderPrecedence(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	t.Run("invalid token on the legacy header surfaces the reason as 401", func(t *testing.T) {
-		lockdown, _ := NewLockdown("")
+		lockdown, _ := NewLockdown("", lock.NewInMemoryDeployLockStore())
 		strategies := map[string]auth.AuthStrategy{
 			legacyKeycloakHeader: newAuthStrategy(t, false, fmt.Errorf("token expired")),
 		}
@@ -2222,7 +2443,7 @@ func TestRequireOIDCAuthHeaderPrecedence(t *testing.T) {
 	})
 
 	t.Run("a rejected canonical header does not fall through to the legacy header", func(t *testing.T) {
-		lockdown, _ := NewLockdown("")
+		lockdown, _ := NewLockdown("", lock.NewInMemoryDeployLockStore())
 		legacy := mocks.NewMockAuthStrategy(gomock.NewController(t))
 		legacy.EXPECT().Validate(gomock.Any()).Times(0) // must never be consulted
 		strategies := map[string]auth.AuthStrategy{
@@ -2256,8 +2477,8 @@ func TestReleaseDeployLockWithKeycloak(t *testing.T) {
 	t.Run("returns 401 with reason when token is invalid", func(t *testing.T) {
 		// Strategy returned (false, err): auth attempted but failed.
 		// The 401 body should carry the strategy's reason.
-		lockdown, _ := NewLockdown("")
-		lockdown.SetLock()
+		lockdown, _ := NewLockdown("", lock.NewInMemoryDeployLockStore())
+		require.NoError(t, lockdown.SetLock())
 		strategies := make(map[string]auth.AuthStrategy)
 		strategies[oidcHeader] = newAuthStrategy(t, false, fmt.Errorf("token expired"))
 
@@ -2283,8 +2504,8 @@ func TestReleaseDeployLockWithKeycloak(t *testing.T) {
 	})
 
 	t.Run("releases lock when token is valid", func(t *testing.T) {
-		lockdown, _ := NewLockdown("")
-		lockdown.SetLock()
+		lockdown, _ := NewLockdown("", lock.NewInMemoryDeployLockStore())
+		require.NoError(t, lockdown.SetLock())
 		strategies := make(map[string]auth.AuthStrategy)
 		strategies[oidcHeader] = newAuthStrategy(t, true, nil)
 

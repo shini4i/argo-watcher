@@ -14,7 +14,14 @@
 #      same restart loses all history (the task would 404); on Postgres it is
 #      still there, 'deployed'. This is the whole reason the Postgres backend
 #      exists, and nothing else in the suite (or the unit tests) asserts it.
-#   4. supersession under real git contention works on Postgres — a newer deploy
+#   4. the deploy lock is SHARED and PERSISTENT: a lock row written by another
+#      writer (what a second replica's SetLock does) is honored by this server —
+#      GET reports it, deploys are rejected, and the lockdown watcher broadcasts it
+#      to a connected WebSocket client (the only path a browser has to a lock set
+#      elsewhere, since the API handlers do not push) — it survives a pod restart,
+#      and clearing it unblocks deploys again. On in-memory state the lock never
+#      leaves the process that set it and dies with it.
+#   5. supersession under real git contention works on Postgres — a newer deploy
 #      cancels an older retrying one via CancelInProgressTasks (hand-written SQL
 #      that DIFFERS from the in-memory Go path) and the superseded task never
 #      clobbers the winner's write-back. This guards git-op correctness on the
@@ -47,10 +54,61 @@ root="$(cd "${here}/../../.." && pwd)"
 
 bin_dir="$(mktemp -d)"
 CLIENT_BIN="${bin_dir}/aw-client"
+probe_out="$(mktemp)"
 pf_pid=""
-trap 'kill $(jobs -p) 2>/dev/null || true; rm -rf "$bin_dir"' EXIT
+probe_pid=""
+# Set to 1 while the deploy-lock assertion holds the shared lock (see below).
+lock_set=0
+
+psql_db() {
+  local sql="$1"
+  kubectl -n "$NS_AW" exec argo-watcher-db-0 -- psql -qtAX -U argo_watcher -d argo_watcher -c "$sql"
+}
+
+cleanup() {
+  # The deploy lock lives in the shared database, so a lock left set by an
+  # aborted run would 406 every deploy in the phases that follow. Always drop it.
+  if [[ "$lock_set" == 1 ]]; then
+    psql_db "UPDATE deploy_lock SET manual_lock = false" >/dev/null 2>&1 || true
+  fi
+  # jobs -p prints one PID per line; splitting them into separate arguments is
+  # the point, and they are always bare digits.
+  # shellcheck disable=SC2046
+  kill $(jobs -p) 2>/dev/null || true
+  rm -rf "$bin_dir" "$probe_out"
+}
+trap cleanup EXIT
 
 base="http://localhost:${PORT}/api/v1"
+
+# start_probe: hold a WebSocket client open and block until it has connected, so a
+# broadcast triggered afterwards cannot be missed by a slow handshake. A pod
+# restart kills the socket, so call this again after each forward. Any previous
+# probe is killed first: it would otherwise keep appending to the same file that
+# this one truncates, mixing the old capture into the new assertion.
+start_probe() {
+  [[ -n "$probe_pid" ]] && kill "$probe_pid" 2>/dev/null || true
+  : >"$probe_out"
+  WS_URL="ws://localhost:${PORT}/ws" DURATION=300s "${bin_dir}/wsprobe" >"$probe_out" 2>/dev/null &
+  probe_pid=$!
+  for _ in $(seq 1 20); do
+    grep -q '^OPEN$' "$probe_out" && return 0
+    sleep 1
+  done
+  echo "STATE-POSTGRES: FAIL — WS probe never connected on :${PORT}"
+  exit 1
+}
+
+# wait_ws <message>: wait up to ~30s (6x the 5s lockdown poll interval) for the
+# lockdown watcher to broadcast <message> to the probe.
+wait_ws() {
+  local message="$1"
+  for _ in $(seq 1 6); do
+    grep -q "^MSG ${message}\$" "$probe_out" && return 0
+    sleep 5
+  done
+  return 1
+}
 
 # forward: (re)establish a port-forward to the argo-watcher service and block until
 # /healthz answers. Called again after the restart, since deleting the pod kills
@@ -103,6 +161,8 @@ echo "  OK   /config reports state_type=postgres"
 echo "=== deploying ${APP} on Postgres (real write-back loop) ==="
 ( cd "$root" && go build -o "$CLIENT_BIN" ./cmd/client ) \
   || { echo "STATE-POSTGRES: FAIL — client build failed"; exit 1; }
+( cd "$root" && go build -o "${bin_dir}/wsprobe" ./test/e2e/tools/wsprobe ) \
+  || { echo "STATE-POSTGRES: FAIL — wsprobe build failed"; exit 1; }
 
 # Wait for the app's baseline sync, then deploy a tag different from its current one
 # so the write-back actually commits (an unchanged tag is byte-compared and skipped).
@@ -149,6 +209,85 @@ if [[ "$code" != "200" || "$status_after" != "deployed" ]]; then
 fi
 echo "  OK   task ${id} still present as 'deployed' after the restart"
 
+echo "=== shared deploy lock: a lock written by another writer is honored ==="
+# The manual lock API needs OIDC (heavy tier), so write the shared row directly —
+# which is exactly what a second replica's SetLock does. This asserts the whole
+# read path on Postgres: the migration created deploy_lock, the server reads it
+# per request, and a lock nobody set on THIS process still rejects deployments.
+# The EXIT trap clears the lock, so an abort mid-assertion cannot freeze the
+# release for the phases that follow.
+#
+# A WS client is held open across the write: since the API handlers do not push,
+# the lockdown watcher is the ONLY thing that tells a browser about a lock set
+# elsewhere. Nothing else in the lab observes that path — lockdown.sh covers the
+# schedule trigger, and that sub-check is skipped when the pod boots in-window.
+start_probe
+psql_db "UPDATE deploy_lock SET manual_lock = true, override_until = NULL" >/dev/null
+lock_set=1
+
+if ! curl -s -m 10 "${base}/deploy-lock" | jq -e '. == true' >/dev/null 2>&1; then
+  echo "STATE-POSTGRES: FAIL — GET /deploy-lock did not report the shared lock"
+  exit 1
+fi
+
+if wait_ws locked; then
+  echo "  OK   the watcher broadcast 'locked' for a lock written by another writer"
+else
+  echo "STATE-POSTGRES: FAIL — no 'locked' WS broadcast (captured: $(tr '\n' ',' <"$probe_out"))"
+  exit 1
+fi
+
+code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -X POST "${base}/tasks" \
+  -H 'Content-Type: application/json' \
+  -H "ARGO_WATCHER_DEPLOY_TOKEN: ${DEPLOY_TOKEN}" \
+  -d "{\"app\":\"${APP}\",\"author\":\"e2e-pg\",\"project\":\"lab\",\"images\":[{\"image\":\"${IMAGE}\",\"tag\":\"v1.10.3\"}]}")
+if [[ "$code" != "406" ]]; then
+  echo "STATE-POSTGRES: FAIL — deploy during a shared lock returned ${code}, want 406"
+  exit 1
+fi
+echo "  OK   shared lock rejects deployments (406) on a replica that never set it"
+
+# The lock must also OUTLIVE the process that would have held it in memory: the
+# old implementation lost it on restart, which is the other half of why it moved
+# into the database. A fresh pod reads the row on its first request.
+echo "  restarting the server; the lock must still be in effect"
+kubectl -n "$NS_AW" delete pod argo-watcher-0 --wait=true
+kubectl -n "$NS_AW" rollout status statefulset/argo-watcher --timeout=180s
+forward
+
+if ! curl -s -m 10 "${base}/deploy-lock" | jq -e '. == true' >/dev/null 2>&1; then
+  echo "STATE-POSTGRES: FAIL — the shared lock did not survive the restart"
+  exit 1
+fi
+
+code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -X POST "${base}/tasks" \
+  -H 'Content-Type: application/json' \
+  -H "ARGO_WATCHER_DEPLOY_TOKEN: ${DEPLOY_TOKEN}" \
+  -d "{\"app\":\"${APP}\",\"author\":\"e2e-pg\",\"project\":\"lab\",\"images\":[{\"image\":\"${IMAGE}\",\"tag\":\"v1.10.3\"}]}")
+if [[ "$code" != "406" ]]; then
+  echo "STATE-POSTGRES: FAIL — deploy after the restart returned ${code}, want 406 (lock lost)"
+  exit 1
+fi
+echo "  OK   the lock survived the restart and still rejects deployments"
+
+# The restart above killed the previous socket along with its port-forward, so the
+# release needs a probe reconnected to the new pod.
+start_probe
+psql_db "UPDATE deploy_lock SET manual_lock = false" >/dev/null
+lock_set=0
+if ! curl -s -m 10 "${base}/deploy-lock" | jq -e '. == false' >/dev/null 2>&1; then
+  echo "STATE-POSTGRES: FAIL — GET /deploy-lock still locked after the shared release"
+  exit 1
+fi
+echo "  OK   releasing the shared lock unblocks deployments again"
+
+if wait_ws unlocked; then
+  echo "  OK   the watcher broadcast 'unlocked' for the shared release"
+else
+  echo "STATE-POSTGRES: FAIL — no 'unlocked' WS broadcast (captured: $(tr '\n' ',' <"$probe_out"))"
+  exit 1
+fi
+
 echo "=== supersession under git contention on Postgres ==="
 # race-supersede.sh is self-contained (resets its app to a baseline, runs its own
 # competitor) and drives CancelInProgressTasks — the one deploy-flow query whose
@@ -174,4 +313,4 @@ if ! DEPLOY_TOKEN="${DEPLOY_TOKEN}" BASE_URL="http://localhost:${PORT}" \
   exit 1
 fi
 
-echo "STATE-POSTGRES: PASS (migrated, deployed, survived restart, superseded under contention)"
+echo "STATE-POSTGRES: PASS (migrated, deployed, survived restart, shared deploy lock, superseded under contention)"

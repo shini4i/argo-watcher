@@ -5,15 +5,29 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
+
+	"github.com/shini4i/argo-watcher/internal/lock"
 )
 
+// defaultOverrideDuration is how long releasing the lock suppresses an active
+// scheduled lockdown before it takes effect again.
+const defaultOverrideDuration = 15 * time.Minute
+
+// Lockdown resolves whether deployments are currently frozen, combining the
+// shared manual lock and override deadline held in the store with the schedules
+// each replica evaluates locally.
 type Lockdown struct {
-	mu           sync.RWMutex // protects ManualLock and OverrideMode
-	ManualLock   bool         // used to manually lock the system
-	OverrideMode bool         // used to temporarily disable scheduled lockdowns
-	Schedules    []LockdownSchedule
+	// store holds the manual lock and override deadline. With the Postgres
+	// implementation those are shared by every replica, so a lock set through
+	// one of them rejects deployments on all of them.
+	store lock.DeployLockStore
+	// Schedules are parsed from configuration, which is identical on every
+	// replica, and are therefore evaluated locally rather than stored.
+	Schedules []LockdownSchedule
+	// overrideDuration is the lifetime of the override created by ReleaseLock.
+	// It is a field so tests can shorten it.
+	overrideDuration time.Duration
 }
 
 type LockdownSchedule struct {
@@ -100,28 +114,52 @@ func (l *Lockdown) Parse(schedules string) error {
 	return nil
 }
 
-// IsLocked checks if the system is under lockdown. It returns true if either
-// a manual lock is active or if the current time falls within a scheduled lockdown
-// and no override mode is active. Otherwise, it returns false.
+// IsLocked reports whether the system is under lockdown: true when a manual
+// lock is active, or when the current time falls within a scheduled lockdown
+// that is not currently overridden.
+//
+// A failure to read the shared state is treated as locked. Rejecting a
+// deployment while the state is unknown is recoverable; letting one through
+// during a freeze because the database blinked is not.
 func (l *Lockdown) IsLocked() bool {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-	return l.isLockedInternal()
+	locked, err := l.resolve()
+	if err != nil {
+		slog.Error("failed to read deploy lock state, assuming locked", "error", err)
+	}
+
+	return locked
 }
 
-// isLockedInternal checks lock status without acquiring mutex.
-// Caller must hold at least a read lock.
-func (l *Lockdown) isLockedInternal() bool {
-	if l.ManualLock {
+// resolve reports the current lock state along with any store read error. On a
+// read error it returns the fail-closed answer (locked) *and* the error, so the
+// enforcement path can act on the safe default while the watcher can tell an
+// unknown state apart from a genuine transition.
+func (l *Lockdown) resolve() (bool, error) {
+	state, err := l.store.State()
+	if err != nil {
+		return true, err
+	}
+
+	return l.isLockedWith(state, time.Now()), nil
+}
+
+// isLockedWith resolves the lock state for a given store state and instant. It
+// is separate from IsLocked so the precedence rules can be tested without a
+// store or a clock.
+func (l *Lockdown) isLockedWith(state lock.DeployLockState, now time.Time) bool {
+	if state.ManualLock {
 		return true
 	}
 
-	if l.OverrideMode {
+	if now.Before(state.OverrideUntil) {
 		return false
 	}
 
-	now := time.Now()
+	return l.scheduleActive(now)
+}
 
+// scheduleActive reports whether now falls within any configured lockdown window.
+func (l *Lockdown) scheduleActive(now time.Time) bool {
 	for _, s := range l.Schedules {
 		if timeWithinSchedule(now, s.StartDay, s.EndDay, s.StartHour, s.StartMin, s.EndHour, s.EndMin) {
 			return true
@@ -134,65 +172,53 @@ func (l *Lockdown) isLockedInternal() bool {
 // SetLock immediately places the system into manual lockdown mode.
 // No matter what the scheduled lockdown settings are, once this method is invoked,
 // the system is considered to be under lockdown until manually released.
-func (l *Lockdown) SetLock() {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.ManualLock = true
+func (l *Lockdown) SetLock() error {
+	return l.store.Lock()
 }
 
-// ReleaseLock cancels the manual lockdown. If a scheduled lockdown is active,
-// it temporarily overrides it for the next 15 minutes. After that period,
-// if the scheduled lockdown is still in progress, the system re-locks.
-func (l *Lockdown) ReleaseLock() {
-	l.mu.Lock()
-	l.ManualLock = false
-	isLocked := l.isLockedInternal()
-	if isLocked {
-		l.OverrideMode = true
+// ReleaseLock cancels the manual lockdown. If a scheduled lockdown is active, it
+// is temporarily overridden for overrideDuration; once that deadline passes the
+// schedule takes effect again. The deadline is persisted with the lock state, so
+// the override ends at the same instant on every replica and survives a restart.
+// Clients learn about the expiry from the lockdown watcher, which polls the
+// resolved state.
+func (l *Lockdown) ReleaseLock() error {
+	var overrideUntil time.Time
+	if l.scheduleActive(time.Now()) {
+		overrideUntil = time.Now().Add(l.overrideDuration)
 	}
-	l.mu.Unlock()
 
-	if isLocked {
-		go l.expireOverride(15*time.Minute, notifyWebSocketClients)
-	}
-}
-
-// expireOverride waits for d, then clears the temporary override that ReleaseLock
-// enabled. It re-notifies clients with "locked" only when the system is genuinely
-// still locked once the override ends; if the scheduled window closed during the
-// wait, the system is now unlocked and no stale "locked" message is sent. The
-// duration and notifier are parameters so the guard can be unit-tested.
-func (l *Lockdown) expireOverride(d time.Duration, notify func(string)) {
-	time.Sleep(d)
-
-	l.mu.Lock()
-	l.OverrideMode = false
-	stillLocked := l.isLockedInternal()
-	l.mu.Unlock()
-
-	if stillLocked {
-		notify("locked")
-	}
+	return l.store.Release(overrideUntil)
 }
 
 // WatchTransitions polls the lock state on the given interval and invokes notify
 // with "locked" or "unlocked" whenever the computed state changes. Scheduled
-// lockdowns are evaluated lazily by IsLocked, so this is the only mechanism that
-// informs clients when a schedule window automatically begins or ends. The
-// initial state is recorded without notifying, so only genuine transitions
-// produce a notification. It runs until stop is closed.
+// lockdowns and shared locks set by other replicas are only observable by
+// polling, so this is the mechanism that informs clients about them. The initial
+// state is recorded without notifying, so only genuine transitions produce a
+// notification. It runs until stop is closed.
+//
+// A tick whose store read fails is skipped rather than reported: unlike the
+// enforcement path, which must fail closed, an unreadable state is not a
+// transition, and treating it as one would flap the banner on every transient
+// error. The failure is logged at debug level because a database outage is
+// already reported loudly by the reachability probe.
 func (l *Lockdown) WatchTransitions(stop <-chan struct{}, interval time.Duration, notify func(string)) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	last := l.IsLocked()
+	last, _ := l.resolve()
 
 	for {
 		select {
 		case <-stop:
 			return
 		case <-ticker.C:
-			current := l.IsLocked()
+			current, err := l.resolve()
+			if err != nil {
+				slog.Debug("skipping lockdown transition check, lock state is unreadable", "error", err)
+				continue
+			}
 			if current == last {
 				continue
 			}
@@ -207,11 +233,14 @@ func (l *Lockdown) WatchTransitions(stop <-chan struct{}, interval time.Duration
 	}
 }
 
-// NewLockdown initializes a new Lockdown structure and parses the lockdown schedules
-// if provided. If the schedule parsing is successful, it returns the new Lockdown.
-// Otherwise, it returns an error.
-func NewLockdown(schedules string) (*Lockdown, error) {
-	lockdown := &Lockdown{}
+// NewLockdown initializes a new Lockdown structure backed by the given store and
+// parses the lockdown schedules if provided. If the schedule parsing is
+// successful, it returns the new Lockdown. Otherwise, it returns an error.
+func NewLockdown(schedules string, store lock.DeployLockStore) (*Lockdown, error) {
+	lockdown := &Lockdown{
+		store:            store,
+		overrideDuration: defaultOverrideDuration,
+	}
 	if schedules != "" {
 		if err := lockdown.Parse(schedules); err != nil {
 			return nil, err

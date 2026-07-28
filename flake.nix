@@ -27,6 +27,11 @@
           git
         ];
 
+        # The e2e lab and CI helpers are bash; shellcheck is the linter for them.
+        shellToolchain = with pkgs; [
+          shellcheck
+        ];
+
         # Security scanners, mirroring the CI security workflow so they can be
         # run locally. gosec is already part of goToolchain. nuclei is
         # intentionally absent — DAST runs only in CI against a live server.
@@ -116,7 +121,7 @@
       in
       {
         devShells.default = pkgs.mkShell {
-          packages = goToolchain ++ preCommitTools ++ securityTools ++ frontendToolchain ++ docsToolchain;
+          packages = goToolchain ++ preCommitTools ++ shellToolchain ++ securityTools ++ frontendToolchain ++ docsToolchain;
           shellHook = ''
             export GOPATH="$PWD/.go"
             export GOMODCACHE="$PWD/.gomod"
