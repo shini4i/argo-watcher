@@ -146,7 +146,7 @@ const shutdownTimeout = 10 * time.Second
 // checkConnection.
 //
 // ctx is the caller's remaining shutdown budget: this is one phase of a sequence
-// (see Server.Run), and the phases after it — notably draining queued git
+// (see Server.shutdown), and the phases after it — notably draining queued git
 // write-backs — need what is left of it.
 func (env *Env) Shutdown(ctx context.Context) {
 	if env.shutdownCh != nil {

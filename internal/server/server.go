@@ -173,23 +173,42 @@ func (s *Server) Run() {
 		s.probeCancel()
 	}
 
-	// Stop accepting new connections first and let outstanding HTTP requests
-	// drain (up to 30 seconds), then shut down the WebSocket goroutines. Closing
-	// the listener before env.Shutdown means new handshakes can no longer arrive,
-	// which greatly narrows the window in which a WebSocket handler could call
-	// connWg.Add(1) after env.Shutdown has begun waiting on connWg (a WaitGroup
-	// misuse that could panic during shutdown). It does not fully eliminate it: a
-	// handshake already past the hijack but not yet registered is untracked by
-	// srv.Shutdown, so it can still register in that nanosecond gap — an
-	// acceptable residual given it can only occur on an already-terminating
-	// process. Hijacked WebSocket connections are not waited on by srv.Shutdown;
-	// they are drained by env.Shutdown below.
-	// The three phases below run in sequence and share one deadline, so their total
-	// cannot exceed shutdownBudget. Previously each carried its own independent
-	// timeout, letting the sequence run far longer than any realistic
-	// terminationGracePeriodSeconds — the kubelet then SIGKILLed the process partway
-	// through, which defeats the phase that matters most (draining queued git
-	// write-backs, last in line).
+	s.shutdown(srv)
+
+	slog.Info("server exited")
+}
+
+// httpShutdowner is the one method of *http.Server the shutdown sequence needs.
+// Narrowing it to an interface is what lets the phase budgeting be tested without
+// binding a listener or waiting out a real drain.
+type httpShutdowner interface {
+	Shutdown(ctx context.Context) error
+}
+
+// shutdown runs the ordered drain phases: outstanding HTTP requests, then WebSocket
+// goroutines, then queued git write-backs.
+//
+// Stop accepting new connections first and let outstanding HTTP requests drain,
+// then shut down the WebSocket goroutines. Closing the listener before env.Shutdown
+// means new handshakes can no longer arrive, which greatly narrows the window in
+// which a WebSocket handler could call connWg.Add(1) after env.Shutdown has begun
+// waiting on connWg (a WaitGroup misuse that could panic during shutdown). It does
+// not fully eliminate it: a handshake already past the hijack but not yet registered
+// is untracked by srv.Shutdown, so it can still register in that nanosecond gap — an
+// acceptable residual given it can only occur on an already-terminating process.
+// Hijacked WebSocket connections are not waited on by srv.Shutdown; they are drained
+// by env.Shutdown.
+//
+// The three phases run in sequence and share one deadline, so their total cannot
+// exceed shutdownBudget. Previously each carried its own independent timeout, letting
+// the sequence run far longer than any realistic terminationGracePeriodSeconds — the
+// kubelet then SIGKILLed the process partway through, which defeats the phase that
+// matters most (draining queued git write-backs, last in line).
+//
+// No phase failure short-circuits the sequence: a forced HTTP shutdown is logged and
+// the later phases still get their share, because dropping a queued commit over an
+// unrelated stuck HTTP request would be the worse outcome.
+func (s *Server) shutdown(srv httpShutdowner) {
 	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), shutdownBudget)
 	defer cancelShutdown()
 
@@ -217,6 +236,4 @@ func (s *Server) Run() {
 	if s.updater != nil {
 		s.updater.Close(shutdownCtx)
 	}
-
-	slog.Info("server exited")
 }
