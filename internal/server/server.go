@@ -22,6 +22,18 @@ import (
 	"github.com/shini4i/argo-watcher/internal/updater"
 )
 
+const (
+	// shutdownBudget is the total wall-clock allowance for the whole shutdown
+	// sequence. It must stay below the pod's terminationGracePeriodSeconds
+	// (Kubernetes defaults to 30s) so every phase — including the batch write-back
+	// drain that runs last — gets to finish before the kubelet sends SIGKILL.
+	shutdownBudget = 25 * time.Second
+	// httpDrainBudget caps the HTTP-request drain so the phases after it are not
+	// starved. argo-watcher's handlers are short (task list, add task); long-lived
+	// WebSocket connections are hijacked and drained separately.
+	httpDrainBudget = 8 * time.Second
+)
+
 type Server struct {
 	router      *gin.Engine
 	config      *config.ServerConfig
@@ -161,36 +173,67 @@ func (s *Server) Run() {
 		s.probeCancel()
 	}
 
-	// Stop accepting new connections first and let outstanding HTTP requests
-	// drain (up to 30 seconds), then shut down the WebSocket goroutines. Closing
-	// the listener before env.Shutdown means new handshakes can no longer arrive,
-	// which greatly narrows the window in which a WebSocket handler could call
-	// connWg.Add(1) after env.Shutdown has begun waiting on connWg (a WaitGroup
-	// misuse that could panic during shutdown). It does not fully eliminate it: a
-	// handshake already past the hijack but not yet registered is untracked by
-	// srv.Shutdown, so it can still register in that nanosecond gap — an
-	// acceptable residual given it can only occur on an already-terminating
-	// process. Hijacked WebSocket connections are not waited on by srv.Shutdown;
-	// they are drained by env.Shutdown below.
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	s.shutdown(srv)
 
-	if err := srv.Shutdown(ctx); err != nil {
+	slog.Info("server exited")
+}
+
+// httpShutdowner is the one method of *http.Server the shutdown sequence needs.
+// Narrowing it to an interface is what lets the phase budgeting be tested without
+// binding a listener or waiting out a real drain.
+type httpShutdowner interface {
+	Shutdown(ctx context.Context) error
+}
+
+// shutdown runs the ordered drain phases: outstanding HTTP requests, then WebSocket
+// goroutines, then queued git write-backs.
+//
+// Stop accepting new connections first and let outstanding HTTP requests drain,
+// then shut down the WebSocket goroutines. Closing the listener before env.Shutdown
+// means new handshakes can no longer arrive, which greatly narrows the window in
+// which a WebSocket handler could call connWg.Add(1) after env.Shutdown has begun
+// waiting on connWg (a WaitGroup misuse that could panic during shutdown). It does
+// not fully eliminate it: a handshake already past the hijack but not yet registered
+// is untracked by srv.Shutdown, so it can still register in that nanosecond gap — an
+// acceptable residual given it can only occur on an already-terminating process.
+// Hijacked WebSocket connections are not waited on by srv.Shutdown; they are drained
+// by env.Shutdown.
+//
+// The three phases run in sequence and share one deadline, so their total cannot
+// exceed shutdownBudget. Previously each carried its own independent timeout, letting
+// the sequence run far longer than any realistic terminationGracePeriodSeconds — the
+// kubelet then SIGKILLed the process partway through, which defeats the phase that
+// matters most (draining queued git write-backs, last in line).
+//
+// No phase failure short-circuits the sequence: a forced HTTP shutdown is logged and
+// the later phases still get their share, because dropping a queued commit over an
+// unrelated stuck HTTP request would be the worse outcome.
+func (s *Server) shutdown(srv httpShutdowner) {
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), shutdownBudget)
+	defer cancelShutdown()
+
+	// Phase 1: let outstanding HTTP requests finish. Capped well below the total
+	// because argo-watcher's handlers are short-lived; hijacked WebSocket
+	// connections are not waited on here at all (they are phase 2).
+	httpCtx, cancelHTTP := context.WithTimeout(shutdownCtx, httpDrainBudget)
+	err := srv.Shutdown(httpCtx)
+	cancelHTTP()
+	if err != nil {
 		slog.Error("server forced to shutdown", "error", err)
 	}
 
-	// Now that the listener is closed, signal the WebSocket connection
+	// Phase 2: now that the listener is closed, signal the WebSocket connection
 	// goroutines to stop and wait for them to finish.
-	s.env.Shutdown()
+	wsCtx, cancelWS := context.WithTimeout(shutdownCtx, shutdownTimeout)
+	s.env.Shutdown(wsCtx)
+	cancelWS()
 
-	// Drain any in-flight batch write-backs so queued commits are not abandoned
-	// mid-flush, bounded so a flush stuck on the lock or an unreachable remote
-	// cannot push shutdown past its grace period. No-op when batch mode is disabled.
+	// Phase 3: drain any in-flight batch write-backs so queued commits are not
+	// abandoned mid-flush. Gets whatever the earlier phases left of the budget; Close
+	// also tells retry loops to stop at their next boundary, which removes the
+	// attempts-per-batch multiplier but does not bound one attempt or the number of
+	// queued batches (see Batcher.Close). No-op when batch mode is disabled.
 	if s.updater != nil {
-		drainCtx, drainCancel := context.WithTimeout(context.Background(), 30*time.Second)
-		s.updater.Close(drainCtx)
-		drainCancel()
+		s.updater.Close(shutdownCtx)
 	}
-
-	slog.Info("server exited")
 }

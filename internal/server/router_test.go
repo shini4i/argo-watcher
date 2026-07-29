@@ -823,7 +823,7 @@ func TestWebSocketConnectionIntegration(t *testing.T) {
 
 	// Cleanup: shut down the env (stops checkConnection goroutines), then the HTTP server, then reset connections.
 	t.Cleanup(func() {
-		env.Shutdown()
+		shutdownEnv(env)
 		server.Close()
 		connectionsMutex.Lock()
 		connections = nil
@@ -920,8 +920,8 @@ func TestDeployLockNotifiedOnlyByWatcher(t *testing.T) {
 				lockdown:      lockdown,
 				strategies:    strategies,
 				authenticator: auth.NewAuthenticator(strategies),
-				// Without this, Shutdown has no channel to close, so it waits out the
-				// full shutdownTimeout and leaves the connection goroutine running.
+				// Without this, Shutdown has no channel to close, so it waits out its
+				// whole context and leaves the connection goroutine running.
 				shutdownCh: make(chan struct{}),
 				config: &config.ServerConfig{
 					StaticFilePath: tmpDir,
@@ -932,7 +932,7 @@ func TestDeployLockNotifiedOnlyByWatcher(t *testing.T) {
 
 			server := httptest.NewServer(env.CreateRouter())
 			t.Cleanup(func() {
-				env.Shutdown()
+				shutdownEnv(env)
 				server.Close()
 				connectionsMutex.Lock()
 				connections = nil
@@ -1459,6 +1459,15 @@ func TestSafeFileSystemSymlinkProtection(t *testing.T) {
 	})
 }
 
+// shutdownEnv drains env with the same bound production uses, so a WebSocket
+// goroutine that fails to exit surfaces as a test timeout rather than hanging the
+// run forever on an unbounded wait.
+func shutdownEnv(env *Env) {
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+	env.Shutdown(ctx)
+}
+
 // TestEnvShutdown tests the graceful shutdown functionality.
 func TestEnvShutdown(t *testing.T) {
 	t.Run("shutdown closes channel", func(t *testing.T) {
@@ -1476,7 +1485,7 @@ func TestEnvShutdown(t *testing.T) {
 		}
 
 		// Call shutdown
-		env.Shutdown()
+		env.Shutdown(context.Background())
 
 		// Verify channel is now closed
 		select {
@@ -1493,7 +1502,7 @@ func TestEnvShutdown(t *testing.T) {
 		}
 
 		// Should not panic
-		env.Shutdown()
+		env.Shutdown(context.Background())
 	})
 
 	t.Run("shutdown can be called multiple times safely", func(t *testing.T) {
@@ -1503,9 +1512,9 @@ func TestEnvShutdown(t *testing.T) {
 		}
 
 		// Should not panic when called multiple times
-		env.Shutdown()
-		env.Shutdown()
-		env.Shutdown()
+		env.Shutdown(context.Background())
+		env.Shutdown(context.Background())
+		env.Shutdown(context.Background())
 
 		// Verify channel is closed
 		select {
@@ -1513,6 +1522,26 @@ func TestEnvShutdown(t *testing.T) {
 			// expected - channel is closed
 		default:
 			t.Fatal("channel should be closed")
+		}
+	})
+
+	t.Run("shutdown returns when its context expires", func(t *testing.T) {
+		env := &Env{shutdownCh: make(chan struct{})}
+		// A connection goroutine that never finishes: Shutdown must give up when the
+		// caller's context expires so the phases that follow it still get budget.
+		env.connWg.Add(1)
+		defer env.connWg.Done()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer cancel()
+
+		returned := make(chan struct{})
+		go func() { env.Shutdown(ctx); close(returned) }()
+
+		select {
+		case <-returned:
+		case <-time.After(3 * time.Second):
+			t.Fatal("Shutdown ignored its context deadline")
 		}
 	})
 
@@ -1528,7 +1557,7 @@ func TestEnvShutdown(t *testing.T) {
 		// Start Shutdown in a goroutine and track when it completes
 		shutdownDone := make(chan struct{})
 		go func() {
-			env.Shutdown()
+			env.Shutdown(context.Background())
 			close(shutdownDone)
 		}()
 
@@ -1812,7 +1841,7 @@ func TestConnWgTracking(t *testing.T) {
 	// Trigger shutdown
 	shutdownComplete := make(chan struct{})
 	go func() {
-		env.Shutdown()
+		shutdownEnv(env)
 		close(shutdownComplete)
 	}()
 

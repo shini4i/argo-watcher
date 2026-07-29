@@ -45,6 +45,11 @@ type Batcher struct {
 	// wg tracks in-flight flush goroutines so Close can wait for them to drain.
 	wg     sync.WaitGroup
 	closed bool
+	// drainCh is closed by Close to tell in-flight retry loops to stop after their
+	// current attempt. Without it a single flush can retry for
+	// GIT_OP_TIMEOUT * GIT_MAX_ATTEMPTS and outlive the shutdown deadline, leaving
+	// its requests abandoned without a result.
+	drainCh chan struct{}
 }
 
 // NewBatcher creates a Batcher. maxBatchSize bounds how many apps are committed in
@@ -59,6 +64,7 @@ func NewBatcher(locker lock.Locker, repoCachePath string, maxBatchSize uint, met
 		metrics:       metrics,
 		pending:       make(map[string][]*batchWriteRequest),
 		active:        make(map[string]bool),
+		drainCh:       make(chan struct{}),
 	}
 	b.flushFn = b.flush
 	return b
@@ -154,7 +160,7 @@ func (b *Batcher) flush(batch []*batchWriteRequest) {
 	// operations are bounded by GIT_OP_TIMEOUT per attempt rather than by a
 	// caller context.
 	lockErr := b.locker.WithLock(repoURL, func() error {
-		outcomes = runBatchWriteBack(context.Background(), repo, batch)
+		outcomes = runBatchWriteBack(context.Background(), repo, batch, b.drainCh)
 		return nil
 	})
 	if lockErr != nil {
@@ -182,15 +188,41 @@ func (b *Batcher) deliverAll(batch []*batchWriteRequest, err error) {
 // flush goroutines to drain their pending queues and deliver all results. New
 // Submit calls return errBatcherClosed immediately.
 //
-// The wait is bounded so shutdown cannot exceed the caller's grace period: a flush
-// stuck on the per-repo lock or retrying an unreachable remote could otherwise run
-// for GIT_OP_TIMEOUT × GIT_MAX_ATTEMPTS, well past a typical shutdown deadline and
-// risking a SIGKILL. When ctx expires first, Close returns and the still-running
-// flushes are abandoned (they end when the process does) — the same outcome a hung
-// unbounded drain would force, but without blocking termination.
+// Closing drainCh tells in-flight retry loops to stop at their next retry boundary,
+// so a flush that would otherwise spend GIT_OP_TIMEOUT × GIT_MAX_ATTEMPTS on an
+// unreachable remote instead resolves its requests with errWritebackDraining after
+// the attempt in flight. That is what makes the bounded wait below usually
+// sufficient rather than a near-certain abandonment.
+//
+// It is not a hard bound, in two ways. One attempt is itself capped only by
+// GIT_OP_TIMEOUT (90s by default), which exceeds a typical shutdown budget, so a
+// flush already blocked on a slow remote can outlive ctx. And drainCh is observed
+// only at a retry boundary, never by flushLoop, so batches still queued behind a busy
+// key each get one more full attempt — the drain bounds the retry budget per batch,
+// not the number of queued batches. What the drain reliably removes is the multiplier
+// (attempts per batch), which is what made abandonment near-certain before.
+//
+// Requests abandoned when ctx expires are safe only because Run returns immediately
+// afterwards and the process exits. Do not reuse Close in a context where the process
+// keeps running — an abandoned request never receives a result, and whatever waits on
+// its channel would block forever.
+//
+// Deliberately NOT done: having flushLoop resolve every queued batch on sight of the
+// drain. That would discard write-backs that would have succeeded on their first
+// attempt, trading a real commit for a faster shutdown.
+//
+// The wait is still bounded so shutdown cannot exceed the caller's grace period. When
+// ctx expires first, Close returns and the still-running flushes are abandoned (they
+// end when the process does) — the same outcome a hung unbounded drain would force,
+// but without blocking termination.
+//
+// Close is safe to call more than once.
 func (b *Batcher) Close(ctx context.Context) {
 	b.mu.Lock()
-	b.closed = true
+	if !b.closed {
+		b.closed = true
+		close(b.drainCh)
+	}
 	b.mu.Unlock()
 
 	done := make(chan struct{})

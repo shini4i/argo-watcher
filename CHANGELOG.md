@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   contention-driven, so it adds no latency when a repository is idle.
   `GIT_BATCH_MAX_SIZE` (default `20`) bounds how many applications are committed
   per flush, and the new `gitops_batch_size` metric reports how many were coalesced.
+  On a graceful shutdown, queued write-backs stop retrying at the next retry
+  boundary instead of spending the remaining budget, so their commits get a chance
+  to land; keep `GIT_OP_TIMEOUT` under the shutdown budget so an attempt already in
+  progress can finish too. This protects the commit, not the task's final status —
+  a task interrupted by a restart can still be left `in progress` for the
+  obsolete-task sweep to abort.
 - `state_unavailable` metric: `1` when argo-watcher cannot reach its state backend
   (database), `0` otherwise. It tracks the state backend independently of ArgoCD.
 - The manual deploy lock is now shared across replicas when `STATE_TYPE=postgres`.
@@ -33,6 +39,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Graceful shutdown now completes within a single 25-second budget shared by all of
+  its phases (draining HTTP requests, then WebSocket connections, then queued git
+  write-backs), so it fits inside the Kubernetes default
+  `terminationGracePeriodSeconds` of 30. Each phase previously carried its own
+  independent timeout, letting the sequence run long enough for the kubelet to
+  `SIGKILL` the process partway through — which cut off exactly the work the
+  shutdown sequence exists to finish. Lower the grace period below 30 seconds and
+  the drain can still be cut short; see the troubleshooting guide.
 - Releasing the deploy lock during a scheduled lockdown window now records a
   15-minute override deadline in shared state instead of an in-process timer, so
   the suppression ends at the same instant on every replica and survives a

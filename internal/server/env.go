@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -132,15 +133,22 @@ func watchArgoTransitions(stop <-chan struct{}, interval time.Duration, reason f
 	}
 }
 
-const shutdownTimeout = 10 * time.Second // Maximum time to wait for WebSocket goroutines during shutdown
+// shutdownTimeout caps the WebSocket-drain phase of shutdown. The caller derives
+// the context passed to Shutdown from it, so the phase can also end earlier if the
+// overall shutdown budget (see shutdownBudget) is already spent.
+const shutdownTimeout = 10 * time.Second
 
 // Shutdown gracefully shuts down the server and all WebSocket connections.
 // This method is safe to call multiple times. It blocks until all WebSocket
-// goroutines have finished or the shutdown timeout is reached. If the timeout
-// is reached, some goroutines may still be running but should exit shortly as
-// they observe the closed shutdownCh. Any long-running WebSocket writes are
-// bounded by their own 5-second timeout in checkConnection.
-func (env *Env) Shutdown() {
+// goroutines have finished or ctx expires. If it gives up, some goroutines may
+// still be running but should exit shortly as they observe the closed shutdownCh.
+// Any long-running WebSocket writes are bounded by their own 5-second timeout in
+// checkConnection.
+//
+// ctx is the caller's remaining shutdown budget: this is one phase of a sequence
+// (see Server.shutdown), and the phases after it — notably draining queued git
+// write-backs — need what is left of it.
+func (env *Env) Shutdown(ctx context.Context) {
 	if env.shutdownCh != nil {
 		env.shutdownOnce.Do(func() {
 			close(env.shutdownCh)
@@ -157,8 +165,8 @@ func (env *Env) Shutdown() {
 	select {
 	case <-done:
 		slog.Debug("All WebSocket connections closed gracefully")
-	case <-time.After(shutdownTimeout):
-		slog.Warn("Shutdown timeout reached, some WebSocket goroutines may still be running")
+	case <-ctx.Done():
+		slog.Warn("Shutdown timeout reached, some WebSocket goroutines may still be running", "error", ctx.Err())
 	}
 }
 
