@@ -17,6 +17,8 @@ A short discussion up front avoids the outcomes that waste the most effort:
 
 A rejected PR after a weekend of work is a bad experience for everyone. A two-message issue thread prevents it.
 
+**Security vulnerabilities are the exception: do not open an issue.** Report them privately as described in the [Security Policy](SECURITY.md).
+
 ## What Will Not Be Merged
 
 Low-value drive-by pull requests are closed without detailed review:
