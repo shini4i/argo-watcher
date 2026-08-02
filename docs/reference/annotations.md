@@ -16,6 +16,7 @@ All annotations are prefixed with `argo-watcher/` and are optional unless otherw
 | `argo-watcher/write-back-path` | Application (multi-source only) | `sandbox/charts/demo` | Overrides the write-back path (multi-source only). |
 | `argo-watcher/write-back-filename` | Application | `values-override.yaml` | Overrides the override-file name (default is derived from the app name). |
 | `argo-watcher/fire-and-forget` | Application | `true` | Commits the tag and marks the deployment `deployed` without monitoring status. |
+| `argo-watcher/skip-image-validation` | Application | `true` | Turns off the [fail-fast image check](../operations/troubleshooting.md#image-is-not-part-of-application) for this application, so its deployments wait for the timeout instead. |
 
 See the [Git Integration guide](../guides/gitops-updater.md) for full usage and examples.
 

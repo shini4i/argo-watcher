@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A deployment that requests an image the Argo CD application does not define now
+  fails immediately instead of staying active until the task timeout expires. The
+  usual cause is a misspelled image name or a registry prefix that does not match the
+  manifests; the failure reason lists the images the application does define, so the
+  correct value is visible without opening the Argo CD UI.
+
+  The check compares the request against the application's *desired state* (Argo CD's
+  managed resources), not its running pods, and runs once the application is synced
+  and healthy but the expected image is still missing. Using the desired state is what
+  makes it safe: `status.summary.images` reports only the images of live pods, so a
+  workload that has no pod yet — an untriggered `CronJob`, a `Deployment` scaled to
+  zero — still counts as defining its image and keeps waiting as before. Anything the
+  check cannot resolve keeps waiting too, including a failed lookup or an application
+  whose manifests declare no images at all.
+
+  It is skipped entirely when `ARGO_REFRESH_APP` is `false` or a task sets
+  `refresh: false`, because without a refresh the desired state may be older than the
+  deployment.
+
+  Two kinds of image are part of an application but never appear in the desired state
+  Argo CD reports: images used only by a sync hook (Argo CD omits hook resources), and
+  images named by a custom resource whose workload an operator creates out-of-band.
+  Deploying those would hit the new failure despite being correct, so applications that
+  do should carry the new annotation `argo-watcher/skip-image-validation: "true"`,
+  which turns the check off for that application and restores the previous
+  wait-for-the-timeout behaviour.
+
+### Changed
+
+- The client no longer tells you to check the logs for every failed deployment. The
+  message now defers to the server's reason, which may point at the application or at
+  the deployment request itself.
+
 ## [0.13.0] - 2026-07-30
 
 ### Added

@@ -42,6 +42,28 @@ func TestImageContains(t *testing.T) {
 	}
 }
 
+// TestImageName verifies that ImageName strips tags and digests while leaving a
+// registry host's port intact.
+func TestImageName(t *testing.T) {
+	tests := []struct {
+		reference string
+		expected  string
+	}{
+		{"nginx", "nginx"},
+		{"nginx:1.21.6", "nginx"},
+		{"ghcr.io/shini4i/argo-watcher:v0.13.0", "ghcr.io/shini4i/argo-watcher"},
+		{"registry.example.local:5000/team/app:v1", "registry.example.local:5000/team/app"},
+		{"registry.example.local:5000/team/app", "registry.example.local:5000/team/app"},
+		{"ghcr.io/shini4i/argo-watcher@sha256:" + strings.Repeat("a", 64), "ghcr.io/shini4i/argo-watcher"},
+		{"registry.example.local:5000/team/app:v1@sha256:" + strings.Repeat("b", 64), "registry.example.local:5000/team/app"},
+		{"", ""},
+	}
+
+	for _, test := range tests {
+		assert.Equal(t, test.expected, ImageName(test.reference), "ImageName(%q)", test.reference)
+	}
+}
+
 // TestCurlCommandFromRequest verifies that CurlCommandFromRequest generates
 // a valid cURL command from an HTTP request with headers and body.
 func TestCurlCommandFromRequest(t *testing.T) {

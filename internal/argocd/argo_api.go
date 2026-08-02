@@ -23,6 +23,7 @@ type ArgoApiInterface interface {
 	GetUserInfo() (*models.Userinfo, error)
 	GetApplication(ctx context.Context, app string, refresh bool) (*models.Application, error)
 	GetResourceTree(ctx context.Context, app string) (*models.ApplicationTree, error)
+	GetManagedResources(ctx context.Context, app string) (*models.ManagedResources, error)
 }
 
 type ArgoApi struct {
@@ -236,4 +237,29 @@ func (api *ArgoApi) GetResourceTree(ctx context.Context, app string) (*models.Ap
 	}
 
 	return &tree, nil
+}
+
+// GetManagedResources fetches the desired state of every resource the named application
+// manages, which is what tells whether an image belongs to the application at all.
+// ArgoCD serves it from its application state cache, so no manifests are rendered.
+// The context bounds the request. Like GetResourceTree it does not log: the caller
+// treats any failure as "cannot conclude".
+func (api *ArgoApi) GetManagedResources(ctx context.Context, app string) (*models.ManagedResources, error) {
+	apiUrl := fmt.Sprintf("%s/api/v1/applications/%s/managed-resources", api.baseUrl.String(), url.PathEscape(app))
+
+	body, statusCode, err := api.doGet(ctx, apiUrl)
+	if err != nil {
+		return nil, err
+	}
+
+	if statusCode != http.StatusOK {
+		return nil, parseArgoErrorResponse(statusCode, body)
+	}
+
+	var resources models.ManagedResources
+	if err = json.Unmarshal(body, &resources); err != nil {
+		return nil, fmt.Errorf("could not parse managed-resources response: %w", err)
+	}
+
+	return &resources, nil
 }

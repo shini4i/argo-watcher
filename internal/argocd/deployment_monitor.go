@@ -31,6 +31,33 @@ var errForceRetry = errors.New("force retry")
 // without overwriting the "cancelled" status the newer deployment already wrote.
 var errTaskSuperseded = errors.New("task superseded by a newer deployment")
 
+// ImageNotPartOfAppError reports that a task expects an image the application's desired
+// state never declares, so waiting for it to appear is pointless (issue #519).
+// Image is a repository name without tag or digest, as are DesiredImages.
+type ImageNotPartOfAppError struct {
+	App           string
+	Image         string
+	DesiredImages []string
+}
+
+func (err *ImageNotPartOfAppError) Error() string {
+	return fmt.Sprintf("image %q is not part of application %q", err.Image, err.App)
+}
+
+// Reason renders the user-facing task failure reason.
+func (err *ImageNotPartOfAppError) Reason() string {
+	return fmt.Sprintf(
+		"Application deployment failed. Image %q is not part of application %q.\n\n"+
+			"List of images defined in the application:\n"+
+			"\t%s\n\n"+
+			"The application finished rolling out without this image, so waiting for it would only "+
+			"end in a timeout. Check the image name in the deployment request.",
+		err.Image,
+		err.App,
+		strings.Join(err.DesiredImages, "\n\t"),
+	)
+}
+
 // DeploymentMonitor encapsulates the logic for tracking ArgoCD application rollouts.
 type DeploymentMonitor struct {
 	argo             Argo
@@ -142,6 +169,12 @@ func (monitor *DeploymentMonitor) WaitRollout(task models.Task) (*models.Applica
 
 	slog.Debug("Waiting for rollout", "id", task.Id, "deadline", deadline)
 
+	// The desired-state image check runs at most once per task, on the first poll where
+	// the app has settled without the expected image. It requires refresh: without one
+	// the app status and the desired state both come from ArgoCD's last reconciliation,
+	// which may predate the commit that introduces the image.
+	imagesValidated := false
+
 	err := retry.Do(func() error {
 		// Stop before hitting ArgoCD if a newer deployment superseded this task.
 		// The check is per-iteration: a cancellation that lands mid-iteration is
@@ -163,7 +196,16 @@ func (monitor *DeploymentMonitor) WaitRollout(task models.Task) (*models.Applica
 			return nil
 		}
 
-		return checkRolloutStatus(task, app, monitor.registryProxyUrl, monitor.acceptSuspended)
+		status := app.GetRolloutStatus(task.ListImages(), monitor.registryProxyUrl, monitor.acceptSuspended)
+
+		if !imagesValidated && refresh && shouldValidateDesiredImages(app, status) {
+			imagesValidated = true
+			if imageErr := monitor.validateDesiredImages(ctx, task, app); imageErr != nil {
+				return retry.Unrecoverable(imageErr)
+			}
+		}
+
+		return checkRolloutStatus(task, app, status)
 	}, retryOptions...)
 
 	// Once the retry budget or the wall-clock deadline is exhausted while still polling, surface the
@@ -258,6 +300,19 @@ func (monitor *DeploymentMonitor) HandleArgoAPIFailure(task *models.Task, err er
 	task.Status = finalStatus
 }
 
+// HandleImageNotPartOfApp fails the task immediately instead of letting it run out its
+// timeout waiting for an image the application will never have.
+func (monitor *DeploymentMonitor) HandleImageNotPartOfApp(task *models.Task, imageErr *ImageNotPartOfAppError) {
+	slog.Warn("App deployment failed: expected image is not part of the application.",
+		"image", imageErr.Image, "app", imageErr.App, "id", task.Id)
+	monitor.argo.metrics.AddFailedDeployment(task.App)
+
+	if err := monitor.argo.State.SetTaskStatus(task.Id, models.StatusFailedMessage, imageErr.Reason()); err != nil {
+		slog.Error("Failed to change task status", "error", err, "id", task.Id)
+	}
+	task.Status = models.StatusFailedMessage
+}
+
 func (monitor *DeploymentMonitor) handleDeploymentSuccess(task *models.Task) {
 	slog.Info("App is running on the expected version.", "id", task.Id)
 	monitor.argo.metrics.ResetFailedDeployment(task.App)
@@ -311,10 +366,49 @@ func handleApplicationFetchError(task models.Task, err error) error {
 	return err
 }
 
-// checkRolloutStatus checks if the application completed rollout successfully
-func checkRolloutStatus(task models.Task, application *models.Application, registryProxyUrl string, acceptSuspended bool) error {
-	status := application.GetRolloutStatus(task.ListImages(), registryProxyUrl, acceptSuspended)
+// shouldValidateDesiredImages reports whether the app has finished rolling out yet still
+// lacks an expected image. Only then is the image's absence worth investigating: while the
+// app is unsynced or unhealthy the image may still be on its way.
+func shouldValidateDesiredImages(app *models.Application, status string) bool {
+	return status == models.ArgoRolloutAppNotAvailable &&
+		app.Status.Sync.Status == "Synced" &&
+		app.Status.Health.Status == "Healthy"
+}
 
+// validateDesiredImages returns an *ImageNotPartOfAppError when an expected image is
+// provably absent from the application's desired state. Every uncertainty — the app
+// opted out, the lookup failed, or no images could be read — returns nil so the rollout
+// keeps polling; only positive proof of absence fails the task.
+func (monitor *DeploymentMonitor) validateDesiredImages(ctx context.Context, task models.Task, app *models.Application) error {
+	if app.IsImageValidationSkipped() {
+		return nil
+	}
+
+	resources, err := monitor.argo.api.GetManagedResources(ctx, task.App)
+	if err != nil {
+		slog.Debug("Could not fetch managed resources to validate images", "error", err, "id", task.Id)
+		return nil
+	}
+
+	desired := resources.DesiredImageNames()
+	if len(desired) == 0 {
+		slog.Debug("Application desired state declares no images; skipping validation", "id", task.Id)
+		return nil
+	}
+
+	for index := range task.Images {
+		name := helpers.ImageName(task.Images[index].Image)
+		if helpers.ImagesContains(desired, name, monitor.registryProxyUrl) {
+			continue
+		}
+		return &ImageNotPartOfAppError{App: task.App, Image: name, DesiredImages: desired}
+	}
+
+	return nil
+}
+
+// checkRolloutStatus checks if the application completed rollout successfully
+func checkRolloutStatus(task models.Task, application *models.Application, status string) error {
 	switch status {
 	case models.ArgoRolloutAppDegraded:
 		slog.Debug("Application is degraded", "id", task.Id)
