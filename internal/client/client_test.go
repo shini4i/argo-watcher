@@ -28,6 +28,9 @@ var (
 	cancelledTaskId     = "be8c42c0-a645-11ec-8ea5-f2c4bb72758e"
 	abortedTaskId       = "be8c42c0-a645-11ec-8ea5-f2c4bb727590"
 	unhandledStatusId   = "be8c42c0-a645-11ec-8ea5-f2c4bb72758f"
+
+	failedTaskReason = "Application deployment failed. Image \"ghcr.io/shini4i/typo\" is not part of application \"demo\".\n\n" +
+		"List of images defined in the application:\n\tghcr.io/shini4i/app"
 )
 
 func addTaskHandler(w http.ResponseWriter, r *http.Request) {
@@ -86,11 +89,20 @@ func getTaskStatusHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewEncoder(w).Encode(models.TaskStatus{
-		Status: status,
-		Id:     taskId,
+		Status:       status,
+		Id:           taskId,
+		StatusReason: statusReason(status),
 	}); err != nil {
 		panic(err)
 	}
+}
+
+// statusReason mirrors the server attaching an actionable reason to a terminal status.
+func statusReason(status string) string {
+	if status == models.StatusFailedMessage {
+		return failedTaskReason
+	}
+	return ""
 }
 
 func TestAddTaskServerError(t *testing.T) {
@@ -430,7 +442,14 @@ func TestWaitForDeployment(t *testing.T) {
 		{
 			name:          "Failed deployment",
 			taskId:        failedTaskId,
-			expectedError: "The deployment has failed, please check logs.",
+			expectedError: "The deployment has failed. See the reason below.",
+		},
+		{
+			// The server's reason is the only place the actionable detail lives, so the
+			// client must print it verbatim rather than swallowing it.
+			name:          "Failed deployment surfaces the server reason",
+			taskId:        failedTaskId,
+			expectedError: `Image "ghcr.io/shini4i/typo" is not part of application "demo"`,
 		},
 		{
 			name:          "Application not found",

@@ -23,6 +23,20 @@ func ImagesContains(images []string, image string, registryProxy string) bool {
 	}
 }
 
+// ImageName returns the repository part of a container image reference, with any
+// tag and digest removed ("registry:5000/team/app:v1" -> "registry:5000/team/app").
+// A colon only introduces a tag when it appears after the last path separator, so a
+// registry host's port is preserved.
+func ImageName(reference string) string {
+	name, _, _ := strings.Cut(reference, "@")
+
+	if colon := strings.LastIndex(name, ":"); colon > strings.LastIndex(name, "/") {
+		name = name[:colon]
+	}
+
+	return name
+}
+
 // CurlCommandFromRequest renders an HTTP request as an equivalent cURL command
 // (method, headers, body, URL). The value of any header whose name matches
 // redactHeaders (case-insensitively) is replaced with "<redacted>" so secrets

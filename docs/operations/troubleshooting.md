@@ -60,6 +60,7 @@ Each entry follows the same shape: **Symptom · Likely cause · How to verify ·
 **Likely causes:**
 - The default `DEPLOYMENT_TIMEOUT` (900 seconds / 15 minutes) is too short for the workload.
 - Argo CD is not detecting the image update.
+- The requested image is not part of the application at all. This normally fails immediately rather than timing out — see [Image is not part of application](#image-is-not-part-of-application) for the cases where it cannot be detected.
 - When relying on the built-in GitOps updater: the task was submitted without a valid deploy token or JWT, so the write-back was silently skipped and Argo CD never received the new tag. (If image tags are committed by other means — Argo CD Image Updater, your CI — this is expected and not the cause.)
 
 **How to verify:**
@@ -71,6 +72,37 @@ Each entry follows the same shape: **Symptom · Likely cause · How to verify ·
 1. Increase `DEPLOYMENT_TIMEOUT` to accommodate your typical rollout duration.
 2. If using the built-in GitOps updater, verify the SSH key has write access to the target repository.
 3. Check Argo CD logs for sync errors: `kubectl logs -l app.kubernetes.io/name=argocd-application-controller`.
+
+---
+
+## Image is not part of application
+
+**Symptom:** The deployment fails immediately with `Image "<name>" is not part of application "<app>"`, followed by the list of images the application defines.
+
+**Meaning:** The application finished rolling out — synced and healthy — but its desired state does not declare the requested image at all, so waiting for that image to appear would only burn the task's timeout. Argo Watcher reads the desired state from Argo CD's managed resources, not from the running pods, so a workload that has no pod yet (an untriggered `CronJob`, a `Deployment` scaled to zero) still counts as declaring its image.
+
+**Likely causes:**
+- The image name is misspelled, or the registry prefix does not match what the manifests use.
+- The deployment targets a real but different application — one that exists, so it is not reported as `app not found`, but does not contain this image.
+
+**How to verify:** Compare the requested image with the list in the failure reason, or run `argocd app manifests <app> | grep image:`.
+
+**Fix:** Correct the image name, or the `ARGO_APP`, in the deployment request.
+
+**When the check does not run:** it needs a freshly reconciled application, so it is skipped entirely when `ARGO_REFRESH_APP` is `false` or the task sets `refresh: false`. Without a refresh the desired state may be older than the deployment, and a legitimate image could look absent.
+
+**When the check is wrong:** two kinds of image are part of an application but never appear in the desired state Argo CD reports, so deploying them would hit this failure even though the image name is correct:
+
+- **Images used only by a sync hook.** Argo CD omits hook resources from its managed-resources response, so an image that appears only in, say, a PreSync migration Job is invisible.
+- **Images named by a custom resource.** If the application manages a CR and an operator creates the actual workload from it, that workload is not a managed resource of the application, and the CR usually names the image in a field of its own rather than in a pod template.
+
+Annotate such an application to turn the check off for it. Its deployments then behave exactly as before: they keep polling for the image and fail only when the timeout expires.
+
+```yaml
+metadata:
+  annotations:
+    argo-watcher/skip-image-validation: "true"
+```
 
 ---
 

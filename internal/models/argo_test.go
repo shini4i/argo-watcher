@@ -721,3 +721,23 @@ func TestIsFireAndForgetModeActive(t *testing.T) {
 		})
 	}
 }
+
+func TestIsImageValidationSkipped(t *testing.T) {
+	tt := []struct {
+		name        string
+		annotations map[string]string
+		want        bool
+	}{
+		{"opted out", map[string]string{skipImageValidationAnnotation: "true"}, true},
+		{"explicitly enabled", map[string]string{skipImageValidationAnnotation: "false"}, false},
+		{"other annotations only", map[string]string{managedAnnotation: "true"}, false},
+		{"annotations are nil", nil, false},
+	}
+
+	for _, tc := range tt {
+		t.Run(tc.name, func(t *testing.T) {
+			app := Application{Metadata: ApplicationMetadata{Annotations: tc.annotations}}
+			assert.Equal(t, tc.want, app.IsImageValidationSkipped())
+		})
+	}
+}

@@ -394,6 +394,52 @@ func TestArgoApiGetResourceTreeSuccess(t *testing.T) {
 	assert.Equal(t, `Back-off pulling image "demo:v2": ErrImagePull`, result.Nodes[0].Health.Message)
 }
 
+// TestArgoApiGetManagedResourcesSuccess verifies that GetManagedResources hits the
+// managed-resources endpoint and decodes the desired manifests.
+func TestArgoApiGetManagedResourcesSuccess(t *testing.T) {
+	manifest := `{"kind":"Deployment","spec":{"template":{"spec":{"containers":[{"image":"demo:v1"}]}}}}`
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/v1/applications/demo/managed-resources", r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		require.NoError(t, json.NewEncoder(w).Encode(models.ManagedResources{
+			Items: []models.ManagedResource{{TargetState: manifest}},
+		}))
+	}))
+	defer server.Close()
+
+	parsedURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	api := NewArgoApi()
+	api.baseUrl = *parsedURL
+	api.client = server.Client()
+	api.maxRetries = 1
+
+	result, err := api.GetManagedResources(context.Background(), "demo")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"demo"}, result.DesiredImageNames())
+}
+
+// TestArgoApiGetManagedResourcesError verifies a non-200 response surfaces as an error.
+func TestArgoApiGetManagedResourcesError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer server.Close()
+
+	parsedURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	api := NewArgoApi()
+	api.baseUrl = *parsedURL
+	api.client = server.Client()
+	api.maxRetries = 1
+
+	_, err = api.GetManagedResources(context.Background(), "demo")
+	require.Error(t, err)
+}
+
 // TestArgoApiGetResourceTreeError verifies a non-200 response surfaces as an error.
 func TestArgoApiGetResourceTreeError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

@@ -13,6 +13,7 @@
 #   task=<json>            deploy payload (app/author/project/timeout/images)  (required)
 #   token=<0|1>            send the deploy token (enables write-back); default 1
 #   expect=<substring>     a substring that MUST appear in the client output (repeatable)
+#   max_seconds=<n>        optional: the client must return within n seconds
 #   setup / teardown       optional: names of functions run before/after the scenario
 # The runner runs the client, captures its combined output + exit code, and greps.
 #
@@ -121,10 +122,31 @@ scenario_failed_presync_hook() {
 setup_failed_presync_hook()    { "${here}/hook-fixture.sh" add app3; return; }
 teardown_failed_presync_hook() { "${here}/hook-fixture.sh" remove app3; restore_good_tag app3; return; }
 
+# An image name the app never declares must fail RIGHT AWAY (issue #519) instead of burning
+# the task timeout. token=0 keeps the app green and synced, which is exactly the state the
+# desired-state check requires. max_seconds guards the point of the feature: the generous
+# timeout below must NOT be waited out.
+#
+# Contrast with scenario_unvalidated_not_available above, which uses the app's REAL image name
+# with an unreachable tag — that one must still wait, because the name is in the desired state.
+#
+# Depends on the lab leaving ARGO_REFRESH_APP at its default (true): the check is skipped
+# without a refresh, and this scenario would then wait out its timeout and trip max_seconds.
+scenario_image_not_part_of_app() {
+  echo "task={\"app\":\"app2\",\"author\":\"e2e\",\"project\":\"lab\",\"timeout\":120,\"images\":[{\"image\":\"ghcr.io/shini4i/not-in-this-app\",\"tag\":\"v1\"}]}"
+  echo "token=0"
+  echo "expect=is not part of application"
+  echo "expect=List of images defined in the application:"
+  echo "expect=${IMAGE}"
+  echo "max_seconds=60"
+  return
+}
+
 SCENARIOS=(
   scenario_bad_image
   scenario_unvalidated_not_available
   scenario_failed_presync_hook
+  scenario_image_not_part_of_app
 )
 
 # --- runner -----------------------------------------------------------------
@@ -135,12 +157,15 @@ for scenario in "${SCENARIOS[@]}"; do
   token=$(sed -n 's/^token=//p' <<<"$spec"); token="${token:-1}"
   setup=$(sed -n 's/^setup=//p' <<<"$spec")
   teardown=$(sed -n 's/^teardown=//p' <<<"$spec")
+  max_seconds=$(sed -n 's/^max_seconds=//p' <<<"$spec")
   mapfile -t expects < <(sed -n 's/^expect=//p' <<<"$spec")
 
   [[ -n "$setup" ]] && { echo "  setup: $setup"; "$setup"; }
 
+  started=$(date +%s)
   out=$(scenario_client "$task" "$token"); rc=$?
-  echo "  client exit=${rc}"
+  elapsed=$(( $(date +%s) - started ))
+  echo "  client exit=${rc} elapsed=${elapsed}s"
   # shellcheck disable=SC2001  # per-line prefix needs a regex anchor; ${//} can't do it
   echo "  client output: $(sed 's/^/    | /' <<<"$out")"
 
@@ -152,6 +177,14 @@ for scenario in "${SCENARIOS[@]}"; do
       bad "client output missing «${want}»"
     fi
   done
+
+  if [[ -n "$max_seconds" ]]; then
+    if [[ "$elapsed" -le "$max_seconds" ]]; then
+      ok "client returned in ${elapsed}s (<= ${max_seconds}s)"
+    else
+      bad "client took ${elapsed}s, expected <= ${max_seconds}s"
+    fi
+  fi
 
   [[ -n "$teardown" ]] && { echo "  teardown: $teardown"; "$teardown"; }
 done

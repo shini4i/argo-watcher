@@ -121,7 +121,11 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 
 	application, err := updater.waitForApplicationDeployment(task)
 
+	var imageErr *ImageNotPartOfAppError
+
 	switch {
+	case errors.As(err, &imageErr):
+		updater.monitor.HandleImageNotPartOfApp(&task, imageErr)
 	case errors.Is(err, errTaskSuperseded):
 		// A newer deployment for the same app already marked this task "cancelled"
 		// in the shared state (possibly on another replica). Stop without writing a

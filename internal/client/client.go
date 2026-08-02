@@ -153,7 +153,7 @@ func (watcher *Watcher) waitForDeployment(id, appName, version string) error {
 
 		switch taskInfo.Status {
 		case models.StatusFailedMessage:
-			return fmt.Errorf("The deployment has failed, please check logs.\n%s", taskInfo.StatusReason)
+			return fmt.Errorf("The deployment has failed. See the reason below.\n%s", taskInfo.StatusReason)
 		case models.StatusCancelledMessage:
 			return fmt.Errorf("The deployment was cancelled because a newer deployment superseded it.\n%s", taskInfo.StatusReason)
 		case models.StatusInProgressMessage:

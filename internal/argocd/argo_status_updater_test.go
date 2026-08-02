@@ -79,6 +79,7 @@ func zeroDelay(_ uint, _ error, _ *retry.Config) time.Duration {
 func newArgoApiMock(ctrl *gomock.Controller) *mocks.MockArgoApiInterface {
 	api := mocks.NewMockArgoApiInterface(ctrl)
 	api.EXPECT().GetResourceTree(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+	api.EXPECT().GetManagedResources(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 	return api
 }
 
@@ -1494,14 +1495,14 @@ func TestCheckRolloutStatus(t *testing.T) {
 	app.Status.Health.Status = "Healthy"
 
 	t.Run("returnsNilOnSuccess", func(t *testing.T) {
-		err := checkRolloutStatus(task, app, "", false)
+		err := checkRolloutStatus(task, app, app.GetRolloutStatus(task.ListImages(), "", false))
 		assert.NoError(t, err)
 	})
 
 	t.Run("returnsForceRetryOnPending", func(t *testing.T) {
 		pending := *app
 		pending.Status.Health.Status = "Progressing"
-		err := checkRolloutStatus(task, &pending, "", false)
+		err := checkRolloutStatus(task, &pending, pending.GetRolloutStatus(task.ListImages(), "", false))
 		require.Error(t, err)
 		assert.True(t, retry.IsRecoverable(err))
 	})
@@ -1514,7 +1515,7 @@ func TestCheckRolloutStatus(t *testing.T) {
 		taskCopy := task
 		taskCopy.SavedAppStatus.ImagesHash = helpers.GenerateHash("example.com/app:v1")
 
-		err := checkRolloutStatus(taskCopy, &degraded, "", false)
+		err := checkRolloutStatus(taskCopy, &degraded, degraded.GetRolloutStatus(taskCopy.ListImages(), "", false))
 		require.Error(t, err)
 		assert.False(t, retry.IsRecoverable(err))
 	})
@@ -1528,7 +1529,7 @@ func TestCheckRolloutStatus(t *testing.T) {
 		taskCopy := task
 		taskCopy.SavedAppStatus.ImagesHash = hash
 
-		err := checkRolloutStatus(taskCopy, &degraded, "", false)
+		err := checkRolloutStatus(taskCopy, &degraded, degraded.GetRolloutStatus(taskCopy.ListImages(), "", false))
 		require.Error(t, err)
 		assert.True(t, retry.IsRecoverable(err))
 	})
