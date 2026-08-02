@@ -19,16 +19,16 @@ type ManagedResources struct {
 }
 
 // ManagedResource carries a resource's desired manifest, JSON-serialized as rendered
-// from the application source. TargetState is empty for a resource that exists only
-// in the cluster.
+// from the application source. TargetState is the string "null" for a resource that
+// exists only in the cluster.
 type ManagedResource struct {
 	TargetState string `json:"targetState"`
 }
 
 // DesiredImageNames returns the sorted, de-duplicated repository names (tags and
 // digests stripped) of every container image declared in the application's desired
-// state. An item whose target state is empty or unparsable is skipped, so one bad
-// manifest never hides the images the rest of them declare.
+// state. An unreadable item is skipped rather than aborting the walk: ArgoCD marshals
+// every target state, so an item that fails to decode carries nothing to read anyway.
 func (resources *ManagedResources) DesiredImageNames() []string {
 	if resources == nil {
 		return nil
