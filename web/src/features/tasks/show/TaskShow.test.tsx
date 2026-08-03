@@ -113,6 +113,71 @@ describe('TaskShow', () => {
     expect(screen.getByRole('button', { name: /Refresh/i })).toBeInTheDocument();
   });
 
+  describe('project field', () => {
+    it('renders a plain project as text', async () => {
+      mockUseGetOne.mockReturnValue({
+        data: buildTask({ project: 'demo' }),
+        isLoading: false,
+        isError: false,
+        refetch: vi.fn(),
+      });
+
+      await renderWithRouter('/task/task-1');
+      expect(screen.getByText('demo')).toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'demo' })).not.toBeInTheDocument();
+    });
+
+    it('starts the project link on its own line below the label', async () => {
+      mockUseGetOne.mockReturnValue({
+        data: buildTask({ project: 'https://project.example.com/' }),
+        isLoading: false,
+        isError: false,
+        refetch: vi.fn(),
+      });
+
+      await renderWithRouter('/task/task-1');
+
+      // An inline value such as a link would otherwise share the label's line.
+      const label = screen.getByText('Project');
+      expect(label).toHaveStyle({ display: 'block' });
+      expect(label.nextElementSibling).toBe(
+        screen.getByRole('link', { name: 'project.example.com' }),
+      );
+    });
+
+    it('falls back to an em-dash when the task has no project', async () => {
+      mockUseGetOne.mockReturnValue({
+        data: buildTask({ project: '' }),
+        isLoading: false,
+        isError: false,
+        refetch: vi.fn(),
+      });
+
+      await renderWithRouter('/task/task-1');
+
+      expect(screen.getByText('Project').nextElementSibling).toHaveTextContent('—');
+      expect(screen.queryByRole('link', { name: /project/i })).not.toBeInTheDocument();
+    });
+
+    it('wraps a long project url instead of overflowing the card', async () => {
+      const project = 'https://a-very-long-project-hostname.example.com/some/deep/path';
+      mockUseGetOne.mockReturnValue({
+        data: buildTask({ project }),
+        isLoading: false,
+        isError: false,
+        refetch: vi.fn(),
+      });
+
+      await renderWithRouter('/task/task-1');
+
+      const link = screen.getByRole('link', {
+        name: 'a-very-long-project-hostname.example.com/some/deep/path',
+      });
+      expect(link).toHaveAttribute('href', project);
+      expect(link).toHaveStyle({ overflowWrap: 'anywhere' });
+    });
+  });
+
   describe('rollback details', () => {
     it('does not render the rollback field for a regular deployment', async () => {
       mockUseGetOne.mockReturnValue({

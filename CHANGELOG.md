@@ -51,6 +51,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refreshed, so a pill could keep claiming a task was in progress after it finished.
   While the counts are still loading, the pills show `—` rather than `0`.
 
+- An image tag in the recent-tasks list no longer spills out of its badge. A tag
+  containing a hyphen, such as `895-public`, could break after the hyphen and draw its
+  second half below the badge; tags now stay on one line. A tag too long to fit is
+  trimmed with an ellipsis instead of squeezing the image name out of the column, and
+  the untrimmed value is available as a tooltip.
+
+- On the task details page, a project that is a URL now starts on its own line below
+  the `PROJECT` label instead of running on from it, and a long URL wraps rather than
+  overflowing the card.
+
 ## [0.13.0] - 2026-07-30
 
 ### Added
