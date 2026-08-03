@@ -246,7 +246,16 @@ func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) ([]ret
 	}
 
 	if task.Timeout <= 0 {
-		slog.Debug("Task timeout is non-positive, defaulting to a fixed attempt count", "attempts", defaultAttempts, "id", task.Id)
+		// A zero timeout is the norm: the field is omitted whenever a client leaves TASK_TIMEOUT
+		// unset, so it stays at debug. A negative one can only come from a malformed request and
+		// is worth surfacing.
+		if task.Timeout < 0 {
+			slog.Warn("Ignoring negative task timeout, falling back to the instance default",
+				"timeout_seconds", task.Timeout, "attempts", defaultAttempts, "id", task.Id)
+		} else {
+			slog.Debug("No per-task timeout override, using the instance default",
+				"attempts", defaultAttempts, "id", task.Id)
+		}
 		return append(retryOptions, retry.Attempts(defaultAttempts)), helpers.MulDurationSaturating(defaultAttempts, delay)
 	}
 
