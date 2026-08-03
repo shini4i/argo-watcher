@@ -1,13 +1,17 @@
 package argocd
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1778,6 +1782,133 @@ func TestDeploymentMonitor_configureRetryOptions(t *testing.T) {
 		assert.Equal(t, 5, attempts, "Should use the configured defaultAttempts when timeout is zero")
 		assert.Equal(t, 5*ArgoSyncRetryDelay, deadline, "Default-attempts deadline should be attempts*delay")
 	})
+}
+
+// TestDeploymentMonitor_configureRetryOptionsLogging pins the log severity for a missing
+// versus a malformed per-task timeout. Omitting "timeout" is the common case for clients
+// that never set TASK_TIMEOUT, so it must stay at debug; a negative value is a bad request
+// and has to be visible at warn level.
+func TestDeploymentMonitor_configureRetryOptionsLogging(t *testing.T) {
+	newMonitor := func() *DeploymentMonitor {
+		monitor := NewDeploymentMonitor(
+			Argo{},
+			"",
+			[]retry.Option{retry.DelayType(retry.FixedDelay), retry.Delay(0)},
+			false,
+			ArgoSyncRetryDelay,
+		)
+		monitor.defaultAttempts = 61
+		return monitor
+	}
+
+	t.Run("missingTimeoutLogsAtDebug", func(t *testing.T) {
+		logs := captureDebugLogs(t)
+
+		newMonitor().configureRetryOptions(models.Task{Id: "test-id", Timeout: 0})
+
+		record := findLogRecord(t, logs, "No per-task timeout override, using the instance default")
+		assert.Equal(t, "DEBUG", record["level"])
+		assert.Equal(t, float64(61), record["attempts"], "the substituted budget must be visible")
+		assert.Equal(t, "test-id", record["id"])
+		assert.NotContains(t, logs.String(), "Ignoring negative task timeout")
+	})
+
+	t.Run("negativeTimeoutLogsAtWarn", func(t *testing.T) {
+		logs := captureDebugLogs(t)
+
+		newMonitor().configureRetryOptions(models.Task{Id: "test-id", Timeout: -5})
+
+		record := findLogRecord(t, logs, "Ignoring negative task timeout, falling back to the instance default")
+		assert.Equal(t, "WARN", record["level"])
+		assert.Equal(t, float64(-5), record["timeout_seconds"], "the rejected value must be named")
+		assert.Equal(t, float64(61), record["attempts"])
+		assert.Equal(t, "test-id", record["id"], "the warning is only actionable with the task id")
+	})
+
+	// A timeout that is set must keep taking the override path at debug: mis-scoping the
+	// new condition would warn on every normal deployment while leaving the attempt math
+	// — and therefore every other test here — untouched.
+	t.Run("positiveTimeoutLogsOverrideAtDebug", func(t *testing.T) {
+		logs := captureDebugLogs(t)
+
+		newMonitor().configureRetryOptions(models.Task{Id: "test-id", Timeout: 30})
+
+		record := findLogRecord(t, logs, "Overriding task timeout")
+		assert.Equal(t, "DEBUG", record["level"])
+		assert.Equal(t, float64(30), record["timeout_seconds"])
+		assert.NotContains(t, logs.String(), "Ignoring negative task timeout")
+		assert.NotContains(t, logs.String(), "No per-task timeout override")
+	})
+}
+
+// findLogRecord returns the captured JSON log record whose "msg" equals want, failing the
+// test when none matches. Matching per record keeps a level assertion tied to the message
+// it describes, rather than to whatever else shared the global logger during the test.
+func findLogRecord(t *testing.T, logs *logBuffer, want string) map[string]any {
+	t.Helper()
+
+	for _, line := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
+		if line == "" {
+			continue
+		}
+		var record map[string]any
+		require.NoError(t, json.Unmarshal([]byte(line), &record), "captured log line is not JSON: %s", line)
+		if record["msg"] == want {
+			return record
+		}
+	}
+
+	require.FailNowf(t, "log record not found", "no record with msg %q in:\n%s", want, logs.String())
+	return nil
+}
+
+// captureDebugLogs redirects the default logger into a buffer at debug level for the
+// duration of the test, verifying the capture is live before returning so an assertion
+// on the buffer cannot pass vacuously.
+//
+// Not safe under t.Parallel: it swaps the process-global default logger, so anything
+// else running concurrently in this binary logs into the same buffer. Assert on the
+// specific message, not on a bare level. Call it after registering any cleanup that
+// logs: t.Cleanup runs LIFO, so registering the capture last restores the real logger
+// before that cleanup logging runs.
+func captureDebugLogs(t *testing.T) *logBuffer {
+	t.Helper()
+
+	logs := &logBuffer{}
+	previous := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	slog.SetDefault(slog.New(slog.NewJSONHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
+
+	slog.Debug("capture-live")
+	require.Contains(t, logs.String(), "capture-live", "debug log capture is not working")
+	logs.reset()
+
+	return logs
+}
+
+// logBuffer is a concurrency-safe io.Writer holding everything the logger emitted.
+type logBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *logBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+// String returns everything captured so far.
+func (b *logBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+func (b *logBuffer) reset() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.buf.Reset()
 }
 
 func boolPtr(b bool) *bool { return &b }

@@ -41,6 +41,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The client no longer tells you to check the logs for every failed deployment. The
   message now defers to the server's reason, which may point at the application or at
   the deployment request itself.
+- A deployment that carries no `timeout` no longer logs that the task timeout is
+  "non-positive", which read as a rejected value even though omitting the field is the
+  normal case for clients that leave `TASK_TIMEOUT` unset. Debug logs now say the
+  instance default is in use. A genuinely negative `timeout` is a malformed request and
+  is logged as a warning, naming the value that was ignored.
 
 ### Fixed
 
@@ -50,13 +55,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tab whose status had none — and the per-status counts were fetched once and never
   refreshed, so a pill could keep claiming a task was in progress after it finished.
   While the counts are still loading, the pills show `—` rather than `0`.
-
 - An image tag in the recent-tasks list no longer spills out of its badge. A tag
   containing a hyphen, such as `895-public`, could break after the hyphen and draw its
   second half below the badge; tags now stay on one line. A tag too long to fit is
   trimmed with an ellipsis instead of squeezing the image name out of the column, and
   the untrimmed value is available as a tooltip.
-
 - On the task details page, a project that is a URL now starts on its own line below
   the `PROJECT` label instead of running on from it, and a long URL wraps rather than
   overflowing the card.
