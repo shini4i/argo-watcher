@@ -44,9 +44,12 @@ const {
   };
 });
 
+const refreshMock = vi.fn();
+
 vi.mock('react-admin', () => ({
   List: ListMock,
   Pagination: PaginationMock,
+  useRefresh: () => refreshMock,
   // SearchFilteredView + TaskListLayout body both read useListContext; expose a
   // mutable stub so individual tests can drive the empty/populated branches.
   useListContext: () => listContextRef.current,
@@ -65,6 +68,7 @@ describe('TaskListLayout', () => {
     listCalls.length = 0;
     listContextRef.current = { data: [] };
     readPersistentPerPageMock.mockReset();
+    refreshMock.mockReset();
   });
 
   it('fills react-admin list props and renders header content when provided', () => {
@@ -199,8 +203,10 @@ describe('TaskListLayout', () => {
     expect(screen.queryByTestId('datagrid')).not.toBeInTheDocument();
     expect(screen.queryByTestId('empty-state')).not.toBeInTheDocument();
 
+    // Retry must reload every active query: the toolbar's status counts come
+    // from their own query, and a list-only refetch would leave them stuck.
     screen.getByRole('button', { name: 'Retry' }).click();
-    expect(refetch).toHaveBeenCalledTimes(1);
+    expect(refreshMock).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the populated grid (not the error panel) when a refetch fails with rows already loaded', () => {

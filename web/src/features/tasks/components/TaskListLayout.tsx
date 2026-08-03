@@ -1,6 +1,6 @@
 import { Children, isValidElement, type ReactNode } from 'react';
 import { Box, Stack } from '@mui/material';
-import { List, Pagination, useListContext, type ListProps } from 'react-admin';
+import { List, Pagination, useListContext, useRefresh, type ListProps } from 'react-admin';
 import { PerPagePersistence, readPersistentPerPage } from '../../../shared/hooks/usePersistentPerPage';
 import { EmptyState, EmptyStateCta } from './EmptyState';
 import { SearchFilteredView } from './SearchFilteredView';
@@ -40,6 +40,8 @@ interface TaskListLayoutProps {
  * there is nothing to show. react-admin keeps the previously loaded rows across
  * a refetch, so a transient auto-refresh failure keeps the populated grid (the
  * error is surfaced via react-admin's notification) instead of blanking it.
+ * Its retry reloads every active query so the header's status counts recover
+ * along with the rows.
  */
 const ListBody = ({
   emptyComponent,
@@ -48,8 +50,12 @@ const ListBody = ({
   emptyComponent: ReactNode | false;
   children: ReactNode;
 }) => {
-  const { isPending, total, filterValues, error, refetch } = useListContext();
+  const { isPending, total, filterValues, error } = useListContext();
   const hasFilters = Object.keys(filterValues ?? {}).length > 0;
+  // Retry has to reload every active query, not just the list: the toolbar's
+  // status counts come from their own query, and a list-only refetch would
+  // repopulate the grid while the pills stayed stuck on the failed fetch.
+  const refresh = useRefresh();
 
   if (error && !isPending && total === 0) {
     return (
@@ -57,7 +63,7 @@ const ListBody = ({
         icon="error"
         title="Couldn’t load tasks"
         description="The request failed or timed out. Check that the server is reachable, then try again."
-        cta={<EmptyStateCta label="Retry" onClick={() => refetch()} />}
+        cta={<EmptyStateCta label="Retry" onClick={refresh} />}
       />
     );
   }
