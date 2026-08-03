@@ -23,30 +23,32 @@ const TABS: ReadonlyArray<TabSpec> = [
   { id: 'failed', label: 'Failed', statusFilter: 'failed' },
 ];
 
+// staleTime only dedupes mounts and tab switches: the toolbar's refresh
+// invalidates the query, and invalidation refetches regardless of staleTime, so
+// this is not a ceiling on how often the wide page below is fetched.
 const STATUS_QUERY_OPTS = {
   staleTime: 30_000,
   retry: false,
   refetchOnWindowFocus: false,
 } as const;
 
-/**
- * Single `useGetList` call (no status filter) with a wide page so we can
- * group statuses client-side. Cached for 30 s. When the deployment has more
- * tasks than `perPage`, `data.length < total` and the returned `truncated`
- * flag tells the caller to append a "+" so the user knows the pill is a
- * lower bound rather than an exact count.
- */
+/** Page size of the count query — the ceiling on client-side status grouping. */
 const TASK_COUNT_PAGE_SIZE = 1000;
 
 interface StatusCountSnapshot {
+  /** Task count for the parent filters with the status filter ignored. */
+  readonly total: number;
   readonly counts: Map<string, number>;
+  /** True when the counts are lower bounds because the page cut the result set. */
   readonly truncated: boolean;
+  /** True until the first snapshot lands, so pills can avoid claiming zero. */
+  readonly unavailable: boolean;
 }
 
 /**
- * Strips the status entry from the parent list filter so per-status counts
- * reflect every status (instead of only the currently selected pill) while
- * still respecting the user's app/time-range filters.
+ * Strips the status entry from the parent list filter so all counts reflect
+ * every status (instead of only the currently selected pill) while still
+ * respecting the user's app/time-range filters.
  */
 const dropStatusFilter = (filter: Record<string, unknown>): Record<string, unknown> => {
   if (!('status' in filter)) return filter;
@@ -55,10 +57,18 @@ const dropStatusFilter = (filter: Record<string, unknown>): Record<string, unkno
   return next;
 };
 
+/**
+ * Counts tasks per status from a single `useGetList` call that inherits the
+ * parent list's filters minus `status`, so one query feeds every pill.
+ *
+ * `total` is the backend's own count and stays exact whatever the page size.
+ * The per-status counts are grouped from the fetched rows, so a result set wider
+ * than `TASK_COUNT_PAGE_SIZE` makes them lower bounds and sets `truncated`.
+ */
 const useTaskStatusCounts = (): StatusCountSnapshot => {
   const { filterValues } = useListContext<Task>();
   // Re-issue the count query whenever the parent's non-status filters change so
-  // counts stay scoped to the same tasks the All pill reports via listTotal.
+  // every pill stays scoped to the same set of tasks.
   const filter = useMemo(
     () => dropStatusFilter((filterValues ?? {}) as Record<string, unknown>),
     [filterValues],
@@ -75,25 +85,34 @@ const useTaskStatusCounts = (): StatusCountSnapshot => {
       if (!task.status) return;
       counts.set(task.status, (counts.get(task.status) ?? 0) + 1);
     });
-    const truncated = Array.isArray(data) && typeof total === 'number' && data.length < total;
-    return { counts, truncated };
+    const resolvedTotal = typeof total === 'number' ? total : 0;
+    const loaded = Array.isArray(data);
+    const truncated = loaded && data.length < resolvedTotal;
+    return { total: resolvedTotal, counts, truncated, unavailable: !loaded };
   }, [data, total]);
 };
+
+// A pending or failed count query must not render as "0" — that reads as "no
+// such tasks" next to a populated grid. `retry` is off, so a failed first fetch
+// keeps the placeholder until the next refresh; once a snapshot has landed,
+// react-query keeps it and later failures leave the last known counts on screen.
+const COUNT_UNAVAILABLE = '—';
 
 const formatCount = (n: number, truncated: boolean) => (truncated ? `${n}+` : String(n));
 
 /**
- * Pill-tab row for filtering the recent list by status. The "All" total comes
- * from the parent list context; per-status counts come from one cached
- * `useGetList` query that we group by status in memory.
+ * Pill-tab row for filtering the recent list by status. Every count — "All"
+ * included — comes from one cached `useGetList` query that ignores the status
+ * filter, so selecting a pill never rewrites the other pills' numbers. The
+ * parent list context is deliberately not used for "All": its total honours the
+ * active status filter and would read 0 on a tab whose status has no tasks.
  */
 export const StatusTabs = ({ value, onChange }: StatusTabsProps) => {
   const theme = useTheme();
-  const { total: listTotal = 0 } = useListContext<Task>();
-  const { counts: statusCounts, truncated } = useTaskStatusCounts();
+  const { total, counts: statusCounts, truncated, unavailable } = useTaskStatusCounts();
 
   const counts: Record<string, number> = {
-    all: listTotal,
+    all: total,
     'in progress': statusCounts.get('in progress') ?? 0,
     failed: statusCounts.get('failed') ?? 0,
   };
@@ -115,9 +134,9 @@ export const StatusTabs = ({ value, onChange }: StatusTabsProps) => {
       {TABS.map(tab => {
         const isActive = (value ?? null) === (tab.id ?? null);
         const count = counts[tab.id ?? 'all'] ?? 0;
-        // The "All" pill comes from useListContext.total which is exact for
-        // the visible page; only the status-grouped pills are subject to the
-        // perPage truncation, so don't suffix the All count with "+".
+        // The "All" pill is the query's own total, which is exact regardless of
+        // perPage; only the status-grouped pills are counted from the fetched
+        // rows and thus subject to truncation, so only they get the "+".
         const showTruncation = tab.id !== null && truncated;
         const isDark = theme.palette.mode === 'dark';
         const activeBg = isDark ? theme.palette.background.paper : tokens.surface;
@@ -149,9 +168,14 @@ export const StatusTabs = ({ value, onChange }: StatusTabsProps) => {
               transition: 'background-color 150ms ease, color 150ms ease',
             }}
           >
-            {tab.label}
+            {/* Whitespace-only text nodes generate no flex item, so this
+                separates label from count in the accessible name only. */}
+            {tab.label}{' '}
             <Typography
               component="span"
+              // The placeholder glyph is announced as "em dash" at best, so give
+              // screen readers the reason for the missing number instead.
+              aria-label={unavailable ? 'count unavailable' : undefined}
               sx={{
                 fontFamily: tokens.fontMono,
                 fontSize: 11,
@@ -162,7 +186,7 @@ export const StatusTabs = ({ value, onChange }: StatusTabsProps) => {
                 color: isActive ? tokens.accent : 'inherit',
               }}
             >
-              {formatCount(count, showTruncation)}
+              {unavailable ? COUNT_UNAVAILABLE : formatCount(count, showTruncation)}
             </Typography>
           </button>
         );

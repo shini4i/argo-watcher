@@ -7,6 +7,17 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { Task } from '../../../data/types';
 import { RecentTasksToolbar } from './RecentTasksToolbar';
 
+// useRefresh needs a QueryClientProvider ancestor; stub just that hook so the
+// toolbar can render against a bare ListContextProvider. Its invalidate-and-
+// refetch semantics — what makes the status counts reload with the list — come
+// from ra-core/react-query and are out of reach at this level.
+const refreshMock = vi.fn();
+
+vi.mock('react-admin', async importOriginal => ({
+  ...(await importOriginal<typeof import('react-admin')>()),
+  useRefresh: () => refreshMock,
+}));
+
 vi.mock('./ApplicationFilter', () => ({
   ApplicationFilter: ({ value, onChange }: { value: string; onChange: (next: string) => void }) => (
     <input
@@ -117,13 +128,14 @@ const renderToolbar = (initialEntry: string, filterValues: Record<string, unknow
     </MemoryRouter>,
   );
 
-  return { setFilters, refetch, ...result };
+  return { setFilters, ...result };
 };
 
 describe('RecentTasksToolbar', () => {
   beforeEach(() => {
     capturedLocation = undefined;
     localStorage.clear();
+    refreshMock.mockReset();
     taskListContextState.searchQuery = '';
     taskListContextState.setSearchQuery.mockReset();
   });
@@ -170,11 +182,10 @@ describe('RecentTasksToolbar', () => {
     expect(params.has('app')).toBe(false);
   });
 
-  it('forwards manual refresh to refetch', () => {
-    const { refetch } = renderToolbar('/');
-    refetch.mockClear();
+  it('delegates manual refresh to react-admin useRefresh', () => {
+    renderToolbar('/');
     fireEvent.click(screen.getByRole('button', { name: /refresh now/i }));
-    expect(refetch).toHaveBeenCalledTimes(1);
+    expect(refreshMock).toHaveBeenCalledTimes(1);
   });
 
   it('writes filterValues.status when a status tab is selected', async () => {

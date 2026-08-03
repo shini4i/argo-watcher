@@ -3,9 +3,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { StatusTabs } from './StatusTabs';
 
 const useGetListMock = vi.fn();
+const listContext: { total: number; filterValues: Record<string, unknown> } = {
+  total: 412,
+  filterValues: { app: 'demo' },
+};
 
 vi.mock('react-admin', () => ({
-  useListContext: () => ({ total: 412, filterValues: { app: 'demo' } }),
+  useListContext: () => listContext,
   useGetList: (...args: unknown[]) => useGetListMock(...args),
 }));
 
@@ -25,16 +29,34 @@ const sampleData = [
 
 describe('StatusTabs', () => {
   beforeEach(() => {
+    listContext.total = 412;
+    listContext.filterValues = { app: 'demo' };
     useGetListMock.mockReset();
-    useGetListMock.mockReturnValue({ data: sampleData });
+    useGetListMock.mockReturnValue({ data: sampleData, total: sampleData.length });
   });
+
+  // The count renders inside the tab button, so each tab's accessible name is
+  // "<label> <count>" — asserting on the whole name pins a number to its pill.
+  const expectTabCounts = (all: string, inProgress: string, failed: string) => {
+    expect(screen.getByRole('tab', { name: `All ${all}` })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: `In progress ${inProgress}` })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: `Failed ${failed}` })).toBeInTheDocument();
+  };
 
   it('renders three tabs with their counts', () => {
     render(<StatusTabs value={null} onChange={() => {}} />);
-    expect(screen.getByRole('tab', { name: /All/ })).toBeInTheDocument();
-    expect(screen.getByText('412')).toBeInTheDocument(); // All
-    expect(screen.getByText('3')).toBeInTheDocument(); // In progress
-    expect(screen.getByText('7')).toBeInTheDocument(); // Failed
+    expectTabCounts('11', '3', '7');
+  });
+
+  it('keeps every count independent of the selected status tab', () => {
+    // The list context reports only the tasks matching the active status
+    // filter; every pill must come from the status-agnostic count query.
+    listContext.total = 7;
+    listContext.filterValues = { app: 'demo', status: 'failed' };
+
+    render(<StatusTabs value="failed" onChange={() => {}} />);
+
+    expectTabCounts('11', '3', '7');
   });
 
   it('marks the active tab as selected', () => {
@@ -58,7 +80,8 @@ describe('StatusTabs', () => {
   });
 
   it('issues a single useGetList query inheriting parent filters minus status', () => {
-    render(<StatusTabs value={null} onChange={() => {}} />);
+    listContext.filterValues = { app: 'demo', status: 'failed' };
+    render(<StatusTabs value="failed" onChange={() => {}} />);
     expect(useGetListMock).toHaveBeenCalledTimes(1);
     const [resource, params] = useGetListMock.mock.calls[0];
     expect(resource).toBe('tasks');
@@ -67,38 +90,41 @@ describe('StatusTabs', () => {
     expect(params.pagination).toEqual({ page: 1, perPage: 1000 });
   });
 
-  it('shows zero counts when no data is loaded yet', () => {
+  it('shows a placeholder instead of zero when no snapshot has loaded yet', () => {
     useGetListMock.mockReturnValue({ data: undefined });
     render(<StatusTabs value={null} onChange={() => {}} />);
-    const counts = screen.getAllByText('0');
-    expect(counts.length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText('—')).toHaveLength(3);
+    expect(screen.queryByText('0')).toBeNull();
   });
 
   it('appends "+" to status counts when the loaded page is truncated', () => {
     useGetListMock.mockReturnValue({ data: sampleData, total: 5000 });
     render(<StatusTabs value={null} onChange={() => {}} />);
 
-    // Status pills surface the lower-bound suffix; the All pill comes from
-    // useListContext.total and stays exact.
-    expect(screen.getByText('3+')).toBeInTheDocument(); // In progress
-    expect(screen.getByText('7+')).toBeInTheDocument(); // Failed
-    expect(screen.getByText('412')).toBeInTheDocument(); // All — no "+"
-    expect(screen.queryByText('412+')).toBeNull();
+    // Status pills surface the lower-bound suffix; the All pill is the query's
+    // own total and stays exact.
+    expectTabCounts('5000', '3+', '7+');
+    expect(screen.queryByText('5000+')).toBeNull();
   });
 
   it('does not suffix counts when data.length matches total', () => {
     useGetListMock.mockReturnValue({ data: sampleData, total: sampleData.length });
     render(<StatusTabs value={null} onChange={() => {}} />);
-    expect(screen.getByText('3')).toBeInTheDocument();
-    expect(screen.getByText('7')).toBeInTheDocument();
+    expectTabCounts('11', '3', '7');
     expect(screen.queryByText('3+')).toBeNull();
   });
 
-  it('does not suffix loading-state counts when data is undefined', () => {
+  it('keeps the placeholder when a total arrives without rows', () => {
     useGetListMock.mockReturnValue({ data: undefined, total: 5000 });
     render(<StatusTabs value={null} onChange={() => {}} />);
-    const counts = screen.getAllByText('0');
-    expect(counts.length).toBeGreaterThan(0);
+    expect(screen.getAllByText('—')).toHaveLength(3);
     expect(screen.queryByText('0+')).toBeNull();
+  });
+
+  it('renders a genuine zero once a snapshot with no matching tasks loads', () => {
+    useGetListMock.mockReturnValue({ data: [], total: 0 });
+    render(<StatusTabs value={null} onChange={() => {}} />);
+    expect(screen.getAllByText('0')).toHaveLength(3);
+    expect(screen.queryByText('—')).toBeNull();
   });
 });

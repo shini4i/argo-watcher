@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Stack } from '@mui/material';
-import { useListContext } from 'react-admin';
+import { useListContext, useRefresh } from 'react-admin';
 import {
   ApplicationFilter,
   normalizeApplicationFilterValue,
@@ -36,8 +36,12 @@ const SCHEMA: FilterStateSchema<RecentFiltersValues> = {
 
 /** Toolbar with status tabs, application filter, search, and the refresh control. */
 export const RecentTasksToolbar = ({ storageKey = 'recentTasks' }: { storageKey?: string }) => {
-  const { data, refetch } = useListContext<Task>();
+  const { data } = useListContext<Task>();
   const records = useMemo(() => (Array.isArray(data) ? data : []), [data]);
+  // Refresh every active query, not just the list: the status pills are backed
+  // by their own useGetList, so the list's `refetch` would leave their counts
+  // frozen at whatever the first load saw.
+  const handleRefresh = useRefresh();
 
   const { values, applied, apply } = useFilterState<RecentFiltersValues>({
     storageKey,
@@ -60,17 +64,6 @@ export const RecentTasksToolbar = ({ storageKey = 'recentTasks' }: { storageKey?
     },
     [apply, values],
   );
-
-  const handleRefresh = useCallback(() => {
-    const result = refetch?.();
-    if (result && typeof (result as Promise<unknown>).catch === 'function') {
-      (result as Promise<unknown>).catch(error => {
-        if (import.meta.env.DEV) {
-          console.warn('RecentTasksToolbar refresh failed', error);
-        }
-      });
-    }
-  }, [refetch]);
 
   const chips: FilterChipDescriptor[] = [];
   if (applied.app) {

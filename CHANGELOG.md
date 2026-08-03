@@ -42,6 +42,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   message now defers to the server's reason, which may point at the application or at
   the deployment request itself.
 
+### Fixed
+
+- The status pills above the recent-tasks list now report the same numbers on every
+  tab and reload together with the list. Selecting "In progress" or "Failed" used to
+  drop the "All" count to the number of tasks matching the selected status — 0 on a
+  tab whose status had none — and the per-status counts were fetched once and never
+  refreshed, so a pill could keep claiming a task was in progress after it finished.
+  While the counts are still loading, the pills show `—` rather than `0`.
+
 ## [0.13.0] - 2026-07-30
 
 ### Added
