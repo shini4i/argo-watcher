@@ -19,7 +19,14 @@ interface ImageRowProps {
   readonly image: Image;
 }
 
-/** Single repo + tag-chip row, rendered identically for primary and expanded entries. */
+/** Widest, in px, a tag badge may grow before its label is trimmed with an ellipsis. */
+export const TAG_MAX_WIDTH = 120;
+
+/**
+ * Single repo + tag-chip row, rendered identically for primary and expanded entries.
+ * The tag badge never wraps or shrinks — a hyphenated tag would otherwise break after
+ * the hyphen and spill out of the fixed-height pill. The full tag stays in the tooltip.
+ */
 const ImageRow = ({ image }: ImageRowProps) => (
   <Stack
     direction="row"
@@ -34,6 +41,7 @@ const ImageRow = ({ image }: ImageRowProps) => (
         fontFamily: tokens.fontMono,
         fontSize: 11.5,
         color: 'text.primary',
+        minWidth: 0,
         overflow: 'hidden',
         textOverflow: 'ellipsis',
         whiteSpace: 'nowrap',
@@ -44,10 +52,18 @@ const ImageRow = ({ image }: ImageRowProps) => (
     </Typography>
     <Box
       component="span"
+      title={image.tag}
       sx={{
-        display: 'inline-flex',
-        alignItems: 'center',
+        // inline-block, not inline-flex: text-overflow is ignored on a flex
+        // container, which clips the tag mid-character instead of ellipsizing.
+        display: 'inline-block',
+        flexShrink: 0,
+        maxWidth: TAG_MAX_WIDTH,
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
         height: 18,
+        lineHeight: '18px',
         padding: '0 6px',
         borderRadius: tokens.radiusPill,
         backgroundColor: tokens.accentSoft,

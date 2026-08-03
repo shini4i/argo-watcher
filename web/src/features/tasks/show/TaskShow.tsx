@@ -573,12 +573,15 @@ interface InfoFieldProps {
 
 /**
  * Displays a single piece of labeled metadata inside the task details view.
+ * The label is block-level so that an inline value node, such as a link, still
+ * starts on its own line below it.
  */
 const InfoField = ({ label, value }: InfoFieldProps) => (
   <Box>
     <Typography
       variant="caption"
       sx={{
+        display: 'block',
         color: 'text.secondary',
         textTransform: 'uppercase',
         letterSpacing: 0.6,
@@ -610,7 +613,12 @@ const ProjectReference = ({ project }: { project?: string | null }) => {
     label = label.slice(0, -1);
   }
   return (
-    <Link href={project} target="_blank" rel="noopener noreferrer">
+    <Link
+      href={project}
+      target="_blank"
+      rel="noopener noreferrer"
+      sx={{ overflowWrap: 'anywhere' }}
+    >
       {label}
     </Link>
   );
