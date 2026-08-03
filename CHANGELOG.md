@@ -63,6 +63,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - On the task details page, a project that is a URL now starts on its own line below
   the `PROJECT` label instead of running on from it, and a long URL wraps rather than
   overflowing the card.
+- Opening the Web UI now shows a loading screen — the logo and an animated indicator —
+  while the session is resolved with the identity provider, instead of a blank white
+  page that gave no sign the app was working. The status line starts as "Loading…" and
+  becomes "Signing in…" only once the server configuration confirms OIDC is enabled, so
+  an auth-less deployment is never told it is signing in; those deployments wait for a
+  single configuration request and then render. The screen is always dark, regardless of
+  the selected theme. A cold load still shows a brief blank page while the browser
+  downloads the JavaScript bundle, before any of this can run.
 
 ## [0.13.0] - 2026-07-30
 

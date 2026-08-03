@@ -276,6 +276,16 @@ const ensureAuthenticated = async (manager: UserManager): Promise<boolean> => {
   return true;
 };
 
+interface BootstrapOptions {
+  /**
+   * Invoked once the server configuration confirms OIDC is enabled, before any
+   * provider round trip. Never called for auth-less deployments, which lets the
+   * caller keep sign-in-specific UI off screen until a sign-in is actually
+   * happening. Runs before the returned promise settles.
+   */
+  readonly onOidcEnabled?: () => void;
+}
+
 /**
  * Eagerly processes authentication before the React tree is mounted.
  *
@@ -289,13 +299,21 @@ const ensureAuthenticated = async (manager: UserManager): Promise<boolean> => {
  * Bootstrap failures are swallowed so rendering is never blocked; checkAuth re-runs
  * the same path on mount.
  */
-export const bootstrapAuth = async (): Promise<void> => {
+export const bootstrapAuth = async ({ onOidcEnabled }: BootstrapOptions = {}): Promise<void> => {
   try {
     const manager = await ensureUserManager();
     if (!manager) {
       setAccessToken(null);
       clearUserGroupsCache();
       return;
+    }
+
+    // Guarded: this callback only drives presentation, so a throw from it must not
+    // cancel the sign-in or be reported as an authentication failure.
+    try {
+      onOidcEnabled?.();
+    } catch (error) {
+      console.warn('[auth] onOidcEnabled callback threw; continuing with sign-in.', error);
     }
 
     if (isRedirectCallback()) {

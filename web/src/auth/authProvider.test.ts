@@ -293,6 +293,37 @@ describe('authProvider', () => {
       expect(userManagerMock.signinRedirect).not.toHaveBeenCalled();
     });
 
+    it('reports OIDC as enabled before any provider round trip', async () => {
+      mockConfig(enabledConfig());
+      userManagerMock.getUser.mockResolvedValue(null);
+      // Recorded, not asserted, inside the callback: bootstrapAuth catches
+      // everything, so a failed expectation in there would be swallowed and the
+      // ordering claim would go unchecked.
+      let redirectCallsWhenNotified = -1;
+      const onOidcEnabled = vi.fn(() => {
+        redirectCallsWhenNotified = userManagerMock.signinRedirect.mock.calls.length;
+      });
+      const module = await import('./authProvider');
+
+      await module.bootstrapAuth({ onOidcEnabled });
+
+      expect(onOidcEnabled).toHaveBeenCalledTimes(1);
+      // The caller learns a sign-in is coming before the redirect starts, which is
+      // what lets it swap the loading message ahead of the round trip.
+      expect(redirectCallsWhenNotified).toBe(0);
+      expect(userManagerMock.signinRedirect).toHaveBeenCalledTimes(1);
+    });
+
+    it('never reports OIDC as enabled for an auth-less deployment', async () => {
+      mockConfig({ oidc: { enabled: false } });
+      const onOidcEnabled = vi.fn();
+      const module = await import('./authProvider');
+
+      await module.bootstrapAuth({ onOidcEnabled });
+
+      expect(onOidcEnabled).not.toHaveBeenCalled();
+    });
+
     it('completes the authorization-code callback and stores the token', async () => {
       mockConfig(enabledConfig());
       window.history.replaceState({}, '', '/?code=abc&state=xyz');

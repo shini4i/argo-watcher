@@ -23,6 +23,7 @@ import { httpClient } from '../../data/httpClient';
 import { ConfigDrawer } from './ConfigDrawer';
 import logoUrl from '../../assets/logo.png';
 import { useTimezone } from '../../shared/providers/TimezoneProvider';
+import { tokens } from '../../theme/tokens';
 
 const DOCS_BASE_URL = 'https://argo-watcher.readthedocs.io';
 const GITHUB_REPO_URL = 'https://github.com/shini4i/argo-watcher';
@@ -36,7 +37,7 @@ const appBarStyles: SxProps<Theme> = theme => {
   if (theme.palette.mode === 'dark') {
     return {
       backgroundColor: 'transparent',
-      backgroundImage: 'linear-gradient(135deg, #1f2937 0%, #111827 100%)',
+      backgroundImage: tokens.appBarGradientDark,
       boxShadow: '0px 2px 6px rgba(4, 8, 15, 0.45)',
       color: '#f8fafc',
       transition: 'background-color 0.3s ease, background-image 0.3s ease, box-shadow 0.3s ease, color 0.3s ease',
