@@ -544,6 +544,144 @@ func TestArgoRolloutMessage(t *testing.T) {
 				"\tJob(app-migrations) PreSync Failed with message backoff",
 			application.GetRolloutMessage(ArgoRolloutAppNotHealthy, images, nil))
 	})
+
+	t.Run("Rollout message - ArgoRolloutAppDegraded reports the degraded resource and its pod cause", func(t *testing.T) {
+		// A degraded rollout shares the not-healthy message shape and must not fall through to the
+		// unexpected-status message. This is the terminal failure an operator reads most often — a
+		// migration Job that exhausted its backoff limit — so the Job and the pod behind it must
+		// both be named.
+		application := Application{}
+		application.Status.Summary.Images = []string{"app:v0.0.2"}
+		application.Status.Sync.Status = "Synced"
+		application.Status.Health.Status = "Degraded"
+		application.Status.Resources = []ApplicationResource{
+			{
+				Kind: "Job", Name: "app-db-migrations", Namespace: "app",
+				Health: struct {
+					Message string `json:"message"`
+					Status  string `json:"status"`
+				}{Status: "Degraded", Message: "Job has reached the specified backoff limit"},
+			},
+		}
+		tree := &ApplicationTree{Nodes: []ApplicationTreeNode{
+			treeNode("Pod", "app-db-migrations-abcde", "Degraded", "back-off 5m0s restarting failed container=migrate"),
+		}}
+		images := []string{"app:v0.0.2"}
+		assert.Equal(t,
+			"App sync status \"Synced\"\n"+
+				"App health status \"Degraded\"\n"+
+				"Resources:\n"+
+				"\tJob(app-db-migrations) Degraded with message Job has reached the specified backoff limit\n\n"+
+				"Unhealthy resources:\n"+
+				"\tPod(app-db-migrations-abcde) Degraded with message back-off 5m0s restarting failed container=migrate",
+			application.GetRolloutMessage(ArgoRolloutAppDegraded, images, tree))
+	})
+
+	t.Run("Rollout message - not healthy omits the Resources block when no resource reports health", func(t *testing.T) {
+		// ArgoCD reports no health for kinds it cannot assess, so the unhealthy-resource list can
+		// come back empty. The block must then be absent entirely rather than printed as a bare
+		// "Resources:" header with nothing under it, which reads as "collection failed".
+		application := Application{}
+		application.Status.Summary.Images = []string{"app:v0.0.2"}
+		application.Status.Sync.Status = "Synced"
+		application.Status.Health.Status = "Progressing"
+		application.Status.Resources = []ApplicationResource{
+			{Kind: "ServiceAccount", Name: "app", Namespace: "app"},
+		}
+		images := []string{"app:v0.0.2"}
+		assert.Equal(t,
+			"App sync status \"Synced\"\n"+
+				"App health status \"Progressing\"",
+			application.GetRolloutMessage(ArgoRolloutAppNotHealthy, images, nil))
+	})
+
+	t.Run("Rollout message - not synced omits the Resources block when the sync result is empty", func(t *testing.T) {
+		// Same contract as the not-healthy arm: a sync that reported no resources must not leave a
+		// bare "Resources:" heading behind. All three arms format the listing the same way.
+		application := Application{}
+		application.Status.OperationState.Phase = "NotWorking"
+		application.Status.OperationState.Message = "Not working test app"
+		assert.Equal(t,
+			"App status \"NotWorking\"\n"+
+				"App message \"Not working test app\"",
+			application.GetRolloutMessage(ArgoRolloutAppNotSynced, []string{"app:v0.0.2"}, nil))
+	})
+
+	t.Run("Rollout message - not healthy reports what is still progressing when nothing is degraded", func(t *testing.T) {
+		// A rollout that simply ran out its timeout has nothing Degraded: every node is still
+		// Progressing, which isProblemHealthStatus deliberately excludes. Without this fallback the
+		// operator is told only "Progressing" with no indication of what never became ready.
+		application := Application{}
+		application.Status.Summary.Images = []string{"app:v0.0.2"}
+		application.Status.Sync.Status = "Synced"
+		application.Status.Health.Status = "Progressing"
+		tree := &ApplicationTree{Nodes: []ApplicationTreeNode{
+			treeNode("Deployment", "app", "Progressing", "Waiting for rollout to finish: 0 of 1 updated replicas are available..."),
+			treeNode("Pod", "app-xyz", "Progressing", "container has not become ready"),
+			treeNode("Service", "app", "Healthy", ""),
+		}}
+		images := []string{"app:v0.0.2"}
+		assert.Equal(t,
+			"App sync status \"Synced\"\n"+
+				"App health status \"Progressing\"\n\n"+
+				"Resources still progressing:\n"+
+				"\tDeployment(app) Progressing with message Waiting for rollout to finish: 0 of 1 updated replicas are available...\n"+
+				"\tPod(app-xyz) Progressing with message container has not become ready",
+			application.GetRolloutMessage(ArgoRolloutAppNotHealthy, images, tree))
+	})
+
+	t.Run("Rollout message - a degraded app suppresses the still-progressing fallback", func(t *testing.T) {
+		// Suppression keys on the app's own health, not on the degraded node: once the application
+		// itself is Degraded that IS the culprit, and listing the Progressing siblings alongside it
+		// would dilute the signal the "Unhealthy resources:" section exists to carry.
+		application := Application{}
+		application.Status.Summary.Images = []string{"app:v0.0.2"}
+		application.Status.Sync.Status = "Synced"
+		application.Status.Health.Status = "Degraded"
+		tree := &ApplicationTree{Nodes: []ApplicationTreeNode{
+			treeNode("Pod", "app-xyz", "Degraded", "CrashLoopBackOff"),
+			treeNode("Deployment", "app", "Progressing", "Waiting for rollout to finish"),
+		}}
+		images := []string{"app:v0.0.2"}
+		msg := application.GetRolloutMessage(ArgoRolloutAppDegraded, images, tree)
+		assert.Contains(t, msg, "Unhealthy resources:\n\tPod(app-xyz) Degraded with message CrashLoopBackOff")
+		assert.NotContains(t, msg, "Resources still progressing:")
+	})
+
+	t.Run("Rollout message - a problem resource that is not the culprit still reports what is progressing", func(t *testing.T) {
+		// isProblemHealthStatus also matches Suspended/Missing/Unknown. A suspended CronJob is a
+		// problem node but not why the rollout stalled, so it must not hide the workload that never
+		// became ready: both sections are reported when the app itself is still Progressing.
+		application := Application{}
+		application.Status.Summary.Images = []string{"app:v0.0.2"}
+		application.Status.Sync.Status = "Synced"
+		application.Status.Health.Status = "Progressing"
+		tree := &ApplicationTree{Nodes: []ApplicationTreeNode{
+			treeNode("CronJob", "backup", "Suspended", ""),
+			treeNode("Deployment", "app", "Progressing", "Waiting for rollout to finish"),
+		}}
+		msg := application.GetRolloutMessage(ArgoRolloutAppNotHealthy, []string{"app:v0.0.2"}, tree)
+		assert.Contains(t, msg, "Unhealthy resources:\n\tCronJob(backup) Suspended")
+		assert.Contains(t, msg, "Resources still progressing:\n\tDeployment(app) Progressing with message Waiting for rollout to finish")
+	})
+
+	t.Run("Rollout message - not available reports what is still progressing when nothing is degraded", func(t *testing.T) {
+		// The same fallback must serve the not-available arm: an image that never appears because
+		// its pod is stuck Pending has no Degraded node either.
+		application := Application{}
+		application.Status.Summary.Images = []string{"app:v0.0.1"}
+		application.Status.Health.Status = "Progressing"
+		tree := &ApplicationTree{Nodes: []ApplicationTreeNode{
+			treeNode("Pod", "app-xyz", "Progressing", "Pod is in Pending state"),
+		}}
+		images := []string{"app:v0.0.2"}
+		assert.Equal(t,
+			"List of current images (last app check):\n\tapp:v0.0.1\n\n"+
+				"List of expected images:\n\tapp:v0.0.2\n\n"+
+				"Resources still progressing:\n"+
+				"\tPod(app-xyz) Progressing with message Pod is in Pending state",
+			application.GetRolloutMessage(ArgoRolloutAppNotAvailable, images, tree))
+	})
 }
 
 // treeNode builds an ApplicationTreeNode with the given health, sparing tests the anonymous

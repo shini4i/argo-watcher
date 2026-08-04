@@ -141,9 +141,10 @@ phase() {
 }
 
 @test "failure-diagnostics: failure reasons carry the real cause" {
-  # Deliberately breaks apps (bad images, a failing PreSync hook in the SHARED chart
-  # values) and pushes straight to the gitops repo, so running it before the soak
-  # would perturb those pristine-state gates.
+  # Deliberately breaks apps (bad images, and — injected into the SHARED chart values — a
+  # failing PreSync hook, a failing migration Job, or a never-ready Deployment) and pushes
+  # straight to the gitops repo, so running it before the soak would perturb those
+  # pristine-state gates. Each scenario removes its own fixture before the next one runs.
   phase failure-diagnostics.sh
 }
 

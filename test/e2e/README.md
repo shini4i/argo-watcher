@@ -72,7 +72,7 @@ task load                 # git-conflict soak: competitor + concurrent deploys, 
 task batch-writeback      # toggle GIT_BATCH_WRITEBACK on, re-run the contention soak: assert 0 lost updates + real coalescing (mean batch size > 1), then revert
 task race                 # same-app supersession: a newer deploy must win over an older retrying one
 task state-postgres       # flip the release to Postgres state: assert migration, deploy loop, task survives a pod restart, the shared deploy lock, supersession under contention
-task failure-diagnostics  # assert failure reasons carry the real cause (pod ImagePullBackOff, failed hooks)
+task failure-diagnostics  # assert failure reasons carry the real cause (pod ImagePullBackOff, failed hooks, a degraded migration Job, a stuck rollout)
 task argocd-unreachable   # scale ArgoCD down: assert /reachability flips (reason "argocd") + the watcher broadcasts "argocd_down:argocd" + POST fast-fails 503, then recovers
 task shutdown-drain       # assert graceful shutdown drains in-flight WebSocket connections (GoingAway) with no race/panic
 task down                 # destroy the cluster
@@ -125,7 +125,7 @@ again instead of re-establishing a forward.
 | `scripts/batch-writeback.sh` | toggle `GIT_BATCH_WRITEBACK=true` on the release, re-run the contention soak, and revert; reuses `collect.sh` (with `BATCH_MODE`) to gate on zero lost updates and real coalescing (`gitops_batch_size` mean > 1) |
 | `fixtures/postgres/` | in-cluster Postgres (Secret + Service + StatefulSet, one resource per file) the `state-postgres` phase points the release at; the chart bundles no database |
 | `values/argo-watcher-postgres.yaml` | overlay layered over `values/argo-watcher.yaml` that enables `postgres` (sets `STATE_TYPE=postgres`, wires `DB_*`, triggers the migration Job) |
-| `scripts/hook-fixture.sh` | add/remove a failing PreSync hook via the chart's `rawObject` |
+| `scripts/failure-fixture.sh` | inject/remove a deliberately-broken resource via the chart's `rawObject`: a failing PreSync hook (`hook`, aborts the sync), a failing plain migration Job (`degraded`, lets the image roll out and holds the app Synced+Degraded), or a Deployment whose readiness probe never passes (`pending`, holds the app Synced+Progressing with nothing Degraded); sole owner of the shared `chart/values.yaml` |
 | `scripts/notifications.sh` | assert the generic webhook fires start + result with the templated payload and auth header |
 | `scripts/api-surface.sh` | assert the read-only HTTP surface to contract: version/config (secrets redacted), task-list filters + invalid-status 400, unknown-task 404, deploy-lock POST/DELETE 404 when OIDC auth is off |
 | `scripts/client-knobs.sh` | assert client env knobs via the real client: `TASK_REFRESH=false` still deploys, `DEBUG=true` cURL log redacts the deploy token |

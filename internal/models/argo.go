@@ -149,9 +149,10 @@ func (app *Application) GetRolloutStatus(rolloutImages []string, registryProxyUr
 // preferred source for the "Unhealthy resources" section because it alone carries the
 // pod-level failure cause (ImagePullBackOff / CrashLoopBackOff); when nil the message
 // falls back to the app's top-level Status.Resources, preserving the pre-tree behaviour.
-// The actionable diagnostics (terminal sync operation, failed hooks, unhealthy resources)
-// are appended to both the "not available" and "not healthy"/"degraded" failures so on-call
-// users don't have to context-switch into the ArgoCD UI regardless of how the rollout failed.
+// The actionable diagnostics (terminal sync operation, failed hooks, unhealthy resources, and —
+// while the application is still Progressing — the resources that never became ready) are appended
+// to both the "not available" and "not healthy"/"degraded" failures so on-call users don't have to
+// context-switch into the ArgoCD UI regardless of how the rollout failed.
 func (app *Application) GetRolloutMessage(status string, rolloutImages []string, tree *ApplicationTree) string {
 	switch status {
 	// not all expected images were deployed
@@ -169,15 +170,13 @@ func (app *Application) GetRolloutMessage(status string, rolloutImages []string,
 		return appendDiagnostics(base, app.buildFailureDiagnostics(tree, true))
 	// sync status was not "Synced"
 	case ArgoRolloutAppNotSynced:
-		return fmt.Sprintf(
+		base := fmt.Sprintf(
 			"App status \"%s\"\n"+
-				"App message \"%s\"\n"+
-				"Resources:\n"+
-				"\t%s",
+				"App message \"%s\"",
 			app.Status.OperationState.Phase,
 			app.Status.OperationState.Message,
-			strings.Join(app.ListSyncResultResources(), "\n\t"),
 		)
+		return appendResourceListing(base, app.ListSyncResultResources())
 	// app is unhealthy or degraded
 	case ArgoRolloutAppNotHealthy, ArgoRolloutAppDegraded:
 		// display current health of the top-level resources, then append the same
@@ -185,22 +184,33 @@ func (app *Application) GetRolloutMessage(status string, rolloutImages []string,
 		// failing pod surfaces here just as often, and its cause lives in the tree.
 		base := fmt.Sprintf(
 			"App sync status \"%s\"\n"+
-				"App health status \"%s\"\n"+
-				"Resources:\n"+
-				"\t%s",
+				"App health status \"%s\"",
 			app.Status.Sync.Status,
 			app.Status.Health.Status,
-			strings.Join(app.ListUnhealthyResources(), "\n\t"),
 		)
-		// Base "Resources:" already lists the top-level resources, so do NOT fall back to them
-		// again here; only tree-sourced problem nodes (the distinct pod cause) add signal.
-		return appendDiagnostics(base, app.buildFailureDiagnostics(tree, false))
+		// The resource listing already covers the top-level resources, so the diagnostics must NOT
+		// fall back to them again; only tree-sourced problem nodes (the pod cause) add signal.
+		return appendDiagnostics(
+			appendResourceListing(base, app.ListUnhealthyResources()),
+			app.buildFailureDiagnostics(tree, false),
+		)
 	}
 
 	return fmt.Sprintf(
 		"received unexpected rollout status \"%s\"",
 		status,
 	)
+}
+
+// appendResourceListing appends the "Resources:" block to a failure message, and only when there
+// is something to list. ArgoCD reports no health for kinds it cannot assess and a sync can report
+// no resources at all, so the listing is routinely empty — and a bare heading with nothing under
+// it reads as a failure to collect the diagnostics rather than as "nothing to report".
+func appendResourceListing(base string, resources []string) string {
+	if len(resources) == 0 {
+		return base
+	}
+	return base + "\nResources:\n\t" + strings.Join(resources, "\n\t")
 }
 
 // appendDiagnostics joins the base failure message with the optional diagnostics suffix,
@@ -327,6 +337,20 @@ func (tree *ApplicationTree) ListProblemNodes() []string {
 	return list
 }
 
+// ListProgressingNodes returns formatted lines for resource-tree nodes still Progressing — the
+// resources a rollout that ran out its timeout was still waiting on.
+func (tree *ApplicationTree) ListProgressingNodes() []string {
+	var list []string
+	for index := range tree.Nodes {
+		node := tree.Nodes[index]
+		if node.Health.Status != "Progressing" {
+			continue
+		}
+		list = append(list, formatTreeNode(node))
+	}
+	return list
+}
+
 // problemResourceLines returns the "Unhealthy resources" lines. It always prefers the live
 // resource tree (which alone carries pod-level causes). When the tree is nil it falls back to
 // the app's top-level Status.Resources only if allowStatusFallback is set — the not-available
@@ -364,6 +388,18 @@ func (app *Application) buildFailureDiagnostics(tree *ApplicationTree, allowStat
 
 	if resources := app.problemResourceLines(tree, allowStatusFallback); len(resources) > 0 {
 		sections = append(sections, "Unhealthy resources:\n\t"+strings.Join(resources, "\n\t"))
+	}
+
+	// A still-Progressing app ran out its timeout while coming up, and isProblemHealthStatus
+	// excludes Progressing, so without this the failure can name no resource at all. Gated on the
+	// app's own health rather than on the absence of problem resources: a Suspended CronJob or a
+	// Missing resource is a problem node that is NOT the reason the rollout stalled, and it must
+	// not hide the workload that never became ready. A Degraded app reports health "Degraded", so
+	// its report stays free of progressing noise.
+	if tree != nil && app.Status.Health.Status == "Progressing" {
+		if pending := tree.ListProgressingNodes(); len(pending) > 0 {
+			sections = append(sections, "Resources still progressing:\n\t"+strings.Join(pending, "\n\t"))
+		}
 	}
 
 	return strings.Join(sections, "\n\n")

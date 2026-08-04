@@ -71,6 +71,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   single configuration request and then render. The screen is always dark, regardless of
   the selected theme. A cold load still shows a brief blank page while the browser
   downloads the JavaScript bundle, before any of this can run.
+- A deployment that fails because the application went `Degraded` after the new images
+  landed is no longer reported as `ArgoCD API Error: application has degraded`. Argo CD's
+  API had answered correctly — the application itself became unhealthy — and the message
+  carried nothing else, so the cause had to be looked up in the Argo CD UI. Such a task
+  now carries the same report as every other failed rollout: the application's sync and
+  health status, any failed sync hooks, and the unhealthy resources enriched from Argo
+  CD's live resource tree, which is where the actual culprit appears — the failed
+  migration `Job` or the crashlooping pod behind the degradation.
+- A failure reason no longer ends in an empty `Resources:` heading. Argo CD reports no
+  health for resource kinds it cannot assess, and an application made up only of those
+  produced a heading with nothing under it, which read as though the diagnostics had
+  failed to collect. The heading is now printed only when there is something to list.
+- A deployment that runs out its timeout while the application is still `Progressing`
+  now names the resources that never became ready, under `Resources still progressing:`.
+  Such a rollout has nothing degraded — every resource is mid-rollout — so the previous
+  report identified no resource at all and gave no clue which workload was stuck. When
+  something *is* degraded the report is unchanged: the degraded resource is the culprit,
+  and its still-progressing siblings are left out rather than diluting it.
 
 ## [0.13.0] - 2026-07-30
 

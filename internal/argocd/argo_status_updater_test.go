@@ -507,12 +507,12 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
+		// The sync reported no resources, so no resource listing is appended: the reason ends at
+		// the message line rather than carrying an empty "Resources:" header.
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage,
 			"Application deployment failed. Rollout status is not synced\n\n"+
 				"App status \"NotWorking\"\n"+
-				"App message \"Not working test app\"\n"+
-				"Resources:\n"+
-				"\t")
+				"App message \"Not working test app\"")
 
 		// run the rollout
 		updater.WaitForRollout(task)
@@ -556,12 +556,12 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
+		// This fixture app declares no resources, so no resource listing is appended: the reason
+		// ends at the health line rather than carrying an empty "Resources:" header.
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage,
 			"Application deployment failed. Rollout status is not healthy\n\n"+
 				"App sync status \"Synced\"\n"+
-				"App health status \"NotHealthy\"\n"+
-				"Resources:\n"+
-				"\t")
+				"App health status \"NotHealthy\"")
 
 		// run the rollout
 		updater.WaitForRollout(task)
@@ -716,6 +716,190 @@ func TestDeploymentMonitorHandleDeploymentFailureResourceTreeErrorIsNonFatal(t *
 	assert.Equal(t, models.StatusFailedMessage, task.Status)
 	assert.Contains(t, capturedReason, "Rollout status is not available")
 	assert.Contains(t, capturedReason, "List of expected images:")
+}
+
+// TestArgoStatusUpdaterDegradedReportsRolloutDiagnostics pins the user-facing contract for a
+// terminally degraded app: the stored reason reports a failed degraded rollout carrying the
+// resource-level cause (a failed migration Job here), and never the API-failure message, which
+// would blame ArgoCD for an application that went Degraded on its own. Uses a raw mock so the
+// resource-tree return is not shadowed by newArgoApiMock's best-effort nil default.
+func TestArgoStatusUpdaterDegradedReportsRolloutDiagnostics(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	api := mocks.NewMockArgoApiInterface(ctrl)
+	metrics := mocks.NewMockMetricsInterface(ctrl)
+	state := notSupersededState(ctrl)
+
+	argo := &Argo{}
+	argo.Init(state, api, metrics)
+	updater := initTestUpdater(t, newUpdaterTestConfig(lock.NewInMemoryLocker()), argo)
+
+	task := models.Task{
+		Id:      "test-id",
+		App:     "test-app",
+		Timeout: 15,
+		Images:  []models.Image{{Image: "ghcr.io/shini4i/argo-watcher", Tag: "v2"}},
+	}
+
+	// Initial fetch: the expected image has not landed yet, so the saved images hash differs
+	// from the degraded app's — that difference is what makes the degradation terminal.
+	initial := &models.Application{}
+	initial.Status.Summary.Images = []string{"ghcr.io/shini4i/argo-watcher:v1"}
+	initial.Status.Sync.Status = "Synced"
+	initial.Status.Health.Status = "Healthy"
+
+	migrationJob := models.ApplicationResource{Kind: "Job", Name: "app-db-migrations", Namespace: "test-app"}
+	migrationJob.Health.Status = "Degraded"
+	migrationJob.Health.Message = "Job has reached the specified backoff limit"
+
+	degraded := &models.Application{}
+	degraded.Status.Summary.Images = []string{"ghcr.io/shini4i/argo-watcher:v2"}
+	degraded.Status.Sync.Status = "Synced"
+	degraded.Status.Health.Status = "Degraded"
+	degraded.Status.Resources = []models.ApplicationResource{migrationJob}
+
+	failedPod := models.ApplicationTreeNode{Kind: "Pod", Name: "app-db-migrations-abcde", Namespace: "test-app"}
+	failedPod.Health.Status = "Degraded"
+	failedPod.Health.Message = "back-off 5m0s restarting failed container=migrate"
+
+	gomock.InOrder(
+		api.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(initial, nil),
+		api.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(degraded, nil),
+	)
+	api.EXPECT().GetResourceTree(gomock.Any(), task.App).
+		Return(&models.ApplicationTree{Nodes: []models.ApplicationTreeNode{failedPod}}, nil)
+	// Mirrors newArgoApiMock's default for the other best-effort call, which this raw mock
+	// bypasses: without it, flipping the instance-wide refresh default would fail this test
+	// with an opaque "unexpected call" instead of a behavioural assertion.
+	api.EXPECT().GetManagedResources(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+
+	var capturedReason string
+	metrics.EXPECT().AddInProgressTask()
+	metrics.EXPECT().AddFailedDeployment(task.App)
+	metrics.EXPECT().RemoveInProgressTask()
+	state.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage, gomock.Any()).
+		DoAndReturn(func(_ string, _ string, reason string) error {
+			capturedReason = reason
+			return nil
+		})
+
+	updater.WaitForRollout(task)
+
+	assert.NotContains(t, capturedReason, "ArgoCD API Error")
+	assert.Contains(t, capturedReason, "Application deployment failed. Rollout status is degraded")
+	assert.Contains(t, capturedReason, "Job(app-db-migrations) Degraded with message Job has reached the specified backoff limit")
+	assert.Contains(t, capturedReason, "Unhealthy resources:")
+	assert.Contains(t, capturedReason, "Pod(app-db-migrations-abcde) Degraded with message back-off 5m0s restarting failed container=migrate")
+}
+
+// TestArgoStatusUpdaterSupersededAfterSuccessfulPollWritesNoStatus fences the one sentinel
+// rolloutStateAlreadyObserved must never cover. Unlike TestArgoStatusUpdaterStopsMidPollWhenSuperseded,
+// the supersession lands only after a poll has already fetched the application, so WaitRollout holds a
+// non-nil application and the predicate — not the nil guard — decides the outcome. Swallowing
+// errTaskSuperseded here would make the poller overwrite the "cancelled" status a newer deployment
+// already wrote (issue #353), which no other test would catch.
+func TestArgoStatusUpdaterSupersededAfterSuccessfulPollWritesNoStatus(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	apiMock := newArgoApiMock(ctrl)
+	metricsMock := mocks.NewMockMetricsInterface(ctrl)
+	stateMock := mocks.NewMockTaskRepository(ctrl)
+
+	argo := &Argo{}
+	argo.Init(stateMock, apiMock, metricsMock)
+
+	updater := initTestUpdater(t, newUpdaterTestConfig(lock.NewInMemoryLocker()), argo)
+	capture := &capturingStrategy{}
+	updater.notifier = notifications.NewNotifier(capture)
+
+	task := models.Task{
+		Id:      "old-id",
+		App:     "test-app",
+		Timeout: 15,
+		Images:  []models.Image{{Image: "ghcr.io/shini4i/argo-watcher", Tag: "dev"}},
+	}
+
+	// Not-final app, so the first poll iteration completes without reaching a terminal state.
+	application := models.Application{}
+	application.Status.Summary.Images = []string{"ghcr.io/shini4i/argo-watcher:dev"}
+	application.Status.Sync.Status = "Synced"
+	application.Status.Health.Status = "Progressing"
+	// Exactly the initial fetch plus the first poll: the second iteration must bail on the
+	// supersession check before calling ArgoCD again.
+	apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(&application, nil).Times(2)
+
+	// In-progress for the initial check and the first poll iteration; cancelled from the
+	// second iteration on, i.e. after a successful fetch has already been recorded.
+	gomock.InOrder(
+		stateMock.EXPECT().GetTask(task.Id).Return(&models.Task{Id: task.Id, Status: models.StatusInProgressMessage}, nil),
+		stateMock.EXPECT().GetTask(task.Id).Return(&models.Task{Id: task.Id, Status: models.StatusInProgressMessage}, nil),
+		stateMock.EXPECT().GetTask(task.Id).Return(&models.Task{Id: task.Id, Status: models.StatusCancelledMessage}, nil).AnyTimes(),
+	)
+
+	metricsMock.EXPECT().AddInProgressTask()
+	metricsMock.EXPECT().RemoveInProgressTask()
+	// No SetTaskStatus and no failed-deployment metric are expected, so gomock fails the test
+	// if the superseded task is mistaken for a reportable rollout state.
+
+	updater.WaitForRollout(task)
+
+	require.NotEmpty(t, capture.sent)
+	assert.Equal(t, models.StatusCancelledMessage, capture.sent[len(capture.sent)-1].Status)
+}
+
+// TestArgoStatusUpdaterAbortsWhenArgoBecomesUnreachableMidPoll pins that a transport failure is
+// still classified as aborted once a poll has already fetched the application. The existing
+// unreachable-ArgoCD tests all leave WaitRollout's application nil, so they exit through the nil
+// guard and say nothing about rolloutStateAlreadyObserved; only this case proves a transport error
+// is not mistaken for an observed rollout state and reported as an application failure.
+func TestArgoStatusUpdaterAbortsWhenArgoBecomesUnreachableMidPoll(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	apiMock := newArgoApiMock(ctrl)
+	metricsMock := mocks.NewMockMetricsInterface(ctrl)
+	stateMock := notSupersededState(ctrl)
+
+	argo := &Argo{}
+	argo.Init(stateMock, apiMock, metricsMock)
+
+	updater := initTestUpdater(t, newUpdaterTestConfig(lock.NewInMemoryLocker()), argo)
+
+	task := models.Task{
+		Id:      "test-id",
+		App:     "test-app",
+		Timeout: 15,
+		Images:  []models.Image{{Image: "ghcr.io/shini4i/argo-watcher", Tag: "dev"}},
+	}
+
+	application := models.Application{}
+	application.Status.Summary.Images = []string{"ghcr.io/shini4i/argo-watcher:dev"}
+	application.Status.Sync.Status = "Synced"
+	application.Status.Health.Status = "Progressing"
+
+	// The initial fetch and the first poll succeed; ArgoCD then goes away mid-rollout.
+	gomock.InOrder(
+		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(&application, nil).Times(2),
+		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).
+			Return(nil, &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connect: connection refused")}).
+			MinTimes(1),
+	)
+
+	var capturedReason string
+	metricsMock.EXPECT().AddInProgressTask()
+	metricsMock.EXPECT().AddFailedDeployment(task.App)
+	metricsMock.EXPECT().RemoveInProgressTask()
+	stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusAborted, gomock.Any()).
+		DoAndReturn(func(_ string, _ string, reason string) error {
+			capturedReason = reason
+			return nil
+		})
+
+	updater.WaitForRollout(task)
+
+	assert.Contains(t, capturedReason, "connection refused")
 }
 
 func TestDeploymentMonitorHandleArgoAPIFailureHandlesStateError(t *testing.T) {
@@ -1522,6 +1706,9 @@ func TestCheckRolloutStatus(t *testing.T) {
 		err := checkRolloutStatus(taskCopy, &degraded, degraded.GetRolloutStatus(taskCopy.ListImages(), "", false))
 		require.Error(t, err)
 		assert.False(t, retry.IsRecoverable(err))
+		// The sentinel identity is load-bearing: WaitRollout keys on it to report the degraded
+		// rollout with full diagnostics instead of routing it through the API-failure path.
+		assert.ErrorIs(t, err, errAppDegraded)
 	})
 
 	t.Run("returnsForceRetryWhenDegradedWithSameHash", func(t *testing.T) {
