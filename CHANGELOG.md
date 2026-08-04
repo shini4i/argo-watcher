@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-08-04
+
 ### Added
 
 - A deployment that requests an image the Argo CD application does not define now
@@ -592,7 +594,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bumped the Go toolchain to `1.25.11`, resolving a `net/textproto` standard
   library vulnerability present in `go1.25.9`.
 
-[Unreleased]: https://github.com/shini4i/argo-watcher/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/shini4i/argo-watcher/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/shini4i/argo-watcher/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/shini4i/argo-watcher/compare/v0.12.2...v0.13.0
 [0.12.2]: https://github.com/shini4i/argo-watcher/compare/v0.12.1...v0.12.2
 [0.12.1]: https://github.com/shini4i/argo-watcher/compare/v0.12.0...v0.12.1
