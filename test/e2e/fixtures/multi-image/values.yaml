@@ -18,7 +18,7 @@ app:
   proxyTag: "1.28"
 
   # Second image, added through the app chart's rawObject passthrough (the same
-  # mechanism hook-fixture.sh uses) rather than a hand-written chart. Rendered via
+  # mechanism failure-fixture.sh uses) rather than a hand-written chart. Rendered via
   # app.render, which tpls the value — so {{ .Values.proxyTag }} resolves against
   # the subchart values. No probes: the image runs a long-lived server, so the pod
   # reaching Running is enough for Argo to report the Deployment Healthy.

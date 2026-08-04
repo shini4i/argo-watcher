@@ -25,6 +25,14 @@ const (
 // It must never reach the user-visible task status — WaitRollout swallows it so the caller can report the actual rollout state instead.
 var errForceRetry = errors.New("force retry")
 
+// errAppDegraded is an internal sentinel returned by the poll loop when the application went
+// Degraded after the task's images landed, which makes the failure terminal. Like errForceRetry it
+// must never reach the user-visible task status: any error escaping WaitRollout is reported through
+// HandleArgoAPIFailure, which blames ArgoCD's API and carries no diagnostics. WaitRollout therefore
+// swallows it so the caller reports the degraded rollout together with its resource-level cause
+// (a failed hook, a crashlooping pod) instead.
+var errAppDegraded = errors.New("application has degraded")
+
 // errTaskSuperseded is an internal sentinel returned by the poll loop when the task
 // has been marked cancelled in the shared state by a newer deployment for the same
 // app. Unlike errForceRetry it is not swallowed: WaitForRollout uses it to stop
@@ -208,16 +216,28 @@ func (monitor *DeploymentMonitor) WaitRollout(task models.Task) (*models.Applica
 		return checkRolloutStatus(task, app, status)
 	}, retryOptions...)
 
-	// Once the retry budget or the wall-clock deadline is exhausted while still polling, surface the
-	// last successfully-fetched application instead of the internal sentinel or the context error, so
-	// the caller can report the real rollout status (e.g. "not synced", "not healthy") to the user.
+	// Whenever the loop ends with the app's real rollout state already observed, surface the last
+	// successfully-fetched application instead of the internal sentinel or the context error, so the
+	// caller can report that status (e.g. "not synced", "not healthy", "degraded") to the user.
 	// If no fetch ever succeeded (application is nil), the error is returned so the caller can classify
 	// the underlying failure (e.g. connection refused -> aborted).
-	if application != nil && (errors.Is(err, errForceRetry) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)) {
+	if application != nil && rolloutStateAlreadyObserved(err) {
 		err = nil
 	}
 
 	return application, err
+}
+
+// rolloutStateAlreadyObserved reports whether err means the poll loop ended with the application's
+// real rollout state already fetched, so the caller must report that state (with its diagnostics)
+// rather than the error itself: the force-retry and degraded sentinels, plus the deadline and
+// cancellation errors that end a loop still waiting for a final state. errTaskSuperseded is
+// deliberately absent — a superseded task must have no status written at all (issue #353).
+func rolloutStateAlreadyObserved(err error) bool {
+	return errors.Is(err, errForceRetry) ||
+		errors.Is(err, errAppDegraded) ||
+		errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, context.Canceled)
 }
 
 // configureRetryOptions derives retry attempts by preferring per-task overrides, then monitor defaults, and finally a legacy retry window aligned with the current retry delay.
@@ -424,7 +444,7 @@ func checkRolloutStatus(task models.Task, application *models.Application, statu
 		normalizedImages := helpers.NormalizeImages(application.Status.Summary.Images)
 		hash := helpers.GenerateHash(strings.Join(normalizedImages, ","))
 		if !bytes.Equal(task.SavedAppStatus.ImagesHash, hash) {
-			return retry.Unrecoverable(errors.New("application has degraded"))
+			return retry.Unrecoverable(errAppDegraded)
 		}
 	case models.ArgoRolloutAppSuccess:
 		slog.Debug("Application rollout finished", "id", task.Id)

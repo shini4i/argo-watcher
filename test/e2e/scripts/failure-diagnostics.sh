@@ -29,7 +29,22 @@ GOOD_TAG="${GOOD_TAG:-v1.10.1}"
 # Build the client once; every scenario runs the same binary (deterministic, no
 # per-invocation `go run` compile).
 bin_dir="$(mktemp -d)"
-trap 'rm -rf "$bin_dir"' EXIT
+# Revert the shared chart values on ANY exit, not just the happy path: a scenario setup that dies
+# (its app never reaching the expected state) would otherwise leave a repo-wide fixture committed,
+# and a failing phase deliberately leaves the cluster up — so the next run would start from a broken
+# baseline. The diagnosis lives in the captured client output, not in the live cluster state.
+#
+# Gated on a fixture actually having been applied, so a phase that fails before that (an unreachable
+# service, a failed build) does not push a pointless commit to the lab's gitops repo.
+fixture_applied=0
+cleanup() {
+  if [[ "$fixture_applied" -eq 1 ]]; then
+    "${here}/failure-fixture.sh" remove >/dev/null 2>&1 || true
+  fi
+  rm -rf "$bin_dir"
+  return
+}
+trap cleanup EXIT
 build_client "$bin_dir" || die "client build failed"
 
 wait_service || die "argo-watcher not reachable on ${AW_URL}"
@@ -77,7 +92,6 @@ restore_good_tag() {
 # the Pod (resource tree), never in the app's top-level resources; the fix must surface it.
 scenario_bad_image() {
   echo "task={\"app\":\"app1\",\"author\":\"e2e\",\"project\":\"lab\",\"timeout\":90,\"images\":[{\"image\":\"${IMAGE}\",\"tag\":\"v0.0.0-nopull\"}]}"
-  echo "token=1"
   echo "expect=Unhealthy resources:"
   echo "expect=Pod("
   echo "expect=ErrImagePull"
@@ -112,15 +126,109 @@ scenario_unvalidated_not_available() {
 # the old tag, the expected image is "not available", and the failure diagnostics carry the hook.
 scenario_failed_presync_hook() {
   echo "task={\"app\":\"app3\",\"author\":\"e2e\",\"project\":\"lab\",\"timeout\":90,\"images\":[{\"image\":\"${IMAGE}\",\"tag\":\"v0.0.0-hookfail\"}]}"
-  echo "token=1"
   echo "expect=Failed hooks:"
   echo "expect=PreSync Failed"
   echo "setup=setup_failed_presync_hook"
   echo "teardown=teardown_failed_presync_hook"
   return
 }
-setup_failed_presync_hook()    { "${here}/hook-fixture.sh" add app3; return; }
-teardown_failed_presync_hook() { "${here}/hook-fixture.sh" remove app3; restore_good_tag app3; return; }
+setup_failed_presync_hook()    { fixture_applied=1; "${here}/failure-fixture.sh" hook; return; }
+teardown_failed_presync_hook() { "${here}/failure-fixture.sh" remove; restore_good_tag app3; return; }
+
+# A failing plain (non-hook) migration Job holds the app Degraded while the deploy's image
+# rolls out normally. That combination — Synced, the expected image live, health Degraded — is
+# the TERMINAL degraded rollout, which must be reported as a degraded rollout carrying the
+# resource-level cause. Regression guard for the routing bug where this arm was reported as
+# "ArgoCD API Error: application has degraded" with no diagnostics at all.
+#
+# app4 is used by no other scenario in this phase, so the repo-wide fixture is added and
+# removed around this deploy alone. The tag must differ from the app's current one or the
+# write-back is a byte-identical no-op (#472) and no sync — hence no rollout — happens.
+scenario_degraded_migration_job() {
+  local tag
+  tag=$(other_tag app4)
+  echo "task={\"app\":\"app4\",\"author\":\"e2e\",\"project\":\"lab\",\"timeout\":180,\"images\":[{\"image\":\"${IMAGE}\",\"tag\":\"${tag}\"}]}"
+  echo "expect=Rollout status is degraded"
+  echo "expect=App health status \"Degraded\""
+  echo "expect=Job(failing-migration) Degraded with message Job has reached the specified backoff limit"
+  echo "expect=Unhealthy resources:"
+  # The pod-level cause comes only from the resource tree; the pod name carries a random
+  # suffix, so assert the message. Without the tree enrichment this line is absent entirely.
+  echo "expect=failed with exit code 1"
+  # A terminal degradation must be reported the moment it is observed, not waited out: the
+  # deploy above allows 180s, so anything near it means the rollout kept polling instead.
+  echo "max_seconds=120"
+  echo "setup=setup_degraded_migration_job"
+  echo "teardown=teardown_degraded_migration_job"
+  return
+}
+setup_degraded_migration_job() {
+  fixture_applied=1
+  "${here}/failure-fixture.sh" degraded
+  # Nothing is polling app4 yet, so without a nudge this would wait out ArgoCD's default 180s
+  # reconciliation. The refresh annotation makes the auto-sync (and the Job's failure) prompt
+  # and deterministic instead.
+  refresh_all_apps
+  # The Job must already be failing when the deploy starts, so the rollout observes Degraded
+  # with the new image live rather than a mid-sync state that is merely not-yet-healthy.
+  wait_app app4 "Degraded" 40 || die "app4 never became Degraded with the failing-migration fixture"
+  return
+}
+teardown_degraded_migration_job() {
+  "${here}/failure-fixture.sh" remove
+  refresh_all_apps
+  # Wait for the prune to clear the Job before restoring the tag: a deploy issued while the
+  # app is still Degraded would fail and burn its whole timeout, and later phases open on a
+  # Synced/Healthy baseline.
+  wait_app app4 "Synced/Healthy" 60 || note "app4 did not return to Synced/Healthy (last: ${APP_STATE:-unknown})"
+  restore_good_tag app4
+  return
+}
+
+# A rollout that merely runs out its timeout while pods are still coming up has NOTHING
+# Degraded — every node is Progressing, which the problem-health filter excludes. The reason must
+# still name what never became ready instead of ending at a bare health line with no resources.
+scenario_progressing_timeout() {
+  local tag
+  tag=$(other_tag app5)
+  # A short timeout is the point: the app never becomes healthy, so the task must expire. Kept
+  # well under the fixture's progressDeadlineSeconds so nothing turns Degraded first.
+  echo "task={\"app\":\"app5\",\"author\":\"e2e\",\"project\":\"lab\",\"timeout\":75,\"images\":[{\"image\":\"${IMAGE}\",\"tag\":\"${tag}\"}]}"
+  echo "expect=Rollout status is not healthy"
+  echo "expect=App health status \"Progressing\""
+  echo "expect=Resources still progressing:"
+  echo "expect=never-ready"
+  echo "max_seconds=150"
+  echo "setup=setup_progressing_timeout"
+  echo "teardown=teardown_progressing_timeout"
+  return
+}
+setup_progressing_timeout() {
+  fixture_applied=1
+  "${here}/failure-fixture.sh" pending
+  refresh_all_apps
+  wait_app app5 "Progressing" 40 || die "app5 never became Progressing with the never-ready fixture"
+  return
+}
+teardown_progressing_timeout() {
+  "${here}/failure-fixture.sh" remove
+  refresh_all_apps
+  wait_app app5 "Synced/Healthy" 60 || note "app5 did not return to Synced/Healthy (last: ${APP_STATE:-unknown})"
+  restore_good_tag app5
+  return
+}
+
+# refresh_all_apps: ask ArgoCD to re-compare every fixture app against git now.
+#
+# Scoped to ALL apps, not just the one under test: chart/values.yaml is shared, so an injected
+# fixture breaks every fixture app, and removing it only clears them once each one reconciles.
+# Refreshing just the app under test would leave the rest unhealthy for up to ArgoCD's 180s
+# reconciliation and stall whichever phase runs next on its Synced/Healthy precondition.
+refresh_all_apps() {
+  kubectl -n "$NS_ARGOCD" annotate applications --all \
+    argocd.argoproj.io/refresh=normal --overwrite >/dev/null 2>&1 || true
+  return
+}
 
 # An image name the app never declares must fail RIGHT AWAY (issue #519) instead of burning
 # the task timeout. token=0 keeps the app green and synced, which is exactly the state the
@@ -139,6 +247,15 @@ scenario_image_not_part_of_app() {
   echo "expect=List of images defined in the application:"
   echo "expect=${IMAGE}"
   echo "max_seconds=60"
+  echo "setup=setup_image_not_part_of_app"
+  return
+}
+# The desired-state check runs only against a Synced AND Healthy app, and the fixtures the earlier
+# scenarios inject are repo-wide — so app2 is broken and pruned again alongside the app actually
+# under test. Waiting here, rather than trusting the previous teardown, keeps max_seconds above
+# honest: an app still mid-prune would skip the check and burn the full task timeout instead.
+setup_image_not_part_of_app() {
+  require_app_synced app2 60
   return
 }
 
@@ -146,6 +263,8 @@ SCENARIOS=(
   scenario_bad_image
   scenario_unvalidated_not_available
   scenario_failed_presync_hook
+  scenario_degraded_migration_job
+  scenario_progressing_timeout
   scenario_image_not_part_of_app
 )
 
