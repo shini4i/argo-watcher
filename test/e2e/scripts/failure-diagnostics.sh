@@ -92,7 +92,6 @@ restore_good_tag() {
 # the Pod (resource tree), never in the app's top-level resources; the fix must surface it.
 scenario_bad_image() {
   echo "task={\"app\":\"app1\",\"author\":\"e2e\",\"project\":\"lab\",\"timeout\":90,\"images\":[{\"image\":\"${IMAGE}\",\"tag\":\"v0.0.0-nopull\"}]}"
-  echo "token=1"
   echo "expect=Unhealthy resources:"
   echo "expect=Pod("
   echo "expect=ErrImagePull"
@@ -127,7 +126,6 @@ scenario_unvalidated_not_available() {
 # the old tag, the expected image is "not available", and the failure diagnostics carry the hook.
 scenario_failed_presync_hook() {
   echo "task={\"app\":\"app3\",\"author\":\"e2e\",\"project\":\"lab\",\"timeout\":90,\"images\":[{\"image\":\"${IMAGE}\",\"tag\":\"v0.0.0-hookfail\"}]}"
-  echo "token=1"
   echo "expect=Failed hooks:"
   echo "expect=PreSync Failed"
   echo "setup=setup_failed_presync_hook"
@@ -150,7 +148,6 @@ scenario_degraded_migration_job() {
   local tag
   tag=$(other_tag app4)
   echo "task={\"app\":\"app4\",\"author\":\"e2e\",\"project\":\"lab\",\"timeout\":180,\"images\":[{\"image\":\"${IMAGE}\",\"tag\":\"${tag}\"}]}"
-  echo "token=1"
   echo "expect=Rollout status is degraded"
   echo "expect=App health status \"Degraded\""
   echo "expect=Job(failing-migration) Degraded with message Job has reached the specified backoff limit"
@@ -197,7 +194,6 @@ scenario_progressing_timeout() {
   # A short timeout is the point: the app never becomes healthy, so the task must expire. Kept
   # well under the fixture's progressDeadlineSeconds so nothing turns Degraded first.
   echo "task={\"app\":\"app5\",\"author\":\"e2e\",\"project\":\"lab\",\"timeout\":75,\"images\":[{\"image\":\"${IMAGE}\",\"tag\":\"${tag}\"}]}"
-  echo "token=1"
   echo "expect=Rollout status is not healthy"
   echo "expect=App health status \"Progressing\""
   echo "expect=Resources still progressing:"
