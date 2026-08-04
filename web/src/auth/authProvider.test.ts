@@ -293,6 +293,78 @@ describe('authProvider', () => {
       expect(userManagerMock.signinRedirect).not.toHaveBeenCalled();
     });
 
+    it('reports OIDC as enabled before any provider round trip', async () => {
+      mockConfig(enabledConfig());
+      userManagerMock.getUser.mockResolvedValue(null);
+      // Recorded, not asserted, inside the callback: bootstrapAuth catches
+      // everything, so a failed expectation in there would be swallowed and the
+      // ordering claim would go unchecked.
+      let redirectCallsWhenNotified = -1;
+      const onOidcEnabled = vi.fn(() => {
+        redirectCallsWhenNotified = userManagerMock.signinRedirect.mock.calls.length;
+      });
+      const module = await import('./authProvider');
+
+      await module.bootstrapAuth({ onOidcEnabled });
+
+      expect(onOidcEnabled).toHaveBeenCalledTimes(1);
+      // The caller learns a sign-in is coming before the redirect starts, which is
+      // what lets it swap the loading message ahead of the round trip.
+      expect(redirectCallsWhenNotified).toBe(0);
+      expect(userManagerMock.signinRedirect).toHaveBeenCalledTimes(1);
+    });
+
+    it('never reports OIDC as enabled for an auth-less deployment', async () => {
+      mockConfig({ oidc: { enabled: false } });
+      const onOidcEnabled = vi.fn();
+      const module = await import('./authProvider');
+
+      await module.bootstrapAuth({ onOidcEnabled });
+
+      expect(onOidcEnabled).not.toHaveBeenCalled();
+    });
+
+    it('reports OIDC as enabled while returning from the provider', async () => {
+      mockConfig(enabledConfig());
+      window.history.replaceState({}, '', '/?code=abc&state=xyz');
+      userManagerMock.signinRedirectCallback.mockResolvedValue(signedInUser());
+      // Recorded rather than asserted inside the callback, as above.
+      let exchangeCallsWhenNotified = -1;
+      const onOidcEnabled = vi.fn(() => {
+        exchangeCallsWhenNotified = userManagerMock.signinRedirectCallback.mock.calls.length;
+      });
+      const module = await import('./authProvider');
+
+      await module.bootstrapAuth({ onOidcEnabled });
+
+      // The code exchange is the longest wait of a sign-in, so it must be labelled
+      // as one before the exchange starts — not left under the neutral message.
+      expect(onOidcEnabled).toHaveBeenCalledTimes(1);
+      expect(exchangeCallsWhenNotified).toBe(0);
+      expect(userManagerMock.signinRedirectCallback).toHaveBeenCalledTimes(1);
+    });
+
+    it('continues the sign-in when the OIDC-enabled callback throws', async () => {
+      mockConfig(enabledConfig());
+      userManagerMock.getUser.mockResolvedValue(null);
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const onOidcEnabled = vi.fn(() => {
+        throw new Error('render failed');
+      });
+      const module = await import('./authProvider');
+
+      await module.bootstrapAuth({ onOidcEnabled });
+
+      expect(onOidcEnabled).toHaveBeenCalledTimes(1);
+      // A broken loading screen must not cost the user their sign-in.
+      expect(userManagerMock.signinRedirect).toHaveBeenCalledTimes(1);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('onOidcEnabled callback threw'),
+        expect.any(Error),
+      );
+      warnSpy.mockRestore();
+    });
+
     it('completes the authorization-code callback and stores the token', async () => {
       mockConfig(enabledConfig());
       window.history.replaceState({}, '', '/?code=abc&state=xyz');

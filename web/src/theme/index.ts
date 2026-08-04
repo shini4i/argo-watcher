@@ -86,7 +86,7 @@ const getDesignTokens = (mode: PaletteMode): ThemeOptions => ({
         colorPrimary:
           mode === 'dark'
             ? {
-                backgroundImage: 'linear-gradient(135deg, #1f2937 0%, #111827 100%)',
+                backgroundImage: tokens.appBarGradientDark,
               }
             : {
                 backgroundImage: 'none',

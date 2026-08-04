@@ -59,6 +59,8 @@ export const tokens = {
 
   // dark-mode surfaces (kept here so the palette stays consistent across modes)
   canvasDark: '#0B1120',
+  // shared by the dark app bar and the pre-auth loading screen
+  appBarGradientDark: 'linear-gradient(135deg, #1f2937 0%, #111827 100%)',
   surfaceDark: '#15213B',
   surface2Dark: '#1A2746',
 
