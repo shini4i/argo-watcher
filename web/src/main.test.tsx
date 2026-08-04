@@ -112,6 +112,27 @@ describe('main entrypoint', () => {
     unmount();
   });
 
+  it('replaces the sign-in splash with the app once the bootstrap settles', async () => {
+    document.body.innerHTML = '<div id="root"></div>';
+
+    await import('./main');
+
+    notifyOidcEnabled();
+    resolveBootstrap();
+    await waitFor(() => expect(renderMock).toHaveBeenCalledTimes(3));
+
+    // The splash render must land before the app render, or a signed-in user is
+    // left staring at the loading screen.
+    const splash = render(renderMock.mock.calls[1][0] as ReactElement);
+    expect(screen.getByTestId('app-splash')).toHaveTextContent('Signing in…');
+    splash.unmount();
+
+    const app = render(renderMock.mock.calls[2][0] as ReactElement);
+    expect(screen.getByTestId('app-component')).toBeInTheDocument();
+    expect(screen.queryByTestId('app-splash')).toBeNull();
+    app.unmount();
+  });
+
   it('keeps the neutral status line when OIDC is disabled', async () => {
     document.body.innerHTML = '<div id="root"></div>';
 

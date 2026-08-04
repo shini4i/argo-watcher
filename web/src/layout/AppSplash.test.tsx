@@ -33,6 +33,30 @@ describe('AppSplash', () => {
     expect(new Set(delays).size).toBe(3);
   });
 
+  it('stops the dots animating for a reduced-motion preference', () => {
+    render(<AppSplash message="Loading…" />);
+
+    // jsdom does not evaluate media queries, so the emitted rule is read instead
+    // of the computed style. Whitespace is stripped so the assertion does not
+    // depend on the CSS engine's formatting.
+    const css = Array.from(document.querySelectorAll('style'))
+      .map(style => style.textContent ?? '')
+      .join('')
+      .replace(/\s+/g, '');
+
+    // One dot is enough: all three come from the same style callback.
+    const [dot] = screen.getAllByTestId('app-splash-dot');
+    const dotClass = Array.from(dot.classList).find(name => name.startsWith('css-'));
+    const rule = css.match(
+      new RegExp(`@media\\(prefers-reduced-motion:reduce\\)\\{\\.${dotClass}\\{([^}]*)\\}`),
+    );
+
+    expect(rule, `no reduced-motion rule emitted for .${dotClass}`).not.toBeNull();
+    // With the animation off, the resting dim state is what the user sees.
+    expect(rule?.[1]).toContain('animation:none');
+    expect(rule?.[1]).toContain('opacity:0.6');
+  });
+
   it('renders dark even when the surrounding app theme is light', () => {
     render(
       <ThemeProvider theme={lightTheme}>
