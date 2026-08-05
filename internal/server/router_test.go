@@ -95,6 +95,7 @@ func newMetrics(ctrl *gomock.Controller) *mocks.MockMetricsInterface {
 	metrics.EXPECT().ObserveGitWritebackDuration(gomock.Any(), gomock.Any()).AnyTimes()
 	metrics.EXPECT().ObserveGitLockWaitDuration(gomock.Any(), gomock.Any()).AnyTimes()
 	metrics.EXPECT().ObserveDeploymentDuration(gomock.Any(), gomock.Any()).AnyTimes()
+	metrics.EXPECT().AddUnauthenticatedRead(gomock.Any()).AnyTimes()
 	return metrics
 }
 
@@ -231,7 +232,7 @@ func TestDeployLockEndpointRegistration(t *testing.T) {
 		assert.False(t, hasRoute(routes, http.MethodDelete, lockPath),
 			"DELETE deploy-lock must not be registered without an auth backend")
 		assert.True(t, hasRoute(routes, http.MethodGet, lockPath),
-			"read-only GET deploy-lock must stay available")
+			"read-only GET deploy-lock must stay registered")
 	})
 }
 

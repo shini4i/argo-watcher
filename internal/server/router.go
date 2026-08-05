@@ -75,28 +75,52 @@ func (env *Env) CreateRouter() *gin.Engine {
 	}
 	router.StaticFS("/swagger", swaggerFS)
 
-	v1 := router.Group("/api/v1")
+	// The API is split into two groups by how each route is authenticated.
+	//
+	// `open` carries routes that must remain reachable without a session, or that
+	// authenticate themselves:
+	//   - POST /tasks authenticates optionally by design: an uncredentialed
+	//     submission is accepted and monitored, it just gets no git write-back and
+	//     no authority to supersede (see docs/reference/api.md).
+	//   - GET /config bootstraps the login flow. The frontend has to read the OIDC
+	//     issuer and client id from it BEFORE it can hold a token, so gating it
+	//     would make signing in impossible. Its payload is trimmed to match (see
+	//     config.ServerConfig).
+	//   - GET /tasks/:id is the one read a released client performs, polled for the
+	//     whole length of every deployment — and that client sends its credential
+	//     only on POST. Requiring auth here would break every pipeline at once, so
+	//     the v4 UUID acts as the capability: it is handed only to the submitter,
+	//     and the enumerable list endpoint below is protected. Uncredentialed hits
+	//     are counted (countUnauthenticatedRead) so the fleet's migration can be
+	//     measured before this exemption is ever removed.
+	//   - POST/DELETE /deploy-lock enforce privileged group membership themselves,
+	//     and are only registered when OIDC is enabled: without an auth backend
+	//     they cannot be protected, so exposing them would leave an
+	//     unauthenticated deploy-freeze switch reachable by anyone who can reach
+	//     the server (including via a victim's browser).
+	//
+	// `authenticated` carries the browser-facing reads. Nothing but the Web UI
+	// consumes them, so requiring a credential costs no pipeline anything. When OIDC
+	// is disabled the middleware is a no-op and these behave exactly as before.
+	open := router.Group("/api/v1")
+	authenticated := router.Group("/api/v1", env.requireAuthenticatedRead())
 	{
-		v1.POST("/tasks", env.addTask)
-		v1.GET("/tasks", env.getState)
-		v1.GET("/tasks/:id", env.getTaskStatus)
-		v1.GET("/version", env.getVersion)
-		v1.GET("/config", env.getConfig)
+		open.POST("/tasks", env.addTask)
+		open.GET("/config", env.getConfig)
+		open.GET("/tasks/:id", env.countUnauthenticatedRead(), env.getTaskStatus)
+
+		authenticated.GET("/tasks", env.getState)
+		authenticated.GET("/version", env.getVersion)
 		// Read-only ArgoCD + state-backend reachability for the frontend
-		// "unreachable" banner (issue #498). Always registered: it exposes no
-		// privileged action and mirrors the cached liveness-probe state without a
-		// live probe.
-		v1.GET("/reachability", env.reachability)
-		// The state-changing deploy-lock endpoints are only registered when OIDC
-		// auth is enabled: without an auth backend they cannot be protected, so
-		// exposing them would leave an unauthenticated deploy-freeze switch reachable
-		// by anyone who can reach the server (including via a victim's browser). The
-		// read-only GET stays available so the banner and scheduled lockdown keep working.
+		// "unreachable" banner (issue #498). It exposes no privileged action and
+		// mirrors the cached liveness-probe state without a live probe.
+		authenticated.GET("/reachability", env.reachability)
+		authenticated.GET(deployLockEndpoint, env.isDeployLockSet)
+
 		if env.config.OIDC.Enabled {
-			v1.POST(deployLockEndpoint, env.SetDeployLock)
-			v1.DELETE(deployLockEndpoint, env.ReleaseDeployLock)
+			open.POST(deployLockEndpoint, env.SetDeployLock)
+			open.DELETE(deployLockEndpoint, env.ReleaseDeployLock)
 		}
-		v1.GET(deployLockEndpoint, env.isDeployLockSet)
 	}
 
 	// Static file serving - use NoRoute to handle unmatched paths

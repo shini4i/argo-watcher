@@ -12,7 +12,7 @@ scrape_configs:
 
 ## Exposed metrics
 
-The server emits ten metrics today, all defined in [`internal/prometheus/metrics.go`](https://github.com/shini4i/argo-watcher/blob/main/internal/prometheus/metrics.go).
+The server emits eleven metrics today, all defined in [`internal/prometheus/metrics.go`](https://github.com/shini4i/argo-watcher/blob/main/internal/prometheus/metrics.go).
 
 | Metric | Type | Labels | Description |
 |---|---|---|---|
@@ -26,6 +26,7 @@ The server emits ten metrics today, all defined in [`internal/prometheus/metrics
 | `gitops_lock_wait_duration_seconds` | histogram | `app` | Time spent waiting to acquire the per-repository git write-back lock. High values mean tasks are queued behind concurrent write-backs to the same repo. |
 | `deployment_duration_seconds` | histogram | `app` | End-to-end wall-clock time of a successful deployment, from the start of rollout monitoring until the app reached the deployed state. Only successful deployments are observed (a failure's duration is dominated by the timeout). |
 | `gitops_batch_size` | histogram | (none) | Number of applications coalesced into a single batch write-back flush. Only observed when `GIT_BATCH_WRITEBACK` is enabled; a distribution skewed toward 1 means little batching is happening (low contention). See the [GitOps Updater](../guides/gitops-updater.md#batch-write-back) guide. |
+| `unauthenticated_reads` | counter | `path` | Reads served without a credential on the endpoints deliberately left open while OIDC auth is enabled (currently `GET /api/v1/tasks/{id}`). Zero only when every caller presents a credential. See [Tracking the read-auth migration](#tracking-the-read-auth-migration). |
 
 In addition, the standard Go runtime metrics from the Prometheus client library are exposed (`go_*`, `process_*`).
 
@@ -160,6 +161,26 @@ sum(rate(processed_deployments[1h])) by (app)
 ```
 
 A graph panel showing deployment frequency per application — useful for capacity planning and identifying applications that suddenly stop deploying.
+
+## Tracking the read-auth migration
+
+With [OIDC authentication](../guides/oidc.md) enabled, the browser-facing reads
+require a credential, but `GET /api/v1/tasks/{id}` stays open: the Argo Watcher
+client polls it for the whole length of every deployment and sends its credential
+only on submission, so requiring one there would break every pipeline still
+running an older client. The `unauthenticated_reads` counter measures how much of
+your fleet that still is:
+
+```promql
+sum(rate(unauthenticated_reads[1h])) by (path)
+```
+
+Every pipeline that upgrades to a client sending its credential on reads drops out
+of this figure. When it reaches zero and stays there across a full deployment
+cycle for every project, no caller depends on the exemption any more.
+
+Nothing is logged per request — the endpoint is polled continuously during a
+deployment, so a log line per read would bury everything else.
 
 ## Where to look next
 

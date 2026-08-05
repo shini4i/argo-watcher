@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/shini4i/argo-watcher/internal/auth"
 	"github.com/shini4i/argo-watcher/internal/models"
 	"github.com/shini4i/argo-watcher/internal/state"
 )
@@ -35,6 +36,8 @@ const (
 // @Description Get the version of the server
 // @Tags frontend
 // @Success 200 {string} string
+// @Failure 401 {object} models.TaskStatus "no credential, or the credential was rejected (only when OIDC auth is enabled)"
+// @Failure 503 {object} models.TaskStatus "the OIDC provider could not be consulted; retry"
 // @Router /api/v1/version [get]
 func (env *Env) getVersion(c *gin.Context) {
 	c.JSON(http.StatusOK, version)
@@ -118,6 +121,8 @@ func (env *Env) addTask(c *gin.Context) {
 // @Param limit query int false "Maximum number of tasks to return (1-1000, defaults to 1000)"
 // @Param offset query int false "Number of tasks to skip before returning results"
 // @Success 200 {object} models.TasksResponse
+// @Failure 401 {object} models.TaskStatus "no credential, or the credential was rejected (only when OIDC auth is enabled)"
+// @Failure 503 {object} models.TaskStatus "the OIDC provider could not be consulted; retry"
 // @Router /api/v1/tasks [get]
 func (env *Env) getState(c *gin.Context) {
 	startTime, err := strconv.ParseFloat(c.Query("from_timestamp"), 64)
@@ -240,10 +245,9 @@ func (env *Env) getConfig(c *gin.Context) {
 // failure the response distinguishes:
 //   - 401 with "authentication required" when no auth header was sent.
 //   - 401 with the strategy's reason when the token was rejected.
-//
-// Strategy transport/parse failures (e.g. the provider unreachable) are also
-// returned as 401 with a sanitized "token validation failed" message; full
-// details land in the server log only.
+//   - 503 when the provider could not be consulted at all, so that a provider
+//     outage does not make the Web UI treat the session as dead (see
+//     requireAuthenticatedRead). Details land in the server log only.
 func (env *Env) requireOIDCAuth(c *gin.Context) bool {
 	if !env.config.OIDC.Enabled {
 		return true
@@ -253,6 +257,15 @@ func (env *Env) requireOIDCAuth(c *gin.Context) bool {
 		valid, err := env.validateToken(c, header)
 		if valid {
 			return true
+		}
+		if errors.Is(err, auth.ErrProviderUnavailable) {
+			slog.Error("rejecting request: authentication provider unavailable",
+				"method", c.Request.Method, "url", c.Request.URL, "error", err)
+			c.JSON(http.StatusServiceUnavailable, models.TaskStatus{
+				Status: "authentication provider unavailable",
+				Error:  err.Error(),
+			})
+			return false
 		}
 		if err != nil {
 			// A header was present and the strategy rejected the token. Surface the reason.
@@ -272,6 +285,105 @@ func (env *Env) requireOIDCAuth(c *gin.Context) bool {
 		Status: unauthorizedMessage,
 		Error:  "authentication required (set " + oidcHeader + " header)",
 	})
+	return false
+}
+
+// requireAuthenticatedRead returns middleware that rejects reads carrying no
+// valid credential once OIDC auth is enabled. With OIDC disabled it is a no-op:
+// there is no auth backend to validate against, so gating reads would only lock
+// operators out of their own UI.
+//
+// Any configured credential is accepted — an OIDC session, the deploy token, or a
+// CI JWT. Reads are not restricted to OIDC_PRIVILEGED_GROUPS (that gate belongs to
+// the deploy-lock endpoints), and accepting machine credentials is what will let
+// the deliberately open GET /tasks/:id be closed later without cutting pipelines
+// off from their own task status.
+//
+// Failures are mapped so the frontend can tell them apart: a rejected or missing
+// credential is 401, while an authentication provider that could not be consulted
+// is 503. That distinction matters — the Web UI discards its session on a 401, so
+// reporting a provider outage as one would sign every user out over a blip.
+func (env *Env) requireAuthenticatedRead() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if !env.config.OIDC.Enabled {
+			c.Next()
+			return
+		}
+
+		valid, err := env.authenticator.AuthenticateRequest(c.Request)
+		if valid {
+			c.Next()
+			return
+		}
+
+		if errors.Is(err, auth.ErrProviderUnavailable) {
+			slog.Error("rejecting read: authentication provider unavailable",
+				"method", c.Request.Method, "url", c.Request.URL, "error", err)
+			c.AbortWithStatusJSON(http.StatusServiceUnavailable, models.TaskStatus{
+				Status: "authentication provider unavailable",
+				Error:  err.Error(),
+			})
+			return
+		}
+
+		if err != nil {
+			slog.Warn("rejecting read with invalid credential",
+				"method", c.Request.Method, "url", c.Request.URL, "error", err)
+			c.AbortWithStatusJSON(http.StatusUnauthorized, models.TaskStatus{
+				Status: unauthorizedMessage,
+				Error:  err.Error(),
+			})
+			return
+		}
+
+		slog.Warn("rejecting unauthenticated read", "method", c.Request.Method, "url", c.Request.URL)
+		c.AbortWithStatusJSON(http.StatusUnauthorized, models.TaskStatus{
+			Status: unauthorizedMessage,
+			Error:  "authentication required (set " + oidcHeader + " header)",
+		})
+	}
+}
+
+// countUnauthenticatedRead returns middleware that records a read on which no
+// credential was presented at all, while OIDC auth is enabled. It never blocks the
+// request: the route it guards is open on purpose (see CreateRouter), and the
+// counter exists to measure how much of the fleet still reads without credentials —
+// the evidence needed before that exemption can be removed.
+//
+// It deliberately tests for the presence of a credential rather than its validity.
+// Validating here would put a provider round trip in the latency path of an
+// endpoint documented as never blocking, and during a provider outage every poll
+// would wait on it. It would also blur the measurement: an expired token or an
+// unreachable provider would be counted as "no credential", inflating the very
+// number whose fall to zero is the signal that this exemption can be closed.
+//
+// A counter rather than a log line: the guarded endpoint is polled for the entire
+// duration of every deployment, so logging each request would bury the log.
+func (env *Env) countUnauthenticatedRead() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if !env.config.OIDC.Enabled {
+			c.Next()
+			return
+		}
+
+		if !env.hasCredential(c.Request) {
+			env.metrics.AddUnauthenticatedRead(c.FullPath())
+		}
+
+		c.Next()
+	}
+}
+
+// hasCredential reports whether the request carries a non-empty value in any header
+// a configured auth strategy reads. It says nothing about whether that credential
+// is valid.
+func (env *Env) hasCredential(request *http.Request) bool {
+	for header := range env.strategies {
+		if request.Header.Get(header) != "" {
+			return true
+		}
+	}
+
 	return false
 }
 

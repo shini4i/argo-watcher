@@ -256,7 +256,7 @@ The Web UI lockdown banner updates automatically (within a few seconds) when a s
 ### Manual Lockdown
 
 !!! note
-    Manual locking requires OIDC authentication (`OIDC_ENABLED=true`; the legacy `KEYCLOAK_ENABLED=true` still works). Without an auth backend the server does not register the `POST`/`DELETE /api/v1/deploy-lock` endpoints (requests return `404 Not Found`) and the Web UI does not show the lock toggle. The read-only lock status and scheduled lockdown (above) work regardless of authentication. See [OIDC / SSO Integration](oidc.md).
+    Manual locking requires OIDC authentication (`OIDC_ENABLED=true`; the legacy `KEYCLOAK_ENABLED=true` still works). Without an auth backend the server does not register the `POST`/`DELETE /api/v1/deploy-lock` endpoints (requests return `404 Not Found`) and the Web UI does not show the lock toggle. Scheduled lockdown (above) works regardless of authentication. Reading the lock status needs no privileged group, but with OIDC enabled it does need a credential — see [Protected endpoints](oidc.md#protected-endpoints). See also [OIDC / SSO Integration](oidc.md).
 
 #### Via API
 

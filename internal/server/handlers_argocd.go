@@ -27,6 +27,8 @@ type ReachabilityResponse struct {
 // @Tags frontend
 // @Produce json
 // @Success 200 {object} ReachabilityResponse
+// @Failure 401 {object} models.TaskStatus "no credential, or the credential was rejected (only when OIDC auth is enabled)"
+// @Failure 503 {object} models.TaskStatus "the OIDC provider could not be consulted; retry"
 // @Router /api/v1/reachability [get]
 func (env *Env) reachability(c *gin.Context) {
 	// Read the cached reason once and derive availability from it, so the

@@ -21,11 +21,17 @@ import (
 // or "https://authentik/application/o/argo-watcher/" for Authentik); the backend
 // discovers the userinfo endpoint from it at runtime. The deprecated KEYCLOAK_*
 // variables are mapped onto these fields by applyKeycloakCompat.
+//
+// TokenValidationInterval (milliseconds) is how long a provider decision about a
+// token may be reused, bounding how stale an authorization decision can be. It is
+// capped per token by that token's own expiry, so a cached decision never outlives
+// the credential it describes. Zero revalidates against the provider on every
+// request, which multiplies UI refreshes into provider traffic.
 type OIDCConfig struct {
 	Enabled                 bool     `env:"OIDC_ENABLED" json:"enabled"`
 	IssuerURL               string   `env:"OIDC_ISSUER_URL" json:"issuer_url,omitempty"`
 	ClientId                string   `env:"OIDC_CLIENT_ID" json:"client_id,omitempty"`
-	TokenValidationInterval int      `env:"OIDC_TOKEN_VALIDATION_INTERVAL" envDefault:"10000" json:"token_validation_interval"`
+	TokenValidationInterval int      `env:"OIDC_TOKEN_VALIDATION_INTERVAL" envDefault:"300000" json:"token_validation_interval"`
 	PrivilegedGroups        []string `env:"OIDC_PRIVILEGED_GROUPS" json:"privileged_groups,omitempty"`
 }
 
@@ -58,6 +64,15 @@ type MattermostConfig struct {
 	MentionAuthor bool   `env:"MATTERMOST_MENTION_AUTHOR" envDefault:"false" json:"mention_author"` // prepend @<Author> to every post
 }
 
+// ServerConfig is the server's runtime configuration. Its json tags double as the
+// wire format of GET /api/v1/config, which is served WITHOUT authentication —
+// the frontend must read the OIDC issuer and client id from it before a login can
+// happen, so the endpoint cannot be gated. Every field marked `json:"-"` is
+// therefore excluded because it must not be public, not merely because the UI has
+// no use for it: notification targets (a webhook URL is itself the credential),
+// the lockdown schedule, and the TLS posture all describe the deployment to an
+// unauthenticated caller. Add a new field to the payload only if the frontend or
+// the CLI client genuinely needs it.
 type ServerConfig struct {
 	ArgoUrl            url.URL          `env:"ARGO_URL,required,notEmpty" json:"argo_cd_url"`
 	ArgoUrlAlias       string           `env:"ARGO_URL_ALIAS" json:"argo_cd_url_alias,omitempty"` // Used to generate App Url. Can be omitted if ArgoUrl is reachable from outside.
@@ -69,7 +84,7 @@ type ServerConfig struct {
 	RegistryProxyUrl   string           `env:"DOCKER_IMAGES_PROXY" json:"registry_proxy_url,omitempty"`
 	StateType          string           `env:"STATE_TYPE,required" json:"state_type"`
 	StaticFilePath     string           `env:"STATIC_FILES_PATH" envDefault:"static" json:"-"`
-	SkipTlsVerify      bool             `env:"SKIP_TLS_VERIFY" envDefault:"false" json:"skip_tls_verify"`
+	SkipTlsVerify      bool             `env:"SKIP_TLS_VERIFY" envDefault:"false" json:"-"`
 	LogLevel           string           `env:"LOG_LEVEL" envDefault:"info" json:"log_level"`
 	Host               string           `env:"HOST" envDefault:"0.0.0.0" json:"-"`
 	Port               string           `env:"PORT" envDefault:"8080" json:"-"`
@@ -77,9 +92,9 @@ type ServerConfig struct {
 	JWTSecret          string           `env:"JWT_SECRET" json:"-"`
 	Db                 DatabaseConfig   `json:"-"`
 	OIDC               OIDCConfig       `json:"oidc,omitempty"`
-	LockdownSchedule   string           `env:"LOCKDOWN_SCHEDULE" json:"lockdown_schedule,omitempty"`
-	Webhook            WebhookConfig    `json:"webhook,omitempty"`
-	Mattermost         MattermostConfig `json:"mattermost,omitempty"`
+	LockdownSchedule   string           `env:"LOCKDOWN_SCHEDULE" json:"-"`
+	Webhook            WebhookConfig    `json:"-"`
+	Mattermost         MattermostConfig `json:"-"`
 	DevEnvironment     bool             `env:"DEV_ENVIRONMENT" envDefault:"false" json:"devEnvironment"` // Whether a set of dev specific setting should be turned on, do not touch unless you know what you are doing
 	ArgoApiRetries     uint             `env:"ARGO_API_RETRIES" envDefault:"3" json:"argo_api_retries"`  // Total attempts (including initial); passed to retry.Attempts()
 	RepoCachePath      string           `env:"REPO_CACHE_PATH" envDefault:"/data" json:"-"`

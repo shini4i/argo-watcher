@@ -187,6 +187,12 @@ tasks:
     cmds:
       - DEPLOY_TOKEN={{.DEPLOY_TOKEN}} ./scripts/api-surface.sh
 
+  read-auth:
+    desc: "Assert OIDC read protection: 401 without a credential, 503 when the provider is unreachable, exemptions still open"
+    cmds:
+      - AW_CHART_REPO={{.AW_CHART_REPO}} AW_CHART_VERSION={{.AW_CHART_VERSION}}
+        DEPLOY_TOKEN={{.DEPLOY_TOKEN}} JWT_SECRET={{.JWT_SECRET}} ./scripts/read-auth.sh
+
   smoke:
     desc: "One authenticated end-to-end deploy proving the write-back loop"
     cmds:

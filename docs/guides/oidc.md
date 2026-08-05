@@ -8,10 +8,63 @@ When OIDC integration is enabled:
 
 1. Users are redirected to the provider's login page before they can view any tasks in the Web UI.
 2. The user's token is validated by the Argo Watcher backend by calling the provider's **userinfo** endpoint, which the backend discovers automatically from the issuer's [discovery document](https://openid.net/specs/openid-connect-discovery-1_0.html) (`<issuer>/.well-known/openid-configuration`).
-3. Users who belong to one of the configured **privileged groups** see a **Redeploy** button on the task details page and can manage the [deployment lock](gitops-updater.md#deployment-locking).
+3. The backend **requires a credential on its read endpoints** — being signed in is enough, no group membership needed. See [Protected endpoints](#protected-endpoints).
+4. Users who belong to one of the configured **privileged groups** see a **Redeploy** button on the task details page and can manage the [deployment lock](gitops-updater.md#deployment-locking).
+
+With OIDC disabled, every endpoint stays open exactly as before — there is no auth backend to validate against.
 
 !!! note
     The backend discovers the userinfo endpoint lazily, on the first token validation — not at startup — so a provider that is briefly unreachable when Argo Watcher boots does not prevent it from starting.
+
+## Protected endpoints
+
+Enabling OIDC closes the endpoints only the Web UI consumes. Nothing else reads
+them, so no deployment pipeline is affected.
+
+| Endpoint | With OIDC enabled |
+|----------|-------------------|
+| `GET /api/v1/tasks` | Credential required |
+| `GET /api/v1/version` | Credential required |
+| `GET /api/v1/reachability` | Credential required |
+| `GET /api/v1/deploy-lock` | Credential required |
+| `POST`/`DELETE /api/v1/deploy-lock` | Credential required **and** privileged group |
+| `POST /api/v1/tasks` | Unchanged — optional credential (governs git write-back) |
+| `GET /api/v1/tasks/{id}` | **Open** — see below |
+| `GET /api/v1/config` | **Open** — the Web UI reads the issuer and client id from it before it can obtain a token |
+| `/healthz`, `/metrics` | **Open** — probes and Prometheus cannot perform an OIDC flow |
+| `/ws` | **Open** — a browser cannot attach a header to a WebSocket handshake. Carries lock and reachability transitions only |
+
+Any configured credential is accepted on the reads: an OIDC session, the
+`ARGO_WATCHER_DEPLOY_TOKEN`, or a [JWT](gitops-updater.md#jwt-configuration).
+Read access is deliberately **not** limited to `OIDC_PRIVILEGED_GROUPS` — that gate
+applies to the deploy lock only.
+
+!!! warning "`GET /api/v1/tasks/{id}` and `/ws` are not protected"
+    The Argo Watcher client polls `GET /api/v1/tasks/{id}` for the whole length of
+    every deployment and presents its credential only when submitting the task, so
+    requiring one for that lookup would break every pipeline at once. The task id is
+    a random v4 UUID returned only to the submitter, and the enumerable
+    `GET /api/v1/tasks` list is protected, so the exposure is limited to callers that
+    already hold a task id — but a task id appearing in a CI log or a webhook payload
+    is enough to read that task's app, author, project, images and status. The
+    `unauthenticated_reads` metric reports how many such reads still arrive
+    without a credential; see
+    [Tracking the read-auth migration](../operations/observability.md#tracking-the-read-auth-migration).
+
+    `/ws` broadcasts deployment-lock and Argo CD reachability transitions (no task
+    data crosses the socket). Those are the same two signals `GET /api/v1/deploy-lock`
+    and `GET /api/v1/reachability` now require a credential for, so anyone who can
+    open a WebSocket can still observe them: gating the REST endpoints narrows that
+    exposure rather than closing it. Restrict network access to the server
+    accordingly.
+
+### If the provider is unreachable
+
+A read whose credential could not be checked because the provider itself is
+unreachable returns **503 Service Unavailable**, not 401. The Web UI treats a 401 as
+a dead session and signs the user out, so a brief provider outage must not be
+reported as an authentication failure. Cached decisions (see
+`OIDC_TOKEN_VALIDATION_INTERVAL` below) keep working during the outage.
 
 ## Prerequisites
 
@@ -38,13 +91,31 @@ The following environment variables control the OIDC integration:
 | `OIDC_ENABLED`                   | Enable OIDC authentication                                               | `false` | No          |
 | `OIDC_ISSUER_URL`                | The provider's issuer URL (used for discovery)                           |         | Conditional |
 | `OIDC_CLIENT_ID`                 | Client ID registered with the provider                                   |         | Conditional |
-| `OIDC_TOKEN_VALIDATION_INTERVAL` | Interval (in milliseconds) between token validations                     | `10000` | No          |
+| `OIDC_TOKEN_VALIDATION_INTERVAL` | How long (in milliseconds) a provider decision about a token may be reused | `300000` | No          |
 | `OIDC_PRIVILEGED_GROUPS`         | Comma-separated list of groups with elevated permissions                 |         | Conditional |
 
 All `Conditional` variables are required when `OIDC_ENABLED` is set to `true`.
 
+### `OIDC_TOKEN_VALIDATION_INTERVAL`
+
+Every authorization decision is made by asking the provider's userinfo endpoint
+about the token. Since the Web UI refreshes on a timer, doing that per request
+would turn each open browser tab into a steady stream of provider traffic, so a
+decision is reused for this interval — one userinfo call per token per interval,
+regardless of how many requests arrive.
+
+The interval is the upper bound on how stale a **read** authorization can be. Each
+decision is additionally capped by the token's own expiry, so it can never outlive
+the credential it describes. Setting it to `0` validates every request against the
+provider.
+
+Privileged actions — managing the deployment lock — are exempt: they always
+re-verify against the provider, so removing a user from `OIDC_PRIVILEGED_GROUPS`
+takes effect immediately rather than within the interval. A lock click is a rare
+human action, so the extra round trip costs nothing.
+
 !!! note
-    `OIDC_TOKEN_VALIDATION_INTERVAL` is in milliseconds. The default of `10000` checks token validity every 10 seconds.
+    The default is `300000` (5 minutes), matched to typical access-token lifetimes.
 
 ### The issuer URL
 

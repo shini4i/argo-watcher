@@ -175,7 +175,7 @@ metadata:
 - The lock state cannot be read at all — see [All deployments rejected as locked, but nobody set a lock](#all-deployments-rejected-as-locked-but-nobody-set-a-lock).
 
 **How to verify:**
-- Read the current state: `curl $ARGO_WATCHER_URL/api/v1/deploy-lock` (no authentication needed).
+- Read the current state: `curl -H "Oidc-Authorization: $OIDC_TOKEN" $ARGO_WATCHER_URL/api/v1/deploy-lock` (with OIDC enabled any credential works and no privileged group is needed; with OIDC disabled the header can be omitted).
 - Check the response code of the release itself:
   ```bash
   curl -i -X DELETE -H "Oidc-Authorization: $OIDC_TOKEN" $ARGO_WATCHER_URL/api/v1/deploy-lock

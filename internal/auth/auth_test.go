@@ -8,6 +8,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
 	"github.com/shini4i/argo-watcher/internal/config"
@@ -124,6 +125,165 @@ func TestAuthenticatorValidateReturnsLastError(t *testing.T) {
 
 	assert.False(t, valid)
 	assert.EqualError(t, validateErr, "strategy error")
+}
+
+// splitStrategy is a strategy that separates authentication from authorization,
+// standing in for the OIDC service: Validate additionally demands privilege.
+type splitStrategy struct {
+	authenticated bool
+	privileged    bool
+}
+
+func (s splitStrategy) Authenticate(string) error {
+	if !s.authenticated {
+		return errors.New("not authenticated")
+	}
+	return nil
+}
+
+func (s splitStrategy) Validate(string) (bool, error) {
+	if !s.authenticated || !s.privileged {
+		return false, errors.New("not privileged")
+	}
+	return true, nil
+}
+
+// unavailableStrategy stands in for an OIDC service whose provider cannot be
+// reached, which callers must distinguish from a rejected credential.
+type unavailableStrategy struct{}
+
+func (unavailableStrategy) Authenticate(string) error { return ErrProviderUnavailable }
+
+func (unavailableStrategy) Validate(string) (bool, error) { return false, ErrProviderUnavailable }
+
+func TestAuthenticatorAuthenticateRequest(t *testing.T) {
+	newRequest := func(t *testing.T, header, value string) *http.Request {
+		t.Helper()
+		request, err := http.NewRequest(http.MethodGet, "http://example.com", http.NoBody)
+		assert.NoError(t, err)
+		if header != "" {
+			request.Header.Set(header, value)
+		}
+		return request
+	}
+
+	t.Run("accepts an authenticated but unprivileged subject", func(t *testing.T) {
+		// This is the whole point of the split: reads are open to any signed-in
+		// user, while Validate keeps gating privileged actions.
+		authenticator := NewAuthenticator(map[string]AuthStrategy{
+			"Oidc-Authorization": splitStrategy{authenticated: true, privileged: false},
+		})
+		request := newRequest(t, "Oidc-Authorization", "token")
+
+		valid, err := authenticator.AuthenticateRequest(request)
+		assert.True(t, valid)
+		assert.NoError(t, err)
+
+		valid, err = authenticator.Validate(request)
+		assert.False(t, valid)
+		assert.Error(t, err)
+	})
+
+	t.Run("rejects an unauthenticated subject", func(t *testing.T) {
+		authenticator := NewAuthenticator(map[string]AuthStrategy{
+			"Oidc-Authorization": splitStrategy{authenticated: false},
+		})
+
+		valid, err := authenticator.AuthenticateRequest(newRequest(t, "Oidc-Authorization", "token"))
+
+		assert.False(t, valid)
+		assert.Error(t, err)
+	})
+
+	t.Run("treats possession as authentication for strategies without groups", func(t *testing.T) {
+		// A deploy token or CI JWT carries no group concept, so a valid token is
+		// authentication — this is what lets a pipeline read its own task.
+		authenticator := NewAuthenticator(map[string]AuthStrategy{
+			"ARGO_WATCHER_DEPLOY_TOKEN": NewDeployTokenAuthService("valid"),
+		})
+
+		valid, err := authenticator.AuthenticateRequest(newRequest(t, "ARGO_WATCHER_DEPLOY_TOKEN", "valid"))
+
+		assert.True(t, valid)
+		assert.NoError(t, err)
+	})
+
+	t.Run("reports no credential distinctly from a rejected one", func(t *testing.T) {
+		authenticator := NewAuthenticator(map[string]AuthStrategy{
+			"ARGO_WATCHER_DEPLOY_TOKEN": NewDeployTokenAuthService("valid"),
+		})
+
+		valid, err := authenticator.AuthenticateRequest(newRequest(t, "", ""))
+
+		assert.False(t, valid)
+		assert.NoError(t, err, "no header sent must not look like a wrong token")
+	})
+
+	t.Run("accepts a valid credential alongside a rejected one", func(t *testing.T) {
+		// The frontend sends the OIDC token in both Authorization and
+		// Oidc-Authorization; with JWT_SECRET set the former is parsed as an HMAC
+		// JWT and fails. One working credential must still authenticate.
+		authenticator := NewAuthenticator(map[string]AuthStrategy{
+			"Authorization":      NewJWTAuthService("secret"),
+			"Oidc-Authorization": splitStrategy{authenticated: true},
+		})
+		request := newRequest(t, "Authorization", "Bearer not-an-hmac-jwt")
+		request.Header.Set("Oidc-Authorization", "Bearer oidc-token")
+
+		valid, err := authenticator.AuthenticateRequest(request)
+
+		assert.True(t, valid)
+		assert.NoError(t, err)
+	})
+
+	t.Run("prefers an unavailable provider over another strategy's rejection", func(t *testing.T) {
+		// The real shape of this: the Web UI sends its OIDC token in BOTH headers,
+		// and with JWT_SECRET set the Authorization copy is parsed as an HMAC JWT and
+		// rejected, while the OIDC strategy cannot reach the provider. Strategy
+		// iteration order is randomized, so the loop below would catch a
+		// coin-flipping precedence — and a 401 here signs the user out of a session
+		// that may be entirely valid.
+		authenticator := NewAuthenticator(map[string]AuthStrategy{
+			"Authorization":      NewJWTAuthService("secret"),
+			"Oidc-Authorization": unavailableStrategy{},
+		})
+
+		for i := 0; i < 50; i++ {
+			request := newRequest(t, "Authorization", "Bearer not-an-hmac-jwt")
+			request.Header.Set("Oidc-Authorization", "Bearer oidc-token")
+
+			valid, err := authenticator.AuthenticateRequest(request)
+
+			require.False(t, valid)
+			require.ErrorIs(t, err, ErrProviderUnavailable, "iteration %d", i)
+		}
+	})
+
+	t.Run("reports a rejection when every credential was actually evaluated", func(t *testing.T) {
+		authenticator := NewAuthenticator(map[string]AuthStrategy{
+			"Authorization":      NewJWTAuthService("secret"),
+			"Oidc-Authorization": splitStrategy{authenticated: false},
+		})
+		request := newRequest(t, "Authorization", "Bearer not-an-hmac-jwt")
+		request.Header.Set("Oidc-Authorization", "Bearer oidc-token")
+
+		valid, err := authenticator.AuthenticateRequest(request)
+
+		assert.False(t, valid)
+		require.Error(t, err)
+		assert.NotErrorIs(t, err, ErrProviderUnavailable)
+	})
+
+	t.Run("tolerates a nil receiver and a nil request", func(t *testing.T) {
+		var authenticator *Authenticator
+		valid, err := authenticator.AuthenticateRequest(newRequest(t, "", ""))
+		assert.False(t, valid)
+		assert.NoError(t, err)
+
+		valid, err = NewAuthenticator(nil).AuthenticateRequest(nil)
+		assert.False(t, valid)
+		assert.NoError(t, err)
+	})
 }
 
 func TestAuthenticatorStrategyLookup(t *testing.T) {
