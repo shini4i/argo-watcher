@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"testing"
@@ -12,8 +13,8 @@ import (
 )
 
 // signedTokenWithExp builds an HMAC-signed JWT carrying the given expiry. The
-// signature is irrelevant here: tokenExpiry parses without verifying, so the
-// token only needs to be structurally valid.
+// signature is irrelevant — tokenExpiry only decodes the payload — but signing keeps
+// the fixture a realistic token.
 func signedTokenWithExp(t *testing.T, exp time.Time) string {
 	t.Helper()
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
@@ -40,6 +41,29 @@ func TestTokenExpiry(t *testing.T) {
 		_, ok := tokenExpiry("opaque-reference-token")
 
 		assert.False(t, ok)
+	})
+
+	t.Run("reports no expiry for a malformed payload segment", func(t *testing.T) {
+		for _, token := range []string{
+			"header.!!!not-base64!!!.signature",
+			"header." + base64.RawURLEncoding.EncodeToString([]byte("not json")) + ".signature",
+			"header." + base64.RawURLEncoding.EncodeToString([]byte(`{"exp":"soon"}`)) + ".signature",
+		} {
+			_, ok := tokenExpiry(token)
+			assert.False(t, ok, token)
+		}
+	})
+
+	t.Run("accepts a non-integer exp", func(t *testing.T) {
+		// RFC 7519 NumericDate permits a fractional value.
+		want := time.Now().Add(time.Hour).Truncate(time.Second)
+		payload := fmt.Sprintf(`{"exp":%d.75}`, want.Unix())
+		token := "header." + base64.RawURLEncoding.EncodeToString([]byte(payload)) + ".signature"
+
+		got, ok := tokenExpiry(token)
+
+		require.True(t, ok)
+		assert.WithinDuration(t, want, got, time.Second)
 	})
 
 	t.Run("reports no expiry for a JWT without an exp claim", func(t *testing.T) {

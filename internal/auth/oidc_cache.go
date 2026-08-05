@@ -3,6 +3,8 @@ package auth
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"strings"
 	"sync"
 	"time"
 
@@ -173,22 +175,32 @@ func cacheTTL(configured time.Duration, token string) time.Duration {
 	return configured
 }
 
-// tokenExpiry reads the "exp" claim of a JWT access token without verifying its
-// signature, reporting ok=false for opaque tokens and for JWTs carrying no exp.
+// tokenExpiry reads the "exp" claim from a JWT access token's payload segment,
+// reporting ok=false for opaque tokens and for JWTs carrying no exp.
 //
-// Deliberately unverified: the claim only ever shortens a cache entry's lifetime, and
-// a decision enters the cache only after the provider has accepted the token, so a
-// forged exp buys nothing beyond the configured interval.
+// It decodes rather than parses on purpose: the value is a hint used only to shorten a
+// cache entry's lifetime, never to decide anything. Going through the parser would
+// imply this validates the token — it does not, and it must not, since the provider is
+// the only authority on that and has already spoken by the time an entry is written.
 func tokenExpiry(token string) (time.Time, bool) {
-	claims := jwt.MapClaims{}
-	if _, _, err := jwt.NewParser().ParseUnverified(token, claims); err != nil {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
 		return time.Time{}, false
 	}
 
-	expiry, err := claims.GetExpirationTime()
-	if err != nil || expiry == nil {
+	payload, err := jwt.NewParser().DecodeSegment(parts[1])
+	if err != nil {
 		return time.Time{}, false
 	}
 
-	return expiry.Time, true
+	// Seconds since the epoch, per RFC 7519 NumericDate; float because the spec allows
+	// a non-integer value. Sub-second precision is irrelevant to a cache lifetime.
+	var claims struct {
+		Exp float64 `json:"exp"`
+	}
+	if err := json.Unmarshal(payload, &claims); err != nil || claims.Exp == 0 {
+		return time.Time{}, false
+	}
+
+	return time.Unix(int64(claims.Exp), 0), true
 }
