@@ -6,9 +6,9 @@
 #   - GET  /api/v1/version              -> 200, non-empty JSON string
 #   - GET  /api/v1/config               -> 200; Keycloak reported disabled; the
 #                                          deploy-token secret is redacted (json:"-");
-#                                          notification targets, lockdown schedule
-#                                          and TLS posture are absent — the endpoint
-#                                          is unauthenticated by necessity (the UI
+#                                          notification targets absent but their
+#                                          `enabled` flags kept — the endpoint is
+#                                          unauthenticated by necessity (the UI
 #                                          bootstraps its login from it)
 #
 # The lab runs with OIDC disabled, which is the deployment shape asserted here:
@@ -57,12 +57,13 @@ elif ! jq -e '.keycloak.enabled == false' <<<"$BODY" >/dev/null 2>&1; then
 elif grep -qF "$DEPLOY_TOKEN" <<<"$BODY"; then
   # A leaked secret here is the whole reason ServerConfig marks it json:"-".
   bad "config: deploy token leaked in /config response"
-elif ! jq -e 'has("webhook") == false and has("mattermost") == false' <<<"$BODY" >/dev/null 2>&1; then
-  # /config is served unauthenticated, and a notification webhook URL is itself
-  # the credential — the lab has webhooks enabled, so a regression shows up here.
-  bad "config: notification settings exposed on an unauthenticated endpoint"
-elif ! jq -e 'has("lockdown_schedule") == false and has("skip_tls_verify") == false' <<<"$BODY" >/dev/null 2>&1; then
-  bad "config: deployment detail (lockdown schedule / TLS posture) exposed unauthenticated"
+elif ! jq -e '(.webhook | has("url") | not) and (.mattermost | has("url") | not)' <<<"$BODY" >/dev/null 2>&1; then
+  # /config is served unauthenticated and a webhook URL is itself the credential; the
+  # lab runs with webhooks enabled, so a regression shows up here.
+  bad "config: notification target exposed on an unauthenticated endpoint"
+elif ! jq -e '.webhook.enabled == true' <<<"$BODY" >/dev/null 2>&1; then
+  # The enabled flag must survive: downstream consumers (argo-watcher-mcp) read it.
+  bad "config: webhook.enabled missing (lab runs with webhooks on)"
 elif ! jq -e '.argo_cd_url != null' <<<"$BODY" >/dev/null 2>&1; then
   # The CLI client builds the app URL from this field; trimming must not take it.
   bad "config: argo_cd_url missing — the client needs it to build app URLs"

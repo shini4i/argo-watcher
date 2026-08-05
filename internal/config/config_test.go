@@ -460,11 +460,12 @@ func TestServerConfig_JSONExcludesSensitiveFields(t *testing.T) {
 	assert.NotContains(t, jsonString, "deploy-token")
 }
 
-// TestServerConfig_JSONOmitsDeploymentDetail pins the payload of the
-// unauthenticated GET /api/v1/config: notification targets, the lockdown schedule
-// and the TLS posture describe the deployment and must not be readable by anyone
-// who can reach the server. A webhook URL is itself the credential.
-func TestServerConfig_JSONOmitsDeploymentDetail(t *testing.T) {
+// TestServerConfig_JSONOmitsNotificationTargets pins the payload of the
+// unauthenticated GET /api/v1/config: how to reach a notification receiver must not be
+// readable by anyone who can reach the server, since a webhook URL is itself the
+// credential. The `enabled` flags stay — they name no target, and downstream consumers
+// (argo-watcher-mcp) forward them.
+func TestServerConfig_JSONOmitsNotificationTargets(t *testing.T) {
 	config := &ServerConfig{
 		SkipTlsVerify:    true,
 		LockdownSchedule: "Mon-Fri 09:00-18:00",
@@ -490,10 +491,15 @@ func TestServerConfig_JSONOmitsDeploymentDetail(t *testing.T) {
 	assert.NotContains(t, jsonString, "mattermost.example.com")
 	assert.NotContains(t, jsonString, "mattermost-token")
 	assert.NotContains(t, jsonString, "channel-id")
-	assert.NotContains(t, jsonString, "Mon-Fri 09:00-18:00")
-	assert.NotContains(t, jsonString, "skip_tls_verify")
 
-	// What the frontend and the CLI client do need must survive the trim.
+	// What other consumers read must survive: the enabled flags, the schedule and the
+	// TLS posture are all allowlisted downstream.
+	var decoded map[string]any
+	require.NoError(t, json.Unmarshal(jsonBytes, &decoded))
+	assert.Equal(t, true, decoded["webhook"].(map[string]any)["enabled"])
+	assert.Equal(t, true, decoded["mattermost"].(map[string]any)["enabled"])
+	assert.Equal(t, "Mon-Fri 09:00-18:00", decoded["lockdown_schedule"])
+	assert.Equal(t, true, decoded["skip_tls_verify"])
 	assert.Contains(t, jsonString, "argo_cd_url")
 	assert.Contains(t, jsonString, "oidc")
 }

@@ -281,14 +281,11 @@ func TestReadAuthOpenEndpoints(t *testing.T) {
 	})
 }
 
-// TestReadAuthCoversEveryRegisteredRead derives its expectations from the router's
-// own route table instead of a hand-kept list, so a read added later is covered
-// without anyone remembering to extend a test. Adding a route means deciding
-// whether it belongs in the open or the authenticated group; landing in the wrong
-// one fails here.
+// TestReadAuthCoversEveryRegisteredRead derives its expectations from the router's own
+// route table rather than a hand-kept list, so a read added later to the wrong group
+// fails here without anyone remembering to extend a test.
 func TestReadAuthCoversEveryRegisteredRead(t *testing.T) {
-	// The exemptions, each justified in CreateRouter: login bootstraps from /config,
-	// and the released client polls /tasks/:id without a credential.
+	// Exemptions, each justified in CreateRouter.
 	openByDesign := map[string]bool{
 		"/api/v1/config":    true,
 		"/api/v1/tasks/:id": true,
@@ -329,12 +326,9 @@ func TestReadAuthCoversEveryRegisteredRead(t *testing.T) {
 	assert.GreaterOrEqual(t, checked, 6, "the route table should have yielded every /api/v1 read")
 }
 
-// TestReadAuthTaskLookupRemainsOpen pins the deliberate exemption: a released
-// client polls GET /api/v1/tasks/{id} for the whole length of every deployment and
-// sends no credential on GETs, so gating it would break every pipeline at once.
-// The task id is an unguessable v4 UUID handed only to the submitter, and the
-// enumerable list endpoint is protected — so the exemption is bounded to callers
-// that already hold a pointer to the task.
+// TestReadAuthTaskLookupRemainsOpen pins the deliberate exemption: released clients
+// poll this lookup without a credential, so gating it would break every pipeline. The
+// v4 UUID is the capability, and the enumerable list endpoint is protected.
 func TestReadAuthTaskLookupRemainsOpen(t *testing.T) {
 	const (
 		unknownTask = "/api/v1/tasks/00000000-0000-0000-0000-000000000000"

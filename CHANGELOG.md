@@ -52,11 +52,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- `GET /api/v1/config` no longer discloses the notification settings
-  (`webhook`, `mattermost`), the lockdown schedule or the TLS verification posture.
-  That endpoint cannot be authenticated — the Web UI reads the OIDC issuer and client
-  id from it before it can hold a token — and a notification webhook URL is itself a
-  credential.
+- `GET /api/v1/config` no longer discloses how to reach a notification receiver: the
+  `webhook` and `mattermost` blocks are reduced to their `enabled` flag. That endpoint
+  cannot be authenticated — the Web UI reads the OIDC issuer and client id from it
+  before it can hold a token — and a webhook URL is itself a credential. Every other
+  field, including the `enabled` flags, is unchanged.
 
 ## [0.14.0] - 2026-08-04
 

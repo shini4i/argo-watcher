@@ -28,15 +28,10 @@ type discoveryDocument struct {
 	UserinfoEndpoint string `json:"userinfo_endpoint"`
 }
 
-// ErrProviderUnavailable marks a failure to reach the OIDC provider or to make
-// sense of its answer, as distinct from a token the provider actively rejected.
-// Handlers map it to 503 rather than 401 so that a provider outage does not read
-// as an authentication failure — a 401 makes the frontend discard its session and
-// bounce the user to the login page, turning a brief provider blip into a
-// site-wide logout.
-//
-// Its message is the sanitized text shown to clients: transport details (URLs,
-// hostnames, parse errors) belong in the server log only.
+// ErrProviderUnavailable marks a failure to reach the OIDC provider or to make sense
+// of its answer, as distinct from a token it actively rejected. Handlers map it to 503,
+// because the frontend discards its session on a 401 — a blip would log everyone out.
+// Its message is the sanitized text clients see; details stay in the server log.
 var ErrProviderUnavailable = errors.New("token validation failed")
 
 // OIDCAuthService validates bearer tokens against any OIDC-compliant provider by
@@ -195,12 +190,9 @@ func (o *OIDCAuthService) Authenticate(token string) error {
 // the token is valid, effectively delegating validation to the provider. The user
 // must additionally belong to a privileged group to be authorized.
 //
-// It deliberately does not answer from the cache. Reusing a decision is a trade
-// made for reads, which the Web UI issues on a timer; a privileged action is a rare
-// human click, so re-asking the provider costs nothing and keeps group removal and
-// provider-side session revocation effective immediately instead of within
-// OIDC_TOKEN_VALIDATION_INTERVAL. The fresh result still populates the cache for
-// subsequent reads.
+// It deliberately does not answer from a cached acceptance: a privileged action is a
+// rare human click, so re-asking the provider costs nothing and keeps group removal
+// and session revocation immediate rather than within OIDC_TOKEN_VALIDATION_INTERVAL.
 func (o *OIDCAuthService) Validate(token string) (bool, error) {
 	info, err := o.resolveIdentity(token, false)
 	if err != nil {
@@ -214,18 +206,14 @@ func (o *OIDCAuthService) Validate(token string) (bool, error) {
 	return true, nil
 }
 
-// resolveIdentity returns the provider's view of a token. With allowCached set it
-// answers from the validation cache when a fresh decision is on hand; otherwise only
-// a cached rejection may be reused. Either way the outcome is recorded for later use.
+// resolveIdentity returns the provider's view of a token, recording the outcome for
+// later use. With allowCached it answers from the cache; without it, only a cached
+// rejection may be reused — a rejection cannot over-grant, so honoring it still blunts
+// a hot loop of bad tokens, while reusing an acceptance is what would extend a stale
+// privilege.
 //
-// Reusing a rejection cannot over-grant — the provider already refused this exact
-// token — so honoring it even on the privileged path keeps a hot loop of bad tokens
-// from being amplified into provider traffic. Reusing an acceptance is what would
-// extend a stale privilege, and that is precisely what the privileged path opts out
-// of.
-//
-// A provider failure is never cached: remembering it would deny access for the whole
-// validation interval over what may be a momentary blip.
+// A provider failure is never cached: it would deny access for the whole interval over
+// what may be a momentary blip.
 func (o *OIDCAuthService) resolveIdentity(token string, allowCached bool) (*userInfoResponse, error) {
 	if entry, ok := o.cache.get(token); ok && (allowCached || entry.err != nil) {
 		return entry.info, entry.err
@@ -241,9 +229,9 @@ func (o *OIDCAuthService) resolveIdentity(token string, allowCached bool) (*user
 	return info, err
 }
 
-// fetchUserInfo calls the provider's userinfo endpoint with the given bearer
-// token. Failures to reach or parse the provider yield ErrProviderUnavailable;
-// a non-200 answer is reported as a rejection of the token.
+// fetchUserInfo calls the provider's userinfo endpoint with the given bearer token.
+// Failures to reach, parse or make sense of the provider yield ErrProviderUnavailable;
+// only a 401/403 is reported as a rejection of the token.
 func (o *OIDCAuthService) fetchUserInfo(token string) (*userInfoResponse, error) {
 	userinfoURL, err := o.resolveUserinfoURL()
 	if err != nil {
@@ -272,8 +260,15 @@ func (o *OIDCAuthService) fetchUserInfo(token string) (*userInfoResponse, error)
 		return nil, ErrProviderUnavailable
 	}
 
-	if resp.StatusCode != http.StatusOK {
+	// Only 401/403 are the provider judging the token; any other non-200 means it
+	// did not judge it at all, and a rejection would sign valid users out.
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 		return nil, fmt.Errorf("token validation failed with status: %v", resp.Status)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		slog.Error("oidc: userinfo returned an unusable status", "status", resp.Status)
+		return nil, ErrProviderUnavailable
 	}
 
 	var info userInfoResponse

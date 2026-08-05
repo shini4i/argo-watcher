@@ -294,6 +294,44 @@ func TestOIDCAuthService_Authenticate(t *testing.T) {
 		assert.ErrorIs(t, err, ErrProviderUnavailable)
 	})
 
+	t.Run("treats a provider server error as unavailable, not as a rejection", func(t *testing.T) {
+		// A 502 or 429 means the token was never judged; calling that a rejection
+		// signs valid users out.
+		for _, status := range []int{
+			http.StatusInternalServerError,
+			http.StatusBadGateway,
+			http.StatusServiceUnavailable,
+			http.StatusTooManyRequests,
+			http.StatusNotFound,
+		} {
+			server := newOIDCTestServer(t, status, `{}`, nil, false)
+			service := &OIDCAuthService{}
+			require.NoError(t, service.Init(server.URL, "test", nil, 0))
+			service.client = server.Client()
+
+			err := service.Authenticate("token")
+
+			require.Error(t, err, "status %d", status)
+			assert.ErrorIs(t, err, ErrProviderUnavailable, "status %d", status)
+			server.Close()
+		}
+	})
+
+	t.Run("treats a forbidden response as a rejection", func(t *testing.T) {
+		for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+			server := newOIDCTestServer(t, status, `{}`, nil, false)
+			service := &OIDCAuthService{}
+			require.NoError(t, service.Init(server.URL, "test", nil, 0))
+			service.client = server.Client()
+
+			err := service.Authenticate("token")
+
+			require.Error(t, err, "status %d", status)
+			assert.NotErrorIs(t, err, ErrProviderUnavailable, "status %d", status)
+			server.Close()
+		}
+	})
+
 	t.Run("reports an unusable provider response distinctly from a rejection", func(t *testing.T) {
 		server := newOIDCTestServer(t, http.StatusOK, `not json`, nil, false)
 		defer server.Close()

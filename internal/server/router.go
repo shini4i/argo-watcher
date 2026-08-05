@@ -75,33 +75,15 @@ func (env *Env) CreateRouter() *gin.Engine {
 	}
 	router.StaticFS("/swagger", swaggerFS)
 
-	// The API is split into two groups by how each route is authenticated.
-	//
-	// `open` carries routes that must remain reachable without a session, or that
-	// authenticate themselves:
-	//   - POST /tasks authenticates optionally by design: an uncredentialed
-	//     submission is accepted and monitored, it just gets no git write-back and
-	//     no authority to supersede (see docs/reference/api.md).
-	//   - GET /config bootstraps the login flow. The frontend has to read the OIDC
-	//     issuer and client id from it BEFORE it can hold a token, so gating it
-	//     would make signing in impossible. Its payload is trimmed to match (see
-	//     config.ServerConfig).
-	//   - GET /tasks/:id is the one read a released client performs, polled for the
-	//     whole length of every deployment — and that client sends its credential
-	//     only on POST. Requiring auth here would break every pipeline at once, so
-	//     the v4 UUID acts as the capability: it is handed only to the submitter,
-	//     and the enumerable list endpoint below is protected. Uncredentialed hits
-	//     are counted (countUnauthenticatedRead) so the fleet's migration can be
-	//     measured before this exemption is ever removed.
-	//   - POST/DELETE /deploy-lock enforce privileged group membership themselves,
-	//     and are only registered when OIDC is enabled: without an auth backend
-	//     they cannot be protected, so exposing them would leave an
-	//     unauthenticated deploy-freeze switch reachable by anyone who can reach
-	//     the server (including via a victim's browser).
-	//
-	// `authenticated` carries the browser-facing reads. Nothing but the Web UI
-	// consumes them, so requiring a credential costs no pipeline anything. When OIDC
-	// is disabled the middleware is a no-op and these behave exactly as before.
+	// Routes are grouped by how they authenticate. `authenticated` holds the reads
+	// only the Web UI consumes, so gating them costs no pipeline anything.
+	// `open` holds the rest, each for a reason that is not negotiable:
+	//   - POST /tasks takes an optional credential by design (docs/reference/api.md).
+	//   - GET /config bootstraps the login flow, so it cannot require a token.
+	//   - GET /tasks/:id is polled by released clients, which send no credential on
+	//     GETs; the v4 UUID is the capability and the enumerable list is protected.
+	//   - POST/DELETE /deploy-lock enforce privileged membership themselves, and are
+	//     registered only under OIDC so they are never an open deploy-freeze switch.
 	open := router.Group("/api/v1")
 	authenticated := router.Group("/api/v1", env.requireAuthenticatedRead())
 	{

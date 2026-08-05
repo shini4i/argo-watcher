@@ -10,18 +10,13 @@ import (
 )
 
 const (
-	// maxCacheEntries bounds the validation cache. Without a ceiling, a flood of
-	// distinct bogus tokens would grow the map without bound, turning an
-	// unauthenticated endpoint into a memory-exhaustion primitive. At the ceiling,
-	// expired entries are reclaimed and — failing that — an arbitrary entry is
-	// evicted (see evictOneLocked), so the map never grows past it.
+	// maxCacheEntries bounds the map so a flood of distinct bogus tokens cannot
+	// exhaust memory; at the ceiling entries are reclaimed or evicted.
 	maxCacheEntries = 10000
 
-	// negativeCacheTTL caps how long a rejection is remembered, independently of
-	// the configured interval. A long interval must not pin a rejection for
-	// minutes: a token the provider refused because of clock skew, or a session an
-	// administrator has just reinstated, needs to recover quickly. Its only job is
-	// to stop a hot loop of bad requests from hammering the provider.
+	// negativeCacheTTL caps how long a rejection is remembered regardless of the
+	// configured interval: long enough to blunt a hot loop of bad requests, short
+	// enough that a reinstated session recovers quickly.
 	negativeCacheTTL = 30 * time.Second
 )
 
@@ -33,13 +28,10 @@ type cachedValidation struct {
 	expiresAt time.Time
 }
 
-// validationCache memoizes provider decisions per access token so that gating
-// every request on OIDC costs one userinfo round trip per token per interval
-// rather than one per request.
-//
-// Entries are keyed by the SHA-256 of the token, never the token itself, so raw
-// credentials do not sit in a map key where a heap dump or a debug print would
-// expose them. A zero or negative TTL disables caching entirely.
+// validationCache memoizes provider decisions per access token, so gating requests on
+// OIDC costs one userinfo round trip per token per interval rather than one per
+// request. Entries are keyed by the token's SHA-256 so raw credentials never sit in a
+// map key. A non-positive TTL disables caching.
 type validationCache struct {
 	mu      sync.Mutex
 	ttl     time.Duration
@@ -116,12 +108,9 @@ func (c *validationCache) put(token string, info *userInfoResponse, err error) {
 
 // entryTTL returns how long this decision may be remembered.
 //
-// A rejection's lifetime is deliberately NOT derived from the token's expiry. The
-// most common bad credential is an expired token, whose remaining lifetime is zero
-// or negative — deriving from it would refuse to cache exactly the rejection worth
-// remembering, and a loop of expired tokens would reach the provider on every
-// request. A rejected token stays rejected, so a short fixed lifetime is both safe
-// and sufficient.
+// A rejection's lifetime is NOT derived from the token's expiry: the commonest bad
+// credential is an expired token, so deriving it would refuse to cache the very
+// rejection worth remembering.
 func (c *validationCache) entryTTL(token string, err error) time.Duration {
 	if err == nil {
 		return cacheTTL(c.ttl, token)
@@ -143,16 +132,12 @@ func (c *validationCache) reclaimExpiredLocked() {
 	}
 }
 
-// evictOneLocked frees a slot by dropping an arbitrary entry when the cache is
-// still full after reclaiming expired ones. The caller must hold the mutex.
+// evictOneLocked frees a slot by dropping an arbitrary entry when the cache is still
+// full after reclaiming expired ones. The caller must hold the mutex.
 //
-// Evicting beats refusing to store: a flood of distinct unusable tokens would
-// otherwise hold every slot until it expired, leaving real sessions uncached and
-// sending a provider round trip on every UI request. Arbitrary choice (Go map
-// order) rather than least-recently-used — the bookkeeping LRU needs buys nothing
-// here, since a wrongly evicted entry costs one round trip to rebuild. Note this
-// bounds memory only: nothing here rate-limits how much provider traffic an
-// unauthenticated caller can induce.
+// Evicting beats refusing to store, which would leave real sessions uncached behind a
+// flood of junk tokens. The choice is arbitrary rather than LRU because a wrong
+// eviction costs one round trip. This bounds memory only, not provider traffic.
 func (c *validationCache) evictOneLocked() {
 	if len(c.entries) < maxCacheEntries {
 		return
@@ -191,11 +176,9 @@ func cacheTTL(configured time.Duration, token string) time.Duration {
 // tokenExpiry reads the "exp" claim of a JWT access token without verifying its
 // signature, reporting ok=false for opaque tokens and for JWTs carrying no exp.
 //
-// The claim is used for exactly one purpose: shortening a cache entry's lifetime.
-// It is never a substitute for validation — the provider remains the only
-// authority on whether a token is good, and a decision only enters the cache
-// after the provider has spoken. A token claiming a distant expiry therefore buys
-// nothing beyond the configured interval.
+// Deliberately unverified: the claim only ever shortens a cache entry's lifetime, and
+// a decision enters the cache only after the provider has accepted the token, so a
+// forged exp buys nothing beyond the configured interval.
 func tokenExpiry(token string) (time.Time, bool) {
 	claims := jwt.MapClaims{}
 	if _, _, err := jwt.NewParser().ParseUnverified(token, claims); err != nil {

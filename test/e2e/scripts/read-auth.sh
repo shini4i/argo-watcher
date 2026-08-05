@@ -1,30 +1,23 @@
 #!/usr/bin/env bash
 # Assert the OIDC read-protection contract against the real server.
 #
-# OIDC_ENABLED is a server-global config, so — like lockdown.sh — this phase toggles
-# it on the live release for its own duration and reverts before exiting.
+# OIDC_ENABLED is server-global, so — like lockdown.sh — this phase toggles it on the
+# live release for its own duration and reverts before exiting.
 #
-# It runs WITHOUT an identity provider, on purpose. The issuer points at a closed
-# port, so every token the server is asked to check fails to validate with a
-# transport error. That is exactly the interesting half of the contract and it needs
-# no Keycloak in the lab:
+# It runs WITHOUT an identity provider: the issuer points at a closed port, so any token
+# the server must check fails with a transport error. That covers the contract's
+# interesting half with no Keycloak in the lab:
 #
-#   - no credential            -> 401 (the middleware answers before any provider call)
-#   - an OIDC token            -> 503 (the provider could not be consulted)
-#   - a deploy token / JWT     -> 200 (validated locally, provider never involved)
+#   - no credential        -> 401 (answered before any provider call)
+#   - an OIDC token        -> 503 (the provider could not be consulted)
+#   - a deploy token / JWT -> 200 (validated locally)
 #
-# The 503 case is why the closed port matters: a 401 there would make the Web UI
-# discard a live session over a provider blip, and the lab reproduces the shape that
-# made that fail intermittently in unit tests — the UI sends its token in BOTH
-# Authorization and Oidc-Authorization, and the lab sets JWT_SECRET, so the
-# Authorization copy is claimed by the JWT strategy and rejected while the OIDC
-# strategy reports the outage. Strategy order is a randomized map iteration, so that
-# case is asserted repeatedly rather than once.
+# The 503 case is asserted repeatedly, not once: the lab sets JWT_SECRET, so a request
+# carrying both headers has one strategy rejecting and one reporting the outage, and
+# strategy order is a randomized map iteration.
 #
-# Group membership is NOT exercised here: with the provider unreachable, no token can
-# be authorized, so privileged-vs-unprivileged is not observable. That distinction is
-# covered against a real Keycloak in internal/server/keycloak_integration_test.go
-# (TestKeycloakReadAuthn / TestKeycloakDeployLockAuthz).
+# Group membership is not observable with the provider unreachable; that is covered
+# against a real Keycloak in internal/server/keycloak_integration_test.go.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -155,10 +148,10 @@ fi
 
 req GET "${AW_API}/config"
 if [[ "$CODE" == "200" ]] &&
-   jq -e 'has("webhook") == false and has("mattermost") == false' <<<"$BODY" >/dev/null 2>&1; then
-  ok "GET /config -> 200 without a credential, notification settings withheld"
+   jq -e '(.webhook | has("url") | not) and (.mattermost | has("url") | not)' <<<"$BODY" >/dev/null 2>&1; then
+  ok "GET /config -> 200 without a credential, notification targets withheld"
 else
-  bad "GET /config: code=${CODE} (want 200 with no notification settings)"
+  bad "GET /config: code=${CODE} (want 200 with no notification targets)"
 fi
 
 req GET "${AW_URL}/healthz"

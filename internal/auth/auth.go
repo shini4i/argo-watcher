@@ -15,15 +15,6 @@ type AuthStrategy interface {
 	Validate(token string) (bool, error)
 }
 
-// Authenticatable is implemented by strategies that distinguish authentication
-// from authorization — currently OIDC, where Validate additionally demands
-// privileged-group membership. A strategy without a group concept (the deploy
-// token, a CI JWT) does not implement it: possession of a valid token is both its
-// authentication and its authorization, so Validate answers both questions.
-type Authenticatable interface {
-	Authenticate(token string) error
-}
-
 // Authenticator coordinates multiple AuthStrategy implementations against an HTTP request.
 type Authenticator struct {
 	strategies map[string]AuthStrategy
@@ -77,21 +68,23 @@ func (a *Authenticator) Validate(request *http.Request) (bool, error) {
 }
 
 // AuthenticateRequest reports whether the request carries a credential proving
-// the caller is authenticated, without requiring any privilege. Strategies that
-// separate the two concerns (see Authenticatable) are asked the authentication
-// question; the rest are asked to validate, since for them a valid token is
-// authentication.
+// the caller is authenticated, without requiring any privilege.
 //
 // It follows the same three return states as Validate, so callers can tell "no
 // credential sent" from "credential rejected".
 func (a *Authenticator) AuthenticateRequest(request *http.Request) (bool, error) {
 	return a.walk(request, func(strategy AuthStrategy, token string) (bool, error) {
-		authenticatable, ok := strategy.(Authenticatable)
+		// A strategy that separates authentication from authorization exposes
+		// Authenticate for the weaker check — currently OIDC, whose Validate
+		// additionally demands privileged-group membership. A strategy with no group
+		// concept (the deploy token, a CI JWT) does not, because for it a valid token
+		// answers both questions, so Validate is the authentication check too.
+		authenticator, ok := strategy.(interface{ Authenticate(token string) error })
 		if !ok {
 			return strategy.Validate(token)
 		}
 
-		if err := authenticatable.Authenticate(token); err != nil {
+		if err := authenticator.Authenticate(token); err != nil {
 			return false, err
 		}
 		return true, nil
@@ -103,16 +96,11 @@ func (a *Authenticator) AuthenticateRequest(request *http.Request) (bool, error)
 // strategy was invoked at all — the "authentication not provided" state described
 // on Validate — and otherwise the failure of the invoked strategies.
 //
-// A request may carry several credentials at once: the Web UI sends its OIDC token
-// in both Authorization and Oidc-Authorization, and with JWT_SECRET configured the
-// former is claimed by the JWT strategy, which rejects it. When the outcomes
-// disagree, ErrProviderUnavailable wins over a rejection. "Rejected" is only a
-// truthful answer if every credential was actually evaluated; if one of them could
-// not be checked, the honest answer is that the server cannot tell yet — and it
-// matters concretely, because callers map a rejection to 401, which makes the Web
-// UI discard a session that may be perfectly valid. Strategy iteration order is
-// randomized (Go map), so without this precedence the status would flip between
-// runs.
+// A request may carry several credentials at once — the Web UI sends its OIDC token in
+// both Authorization and Oidc-Authorization, and the JWT strategy rejects that copy —
+// so when outcomes disagree ErrProviderUnavailable wins: "rejected" is only truthful
+// if every credential was evaluated, and callers turn a rejection into a 401. Map
+// iteration is randomized, so without this precedence the status flips between runs.
 func (a *Authenticator) walk(request *http.Request, check func(AuthStrategy, string) (bool, error)) (bool, error) {
 	if a == nil || request == nil {
 		return false, nil

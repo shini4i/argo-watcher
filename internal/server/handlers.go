@@ -288,21 +288,15 @@ func (env *Env) requireOIDCAuth(c *gin.Context) bool {
 	return false
 }
 
-// requireAuthenticatedRead returns middleware that rejects reads carrying no
-// valid credential once OIDC auth is enabled. With OIDC disabled it is a no-op:
-// there is no auth backend to validate against, so gating reads would only lock
-// operators out of their own UI.
+// requireAuthenticatedRead returns middleware that rejects reads carrying no valid
+// credential once OIDC auth is enabled; with OIDC disabled it is a no-op.
 //
-// Any configured credential is accepted — an OIDC session, the deploy token, or a
-// CI JWT. Reads are not restricted to OIDC_PRIVILEGED_GROUPS (that gate belongs to
-// the deploy-lock endpoints), and accepting machine credentials is what will let
-// the deliberately open GET /tasks/:id be closed later without cutting pipelines
-// off from their own task status.
+// Any configured credential is accepted — an OIDC session, the deploy token or a CI
+// JWT — and reads are deliberately not restricted to OIDC_PRIVILEGED_GROUPS, which
+// gates the deploy-lock writes alone.
 //
-// Failures are mapped so the frontend can tell them apart: a rejected or missing
-// credential is 401, while an authentication provider that could not be consulted
-// is 503. That distinction matters — the Web UI discards its session on a 401, so
-// reporting a provider outage as one would sign every user out over a blip.
+// A rejected or missing credential is 401; a provider that could not be consulted is
+// 503, because the Web UI discards its session on a 401.
 func (env *Env) requireAuthenticatedRead() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if !env.config.OIDC.Enabled {
@@ -344,21 +338,13 @@ func (env *Env) requireAuthenticatedRead() gin.HandlerFunc {
 	}
 }
 
-// countUnauthenticatedRead returns middleware that records a read on which no
-// credential was presented at all, while OIDC auth is enabled. It never blocks the
-// request: the route it guards is open on purpose (see CreateRouter), and the
-// counter exists to measure how much of the fleet still reads without credentials —
-// the evidence needed before that exemption can be removed.
+// countUnauthenticatedRead returns middleware that counts reads arriving with no
+// credential while OIDC auth is enabled. It never blocks: the route it guards is open
+// on purpose, and the count is the migration signal for closing it later.
 //
-// It deliberately tests for the presence of a credential rather than its validity.
-// Validating here would put a provider round trip in the latency path of an
-// endpoint documented as never blocking, and during a provider outage every poll
-// would wait on it. It would also blur the measurement: an expired token or an
-// unreachable provider would be counted as "no credential", inflating the very
-// number whose fall to zero is the signal that this exemption can be closed.
-//
-// A counter rather than a log line: the guarded endpoint is polled for the entire
-// duration of every deployment, so logging each request would bury the log.
+// It tests for presence rather than validity so the guarded endpoint — polled for the
+// whole length of every deployment — never waits on the provider, and so an expired
+// token cannot inflate the number whose fall to zero licenses that closure.
 func (env *Env) countUnauthenticatedRead() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if !env.config.OIDC.Enabled {
@@ -374,9 +360,8 @@ func (env *Env) countUnauthenticatedRead() gin.HandlerFunc {
 	}
 }
 
-// hasCredential reports whether the request carries a non-empty value in any header
-// a configured auth strategy reads. It says nothing about whether that credential
-// is valid.
+// hasCredential reports whether the request carries a non-empty value in any header a
+// configured auth strategy reads, saying nothing about whether it is valid.
 func (env *Env) hasCredential(request *http.Request) bool {
 	for header := range env.strategies {
 		if request.Header.Get(header) != "" {

@@ -22,11 +22,9 @@ import (
 // discovers the userinfo endpoint from it at runtime. The deprecated KEYCLOAK_*
 // variables are mapped onto these fields by applyKeycloakCompat.
 //
-// TokenValidationInterval (milliseconds) is how long a provider decision about a
-// token may be reused, bounding how stale an authorization decision can be. It is
-// capped per token by that token's own expiry, so a cached decision never outlives
-// the credential it describes. Zero revalidates against the provider on every
-// request, which multiplies UI refreshes into provider traffic.
+// TokenValidationInterval (milliseconds) bounds how stale a read authorization can be,
+// capped per token by that token's own expiry. Zero revalidates every request, which
+// multiplies UI refreshes into provider traffic.
 type OIDCConfig struct {
 	Enabled                 bool     `env:"OIDC_ENABLED" json:"enabled"`
 	IssuerURL               string   `env:"OIDC_ISSUER_URL" json:"issuer_url,omitempty"`
@@ -45,34 +43,35 @@ type DatabaseConfig struct {
 	DSN            string `env:"DB_DSN,expand" envDefault:"host=${DB_HOST} port=${DB_PORT} user=${DB_USER} password=${DB_PASSWORD} dbname=${DB_NAME} sslmode=${DB_SSL_MODE} TimeZone=${DB_TIMEZONE}"`
 }
 
+// WebhookConfig describes the generic notification receiver. Only Enabled is public:
+// the rest says how to reach a third party, and the URL is itself the credential.
 type WebhookConfig struct {
 	Enabled              bool   `env:"WEBHOOK_ENABLED" envDefault:"false" json:"enabled"`
-	Url                  string `env:"WEBHOOK_URL" json:"url,omitempty"`
-	ContentType          string `env:"WEBHOOK_CONTENT_TYPE" envDefault:"application/json" json:"content_type,omitempty"`
-	Format               string `env:"WEBHOOK_FORMAT" json:"format,omitempty"`
-	AuthorizationHeader  string `env:"WEBHOOK_AUTHORIZATION_HEADER_NAME" envDefault:"Authorization" json:"authorization_header,omitempty"`
+	Url                  string `env:"WEBHOOK_URL" json:"-"`
+	ContentType          string `env:"WEBHOOK_CONTENT_TYPE" envDefault:"application/json" json:"-"`
+	Format               string `env:"WEBHOOK_FORMAT" json:"-"`
+	AuthorizationHeader  string `env:"WEBHOOK_AUTHORIZATION_HEADER_NAME" envDefault:"Authorization" json:"-"`
 	Token                string `env:"WEBHOOK_AUTHORIZATION_HEADER_VALUE" envDefault:"" json:"-"`
-	AllowedResponseCodes []int  `env:"WEBHOOK_ALLOWED_RESPONSE_CODES" envDefault:"200" json:"allowed_response_codes,omitempty"`
+	AllowedResponseCodes []int  `env:"WEBHOOK_ALLOWED_RESPONSE_CODES" envDefault:"200" json:"-"`
 }
 
+// MattermostConfig follows WebhookConfig: only Enabled is public.
 type MattermostConfig struct {
 	Enabled       bool   `env:"MATTERMOST_ENABLED" envDefault:"false" json:"enabled"`
-	Url           string `env:"MATTERMOST_URL" json:"url,omitempty"` // base URL of the Mattermost instance, without /api/v4
-	Token         string `env:"MATTERMOST_TOKEN" json:"-"`           // bot access token
-	ChannelId     string `env:"MATTERMOST_CHANNEL_ID" json:"channel_id,omitempty"`
-	Format        string `env:"MATTERMOST_FORMAT" json:"format,omitempty"`                          // Go template rendering models.Task into the post markdown message
-	MentionAuthor bool   `env:"MATTERMOST_MENTION_AUTHOR" envDefault:"false" json:"mention_author"` // prepend @<Author> to every post
+	Url           string `env:"MATTERMOST_URL" json:"-"`   // base URL of the Mattermost instance, without /api/v4
+	Token         string `env:"MATTERMOST_TOKEN" json:"-"` // bot access token
+	ChannelId     string `env:"MATTERMOST_CHANNEL_ID" json:"-"`
+	Format        string `env:"MATTERMOST_FORMAT" json:"-"`                            // Go template rendering models.Task into the post markdown message
+	MentionAuthor bool   `env:"MATTERMOST_MENTION_AUTHOR" envDefault:"false" json:"-"` // prepend @<Author> to every post
 }
 
-// ServerConfig is the server's runtime configuration. Its json tags double as the
-// wire format of GET /api/v1/config, which is served WITHOUT authentication —
-// the frontend must read the OIDC issuer and client id from it before a login can
-// happen, so the endpoint cannot be gated. Every field marked `json:"-"` is
-// therefore excluded because it must not be public, not merely because the UI has
-// no use for it: notification targets (a webhook URL is itself the credential),
-// the lockdown schedule, and the TLS posture all describe the deployment to an
-// unauthenticated caller. Add a new field to the payload only if the frontend or
-// the CLI client genuinely needs it.
+// ServerConfig is the server's runtime configuration. Its json tags double as the wire
+// format of GET /api/v1/config, which cannot be authenticated — the frontend reads the
+// OIDC issuer and client id from it before it can hold a token. A field marked
+// `json:"-"` is excluded because it must not be public, not merely because the UI has
+// no use for it. Consumers other than the UI read this payload too
+// (github.com/shini4i/argo-watcher-mcp allowlists it field by field), so removing a
+// key is a breaking change for them.
 type ServerConfig struct {
 	ArgoUrl            url.URL          `env:"ARGO_URL,required,notEmpty" json:"argo_cd_url"`
 	ArgoUrlAlias       string           `env:"ARGO_URL_ALIAS" json:"argo_cd_url_alias,omitempty"` // Used to generate App Url. Can be omitted if ArgoUrl is reachable from outside.
@@ -84,7 +83,7 @@ type ServerConfig struct {
 	RegistryProxyUrl   string           `env:"DOCKER_IMAGES_PROXY" json:"registry_proxy_url,omitempty"`
 	StateType          string           `env:"STATE_TYPE,required" json:"state_type"`
 	StaticFilePath     string           `env:"STATIC_FILES_PATH" envDefault:"static" json:"-"`
-	SkipTlsVerify      bool             `env:"SKIP_TLS_VERIFY" envDefault:"false" json:"-"`
+	SkipTlsVerify      bool             `env:"SKIP_TLS_VERIFY" envDefault:"false" json:"skip_tls_verify"`
 	LogLevel           string           `env:"LOG_LEVEL" envDefault:"info" json:"log_level"`
 	Host               string           `env:"HOST" envDefault:"0.0.0.0" json:"-"`
 	Port               string           `env:"PORT" envDefault:"8080" json:"-"`
@@ -92,9 +91,9 @@ type ServerConfig struct {
 	JWTSecret          string           `env:"JWT_SECRET" json:"-"`
 	Db                 DatabaseConfig   `json:"-"`
 	OIDC               OIDCConfig       `json:"oidc,omitempty"`
-	LockdownSchedule   string           `env:"LOCKDOWN_SCHEDULE" json:"-"`
-	Webhook            WebhookConfig    `json:"-"`
-	Mattermost         MattermostConfig `json:"-"`
+	LockdownSchedule   string           `env:"LOCKDOWN_SCHEDULE" json:"lockdown_schedule,omitempty"`
+	Webhook            WebhookConfig    `json:"webhook,omitempty"`
+	Mattermost         MattermostConfig `json:"mattermost,omitempty"`
 	DevEnvironment     bool             `env:"DEV_ENVIRONMENT" envDefault:"false" json:"devEnvironment"` // Whether a set of dev specific setting should be turned on, do not touch unless you know what you are doing
 	ArgoApiRetries     uint             `env:"ARGO_API_RETRIES" envDefault:"3" json:"argo_api_retries"`  // Total attempts (including initial); passed to retry.Attempts()
 	RepoCachePath      string           `env:"REPO_CACHE_PATH" envDefault:"/data" json:"-"`
