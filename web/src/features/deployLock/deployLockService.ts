@@ -1,5 +1,5 @@
 import { httpClient, type HttpResponse } from '../../data/httpClient';
-import { resolveWebSocketUrl } from '../../data/webSocketUrl';
+import { resolveWebSocketUrl, webSocketProtocols } from '../../data/webSocketUrl';
 import { getBrowserWindow } from '../../shared/utils';
 
 /**
@@ -117,7 +117,7 @@ export class DeployLockService {
     }
 
     const url = resolveWebSocketUrl();
-    this.socket = new WebSocket(url);
+    this.socket = new WebSocket(url, webSocketProtocols());
 
     // Re-bootstrap against the authoritative state on every (re)connect: the
     // server only pushes on transitions, and with the shared Postgres lock a

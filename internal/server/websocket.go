@@ -8,11 +8,15 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/coder/websocket"
 	"github.com/gin-gonic/gin"
+
+	"github.com/shini4i/argo-watcher/internal/auth"
+	"github.com/shini4i/argo-watcher/internal/models"
 )
 
 var (
@@ -84,13 +88,88 @@ func (w *wsResponseWriter) WriteHeader(code int) {
 	}
 }
 
+const (
+	// wsSubprotocol is the protocol the server negotiates. A browser fails the
+	// connection unless the server echoes one of the protocols it offered, so this
+	// gives it something to echo that is not the token below.
+	wsSubprotocol = "argo-watcher.v1"
+
+	// wsTokenSubprotocolPrefix carries a credential for clients that cannot set a
+	// header on the handshake, which is every browser: the WebSocket API accepts only
+	// a URL and a subprotocol list. A query parameter would be the other option, but
+	// it lands in access logs.
+	wsTokenSubprotocolPrefix = "argo-watcher.token."
+)
+
+// authorizeWebSocket reports whether the handshake may proceed, writing the rejection
+// itself when it may not. With OIDC disabled it always passes.
+//
+// The socket broadcasts deployment-lock and Argo CD reachability transitions — the same
+// signals GET /deploy-lock and /reachability require a credential for — so leaving it
+// open would make protecting those endpoints cosmetic.
+func (env *Env) authorizeWebSocket(c *gin.Context) bool {
+	if !env.config.OIDC.Enabled {
+		return true
+	}
+
+	valid, err := env.authenticator.AuthenticateRequest(c.Request)
+	if !valid && err == nil {
+		// No header credential: fall back to the browser's transport.
+		valid, err = env.authenticator.AuthenticateToken(oidcHeader, wsSubprotocolToken(c.Request))
+	}
+
+	if valid {
+		return true
+	}
+
+	// Mirrors requireAuthenticatedRead: a provider outage is 503, so a reconnecting tab
+	// does not discard a session that may still be valid.
+	if errors.Is(err, auth.ErrProviderUnavailable) {
+		slog.Error("rejecting websocket: authentication provider unavailable", "error", err)
+		c.AbortWithStatusJSON(http.StatusServiceUnavailable, models.TaskStatus{
+			Status: "authentication provider unavailable",
+			Error:  err.Error(),
+		})
+		return false
+	}
+
+	if err != nil {
+		slog.Warn("rejecting websocket with invalid credential", "error", err)
+	} else {
+		slog.Warn("rejecting unauthenticated websocket")
+	}
+	c.AbortWithStatusJSON(http.StatusUnauthorized, models.TaskStatus{
+		Status: unauthorizedMessage,
+		Error:  "authentication required (offer the " + wsTokenSubprotocolPrefix + "<token> subprotocol)",
+	})
+
+	return false
+}
+
+// wsSubprotocolToken returns the credential offered in Sec-WebSocket-Protocol, or "".
+func wsSubprotocolToken(request *http.Request) string {
+	for _, offered := range strings.Split(request.Header.Get("Sec-WebSocket-Protocol"), ",") {
+		if token, found := strings.CutPrefix(strings.TrimSpace(offered), wsTokenSubprotocolPrefix); found {
+			return token
+		}
+	}
+
+	return ""
+}
+
 // handleWebSocketConnection accepts a WebSocket connection, adds it to a slice,
 // and initiates a goroutine to ping the connection regularly. If WebSocket
 // acceptance fails, an error is logged. The goroutine serves to monitor
 // the connection's activity and removes it from the slice if it's inactive.
 func (env *Env) handleWebSocketConnection(c *gin.Context) {
+	// Before hijacking, so a rejection is an ordinary HTTP response.
+	if !env.authorizeWebSocket(c) {
+		return
+	}
+
 	options := &websocket.AcceptOptions{
 		InsecureSkipVerify: env.config.DevEnvironment, // It will disable websocket host validation if set to true
+		Subprotocols:       []string{wsSubprotocol},
 	}
 
 	// Pre-hijack the connection BEFORE WriteHeader is called

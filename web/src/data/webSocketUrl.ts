@@ -1,4 +1,5 @@
 import { getBrowserWindow } from '../shared/utils';
+import { getAccessToken } from '../auth/tokenStore';
 
 /**
  * Shared resolution of the argo-watcher `/ws` WebSocket endpoint. Both the
@@ -87,4 +88,21 @@ export const resolveWebSocketUrl = (): string => {
   const protocol = location?.protocol === 'https:' ? 'wss:' : 'ws:';
   const host = location?.host ?? 'localhost';
   return `${protocol}//${host}/ws`;
+};
+
+/**
+ * Protocol the server negotiates, and the prefix that carries a credential.
+ *
+ * A browser cannot set headers on a WebSocket handshake — the API takes a URL and a
+ * subprotocol list — so the token travels as a subprotocol rather than in a query
+ * parameter, which would land in access logs. The plain name is offered too because the
+ * browser fails the connection unless the server echoes one of the entries.
+ */
+const WS_SUBPROTOCOL = 'argo-watcher.v1';
+const WS_TOKEN_SUBPROTOCOL_PREFIX = 'argo-watcher.token.';
+
+/** Subprotocols to offer on the handshake, carrying the access token when one is held. */
+export const webSocketProtocols = (): string[] => {
+  const token = getAccessToken();
+  return token ? [WS_SUBPROTOCOL, `${WS_TOKEN_SUBPROTOCOL_PREFIX}${token}`] : [WS_SUBPROTOCOL];
 };

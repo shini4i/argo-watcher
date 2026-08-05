@@ -3,14 +3,17 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/coder/websocket"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -242,5 +245,59 @@ func TestKeycloakReadAuthn(t *testing.T) {
 
 	t.Run("no token is rejected", func(t *testing.T) {
 		assert.Equal(t, http.StatusUnauthorized, callProtectedRead(t, srv, ""))
+	})
+}
+
+// TestKeycloakWebSocketHandshake proves the browser's transport against a real
+// provider: a token Keycloak issued, offered as a subprotocol rather than a header,
+// establishes the socket — and the server echoes only the plain protocol name, which is
+// what a browser needs to keep the connection.
+func TestKeycloakWebSocketHandshake(t *testing.T) {
+	waitForKeycloak(t)
+
+	env := newKeycloakEnv(t)
+	env.config.StaticFilePath = t.TempDir()
+	env.config.DevEnvironment = true // accept the httptest origin
+	srv := httptest.NewServer(env.CreateRouter())
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		env.Shutdown(ctx)
+		srv.Close()
+		connectionsMutex.Lock()
+		connections = nil
+		connectionsMutex.Unlock()
+	})
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws"
+
+	t.Run("a token offered as a subprotocol establishes the socket", func(t *testing.T) {
+		token := keycloakToken(t, "regular-user", "regular-pass")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+
+		conn, resp, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{
+			Subprotocols: []string{wsSubprotocol, wsTokenSubprotocolPrefix + token},
+		})
+		require.NoError(t, err)
+		defer func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") }()
+
+		assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
+		assert.Equal(t, wsSubprotocol, resp.Header.Get("Sec-WebSocket-Protocol"))
+	})
+
+	t.Run("a handshake with no credential is refused", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+
+		conn, resp, err := websocket.Dial(ctx, wsURL, nil)
+		if conn != nil {
+			_ = conn.Close(websocket.StatusNormalClosure, "test done")
+		}
+
+		require.Error(t, err)
+		require.NotNil(t, resp)
+		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 	})
 }

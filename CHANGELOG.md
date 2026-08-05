@@ -19,10 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   presents no credential — stays open, guarded by the unguessable task id. With OIDC
   disabled nothing changes.
 
-  `/ws` also stays open, because a browser cannot attach a header to a WebSocket
-  handshake. It carries deployment-lock and Argo CD reachability transitions — the
-  same signals `GET /deploy-lock` and `/reachability` now require a credential for —
-  so gating those endpoints narrows that exposure rather than closing it.
+  The `/ws` WebSocket, which broadcasts the same deployment-lock and Argo CD
+  reachability transitions, requires a credential too. A browser cannot attach a header
+  to a WebSocket handshake, so the Web UI passes its token as the
+  `argo-watcher.token.<token>` subprotocol; other clients send the usual headers. A
+  handshake with no credential is refused with `401` before the connection is upgraded.
 - A new `unauthenticated_reads` counter (labelled by `path`) reports how many reads
   still arrive without a credential on the endpoints left open on purpose. It reaching
   zero is the evidence needed before those can be closed too.

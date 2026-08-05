@@ -286,6 +286,66 @@ func TestAuthenticatorAuthenticateRequest(t *testing.T) {
 	})
 }
 
+func TestAuthenticatorAuthenticateToken(t *testing.T) {
+	t.Run("accepts an authenticated subject under the named strategy", func(t *testing.T) {
+		authenticator := NewAuthenticator(map[string]AuthStrategy{
+			"Oidc-Authorization": splitStrategy{authenticated: true, privileged: false},
+		})
+
+		valid, err := authenticator.AuthenticateToken("Oidc-Authorization", "token")
+
+		assert.True(t, valid)
+		assert.NoError(t, err)
+	})
+
+	t.Run("rejects an unauthenticated subject", func(t *testing.T) {
+		authenticator := NewAuthenticator(map[string]AuthStrategy{
+			"Oidc-Authorization": splitStrategy{authenticated: false},
+		})
+
+		valid, err := authenticator.AuthenticateToken("Oidc-Authorization", "token")
+
+		assert.False(t, valid)
+		assert.Error(t, err)
+	})
+
+	t.Run("surfaces an unavailable provider", func(t *testing.T) {
+		authenticator := NewAuthenticator(map[string]AuthStrategy{
+			"Oidc-Authorization": unavailableStrategy{},
+		})
+
+		valid, err := authenticator.AuthenticateToken("Oidc-Authorization", "token")
+
+		assert.False(t, valid)
+		assert.ErrorIs(t, err, ErrProviderUnavailable)
+	})
+
+	t.Run("reports no credential for an empty token or unknown strategy", func(t *testing.T) {
+		authenticator := NewAuthenticator(map[string]AuthStrategy{
+			"Oidc-Authorization": splitStrategy{authenticated: true},
+		})
+
+		valid, err := authenticator.AuthenticateToken("Oidc-Authorization", "")
+		assert.False(t, valid)
+		assert.NoError(t, err)
+
+		valid, err = authenticator.AuthenticateToken("Nope", "token")
+		assert.False(t, valid)
+		assert.NoError(t, err)
+	})
+
+	t.Run("strips a Bearer prefix like the header path", func(t *testing.T) {
+		strategy := mocks.NewMockAuthStrategy(gomock.NewController(t))
+		strategy.EXPECT().Validate("trimmed").Return(true, nil).AnyTimes()
+		authenticator := NewAuthenticator(map[string]AuthStrategy{"Oidc-Authorization": strategy})
+
+		valid, err := authenticator.AuthenticateToken("Oidc-Authorization", "Bearer trimmed")
+
+		assert.True(t, valid)
+		assert.NoError(t, err)
+	})
+}
+
 func TestAuthenticatorStrategyLookup(t *testing.T) {
 	strategy := NewDeployTokenAuthService("valid")
 	authenticator := NewAuthenticator(map[string]AuthStrategy{
