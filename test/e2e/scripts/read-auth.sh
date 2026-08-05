@@ -1,0 +1,233 @@
+#!/usr/bin/env bash
+# Assert the OIDC read-protection contract against the real server.
+#
+# OIDC_ENABLED is server-global, so — like lockdown.sh — this phase toggles it on the
+# live release for its own duration and reverts before exiting.
+#
+# It runs WITHOUT an identity provider: the issuer points at a closed port, so any token
+# the server must check fails with a transport error. That covers the contract's
+# interesting half with no Keycloak in the lab:
+#
+#   - no credential        -> 401 (answered before any provider call)
+#   - an OIDC token        -> 503 (the provider could not be consulted)
+#   - a deploy token / JWT -> 200 (validated locally)
+#
+# The 503 case is asserted repeatedly, not once: the lab sets JWT_SECRET, so a request
+# carrying both headers has one strategy rejecting and one reporting the outage, and
+# strategy order is a randomized map iteration.
+#
+# Group membership is not observable with the provider unreachable; that is covered
+# against a real Keycloak in internal/server/keycloak_integration_test.go.
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./lib.sh
+. "${here}/lib.sh"
+
+: "${AW_CHART_REPO:?AW_CHART_REPO is required}" "${AW_CHART_VERSION:?AW_CHART_VERSION is required}"
+VALUES="${E2E_DIR}/values/argo-watcher.yaml"
+# MUST match JWT_SECRET in values/argo-watcher.yaml — the JWT read below is signed
+# with it and the server verifies against the value it was deployed with.
+JWT_SECRET="${JWT_SECRET:-e2e-jwt-secret}"
+
+# A closed port on the pod's own loopback: connection refused is immediate, so each
+# assertion costs nothing while still exercising the provider-unreachable path.
+UNREACHABLE_ISSUER="http://127.0.0.1:1"
+UNKNOWN_TASK="00000000-0000-0000-0000-000000000000"
+OIDC_HEADER="Oidc-Authorization: Bearer e2e-oidc-token"
+# Structurally invalid as an HMAC JWT, so the JWT strategy on Authorization rejects
+# it — the second credential in the mixed-outcome case below.
+BAD_JWT_HEADER="Authorization: Bearer not-a-real-jwt"
+
+# The reads that must require a credential once OIDC is on. Kept as a list so a new
+# protected read is one line here.
+PROTECTED=(
+  "tasks?from_timestamp=0"
+  "version"
+  "reachability"
+  "deploy-lock"
+)
+
+revert() {
+  echo "reverting OIDC_ENABLED"
+  helm_apply_aw || true
+  wait_service || true
+  return
+}
+trap revert EXIT
+
+wait_service || die "argo-watcher never answered on ${AW_URL}"
+
+# --- 0. Baseline: with OIDC off the same reads are open ------------------------
+# Without this the phase could pass against a server that rejects reads for some
+# unrelated reason.
+for path in "${PROTECTED[@]}"; do
+  req GET "${AW_API}/${path}"
+  [[ "$CODE" == "200" ]] || bad "baseline (OIDC off) GET /${path}: code=${CODE}, want 200"
+done
+ok "baseline: every read is open with OIDC disabled"
+
+# --- 1. Enable OIDC against an unreachable issuer -----------------------------
+# ClientId is mandatory when enabled (validateServerConfig), so the pod would
+# CrashLoop without it. PrivilegedGroups is optional and irrelevant here.
+idx=$(extra_envs_index "$VALUES")
+helm_apply_aw --set-string "extraEnvs[${idx}].name=OIDC_ENABLED" \
+              --set-string "extraEnvs[${idx}].value=true" \
+              --set-string "extraEnvs[$((idx + 1))].name=OIDC_ISSUER_URL" \
+              --set-string "extraEnvs[$((idx + 1))].value=${UNREACHABLE_ISSUER}" \
+              --set-string "extraEnvs[$((idx + 2))].name=OIDC_CLIENT_ID" \
+              --set-string "extraEnvs[$((idx + 2))].value=argo-watcher-e2e"
+wait_service || die "argo-watcher never came back after enabling OIDC"
+
+req GET "${AW_API}/config"
+if jq -e '.oidc.enabled == true' <<<"$BODY" >/dev/null 2>&1; then
+  ok "server reports oidc.enabled=true"
+else
+  die "server did not come back with OIDC enabled (config=${BODY})"
+fi
+
+# --- 2. Protected reads reject an uncredentialed caller -----------------------
+for path in "${PROTECTED[@]}"; do
+  req GET "${AW_API}/${path}"
+  if [[ "$CODE" == "401" ]] && jq -e '.error | test("authentication required")' <<<"$BODY" >/dev/null 2>&1; then
+    ok "GET /${path} -> 401 without a credential"
+  else
+    bad "GET /${path}: code=${CODE} body=${BODY} (want 401 authentication required)"
+  fi
+done
+
+# --- 3. An unreachable provider is 503, never 401 -----------------------------
+# 401 is what makes the Web UI drop its session, so this is the distinction the
+# whole error mapping exists for.
+req GET "${AW_API}/tasks?from_timestamp=0" -H "$OIDC_HEADER"
+if [[ "$CODE" == "503" ]]; then
+  ok "GET /tasks with an OIDC token -> 503 (provider unreachable)"
+else
+  bad "GET /tasks with an OIDC token: code=${CODE} body=${BODY} (want 503)"
+fi
+
+# Mixed outcomes across strategies: the provider-unavailable signal must win over the
+# JWT strategy's rejection on every request, not on average.
+mixed_fails=0
+for _ in $(seq 1 15); do
+  req GET "${AW_API}/tasks?from_timestamp=0" -H "$OIDC_HEADER" -H "$BAD_JWT_HEADER"
+  [[ "$CODE" == "503" ]] || mixed_fails=$((mixed_fails + 1))
+done
+if [[ "$mixed_fails" == "0" ]]; then
+  ok "OIDC token + rejected JWT -> 503 on all 15 attempts (precedence is stable)"
+else
+  bad "OIDC token + rejected JWT: ${mixed_fails}/15 attempts were not 503 (strategy precedence depends on map order)"
+fi
+
+# --- 4. Machine credentials read without touching the provider ----------------
+req GET "${AW_API}/tasks?from_timestamp=0" -H "ARGO_WATCHER_DEPLOY_TOKEN: ${DEPLOY_TOKEN}"
+if [[ "$CODE" == "200" ]]; then
+  ok "GET /tasks with the deploy token -> 200"
+else
+  bad "GET /tasks with the deploy token: code=${CODE} body=${BODY} (want 200)"
+fi
+
+jwt="$(cd "$E2E_ROOT" && JWT_SECRET="$JWT_SECRET" go run ./test/e2e/tools/mintjwt)" ||
+  die "could not mint a JWT"
+req GET "${AW_API}/tasks?from_timestamp=0" -H "Authorization: ${jwt}"
+if [[ "$CODE" == "200" ]]; then
+  ok "GET /tasks with a valid JWT -> 200 (a pipeline can read)"
+else
+  bad "GET /tasks with a valid JWT: code=${CODE} body=${BODY} (want 200)"
+fi
+
+# --- 5. The deliberate exemptions stay reachable -------------------------------
+# Breaking any of these breaks either every pipeline (the task lookup), the Web UI's
+# ability to log in at all (/config), or the probes and the scrape.
+req GET "${AW_API}/tasks/${UNKNOWN_TASK}"
+if [[ "$CODE" == "404" ]] && jq -e '.error == "task not found"' <<<"$BODY" >/dev/null 2>&1; then
+  ok "GET /tasks/<id> -> 404 without a credential (reached the handler)"
+else
+  bad "GET /tasks/<id>: code=${CODE} body=${BODY} (want 404 task not found)"
+fi
+
+req GET "${AW_API}/config"
+if [[ "$CODE" == "200" ]] &&
+   jq -e '(.webhook | has("url") | not) and (.mattermost | has("url") | not)' <<<"$BODY" >/dev/null 2>&1; then
+  ok "GET /config -> 200 without a credential, notification targets withheld"
+else
+  bad "GET /config: code=${CODE} (want 200 with no notification targets)"
+fi
+
+req GET "${AW_URL}/healthz"
+if [[ "$CODE" == "200" ]]; then
+  ok "GET /healthz -> 200 (probes unaffected)"
+else
+  bad "GET /healthz: code=${CODE} (want 200)"
+fi
+
+req GET "${AW_URL}/metrics"
+if [[ "$CODE" == "200" ]]; then
+  ok "GET /metrics -> 200 (scrape unaffected)"
+else
+  bad "GET /metrics: code=${CODE} (want 200)"
+fi
+
+# A malformed body proves the request reached addTask: 406 comes from payload
+# parsing, 401 would come from the middleware. Moving POST /tasks behind auth would
+# reject every uncredentialed pipeline in the fleet at once.
+req POST "${AW_API}/tasks" -H 'Content-Type: application/json' -d '{'
+if [[ "$CODE" == "406" ]]; then
+  ok "POST /tasks -> 406 without a credential (submission is not gated)"
+else
+  bad "POST /tasks: code=${CODE} body=${BODY} (want 406 — 401 means submission got gated)"
+fi
+
+# --- 6. The migration counter tracks credential-less reads only ---------------
+before="$(metric_sum unauthenticated_reads)"
+req GET "${AW_API}/tasks/${UNKNOWN_TASK}"
+after_open="$(metric_sum unauthenticated_reads)"
+if (( after_open > before )); then
+  ok "unauthenticated_reads counted the credential-less lookup (${before} -> ${after_open})"
+else
+  bad "unauthenticated_reads did not count a credential-less lookup (${before} -> ${after_open})"
+fi
+
+if curl -s -m 10 "${AW_URL}/metrics" | grep -q 'unauthenticated_reads{path="/api/v1/tasks/:id"}'; then
+  ok "the counter is labelled with the route pattern"
+else
+  bad "no unauthenticated_reads series labelled path=\"/api/v1/tasks/:id\""
+fi
+
+# A credentialed read must not inflate the number whose fall to zero is what
+# licenses closing this endpoint.
+req GET "${AW_API}/tasks/${UNKNOWN_TASK}" -H "ARGO_WATCHER_DEPLOY_TOKEN: ${DEPLOY_TOKEN}"
+after_creds="$(metric_sum unauthenticated_reads)"
+if [[ "$after_creds" == "$after_open" ]]; then
+  ok "a credentialed lookup left the counter unchanged (${after_creds})"
+else
+  bad "a credentialed lookup moved the counter (${after_open} -> ${after_creds})"
+fi
+
+# --- 7. The privileged write path is registered but cannot be authorized ------
+req POST "${AW_API}/deploy-lock" -H "$OIDC_HEADER"
+if [[ "$CODE" == "503" ]]; then
+  ok "POST /deploy-lock -> 503 (registered under OIDC, provider unreachable)"
+else
+  bad "POST /deploy-lock: code=${CODE} body=${BODY} (want 503)"
+fi
+
+# --- 8. Revert and prove the toggle is the only thing gating reads ------------
+revert
+trap - EXIT
+
+for path in "${PROTECTED[@]}"; do
+  req GET "${AW_API}/${path}"
+  [[ "$CODE" == "200" ]] || bad "after revert GET /${path}: code=${CODE}, want 200"
+done
+ok "every read is open again with OIDC disabled"
+
+# Nothing above could authorize a lock, so the lab must be left unlocked.
+req GET "${AW_API}/deploy-lock"
+if jq -e '. == false' <<<"$BODY" >/dev/null 2>&1; then
+  ok "deploy lock still unset"
+else
+  bad "deploy lock is set after the phase (body=${BODY})"
+fi
+
+phase_end READ-AUTH

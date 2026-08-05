@@ -75,28 +75,34 @@ func (env *Env) CreateRouter() *gin.Engine {
 	}
 	router.StaticFS("/swagger", swaggerFS)
 
-	v1 := router.Group("/api/v1")
+	// Routes are grouped by how they authenticate. `authenticated` holds the reads
+	// only the Web UI consumes, so gating them costs no pipeline anything.
+	// `open` holds the rest, each for a reason that is not negotiable:
+	//   - POST /tasks takes an optional credential by design (docs/reference/api.md).
+	//   - GET /config bootstraps the login flow, so it cannot require a token.
+	//   - GET /tasks/:id is polled by released clients, which send no credential on
+	//     GETs; the v4 UUID is the capability and the enumerable list is protected.
+	//   - POST/DELETE /deploy-lock enforce privileged membership themselves, and are
+	//     registered only under OIDC so they are never an open deploy-freeze switch.
+	open := router.Group("/api/v1")
+	authenticated := router.Group("/api/v1", env.requireAuthenticatedRead())
 	{
-		v1.POST("/tasks", env.addTask)
-		v1.GET("/tasks", env.getState)
-		v1.GET("/tasks/:id", env.getTaskStatus)
-		v1.GET("/version", env.getVersion)
-		v1.GET("/config", env.getConfig)
+		open.POST("/tasks", env.addTask)
+		open.GET("/config", env.getConfig)
+		open.GET("/tasks/:id", env.countUnauthenticatedRead(), env.getTaskStatus)
+
+		authenticated.GET("/tasks", env.getState)
+		authenticated.GET("/version", env.getVersion)
 		// Read-only ArgoCD + state-backend reachability for the frontend
-		// "unreachable" banner (issue #498). Always registered: it exposes no
-		// privileged action and mirrors the cached liveness-probe state without a
-		// live probe.
-		v1.GET("/reachability", env.reachability)
-		// The state-changing deploy-lock endpoints are only registered when OIDC
-		// auth is enabled: without an auth backend they cannot be protected, so
-		// exposing them would leave an unauthenticated deploy-freeze switch reachable
-		// by anyone who can reach the server (including via a victim's browser). The
-		// read-only GET stays available so the banner and scheduled lockdown keep working.
+		// "unreachable" banner (issue #498). It exposes no privileged action and
+		// mirrors the cached liveness-probe state without a live probe.
+		authenticated.GET("/reachability", env.reachability)
+		authenticated.GET(deployLockEndpoint, env.isDeployLockSet)
+
 		if env.config.OIDC.Enabled {
-			v1.POST(deployLockEndpoint, env.SetDeployLock)
-			v1.DELETE(deployLockEndpoint, env.ReleaseDeployLock)
+			open.POST(deployLockEndpoint, env.SetDeployLock)
+			open.DELETE(deployLockEndpoint, env.ReleaseDeployLock)
 		}
-		v1.GET(deployLockEndpoint, env.isDeployLockSet)
 	}
 
 	// Static file serving - use NoRoute to handle unmatched paths

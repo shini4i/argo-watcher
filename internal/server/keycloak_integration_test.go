@@ -88,6 +88,9 @@ func keycloakToken(t *testing.T, username, password string) string {
 // the pre-refactor code targeted directly.
 func newKeycloakEnv(t *testing.T) *Env {
 	t.Helper()
+	// TokenValidationInterval is left at zero on purpose: every request then
+	// reaches Keycloak, so an authorization assertion here can never pass on a
+	// cached decision. The caching behaviour itself is covered by unit tests.
 	cfg := &config.ServerConfig{
 		StateType: "in-memory",
 		OIDC: config.OIDCConfig{
@@ -180,5 +183,64 @@ func TestKeycloakDeployLockAuthz(t *testing.T) {
 
 	t.Run("missing token is unauthorized", func(t *testing.T) {
 		assert.Equal(t, http.StatusUnauthorized, callDeployLock(t, srv, http.MethodPost, ""))
+	})
+}
+
+// protectedReadServer exposes one authenticated read behind the real middleware.
+// /version is used because it needs no state or ArgoCD wiring, keeping the test
+// focused on the authentication decision.
+func protectedReadServer(t *testing.T, env *Env) *httptest.Server {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	authenticated := router.Group("/api/v1", env.requireAuthenticatedRead())
+	authenticated.GET("/version", env.getVersion)
+
+	srv := httptest.NewServer(router)
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// callProtectedRead issues an authenticated read, carrying the token in the
+// canonical OIDC header when one is given, and returns the HTTP status code.
+func callProtectedRead(t *testing.T, srv *httptest.Server, token string) int {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, srv.URL+"/api/v1/version", nil)
+	require.NoError(t, err)
+	if token != "" {
+		req.Header.Set(oidcHeader, "Bearer "+token)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	return resp.StatusCode
+}
+
+// TestKeycloakReadAuthn proves against a real provider that read access is gated
+// on authentication alone. The non-privileged user is the case unit tests cannot
+// fully vouch for: the very token Keycloak issues for a user outside
+// OIDC_PRIVILEGED_GROUPS — rejected by the deploy-lock endpoints above — must be
+// accepted here, or enabling OIDC would lock ordinary users out of the UI.
+func TestKeycloakReadAuthn(t *testing.T) {
+	waitForKeycloak(t)
+	srv := protectedReadServer(t, newKeycloakEnv(t))
+
+	t.Run("a non-privileged user may read", func(t *testing.T) {
+		token := keycloakToken(t, "regular-user", "regular-pass")
+		assert.Equal(t, http.StatusOK, callProtectedRead(t, srv, token))
+	})
+
+	t.Run("a privileged user may read", func(t *testing.T) {
+		token := keycloakToken(t, "priv-user", "priv-pass")
+		assert.Equal(t, http.StatusOK, callProtectedRead(t, srv, token))
+	})
+
+	t.Run("a garbage token is rejected", func(t *testing.T) {
+		assert.Equal(t, http.StatusUnauthorized, callProtectedRead(t, srv, "not-a-real-token"))
+	})
+
+	t.Run("no token is rejected", func(t *testing.T) {
+		assert.Equal(t, http.StatusUnauthorized, callProtectedRead(t, srv, ""))
 	})
 }

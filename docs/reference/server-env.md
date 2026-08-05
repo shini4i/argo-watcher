@@ -42,7 +42,7 @@ These variables control authentication and optional features. See the linked gui
 |-----------------------------|------------------------------------------------------------------------------|---------|-------------|
 | `ARGO_WATCHER_DEPLOY_TOKEN` | Shared token for validating client requests. See [GitOps Updater](../guides/gitops-updater.md). |         | No          |
 | `JWT_SECRET`                | Secret key for signing and validating JWT tokens. See [GitOps Updater](../guides/gitops-updater.md#jwt-configuration). |         | No          |
-| `OIDC_ENABLED`              | Enable OIDC authentication (Keycloak, Authentik, …). See [OIDC / SSO Integration](../guides/oidc.md). The legacy `KEYCLOAK_*` variables remain honored but are deprecated. | `false` | No          |
+| `OIDC_ENABLED`              | Enable OIDC authentication (Keycloak, Authentik, …). Also makes the Web UI's read endpoints require a credential — see [Protected endpoints](../guides/oidc.md#protected-endpoints). The legacy `KEYCLOAK_*` variables remain honored but are deprecated. | `false` | No          |
 | `WEBHOOK_ENABLED`           | Enable webhook notifications. See [Notifications](../guides/notifications.md).         | `false` | No          |
 | `LOCKDOWN_SCHEDULE`         | Recurring deployment lock schedule. See [Deployment Locking](../guides/gitops-updater.md#deployment-locking). |         | No          |
 

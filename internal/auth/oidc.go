@@ -28,15 +28,25 @@ type discoveryDocument struct {
 	UserinfoEndpoint string `json:"userinfo_endpoint"`
 }
 
+// ErrProviderUnavailable marks a failure to reach the OIDC provider or to make sense
+// of its answer, as distinct from a token it actively rejected. Handlers map it to 503,
+// because the frontend discards its session on a 401 — a blip would log everyone out.
+// Its message is the sanitized text clients see; details stay in the server log.
+var ErrProviderUnavailable = errors.New("token validation failed")
+
 // OIDCAuthService validates bearer tokens against any OIDC-compliant provider by
 // calling the provider's userinfo endpoint. The endpoint is resolved lazily on
 // first use via OIDC discovery, so process startup never depends on the provider
 // being reachable.
+//
+// Decisions are memoized per token (see validationCache) so that authorizing
+// every request costs one userinfo round trip per token per validation interval.
 type OIDCAuthService struct {
 	IssuerURL        string
 	ClientId         string
 	PrivilegedGroups []string
 	client           *http.Client
+	cache            *validationCache
 
 	mu          sync.Mutex
 	userinfoURL string
@@ -46,7 +56,11 @@ type OIDCAuthService struct {
 // not contact the network: the userinfo endpoint is discovered lazily on the
 // first Validate call (see resolveUserinfoURL), preserving the pre-refactor
 // behaviour where startup never reached out to the identity provider.
-func (o *OIDCAuthService) Init(issuerURL, clientId string, privilegedGroups []string) error {
+//
+// validationInterval is how long a provider decision may be reused for a given
+// token; it bounds how stale an authorization decision can be. Zero disables
+// caching, validating every request against the provider.
+func (o *OIDCAuthService) Init(issuerURL, clientId string, privilegedGroups []string, validationInterval time.Duration) error {
 	if err := validateIssuerURL(issuerURL); err != nil {
 		return err
 	}
@@ -55,6 +69,7 @@ func (o *OIDCAuthService) Init(issuerURL, clientId string, privilegedGroups []st
 	o.ClientId = clientId
 	o.PrivilegedGroups = privilegedGroups
 	o.client = &http.Client{Timeout: 10 * time.Second}
+	o.cache = newValidationCache(validationInterval)
 
 	return nil
 }
@@ -104,31 +119,31 @@ func (o *OIDCAuthService) resolveUserinfoURL() (string, error) {
 	req, err := http.NewRequest(http.MethodGet, discoveryURL, nil) // #nosec G704 - issuer URL is validated in Init()
 	if err != nil {
 		slog.Error("oidc: error creating discovery request", "error", err)
-		return "", errors.New("token validation failed")
+		return "", ErrProviderUnavailable
 	}
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := o.client.Do(req) // #nosec G704 - issuer URL is validated in Init()
 	if err != nil {
 		slog.Error("oidc: discovery request failed", "issuer", o.IssuerURL, "error", err)
-		return "", errors.New("token validation failed")
+		return "", ErrProviderUnavailable
 	}
 	defer closeBody(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
 		slog.Error("oidc: discovery returned non-200", "issuer", o.IssuerURL, "status", resp.Status)
-		return "", errors.New("token validation failed")
+		return "", ErrProviderUnavailable
 	}
 
 	var doc discoveryDocument
 	if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
 		slog.Error("oidc: error decoding discovery document", "error", err)
-		return "", errors.New("token validation failed")
+		return "", ErrProviderUnavailable
 	}
 
 	if err := validateUserinfoURL(doc.UserinfoEndpoint); err != nil {
 		slog.Error("oidc: invalid userinfo endpoint in discovery document", "error", err)
-		return "", errors.New("token validation failed")
+		return "", ErrProviderUnavailable
 	}
 
 	o.userinfoURL = doc.UserinfoEndpoint
@@ -158,54 +173,111 @@ func validateUserinfoURL(rawURL string) error {
 	return nil
 }
 
-// Validate implements a simple token validation approach: it calls the OIDC
-// provider's userinfo endpoint with the bearer token and treats HTTP 200 as
-// proof the token is valid, effectively delegating validation to the provider.
-// The user must additionally belong to a privileged group to be authorized.
+// Authenticate reports whether a token identifies a signed-in user, without
+// requiring any privilege. It is the check for read access: every authenticated
+// user may read, while privileged actions go through Validate.
+//
+// It returns nil when the provider accepts the token, an error naming the reason
+// when the provider rejects it, and ErrProviderUnavailable when the provider could
+// not be consulted at all.
+func (o *OIDCAuthService) Authenticate(token string) error {
+	_, err := o.resolveIdentity(token, true)
+	return err
+}
+
+// Validate implements AuthStrategy for privileged operations: it calls the OIDC
+// provider's userinfo endpoint with the bearer token and treats HTTP 200 as proof
+// the token is valid, effectively delegating validation to the provider. The user
+// must additionally belong to a privileged group to be authorized.
+//
+// It deliberately does not answer from a cached acceptance: a privileged action is a
+// rare human click, so re-asking the provider costs nothing and keeps group removal
+// and session revocation immediate rather than within OIDC_TOKEN_VALIDATION_INTERVAL.
 func (o *OIDCAuthService) Validate(token string) (bool, error) {
-	userinfoURL, err := o.resolveUserinfoURL()
+	info, err := o.resolveIdentity(token, false)
 	if err != nil {
 		return false, err
 	}
 
-	var info userInfoResponse
+	if !o.allowedToRollback(info.Username, info.Groups) {
+		return false, fmt.Errorf("%s is not a member of any of the privileged groups", info.Username)
+	}
+
+	return true, nil
+}
+
+// resolveIdentity returns the provider's view of a token, recording the outcome for
+// later use. With allowCached it answers from the cache; without it, only a cached
+// rejection may be reused — a rejection cannot over-grant, so honoring it still blunts
+// a hot loop of bad tokens, while reusing an acceptance is what would extend a stale
+// privilege.
+//
+// A provider failure is never cached: it would deny access for the whole interval over
+// what may be a momentary blip.
+func (o *OIDCAuthService) resolveIdentity(token string, allowCached bool) (*userInfoResponse, error) {
+	if entry, ok := o.cache.get(token); ok && (allowCached || entry.err != nil) {
+		return entry.info, entry.err
+	}
+
+	info, err := o.fetchUserInfo(token)
+	if errors.Is(err, ErrProviderUnavailable) {
+		return nil, err
+	}
+
+	o.cache.put(token, info, err)
+
+	return info, err
+}
+
+// fetchUserInfo calls the provider's userinfo endpoint with the given bearer token.
+// Failures to reach, parse or make sense of the provider yield ErrProviderUnavailable;
+// only a 401/403 is reported as a rejection of the token.
+func (o *OIDCAuthService) fetchUserInfo(token string) (*userInfoResponse, error) {
+	userinfoURL, err := o.resolveUserinfoURL()
+	if err != nil {
+		return nil, err
+	}
 
 	req, err := http.NewRequest(http.MethodGet, userinfoURL, nil) // #nosec G704 - URL is validated in resolveUserinfoURL()
 	if err != nil {
 		// Transport/internal failure details (URLs, hostnames) stay in the
 		// server log; the public-facing error must not leak them.
 		slog.Error("oidc: error creating userinfo request", "error", err)
-		return false, errors.New("token validation failed")
+		return nil, ErrProviderUnavailable
 	}
 	req.Header.Add("Authorization", "Bearer "+token)
 
 	resp, err := o.client.Do(req) // #nosec G704 - URL is validated in resolveUserinfoURL()
 	if err != nil {
 		slog.Error("oidc: userinfo request failed", "error", err)
-		return false, errors.New("token validation failed")
+		return nil, ErrProviderUnavailable
 	}
 	defer closeBody(resp.Body)
 
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		slog.Error("oidc: error reading userinfo response body", "error", err)
-		return false, errors.New("token validation failed")
+		return nil, ErrProviderUnavailable
 	}
 
+	// Only 401/403 are the provider judging the token; any other non-200 means it
+	// did not judge it at all, and a rejection would sign valid users out.
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return nil, fmt.Errorf("token validation failed with status: %v", resp.Status)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		slog.Error("oidc: userinfo returned an unusable status", "status", resp.Status)
+		return nil, ErrProviderUnavailable
+	}
+
+	var info userInfoResponse
 	if err := json.Unmarshal(bodyBytes, &info); err != nil {
 		slog.Error("oidc: error unmarshalling userinfo response", "error", err)
-		return false, errors.New("token validation failed")
+		return nil, ErrProviderUnavailable
 	}
 
-	userPrivileged := o.allowedToRollback(info.Username, info.Groups)
-
-	if resp.StatusCode == http.StatusOK && userPrivileged {
-		return true, nil
-	} else if resp.StatusCode == http.StatusOK && !userPrivileged {
-		return false, fmt.Errorf("%s is not a member of any of the privileged groups", info.Username)
-	}
-
-	return false, fmt.Errorf("token validation failed with status: %v", resp.Status)
+	return &info, nil
 }
 
 // allowedToRollback checks if the user is a member of any of the privileged groups.

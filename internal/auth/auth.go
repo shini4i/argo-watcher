@@ -1,9 +1,11 @@
 package auth
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/shini4i/argo-watcher/internal/config"
 )
@@ -60,11 +62,51 @@ func parseAuthToken(request *http.Request, header string) string {
 //     token; err is the last strategy's reason and should be surfaced to
 //     the client so it can show something actionable.
 func (a *Authenticator) Validate(request *http.Request) (bool, error) {
+	return a.walk(request, func(strategy AuthStrategy, token string) (bool, error) {
+		return strategy.Validate(token)
+	})
+}
+
+// AuthenticateRequest reports whether the request carries a credential proving
+// the caller is authenticated, without requiring any privilege.
+//
+// It follows the same three return states as Validate, so callers can tell "no
+// credential sent" from "credential rejected".
+func (a *Authenticator) AuthenticateRequest(request *http.Request) (bool, error) {
+	return a.walk(request, func(strategy AuthStrategy, token string) (bool, error) {
+		// A strategy that separates authentication from authorization exposes
+		// Authenticate for the weaker check — currently OIDC, whose Validate
+		// additionally demands privileged-group membership. A strategy with no group
+		// concept (the deploy token, a CI JWT) does not, because for it a valid token
+		// answers both questions, so Validate is the authentication check too.
+		authenticator, ok := strategy.(interface{ Authenticate(token string) error })
+		if !ok {
+			return strategy.Validate(token)
+		}
+
+		if err := authenticator.Authenticate(token); err != nil {
+			return false, err
+		}
+		return true, nil
+	})
+}
+
+// walk applies check to every strategy whose header carries a token, returning on
+// the first acceptance. When no strategy accepts, it returns a nil error if no
+// strategy was invoked at all — the "authentication not provided" state described
+// on Validate — and otherwise the failure of the invoked strategies.
+//
+// A request may carry several credentials at once — the Web UI sends its OIDC token in
+// both Authorization and Oidc-Authorization, and the JWT strategy rejects that copy —
+// so when outcomes disagree ErrProviderUnavailable wins: "rejected" is only truthful
+// if every credential was evaluated, and callers turn a rejection into a 401. Map
+// iteration is randomized, so without this precedence the status flips between runs.
+func (a *Authenticator) walk(request *http.Request, check func(AuthStrategy, string) (bool, error)) (bool, error) {
 	if a == nil || request == nil {
 		return false, nil
 	}
 
-	var lastErr error
+	var rejectedErr, unavailableErr error
 
 	for header, strategy := range a.strategies {
 		token := parseAuthToken(request, header)
@@ -72,16 +114,24 @@ func (a *Authenticator) Validate(request *http.Request) (bool, error) {
 			continue
 		}
 
-		valid, err := strategy.Validate(token)
+		valid, err := check(strategy, token)
 		if valid {
 			return true, nil
 		}
+		if errors.Is(err, ErrProviderUnavailable) {
+			unavailableErr = err
+			continue
+		}
 		if err != nil {
-			lastErr = err
+			rejectedErr = err
 		}
 	}
 
-	return false, lastErr
+	if unavailableErr != nil {
+		return false, unavailableErr
+	}
+
+	return false, rejectedErr
 }
 
 // ValidateStrategy restricts validation to a single allowed strategy header.
@@ -126,6 +176,7 @@ func NewOIDCAuthService(config *config.ServerConfig) (*OIDCAuthService, error) {
 		config.OIDC.IssuerURL,
 		config.OIDC.ClientId,
 		config.OIDC.PrivilegedGroups,
+		time.Duration(config.OIDC.TokenValidationInterval)*time.Millisecond,
 	); err != nil {
 		return nil, err
 	}

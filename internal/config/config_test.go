@@ -459,3 +459,61 @@ func TestServerConfig_JSONExcludesSensitiveFields(t *testing.T) {
 	assert.NotContains(t, jsonString, "db-password")
 	assert.NotContains(t, jsonString, "deploy-token")
 }
+
+// TestServerConfig_JSONOmitsNotificationTargets pins the payload of the
+// unauthenticated GET /api/v1/config: how to reach a notification receiver must not be
+// readable by anyone who can reach the server, since a webhook URL is itself the
+// credential. The `enabled` flags stay — they name no target, and downstream consumers
+// (argo-watcher-mcp) forward them.
+func TestServerConfig_JSONOmitsNotificationTargets(t *testing.T) {
+	config := &ServerConfig{
+		SkipTlsVerify:    true,
+		LockdownSchedule: "Mon-Fri 09:00-18:00",
+		Webhook: WebhookConfig{
+			Enabled: true,
+			Url:     "https://hooks.example.com/services/T000/B000/XXXX",
+			Token:   "webhook-token",
+		},
+		Mattermost: MattermostConfig{
+			Enabled:   true,
+			Url:       "https://mattermost.example.com",
+			ChannelId: "channel-id",
+			Token:     "mattermost-token",
+		},
+	}
+
+	jsonBytes, err := json.Marshal(config)
+	require.NoError(t, err)
+	jsonString := string(jsonBytes)
+
+	assert.NotContains(t, jsonString, "hooks.example.com")
+	assert.NotContains(t, jsonString, "webhook-token")
+	assert.NotContains(t, jsonString, "mattermost.example.com")
+	assert.NotContains(t, jsonString, "mattermost-token")
+	assert.NotContains(t, jsonString, "channel-id")
+
+	// What other consumers read must survive: the enabled flags, the schedule and the
+	// TLS posture are all allowlisted downstream.
+	var decoded map[string]any
+	require.NoError(t, json.Unmarshal(jsonBytes, &decoded))
+	assert.Equal(t, true, decoded["webhook"].(map[string]any)["enabled"])
+	assert.Equal(t, true, decoded["mattermost"].(map[string]any)["enabled"])
+	assert.Equal(t, "Mon-Fri 09:00-18:00", decoded["lockdown_schedule"])
+	assert.Equal(t, true, decoded["skip_tls_verify"])
+	assert.Contains(t, jsonString, "argo_cd_url")
+	assert.Contains(t, jsonString, "oidc")
+}
+
+// TestServerConfig_DefaultValidationIntervalMatchesTokenLifetime guards the
+// caching default: revalidating every 10s (the previously documented but never
+// implemented value) would turn every UI refresh into provider traffic.
+func TestServerConfig_DefaultValidationInterval(t *testing.T) {
+	t.Setenv("ARGO_URL", "https://example.com")
+	t.Setenv("ARGO_TOKEN", "secret-token")
+	t.Setenv("STATE_TYPE", "in-memory")
+
+	cfg, err := NewServerConfig()
+
+	require.NoError(t, err)
+	assert.Equal(t, 300000, cfg.OIDC.TokenValidationInterval)
+}

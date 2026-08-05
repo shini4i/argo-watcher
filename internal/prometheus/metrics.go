@@ -19,6 +19,7 @@ type MetricsInterface interface {
 	ObserveGitLockWaitDuration(app string, seconds float64)
 	ObserveDeploymentDuration(app string, seconds float64)
 	ObserveGitBatchSize(size int)
+	AddUnauthenticatedRead(path string)
 }
 
 // Metrics contains all the prometheus collectors.
@@ -33,6 +34,7 @@ type Metrics struct {
 	GitLockWaitDuration  *prometheus.HistogramVec
 	DeploymentDuration   *prometheus.HistogramVec
 	GitBatchSize         prometheus.Histogram
+	UnauthenticatedReads *prometheus.CounterVec
 }
 
 // NewMetrics creates and registers the metrics with the provided Registerer.
@@ -103,9 +105,17 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 			Help:    "Number of applications committed in a single batch write-back flush.",
 			Buckets: []float64{1, 2, 5, 10, 20, 50, 100},
 		}),
+		// UnauthenticatedReads is the migration signal for closing the read endpoints
+		// left open on purpose (see router.go): it keeps rising while pipelines run a
+		// client that sends no credential on GETs, and reaching zero is the evidence
+		// that requiring auth there is safe.
+		UnauthenticatedReads: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "unauthenticated_reads",
+			Help: "Reads served without a credential on the deliberately open read endpoints while OIDC auth was enabled.",
+		}, []string{"path"}),
 	}
 
-	reg.MustRegister(m.FailedDeployment, m.ProcessedDeployments, m.ArgocdUnavailable, m.StateUnavailable, m.InProgressTasks, m.RefreshDuration, m.GitWritebackDuration, m.GitLockWaitDuration, m.DeploymentDuration, m.GitBatchSize)
+	reg.MustRegister(m.FailedDeployment, m.ProcessedDeployments, m.ArgocdUnavailable, m.StateUnavailable, m.InProgressTasks, m.RefreshDuration, m.GitWritebackDuration, m.GitLockWaitDuration, m.DeploymentDuration, m.GitBatchSize, m.UnauthenticatedReads)
 
 	return m
 }
@@ -180,4 +190,10 @@ func (m *Metrics) ObserveDeploymentDuration(app string, seconds float64) {
 // batch write-back flush.
 func (m *Metrics) ObserveGitBatchSize(size int) {
 	m.GitBatchSize.Observe(float64(size))
+}
+
+// AddUnauthenticatedRead increments the UnauthenticatedReads counter for the given
+// request path.
+func (m *Metrics) AddUnauthenticatedRead(path string) {
+	m.UnauthenticatedReads.WithLabelValues(path).Inc()
 }

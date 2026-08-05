@@ -5,7 +5,16 @@
 # operators depend on that no other phase exercises:
 #   - GET  /api/v1/version              -> 200, non-empty JSON string
 #   - GET  /api/v1/config               -> 200; Keycloak reported disabled; the
-#                                          deploy-token secret is redacted (json:"-")
+#                                          deploy-token secret is redacted (json:"-");
+#                                          notification targets absent but their
+#                                          `enabled` flags kept — the endpoint is
+#                                          unauthenticated by necessity (the UI
+#                                          bootstraps its login from it)
+#
+# The lab runs with OIDC disabled, which is the deployment shape asserted here:
+# every read stays open. Read protection under OIDC lives in the Keycloak
+# integration suite (internal/server/keycloak_integration_test.go, docker-compose
+# `integration` profile) until the lab grows an OIDC-enabled phase.
 #   - GET  /api/v1/tasks?status=bogus   -> 400 "unsupported status filter"
 #   - GET  /api/v1/tasks?status=deployed-> 200, valid JSON (filter accepted)
 #   - GET  /api/v1/tasks/<unknown-uuid> -> 404 "task not found" (the 404-vs-500
@@ -48,8 +57,18 @@ elif ! jq -e '.keycloak.enabled == false' <<<"$BODY" >/dev/null 2>&1; then
 elif grep -qF "$DEPLOY_TOKEN" <<<"$BODY"; then
   # A leaked secret here is the whole reason ServerConfig marks it json:"-".
   bad "config: deploy token leaked in /config response"
+elif ! jq -e '(.webhook | has("url") | not) and (.mattermost | has("url") | not)' <<<"$BODY" >/dev/null 2>&1; then
+  # /config is served unauthenticated and a webhook URL is itself the credential; the
+  # lab runs with webhooks enabled, so a regression shows up here.
+  bad "config: notification target exposed on an unauthenticated endpoint"
+elif ! jq -e '.webhook.enabled == true' <<<"$BODY" >/dev/null 2>&1; then
+  # The enabled flag must survive: downstream consumers (argo-watcher-mcp) read it.
+  bad "config: webhook.enabled missing (lab runs with webhooks on)"
+elif ! jq -e '.argo_cd_url != null' <<<"$BODY" >/dev/null 2>&1; then
+  # The CLI client builds the app URL from this field; trimming must not take it.
+  bad "config: argo_cd_url missing — the client needs it to build app URLs"
 else
-  ok "config: oidc disabled (+ legacy keycloak mirror), deploy token redacted (${CODE})"
+  ok "config: oidc disabled (+ legacy keycloak mirror), secrets and deployment detail withheld (${CODE})"
 fi
 
 echo "=== task-list filters ==="

@@ -7,10 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- With OIDC authentication enabled, the read endpoints the Web UI consumes —
+  `GET /api/v1/tasks`, `/version`, `/reachability` and `GET /deploy-lock` — now
+  require a credential. Being signed in is enough; membership of
+  `OIDC_PRIVILEGED_GROUPS` remains necessary only for managing the deployment lock.
+  A deploy token or a CI JWT is accepted as well, so pipelines can read too.
+  Deployments are unaffected: `POST /api/v1/tasks` keeps its optional-credential
+  behaviour, and `GET /api/v1/tasks/{id}` — the lookup the client polls, which
+  presents no credential — stays open, guarded by the unguessable task id. With OIDC
+  disabled nothing changes.
+
+  `/ws` also stays open, because a browser cannot attach a header to a WebSocket
+  handshake. It carries deployment-lock and Argo CD reachability transitions — the
+  same signals `GET /deploy-lock` and `/reachability` now require a credential for —
+  so gating those endpoints narrows that exposure rather than closing it.
+- A new `unauthenticated_reads` counter (labelled by `path`) reports how many reads
+  still arrive without a credential on the endpoints left open on purpose. It reaching
+  zero is the evidence needed before those can be closed too.
+
+### Changed
+
+- Read authorization is no longer sent to the OIDC provider on every request: a
+  decision is reused for `OIDC_TOKEN_VALIDATION_INTERVAL`, capped by the token's own
+  expiry, so an open browser tab costs one userinfo call per token per interval
+  instead of one per refresh. Privileged actions (managing the deployment lock) still
+  re-verify against the provider every time, so removing a user from a privileged
+  group takes effect immediately.
+
+  `OIDC_TOKEN_VALIDATION_INTERVAL` is now honoured — previous releases parsed it and
+  never used it — and its default is `300000` ms (5 minutes). A deployment that set
+  the variable explicitly will see its value take effect for the first time; one
+  relying on the default gets 5-minute reuse for reads.
+- A request whose credential could not be checked because the OIDC provider was
+  unreachable now returns `503 Service Unavailable` instead of `401 Unauthorized`.
+  The Web UI treats a 401 as a dead session and signs the user out, so a brief
+  provider outage no longer logs everyone out.
+
 ### Fixed
 
 - The Duration column of the tasks table now counts up while a deployment is in
   progress, instead of showing `0s` until the task reaches a final status.
+
+### Security
+
+- `GET /api/v1/config` no longer discloses how to reach a notification receiver: the
+  `webhook` and `mattermost` blocks are reduced to their `enabled` flag. That endpoint
+  cannot be authenticated — the Web UI reads the OIDC issuer and client id from it
+  before it can hold a token — and a webhook URL is itself a credential. Every other
+  field, including the `enabled` flags, is unchanged.
 
 ## [0.14.0] - 2026-08-04
 

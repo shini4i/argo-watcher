@@ -21,11 +21,15 @@ import (
 // or "https://authentik/application/o/argo-watcher/" for Authentik); the backend
 // discovers the userinfo endpoint from it at runtime. The deprecated KEYCLOAK_*
 // variables are mapped onto these fields by applyKeycloakCompat.
+//
+// TokenValidationInterval (milliseconds) bounds how stale a read authorization can be,
+// capped per token by that token's own expiry. Zero revalidates every request, which
+// multiplies UI refreshes into provider traffic.
 type OIDCConfig struct {
 	Enabled                 bool     `env:"OIDC_ENABLED" json:"enabled"`
 	IssuerURL               string   `env:"OIDC_ISSUER_URL" json:"issuer_url,omitempty"`
 	ClientId                string   `env:"OIDC_CLIENT_ID" json:"client_id,omitempty"`
-	TokenValidationInterval int      `env:"OIDC_TOKEN_VALIDATION_INTERVAL" envDefault:"10000" json:"token_validation_interval"`
+	TokenValidationInterval int      `env:"OIDC_TOKEN_VALIDATION_INTERVAL" envDefault:"300000" json:"token_validation_interval"`
 	PrivilegedGroups        []string `env:"OIDC_PRIVILEGED_GROUPS" json:"privileged_groups,omitempty"`
 }
 
@@ -39,25 +43,35 @@ type DatabaseConfig struct {
 	DSN            string `env:"DB_DSN,expand" envDefault:"host=${DB_HOST} port=${DB_PORT} user=${DB_USER} password=${DB_PASSWORD} dbname=${DB_NAME} sslmode=${DB_SSL_MODE} TimeZone=${DB_TIMEZONE}"`
 }
 
+// WebhookConfig describes the generic notification receiver. Only Enabled is public:
+// the rest says how to reach a third party, and the URL is itself the credential.
 type WebhookConfig struct {
 	Enabled              bool   `env:"WEBHOOK_ENABLED" envDefault:"false" json:"enabled"`
-	Url                  string `env:"WEBHOOK_URL" json:"url,omitempty"`
-	ContentType          string `env:"WEBHOOK_CONTENT_TYPE" envDefault:"application/json" json:"content_type,omitempty"`
-	Format               string `env:"WEBHOOK_FORMAT" json:"format,omitempty"`
-	AuthorizationHeader  string `env:"WEBHOOK_AUTHORIZATION_HEADER_NAME" envDefault:"Authorization" json:"authorization_header,omitempty"`
+	Url                  string `env:"WEBHOOK_URL" json:"-"`
+	ContentType          string `env:"WEBHOOK_CONTENT_TYPE" envDefault:"application/json" json:"-"`
+	Format               string `env:"WEBHOOK_FORMAT" json:"-"`
+	AuthorizationHeader  string `env:"WEBHOOK_AUTHORIZATION_HEADER_NAME" envDefault:"Authorization" json:"-"`
 	Token                string `env:"WEBHOOK_AUTHORIZATION_HEADER_VALUE" envDefault:"" json:"-"`
-	AllowedResponseCodes []int  `env:"WEBHOOK_ALLOWED_RESPONSE_CODES" envDefault:"200" json:"allowed_response_codes,omitempty"`
+	AllowedResponseCodes []int  `env:"WEBHOOK_ALLOWED_RESPONSE_CODES" envDefault:"200" json:"-"`
 }
 
+// MattermostConfig follows WebhookConfig: only Enabled is public.
 type MattermostConfig struct {
 	Enabled       bool   `env:"MATTERMOST_ENABLED" envDefault:"false" json:"enabled"`
-	Url           string `env:"MATTERMOST_URL" json:"url,omitempty"` // base URL of the Mattermost instance, without /api/v4
-	Token         string `env:"MATTERMOST_TOKEN" json:"-"`           // bot access token
-	ChannelId     string `env:"MATTERMOST_CHANNEL_ID" json:"channel_id,omitempty"`
-	Format        string `env:"MATTERMOST_FORMAT" json:"format,omitempty"`                          // Go template rendering models.Task into the post markdown message
-	MentionAuthor bool   `env:"MATTERMOST_MENTION_AUTHOR" envDefault:"false" json:"mention_author"` // prepend @<Author> to every post
+	Url           string `env:"MATTERMOST_URL" json:"-"`   // base URL of the Mattermost instance, without /api/v4
+	Token         string `env:"MATTERMOST_TOKEN" json:"-"` // bot access token
+	ChannelId     string `env:"MATTERMOST_CHANNEL_ID" json:"-"`
+	Format        string `env:"MATTERMOST_FORMAT" json:"-"`                            // Go template rendering models.Task into the post markdown message
+	MentionAuthor bool   `env:"MATTERMOST_MENTION_AUTHOR" envDefault:"false" json:"-"` // prepend @<Author> to every post
 }
 
+// ServerConfig is the server's runtime configuration. Its json tags double as the wire
+// format of GET /api/v1/config, which cannot be authenticated — the frontend reads the
+// OIDC issuer and client id from it before it can hold a token. A field marked
+// `json:"-"` is excluded because it must not be public, not merely because the UI has
+// no use for it. Consumers other than the UI read this payload too
+// (github.com/shini4i/argo-watcher-mcp allowlists it field by field), so removing a
+// key is a breaking change for them.
 type ServerConfig struct {
 	ArgoUrl            url.URL          `env:"ARGO_URL,required,notEmpty" json:"argo_cd_url"`
 	ArgoUrlAlias       string           `env:"ARGO_URL_ALIAS" json:"argo_cd_url_alias,omitempty"` // Used to generate App Url. Can be omitted if ArgoUrl is reachable from outside.

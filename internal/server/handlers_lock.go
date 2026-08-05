@@ -74,6 +74,8 @@ func (env *Env) ReleaseDeployLock(c *gin.Context) {
 // @Description Check if deploy lock is set
 // @Tags frontend
 // @Success 200 {boolean} boolean
+// @Failure 401 {object} models.TaskStatus "no credential, or the credential was rejected (only when OIDC auth is enabled)"
+// @Failure 503 {object} models.TaskStatus "the OIDC provider could not be consulted; retry"
 // @Router /api/v1/deploy-lock [get]
 func (env *Env) isDeployLockSet(c *gin.Context) {
 	c.JSON(http.StatusOK, env.lockdown.IsLocked())

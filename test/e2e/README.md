@@ -58,6 +58,7 @@ Individual steps (for iterating or debugging):
 task up                   # build the race image + boot the full lab (idempotent)
 task verify               # assert argo-watcher is up and reaching real Argo
 task api-surface          # assert the read-only HTTP surface (version/config/task-list/deploy-lock) to contract
+task read-auth            # assert OIDC read protection: 401 without a credential, 503 when the provider is unreachable, exemptions still open
 task smoke                # one authenticated deploy through the full write-back loop, via the real client binary
 task client-knobs         # assert client env knobs: TASK_REFRESH override deploys, DEBUG cURL log redacts the token
 task jwt-auth             # assert the JWT (BEARER_TOKEN) auth path drives an authenticated write-back to deployed
@@ -128,6 +129,7 @@ again instead of re-establishing a forward.
 | `scripts/failure-fixture.sh` | inject/remove a deliberately-broken resource via the chart's `rawObject`: a failing PreSync hook (`hook`, aborts the sync), a failing plain migration Job (`degraded`, lets the image roll out and holds the app Synced+Degraded), or a Deployment whose readiness probe never passes (`pending`, holds the app Synced+Progressing with nothing Degraded); sole owner of the shared `chart/values.yaml` |
 | `scripts/notifications.sh` | assert the generic webhook fires start + result with the templated payload and auth header |
 | `scripts/api-surface.sh` | assert the read-only HTTP surface to contract: version/config (secrets redacted), task-list filters + invalid-status 400, unknown-task 404, deploy-lock POST/DELETE 404 when OIDC auth is off |
+| `scripts/read-auth.sh` | assert OIDC read protection: toggles `OIDC_ENABLED` on the release with the issuer pointed at a closed port and reverts, asserting 401 without a credential, 503 (never 401) when the provider cannot be consulted — including with a rejected JWT alongside, 15× because strategy order is randomized — 200 for a deploy token / JWT, the `/tasks/:id`, `/config`, `/healthz`, `/metrics` and `POST /tasks` exemptions, and the `unauthenticated_reads` counter semantics. Needs no identity provider; group-based authorization is covered by the Keycloak integration suite instead |
 | `scripts/client-knobs.sh` | assert client env knobs via the real client: `TASK_REFRESH=false` still deploys, `DEBUG=true` cURL log redacts the deploy token |
 | `scripts/jwt-auth.sh` | assert the JWT (`BEARER_TOKEN`) auth path: mint an HS256 token, deploy with no deploy token, prove the authenticated write-back reaches deployed |
 | `tools/mintjwt/` | tiny Go HS256 JWT minter (signs with the server's own jwt library; avoids an openssl dependency) |
