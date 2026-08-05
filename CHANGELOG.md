@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The Duration column of the tasks table now counts up while a deployment is in
+  progress, instead of showing `0s` until the task reaches a final status.
+
 ## [0.14.0] - 2026-08-04
 
 ### Added
