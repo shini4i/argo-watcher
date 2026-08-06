@@ -1,0 +1,62 @@
+{
+  "status": {
+    "health": {
+      "status": "Healthy"
+    },
+    "conditions": [
+      {
+        "type": "ComparisonError",
+        "message": "Failed to load target state: rpc error: code = Unknown"
+      },
+      {
+        "type": "OrphanedResourceWarning",
+        "message": "Application has 1 orphaned resource"
+      }
+    ],
+    "operationState": {
+      "phase": "Succeeded",
+      "message": "successfully synced (all tasks run)",
+      "syncResult": {
+        "resources": [
+          {
+            "hookPhase": "Running",
+            "hookType": "",
+            "kind": "Deployment",
+            "message": "deployment.apps/product-catalog configured",
+            "status": "Synced",
+            "syncPhase": "Sync",
+            "name": "product-catalog",
+            "namespace": "app"
+          }
+        ]
+      }
+    },
+    "resources": [
+      {
+        "kind": "Deployment",
+        "name": "product-catalog",
+        "namespace": "app",
+        "status": "OutOfSync"
+      },
+      {
+        "kind": "Service",
+        "name": "product-catalog",
+        "namespace": "app",
+        "status": "Synced"
+      },
+      {
+        "kind": "Endpoints",
+        "name": "product-catalog",
+        "namespace": "app"
+      }
+    ],
+    "summary": {
+      "images": [
+        "product-catalog:v0.0.2"
+      ]
+    },
+    "sync": {
+      "status": "OutOfSync"
+    }
+  }
+}
