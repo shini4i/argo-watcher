@@ -943,7 +943,9 @@ func TestDeployLockNotifiedOnlyByWatcher(t *testing.T) {
 
 			dialCtx, dialCancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer dialCancel()
-			conn, _, err := websocket.Dial(dialCtx, "ws"+strings.TrimPrefix(server.URL, "http")+"/ws", nil)
+			// OIDC is enabled here, so the handshake needs a credential like any other.
+			conn, _, err := websocket.Dial(dialCtx, "ws"+strings.TrimPrefix(server.URL, "http")+"/ws",
+				&websocket.DialOptions{HTTPHeader: http.Header{oidcHeader: []string{"Bearer token"}}})
 			require.NoError(t, err)
 			defer conn.Close(websocket.StatusNormalClosure, "test complete")
 

@@ -48,13 +48,20 @@ PROTECTED=(
   "deploy-lock"
 )
 
+bin_dir="$(mktemp -d)"
+probe_out="$(mktemp)"
+
 revert() {
   echo "reverting OIDC_ENABLED"
   helm_apply_aw || true
   wait_service || true
+  rm -rf "$bin_dir" "$probe_out"
   return
 }
 trap revert EXIT
+
+build_bin "$bin_dir" ./test/e2e/tools/wsprobe || die "wsprobe build failed"
+wsprobe="$BIN"
 
 wait_service || die "argo-watcher never answered on ${AW_URL}"
 
@@ -204,7 +211,35 @@ else
   bad "a credentialed lookup moved the counter (${after_open} -> ${after_creds})"
 fi
 
-# --- 7. The privileged write path is registered but cannot be authorized ------
+# --- 7. The WebSocket handshake is gated too -----------------------------------
+# /ws broadcasts the same deploy-lock and reachability transitions the REST reads now
+# require a credential for, so leaving it open would make that gating cosmetic.
+WS_URL="$AW_WS_URL" DURATION=5s "$wsprobe" >"$probe_out" 2>/dev/null || true
+if grep -q "^REJECTED status=401$" "$probe_out"; then
+  ok "WS handshake -> 401 without a credential"
+else
+  bad "WS handshake without a credential: $(tr '\n' ',' <"$probe_out") (want REJECTED status=401)"
+fi
+
+# The deploy token stands in for any non-browser client; the provider is never consulted
+# for it, so this is the one credential that can establish a socket in this phase.
+WS_URL="$AW_WS_URL" DURATION=2s WSPROBE_DEPLOY_TOKEN="$DEPLOY_TOKEN" "$wsprobe" >"$probe_out" 2>/dev/null || true
+if wait_ws_open "$probe_out"; then
+  ok "WS handshake accepted with a deploy token"
+else
+  bad "WS handshake with a deploy token: $(tr '\n' ',' <"$probe_out") (want OPEN)"
+fi
+
+# The subprotocol transport a browser is limited to: reaching the OIDC strategy at all
+# proves the token was extracted, and the unreachable provider makes it a 503.
+WS_URL="$AW_WS_URL" DURATION=5s WSPROBE_SUBPROTOCOL_TOKEN=browser-token "$wsprobe" >"$probe_out" 2>/dev/null || true
+if grep -q "^REJECTED status=503$" "$probe_out"; then
+  ok "WS subprotocol token reaches the provider (503 while it is unreachable)"
+else
+  bad "WS subprotocol handshake: $(tr '\n' ',' <"$probe_out") (want REJECTED status=503)"
+fi
+
+# --- 8. The privileged write path is registered but cannot be authorized ------
 req POST "${AW_API}/deploy-lock" -H "$OIDC_HEADER"
 if [[ "$CODE" == "503" ]]; then
   ok "POST /deploy-lock -> 503 (registered under OIDC, provider unreachable)"
@@ -212,7 +247,7 @@ else
   bad "POST /deploy-lock: code=${CODE} body=${BODY} (want 503)"
 fi
 
-# --- 8. Revert and prove the toggle is the only thing gating reads ------------
+# --- 9. Revert and prove the toggle is the only thing gating reads ------------
 revert
 trap - EXIT
 

@@ -22,7 +22,7 @@ Credentials serve two purposes: authorizing the built-in [GitOps Updater](../gui
 
 With OIDC **disabled** — the default — every endpoint is readable without a credential.
 
-With OIDC **enabled**, the endpoints the Web UI consumes require one: `GET /api/v1/tasks`, `/version`, `/reachability` and `/deploy-lock`. Any of the credentials above is accepted; group membership is not required for reads. Three endpoints stay deliberately open — `GET /api/v1/tasks/{id}` (the lookup the client polls, guarded only by the unguessable task id), `GET /api/v1/config` (the Web UI bootstraps its login from it), and `/ws`. See [Protected endpoints](../guides/oidc.md#protected-endpoints) for the full table and the caveats.
+With OIDC **enabled**, the endpoints the Web UI consumes require one: `GET /api/v1/tasks`, `/version`, `/reachability` and `/deploy-lock`. Any of the credentials above is accepted; group membership is not required for reads. The `/ws` WebSocket is gated too; a browser passes its token as the `argo-watcher.token.<token>` subprotocol, since it cannot set a header on the handshake. Two endpoints stay deliberately open — `GET /api/v1/tasks/{id}` (the lookup the client polls, guarded only by the unguessable task id) and `GET /api/v1/config` (the Web UI bootstraps its login from it). See [Protected endpoints](../guides/oidc.md#protected-endpoints) for the full table and the caveats.
 
 A read rejected for a missing or invalid credential returns `401 Unauthorized`. A read whose credential could not be checked because the OIDC provider was unreachable returns `503 Service Unavailable` — the distinction exists so a provider outage does not read as a dead session.
 

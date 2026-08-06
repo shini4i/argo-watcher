@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { resolveWebSocketUrl } from './webSocketUrl';
+import { resolveWebSocketUrl, webSocketProtocols } from './webSocketUrl';
 import * as sharedUtils from '../shared/utils';
+import { clearAccessToken, setAccessToken } from '../auth/tokenStore';
 
 /**
  * Covers the extracted, security-sensitive WebSocket URL resolution directly
@@ -51,5 +52,32 @@ describe('resolveWebSocketUrl', () => {
     stubLocation('http:', 'argo.example:8080');
     import.meta.env.VITE_WS_BASE_URL = '';
     expect(resolveWebSocketUrl()).toBe('ws://argo.example:8080/ws');
+  });
+});
+
+/**
+ * The handshake is the one request the browser cannot attach a header to, so the
+ * credential rides in the subprotocol list instead. Covered directly because a silent
+ * regression here logs every user out of the live banners with OIDC enabled.
+ */
+describe('webSocketProtocols', () => {
+  beforeEach(() => {
+    clearAccessToken();
+  });
+
+  it('offers only the protocol name when no token is held', () => {
+    expect(webSocketProtocols()).toEqual(['argo-watcher.v1']);
+  });
+
+  it('appends the token entry when a token is held', () => {
+    setAccessToken('abc.def.ghi');
+
+    expect(webSocketProtocols()).toEqual(['argo-watcher.v1', 'argo-watcher.token.abc.def.ghi']);
+  });
+
+  it('never sends a token entry with an empty value', () => {
+    setAccessToken('');
+
+    expect(webSocketProtocols()).toEqual(['argo-watcher.v1']);
   });
 });

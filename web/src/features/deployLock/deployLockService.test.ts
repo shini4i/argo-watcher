@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DeployLockListener } from './deployLockService';
 import { DeployLockService, __testing } from './deployLockService';
 import * as sharedUtils from '../../shared/utils';
+import { clearAccessToken, setAccessToken } from '../../auth/tokenStore';
 
 class MockWebSocket {
   public onopen: (() => void) | null = null;
@@ -9,7 +10,10 @@ class MockWebSocket {
   public onclose: (() => void) | null = null;
   public onerror: ((error: unknown) => void) | null = null;
 
-  constructor(public url: string) {
+  constructor(
+    public url: string,
+    public protocols?: string | string[],
+  ) {
     MockWebSocket.instances.push(this);
   }
 
@@ -88,6 +92,24 @@ describe('DeployLockService', () => {
 
     await vi.waitUntil(() => listener.mock.calls.length > 0);
     expect(listener).toHaveBeenCalledWith(false);
+  });
+
+  it('offers the access token as a subprotocol on the handshake', async () => {
+    // The browser cannot set a header here, so dropping this argument would make every
+    // socket fail the handshake once OIDC is enabled.
+    setAccessToken('abc.def.ghi');
+    mockFetch([{ body: false }]);
+    const service = new DeployLockService();
+    const unsubscribe = service.subscribe(vi.fn());
+    await Promise.resolve();
+
+    expect(MockWebSocket.instances[0].protocols).toEqual([
+      'argo-watcher.v1',
+      'argo-watcher.token.abc.def.ghi',
+    ]);
+
+    unsubscribe();
+    clearAccessToken();
   });
 
   it('updates status on WebSocket messages', async () => {

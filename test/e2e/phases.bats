@@ -64,7 +64,7 @@ phase() {
   phase api-surface.sh
 }
 
-@test "read-auth: OIDC gates the browser-facing reads, 401 vs 503, exemptions hold" {
+@test "read-auth: OIDC gates the reads and the WebSocket, 401 vs 503, exemptions hold" {
   # Sits next to api-surface because it is the other HTTP-contract phase, and before
   # everything that deploys: it toggles OIDC_ENABLED on the release (two pod
   # restarts) and reverts, so no in-flight task should be in the air. It touches no

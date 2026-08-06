@@ -73,22 +73,46 @@ func (a *Authenticator) Validate(request *http.Request) (bool, error) {
 // It follows the same three return states as Validate, so callers can tell "no
 // credential sent" from "credential rejected".
 func (a *Authenticator) AuthenticateRequest(request *http.Request) (bool, error) {
-	return a.walk(request, func(strategy AuthStrategy, token string) (bool, error) {
-		// A strategy that separates authentication from authorization exposes
-		// Authenticate for the weaker check — currently OIDC, whose Validate
-		// additionally demands privileged-group membership. A strategy with no group
-		// concept (the deploy token, a CI JWT) does not, because for it a valid token
-		// answers both questions, so Validate is the authentication check too.
-		authenticator, ok := strategy.(interface{ Authenticate(token string) error })
-		if !ok {
-			return strategy.Validate(token)
-		}
+	return a.walk(request, authenticate)
+}
 
-		if err := authenticator.Authenticate(token); err != nil {
-			return false, err
-		}
-		return true, nil
-	})
+// AuthenticateToken authenticates a bare token against the strategy registered under
+// header, for a transport that cannot carry one: a browser cannot set headers on a
+// WebSocket handshake. It returns (false, nil) when the token is empty or no such
+// strategy is registered, matching AuthenticateRequest's "no credential" state.
+func (a *Authenticator) AuthenticateToken(header, token string) (bool, error) {
+	if a == nil || token == "" {
+		return false, nil
+	}
+
+	strategy, ok := a.strategies[header]
+	if !ok {
+		return false, nil
+	}
+
+	if after, found := strings.CutPrefix(token, "Bearer "); found {
+		token = after
+	}
+
+	return authenticate(strategy, token)
+}
+
+// authenticate asks a strategy the authentication-only question. A strategy that
+// separates authentication from authorization exposes Authenticate — currently OIDC,
+// whose Validate additionally demands privileged-group membership. One with no group
+// concept (the deploy token, a CI JWT) does not, because for it a valid token answers
+// both questions.
+func authenticate(strategy AuthStrategy, token string) (bool, error) {
+	authenticator, ok := strategy.(interface{ Authenticate(token string) error })
+	if !ok {
+		return strategy.Validate(token)
+	}
+
+	if err := authenticator.Authenticate(token); err != nil {
+		return false, err
+	}
+
+	return true, nil
 }
 
 // walk applies check to every strategy whose header carries a token, returning on

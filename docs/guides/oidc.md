@@ -32,14 +32,14 @@ them, so no deployment pipeline is affected.
 | `GET /api/v1/tasks/{id}` | **Open** — see below |
 | `GET /api/v1/config` | **Open** — the Web UI reads the issuer and client id from it before it can obtain a token |
 | `/healthz`, `/metrics` | **Open** — probes and Prometheus cannot perform an OIDC flow |
-| `/ws` | **Open** — a browser cannot attach a header to a WebSocket handshake. Carries lock and reachability transitions only |
+| `/ws` | Credential required — as a subprotocol from a browser, see [The WebSocket handshake](#the-websocket-handshake) |
 
 Any configured credential is accepted on the reads: an OIDC session, the
 `ARGO_WATCHER_DEPLOY_TOKEN`, or a [JWT](gitops-updater.md#jwt-configuration).
 Read access is deliberately **not** limited to `OIDC_PRIVILEGED_GROUPS` — that gate
 applies to the deploy lock only.
 
-!!! warning "`GET /api/v1/tasks/{id}` and `/ws` are not protected"
+!!! warning "`GET /api/v1/tasks/{id}` is not protected"
     The Argo Watcher client polls `GET /api/v1/tasks/{id}` for the whole length of
     every deployment and presents its credential only when submitting the task, so
     requiring one for that lookup would break every pipeline at once. The task id is
@@ -51,12 +51,25 @@ applies to the deploy lock only.
     without a credential; see
     [Tracking the read-auth migration](../operations/observability.md#tracking-the-read-auth-migration).
 
-    `/ws` broadcasts deployment-lock and Argo CD reachability transitions (no task
-    data crosses the socket). Those are the same two signals `GET /api/v1/deploy-lock`
-    and `GET /api/v1/reachability` now require a credential for, so anyone who can
-    open a WebSocket can still observe them: gating the REST endpoints narrows that
-    exposure rather than closing it. Restrict network access to the server
-    accordingly.
+### The WebSocket handshake
+
+`/ws` requires a credential like the other reads — it broadcasts the deployment-lock and
+Argo CD reachability transitions that `GET /api/v1/deploy-lock` and
+`GET /api/v1/reachability` are gated on, so leaving it open would make gating those
+cosmetic. No task data crosses the socket.
+
+A browser cannot attach a header to a WebSocket handshake — the API takes a URL and a
+subprotocol list — so the Web UI offers its token as a subprotocol instead:
+
+```text
+Sec-WebSocket-Protocol: argo-watcher.v1, argo-watcher.token.<access-token>
+```
+
+The server negotiates `argo-watcher.v1` and never echoes the token entry. Clients that
+can set headers (the CLI, monitoring probes) send `Oidc-Authorization`,
+`ARGO_WATCHER_DEPLOY_TOKEN` or `Authorization` as usual and need no subprotocol. A
+handshake carrying no credential is refused with `401` before the connection is
+upgraded; one whose provider cannot be reached is refused with `503`.
 
 ### If the provider is unreachable
 

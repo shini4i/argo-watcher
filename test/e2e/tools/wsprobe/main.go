@@ -5,6 +5,7 @@
 //	MSG <text>                      a text frame received (e.g. "heartbeat", "locked", "unlocked")
 //	CLOSED code=<n> reason=<text>   the server closed the connection
 //	DEADLINE                        DURATION elapsed with the connection still open
+//	REJECTED status=<n>             the handshake was refused (e.g. 401 without a credential)
 //
 // A caller can wait for OPEN before acting (e.g. before triggering a shutdown),
 // so the connection is guaranteed established rather than raced by a fixed sleep.
@@ -26,6 +27,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"strconv"
 	"time"
@@ -41,6 +43,37 @@ func env(k, def string) string {
 	return def
 }
 
+// credentials are the tokens a probe may present, read from the environment in main
+// alongside the rest of the configuration.
+//
+// The WSPROBE_ prefix is load-bearing: the phase environment exports DEPLOY_TOKEN and
+// JWT_SECRET suite-wide, so a bare name here would silently credential every probe —
+// including the ones asserting that an uncredentialed handshake is refused.
+type credentials struct {
+	oidc        string
+	deploy      string
+	subprotocol string
+}
+
+// dialOptions presents the given credentials, which /ws requires once OIDC auth is
+// enabled. The header variants send what any non-browser client would; the subprotocol
+// exercises the transport a browser is limited to.
+func dialOptions(creds credentials) *websocket.DialOptions {
+	opts := &websocket.DialOptions{HTTPHeader: http.Header{}}
+
+	if creds.oidc != "" {
+		opts.HTTPHeader.Set("Oidc-Authorization", "Bearer "+creds.oidc)
+	}
+	if creds.deploy != "" {
+		opts.HTTPHeader.Set("ARGO_WATCHER_DEPLOY_TOKEN", creds.deploy)
+	}
+	if creds.subprotocol != "" {
+		opts.Subprotocols = []string{"argo-watcher.v1", "argo-watcher.token." + creds.subprotocol}
+	}
+
+	return opts
+}
+
 func main() {
 	wsURL := os.Getenv("WS_URL")
 	if wsURL == "" {
@@ -52,12 +85,22 @@ func main() {
 		fmt.Fprintf(os.Stderr, "wsprobe: invalid DURATION: %v\n", err)
 		os.Exit(2)
 	}
+	creds := credentials{
+		oidc:        env("WSPROBE_OIDC_TOKEN", ""),
+		deploy:      env("WSPROBE_DEPLOY_TOKEN", ""),
+		subprotocol: env("WSPROBE_SUBPROTOCOL_TOKEN", ""),
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), dur)
 	defer cancel()
 
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	conn, resp, err := websocket.Dial(ctx, wsURL, dialOptions(creds))
 	if err != nil {
+		// The status is what a phase asserting a rejected handshake needs, and the dial
+		// error text alone does not carry it reliably.
+		if resp != nil {
+			fmt.Printf("REJECTED status=%d\n", resp.StatusCode)
+		}
 		fmt.Fprintf(os.Stderr, "wsprobe: dial failed: %v\n", err)
 		os.Exit(1)
 	}

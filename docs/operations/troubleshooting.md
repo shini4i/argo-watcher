@@ -134,8 +134,11 @@ metadata:
 
 **Likely cause:** A reverse proxy or load balancer in front of the server is stripping the `Upgrade` and `Connection` headers, so the WebSocket handshake on `/ws` never happens and the server answers 400.
 
+With [OIDC](../guides/oidc.md#the-websocket-handshake) enabled there is a second candidate: a proxy that forwards the upgrade but strips `Sec-WebSocket-Protocol` removes the credential the browser sends there, and the handshake is refused with 401.
+
 **How to verify:**
 - Set `LOG_LEVEL=debug` and look for `non-upgrade request to /ws`. It logs the `upgrade` and `connection` header values that actually arrived — an empty `upgrade` means the proxy dropped it before the request reached Argo Watcher.
+- A `rejecting unauthenticated websocket` warning in the server log, while the REST reads work in the same browser, points at a stripped `Sec-WebSocket-Protocol` rather than a session problem.
 
 **Fix:**
 1. Enable WebSocket support on the proxy. For nginx, forward the headers explicitly:
