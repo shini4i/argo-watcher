@@ -50,6 +50,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The Duration column of the tasks table now counts up while a deployment is in
   progress, instead of showing `0s` until the task reaches a final status.
+- A deployment that fails with `Rollout status is not synced` now names what is
+  actually out of sync. The report previously showed only the last sync *operation*,
+  which routinely reads `Succeeded` / `successfully synced (all tasks run)` even
+  though the application is still out of sync — leaving no culprit and reading as a
+  contradiction. It now lists the drifted resources under `Out-of-sync resources:`
+  and, when Argo CD could not complete the comparison at all, the reason under
+  `Sync errors:`. An application that is degraded *and* out of sync is reported here
+  too — a pending sync may still recover it — so the failing pod behind it now appears
+  under `Unhealthy resources:` rather than only in the Argo CD UI. A failure with none
+  of the three keeps its previous output.
 
 ### Security
 

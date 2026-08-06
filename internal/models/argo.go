@@ -43,7 +43,10 @@ type ApplicationResource struct {
 	Kind      string `json:"kind"`      // example: Pod | Job
 	Name      string `json:"name"`      // example: app-migrations
 	Namespace string `json:"namespace"` // example: app
-	Health    struct {
+	// Status is the resource's current sync state (example: OutOfSync). ArgoCD omits it for
+	// resources it does not compare, so an empty value means "not assessed", not "in sync".
+	Status string `json:"status"`
+	Health struct {
 		Message string `json:"message"` // example: Job has reached the specified backoff limit
 		Status  string `json:"status"`  // example: Synced
 	} `json:"health"`
@@ -74,10 +77,19 @@ type ApplicationTreeNode struct {
 	} `json:"health"`
 }
 
+// ApplicationCondition is an entry of ArgoCD's status.conditions: either an error (a "*Error"
+// type) or an advisory warning (a "*Warning" type). A manifest-generation failure surfaces here
+// and nowhere in the sync status itself, which merely reports "Unknown".
+type ApplicationCondition struct {
+	Type    string `json:"type"`    // example: ComparisonError
+	Message string `json:"message"` // example: Failed to load target state
+}
+
 type ApplicationStatus struct {
 	Health struct {
 		Status string `json:"status"`
 	}
+	Conditions     []ApplicationCondition          `json:"conditions"`
 	OperationState ApplicationStatusOperationState `json:"operationState"`
 	Resources      []ApplicationResource           `json:"resources"`
 	Summary        struct {
@@ -152,7 +164,9 @@ func (app *Application) GetRolloutStatus(rolloutImages []string, registryProxyUr
 // The actionable diagnostics (terminal sync operation, failed hooks, unhealthy resources, and —
 // while the application is still Progressing — the resources that never became ready) are appended
 // to both the "not available" and "not healthy"/"degraded" failures so on-call users don't have to
-// context-switch into the ArgoCD UI regardless of how the rollout failed.
+// context-switch into the ArgoCD UI regardless of how the rollout failed. The "not synced" failure
+// gets its own set instead: it fails on current drift, which the health-oriented sections cannot
+// describe (see buildSyncFailureDiagnostics).
 func (app *Application) GetRolloutMessage(status string, rolloutImages []string, tree *ApplicationTree) string {
 	switch status {
 	// not all expected images were deployed
@@ -176,7 +190,10 @@ func (app *Application) GetRolloutMessage(status string, rolloutImages []string,
 			app.Status.OperationState.Phase,
 			app.Status.OperationState.Message,
 		)
-		return appendResourceListing(base, app.ListSyncResultResources())
+		return appendDiagnostics(
+			appendResourceListing(base, app.ListSyncResultResources()),
+			app.buildSyncFailureDiagnostics(tree),
+		)
 	// app is unhealthy or degraded
 	case ArgoRolloutAppNotHealthy, ArgoRolloutAppDegraded:
 		// display current health of the top-level resources, then append the same
@@ -262,6 +279,70 @@ func (app *Application) ListUnhealthyResources() []string {
 		list = append(list, formatHealthResource(resource))
 	}
 	return list
+}
+
+// listOutOfSyncResources returns one formatted line per top-level resource whose sync status is
+// not "Synced". Resources ArgoCD does not compare carry no status at all and are skipped: an empty
+// value means "not assessed" rather than "drifted", and reporting those would bury the real culprit.
+func (app *Application) listOutOfSyncResources() []string {
+	var list []string
+
+	for index := range app.Status.Resources {
+		resource := app.Status.Resources[index]
+		if resource.Status == "" || resource.Status == "Synced" {
+			continue
+		}
+		list = append(list, fmt.Sprintf("%s(%s) %s", resource.Kind, resource.Name, resource.Status))
+	}
+	return list
+}
+
+// listErrorConditions returns one formatted line per application condition reporting an error.
+// ArgoCD names every error condition with an "Error" suffix and every advisory one with a
+// "Warning" suffix, so the suffix decides what is actionable — a fixed list would go stale as
+// upstream adds condition types.
+func (app *Application) listErrorConditions() []string {
+	var list []string
+
+	for index := range app.Status.Conditions {
+		condition := app.Status.Conditions[index]
+		if !strings.HasSuffix(condition.Type, "Error") {
+			continue
+		}
+		list = append(list, fmt.Sprintf("%s: %s", condition.Type, condition.Message))
+	}
+	return list
+}
+
+// buildSyncFailureDiagnostics builds the optional diagnostics suffix appended to the "not synced"
+// rollout failure. The base message reports the last sync *operation*, which routinely succeeded
+// while the application drifted straight back out of sync; the drift itself lives in the current
+// resource statuses, and the reason a comparison failed outright lives only in the conditions.
+// Each section is included only when it has content, so a failure with neither keeps its legacy output.
+func (app *Application) buildSyncFailureDiagnostics(tree *ApplicationTree) string {
+	var sections []string
+
+	// Errors come first: the resource listing is unbounded, so the one line naming the
+	// cause must not trail dozens of drift lines.
+	if conditions := app.listErrorConditions(); len(conditions) > 0 {
+		sections = append(sections, "Sync errors:\n\t"+strings.Join(conditions, "\n\t"))
+	}
+
+	// GetRolloutStatus classifies a Degraded application that is still OutOfSync as "not synced",
+	// because a pending sync may yet recover it. This report is therefore the only one such a
+	// failure ever produces, and the pod-level cause of the degradation reaches the user only from
+	// the tree — Status.Resources carries no pod health.
+	if tree != nil {
+		if problems := tree.ListProblemNodes(); len(problems) > 0 {
+			sections = append(sections, "Unhealthy resources:\n\t"+strings.Join(problems, "\n\t"))
+		}
+	}
+
+	if resources := app.listOutOfSyncResources(); len(resources) > 0 {
+		sections = append(sections, "Out-of-sync resources:\n\t"+strings.Join(resources, "\n\t"))
+	}
+
+	return strings.Join(sections, "\n\n")
 }
 
 // isTerminalFailurePhase reports whether the given ArgoCD phase value indicates a terminal failure. The same

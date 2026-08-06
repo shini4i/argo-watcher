@@ -62,6 +62,35 @@ func TestListUnhealthyResources(t *testing.T) {
 	assert.Equal(t, expectedResources, unhealthyResources)
 }
 
+func TestNotSyncedDiagnosticsFromPayload(t *testing.T) {
+	// Decodes a captured ArgoCD payload so the struct tags the not-synced report depends on —
+	// status.resources[].status and status.conditions — are exercised. Tests that build the
+	// Application in Go cannot catch a wrong tag, which would leave both sections silently empty.
+	jsonData, err := os.ReadFile("testdata/out-of-sync-deployment.json")
+	if err != nil {
+		t.Fatalf("Failed to read JSON data file: %s", err)
+	}
+
+	var app Application
+	if err := json.Unmarshal(jsonData, &app); err != nil {
+		t.Fatalf("Failed to unmarshal JSON data: %s", err)
+	}
+
+	assert.Equal(t, ArgoRolloutAppNotSynced,
+		app.GetRolloutStatus([]string{"product-catalog:v0.0.2"}, "", false))
+
+	assert.Equal(t,
+		"App status \"Succeeded\"\n"+
+			"App message \"successfully synced (all tasks run)\"\n"+
+			"Resources:\n"+
+			"\tDeployment(product-catalog)  Running with message deployment.apps/product-catalog configured\n\n"+
+			"Sync errors:\n"+
+			"\tComparisonError: Failed to load target state: rpc error: code = Unknown\n\n"+
+			"Out-of-sync resources:\n"+
+			"\tDeployment(product-catalog) OutOfSync",
+		app.GetRolloutMessage(ArgoRolloutAppNotSynced, []string{"product-catalog:v0.0.2"}, nil))
+}
+
 func TestArgoRolloutStatus(t *testing.T) {
 	t.Run("Rollout status - ArgoRolloutAppNotAvailable", func(t *testing.T) {
 		// define application
@@ -123,6 +152,17 @@ func TestArgoRolloutStatus(t *testing.T) {
 		registryProxyUrl := ""
 		// test status
 		assert.Equal(t, ArgoRolloutAppDegraded, application.GetRolloutStatus(images, registryProxyUrl, false))
+	})
+
+	t.Run("Rollout status - a degraded app that is still OutOfSync is not synced", func(t *testing.T) {
+		// A pending sync may yet recover the app, so drift outranks degradation here. The
+		// not-synced failure report relies on this routing to know it must carry the pod cause.
+		application := Application{}
+		application.Status.Summary.Images = []string{"ghcr.io/shini4i/argo-watcher:version1"}
+		application.Status.Sync.Status = "OutOfSync"
+		application.Status.Health.Status = "Degraded"
+		images := []string{"ghcr.io/shini4i/argo-watcher:version1"}
+		assert.Equal(t, ArgoRolloutAppNotSynced, application.GetRolloutStatus(images, "", false))
 	})
 
 	t.Run("acceptSuspended is true", func(t *testing.T) {
@@ -604,6 +644,175 @@ func TestArgoRolloutMessage(t *testing.T) {
 		assert.Equal(t,
 			"App status \"NotWorking\"\n"+
 				"App message \"Not working test app\"",
+			application.GetRolloutMessage(ArgoRolloutAppNotSynced, []string{"app:v0.0.2"}, nil))
+	})
+
+	t.Run("Rollout message - not synced reports the pod-level cause when the app is also degraded", func(t *testing.T) {
+		// A Degraded application that is still OutOfSync is classified "not synced", so this arm is
+		// the only place the crashlooping pod behind such a failure is ever reported. The cause lives
+		// in the resource tree alone — Status.Resources carries no pod health.
+		application := Application{}
+		application.Status.OperationState.Phase = "Succeeded"
+		application.Status.OperationState.Message = "successfully synced (all tasks run)"
+		application.Status.Resources = []ApplicationResource{
+			{Kind: "Deployment", Name: "product-catalog", Namespace: "app", Status: "OutOfSync"},
+		}
+		tree := &ApplicationTree{Nodes: []ApplicationTreeNode{
+			treeNode("Pod", "product-catalog-abcde", "Degraded", "back-off 5m0s restarting failed container=app"),
+			treeNode("Service", "product-catalog", "Healthy", ""),
+		}}
+		assert.Equal(t,
+			"App status \"Succeeded\"\n"+
+				"App message \"successfully synced (all tasks run)\"\n\n"+
+				"Unhealthy resources:\n"+
+				"\tPod(product-catalog-abcde) Degraded with message back-off 5m0s restarting failed container=app\n\n"+
+				"Out-of-sync resources:\n"+
+				"\tDeployment(product-catalog) OutOfSync",
+			application.GetRolloutMessage(ArgoRolloutAppNotSynced, []string{"app:v0.0.2"}, tree))
+	})
+
+	t.Run("Rollout message - not synced adds no Unhealthy block when the tree is clean", func(t *testing.T) {
+		// The tree is fetched on every failure, so a healthy one must leave the report untouched.
+		application := Application{}
+		application.Status.OperationState.Phase = "Succeeded"
+		application.Status.OperationState.Message = "successfully synced (all tasks run)"
+		application.Status.Resources = []ApplicationResource{
+			{Kind: "Deployment", Name: "product-catalog", Namespace: "app", Status: "OutOfSync"},
+		}
+		tree := &ApplicationTree{Nodes: []ApplicationTreeNode{
+			treeNode("Pod", "product-catalog-abcde", "Healthy", ""),
+		}}
+		assert.Equal(t,
+			"App status \"Succeeded\"\n"+
+				"App message \"successfully synced (all tasks run)\"\n\n"+
+				"Out-of-sync resources:\n"+
+				"\tDeployment(product-catalog) OutOfSync",
+			application.GetRolloutMessage(ArgoRolloutAppNotSynced, []string{"app:v0.0.2"}, tree))
+	})
+
+	t.Run("Rollout message - not synced omits the Sync errors block when only warnings are present", func(t *testing.T) {
+		// The conditions filter emptying out must leave no trace: no header, no separator. Warnings
+		// are the common case on a healthy app, so this is the path most likely to regress.
+		application := Application{}
+		application.Status.OperationState.Phase = "Succeeded"
+		application.Status.OperationState.Message = "successfully synced (all tasks run)"
+		application.Status.Conditions = []ApplicationCondition{
+			{Type: "OrphanedResourceWarning", Message: "Application has 1 orphaned resource"},
+			{Type: "SharedResourceWarning", Message: "Resource is part of applications app-a and app-b"},
+		}
+		assert.Equal(t,
+			"App status \"Succeeded\"\n"+
+				"App message \"successfully synced (all tasks run)\"",
+			application.GetRolloutMessage(ArgoRolloutAppNotSynced, []string{"app:v0.0.2"}, nil))
+	})
+
+	t.Run("Rollout message - not synced omits the Out-of-sync block when no resource has drifted", func(t *testing.T) {
+		// The app-level sync status can be non-Synced while every top-level resource compares clean
+		// (or is not compared at all), so the resource filter must be able to empty out silently.
+		application := Application{}
+		application.Status.OperationState.Phase = "Succeeded"
+		application.Status.OperationState.Message = "successfully synced (all tasks run)"
+		application.Status.Resources = []ApplicationResource{
+			{Kind: "Service", Name: "product-catalog", Namespace: "app", Status: "Synced"},
+			{Kind: "Endpoints", Name: "product-catalog", Namespace: "app"},
+		}
+		assert.Equal(t,
+			"App status \"Succeeded\"\n"+
+				"App message \"successfully synced (all tasks run)\"",
+			application.GetRolloutMessage(ArgoRolloutAppNotSynced, []string{"app:v0.0.2"}, nil))
+	})
+
+	t.Run("Rollout message - not synced names the resources that are out of sync", func(t *testing.T) {
+		// The base message reports the last sync operation, which routinely succeeded while the app
+		// drifted straight back out of sync. Without this section the report names no culprit at all.
+		application := Application{}
+		application.Status.OperationState.Phase = "Succeeded"
+		application.Status.OperationState.Message = "successfully synced (all tasks run)"
+		application.Status.Resources = []ApplicationResource{
+			{Kind: "Deployment", Name: "product-catalog", Namespace: "app", Status: "OutOfSync"},
+			{Kind: "Service", Name: "product-catalog", Namespace: "app", Status: "Synced"},
+			{Kind: "ConfigMap", Name: "product-catalog", Namespace: "app", Status: "Unknown"},
+			// A resource ArgoCD does not compare carries no status: absent means "not assessed",
+			// not "drifted", so it must not be reported as a culprit.
+			{Kind: "Endpoints", Name: "product-catalog", Namespace: "app"},
+		}
+		assert.Equal(t,
+			"App status \"Succeeded\"\n"+
+				"App message \"successfully synced (all tasks run)\"\n\n"+
+				"Out-of-sync resources:\n"+
+				"\tDeployment(product-catalog) OutOfSync\n"+
+				"\tConfigMap(product-catalog) Unknown",
+			application.GetRolloutMessage(ArgoRolloutAppNotSynced, []string{"app:v0.0.2"}, nil))
+	})
+
+	t.Run("Rollout message - not synced surfaces error conditions and ignores warnings", func(t *testing.T) {
+		// A sync status of "Unknown" means ArgoCD could not compare at all, and the reason lives
+		// only in the conditions. Warnings are advisory and would dilute the signal.
+		application := Application{}
+		application.Status.OperationState.Phase = "Succeeded"
+		application.Status.OperationState.Message = "successfully synced (all tasks run)"
+		application.Status.Conditions = []ApplicationCondition{
+			{Type: "ComparisonError", Message: "Failed to load target state: rpc error: code = Unknown"},
+			{Type: "OrphanedResourceWarning", Message: "Application has 1 orphaned resource"},
+			{Type: "InvalidSpecError", Message: "Application referencing project default which does not exist"},
+		}
+		assert.Equal(t,
+			"App status \"Succeeded\"\n"+
+				"App message \"successfully synced (all tasks run)\"\n\n"+
+				"Sync errors:\n"+
+				"\tComparisonError: Failed to load target state: rpc error: code = Unknown\n"+
+				"\tInvalidSpecError: Application referencing project default which does not exist",
+			application.GetRolloutMessage(ArgoRolloutAppNotSynced, []string{"app:v0.0.2"}, nil))
+	})
+
+	t.Run("Rollout message - not synced keeps the sync result listing alongside the drift diagnostics", func(t *testing.T) {
+		// The reported case: every resource applied cleanly ("configured"), the sync operation
+		// succeeded, and the app was still out of sync when the rollout timed out. Both blocks
+		// carry signal — the operation result and the drift that outlived it.
+		application := Application{}
+		application.Status.OperationState.Phase = "Succeeded"
+		application.Status.OperationState.Message = "successfully synced (all tasks run)"
+		application.Status.OperationState.SyncResult.Resources = []ApplicationOperationResource{
+			{
+				Kind:      "Deployment",
+				Name:      "product-catalog",
+				Namespace: "app",
+				Status:    "Synced",
+				HookPhase: "Running",
+				SyncPhase: "Sync",
+				Message:   "deployment.apps/product-catalog configured",
+			},
+		}
+		application.Status.Resources = []ApplicationResource{
+			{Kind: "Deployment", Name: "product-catalog", Namespace: "app", Status: "OutOfSync"},
+		}
+		assert.Equal(t,
+			"App status \"Succeeded\"\n"+
+				"App message \"successfully synced (all tasks run)\"\n"+
+				"Resources:\n"+
+				"\tDeployment(product-catalog)  Running with message deployment.apps/product-catalog configured\n\n"+
+				"Out-of-sync resources:\n"+
+				"\tDeployment(product-catalog) OutOfSync",
+			application.GetRolloutMessage(ArgoRolloutAppNotSynced, []string{"app:v0.0.2"}, nil))
+	})
+
+	t.Run("Rollout message - not synced reports drift and errors together", func(t *testing.T) {
+		application := Application{}
+		application.Status.OperationState.Phase = "Succeeded"
+		application.Status.OperationState.Message = "successfully synced (all tasks run)"
+		application.Status.Resources = []ApplicationResource{
+			{Kind: "Deployment", Name: "product-catalog", Namespace: "app", Status: "OutOfSync"},
+		}
+		application.Status.Conditions = []ApplicationCondition{
+			{Type: "SyncError", Message: "Failed sync attempt to v1.2.3"},
+		}
+		assert.Equal(t,
+			"App status \"Succeeded\"\n"+
+				"App message \"successfully synced (all tasks run)\"\n\n"+
+				"Sync errors:\n"+
+				"\tSyncError: Failed sync attempt to v1.2.3\n\n"+
+				"Out-of-sync resources:\n"+
+				"\tDeployment(product-catalog) OutOfSync",
 			application.GetRolloutMessage(ArgoRolloutAppNotSynced, []string{"app:v0.0.2"}, nil))
 	})
 
