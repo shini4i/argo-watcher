@@ -18,13 +18,21 @@ The Argo Watcher client is a lightweight CLI tool distributed as a Docker image 
 | Variable                    | Description                                                                                       |
 |-----------------------------|---------------------------------------------------------------------------------------------------|
 | `ARGO_WATCHER_DEPLOY_TOKEN` | Deploy token for Git image override (required when using the built-in GitOps updater)            |
-| `BEARER_TOKEN`              | JWT for authentication. Set the raw token (e.g. `eyJhbGci...`) so it is maskable as a GitLab CI variable; a legacy `Bearer <token>` value is still accepted. |
+| `BEARER_TOKEN`              | JWT for authentication. Set the raw token (e.g. `eyJhbGci...`) so it is maskable as a GitLab CI variable; a legacy `Bearer <token>` value is still accepted. Takes precedence over `ARGO_WATCHER_DEPLOY_TOKEN` when both are set. |
 | `TIMEOUT`                   | HTTP request timeout (e.g. `60s`, `2m`)                                                         |
 | `TASK_TIMEOUT`              | Maximum time (in seconds) to wait for a task to complete; unset keeps the server's `DEPLOYMENT_TIMEOUT` |
 | `TASK_REFRESH`              | Override the server's refresh setting for this deployment (`true`/`false`); unset keeps the server default |
 | `RETRY_INTERVAL`            | Interval between status polling attempts (e.g. `15s`, `1m`)                                    |
 | `EXPECTED_DEPLOY_TIME`      | Expected deployment duration; affects polling behavior (e.g. `15m`, `30m`)                     |
 | `DEBUG`                     | Enable verbose debug output                                                                      |
+
+## Authentication
+
+The configured credential is presented on every request the client makes — the task
+submission and the status polls that follow it. A server running with
+[`OIDC_REQUIRE_TASK_READ_AUTH`](server-env.md) therefore serves this client, and one
+running without it is unaffected: the extra header is ignored where no credential is
+required.
 
 ## Retry Behavior
 

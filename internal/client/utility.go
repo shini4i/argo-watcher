@@ -24,13 +24,14 @@ type transientError struct {
 func (e transientError) Error() string { return e.err.Error() }
 func (e transientError) Unwrap() error { return e.err }
 
-// doRequest creates a new HTTP request and sends it using the watcher's client,
-// returning the response or an error.
+// doRequest creates a new HTTP request, presents the configured credential on it
+// and sends it using the watcher's client, returning the response or an error.
 func (watcher *Watcher) doRequest(method, url string, body io.Reader) (*http.Response, error) {
 	req, err := http.NewRequest(method, url, body)
 	if err != nil {
 		return nil, err
 	}
+	watcher.auth.apply(req)
 	return watcher.client.Do(req)
 }
 
@@ -184,11 +185,14 @@ func generateAppUrl(watcher *Watcher, task models.Task) (string, error) {
 }
 
 // setupWatcher takes application configuration and initializes a new Watcher instance
-// with the specified parameters.
+// with the specified parameters, including the credential it presents on every
+// request to argo-watcher.
 func setupWatcher(config *Config) *Watcher {
-	return NewWatcher(
+	watcher := NewWatcher(
 		strings.TrimSuffix(config.Url, "/"),
 		config.Debug,
 		config.Timeout,
 	)
+	watcher.auth = credentialFrom(config)
+	return watcher
 }

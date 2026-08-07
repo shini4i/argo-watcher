@@ -412,6 +412,69 @@ func TestNewServerConfig_OIDCValidation(t *testing.T) {
 	assert.Contains(t, err.Error(), "OIDC.ClientId")
 }
 
+// TestNewServerConfig_RequireTaskReadAuth covers the switch that closes
+// GET /api/v1/tasks/{id}. It only has meaning while the reads are protected at all,
+// so setting it with OIDC disabled is a misconfiguration the operator must see: it
+// would otherwise leave the endpoint open while reading as if it were closed.
+func TestNewServerConfig_RequireTaskReadAuth(t *testing.T) {
+	baseEnv := func(t *testing.T) {
+		t.Helper()
+		t.Setenv("ARGO_URL", "https://example.com")
+		t.Setenv("ARGO_TOKEN", "secret-token")
+		t.Setenv("STATE_TYPE", "in-memory")
+	}
+
+	t.Run("defaults to off", func(t *testing.T) {
+		baseEnv(t)
+
+		cfg, err := NewServerConfig()
+
+		require.NoError(t, err)
+		assert.False(t, cfg.OIDC.RequireTaskReadAuth)
+	})
+
+	t.Run("accepted with OIDC enabled", func(t *testing.T) {
+		baseEnv(t)
+		t.Setenv("OIDC_ENABLED", "true")
+		t.Setenv("OIDC_ISSUER_URL", "https://idp.example.com/application/o/aw/")
+		t.Setenv("OIDC_CLIENT_ID", "argo-watcher")
+		t.Setenv("OIDC_REQUIRE_TASK_READ_AUTH", "true")
+
+		cfg, err := NewServerConfig()
+
+		require.NoError(t, err)
+		assert.True(t, cfg.OIDC.RequireTaskReadAuth)
+	})
+
+	t.Run("rejected with OIDC disabled", func(t *testing.T) {
+		baseEnv(t)
+		t.Setenv("OIDC_REQUIRE_TASK_READ_AUTH", "true")
+
+		_, err := NewServerConfig()
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "OIDC.RequireTaskReadAuth")
+		assert.Contains(t, err.Error(), "OIDC_ENABLED")
+	})
+
+	t.Run("accepted when OIDC is enabled through the legacy KEYCLOAK_* variables", func(t *testing.T) {
+		// The guard reads OIDC.Enabled, which a legacy deployment only sets via
+		// applyKeycloakCompat. Checking it before that mapping would refuse to start
+		// every Keycloak-configured server, naming a variable its operator never set.
+		baseEnv(t)
+		t.Setenv("KEYCLOAK_ENABLED", "true")
+		t.Setenv("KEYCLOAK_URL", "https://kc.example.com")
+		t.Setenv("KEYCLOAK_REALM", "argo-watcher")
+		t.Setenv("KEYCLOAK_CLIENT_ID", "argo-watcher")
+		t.Setenv("OIDC_REQUIRE_TASK_READ_AUTH", "true")
+
+		cfg, err := NewServerConfig()
+
+		require.NoError(t, err)
+		assert.True(t, cfg.OIDC.RequireTaskReadAuth)
+	})
+}
+
 // TestServerConfig_JSONDualKey verifies that /api/v1/config exposes the OIDC
 // block under both the canonical "oidc" key and the legacy "keycloak" mirror
 // with identical content, preserving backward compatibility for old consumers.
@@ -436,6 +499,13 @@ func TestServerConfig_JSONDualKey(t *testing.T) {
 	require.True(t, hasKeycloak, "expected a legacy keycloak mirror block")
 	assert.JSONEq(t, string(oidcRaw), string(kcRaw), "keycloak mirror must match the oidc block")
 	assert.Contains(t, string(oidcRaw), `"issuer_url":"https://kc.example.com/realms/argo-watcher"`)
+
+	// /api/v1/config is readable without a credential, and read policy is the
+	// server's business, not bootstrap data any client needs.
+	cfg.OIDC.RequireTaskReadAuth = true
+	withPolicy, err := json.Marshal(cfg)
+	require.NoError(t, err)
+	assert.NotContains(t, string(withPolicy), "require_task_read_auth")
 }
 
 func TestServerConfig_JSONExcludesSensitiveFields(t *testing.T) {

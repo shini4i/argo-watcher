@@ -18,6 +18,7 @@ import (
 	"github.com/shini4i/argo-watcher/internal/auth"
 	"github.com/shini4i/argo-watcher/internal/config"
 	"github.com/shini4i/argo-watcher/internal/lock"
+	"github.com/shini4i/argo-watcher/internal/models"
 	"github.com/shini4i/argo-watcher/internal/prometheus"
 	"github.com/shini4i/argo-watcher/internal/state"
 )
@@ -56,6 +57,13 @@ func (s oidcLikeStrategy) Validate(string) (bool, error) {
 // registry, so counter assertions read the value the server would actually export.
 func readAuthEnv(t *testing.T, oidcEnabled bool, strategies map[string]auth.AuthStrategy) (*Env, *prometheus.Metrics) {
 	t.Helper()
+	return readAuthEnvWithTask(t, oidcEnabled, strategies, nil)
+}
+
+// readAuthEnvWithTask is readAuthEnv with a task the state backend knows, so a lookup
+// resolves to an application instead of answering 404.
+func readAuthEnvWithTask(t *testing.T, oidcEnabled bool, strategies map[string]auth.AuthStrategy, task *models.Task) (*Env, *prometheus.Metrics) {
+	t.Helper()
 	gin.SetMode(gin.TestMode)
 
 	ctrl := gomock.NewController(t)
@@ -63,7 +71,11 @@ func readAuthEnv(t *testing.T, oidcEnabled bool, strategies map[string]auth.Auth
 	// These tests assert routing and authentication, not task retrieval: a healthy
 	// backend that knows no tasks keeps the handlers on their simplest path.
 	repo.EXPECT().Check().Return(true).AnyTimes()
-	repo.EXPECT().GetTask(gomock.Any()).Return(nil, state.ErrTaskNotFound).AnyTimes()
+	if task != nil {
+		repo.EXPECT().GetTask(gomock.Any()).Return(task, nil).AnyTimes()
+	} else {
+		repo.EXPECT().GetTask(gomock.Any()).Return(nil, state.ErrTaskNotFound).AnyTimes()
+	}
 	metrics := prometheus.NewMetrics(promclient.NewRegistry())
 	argo := &argocd.Argo{}
 	argo.Init(repo, newArgoAPI(ctrl), metrics)
@@ -86,9 +98,10 @@ func readAuthEnv(t *testing.T, oidcEnabled bool, strategies map[string]auth.Auth
 	return env, metrics
 }
 
-// unauthenticatedReads reads the counter value the server would export for a path.
-func unauthenticatedReads(metrics *prometheus.Metrics, path string) float64 {
-	return promtestutil.ToFloat64(metrics.UnauthenticatedReads.WithLabelValues(path))
+// unauthenticatedReads reads the counter value the server would export for one
+// path/app series.
+func unauthenticatedReads(metrics *prometheus.Metrics, path, app string) float64 {
+	return promtestutil.ToFloat64(metrics.UnauthenticatedReads.WithLabelValues(path, app))
 }
 
 // getWith issues a GET through the full router, optionally carrying a credential.
@@ -353,7 +366,18 @@ func TestReadAuthTaskLookupRemainsOpen(t *testing.T) {
 
 		getWith(t, env, unknownTask, "", "")
 
-		assert.Equal(t, float64(1), unauthenticatedReads(metrics, routePath))
+		assert.Equal(t, float64(1), unauthenticatedReads(metrics, routePath, unknownApp))
+	})
+
+	t.Run("labels the count with the application behind the task", func(t *testing.T) {
+		// Without this label the counter says a migration is unfinished and nothing
+		// about whose pipeline to go and upgrade.
+		env, metrics := readAuthEnvWithTask(t, true, oidcStrategies(), &models.Task{Id: "task-id", App: "payments-api"})
+
+		getWith(t, env, unknownTask, "", "")
+
+		assert.Equal(t, float64(1), unauthenticatedReads(metrics, routePath, "payments-api"))
+		assert.Zero(t, unauthenticatedReads(metrics, routePath, unknownApp))
 	})
 
 	t.Run("does not count a credentialed read", func(t *testing.T) {
@@ -361,7 +385,7 @@ func TestReadAuthTaskLookupRemainsOpen(t *testing.T) {
 
 		getWith(t, env, unknownTask, oidcHeader, "Bearer token")
 
-		assert.Zero(t, unauthenticatedReads(metrics, routePath))
+		assert.Zero(t, unauthenticatedReads(metrics, routePath, unknownApp))
 	})
 
 	t.Run("does not count a read whose credential was rejected", func(t *testing.T) {
@@ -374,7 +398,7 @@ func TestReadAuthTaskLookupRemainsOpen(t *testing.T) {
 
 		getWith(t, env, unknownTask, oidcHeader, "Bearer expired-token")
 
-		assert.Zero(t, unauthenticatedReads(metrics, routePath))
+		assert.Zero(t, unauthenticatedReads(metrics, routePath, unknownApp))
 	})
 
 	t.Run("does not count a credentialed read during a provider outage", func(t *testing.T) {
@@ -388,7 +412,7 @@ func TestReadAuthTaskLookupRemainsOpen(t *testing.T) {
 		})
 
 		assert.Equal(t, http.StatusNotFound, getWith(t, env, unknownTask, oidcHeader, "Bearer token").Code)
-		assert.Zero(t, unauthenticatedReads(metrics, routePath))
+		assert.Zero(t, unauthenticatedReads(metrics, routePath, unknownApp))
 	})
 
 	t.Run("does not count anything when OIDC is disabled", func(t *testing.T) {
@@ -397,6 +421,75 @@ func TestReadAuthTaskLookupRemainsOpen(t *testing.T) {
 
 		getWith(t, env, unknownTask, "", "")
 
-		assert.Zero(t, unauthenticatedReads(metrics, routePath))
+		assert.Zero(t, unauthenticatedReads(metrics, routePath, unknownApp))
+	})
+}
+
+// TestReadAuthTaskLookupEnforced covers the end of the migration: with
+// OIDC_REQUIRE_TASK_READ_AUTH set, the lookup the client polls is gated like every
+// other read. Nothing else about the endpoint changes — the same credentials are
+// accepted and a provider outage is still a 503, not a 401.
+func TestReadAuthTaskLookupEnforced(t *testing.T) {
+	const (
+		unknownTask = "/api/v1/tasks/00000000-0000-0000-0000-000000000000"
+		routePath   = "/api/v1/tasks/:id"
+	)
+
+	enforcedEnv := func(t *testing.T, strategies map[string]auth.AuthStrategy) (*Env, *prometheus.Metrics) {
+		t.Helper()
+		env, metrics := readAuthEnv(t, true, strategies)
+		env.config.OIDC.RequireTaskReadAuth = true
+		return env, metrics
+	}
+
+	t.Run("rejects a lookup without a credential", func(t *testing.T) {
+		env, _ := enforcedEnv(t, map[string]auth.AuthStrategy{
+			oidcHeader: oidcLikeStrategy{authenticated: true},
+		})
+
+		assert.Equal(t, http.StatusUnauthorized, getWith(t, env, unknownTask, "", "").Code)
+	})
+
+	t.Run("serves a lookup carrying a credential", func(t *testing.T) {
+		env, _ := enforcedEnv(t, map[string]auth.AuthStrategy{
+			oidcHeader: oidcLikeStrategy{authenticated: true},
+		})
+
+		// 404 proves the request reached the handler rather than being rejected.
+		assert.Equal(t, http.StatusNotFound, getWith(t, env, unknownTask, oidcHeader, "Bearer token").Code)
+	})
+
+	t.Run("accepts a deploy token, so pipelines keep polling", func(t *testing.T) {
+		const (
+			deployToken       = "s3cr3t-deploy-token"
+			deployTokenHeader = "ARGO_WATCHER_DEPLOY_TOKEN"
+		)
+		env, _ := enforcedEnv(t, map[string]auth.AuthStrategy{
+			deployTokenHeader: auth.NewDeployTokenAuthService(deployToken),
+		})
+
+		assert.Equal(t, http.StatusNotFound, getWith(t, env, unknownTask, deployTokenHeader, deployToken).Code)
+	})
+
+	t.Run("reports a provider outage as 503, never 401", func(t *testing.T) {
+		// The client retries a 5xx and gives up on a 4xx, so mapping an outage to 401
+		// would fail deployments that a brief blip should have survived.
+		env, _ := enforcedEnv(t, map[string]auth.AuthStrategy{
+			oidcHeader: oidcLikeStrategy{unavailable: true},
+		})
+
+		assert.Equal(t, http.StatusServiceUnavailable, getWith(t, env, unknownTask, oidcHeader, "Bearer token").Code)
+	})
+
+	t.Run("stops counting once the endpoint is closed", func(t *testing.T) {
+		// The counter exists to license this switch; with it on there is no
+		// unauthenticated read left to count, so the series must stay flat.
+		env, metrics := enforcedEnv(t, map[string]auth.AuthStrategy{
+			oidcHeader: oidcLikeStrategy{authenticated: true},
+		})
+
+		getWith(t, env, unknownTask, "", "")
+
+		assert.Zero(t, unauthenticatedReads(metrics, routePath, unknownApp))
 	})
 }

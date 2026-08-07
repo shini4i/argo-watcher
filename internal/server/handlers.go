@@ -29,6 +29,12 @@ const (
 	// deprecated alias still accepted for backward compatibility.
 	oidcHeader           = "Oidc-Authorization"
 	legacyKeycloakHeader = "Keycloak-Authorization"
+	// taskAppKey is where getTaskStatus leaves the resolved application name for
+	// middleware that runs after it; countUnauthenticatedRead labels with it.
+	taskAppKey = "task_app"
+	// unknownApp labels a counted read that resolved to no task, so the series is
+	// still exported rather than silently dropped.
+	unknownApp = "unknown"
 )
 
 // getVersion godoc
@@ -193,6 +199,7 @@ func (env *Env) getTaskStatus(c *gin.Context) {
 			Error: "internal server error",
 		})
 	} else {
+		c.Set(taskAppKey, task.App)
 		c.JSON(http.StatusOK, models.TaskStatus{
 			Id:           task.Id,
 			Created:      task.Created,
@@ -345,18 +352,24 @@ func (env *Env) requireAuthenticatedRead() gin.HandlerFunc {
 // It tests for presence rather than validity so the guarded endpoint — polled for the
 // whole length of every deployment — never waits on the provider, and so an expired
 // token cannot inflate the number whose fall to zero licenses that closure.
+//
+// The count is recorded after the handler, which is what names the application behind
+// the read: a fleet-wide total says a migration is unfinished, the app label says
+// whose pipeline to go and upgrade.
 func (env *Env) countUnauthenticatedRead() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if !env.config.OIDC.Enabled {
+		if !env.config.OIDC.Enabled || env.hasCredential(c.Request) {
 			c.Next()
 			return
 		}
 
-		if !env.hasCredential(c.Request) {
-			env.metrics.AddUnauthenticatedRead(c.FullPath())
-		}
-
 		c.Next()
+
+		app := c.GetString(taskAppKey)
+		if app == "" {
+			app = unknownApp
+		}
+		env.metrics.AddUnauthenticatedRead(c.FullPath(), app)
 	}
 }
 

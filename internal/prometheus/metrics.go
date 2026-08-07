@@ -19,7 +19,7 @@ type MetricsInterface interface {
 	ObserveGitLockWaitDuration(app string, seconds float64)
 	ObserveDeploymentDuration(app string, seconds float64)
 	ObserveGitBatchSize(size int)
-	AddUnauthenticatedRead(path string)
+	AddUnauthenticatedRead(path, app string)
 }
 
 // Metrics contains all the prometheus collectors.
@@ -108,11 +108,12 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		// UnauthenticatedReads is the migration signal for closing the read endpoints
 		// left open on purpose (see router.go): it keeps rising while pipelines run a
 		// client that sends no credential on GETs, and reaching zero is the evidence
-		// that requiring auth there is safe.
+		// that requiring auth there is safe. The app label names who still has to
+		// upgrade; it is "unknown" when the read did not resolve to a task.
 		UnauthenticatedReads: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "unauthenticated_reads",
 			Help: "Reads served without a credential on the deliberately open read endpoints while OIDC auth was enabled.",
-		}, []string{"path"}),
+		}, []string{"path", "app"}),
 	}
 
 	reg.MustRegister(m.FailedDeployment, m.ProcessedDeployments, m.ArgocdUnavailable, m.StateUnavailable, m.InProgressTasks, m.RefreshDuration, m.GitWritebackDuration, m.GitLockWaitDuration, m.DeploymentDuration, m.GitBatchSize, m.UnauthenticatedReads)
@@ -193,7 +194,8 @@ func (m *Metrics) ObserveGitBatchSize(size int) {
 }
 
 // AddUnauthenticatedRead increments the UnauthenticatedReads counter for the given
-// request path.
-func (m *Metrics) AddUnauthenticatedRead(path string) {
-	m.UnauthenticatedReads.WithLabelValues(path).Inc()
+// request path and application. Callers pass "unknown" as app when the read did not
+// resolve to a task.
+func (m *Metrics) AddUnauthenticatedRead(path, app string) {
+	m.UnauthenticatedReads.WithLabelValues(path, app).Inc()
 }

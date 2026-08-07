@@ -12,6 +12,10 @@
 #   - an OIDC token        -> 503 (the provider could not be consulted)
 #   - a deploy token / JWT -> 200 (validated locally)
 #
+# The last section also flips OIDC_REQUIRE_TASK_READ_AUTH, which closes the task
+# lookup left open for clients, and drives the real client against it both with and
+# without a credential.
+#
 # The 503 case is asserted repeatedly, not once: the lab sets JWT_SECRET, so a request
 # carrying both headers has one strategy rejecting and one reporting the outage, and
 # strategy order is a randomized map iteration.
@@ -195,10 +199,10 @@ else
   bad "unauthenticated_reads did not count a credential-less lookup (${before} -> ${after_open})"
 fi
 
-if curl -s -m 10 "${AW_URL}/metrics" | grep -q 'unauthenticated_reads{path="/api/v1/tasks/:id"}'; then
-  ok "the counter is labelled with the route pattern"
+if curl -s -m 10 "${AW_URL}/metrics" | grep -q 'unauthenticated_reads{app="unknown",path="/api/v1/tasks/:id"}'; then
+  ok "the counter is labelled with the route pattern, app unknown for a lookup that matched no task"
 else
-  bad "no unauthenticated_reads series labelled path=\"/api/v1/tasks/:id\""
+  bad "no unauthenticated_reads series labelled app=\"unknown\",path=\"/api/v1/tasks/:id\""
 fi
 
 # A credentialed read must not inflate the number whose fall to zero is what
@@ -209,6 +213,25 @@ if [[ "$after_creds" == "$after_open" ]]; then
   ok "a credentialed lookup left the counter unchanged (${after_creds})"
 else
   bad "a credentialed lookup moved the counter (${after_open} -> ${after_creds})"
+fi
+
+# The label that makes the counter actionable: an operator has to know WHICH pipeline
+# still polls without a credential, so a lookup that resolves to a task must carry that
+# task's app rather than a bare total. The app does not exist in Argo CD — the task is
+# never deployed, and the lookup only has to resolve.
+labelled_app="read-auth-metric-label"
+task_id="$(curl -s -m 10 -X POST "${AW_API}/tasks" -H 'Content-Type: application/json' \
+  -d "{\"app\":\"${labelled_app}\",\"author\":\"e2e\",\"project\":\"lab\",\"images\":[{\"image\":\"${IMAGE}\",\"tag\":\"v0.0.1\"}]}" |
+  jq -r '.id // empty')"
+if [[ -z "$task_id" ]]; then
+  bad "could not create a task to assert the app label"
+else
+  req GET "${AW_API}/tasks/${task_id}"
+  if curl -s -m 10 "${AW_URL}/metrics" | grep -q "unauthenticated_reads{app=\"${labelled_app}\",path=\"/api/v1/tasks/:id\"}"; then
+    ok "the counter names the app behind the uncredentialed lookup"
+  else
+    bad "no unauthenticated_reads series labelled app=\"${labelled_app}\""
+  fi
 fi
 
 # --- 7. The WebSocket handshake is gated too -----------------------------------
@@ -247,7 +270,74 @@ else
   bad "POST /deploy-lock: code=${CODE} body=${BODY} (want 503)"
 fi
 
-# --- 9. Revert and prove the toggle is the only thing gating reads ------------
+# --- 9. OIDC_REQUIRE_TASK_READ_AUTH closes the task lookup too -----------------
+# The exemption in section 5 is a migration allowance. This is the end of it: with
+# the variable set, the lookup is gated like every other read, and the client — which
+# presents its credential on reads — keeps polling through it.
+idx=$(extra_envs_index "$VALUES")
+helm_apply_aw --set-string "extraEnvs[${idx}].name=OIDC_ENABLED" \
+              --set-string "extraEnvs[${idx}].value=true" \
+              --set-string "extraEnvs[$((idx + 1))].name=OIDC_ISSUER_URL" \
+              --set-string "extraEnvs[$((idx + 1))].value=${UNREACHABLE_ISSUER}" \
+              --set-string "extraEnvs[$((idx + 2))].name=OIDC_CLIENT_ID" \
+              --set-string "extraEnvs[$((idx + 2))].value=argo-watcher-e2e" \
+              --set-string "extraEnvs[$((idx + 3))].name=OIDC_REQUIRE_TASK_READ_AUTH" \
+              --set-string "extraEnvs[$((idx + 3))].value=true"
+wait_service || die "argo-watcher never came back after requiring auth on the task lookup"
+
+req GET "${AW_API}/tasks/${UNKNOWN_TASK}"
+if [[ "$CODE" == "401" ]]; then
+  ok "GET /tasks/<id> -> 401 without a credential once the lookup is closed"
+else
+  bad "GET /tasks/<id> with the lookup closed: code=${CODE} body=${BODY} (want 401)"
+fi
+
+req GET "${AW_API}/tasks/${UNKNOWN_TASK}" -H "ARGO_WATCHER_DEPLOY_TOKEN: ${DEPLOY_TOKEN}"
+if [[ "$CODE" == "404" ]]; then
+  ok "GET /tasks/<id> -> 404 with a deploy token (reached the handler)"
+else
+  bad "GET /tasks/<id> with a deploy token: code=${CODE} body=${BODY} (want 404 task not found)"
+fi
+
+# Both machine credentials must work here, not just the one the client runs below:
+# a pipeline authenticating with BEARER_TOKEN polls the same lookup.
+req GET "${AW_API}/tasks/${UNKNOWN_TASK}" -H "Authorization: ${jwt}"
+if [[ "$CODE" == "404" ]]; then
+  ok "GET /tasks/<id> -> 404 with a JWT (reached the handler)"
+else
+  bad "GET /tasks/<id> with a JWT: code=${CODE} body=${BODY} (want 404 task not found)"
+fi
+
+# /config bootstraps the login flow, so closing the lookup must not close it.
+req GET "${AW_API}/config"
+[[ "$CODE" == "200" ]] || bad "GET /config with the lookup closed: code=${CODE} (want 200)"
+ok "GET /config stays open"
+
+# The real client against the closed endpoint. MISSING_APP keeps this phase free of
+# application state: the task reaches "app not found" without deploying anything, and
+# reaching that verdict at all proves the client's poll was served. A rejected poll
+# reports the 401 instead, which is exactly what the second run asserts.
+MISSING_APP="no-such-app-read-auth"
+build_client "$bin_dir" || die "client build failed"
+
+out="$(run_client "$MISSING_APP" "v0.0.1" ARGO_WATCHER_DEPLOY_TOKEN="$DEPLOY_TOKEN" || true)"
+if grep -q "does not exist" <<<"$out"; then
+  ok "the client polled the closed lookup with its deploy token"
+else
+  bad "client with a deploy token did not reach a task verdict: $(tr '\n' ',' <<<"$out")"
+fi
+
+# Both credentials are cleared explicitly: run_client does not scrub the environment,
+# so a token exported by the developer or the runner would turn this into a
+# credentialed run and the assertion would fail for the wrong reason.
+out="$(run_client "$MISSING_APP" "v0.0.1" ARGO_WATCHER_DEPLOY_TOKEN= BEARER_TOKEN= || true)"
+if grep -q "argo-watcher returned status 401" <<<"$out"; then
+  ok "a client with no credential is rejected (the cost of closing the lookup)"
+else
+  bad "client without a credential was not rejected: $(tr '\n' ',' <<<"$out")"
+fi
+
+# --- 10. Revert and prove the toggle is the only thing gating reads -----------
 revert
 trap - EXIT
 

@@ -80,8 +80,10 @@ func (env *Env) CreateRouter() *gin.Engine {
 	// `open` holds the rest, each for a reason that is not negotiable:
 	//   - POST /tasks takes an optional credential by design (docs/reference/api.md).
 	//   - GET /config bootstraps the login flow, so it cannot require a token.
-	//   - GET /tasks/:id is polled by released clients, which send no credential on
-	//     GETs; the v4 UUID is the capability and the enumerable list is protected.
+	//   - GET /tasks/:id is exempt while OIDC_REQUIRE_TASK_READ_AUTH is off, so a
+	//     client polling it without a credential keeps working; the v4 UUID is the
+	//     capability and the enumerable list is protected. Setting that variable moves
+	//     the lookup under the same gate as every other read.
 	//   - POST/DELETE /deploy-lock enforce privileged membership themselves, and are
 	//     registered only under OIDC so they are never an open deploy-freeze switch.
 	open := router.Group("/api/v1")
@@ -89,7 +91,12 @@ func (env *Env) CreateRouter() *gin.Engine {
 	{
 		open.POST("/tasks", env.addTask)
 		open.GET("/config", env.getConfig)
-		open.GET("/tasks/:id", env.countUnauthenticatedRead(), env.getTaskStatus)
+
+		if env.config.OIDC.RequireTaskReadAuth {
+			authenticated.GET("/tasks/:id", env.getTaskStatus)
+		} else {
+			open.GET("/tasks/:id", env.countUnauthenticatedRead(), env.getTaskStatus)
+		}
 
 		authenticated.GET("/tasks", env.getState)
 		authenticated.GET("/version", env.getVersion)
