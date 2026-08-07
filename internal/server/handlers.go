@@ -29,12 +29,9 @@ const (
 	// deprecated alias still accepted for backward compatibility.
 	oidcHeader           = "Oidc-Authorization"
 	legacyKeycloakHeader = "Keycloak-Authorization"
-	// taskAppKey is where getTaskStatus leaves the resolved application name for
+	// taskAppKey is where getTaskStatus leaves the app label of the resolved task for
 	// middleware that runs after it; countUnauthenticatedRead labels with it.
 	taskAppKey = "task_app"
-	// unknownApp labels a counted read that resolved to no task, so the series is
-	// still exported rather than silently dropped.
-	unknownApp = "unknown"
 )
 
 // getVersion godoc
@@ -199,7 +196,7 @@ func (env *Env) getTaskStatus(c *gin.Context) {
 			Error: "internal server error",
 		})
 	} else {
-		c.Set(taskAppKey, task.App)
+		c.Set(taskAppKey, task.MetricApp())
 		c.JSON(http.StatusOK, models.TaskStatus{
 			Id:           task.Id,
 			Created:      task.Created,
@@ -367,7 +364,7 @@ func (env *Env) countUnauthenticatedRead() gin.HandlerFunc {
 
 		app := c.GetString(taskAppKey)
 		if app == "" {
-			app = unknownApp
+			app = models.UnknownApp
 		}
 		env.metrics.AddUnauthenticatedRead(c.FullPath(), app)
 	}

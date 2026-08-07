@@ -25,8 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   handshake with no credential is refused with `401` before the connection is upgraded.
 - A new `unauthenticated_reads` counter (labelled by `path` and `app`) reports how many
   reads still arrive without a credential on the endpoints left open on purpose, and
-  which application's pipeline they belong to. It reaching zero is the evidence needed
-  before those can be closed too.
+  which application's pipeline they belong to. Reads for a task submitted without a
+  credential are counted under `app="unknown"`, since an uncredentialed caller must not
+  be able to choose a label value. It reaching zero is the evidence needed before those
+  can be closed too.
 - `OIDC_REQUIRE_TASK_READ_AUTH` closes that last open read: with it set,
   `GET /api/v1/tasks/{id}` requires a credential like every other read. It is opt-in
   because it fails every deployment driven by a client that polls without one — flip
@@ -57,6 +59,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unreachable now returns `503 Service Unavailable` instead of `401 Unauthorized`.
   The Web UI treats a 401 as a dead session and signs the user out, so a brief
   provider outage no longer logs everyone out.
+
+### Security
+
+- An application name from a task submitted without a credential is no longer used as a
+  Prometheus label: `POST /api/v1/tasks` is open and the name is free text, so a caller
+  could create a permanent series per request and exhaust the monitoring backend. Such
+  deployments are now reported under `app="unknown"` in `processed_deployments`,
+  `unauthenticated_reads`, and in `failed_deployment` when the failure precedes Argo CD
+  confirming the application exists. Deployments carrying a deploy token, JWT or OIDC
+  session keep their real application label; monitoring-only setups that submit without
+  a credential lose the per-app breakdown in those three metrics.
+- Bumped `github.com/go-git/go-git/v5` to 5.19.2 for CVE-2026-71556, where worktree
+  operations may follow symlinks outside the repository.
 
 ### Fixed
 

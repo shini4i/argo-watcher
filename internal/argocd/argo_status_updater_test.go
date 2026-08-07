@@ -340,10 +340,13 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		// argo updater
 		updater := initTestUpdater(t, newUpdaterTestConfig(mockLocker), argo)
 
-		// prepare test data
+		// prepare test data. Validated, so the failure is labelled with the app: a
+		// credentialed pipeline naming an app that does not exist is a typo worth
+		// seeing by name, not an attempt to mint label values.
 		task := models.Task{
-			Id:  "test-id",
-			App: "test-app",
+			Id:        "test-id",
+			App:       "test-app",
+			Validated: true,
 		}
 
 		// mock calls
@@ -373,8 +376,9 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// prepare test data
 		task := models.Task{
-			Id:  "test-id",
-			App: "test-app",
+			Id:        "test-id",
+			App:       "test-app",
+			Validated: true,
 		}
 
 		// mock calls
@@ -405,8 +409,9 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		// prepare test data
 		task := models.Task{
-			Id:  "test-id",
-			App: "test-app",
+			Id:        "test-id",
+			App:       "test-app",
+			Validated: true,
 		}
 
 		// mock calls
@@ -587,7 +592,7 @@ func TestDeploymentMonitorHandleDeploymentSuccessHandlesStateError(t *testing.T)
 		State:   state,
 	}, "", []retry.Option{retry.DelayType(zeroDelay), retry.LastErrorOnly(true)}, false, time.Millisecond)
 
-	task := models.Task{Id: "task-id", App: "demo"}
+	task := models.Task{Id: "task-id", App: "demo", Validated: true}
 
 	metrics.EXPECT().ResetFailedDeployment(task.App)
 	state.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "").Return(errors.New("update failed"))
@@ -868,10 +873,11 @@ func TestArgoStatusUpdaterAbortsWhenArgoBecomesUnreachableMidPoll(t *testing.T) 
 	updater := initTestUpdater(t, newUpdaterTestConfig(lock.NewInMemoryLocker()), argo)
 
 	task := models.Task{
-		Id:      "test-id",
-		App:     "test-app",
-		Timeout: 15,
-		Images:  []models.Image{{Image: "ghcr.io/shini4i/argo-watcher", Tag: "dev"}},
+		Id:        "test-id",
+		App:       "test-app",
+		Timeout:   15,
+		Images:    []models.Image{{Image: "ghcr.io/shini4i/argo-watcher", Tag: "dev"}},
+		Validated: true,
 	}
 
 	application := models.Application{}
@@ -914,7 +920,7 @@ func TestDeploymentMonitorHandleArgoAPIFailureHandlesStateError(t *testing.T) {
 		State:   state,
 	}, "", []retry.Option{retry.DelayType(zeroDelay), retry.LastErrorOnly(true)}, false, time.Millisecond)
 
-	task := models.Task{Id: "task-id", App: "demo"}
+	task := models.Task{Id: "task-id", App: "demo", Validated: true}
 
 	metrics.EXPECT().AddFailedDeployment(task.App)
 	state.EXPECT().
@@ -939,7 +945,7 @@ func TestDeploymentMonitorHandleArgoAPIFailureAbortCountsAsFailure(t *testing.T)
 		State:   state,
 	}, "", []retry.Option{retry.DelayType(zeroDelay), retry.LastErrorOnly(true)}, false, time.Millisecond)
 
-	task := models.Task{Id: "task-id", App: "demo"}
+	task := models.Task{Id: "task-id", App: "demo", Validated: true}
 
 	metrics.EXPECT().AddFailedDeployment(task.App)
 	state.EXPECT().SetTaskStatus(task.Id, models.StatusAborted, gomock.Any())
@@ -1576,10 +1582,11 @@ func TestArgoStatusUpdaterAppDisappearsMidRollout(t *testing.T) {
 	updater := initTestUpdater(t, newUpdaterTestConfig(lock.NewInMemoryLocker()), argo)
 
 	task := models.Task{
-		Id:      "test-id",
-		App:     "test-app",
-		Timeout: 15,
-		Images:  []models.Image{{Image: "ghcr.io/shini4i/argo-watcher", Tag: "dev"}},
+		Id:        "test-id",
+		App:       "test-app",
+		Timeout:   15,
+		Images:    []models.Image{{Image: "ghcr.io/shini4i/argo-watcher", Tag: "dev"}},
+		Validated: true,
 	}
 
 	// Not-final app so the loop keeps polling past the initial check.
@@ -1628,10 +1635,11 @@ func TestArgoStatusUpdaterProceedsWhenStatusReadFails(t *testing.T) {
 	updater := initTestUpdater(t, newUpdaterTestConfig(lock.NewInMemoryLocker()), argo)
 
 	task := models.Task{
-		Id:      "test-id",
-		App:     "test-app",
-		Timeout: 15,
-		Images:  []models.Image{{Image: "ghcr.io/shini4i/argo-watcher", Tag: "dev"}},
+		Id:        "test-id",
+		App:       "test-app",
+		Timeout:   15,
+		Images:    []models.Image{{Image: "ghcr.io/shini4i/argo-watcher", Tag: "dev"}},
+		Validated: true,
 	}
 
 	application := models.Application{}
@@ -1843,7 +1851,7 @@ func TestArgoStatusUpdater_handleArgoAPIFailure(t *testing.T) {
 	updater := initTestUpdater(t, newUpdaterTestConfig(mockLocker), argo)
 
 	t.Run("handleArgoAPIFailure - generic error", func(t *testing.T) {
-		task := models.Task{Id: "test-id", App: "test-app"}
+		task := models.Task{Id: "test-id", App: "test-app", Validated: true}
 		err := fmt.Errorf("some generic error")
 
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
@@ -1854,6 +1862,19 @@ func TestArgoStatusUpdater_handleArgoAPIFailure(t *testing.T) {
 		// The resolved terminal status must be reflected back onto the task so the
 		// result notification does not report a stale "in progress" for a failure.
 		assert.Equal(t, models.StatusFailedMessage, task.Status)
+	})
+
+	t.Run("handleArgoAPIFailure - an unvalidated task does not name the app", func(t *testing.T) {
+		// This path runs before ArgoCD confirms the app exists, and is the one an
+		// app name that never existed reaches. Labelling it would let an
+		// uncredentialed caller mint a permanent series per submission.
+		task := models.Task{Id: "test-id", App: "attacker-controlled-name"}
+		err := fmt.Errorf("applications.argoproj.io \"attacker-controlled-name\" not found")
+
+		metricsMock.EXPECT().AddFailedDeployment(models.UnknownApp)
+		stateMock.EXPECT().SetTaskStatus(task.Id, gomock.Any(), gomock.Any())
+
+		updater.monitor.HandleArgoAPIFailure(&task, err)
 	})
 }
 

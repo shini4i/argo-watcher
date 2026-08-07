@@ -366,18 +366,30 @@ func TestReadAuthTaskLookupRemainsOpen(t *testing.T) {
 
 		getWith(t, env, unknownTask, "", "")
 
-		assert.Equal(t, float64(1), unauthenticatedReads(metrics, routePath, unknownApp))
+		assert.Equal(t, float64(1), unauthenticatedReads(metrics, routePath, models.UnknownApp))
 	})
 
 	t.Run("labels the count with the application behind the task", func(t *testing.T) {
 		// Without this label the counter says a migration is unfinished and nothing
 		// about whose pipeline to go and upgrade.
-		env, metrics := readAuthEnvWithTask(t, true, oidcStrategies(), &models.Task{Id: "task-id", App: "payments-api"})
+		env, metrics := readAuthEnvWithTask(t, true, oidcStrategies(),
+			&models.Task{Id: "task-id", App: "payments-api", Validated: true})
 
 		getWith(t, env, unknownTask, "", "")
 
 		assert.Equal(t, float64(1), unauthenticatedReads(metrics, routePath, "payments-api"))
-		assert.Zero(t, unauthenticatedReads(metrics, routePath, unknownApp))
+		assert.Zero(t, unauthenticatedReads(metrics, routePath, models.UnknownApp))
+	})
+
+	t.Run("does not label an app supplied by an uncredentialed submission", func(t *testing.T) {
+		// Otherwise an open POST + open lookup mints a permanent series per request.
+		env, metrics := readAuthEnvWithTask(t, true, oidcStrategies(),
+			&models.Task{Id: "task-id", App: "attacker-controlled-name", Validated: false})
+
+		getWith(t, env, unknownTask, "", "")
+
+		assert.Equal(t, float64(1), unauthenticatedReads(metrics, routePath, models.UnknownApp))
+		assert.Zero(t, unauthenticatedReads(metrics, routePath, "attacker-controlled-name"))
 	})
 
 	t.Run("does not count a credentialed read", func(t *testing.T) {
@@ -385,7 +397,7 @@ func TestReadAuthTaskLookupRemainsOpen(t *testing.T) {
 
 		getWith(t, env, unknownTask, oidcHeader, "Bearer token")
 
-		assert.Zero(t, unauthenticatedReads(metrics, routePath, unknownApp))
+		assert.Zero(t, unauthenticatedReads(metrics, routePath, models.UnknownApp))
 	})
 
 	t.Run("does not count a read whose credential was rejected", func(t *testing.T) {
@@ -398,7 +410,7 @@ func TestReadAuthTaskLookupRemainsOpen(t *testing.T) {
 
 		getWith(t, env, unknownTask, oidcHeader, "Bearer expired-token")
 
-		assert.Zero(t, unauthenticatedReads(metrics, routePath, unknownApp))
+		assert.Zero(t, unauthenticatedReads(metrics, routePath, models.UnknownApp))
 	})
 
 	t.Run("does not count a credentialed read during a provider outage", func(t *testing.T) {
@@ -412,7 +424,7 @@ func TestReadAuthTaskLookupRemainsOpen(t *testing.T) {
 		})
 
 		assert.Equal(t, http.StatusNotFound, getWith(t, env, unknownTask, oidcHeader, "Bearer token").Code)
-		assert.Zero(t, unauthenticatedReads(metrics, routePath, unknownApp))
+		assert.Zero(t, unauthenticatedReads(metrics, routePath, models.UnknownApp))
 	})
 
 	t.Run("does not count anything when OIDC is disabled", func(t *testing.T) {
@@ -421,7 +433,7 @@ func TestReadAuthTaskLookupRemainsOpen(t *testing.T) {
 
 		getWith(t, env, unknownTask, "", "")
 
-		assert.Zero(t, unauthenticatedReads(metrics, routePath, unknownApp))
+		assert.Zero(t, unauthenticatedReads(metrics, routePath, models.UnknownApp))
 	})
 }
 
@@ -490,6 +502,6 @@ func TestReadAuthTaskLookupEnforced(t *testing.T) {
 
 		getWith(t, env, unknownTask, "", "")
 
-		assert.Zero(t, unauthenticatedReads(metrics, routePath, unknownApp))
+		assert.Zero(t, unauthenticatedReads(metrics, routePath, models.UnknownApp))
 	})
 }

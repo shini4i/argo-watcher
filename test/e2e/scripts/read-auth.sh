@@ -216,11 +216,13 @@ else
 fi
 
 # The label that makes the counter actionable: an operator has to know WHICH pipeline
-# still polls without a credential, so a lookup that resolves to a task must carry that
-# task's app rather than a bare total. The app does not exist in Argo CD — the task is
-# never deployed, and the lookup only has to resolve.
+# still polls without a credential. The submission carries the deploy token — only a
+# validated task may contribute a label value — and the lookup then carries none, which
+# is the migration case being measured. The app does not exist in Argo CD; the task is
+# never deployed and the lookup only has to resolve.
 labelled_app="read-auth-metric-label"
 task_id="$(curl -s -m 10 -X POST "${AW_API}/tasks" -H 'Content-Type: application/json' \
+  -H "ARGO_WATCHER_DEPLOY_TOKEN: ${DEPLOY_TOKEN}" \
   -d "{\"app\":\"${labelled_app}\",\"author\":\"e2e\",\"project\":\"lab\",\"images\":[{\"image\":\"${IMAGE}\",\"tag\":\"v0.0.1\"}]}" |
   jq -r '.id // empty')"
 if [[ -z "$task_id" ]]; then
