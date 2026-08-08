@@ -95,7 +95,7 @@ func newMetrics(ctrl *gomock.Controller) *mocks.MockMetricsInterface {
 	metrics.EXPECT().ObserveGitWritebackDuration(gomock.Any(), gomock.Any()).AnyTimes()
 	metrics.EXPECT().ObserveGitLockWaitDuration(gomock.Any(), gomock.Any()).AnyTimes()
 	metrics.EXPECT().ObserveDeploymentDuration(gomock.Any(), gomock.Any()).AnyTimes()
-	metrics.EXPECT().AddUnauthenticatedRead(gomock.Any()).AnyTimes()
+	metrics.EXPECT().AddUnauthenticatedRead(gomock.Any(), gomock.Any()).AnyTimes()
 	return metrics
 }
 

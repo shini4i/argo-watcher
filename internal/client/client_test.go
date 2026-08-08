@@ -127,7 +127,7 @@ func TestAddTaskServerError(t *testing.T) {
 		},
 	}
 
-	_, err := watcher.addTask(task, "", "")
+	_, err := watcher.addTask(task)
 	assert.Error(t, err)
 }
 
@@ -151,7 +151,7 @@ func TestAddTask_AuthFailureSurfacesServerReason(t *testing.T) {
 		Images: []models.Image{{Tag: testVersion, Image: "example"}},
 	}
 
-	_, err := watcher.addTask(task, "DeployToken", "wrong")
+	_, err := watcher.addTask(task)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "401")
 	assert.Contains(t, err.Error(), "deploy token is invalid")
@@ -177,7 +177,7 @@ func TestAddTask_NonAuthFailureSurfacesServerReason(t *testing.T) {
 		Images: []models.Image{{Tag: testVersion, Image: "example"}},
 	}
 
-	_, err := watcher.addTask(task, "", "")
+	_, err := watcher.addTask(task)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "503")
 	assert.Contains(t, err.Error(), "argocd is unreachable")
@@ -223,7 +223,7 @@ func TestAddTask(t *testing.T) {
 		},
 	}
 
-	taskId, err := client.addTask(task, "", "")
+	taskId, err := client.addTask(task)
 	assert.NoError(t, err)
 	assert.Equal(t, expected.Id, taskId)
 }
@@ -259,8 +259,8 @@ func TestAddTaskJWTHeader(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			watcher := NewWatcher(srv.URL, false, 30*time.Second)
-			_, err := watcher.addTask(models.Task{App: "test"}, "JWT", tc.input)
+			watcher := setupWatcher(&Config{Url: srv.URL, JsonWebToken: tc.input, Timeout: 30 * time.Second})
+			_, err := watcher.addTask(models.Task{App: "test"})
 
 			assert.NoError(t, err)
 			assert.Equal(t, tc.wantAuth, gotAuth, "Authorization header must carry the raw JWT without a Bearer prefix")
@@ -289,8 +289,8 @@ func TestAddTaskDeployTokenHeader(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			watcher := NewWatcher(srv.URL, false, 30*time.Second)
-			_, err := watcher.addTask(models.Task{App: "test"}, "DeployToken", tokenInput)
+			watcher := setupWatcher(&Config{Url: srv.URL, Token: tokenInput, Timeout: 30 * time.Second})
+			_, err := watcher.addTask(models.Task{App: "test"})
 
 			assert.NoError(t, err)
 			assert.Equal(t, tokenInput, gotToken, "deploy token must be sent verbatim, never prefix-stripped")
@@ -305,12 +305,12 @@ func TestAddTaskDeployTokenHeader(t *testing.T) {
 // (which would silently reintroduce the leak) fails the suite.
 func TestAddTaskDebugLogRedactsToken(t *testing.T) {
 	cases := []struct {
-		name       string
-		authMethod string
-		token      string
+		name   string
+		config *Config
+		token  string
 	}{
-		{"JWT", "JWT", "eyJhbGciOiJIUzI1NiJ9.super-secret-jwt.signature"},
-		{"DeployToken", "DeployToken", "s3cr3t-deploy-token"},
+		{"JWT", &Config{JsonWebToken: "eyJhbGciOiJIUzI1NiJ9.super-secret-jwt.signature"}, "eyJhbGciOiJIUzI1NiJ9.super-secret-jwt.signature"},
+		{"DeployToken", &Config{Token: "s3cr3t-deploy-token"}, "s3cr3t-deploy-token"},
 	}
 
 	for _, tc := range cases {
@@ -327,8 +327,11 @@ func TestAddTaskDebugLogRedactsToken(t *testing.T) {
 			log.SetOutput(&logBuf)
 			t.Cleanup(func() { log.SetOutput(originalOutput) })
 
-			watcher := NewWatcher(srv.URL, true, 30*time.Second)
-			_, err := watcher.addTask(models.Task{App: "test"}, tc.authMethod, tc.token)
+			tc.config.Url = srv.URL
+			tc.config.Debug = true
+			tc.config.Timeout = 30 * time.Second
+			watcher := setupWatcher(tc.config)
+			_, err := watcher.addTask(models.Task{App: "test"})
 			assert.NoError(t, err)
 
 			logged := logBuf.String()

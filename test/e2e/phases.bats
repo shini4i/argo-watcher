@@ -66,9 +66,10 @@ phase() {
 
 @test "read-auth: OIDC gates the reads and the WebSocket, 401 vs 503, exemptions hold" {
   # Sits next to api-surface because it is the other HTTP-contract phase, and before
-  # everything that deploys: it toggles OIDC_ENABLED on the release (two pod
-  # restarts) and reverts, so no in-flight task should be in the air. It touches no
-  # application state and leaves the lock unset.
+  # everything that deploys: it toggles OIDC_ENABLED on the release (three pod
+  # restarts, one of them for OIDC_REQUIRE_TASK_READ_AUTH) and reverts, so no
+  # in-flight task should be in the air. Its client runs target an app that does not
+  # exist, so it touches no application state and leaves the lock unset.
   phase read-auth.sh
 }
 

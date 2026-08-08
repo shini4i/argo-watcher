@@ -26,7 +26,10 @@ The server emits eleven metrics today, all defined in [`internal/prometheus/metr
 | `gitops_lock_wait_duration_seconds` | histogram | `app` | Time spent waiting to acquire the per-repository git write-back lock. High values mean tasks are queued behind concurrent write-backs to the same repo. |
 | `deployment_duration_seconds` | histogram | `app` | End-to-end wall-clock time of a successful deployment, from the start of rollout monitoring until the app reached the deployed state. Only successful deployments are observed (a failure's duration is dominated by the timeout). |
 | `gitops_batch_size` | histogram | (none) | Number of applications coalesced into a single batch write-back flush. Only observed when `GIT_BATCH_WRITEBACK` is enabled; a distribution skewed toward 1 means little batching is happening (low contention). See the [GitOps Updater](../guides/gitops-updater.md#batch-write-back) guide. |
-| `unauthenticated_reads` | counter | `path` | Reads served without a credential on the endpoints deliberately left open while OIDC auth is enabled (currently `GET /api/v1/tasks/{id}`). Zero only when every caller presents a credential. See [Tracking the read-auth migration](#tracking-the-read-auth-migration). |
+| `unauthenticated_reads` | counter | `path`, `app` | Reads served without a credential on the endpoints deliberately left open while OIDC auth is enabled (currently `GET /api/v1/tasks/{id}`). Zero only when every caller presents a credential; `app` names the application whose pipeline still polls without one, and is `unknown` when the read matched no task or one whose submission carried no credential (an app name from an uncredentialed caller is unbounded, so it never becomes a label). See [Tracking the read-auth migration](#tracking-the-read-auth-migration). |
+
+!!! note "The `app` label and uncredentialed submissions"
+    `POST /api/v1/tasks` accepts a task without a credential, and the application name is free text — so a name that arrives that way is reported as `app="unknown"` instead of becoming its own series, which would let anyone able to reach the endpoint create unbounded Prometheus series. This affects `processed_deployments`, `unauthenticated_reads`, and `failed_deployment` when the failure happens before Argo CD confirms the application exists. A deployment submitted with a deploy token, JWT or OIDC session is labelled with its real application throughout.
 
 In addition, the standard Go runtime metrics from the Prometheus client library are exposed (`go_*`, `process_*`).
 
@@ -165,19 +168,25 @@ A graph panel showing deployment frequency per application — useful for capaci
 ## Tracking the read-auth migration
 
 With [OIDC authentication](../guides/oidc.md) enabled, the browser-facing reads
-require a credential, but `GET /api/v1/tasks/{id}` stays open: the Argo Watcher
-client polls it for the whole length of every deployment and sends its credential
-only on submission, so requiring one there would break every pipeline still
-running an older client. The `unauthenticated_reads` counter measures how much of
-your fleet that still is:
+require a credential, but `GET /api/v1/tasks/{id}` stays open by default: the Argo
+Watcher client polls it for the whole length of every deployment, and a client too old
+to send a credential on that poll would fail every deployment it drives. The
+`unauthenticated_reads` counter measures how much of your fleet is still in that
+state:
 
 ```promql
-sum(rate(unauthenticated_reads[1h])) by (path)
+sum(rate(unauthenticated_reads[1h])) by (app)
 ```
 
-Every pipeline that upgrades to a client sending its credential on reads drops out
-of this figure. When it reaches zero and stays there across a full deployment
-cycle for every project, no caller depends on the exemption any more.
+That names the applications to chase: each one is a pipeline running a client that
+sends no credential. Group by `path` instead for the endpoint breakdown. Every pipeline
+that upgrades to a client sending its credential on reads drops out of this figure. When it reaches zero and stays there across a full deployment cycle for
+every project, no caller depends on the exemption and you can withdraw it with
+`OIDC_REQUIRE_TASK_READ_AUTH=true` — see
+[Closing the task lookup](../guides/oidc.md#closing-the-task-lookup). A read without a
+credential is then rejected before it is served, so the counter stops moving — and the
+series disappears from `/metrics` after the next restart, which matters if you alert on
+it with `absent()`.
 
 Nothing is logged per request — the endpoint is polled continuously during a
 deployment, so a log line per read would bury everything else.

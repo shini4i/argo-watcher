@@ -29,7 +29,7 @@ them, so no deployment pipeline is affected.
 | `GET /api/v1/deploy-lock` | Credential required |
 | `POST`/`DELETE /api/v1/deploy-lock` | Credential required **and** privileged group |
 | `POST /api/v1/tasks` | Unchanged — optional credential (governs git write-back) |
-| `GET /api/v1/tasks/{id}` | **Open** — see below |
+| `GET /api/v1/tasks/{id}` | **Open** unless `OIDC_REQUIRE_TASK_READ_AUTH=true` — see below |
 | `GET /api/v1/config` | **Open** — the Web UI reads the issuer and client id from it before it can obtain a token |
 | `/healthz`, `/metrics` | **Open** — probes and Prometheus cannot perform an OIDC flow |
 | `/ws` | Credential required — as a subprotocol from a browser, see [The WebSocket handshake](#the-websocket-handshake) |
@@ -39,17 +39,47 @@ Any configured credential is accepted on the reads: an OIDC session, the
 Read access is deliberately **not** limited to `OIDC_PRIVILEGED_GROUPS` — that gate
 applies to the deploy lock only.
 
-!!! warning "`GET /api/v1/tasks/{id}` is not protected"
+!!! warning "`GET /api/v1/tasks/{id}` is open by default"
     The Argo Watcher client polls `GET /api/v1/tasks/{id}` for the whole length of
-    every deployment and presents its credential only when submitting the task, so
-    requiring one for that lookup would break every pipeline at once. The task id is
-    a random v4 UUID returned only to the submitter, and the enumerable
-    `GET /api/v1/tasks` list is protected, so the exposure is limited to callers that
-    already hold a task id — but a task id appearing in a CI log or a webhook payload
-    is enough to read that task's app, author, project, images and status. The
-    `unauthenticated_reads` metric reports how many such reads still arrive
-    without a credential; see
+    every deployment. Requiring a credential there rejects any client too old to send
+    one, so the lookup stays open until you close it deliberately with
+    `OIDC_REQUIRE_TASK_READ_AUTH` (below). The task id is a random v4 UUID returned
+    only to the submitter, and the enumerable `GET /api/v1/tasks` list is protected,
+    so the exposure is limited to callers that already hold a task id — but a task id
+    appearing in a CI log or a webhook payload is enough to read that task's app,
+    author, project, images and status. The `unauthenticated_reads` metric reports how
+    many such reads still arrive without a credential; see
     [Tracking the read-auth migration](../operations/observability.md#tracking-the-read-auth-migration).
+
+### Closing the task lookup
+
+The client presents its credential — `ARGO_WATCHER_DEPLOY_TOKEN` or `BEARER_TOKEN`,
+whichever is configured — on the status poll as well as on the submission. Once every
+pipeline runs a client that does so, set:
+
+```shell
+OIDC_REQUIRE_TASK_READ_AUTH=true
+```
+
+`GET /api/v1/tasks/{id}` then requires a credential like every other read, leaving
+`GET /api/v1/config` as the only open `/api/v1` read (alongside `/healthz` and
+`/metrics`, which cannot perform an OIDC flow).
+
+Two things to know before flipping it:
+
+- **It rejects pipelines that send no credential.** A client that submits tasks without
+  a token still gets its task accepted, then fails on the first status poll with `401`.
+  Wait until `unauthenticated_reads` has stayed at zero across a full deployment cycle
+  for every project — that counter exists to answer exactly this question.
+- **A zero counter means a credential was sent, not that it was accepted.** The counter
+  records presence only, so a wrong deploy token reads as migrated. A `BEARER_TOKEN`
+  JWT must also outlive the longest deployment: it is checked on every status poll
+  once this is on, not only at submission.
+- **It requires `OIDC_ENABLED=true`.** With OIDC disabled no read is protected, so the
+  server refuses to start rather than accept a setting that would not take effect.
+
+A provider outage is still reported as `503`, which the client retries, rather than
+`401`, which it treats as terminal.
 
 ### The WebSocket handshake
 

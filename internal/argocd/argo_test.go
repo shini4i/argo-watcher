@@ -326,8 +326,14 @@ func TestArgoAddTask(t *testing.T) {
 			metrics := mocks.NewMockMetricsInterface(ctrl)
 			state := mocks.NewMockTaskRepository(ctrl)
 
-			// mock calls
-			metrics.EXPECT().AddProcessedDeployment("test-app")
+			// mock calls. Only a validated task names the app: submission is open and
+			// the name is free text, so an uncredentialed caller must not be able to
+			// choose a label value.
+			expectedApp := models.UnknownApp
+			if validated {
+				expectedApp = "test-app"
+			}
+			metrics.EXPECT().AddProcessedDeployment(expectedApp)
 
 			// tasks
 			task := models.Task{
@@ -379,7 +385,7 @@ func TestArgoAddTask(t *testing.T) {
 
 		metrics.EXPECT().AddProcessedDeployment("test-app")
 
-		task := models.Task{App: "test-app", Images: []models.Image{{Tag: taskImageTag}}}
+		task := models.Task{App: "test-app", Images: []models.Image{{Tag: taskImageTag}}, Validated: true}
 		newTask := models.Task{Id: uuid.NewString(), App: "test-app", Images: []models.Image{{Tag: taskImageTag}}}
 
 		// Cancelling prior in-progress tasks is best-effort: a failure here must not
@@ -401,7 +407,7 @@ func TestArgoAddTask(t *testing.T) {
 		metrics := mocks.NewMockMetricsInterface(ctrl)
 		state := mocks.NewMockTaskRepository(ctrl)
 
-		metrics.EXPECT().AddProcessedDeployment("test-app")
+		metrics.EXPECT().AddProcessedDeployment(models.UnknownApp)
 
 		// History ordered created DESC: current is v2, an earlier task (target) ran v1.
 		deployed := []models.Task{
@@ -433,7 +439,7 @@ func TestArgoAddTask(t *testing.T) {
 		metrics := mocks.NewMockMetricsInterface(ctrl)
 		state := mocks.NewMockTaskRepository(ctrl)
 
-		metrics.EXPECT().AddProcessedDeployment("test-app")
+		metrics.EXPECT().AddProcessedDeployment(models.UnknownApp)
 
 		// Deploying a brand-new version (v3) with no earlier match: not a rollback.
 		deployed := []models.Task{

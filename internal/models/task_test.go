@@ -24,6 +24,17 @@ func TestTask_ValidatedIsNeverSerialized(t *testing.T) {
 	assert.False(t, in.Validated, "a caller must not be able to assert its own authority")
 }
 
+// TestTask_MetricApp pins the bound on Prometheus label values: task submission is
+// open and the app name is free text, so an unvalidated task must never contribute
+// one. Without this an unauthenticated caller mints a permanent series per request.
+func TestTask_MetricApp(t *testing.T) {
+	validated := Task{App: "payments-api", Validated: true}
+	assert.Equal(t, "payments-api", validated.MetricApp())
+
+	unvalidated := Task{App: "attacker-controlled-name"}
+	assert.Equal(t, UnknownApp, unvalidated.MetricApp())
+}
+
 // TestTask_RefreshUnmarshal verifies the per-task refresh override (issue #334) is optional and
 // backward compatible: a payload from an old client (no "refresh" field) yields a nil pointer, while
 // explicit true/false round-trip as set. A nil pointer lets the server fall back to its instance default.

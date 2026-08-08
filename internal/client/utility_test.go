@@ -596,4 +596,17 @@ func TestSetupWatcher(t *testing.T) {
 	// Assert the watcher's properties
 	assert.Equal(t, config.Url, watcher.baseUrl)
 	assert.Equal(t, config.Debug, watcher.debugMode)
+	assert.Equal(t, credential{}, watcher.auth, "a client with no token configured carries no credential")
+
+	t.Run("carries the configured deploy token", func(t *testing.T) {
+		watcher := setupWatcher(&Config{Url: "http://localhost:8080", Token: "s3cr3t-deploy-token"})
+
+		assert.Equal(t, credential{header: deployTokenHeader, value: "s3cr3t-deploy-token"}, watcher.auth)
+	})
+
+	t.Run("carries the configured JWT", func(t *testing.T) {
+		watcher := setupWatcher(&Config{Url: "http://localhost:8080", JsonWebToken: testJWT})
+
+		assert.Equal(t, credential{header: jwtHeader, value: testJWT}, watcher.auth)
+	})
 }

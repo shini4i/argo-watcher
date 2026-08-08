@@ -15,21 +15,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `OIDC_PRIVILEGED_GROUPS` remains necessary only for managing the deployment lock.
   A deploy token or a CI JWT is accepted as well, so pipelines can read too.
   Deployments are unaffected: `POST /api/v1/tasks` keeps its optional-credential
-  behaviour, and `GET /api/v1/tasks/{id}` — the lookup the client polls, which
-  presents no credential — stays open, guarded by the unguessable task id. With OIDC
-  disabled nothing changes.
+  behaviour, and `GET /api/v1/tasks/{id}` — the lookup the client polls — stays open
+  by default, guarded by the unguessable task id. With OIDC disabled nothing changes.
 
   The `/ws` WebSocket, which broadcasts the same deployment-lock and Argo CD
   reachability transitions, requires a credential too. A browser cannot attach a header
   to a WebSocket handshake, so the Web UI passes its token as the
   `argo-watcher.token.<token>` subprotocol; other clients send the usual headers. A
   handshake with no credential is refused with `401` before the connection is upgraded.
-- A new `unauthenticated_reads` counter (labelled by `path`) reports how many reads
-  still arrive without a credential on the endpoints left open on purpose. It reaching
-  zero is the evidence needed before those can be closed too.
+- A new `unauthenticated_reads` counter (labelled by `path` and `app`) reports how many
+  reads still arrive without a credential on the endpoints left open on purpose, and
+  which application's pipeline they belong to. Reads for a task submitted without a
+  credential are counted under `app="unknown"`, since an uncredentialed caller must not
+  be able to choose a label value. It reaching zero is the evidence needed before those
+  can be closed too.
+- `OIDC_REQUIRE_TASK_READ_AUTH` closes that last open read: with it set,
+  `GET /api/v1/tasks/{id}` requires a credential like every other read. It is opt-in
+  because it fails every deployment driven by a client that polls without one — flip
+  it once `unauthenticated_reads` has stayed at zero for a full deployment cycle. It
+  requires `OIDC_ENABLED=true`; the server refuses to start otherwise, rather than
+  accept a setting that could not take effect.
 
 ### Changed
 
+- The client now presents its credential — `ARGO_WATCHER_DEPLOY_TOKEN` or
+  `BEARER_TOKEN` — on the status polls as well as on the task submission, so it keeps
+  working against a server that requires one on reads. A server that does not require
+  one ignores the header, and a client with no token configured is unchanged. The
+  deploy token is dropped from a redirect that leaves the configured host, matching how
+  Go already treats the `Authorization` header the JWT rides on.
 - Read authorization is no longer sent to the OIDC provider on every request: a
   decision is reused for `OIDC_TOKEN_VALIDATION_INTERVAL`, capped by the token's own
   expiry, so an open browser tab costs one userinfo call per token per interval
@@ -45,6 +59,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unreachable now returns `503 Service Unavailable` instead of `401 Unauthorized`.
   The Web UI treats a 401 as a dead session and signs the user out, so a brief
   provider outage no longer logs everyone out.
+
+### Security
+
+- An application name from a task submitted without a credential is no longer used as a
+  Prometheus label: `POST /api/v1/tasks` is open and the name is free text, so a caller
+  could create a permanent series per request and exhaust the monitoring backend. Such
+  deployments are now reported under `app="unknown"` in `processed_deployments`,
+  `unauthenticated_reads`, and in `failed_deployment` when the failure precedes Argo CD
+  confirming the application exists. Deployments carrying a deploy token, JWT or OIDC
+  session keep their real application label; monitoring-only setups that submit without
+  a credential lose the per-app breakdown in those three metrics.
+- Bumped `github.com/go-git/go-git/v5` to 5.19.2 for CVE-2026-71556, where worktree
+  operations may follow symlinks outside the repository.
 
 ### Fixed
 

@@ -41,6 +41,20 @@ type Task struct {
 	SavedAppStatus   SavedAppStatus `json:"-"`
 }
 
+// UnknownApp is the app label used for a task whose name must not reach a metric.
+const UnknownApp = "unknown"
+
+// MetricApp returns the app name safe to use as a Prometheus label. Task submission
+// accepts an arbitrary app name without a credential, so an unvalidated task reports
+// UnknownApp: a caller could otherwise mint a permanent series per request. Call sites
+// that only run once ArgoCD has confirmed the application exists may use App directly.
+func (task *Task) MetricApp() string {
+	if !task.Validated {
+		return UnknownApp
+	}
+	return task.App
+}
+
 // ListImages returns the task's images formatted as "{image}:{tag}".
 func (task *Task) ListImages() []string {
 	list := make([]string, len(task.Images))

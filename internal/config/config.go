@@ -25,12 +25,18 @@ import (
 // TokenValidationInterval (milliseconds) bounds how stale a read authorization can be,
 // capped per token by that token's own expiry. Zero revalidates every request, which
 // multiplies UI refreshes into provider traffic.
+//
+// RequireTaskReadAuth closes GET /api/v1/tasks/{id}, the one read left open for
+// clients that poll it without a credential. It is opt-in because turning it on
+// fails every deployment driven by such a client; the unauthenticated_reads metric
+// reports how many are left.
 type OIDCConfig struct {
 	Enabled                 bool     `env:"OIDC_ENABLED" json:"enabled"`
 	IssuerURL               string   `env:"OIDC_ISSUER_URL" json:"issuer_url,omitempty"`
 	ClientId                string   `env:"OIDC_CLIENT_ID" json:"client_id,omitempty"`
 	TokenValidationInterval int      `env:"OIDC_TOKEN_VALIDATION_INTERVAL" envDefault:"300000" json:"token_validation_interval"`
 	PrivilegedGroups        []string `env:"OIDC_PRIVILEGED_GROUPS" json:"privileged_groups,omitempty"`
+	RequireTaskReadAuth     bool     `env:"OIDC_REQUIRE_TASK_READ_AUTH" json:"-"`
 }
 
 type DatabaseConfig struct {
@@ -296,6 +302,12 @@ func validateServerConfig(config *ServerConfig) error {
 		if strings.TrimSpace(config.OIDC.ClientId) == "" {
 			problems = append(problems, "  - OIDC.ClientId: must be set when OIDC auth is enabled (OIDC_CLIENT_ID, or legacy KEYCLOAK_CLIENT_ID)")
 		}
+	}
+	// Rejected rather than ignored: with OIDC disabled no read is protected, so
+	// honouring the switch alone would leave the endpoint open while the configuration
+	// reads as though it were closed.
+	if config.OIDC.RequireTaskReadAuth && !config.OIDC.Enabled {
+		problems = append(problems, "  - OIDC.RequireTaskReadAuth: OIDC_REQUIRE_TASK_READ_AUTH requires OIDC_ENABLED=true; with OIDC disabled no read endpoint is protected")
 	}
 
 	if len(problems) == 0 {

@@ -318,7 +318,9 @@ func (monitor *DeploymentMonitor) taskSuperseded(id string) bool {
 // the caller, keeping the outgoing failure notification in sync with the stored
 // status (mirroring handleDeploymentSuccess/handleDeploymentFailure).
 func (monitor *DeploymentMonitor) HandleArgoAPIFailure(task *models.Task, err error) {
-	monitor.argo.metrics.AddFailedDeployment(task.App)
+	// Reached before ArgoCD confirms the app exists — most often because it does not —
+	// so the name is only as trustworthy as the submission that supplied it.
+	monitor.argo.metrics.AddFailedDeployment(task.MetricApp())
 	finalStatus := determineFailureStatus(*task, err)
 	reason := fmt.Sprintf(ArgoAPIErrorTemplate, err.Error())
 	slog.Warn("Deployment not completed", "status", finalStatus, "reason", reason, "id", task.Id)

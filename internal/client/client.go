@@ -37,21 +37,90 @@ type Watcher struct {
 	client     *http.Client
 	debugMode  bool
 	retryDelay time.Duration
+	auth       credential
+}
+
+const (
+	// jwtHeader carries a CI JWT (BEARER_TOKEN); deployTokenHeader carries a static
+	// deploy token (ARGO_WATCHER_DEPLOY_TOKEN). The server routes a request to a
+	// validation strategy by which of these headers it arrives in.
+	jwtHeader         = "Authorization"
+	deployTokenHeader = "ARGO_WATCHER_DEPLOY_TOKEN" // #nosec G101 -- header name, not a credential
+)
+
+// credential is the header and value the client presents to argo-watcher. The zero
+// value carries nothing, which is how a client with no token configured talks to a
+// server that requires none.
+type credential struct {
+	header string
+	value  string
+}
+
+// credentialFrom picks the credential to present from the client configuration,
+// preferring a CI JWT over a deploy token when both are set.
+//
+// The JWT is sent without a "Bearer " prefix: the raw value is maskable as a GitLab
+// CI variable (a prefix contains a space, which GitLab refuses to mask). A legacy
+// "Bearer <jwt>" value is normalized here, so the wire format never depends on how
+// BEARER_TOKEN was set. The deploy token is sent verbatim — it is an opaque secret
+// that may legitimately start with anything.
+func credentialFrom(config *Config) credential {
+	switch {
+	case config.JsonWebToken != "":
+		return credential{header: jwtHeader, value: strings.TrimPrefix(config.JsonWebToken, "Bearer ")}
+	case config.Token != "":
+		return credential{header: deployTokenHeader, value: config.Token}
+	default:
+		return credential{}
+	}
+}
+
+// apply sets the credential on a request, leaving it untouched when no credential is
+// configured or the configured value is empty.
+func (c credential) apply(request *http.Request) {
+	if c.header == "" || c.value == "" {
+		return
+	}
+	request.Header.Set(c.header, c.value)
 }
 
 // NewWatcher creates a new Watcher instance with the given base URL, timeout, and debug mode.
 func NewWatcher(baseUrl string, debugMode bool, timeout time.Duration) *Watcher {
 	return &Watcher{
-		baseUrl:    baseUrl,
-		client:     &http.Client{Timeout: timeout},
+		baseUrl: baseUrl,
+		client: &http.Client{
+			Timeout:       timeout,
+			CheckRedirect: dropCredentialOnHostChange,
+		},
 		debugMode:  debugMode,
 		retryDelay: defaultRetryDelay,
 	}
 }
 
-// addTask adds a given task to the watcher, using either JWT or a DeployToken for authorization.
+// maxRedirects mirrors net/http's default redirect limit, which setting CheckRedirect
+// replaces.
+const maxRedirects = 10
+
+// dropCredentialOnHostChange strips the deploy-token header from a redirect that
+// leaves the original host. net/http does this for Authorization (so the JWT is
+// already covered) but not for custom headers, and the deploy token authorizes git
+// write-back for every application — it must not be handed to a host the operator did
+// not configure.
+func dropCredentialOnHostChange(request *http.Request, via []*http.Request) error {
+	if len(via) >= maxRedirects {
+		return fmt.Errorf("stopped after %d redirects", maxRedirects)
+	}
+
+	if request.URL.Host != via[0].URL.Host {
+		request.Header.Del(deployTokenHeader)
+	}
+
+	return nil
+}
+
+// addTask adds a given task to the watcher, presenting the watcher's credential.
 // It returns the task ID or an error.
-func (watcher *Watcher) addTask(task models.Task, authMethod, token string) (string, error) {
+func (watcher *Watcher) addTask(task models.Task) (string, error) {
 	requestBody, err := json.Marshal(task)
 	if err != nil {
 		return "", err
@@ -65,25 +134,12 @@ func (watcher *Watcher) addTask(task models.Task, authMethod, token string) (str
 	}
 
 	request.Header.Set("Content-Type", "application/json; charset=UTF-8")
-
-	if authMethod != "" && token != "" {
-		switch authMethod {
-		case "JWT":
-			// Send the raw JWT so the value is maskable as a GitLab CI variable
-			// (a "Bearer " prefix contains a space, which GitLab refuses to mask).
-			// A legacy "Bearer <jwt>" value is still accepted: strip the prefix
-			// here so the wire header is consistent regardless of how the user
-			// set BEARER_TOKEN.
-			request.Header.Set("Authorization", strings.TrimPrefix(token, "Bearer "))
-		case "DeployToken":
-			request.Header.Set("ARGO_WATCHER_DEPLOY_TOKEN", token)
-		}
-	}
+	watcher.auth.apply(request)
 
 	// Print the equivalent cURL command for troubleshooting. Redact the auth
 	// headers so the JWT / deploy token is never written to logs (e.g. CI job
 	// output), which are often persisted and widely readable.
-	if curlCommand, err := helpers.CurlCommandFromRequest(request, "Authorization", "ARGO_WATCHER_DEPLOY_TOKEN"); err != nil {
+	if curlCommand, err := helpers.CurlCommandFromRequest(request, jwtHeader, deployTokenHeader); err != nil {
 		log.Printf("Couldn't get cURL command. Got the following error: %s", err)
 	} else if watcher.debugMode {
 		log.Printf("Adding task to argo-watcher. Equivalent cURL command: %s\n", curlCommand)
@@ -227,16 +283,7 @@ func Run() {
 
 	log.Printf("Waiting for %s app to be running on %s version.\n", task.App, clientConfig.Tag)
 
-	var authMethod, token string
-	if clientConfig.JsonWebToken != "" {
-		authMethod = "JWT"
-		token = clientConfig.JsonWebToken
-	} else if clientConfig.Token != "" {
-		authMethod = "DeployToken"
-		token = clientConfig.Token
-	}
-
-	id, err := watcher.addTask(task, authMethod, token)
+	id, err := watcher.addTask(task)
 	if err != nil {
 		handleFatalError(err, "Couldn't add task.")
 	}
