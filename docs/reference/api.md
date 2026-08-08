@@ -38,6 +38,48 @@ The state-changing `POST`/`DELETE /api/v1/deploy-lock` endpoints are only regist
 - Authentication failures return `401 Unauthorized` with an `error` field describing whether no credentials were provided or the token was rejected.
 - Unexpected server-side problems return `500 Internal Server Error`.
 
+## Health and probe endpoints
+
+Two unauthenticated endpoints report server health. They answer different questions,
+and wiring the wrong one to a Kubernetes probe has real consequences.
+
+| Endpoint | Checks | Use as |
+|----------|--------|--------|
+| `GET /livez` | Nothing but that the process is still serving requests | Liveness probe |
+| `GET /readyz` | Not shutting down, **and** the state backend answers | Readiness probe |
+
+Both return `{"status":"up"}` on success and `503` with `{"status":"down","reason":"..."}`
+otherwise — `shutting down` during a graceful shutdown, `state backend unreachable` when
+the database cannot be pinged.
+
+!!! warning "Do not point a liveness probe at `/readyz`"
+    A liveness failure gets the container restarted, and a restart cannot reach a
+    database that is down. Probing the state backend for liveness turns a recoverable
+    outage into a fleet-wide `CrashLoopBackoff` while every replica is still able to
+    serve task history and the unreachable banner. That is why `/livez` checks no
+    dependency at all.
+
+A startup probe is not needed and is not recommended. The server binds its listener
+only after its configuration, Argo CD client, and state backend are all initialised, so
+there is no window in which it answers requests but is not yet ready. If the state
+backend is unreachable at boot the process exits rather than starting degraded, which a
+startup probe could not observe anyway.
+
+**Argo CD reachability is deliberately absent from both probes.** An Argo CD outage
+degrades Argo Watcher — new deployments are rejected fast and the Web UI shows a banner
+naming the cause — but the server must keep serving precisely then. Alert on the
+`argocd_unavailable` metric or poll `GET /api/v1/reachability` instead.
+
+### Readiness during shutdown
+
+On `SIGTERM` the server fails `/readyz` immediately, keeps serving normally for five
+seconds so the endpoint removal can propagate through kube-proxy and any ingress
+controller, and only then closes its listener and drains in-flight requests, WebSocket
+connections, and queued git write-backs. A readiness probe is what makes that window
+useful; without one, traffic keeps arriving at a pod that has already stopped
+accepting it. The whole sequence is bounded to fit the default 30-second
+`terminationGracePeriodSeconds`.
+
 ## Endpoints
 
 The full endpoint catalog is rendered live from the OpenAPI spec maintained alongside the source code. Use the explorer below to inspect routes, request and response schemas, and try requests against your own server.

@@ -38,6 +38,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `GET /healthz` is replaced by two endpoints with distinct meanings: `GET /livez`,
+  which reports only that the process is still serving and checks no dependency, and
+  `GET /readyz`, which reports whether this instance should receive traffic — down
+  while shutting down, and down when the state backend is unreachable. Both answer
+  `{"status":"up"}` or `503 {"status":"down","reason":"..."}`. The Helm chart points
+  each probe at the right endpoint, so upgrading needs no action. The practical gain is
+  that a database outage no longer fails the liveness probe: a restart cannot bring the
+  database back, so what used to end in a fleet-wide `CrashLoopBackoff` now just marks
+  the pods unready while they keep serving task history and the unreachable banner.
+  Argo CD reachability stays absent from both probes — `GET /api/v1/reachability` and
+  the `argocd_unavailable` metric report it instead.
+- Graceful shutdown now fails readiness and keeps serving for five seconds before
+  closing its listener, so an orchestrator can stop routing requests to the pod while
+  it is still able to answer them. Rolling updates previously ended with a tail of
+  connection resets, because endpoint removal is asynchronous and the listener closed
+  the instant `SIGTERM` arrived. The wait is charged to the existing 25-second shutdown
+  budget, so the whole sequence still fits the default 30-second grace period.
 - The client now presents its credential — `ARGO_WATCHER_DEPLOY_TOKEN` or
   `BEARER_TOKEN` — on the status polls as well as on the task submission, so it keeps
   working against a server that requires one on reads. A server that does not require

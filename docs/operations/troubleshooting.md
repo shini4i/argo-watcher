@@ -39,7 +39,7 @@ Each entry follows the same shape: **Symptom · Likely cause · How to verify ·
 
 **How to verify:**
 - Check the client logs in the CI output.
-- Manually test reachability: `curl $ARGO_WATCHER_URL/healthz` from the CI runner.
+- Manually test reachability: `curl $ARGO_WATCHER_URL/readyz` from the CI runner.
 - Verify the app name: `argocd app get <ARGO_APP>`.
 - Check the image that was pushed to the registry.
 

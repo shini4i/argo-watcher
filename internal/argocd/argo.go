@@ -273,7 +273,7 @@ func imageSignature(task models.Task) string {
 // reachability (IsAvailable) so a deploy fails fast during an outage. The
 // background liveness probe (StartLivenessProbe) is therefore the single place
 // the argocd_unavailable metric and the cached state are refreshed. Note the
-// /healthz endpoint probes only the state backend (SimpleHealthCheck), not
+// /readyz endpoint probes only the state backend (SimpleHealthCheck), not
 // ArgoCD.
 func (argo *Argo) GetTasks(startTime float64, endTime float64, app string, status string, limit int, offset int) models.TasksResponse {
 	tasks, total := argo.State.GetTasks(startTime, endTime, app, status, limit, offset)

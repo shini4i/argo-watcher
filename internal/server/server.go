@@ -28,10 +28,18 @@ const (
 	// (Kubernetes defaults to 30s) so every phase — including the batch write-back
 	// drain that runs last — gets to finish before the kubelet sends SIGKILL.
 	shutdownBudget = 25 * time.Second
+	// readinessDrainDelay is how long the process keeps serving after its readiness
+	// probe starts answering 503, before the listener closes. Removing a pod from a
+	// Service is asynchronous — kube-proxy and ingress controllers keep sending
+	// traffic for a short while after the endpoint is marked not-ready — so closing
+	// the listener immediately drops that traffic. It is charged to shutdownBudget
+	// rather than added on top, so the sequence still fits the pod grace period.
+	readinessDrainDelay = 5 * time.Second
 	// httpDrainBudget caps the HTTP-request drain so the phases after it are not
-	// starved. argo-watcher's handlers are short (task list, add task); long-lived
-	// WebSocket connections are hijacked and drained separately.
-	httpDrainBudget = 8 * time.Second
+	// starved. argo-watcher's handlers are short (task list, add task) and finish
+	// well inside it; long-lived WebSocket connections are hijacked and drained
+	// separately.
+	httpDrainBudget = 5 * time.Second
 )
 
 type Server struct {
@@ -42,6 +50,9 @@ type Server struct {
 	updater     *argocd.ArgoStatusUpdater
 	env         *Env
 	probeCancel context.CancelFunc
+	// drainDelay is how long shutdown waits after failing readiness before closing
+	// the listener. NewServer sets it to readinessDrainDelay; tests shorten it.
+	drainDelay time.Duration
 }
 
 // NewServer creates a new server instance with the given configuration and prometheus registerer.
@@ -136,6 +147,7 @@ func NewServer(serverConfig *config.ServerConfig, reg prometheus.Registerer) (*S
 		updater:     statusUpdater,
 		env:         env,
 		probeCancel: probeCancel,
+		drainDelay:  readinessDrainDelay,
 	}, nil
 }
 
@@ -185,10 +197,15 @@ type httpShutdowner interface {
 	Shutdown(ctx context.Context) error
 }
 
-// shutdown runs the ordered drain phases: outstanding HTTP requests, then WebSocket
-// goroutines, then queued git write-backs.
+// shutdown runs the ordered drain phases: fail readiness so no new traffic is
+// routed here, then outstanding HTTP requests, then WebSocket goroutines, then
+// queued git write-backs.
 //
-// Stop accepting new connections first and let outstanding HTTP requests drain,
+// Failing readiness before touching the listener is what keeps a rolling update
+// from resetting connections: the endpoint removal it triggers is asynchronous, so
+// the process must stay up long enough for that removal to propagate.
+//
+// Stop accepting new connections next and let outstanding HTTP requests drain,
 // then shut down the WebSocket goroutines. Closing the listener before env.Shutdown
 // means new handshakes can no longer arrive, which greatly narrows the window in
 // which a WebSocket handler could call connWg.Add(1) after env.Shutdown has begun
@@ -199,7 +216,7 @@ type httpShutdowner interface {
 // Hijacked WebSocket connections are not waited on by srv.Shutdown; they are drained
 // by env.Shutdown.
 //
-// The three phases run in sequence and share one deadline, so their total cannot
+// The phases run in sequence and share one deadline, so their total cannot
 // exceed shutdownBudget. Previously each carried its own independent timeout, letting
 // the sequence run far longer than any realistic terminationGracePeriodSeconds — the
 // kubelet then SIGKILLed the process partway through, which defeats the phase that
@@ -211,6 +228,18 @@ type httpShutdowner interface {
 func (s *Server) shutdown(srv httpShutdowner) {
 	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), shutdownBudget)
 	defer cancelShutdown()
+
+	// Phase 0: report not-ready and give the orchestrator time to stop routing new
+	// requests here. The process keeps serving normally throughout — this window is
+	// spent staying up, not winding down.
+	s.env.beginDraining()
+	if s.drainDelay > 0 {
+		slog.Info("readiness reported down, waiting for traffic to be routed away", "delay", s.drainDelay)
+		select {
+		case <-time.After(s.drainDelay):
+		case <-shutdownCtx.Done():
+		}
+	}
 
 	// Phase 1: let outstanding HTTP requests finish. Capped well below the total
 	// because argo-watcher's handlers are short-lived; hijacked WebSocket

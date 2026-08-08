@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/shini4i/argo-watcher/internal/argocd"
@@ -25,6 +26,11 @@ type Env struct {
 	authenticator *auth.Authenticator
 	// shutdownCh is closed to signal graceful shutdown to all WebSocket goroutines.
 	shutdownCh chan struct{}
+	// draining is set once graceful shutdown begins, so the readiness probe can
+	// report the pod out of service while it is still able to serve. It is separate
+	// from shutdownCh, which is closed later in the sequence (after the listener),
+	// and deliberately never reset: shutdown is terminal.
+	draining atomic.Bool
 	// shutdownOnce ensures Shutdown() can be called multiple times safely.
 	shutdownOnce sync.Once
 	// connWg tracks active WebSocket connection goroutines for graceful shutdown.
@@ -137,6 +143,19 @@ func watchArgoTransitions(stop <-chan struct{}, interval time.Duration, reason f
 // the context passed to Shutdown from it, so the phase can also end earlier if the
 // overall shutdown budget (see shutdownBudget) is already spent.
 const shutdownTimeout = 10 * time.Second
+
+// beginDraining marks the process as shutting down so the readiness probe starts
+// answering 503. It is called at the very start of the shutdown sequence, before
+// the listener closes, so an orchestrator has a window to stop routing new requests
+// here while the pod can still serve the ones already in flight.
+func (env *Env) beginDraining() {
+	env.draining.Store(true)
+}
+
+// isDraining reports whether graceful shutdown has begun.
+func (env *Env) isDraining() bool {
+	return env.draining.Load()
+}
 
 // Shutdown gracefully shuts down the server and all WebSocket connections.
 // This method is safe to call multiple times. It blocks until all WebSocket

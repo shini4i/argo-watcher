@@ -165,12 +165,14 @@ else
   bad "GET /config: code=${CODE} (want 200 with no notification targets)"
 fi
 
-req GET "${AW_URL}/healthz"
-if [[ "$CODE" == "200" ]]; then
-  ok "GET /healthz -> 200 (probes unaffected)"
-else
-  bad "GET /healthz: code=${CODE} (want 200)"
-fi
+for probe in livez readyz; do
+  req GET "${AW_URL}/${probe}"
+  if [[ "$CODE" == "200" ]]; then
+    ok "GET /${probe} -> 200 (probes unaffected)"
+  else
+    bad "GET /${probe}: code=${CODE} (want 200)"
+  fi
+done
 
 req GET "${AW_URL}/metrics"
 if [[ "$CODE" == "200" ]]; then

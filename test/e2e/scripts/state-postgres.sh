@@ -109,7 +109,7 @@ if kubectl -n "$NS_AW" get job/argo-watcher-migration >/dev/null 2>&1; then
   ok "migration Job completed"
 fi
 
-wait_service || die "argo-watcher /healthz never came up on ${AW_URL}"
+wait_service || die "argo-watcher /livez never came up on ${AW_URL}"
 
 echo "=== asserting the server is actually on Postgres ==="
 st="$(curl -s -m 10 "${AW_API}/config" | jq -r '.state_type')"
@@ -140,7 +140,7 @@ echo "=== restarting the server; the task must survive (Postgres persistence) ==
 kubectl -n "$NS_AW" delete pod argo-watcher-0 --wait=true
 kubectl -n "$NS_AW" rollout status statefulset/argo-watcher --timeout=180s
 # No forward to re-establish: the NodePort URL is unaffected by the pod swap.
-wait_service || die "argo-watcher /healthz never came back after the restart"
+wait_service || die "argo-watcher /livez never came back after the restart"
 
 req GET "${AW_API}/tasks/${id}"
 status_after=$(jq -r '.status' <<<"$BODY")
@@ -183,7 +183,7 @@ ok "shared lock rejects deployments (406) on a replica that never set it"
 echo "  restarting the server; the lock must still be in effect"
 kubectl -n "$NS_AW" delete pod argo-watcher-0 --wait=true
 kubectl -n "$NS_AW" rollout status statefulset/argo-watcher --timeout=180s
-wait_service || die "argo-watcher /healthz never came back after the second restart"
+wait_service || die "argo-watcher /livez never came back after the second restart"
 
 curl -s -m 10 "${AW_API}/deploy-lock" | jq -e '. == true' >/dev/null 2>&1 \
   || die "the shared lock did not survive the restart"

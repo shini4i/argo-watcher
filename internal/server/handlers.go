@@ -211,25 +211,47 @@ func (env *Env) getTaskStatus(c *gin.Context) {
 	}
 }
 
-// healthz godoc
-// @Summary Check if the server is healthy
-// @Description Check if the argo-watcher is ready to process new tasks
+// Causes reported by the readiness probe. They are the response body only; the
+// status code is what an orchestrator acts on.
+const (
+	reasonDraining         = "shutting down"
+	reasonStateUnreachable = "state backend unreachable"
+)
+
+// livez godoc
+// @Summary Liveness probe
+// @Description Report whether the process itself is still serving. It checks no dependency, because a restart — the only remedy a failing liveness probe triggers — cannot fix one.
+// @Tags service
+// @Produce json
+// @Success 200 {object} models.HealthStatus
+// @Router /livez [get]
+func (env *Env) livez(c *gin.Context) {
+	c.JSON(http.StatusOK, models.HealthStatus{Status: "up"})
+}
+
+// readyz godoc
+// @Summary Readiness probe
+// @Description Report whether this instance should receive traffic: down while shutting down, and down when the state backend is unreachable. ArgoCD reachability is deliberately excluded — the API and Web UI must keep serving task history and the unreachable banner during an ArgoCD outage (see /api/v1/reachability).
 // @Tags service
 // @Produce json
 // @Success 200 {object} models.HealthStatus
 // @Failure 503 {object} models.HealthStatus
-// @Router /healthz [get]
-func (env *Env) healthz(c *gin.Context) {
-	if env.argo.SimpleHealthCheck() {
-		c.JSON(http.StatusOK, models.HealthStatus{
-			Status: "up",
-		})
-	} else {
-		c.JSON(http.StatusServiceUnavailable, models.HealthStatus{
-			Status: "down",
-		})
+// @Router /readyz [get]
+func (env *Env) readyz(c *gin.Context) {
+	// Ordered so a drain is reported as a drain: once shutdown starts the state
+	// backend is irrelevant, and reporting it would mislabel a planned rollout as an
+	// outage.
+	if env.isDraining() {
+		c.JSON(http.StatusServiceUnavailable, models.HealthStatus{Status: "down", Reason: reasonDraining})
+		return
 	}
 
+	if !env.argo.SimpleHealthCheck() {
+		c.JSON(http.StatusServiceUnavailable, models.HealthStatus{Status: "down", Reason: reasonStateUnreachable})
+		return
+	}
+
+	c.JSON(http.StatusOK, models.HealthStatus{Status: "up"})
 }
 
 // getConfig godoc

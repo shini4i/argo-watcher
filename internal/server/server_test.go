@@ -34,6 +34,10 @@ func TestNewServer_Success(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, s)
 	assert.Equal(t, cfg, s.config)
+	// A zero drainDelay silently skips the readiness-propagation phase of shutdown,
+	// and every other test constructs Server directly — so this is the only place a
+	// dropped wiring line would be caught before the lab.
+	assert.Equal(t, readinessDrainDelay, s.drainDelay)
 }
 
 func TestNewServer_StateInitFailure(t *testing.T) {
@@ -92,9 +96,9 @@ func TestNewServer_PostgresConnectionFailure(t *testing.T) {
 func TestShutdownBudgetFitsGracePeriod(t *testing.T) {
 	assert.Less(t, shutdownBudget, 30*time.Second, "budget must fit the default pod grace period")
 
-	writebackDrainShare := shutdownBudget - (httpDrainBudget + shutdownTimeout)
+	writebackDrainShare := shutdownBudget - (readinessDrainDelay + httpDrainBudget + shutdownTimeout)
 	assert.GreaterOrEqual(t, writebackDrainShare, 5*time.Second,
-		"HTTP and WebSocket drains must leave the batch write-back drain a usable share")
+		"the readiness delay and the HTTP and WebSocket drains must leave the batch write-back drain a usable share")
 }
 
 // fakeHTTPShutdowner stands in for *http.Server so the phase budgeting can be
@@ -191,4 +195,46 @@ func TestShutdown_WebSocketDrainRunsAfterHTTPDrainFailure(t *testing.T) {
 	default:
 		t.Fatal("the WebSocket drain must still run after the HTTP drain fails")
 	}
+}
+
+// TestShutdown_ReadinessFailsBeforeTheListenerCloses is the ordering the readiness
+// probe exists for. Endpoint removal is asynchronous, so a pod that closes its
+// listener the instant SIGTERM lands is still receiving proxied requests — every
+// rolling update then ends in a tail of connection resets. Failing readiness first
+// is what lets the endpoints controller pull the pod while it can still serve.
+func TestShutdown_ReadinessFailsBeforeTheListenerCloses(t *testing.T) {
+	env := &Env{shutdownCh: make(chan struct{})}
+	s := &Server{env: env}
+
+	var readyAtListenerClose bool
+	srv := &fakeHTTPShutdowner{onShutdown: func() {
+		readyAtListenerClose = !env.isDraining()
+	}}
+
+	s.shutdown(srv)
+
+	assert.False(t, readyAtListenerClose, "readiness must already report down when the listener closes")
+	assert.True(t, env.isDraining(), "the drain flag must outlive the shutdown sequence")
+}
+
+// TestShutdown_ReadinessDelayPrecedesTheHTTPDrain proves the propagation window is
+// actually waited out rather than merely flagged. Flipping the probe and closing the
+// listener in the same breath leaves the race untouched, and nothing else in the
+// sequence would catch it.
+func TestShutdown_ReadinessDelayPrecedesTheHTTPDrain(t *testing.T) {
+	env := &Env{shutdownCh: make(chan struct{})}
+	// A real readinessDrainDelay would add its full wall-clock cost to the suite; the
+	// regression guarded here is "no wait at all", which any non-zero delay exposes.
+	s := &Server{env: env, drainDelay: 50 * time.Millisecond}
+
+	var elapsedAtShutdown time.Duration
+	start := time.Now()
+	srv := &fakeHTTPShutdowner{onShutdown: func() {
+		elapsedAtShutdown = time.Since(start)
+	}}
+
+	s.shutdown(srv)
+
+	assert.GreaterOrEqual(t, elapsedAtShutdown, s.drainDelay,
+		"the HTTP drain must not start until the readiness change has had time to propagate")
 }
