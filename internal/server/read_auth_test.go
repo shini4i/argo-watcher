@@ -267,8 +267,12 @@ func TestReadAuthOpenEndpoints(t *testing.T) {
 		assert.Equal(t, http.StatusOK, getWith(t, env, "/api/v1/config", "", "").Code)
 	})
 
-	t.Run("healthz stays open for probes", func(t *testing.T) {
-		assert.Equal(t, http.StatusOK, getWith(t, env, "/healthz", "", "").Code)
+	t.Run("probe endpoints stay open", func(t *testing.T) {
+		// A kubelet cannot perform an OIDC flow, so gating these would make every
+		// pod fail its probes the moment OIDC is enabled.
+		for _, path := range []string{"/livez", "/readyz"} {
+			assert.Equal(t, http.StatusOK, getWith(t, env, path, "", "").Code, path)
+		}
 	})
 
 	t.Run("metrics stays open for scraping", func(t *testing.T) {

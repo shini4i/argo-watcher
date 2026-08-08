@@ -101,13 +101,13 @@ retry() {
 
 # wait_service [attempts]: block until argo-watcher answers on its HTTP port.
 #
-# Deliberately checks only that a response arrives, NOT that it is 2xx: /healthz
-# returns 503 while ArgoCD is unreachable (handlers.go healthz), which is a state
-# the argocd-unreachable phase induces on purpose and the shutdown-drain phase can
-# observe on a fresh pod. A `curl -f` here would hang in exactly those phases.
+# Gates on liveness, not readiness: /readyz is legitimately 503 while the server is
+# draining or its state backend is unreachable, so a phase that induces either would
+# hang here. /livez answers 200 whenever the process is serving, which is exactly
+# what callers are waiting for; phases assert readiness explicitly where it matters.
 wait_service() {
   local attempts="${1:-30}"
-  retry "$attempts" 2 curl -s -m 3 -o /dev/null "${AW_URL}/healthz"
+  retry "$attempts" 2 curl -fsS -m 3 -o /dev/null "${AW_URL}/livez"
   return
 }
 

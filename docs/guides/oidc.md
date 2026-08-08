@@ -31,7 +31,7 @@ them, so no deployment pipeline is affected.
 | `POST /api/v1/tasks` | Unchanged — optional credential (governs git write-back) |
 | `GET /api/v1/tasks/{id}` | **Open** unless `OIDC_REQUIRE_TASK_READ_AUTH=true` — see below |
 | `GET /api/v1/config` | **Open** — the Web UI reads the issuer and client id from it before it can obtain a token |
-| `/healthz`, `/metrics` | **Open** — probes and Prometheus cannot perform an OIDC flow |
+| `/livez`, `/readyz`, `/metrics` | **Open** — probes and Prometheus cannot perform an OIDC flow |
 | `/ws` | Credential required — as a subprotocol from a browser, see [The WebSocket handshake](#the-websocket-handshake) |
 
 Any configured credential is accepted on the reads: an OIDC session, the
@@ -62,8 +62,8 @@ OIDC_REQUIRE_TASK_READ_AUTH=true
 ```
 
 `GET /api/v1/tasks/{id}` then requires a credential like every other read, leaving
-`GET /api/v1/config` as the only open `/api/v1` read (alongside `/healthz` and
-`/metrics`, which cannot perform an OIDC flow).
+`GET /api/v1/config` as the only open `/api/v1` read (alongside the probe endpoints
+and `/metrics`, which cannot perform an OIDC flow).
 
 Two things to know before flipping it:
 

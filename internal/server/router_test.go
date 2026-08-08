@@ -1941,51 +1941,6 @@ func TestPrometheusHandler(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
-// TestHealthzEndpoint tests the healthz endpoint.
-func TestHealthzEndpoint(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	t.Run("returns up when healthy", func(t *testing.T) {
-		ctrl := gomock.NewController(t)
-		repo, _ := newRepo(ctrl)
-		repo.EXPECT().Check().Return(true).AnyTimes()
-		argo := &argocd.Argo{}
-		argo.Init(repo, newArgoAPI(ctrl), newMetrics(ctrl))
-
-		env := &Env{argo: argo}
-
-		router := gin.New()
-		router.GET("/healthz", env.healthz)
-
-		req, _ := http.NewRequest(http.MethodGet, "/healthz", nil)
-		w := httptest.NewRecorder()
-		router.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusOK, w.Code)
-		assert.Contains(t, w.Body.String(), "up")
-	})
-
-	t.Run("returns down when unhealthy", func(t *testing.T) {
-		ctrl := gomock.NewController(t)
-		repo, _ := newRepo(ctrl)
-		repo.EXPECT().Check().Return(false).AnyTimes()
-		argo := &argocd.Argo{}
-		argo.Init(repo, newArgoAPI(ctrl), newMetrics(ctrl))
-
-		env := &Env{argo: argo}
-
-		router := gin.New()
-		router.GET("/healthz", env.healthz)
-
-		req, _ := http.NewRequest(http.MethodGet, "/healthz", nil)
-		w := httptest.NewRecorder()
-		router.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusServiceUnavailable, w.Code)
-		assert.Contains(t, w.Body.String(), "down")
-	})
-}
-
 // TestGetConfigEndpoint tests the getConfig endpoint.
 func TestGetConfigEndpoint(t *testing.T) {
 	gin.SetMode(gin.TestMode)

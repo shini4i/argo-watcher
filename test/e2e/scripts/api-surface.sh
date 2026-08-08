@@ -36,6 +36,21 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # stay redacted.
 wait_service || die "argo-watcher never answered on ${AW_URL}"
 
+echo "=== probe endpoints ==="
+# /livez must not consult any dependency (that it ignores an unreachable state
+# backend is a unit-level assertion — the base lab runs in-memory state, which
+# cannot be broken from here). What the lab can prove is that both routes are
+# registered and unauthenticated, and that neither reports the ArgoCD state the
+# argocd-unreachable phase induces.
+for path in livez readyz; do
+  req GET "${AW_URL}/${path}"
+  if [[ "$CODE" == "200" ]] && jq -e '.status == "up" and (has("reason") | not)' <<<"$BODY" >/dev/null 2>&1; then
+    ok "/${path} -> 200 up"
+  else
+    bad "/${path}: code=${CODE} body=${BODY} (want 200 {\"status\":\"up\"})"
+  fi
+done
+
 echo "=== version ==="
 req GET "${AW_API}/version"
 if [[ "$CODE" == "200" ]] && jq -e 'type == "string" and length > 0' <<<"$BODY" >/dev/null 2>&1; then

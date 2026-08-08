@@ -116,7 +116,7 @@ again instead of re-establishing a forward.
 | `scripts/lib.sh` | shared phase helpers: endpoint URLs, `retry`/`wait_*`, `req`, `run_client`, `metric_sum`, `helm_apply_aw`, `ok`/`bad`/`phase_end` |
 | `scripts/lib.bats` | unit tests for lib.sh's pure text-processing helpers (no cluster needed) |
 | `scripts/soak.sh` | the git-conflict soak: competitor + concurrent deploys, then the `collect.sh` gates |
-| `scripts/verify.sh` | post-`up` gate: healthz 200 and `argocd_unavailable` 0 |
+| `scripts/verify.sh` | post-`up` gate: readyz 200 and `argocd_unavailable` 0 |
 | `values/` | pinned Helm values for argocd / argo-watcher / gitea / webhook-tester |
 | `scripts/load-race-image.sh` | load a local image into the kind node |
 | `scripts/mint-argo-token.sh` | mint `ARGO_TOKEN` into `argo-watcher-secret` |
@@ -128,8 +128,8 @@ again instead of re-establishing a forward.
 | `values/argo-watcher-postgres.yaml` | overlay layered over `values/argo-watcher.yaml` that enables `postgres` (sets `STATE_TYPE=postgres`, wires `DB_*`, triggers the migration Job) |
 | `scripts/failure-fixture.sh` | inject/remove a deliberately-broken resource via the chart's `rawObject`: a failing PreSync hook (`hook`, aborts the sync), a failing plain migration Job (`degraded`, lets the image roll out and holds the app Synced+Degraded), or a Deployment whose readiness probe never passes (`pending`, holds the app Synced+Progressing with nothing Degraded); sole owner of the shared `chart/values.yaml` |
 | `scripts/notifications.sh` | assert the generic webhook fires start + result with the templated payload and auth header |
-| `scripts/api-surface.sh` | assert the read-only HTTP surface to contract: version/config (secrets redacted), task-list filters + invalid-status 400, unknown-task 404, deploy-lock POST/DELETE 404 when OIDC auth is off |
-| `scripts/read-auth.sh` | assert OIDC read protection: toggles `OIDC_ENABLED` on the release with the issuer pointed at a closed port and reverts, asserting 401 without a credential, 503 (never 401) when the provider cannot be consulted — including with a rejected JWT alongside, 15× because strategy order is randomized — 200 for a deploy token / JWT, the `/tasks/:id`, `/config`, `/healthz`, `/metrics` and `POST /tasks` exemptions, and the `unauthenticated_reads` counter semantics. Also asserts the /ws handshake: 401 with no credential, accepted with a deploy token, and 503 for a subprotocol-borne token whose provider is unreachable. Needs no identity provider; group-based authorization is covered by the Keycloak integration suite instead |
+| `scripts/api-surface.sh` | assert the read-only HTTP surface to contract: the `/livez` + `/readyz` probes, version/config (secrets redacted), task-list filters + invalid-status 400, unknown-task 404, deploy-lock POST/DELETE 404 when OIDC auth is off |
+| `scripts/read-auth.sh` | assert OIDC read protection: toggles `OIDC_ENABLED` on the release with the issuer pointed at a closed port and reverts, asserting 401 without a credential, 503 (never 401) when the provider cannot be consulted — including with a rejected JWT alongside, 15× because strategy order is randomized — 200 for a deploy token / JWT, the `/tasks/:id`, `/config`, `/livez`, `/readyz`, `/metrics` and `POST /tasks` exemptions, and the `unauthenticated_reads` counter semantics. Also asserts the /ws handshake: 401 with no credential, accepted with a deploy token, and 503 for a subprotocol-borne token whose provider is unreachable. Needs no identity provider; group-based authorization is covered by the Keycloak integration suite instead |
 | `scripts/client-knobs.sh` | assert client env knobs via the real client: `TASK_REFRESH=false` still deploys, `DEBUG=true` cURL log redacts the deploy token |
 | `scripts/jwt-auth.sh` | assert the JWT (`BEARER_TOKEN`) auth path: mint an HS256 token, deploy with no deploy token, prove the authenticated write-back reaches deployed |
 | `tools/mintjwt/` | tiny Go HS256 JWT minter (signs with the server's own jwt library; avoids an openssl dependency) |
@@ -144,16 +144,19 @@ again instead of re-establishing a forward.
 | `scripts/docker-proxy.sh` | assert `DOCKER_IMAGES_PROXY` matches a bare image against the proxy-prefixed running image |
 | `fixtures/proxy-app.yaml` | `proxyapp`: reuses the shared chart with the image repository overridden to `mirror.gcr.io/traefik/whoami` |
 | `scripts/lockdown.sh` | assert scheduled lockdown: toggles `LOCKDOWN_SCHEDULE` on the release (window opening ~3 min out) and reverts, asserting in-window deploys are rejected (406), `GET /deploy-lock` reports `true`, and the watcher broadcasts `"locked"` on the transition |
-| `scripts/shutdown-drain.sh` | assert graceful shutdown: hold WebSocket clients open, delete the pod, and assert every client sees a `1001 "server shutdown"` close and the logs show the ordered drain with no data race / panic / drain timeout |
+| `scripts/shutdown-drain.sh` | assert graceful shutdown: hold WebSocket clients open, delete the pod, and assert readiness fails before the listener closes (logged, and the sequence never finishes faster than the 5s propagation window), every client sees a `1001 "server shutdown"` close, and the logs show the ordered drain with no data race / panic / drain timeout |
 | `scripts/argocd-unreachable.sh` | assert the ArgoCD-unreachable signal (#498): scale `argocd-server` to 0, assert `GET /reachability` flips to `{"available":false,"reason":"argocd"}` (state backend stays up), the watcher broadcasts `"argocd_down:argocd"`, and `POST /tasks` fast-fails `503 {"status":"down"}` (well under the retry budget); then scale back up and assert recovery (`available:true`, `"argocd_up"`, `202`) |
 | `tools/wsprobe/` | tiny Go WebSocket probe used by `lockdown` (grep for the `"locked"` broadcast), `shutdown-drain` (assert the graceful GoingAway close), and `argocd-unreachable` (grep for `"argocd_down:argocd"`/`"argocd_up"`), streaming `MSG`/`CLOSED` events one per line |
 
 ## Gotchas (why the scripts exist)
 
-- **`/healthz` returns 503 while ArgoCD is unreachable**, so `wait_service` checks
-  only that a response arrives, never that it is 2xx. A `curl -f` there would hang
-  forever in `argocd-unreachable` (which severs ArgoCD on purpose) and can misfire in
-  `shutdown-drain` on a freshly-booted pod.
+- **`wait_service` gates on `/livez`, never `/readyz`.** Readiness is legitimately
+  503 while the server drains or its state backend is unreachable, so a phase that
+  induces either would hang on a readiness gate. Liveness answers 200 whenever the
+  process is serving, which is what the callers actually wait for.
+- **The lab overrides the chart's probe paths** (`values/argo-watcher.yaml`). The
+  chart still defaults both probes to the removed `/healthz`; without the override
+  every pod fails both probes and the lab never comes up.
 - **`kind load docker-image` is broken with podman + containerd 2.x** — kind
   passes `--all-platforms` to `ctr import`, which fails on a single-arch image
   ("no unpack platforms defined"). `load-race-image.sh` imports via `ctr` with

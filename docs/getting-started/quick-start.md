@@ -33,10 +33,13 @@ The first run takes a couple of minutes to compile the Go binaries. Subsequent r
 In a new terminal:
 
 ```bash
-curl -s http://localhost:8080/healthz
+curl -s http://localhost:8080/readyz
 ```
 
-You should see a `200 OK` response with health details for the database and Argo CD client.
+You should see a `200 OK` response with `{"status":"up"}`, meaning the server is
+serving and its state backend is reachable. See
+[Health and probe endpoints](../reference/api.md#health-and-probe-endpoints) for the
+full set.
 
 ## 3. Submit a task
 

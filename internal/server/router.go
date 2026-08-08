@@ -56,8 +56,10 @@ func (env *Env) CreateRouter() *gin.Engine {
 		c.String(http.StatusBadRequest, "WebSocket upgrade required")
 	})
 
-	// API routes
-	router.GET("/healthz", env.healthz)
+	// API routes. The probe endpoints stay unauthenticated: a kubelet cannot
+	// perform an OIDC flow, and they expose no state beyond up/down.
+	router.GET("/livez", env.livez)
+	router.GET("/readyz", env.readyz)
 	router.GET("/metrics", prometheusHandler())
 	swaggerPath := filepath.Join(env.config.StaticFilePath, "swagger")
 	absSwaggerPath, err := filepath.Abs(swaggerPath)

@@ -7,8 +7,8 @@
 #
 #   1. Hold N WebSocket clients open (tools/wsprobe) against the live server.
 #   2. Follow the pod's logs, then delete the pod with a generous grace period so
-#      the container runs its full graceful shutdown (SIGTERM -> srv.Shutdown ->
-#      env.Shutdown drains the hijacked WS goroutines).
+#      the container runs its full graceful shutdown (SIGTERM -> fail readiness ->
+#      srv.Shutdown -> env.Shutdown drains the hijacked WS goroutines).
 #   3. Assert every WS client saw a graceful close: code 1001 (GoingAway) with
 #      reason "server shutdown" — the exact frame checkConnection sends on drain,
 #      NOT an abrupt socket drop.
@@ -22,11 +22,12 @@
 # the poller, not the HTTP request — asserting it would test the poller, not
 # shutdown. This phase asserts the shutdown/drain contract only.
 #
-# Shutdown runs three sequential phases sharing ONE 25s budget (shutdownBudget in
-# internal/server/server.go): srv.Shutdown (<=8s) -> WebSocket drain (<=10s) ->
-# batch git write-back drain (whatever remains). The budget is sized to fit the
-# Kubernetes default terminationGracePeriodSeconds of 30s, and step 4 below asserts
-# the whole sequence actually fits it.
+# Shutdown runs four sequential phases sharing ONE 25s budget (shutdownBudget in
+# internal/server/server.go): fail /readyz and wait for the endpoint removal to
+# propagate (5s) -> srv.Shutdown (<=5s) -> WebSocket drain (<=10s) -> batch git
+# write-back drain (whatever remains). The budget is sized to fit the Kubernetes
+# default terminationGracePeriodSeconds of 30s, and step 4 below asserts the whole
+# sequence fits it while still spending the propagation window.
 #
 # KNOWN GAP (deliberate, 2026-07-29): this phase runs with GIT_BATCH_WRITEBACK off, so
 # the third phase is a no-op and the batch write-back DRAIN — retry loops stopping at
@@ -119,6 +120,15 @@ if ((shutdown_elapsed < 30)); then
 else
   bad "shutdown took ${shutdown_elapsed}s — exceeds the default 30s grace period, would be SIGKILLed in a normal deployment"
 fi
+# The lower bound is the readiness-propagation window (readinessDrainDelay, 5s):
+# shutdown must not be able to finish faster than the wait it owes the endpoints
+# controller. Dropping that wait is the regression this catches, and it is invisible
+# to every other assertion here — the WebSocket drain works fine without it.
+if ((shutdown_elapsed >= 5)); then
+  ok "shutdown spent the readiness-propagation window before closing the listener"
+else
+  bad "shutdown finished in ${shutdown_elapsed}s — faster than the 5s readiness drain delay, so traffic was cut before the endpoint could be removed"
+fi
 kill "$log_pid" 2>/dev/null || true
 assert_log() {  # pattern human-label want(present|absent)
   local pattern="$1" label="$2" want="$3" found
@@ -130,6 +140,7 @@ assert_log() {  # pattern human-label want(present|absent)
   fi
 }
 assert_log "shutting down server..."                   "shutdown initiated"        present
+assert_log "readiness reported down"                   "readiness failed first"    present
 # This one line is Debug-level (env.go); it is asserted because the lab runs at
 # logLevel: debug (values/argo-watcher.yaml). If that is ever lowered to info this
 # check fails misleadingly — the drain itself would still be fine.
@@ -152,13 +163,13 @@ if ! retry 60 3 recreated_ready; then
 else
   # No port-forward to re-establish: the NodePort URL survived the pod swap.
   wait_service || die "argo-watcher never answered after the pod came back"
-  code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' "${AW_URL}/healthz")
+  code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' "${AW_URL}/readyz")
   # metric_raw, not metric_sum: an ABSENT gauge must fail this gate, not read as 0.
   unavail=$(metric_raw argocd_unavailable)
   if [[ "$code" == "200" && "$unavail" == "0" ]]; then
-    ok "recreated pod healthy and reaching Argo (healthz=200 argocd_unavailable=0)"
+    ok "recreated pod ready and reaching Argo (readyz=200 argocd_unavailable=0)"
   else
-    bad "recreated pod not healthy: healthz=${code} argocd_unavailable=${unavail:-<absent>}"
+    bad "recreated pod not ready: readyz=${code} argocd_unavailable=${unavail:-<absent>}"
   fi
 fi
 

@@ -4,6 +4,15 @@
 # built race image, so it always reflects the code under test.
 logLevel: debug
 
+# Point the probes at the split endpoints. The chart still defaults both to
+# /healthz, which this server no longer serves — without these overrides every pod
+# fails both probes and never becomes Ready. Only `path` is overridden; the chart's
+# timings are merged in unchanged.
+livenessProbe:
+  path: /livez
+readinessProbe:
+  path: /readyz
+
 image:
   repository: ghcr.io/shini4i/argo-watcher
   # tag: injected by the Taskfile (the built `-race` image)

@@ -79,8 +79,13 @@ type TasksResponse struct {
 	Total int64  `json:"total,omitempty"`
 }
 
+// HealthStatus is the payload of the probe endpoints. Status is "up" or "down";
+// Reason names the cause of a "down" and is omitted otherwise, so an operator
+// reading the endpoint during an incident can tell a graceful drain apart from an
+// unreachable state backend.
 type HealthStatus struct {
 	Status string `json:"status"`
+	Reason string `json:"reason,omitempty"`
 }
 
 type TaskStatus struct {
