@@ -160,6 +160,10 @@ const ensureUserManager = async (): Promise<UserManager | null> => {
       redirect_uri: redirectUri,
       post_logout_redirect_uri: redirectUri,
       response_type: 'code',
+      // Applies to both provider redirects. The default ('assign') would leave the
+      // authorize URL in browser history, where a Back press re-authorizes off the
+      // SSO cookie and forwards straight back.
+      redirectMethod: 'replace',
       // Request only universally-valid standard scopes. Requesting a `groups`
       // scope would break login on any provider (e.g. a Keycloak client without
       // a registered `groups` client scope) that rejects unknown scopes with

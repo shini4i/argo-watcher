@@ -26,7 +26,7 @@ import {
 import { useCallback, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useGetIdentity, useGetOne, useNotify, usePermissions } from 'react-admin';
-import { Link as RouterLink, useNavigate, useParams } from 'react-router-dom';
+import { Link as RouterLink, useLocation, useNavigate, useParams } from 'react-router-dom';
 import type { TaskStatus } from '../../../data/types';
 import { formatDuration, formatRelativeTime } from '../../../shared/utils/time';
 import { describeTaskStatus } from '../utils/statusPresentation';
@@ -180,6 +180,7 @@ export const TaskShow = () => {
   const { id } = useParams<{ id: string }>();
   const notify = useNotify();
   const navigate = useNavigate();
+  const location = useLocation();
   const deployLock = useDeployLockState();
   const oidcEnabled = useOidcEnabled();
   const { permissions } = usePermissions();
@@ -269,8 +270,15 @@ export const TaskShow = () => {
   }, [id, refetch, status]);
 
   const handleBack = useCallback(() => {
+    // A `default` key means this is the router's first entry (direct task URL):
+    // there is no in-app screen behind it, and stepping out of the SPA forces a
+    // fresh OIDC sign-in that lands the user right back here.
+    if (location.key === 'default') {
+      navigate('/tasks');
+      return;
+    }
     navigate(-1);
-  }, [navigate]);
+  }, [location.key, navigate]);
 
   const handleRefresh = useCallback(() => {
     const result = refetch();
