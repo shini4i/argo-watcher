@@ -131,6 +131,18 @@ describe('authProvider', () => {
     expect(userManagerMock.signoutRedirect).not.toHaveBeenCalled();
   });
 
+  it('replaces the current history entry when leaving for the provider', async () => {
+    mockConfig(enabledConfig());
+    userManagerMock.getUser.mockResolvedValue(null);
+    const provider = await loadAuthProvider();
+
+    await provider.checkAuth({});
+
+    expect(MockUserManager).toHaveBeenCalledWith(
+      expect.objectContaining({ redirectMethod: 'replace' }),
+    );
+  });
+
   it('never rejects checkAuth when the login redirect fails', async () => {
     mockConfig(enabledConfig());
     userManagerMock.getUser.mockResolvedValue(null);
@@ -376,7 +388,9 @@ describe('authProvider', () => {
       expect(userManagerMock.signinRedirectCallback).toHaveBeenCalledTimes(1);
       expect(getAccessToken()).toBe('token');
       // The ?code&state query is stripped so a reload does not re-trigger the callback.
-      expect(replaceSpy).toHaveBeenCalled();
+      // The empty history state matters too: react-router derives its location key from
+      // it, and the `default` key is what tells the task screen it has no in-app history.
+      expect(replaceSpy).toHaveBeenCalledWith({}, expect.anything(), module.__testing.appBaseUrl());
       replaceSpy.mockRestore();
     });
 

@@ -92,6 +92,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- With OIDC enabled, opening a task detail page from a shared link and pressing Back no
+  longer bounces through a fresh sign-in that lands back on the same page; it returns to
+  the task list. The provider's authorize URL is also no longer left in browser history,
+  so the browser's own Back button behaves the same way.
 - The Duration column of the tasks table now counts up while a deployment is in
   progress, instead of showing `0s` until the task reaches a final status.
 - A deployment that fails with `Rollout status is not synced` now names what is

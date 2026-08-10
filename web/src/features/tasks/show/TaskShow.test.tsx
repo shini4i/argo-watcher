@@ -42,12 +42,14 @@ vi.mock('../../../auth/tokenStore', () => ({
   getAccessToken: () => mockGetAccessToken(),
 }));
 
-const renderWithRouter = async (path: string) => {
+const renderWithHistory = async (entries: string[], initialIndex?: number) => {
   const result = render(
-    <MemoryRouter initialEntries={[path]}>
+    <MemoryRouter initialEntries={entries} initialIndex={initialIndex}>
       <Routes>
         <Route path="/task/:id" element={<TaskShow />} />
         <Route path="/" element={<div data-testid="home-route" />} />
+        <Route path="/tasks" element={<div data-testid="tasks-route" />} />
+        <Route path="/history" element={<div data-testid="history-route" />} />
       </Routes>
     </MemoryRouter>,
   );
@@ -56,6 +58,8 @@ const renderWithRouter = async (path: string) => {
   });
   return result;
 };
+
+const renderWithRouter = async (path: string) => renderWithHistory([path]);
 
 const buildTask = (overrides: Partial<TaskStatus> = {}): TaskStatus => ({
   id: 'task-1',
@@ -111,6 +115,33 @@ describe('TaskShow', () => {
     expect(screen.getByText('task-1')).toBeInTheDocument();
     expect(screen.getByText('Images')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Refresh/i })).toBeInTheDocument();
+  });
+
+  describe('back navigation', () => {
+    beforeEach(() => {
+      mockUseGetOne.mockReturnValue({
+        data: buildTask(),
+        isLoading: false,
+        isError: false,
+        refetch: vi.fn(),
+      });
+    });
+
+    it('returns to the previous in-app screen when one exists', async () => {
+      await renderWithHistory(['/history', '/task/task-1'], 1);
+
+      fireEvent.click(screen.getByRole('button', { name: /^Back$/ }));
+
+      expect(await screen.findByTestId('history-route')).toBeInTheDocument();
+    });
+
+    it('goes to the task list when the detail page is the first history entry', async () => {
+      await renderWithHistory(['/task/task-1']);
+
+      fireEvent.click(screen.getByRole('button', { name: /^Back$/ }));
+
+      expect(await screen.findByTestId('tasks-route')).toBeInTheDocument();
+    });
   });
 
   describe('project field', () => {
