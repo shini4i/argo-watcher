@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-08-11
+
 ### Added
 
 - With OIDC authentication enabled, the read endpoints the Web UI consumes —
@@ -77,19 +79,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The Web UI treats a 401 as a dead session and signs the user out, so a brief
   provider outage no longer logs everyone out.
 
-### Security
-
-- An application name from a task submitted without a credential is no longer used as a
-  Prometheus label: `POST /api/v1/tasks` is open and the name is free text, so a caller
-  could create a permanent series per request and exhaust the monitoring backend. Such
-  deployments are now reported under `app="unknown"` in `processed_deployments`,
-  `unauthenticated_reads`, and in `failed_deployment` when the failure precedes Argo CD
-  confirming the application exists. Deployments carrying a deploy token, JWT or OIDC
-  session keep their real application label; monitoring-only setups that submit without
-  a credential lose the per-app breakdown in those three metrics.
-- Bumped `github.com/go-git/go-git/v5` to 5.19.2 for CVE-2026-71556, where worktree
-  operations may follow symlinks outside the repository.
-
 ### Fixed
 
 - The Web UI no longer leaks a WebSocket connection when a page remount closes and
@@ -117,11 +106,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- An application name from a task submitted without a credential is no longer used as a
+  Prometheus label: `POST /api/v1/tasks` is open and the name is free text, so a caller
+  could create a permanent series per request and exhaust the monitoring backend. Such
+  deployments are now reported under `app="unknown"` in `processed_deployments`,
+  `unauthenticated_reads`, and in `failed_deployment` when the failure precedes Argo CD
+  confirming the application exists. Deployments carrying a deploy token, JWT or OIDC
+  session keep their real application label; monitoring-only setups that submit without
+  a credential lose the per-app breakdown in those three metrics.
 - `GET /api/v1/config` no longer discloses how to reach a notification receiver: the
   `webhook` and `mattermost` blocks are reduced to their `enabled` flag. That endpoint
   cannot be authenticated — the Web UI reads the OIDC issuer and client id from it
   before it can hold a token — and a webhook URL is itself a credential. Every other
   field, including the `enabled` flags, is unchanged.
+- Bumped `github.com/go-git/go-git/v5` to 5.19.2 for CVE-2026-71556, where worktree
+  operations may follow symlinks outside the repository.
 
 ## [0.14.0] - 2026-08-04
 
@@ -710,7 +709,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bumped the Go toolchain to `1.25.11`, resolving a `net/textproto` standard
   library vulnerability present in `go1.25.9`.
 
-[Unreleased]: https://github.com/shini4i/argo-watcher/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/shini4i/argo-watcher/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/shini4i/argo-watcher/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/shini4i/argo-watcher/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/shini4i/argo-watcher/compare/v0.12.2...v0.13.0
 [0.12.2]: https://github.com/shini4i/argo-watcher/compare/v0.12.1...v0.12.2
