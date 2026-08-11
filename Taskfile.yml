@@ -127,6 +127,29 @@ tasks:
       - npm run test
       - echo "===> Done"
 
+  test-web-e2e:
+    desc: Run the Playwright browser suite (requires docker; brings up keycloak). Must not be run concurrently with test-integration.
+    deps: [install-web-dependencies, build-ui]
+    cmds:
+      - echo "===> Starting Keycloak"
+      # No --wait: the keycloak image ships no shell tool, so compose cannot
+      # health-check it. Poll the realm's discovery endpoint instead.
+      - docker compose --profile integration up -d keycloak
+      - defer: docker compose --profile integration down -v
+      - |
+        discovery=http://localhost:8090/realms/argo-watcher-e2e/.well-known/openid-configuration
+        for _ in $(seq 1 60); do
+          if curl -fsS "$discovery" >/dev/null 2>&1; then
+            echo "===> Keycloak is ready"
+            exit 0
+          fi
+          sleep 2
+        done
+        echo "Keycloak realm argo-watcher-e2e not ready after 120s" >&2
+        exit 1
+      - echo "===> Running Playwright suite"
+      - cd web && npm run test:e2e
+
   build-ui:
     desc: Build the web UI bundle
     deps: [install-web-dependencies, docs]
@@ -138,6 +161,11 @@ tasks:
     sources:
       - src/**/*.ts
       - src/**/*.tsx
+    # Without this, an unchanged src plus a deleted or partial dist/ is reported
+    # up to date and the build is skipped — leaving the consumers of web/dist
+    # (the images, the Playwright suite) pointed at nothing.
+    generates:
+      - dist/index.html
 
   kind-upload:
     desc: Build and upload the argo-watcher image to a kind cluster

@@ -1,0 +1,134 @@
+name: Web e2e
+
+# Browser coverage for the behaviour the jsdom suite structurally cannot reach:
+# the top-level OIDC redirect, history/back navigation, the server's SPA fallback
+# for deep links, the live WebSocket driving the deploy-lock banner, and the
+# privileged write flows with their gating.
+#
+# Triggered by UI changes plus everything these flows actually run through:
+# internal/server serves web/dist and terminates the auth/WebSocket paths,
+# internal/config decides what /api/v1/config tells the SPA about OIDC,
+# internal/auth validates the tokens, and cmd/argo-watcher + cmd/mock are the
+# binaries playwright.config.ts launches.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'web/**'
+      - 'internal/server/**'
+      - 'internal/config/**'
+      - 'internal/auth/**'
+      - 'cmd/argo-watcher/**'
+      - 'cmd/mock/**'
+      - 'go.mod'
+      - '.github/workflows/web-e2e.yml'
+      - 'test/keycloak/**'
+      - 'docker-compose.yml'
+      - 'Taskfile.yml'
+  pull_request:
+    types: [opened, synchronize, reopened]
+    # Kept in sync with the push filter above; GitHub Actions does not support
+    # YAML anchors, so the list is duplicated rather than shared.
+    paths:
+      - 'web/**'
+      - 'internal/server/**'
+      - 'internal/config/**'
+      - 'internal/auth/**'
+      - 'cmd/argo-watcher/**'
+      - 'cmd/mock/**'
+      - 'go.mod'
+      - '.github/workflows/web-e2e.yml'
+      - 'test/keycloak/**'
+      - 'docker-compose.yml'
+      - 'Taskfile.yml'
+
+jobs:
+  playwright:
+    name: Playwright
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install Task
+        uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+
+      - name: Install environment dependencies
+        # swag, for the swagger spec that task build-ui requires.
+        run: task install-deps
+
+      - name: Install frontend dependencies
+        working-directory: web
+        run: npm ci --ignore-scripts
+
+      - name: Install Playwright browsers
+        # --ignore-scripts above skips Playwright's own postinstall download, and
+        # the version installed here is whatever web/package.json pins, so client
+        # and browser builds always match.
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+
+      - name: Type-check the suite
+        # Playwright transpiles specs without checking them, so without this the
+        # strict settings in tsconfig.node.json would only ever reach an editor.
+        # Scoped to the node-side project (config + e2e); web/src is not covered.
+        working-directory: web
+        run: npm run typecheck:e2e
+
+      - name: Build the UI bundle
+        # The suite runs against the shipped artifact shape: the Go server serving
+        # web/dist as static files. playwright.config.ts starts the servers.
+        run: task build-ui
+
+      - name: Warm the Go build cache
+        # playwright.config.ts starts the servers with `go run`, three at once and
+        # under a start-up timeout. Compiling here means those are cache hits
+        # rather than three cold builds racing that timeout.
+        run: go build -o /dev/null ./cmd/argo-watcher ./cmd/mock
+
+      - name: Start Keycloak
+        run: docker compose --profile integration up -d keycloak
+
+      - name: Wait for the Keycloak realm
+        run: |
+          discovery=http://localhost:8090/realms/argo-watcher-e2e/.well-known/openid-configuration
+          for _ in $(seq 1 60); do
+            if curl -fsS "$discovery" >/dev/null 2>&1; then
+              echo "Keycloak is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::Keycloak realm argo-watcher-e2e not ready after 120s"
+          exit 1
+
+      - name: Run Playwright suite
+        working-directory: web
+        run: npx playwright test
+
+      - name: Upload the Playwright report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-report
+          path: web/playwright-report
+          retention-days: 7
+
+      - name: Stop Keycloak
+        if: always()
+        run: docker compose --profile integration down -v

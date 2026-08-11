@@ -41,6 +41,7 @@ The project uses [Task](https://taskfile.dev/) as a build and automation tool. A
 | `task build-ui`     | Build the React frontend bundle                                    |
 | `task lint-web`     | Lint the React frontend code                                       |
 | `task test-web`     | Run React frontend unit tests                                      |
+| `task test-web-e2e` | Run the Playwright browser suite against the built UI (requires Docker) |
 | `task bootstrap`    | Start all Docker Compose services                                  |
 | `task teardown`     | Stop all Docker Compose services                                   |
 
@@ -171,6 +172,25 @@ This command brings up the `integration` Docker Compose profile (Gitea, Toxiprox
 ```bash
 task test-web
 ```
+
+### Browser (Playwright) Tests
+
+The jsdom suite above mounts components directly and has no real navigation, so a
+separate Playwright suite covers what only a browser can show: the top-level OIDC
+redirect and the path it returns to, session recovery across a reload, the Go
+server's SPA fallback for deep-linked task URLs, the live WebSocket driving the
+deploy-lock banner, and the privileged write flows (rollback, toggling the lock)
+with their gating for a privileged vs a regular user. Docker must be running.
+
+```bash
+task test-web-e2e
+```
+
+The task builds `web/dist`, brings Keycloak up from the `integration` Compose
+profile, and lets Playwright start the servers it drives: two `argo-watcher`
+instances (ports 8100 without OIDC, 8101 with) plus the mock Argo CD API. Both
+serve the built bundle as static files, which is how the production image runs.
+Specs live in `web/e2e/`, split into the `no-auth` and `auth` projects.
 
 ### Frontend Linting
 
