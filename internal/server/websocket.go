@@ -1,19 +1,15 @@
 package server
 
 import (
-	"bufio"
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/gin-gonic/gin"
 
 	"github.com/shini4i/argo-watcher/internal/auth"
 	"github.com/shini4i/argo-watcher/internal/models"
@@ -24,69 +20,6 @@ var (
 	connections      []*websocket.Conn
 	closedConns      = make(map[*websocket.Conn]bool) // Track closed connections to prevent use-after-close
 )
-
-// wsResponseWriter wraps gin's ResponseWriter to provide proper WebSocket hijacking.
-// gin's ResponseWriter fails Hijack() after WriteHeader() is called, but WebSocket
-// upgrade requires both operations. This wrapper hijacks the connection early
-// (before WriteHeader) and stores the raw connection for later use.
-type wsResponseWriter struct {
-	gin.ResponseWriter
-	conn          net.Conn
-	brw           *bufio.ReadWriter
-	headerWritten bool
-}
-
-// Hijack returns the pre-hijacked connection, bypassing gin's "already written" check.
-func (w *wsResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	if w.conn == nil {
-		return nil, nil, errors.New("connection was not pre-hijacked")
-	}
-	return w.conn, w.brw, nil
-}
-
-// Write writes data through the buffered writer to maintain consistency.
-func (w *wsResponseWriter) Write(data []byte) (int, error) {
-	if w.brw == nil {
-		return 0, errors.New("buffered writer not available")
-	}
-	n, err := w.brw.Write(data)
-	if err != nil {
-		return n, err
-	}
-	return n, w.brw.Flush()
-}
-
-// WriteHeader writes the status line and headers through the buffered writer.
-// Note: The http.ResponseWriter interface does not allow WriteHeader to return an error,
-// so errors are logged but cannot be propagated to the caller.
-// Per http.ResponseWriter contract, multiple calls should be no-ops after the first.
-func (w *wsResponseWriter) WriteHeader(code int) {
-	if w.headerWritten {
-		return
-	}
-	w.headerWritten = true
-
-	if w.brw == nil {
-		slog.Error("buffered writer not available during WriteHeader")
-		return
-	}
-	statusLine := fmt.Sprintf("HTTP/1.1 %d %s\r\n", code, http.StatusText(code))
-	if _, err := w.brw.WriteString(statusLine); err != nil {
-		slog.Error("failed to write status line during WebSocket upgrade", "error", err)
-		return
-	}
-	if err := w.Header().Write(w.brw); err != nil {
-		slog.Error("failed to write headers during WebSocket upgrade", "error", err)
-		return
-	}
-	if _, err := w.brw.WriteString("\r\n"); err != nil {
-		slog.Error("failed to write header terminator during WebSocket upgrade", "error", err)
-		return
-	}
-	if err := w.brw.Flush(); err != nil {
-		slog.Error("failed to flush WebSocket upgrade response", "error", err)
-	}
-}
 
 const (
 	// wsSubprotocol is the protocol the server negotiates. A browser fails the
@@ -107,15 +40,15 @@ const (
 // The socket broadcasts deployment-lock and Argo CD reachability transitions — the same
 // signals GET /deploy-lock and /reachability require a credential for — so leaving it
 // open would make protecting those endpoints cosmetic.
-func (env *Env) authorizeWebSocket(c *gin.Context) bool {
+func (env *Env) authorizeWebSocket(w http.ResponseWriter, r *http.Request) bool {
 	if !env.config.OIDC.Enabled {
 		return true
 	}
 
-	valid, err := env.authenticator.AuthenticateRequest(c.Request)
+	valid, err := env.authenticator.AuthenticateRequest(r)
 	if !valid && err == nil {
 		// No header credential: fall back to the browser's transport.
-		valid, err = env.authenticator.AuthenticateToken(oidcHeader, wsSubprotocolToken(c.Request))
+		valid, err = env.authenticator.AuthenticateToken(oidcHeader, wsSubprotocolToken(r))
 	}
 
 	if valid {
@@ -126,7 +59,7 @@ func (env *Env) authorizeWebSocket(c *gin.Context) bool {
 	// does not discard a session that may still be valid.
 	if errors.Is(err, auth.ErrProviderUnavailable) {
 		slog.Error("rejecting websocket: authentication provider unavailable", "error", err)
-		c.AbortWithStatusJSON(http.StatusServiceUnavailable, models.TaskStatus{
+		writeJSON(w, http.StatusServiceUnavailable, models.TaskStatus{
 			Status: "authentication provider unavailable",
 			Error:  err.Error(),
 		})
@@ -138,7 +71,7 @@ func (env *Env) authorizeWebSocket(c *gin.Context) bool {
 	} else {
 		slog.Warn("rejecting unauthenticated websocket")
 	}
-	c.AbortWithStatusJSON(http.StatusUnauthorized, models.TaskStatus{
+	writeJSON(w, http.StatusUnauthorized, models.TaskStatus{
 		Status: unauthorizedMessage,
 		Error:  "authentication required (offer the " + wsTokenSubprotocolPrefix + "<token> subprotocol)",
 	})
@@ -161,55 +94,39 @@ func wsSubprotocolToken(request *http.Request) string {
 // and initiates a goroutine to ping the connection regularly. If WebSocket
 // acceptance fails, an error is logged. The goroutine serves to monitor
 // the connection's activity and removes it from the slice if it's inactive.
-func (env *Env) handleWebSocketConnection(c *gin.Context) {
-	// Before hijacking, so a rejection is an ordinary HTTP response.
-	if !env.authorizeWebSocket(c) {
+func (env *Env) handleWebSocketConnection(w http.ResponseWriter, r *http.Request) {
+	// Before the upgrade, so a rejection is an ordinary HTTP response.
+	if !env.authorizeWebSocket(w, r) {
 		return
 	}
+
+	// Reject an upgrade the connection cannot carry (HTTP/2 has no hijack) with a
+	// response, rather than letting websocket.Accept fail with the socket already
+	// half-written.
+	if _, ok := w.(http.Hijacker); !ok {
+		slog.Error("ResponseWriter does not support hijacking")
+		writeString(w, http.StatusInternalServerError, "WebSocket not supported")
+		return
+	}
+
+	// Track the in-flight upgrade so graceful shutdown waits for handshakes that are
+	// still in progress, not only for connections that are already established.
+	// Bracketing the rest of the handler also gives Shutdown's connWg.Wait a
+	// happens-before edge over the handshake's response writes; without it the only
+	// synchronization between this handler and shutdown is the underlying TCP socket,
+	// which the race detector cannot observe. Registered before the upgrade hijacks
+	// the connection, which is the point net/http stops tracking the request itself.
+	env.connWg.Add(1)
+	defer env.connWg.Done()
 
 	options := &websocket.AcceptOptions{
 		InsecureSkipVerify: env.config.DevEnvironment, // It will disable websocket host validation if set to true
 		Subprotocols:       []string{wsSubprotocol},
 	}
 
-	// Pre-hijack the connection BEFORE WriteHeader is called
-	// gin's ResponseWriter fails Hijack after WriteHeader, so we hijack first
-	hijacker, ok := c.Writer.(http.Hijacker)
-	if !ok {
-		slog.Error("ResponseWriter does not support hijacking")
-		c.String(http.StatusInternalServerError, "WebSocket not supported")
-		return
-	}
-
-	netConn, brw, err := hijacker.Hijack()
-	if err != nil {
-		slog.Error("failed to hijack connection for WebSocket", "error", err)
-		// After a failed hijack, the connection state is unknown and we cannot reliably
-		// write a response. The client connection will eventually timeout.
-		return
-	}
-
-	// Track the in-flight upgrade so graceful shutdown waits for handshakes that
-	// are still in progress, not only for connections that are already
-	// established. Bracketing the rest of the handler also gives Shutdown's
-	// connWg.Wait a happens-before edge over the handshake's response writes
-	// (websocket.Accept -> WriteHeader below); without it the only
-	// synchronization between this handler and shutdown is the underlying TCP
-	// socket, which the race detector cannot observe. Registered only after a
-	// successful hijack, so non-WebSocket early returns never touch connWg.
-	env.connWg.Add(1)
-	defer env.connWg.Done()
-
-	wrappedWriter := &wsResponseWriter{
-		ResponseWriter: c.Writer,
-		conn:           netConn,
-		brw:            brw,
-	}
-
-	conn, err := websocket.Accept(wrappedWriter, c.Request, options)
+	conn, err := websocket.Accept(w, r, options)
 	if err != nil {
 		slog.Error("failed to accept websocket connection", "error", err)
-		_ = netConn.Close() // #nosec G104 - best effort cleanup, already in error path
 		return
 	}
 

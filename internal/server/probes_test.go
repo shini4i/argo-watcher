@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gin-gonic/gin"
+	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -33,10 +33,9 @@ func probeEnv(t *testing.T, stateUp bool) *Env {
 func probeGet(t *testing.T, env *Env, path string) *httptest.ResponseRecorder {
 	t.Helper()
 
-	gin.SetMode(gin.TestMode)
-	router := gin.New()
-	router.GET("/livez", env.livez)
-	router.GET("/readyz", env.readyz)
+	router := chi.NewRouter()
+	router.Get("/livez", env.livez)
+	router.Get("/readyz", env.readyz)
 
 	req, err := http.NewRequest(http.MethodGet, path, http.NoBody)
 	require.NoError(t, err)

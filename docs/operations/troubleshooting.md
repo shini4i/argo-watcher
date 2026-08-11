@@ -174,7 +174,7 @@ With [OIDC](../guides/oidc.md#the-websocket-handshake) enabled there is a second
 
 **Likely causes:**
 - A [scheduled lockdown](../guides/gitops-updater.md#scheduled-lockdown) window is open. Releasing the lock during a window only suppresses it for 15 minutes, after which it takes effect again.
-- The `DELETE` never reached the server: the state-changing endpoints are only registered when OIDC is enabled (otherwise `404`), and they require a token from a user in one of the `OIDC_PRIVILEGED_GROUPS` (otherwise `401`).
+- The `DELETE` never reached the server: the state-changing endpoints are only registered when OIDC is enabled (otherwise the request falls through to the Web UI and answers `200` with HTML), and they require a token from a user in one of the `OIDC_PRIVILEGED_GROUPS` (otherwise `401`).
 - The lock state cannot be read at all — see [All deployments rejected as locked, but nobody set a lock](#all-deployments-rejected-as-locked-but-nobody-set-a-lock).
 
 **How to verify:**
@@ -183,7 +183,7 @@ With [OIDC](../guides/oidc.md#the-websocket-handshake) enabled there is a second
   ```bash
   curl -i -X DELETE -H "Oidc-Authorization: $OIDC_TOKEN" $ARGO_WATCHER_URL/api/v1/deploy-lock
   ```
-  `404` means OIDC is disabled, `401` means the token was rejected or the user is not in a privileged group, and `500` means the lock state could not be persisted (the reason is in the server log).
+  A `200` carrying HTML (`Content-Type: text/html`) rather than JSON means OIDC is disabled, so the endpoint does not exist and the Web UI answered instead. `401` means the token was rejected or the user is not in a privileged group, and `500` means the lock state could not be persisted (the reason is in the server log).
 - Check whether `LOCKDOWN_SCHEDULE` covers the current time. The server evaluates schedules in its own timezone, which is UTC in the published container image unless `TZ` is set.
 
 **Fix:**

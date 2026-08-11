@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/gin-gonic/gin"
+	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -128,11 +128,11 @@ func newKeycloakEnv(t *testing.T) *Env {
 // the test drives the full request → requireOIDCAuth → provider userinfo path.
 func deployLockServer(t *testing.T, env *Env) *httptest.Server {
 	t.Helper()
-	gin.SetMode(gin.TestMode)
-	router := gin.New()
-	v1 := router.Group("/api/v1")
-	v1.POST("/deploy-lock", env.SetDeployLock)
-	v1.DELETE("/deploy-lock", env.ReleaseDeployLock)
+	router := chi.NewRouter()
+	router.Route("/api/v1", func(r chi.Router) {
+		r.Post("/deploy-lock", env.SetDeployLock)
+		r.Delete("/deploy-lock", env.ReleaseDeployLock)
+	})
 
 	srv := httptest.NewServer(router)
 	t.Cleanup(srv.Close)
@@ -194,10 +194,10 @@ func TestKeycloakDeployLockAuthz(t *testing.T) {
 // focused on the authentication decision.
 func protectedReadServer(t *testing.T, env *Env) *httptest.Server {
 	t.Helper()
-	gin.SetMode(gin.TestMode)
-	router := gin.New()
-	authenticated := router.Group("/api/v1", env.requireAuthenticatedRead())
-	authenticated.GET("/version", env.getVersion)
+	router := chi.NewRouter()
+	router.Route("/api/v1", func(r chi.Router) {
+		r.With(env.requireAuthenticatedRead()).Get("/version", env.getVersion)
+	})
 
 	srv := httptest.NewServer(router)
 	t.Cleanup(srv.Close)

@@ -138,13 +138,25 @@ jobs:
         # every test file that imports them compiles before the tests run.
         run: task mocks
 
+      # Keycloak cannot be a service container: it imports a realm from the
+      # repository, and service containers start before the checkout that would
+      # provide it. The suite polls the discovery endpoint itself, so no wait here.
+      - name: Start Keycloak
+        run: |
+          docker run -d --name keycloak -p 8090:8080 \
+            -e KC_BOOTSTRAP_ADMIN_USERNAME=admin \
+            -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin \
+            -v "${GITHUB_WORKSPACE}/test/keycloak/argo-watcher-e2e-realm.json:/opt/keycloak/data/import/argo-watcher-e2e-realm.json:ro" \
+            quay.io/keycloak/keycloak:26.7.0 start-dev --import-realm
+
       - name: Run integration tests
         # SSH_KEY_PATH and GIT_TIMEOUT are set per-test via t.Setenv inside
         # setupGitea / each test function; no workflow-level env needed here.
-        # internal/argocd holds the git write-back integration suite (push-race,
-        # shallow-clone, batch write-back); it moved there in #478 and must be
-        # listed explicitly or those tests silently never run.
-        run: go test -race -tags=integration -count=1 -timeout=10m ./internal/models/... ./internal/argocd/...
+        # Every package holding integration-tagged tests must be listed explicitly
+        # or they silently never run — and, worse, never even compile: internal/argocd
+        # holds the git write-back suite (push-race, shallow-clone, batch write-back)
+        # and internal/server holds the live-Keycloak deploy-lock and read-auth suite.
+        run: go test -race -tags=integration -count=1 -timeout=10m ./internal/models/... ./internal/argocd/... ./internal/server/...
 
   frontend_test:
     name: Frontend Tests

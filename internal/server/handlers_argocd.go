@@ -3,8 +3,6 @@ package server
 import (
 	"net/http"
 
-	"github.com/gin-gonic/gin"
-
 	"github.com/shini4i/argo-watcher/internal/argocd"
 )
 
@@ -30,13 +28,13 @@ type ReachabilityResponse struct {
 // @Failure 401 {object} models.TaskStatus "no credential, or the credential was rejected (only when OIDC auth is enabled)"
 // @Failure 503 {object} models.TaskStatus "the OIDC provider could not be consulted; retry"
 // @Router /api/v1/reachability [get]
-func (env *Env) reachability(c *gin.Context) {
+func (env *Env) reachability(w http.ResponseWriter, _ *http.Request) {
 	// Read the cached reason once and derive availability from it, so the
 	// response is a snapshot of a single atomic load. Reading availability and
 	// the reason separately could tear across a concurrent liveness-probe update
 	// and yield an internally contradictory body to an external poller.
 	reason := env.argo.UnavailableReason()
-	c.JSON(http.StatusOK, ReachabilityResponse{
+	writeJSON(w, http.StatusOK, ReachabilityResponse{
 		Available: reason == argocd.ReasonNone,
 		Reason:    reason,
 	})

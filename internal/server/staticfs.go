@@ -7,8 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/gin-gonic/gin"
 )
 
 // safeFileSystem wraps http.Dir with additional symlink protection.
@@ -86,19 +84,19 @@ func (fs safeFileSystem) Open(name string) (http.File, error) {
 
 // createStaticFileHandler returns a handler for serving static files with SPA fallback.
 // It attempts to serve the requested file, falling back to index.html for SPA routing.
-func (env *Env) createStaticFileHandler(fs safeFileSystem, staticPath string) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if tryServeStaticFile(c, fs) {
+func (env *Env) createStaticFileHandler(fs safeFileSystem, staticPath string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if tryServeStaticFile(w, r, fs) {
 			return
 		}
 		// Fall back to index.html for SPA routing
-		c.File(filepath.Join(staticPath, "index.html"))
+		http.ServeFile(w, r, filepath.Join(staticPath, "index.html"))
 	}
 }
 
 // tryServeStaticFile attempts to serve a static file and returns true if successful.
-func tryServeStaticFile(c *gin.Context, fs safeFileSystem) bool {
-	f, err := fs.Open(c.Request.URL.Path)
+func tryServeStaticFile(w http.ResponseWriter, r *http.Request, fs safeFileSystem) bool {
+	f, err := fs.Open(r.URL.Path)
 	if err != nil {
 		return false
 	}
@@ -114,6 +112,6 @@ func tryServeStaticFile(c *gin.Context, fs safeFileSystem) bool {
 		return false
 	}
 
-	http.ServeContent(c.Writer, c.Request, stat.Name(), stat.ModTime(), rs)
+	http.ServeContent(w, r, stat.Name(), stat.ModTime(), rs)
 	return true
 }

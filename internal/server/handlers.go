@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/gin-gonic/gin"
+	"github.com/go-chi/chi/v5"
 
 	"github.com/shini4i/argo-watcher/internal/auth"
 	"github.com/shini4i/argo-watcher/internal/models"
@@ -29,9 +29,6 @@ const (
 	// deprecated alias still accepted for backward compatibility.
 	oidcHeader           = "Oidc-Authorization"
 	legacyKeycloakHeader = "Keycloak-Authorization"
-	// taskAppKey is where getTaskStatus leaves the app label of the resolved task for
-	// middleware that runs after it; countUnauthenticatedRead labels with it.
-	taskAppKey = "task_app"
 )
 
 // getVersion godoc
@@ -42,8 +39,8 @@ const (
 // @Failure 401 {object} models.TaskStatus "no credential, or the credential was rejected (only when OIDC auth is enabled)"
 // @Failure 503 {object} models.TaskStatus "the OIDC provider could not be consulted; retry"
 // @Router /api/v1/version [get]
-func (env *Env) getVersion(c *gin.Context) {
-	c.JSON(http.StatusOK, version)
+func (env *Env) getVersion(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, version)
 }
 
 // addTask godoc
@@ -57,13 +54,13 @@ func (env *Env) getVersion(c *gin.Context) {
 // @Failure 401 {object} models.TaskStatus
 // @Failure 406 {object} models.TaskStatus
 // @Router /api/v1/tasks [post]
-func (env *Env) addTask(c *gin.Context) {
+func (env *Env) addTask(w http.ResponseWriter, r *http.Request) {
 	var task models.Task
 
-	err := c.ShouldBindJSON(&task)
+	err := bindJSON(r, &task)
 	if err != nil {
 		slog.Error("failed to parse task payload", "error", err)
-		c.JSON(http.StatusNotAcceptable, models.TaskStatus{
+		writeJSON(w, http.StatusNotAcceptable, models.TaskStatus{
 			Status: "invalid payload",
 			Error:  err.Error(),
 		})
@@ -73,20 +70,20 @@ func (env *Env) addTask(c *gin.Context) {
 	// reject deploys while a lockdown (manual or scheduled) is active
 	if env.lockdown.IsLocked() {
 		slog.Warn("deploy lock is set, rejecting the task")
-		c.JSON(http.StatusNotAcceptable, models.TaskStatus{
+		writeJSON(w, http.StatusNotAcceptable, models.TaskStatus{
 			Status: "rejected",
 			Error:  "lockdown is active, deployments are not accepted",
 		})
 		return
 	}
 
-	tokenValid, err := env.validateToken(c, "")
+	tokenValid, err := env.validateToken(r, "")
 	if err != nil {
 		// A non-nil error means the strategy was invoked and rejected the
 		// token: a client mistake, not a server failure. Return 401 with
 		// the reason so the client can show something actionable.
 		slog.Warn("rejecting task", "error", err)
-		c.JSON(http.StatusUnauthorized, models.TaskStatus{
+		writeJSON(w, http.StatusUnauthorized, models.TaskStatus{
 			Status: unauthorizedMessage,
 			Error:  err.Error(),
 		})
@@ -98,7 +95,7 @@ func (env *Env) addTask(c *gin.Context) {
 	newTask, err := env.argo.AddTask(task)
 	if err != nil {
 		slog.Error("failed to add task", "error", err)
-		c.JSON(http.StatusServiceUnavailable, models.TaskStatus{
+		writeJSON(w, http.StatusServiceUnavailable, models.TaskStatus{
 			Status: "down",
 			Error:  err.Error(),
 		})
@@ -107,7 +104,7 @@ func (env *Env) addTask(c *gin.Context) {
 
 	go env.updater.WaitForRollout(*newTask)
 
-	c.JSON(http.StatusAccepted, models.TaskStatus{
+	writeJSON(w, http.StatusAccepted, models.TaskStatus{
 		Id:     newTask.Id,
 		Status: models.StatusAccepted,
 	})
@@ -127,32 +124,34 @@ func (env *Env) addTask(c *gin.Context) {
 // @Failure 401 {object} models.TaskStatus "no credential, or the credential was rejected (only when OIDC auth is enabled)"
 // @Failure 503 {object} models.TaskStatus "the OIDC provider could not be consulted; retry"
 // @Router /api/v1/tasks [get]
-func (env *Env) getState(c *gin.Context) {
-	startTime, err := strconv.ParseFloat(c.Query("from_timestamp"), 64)
-	if err != nil && c.Query("from_timestamp") != "" {
-		slog.Debug("invalid from_timestamp, defaulting to 0", "from_timestamp", c.Query("from_timestamp"))
+func (env *Env) getState(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+
+	startTime, err := strconv.ParseFloat(query.Get("from_timestamp"), 64)
+	if err != nil && query.Get("from_timestamp") != "" {
+		slog.Debug("invalid from_timestamp, defaulting to 0", "from_timestamp", query.Get("from_timestamp"))
 	}
-	endTime, err := strconv.ParseFloat(c.Query("to_timestamp"), 64)
-	if err != nil && c.Query("to_timestamp") != "" {
-		slog.Debug("invalid to_timestamp, defaulting to current time", "to_timestamp", c.Query("to_timestamp"))
+	endTime, err := strconv.ParseFloat(query.Get("to_timestamp"), 64)
+	if err != nil && query.Get("to_timestamp") != "" {
+		slog.Debug("invalid to_timestamp, defaulting to current time", "to_timestamp", query.Get("to_timestamp"))
 	}
 	if endTime == 0 {
 		endTime = float64(time.Now().Unix())
 	}
-	app := c.Query("app")
-	status := c.Query("status")
+	app := query.Get("app")
+	status := query.Get("status")
 	if status != "" && !models.IsAllowedTaskStatus(status) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported status filter"})
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "unsupported status filter"})
 		return
 	}
 
-	limit, err := strconv.Atoi(c.Query("limit"))
-	if err != nil && c.Query("limit") != "" {
-		slog.Debug("invalid limit, defaulting to 0", "limit", c.Query("limit"))
+	limit, err := strconv.Atoi(query.Get("limit"))
+	if err != nil && query.Get("limit") != "" {
+		slog.Debug("invalid limit, defaulting to 0", "limit", query.Get("limit"))
 	}
-	offset, err := strconv.Atoi(c.Query("offset"))
-	if err != nil && c.Query("offset") != "" {
-		slog.Debug("invalid offset, defaulting to 0", "offset", c.Query("offset"))
+	offset, err := strconv.Atoi(query.Get("offset"))
+	if err != nil && query.Get("offset") != "" {
+		slog.Debug("invalid offset, defaulting to 0", "offset", query.Get("offset"))
 	}
 	if limit <= 0 || limit > maxTaskListLimit {
 		limit = maxTaskListLimit
@@ -161,7 +160,7 @@ func (env *Env) getState(c *gin.Context) {
 		offset = 0
 	}
 
-	c.JSON(http.StatusOK, env.argo.GetTasks(startTime, endTime, app, status, limit, offset))
+	writeJSON(w, http.StatusOK, env.argo.GetTasks(startTime, endTime, app, status, limit, offset))
 }
 
 // getTaskStatus godoc
@@ -174,13 +173,13 @@ func (env *Env) getState(c *gin.Context) {
 // @Failure 404 {object} models.TaskStatus
 // @Failure 500 {object} models.TaskStatus
 // @Router /api/v1/tasks/{id} [get]
-func (env *Env) getTaskStatus(c *gin.Context) {
-	id := c.Param("id")
+func (env *Env) getTaskStatus(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
 	task, err := env.argo.State.GetTask(id)
 
 	if err != nil {
 		if errors.Is(err, state.ErrTaskNotFound) {
-			c.JSON(http.StatusNotFound, models.TaskStatus{
+			writeJSON(w, http.StatusNotFound, models.TaskStatus{
 				Id:    id,
 				Error: "task not found",
 			})
@@ -191,13 +190,13 @@ func (env *Env) getTaskStatus(c *gin.Context) {
 		// instead of masquerading as a missing task, and keep the internal
 		// detail out of the client response.
 		slog.Error("failed to retrieve task", "id", id, "error", err)
-		c.JSON(http.StatusInternalServerError, models.TaskStatus{
+		writeJSON(w, http.StatusInternalServerError, models.TaskStatus{
 			Id:    id,
 			Error: "internal server error",
 		})
 	} else {
-		c.Set(taskAppKey, task.MetricApp())
-		c.JSON(http.StatusOK, models.TaskStatus{
+		setTaskApp(r, task.MetricApp())
+		writeJSON(w, http.StatusOK, models.TaskStatus{
 			Id:           task.Id,
 			Created:      task.Created,
 			Updated:      task.Updated,
@@ -225,8 +224,8 @@ const (
 // @Produce json
 // @Success 200 {object} models.HealthStatus
 // @Router /livez [get]
-func (env *Env) livez(c *gin.Context) {
-	c.JSON(http.StatusOK, models.HealthStatus{Status: "up"})
+func (env *Env) livez(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, models.HealthStatus{Status: "up"})
 }
 
 // readyz godoc
@@ -237,21 +236,21 @@ func (env *Env) livez(c *gin.Context) {
 // @Success 200 {object} models.HealthStatus
 // @Failure 503 {object} models.HealthStatus
 // @Router /readyz [get]
-func (env *Env) readyz(c *gin.Context) {
+func (env *Env) readyz(w http.ResponseWriter, _ *http.Request) {
 	// Ordered so a drain is reported as a drain: once shutdown starts the state
 	// backend is irrelevant, and reporting it would mislabel a planned rollout as an
 	// outage.
 	if env.isDraining() {
-		c.JSON(http.StatusServiceUnavailable, models.HealthStatus{Status: "down", Reason: reasonDraining})
+		writeJSON(w, http.StatusServiceUnavailable, models.HealthStatus{Status: "down", Reason: reasonDraining})
 		return
 	}
 
 	if !env.argo.SimpleHealthCheck() {
-		c.JSON(http.StatusServiceUnavailable, models.HealthStatus{Status: "down", Reason: reasonStateUnreachable})
+		writeJSON(w, http.StatusServiceUnavailable, models.HealthStatus{Status: "down", Reason: reasonStateUnreachable})
 		return
 	}
 
-	c.JSON(http.StatusOK, models.HealthStatus{Status: "up"})
+	writeJSON(w, http.StatusOK, models.HealthStatus{Status: "up"})
 }
 
 // getConfig godoc
@@ -261,8 +260,8 @@ func (env *Env) readyz(c *gin.Context) {
 // @Produce json
 // @Success 200 {object} config.ServerConfig
 // @Router /api/v1/config [get]
-func (env *Env) getConfig(c *gin.Context) {
-	c.JSON(http.StatusOK, env.config)
+func (env *Env) getConfig(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, env.config)
 }
 
 // requireOIDCAuth validates the OIDC token when OIDC auth is enabled. It returns
@@ -274,20 +273,20 @@ func (env *Env) getConfig(c *gin.Context) {
 //   - 503 when the provider could not be consulted at all, so that a provider
 //     outage does not make the Web UI treat the session as dead (see
 //     requireAuthenticatedRead). Details land in the server log only.
-func (env *Env) requireOIDCAuth(c *gin.Context) bool {
+func (env *Env) requireOIDCAuth(w http.ResponseWriter, r *http.Request) bool {
 	if !env.config.OIDC.Enabled {
 		return true
 	}
 
 	for _, header := range []string{oidcHeader, legacyKeycloakHeader} {
-		valid, err := env.validateToken(c, header)
+		valid, err := env.validateToken(r, header)
 		if valid {
 			return true
 		}
 		if errors.Is(err, auth.ErrProviderUnavailable) {
 			slog.Error("rejecting request: authentication provider unavailable",
-				"method", c.Request.Method, "url", c.Request.URL, "error", err)
-			c.JSON(http.StatusServiceUnavailable, models.TaskStatus{
+				"method", r.Method, "url", r.URL, "error", err)
+			writeJSON(w, http.StatusServiceUnavailable, models.TaskStatus{
 				Status: "authentication provider unavailable",
 				Error:  err.Error(),
 			})
@@ -296,8 +295,8 @@ func (env *Env) requireOIDCAuth(c *gin.Context) bool {
 		if err != nil {
 			// A header was present and the strategy rejected the token. Surface the reason.
 			slog.Warn("rejected request with invalid token",
-				"method", c.Request.Method, "url", c.Request.URL, "error", err)
-			c.JSON(http.StatusUnauthorized, models.TaskStatus{
+				"method", r.Method, "url", r.URL, "error", err)
+			writeJSON(w, http.StatusUnauthorized, models.TaskStatus{
 				Status: unauthorizedMessage,
 				Error:  err.Error(),
 			})
@@ -306,8 +305,8 @@ func (env *Env) requireOIDCAuth(c *gin.Context) bool {
 	}
 
 	// No auth header sent on either the canonical or the legacy name.
-	slog.Warn("rejected unauthenticated request", "method", c.Request.Method, "url", c.Request.URL)
-	c.JSON(http.StatusUnauthorized, models.TaskStatus{
+	slog.Warn("rejected unauthenticated request", "method", r.Method, "url", r.URL)
+	writeJSON(w, http.StatusUnauthorized, models.TaskStatus{
 		Status: unauthorizedMessage,
 		Error:  "authentication required (set " + oidcHeader + " header)",
 	})
@@ -323,43 +322,45 @@ func (env *Env) requireOIDCAuth(c *gin.Context) bool {
 //
 // A rejected or missing credential is 401; a provider that could not be consulted is
 // 503, because the Web UI discards its session on a 401.
-func (env *Env) requireAuthenticatedRead() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if !env.config.OIDC.Enabled {
-			c.Next()
-			return
-		}
+func (env *Env) requireAuthenticatedRead() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if !env.config.OIDC.Enabled {
+				next.ServeHTTP(w, r)
+				return
+			}
 
-		valid, err := env.authenticator.AuthenticateRequest(c.Request)
-		if valid {
-			c.Next()
-			return
-		}
+			valid, err := env.authenticator.AuthenticateRequest(r)
+			if valid {
+				next.ServeHTTP(w, r)
+				return
+			}
 
-		if errors.Is(err, auth.ErrProviderUnavailable) {
-			slog.Error("rejecting read: authentication provider unavailable",
-				"method", c.Request.Method, "url", c.Request.URL, "error", err)
-			c.AbortWithStatusJSON(http.StatusServiceUnavailable, models.TaskStatus{
-				Status: "authentication provider unavailable",
-				Error:  err.Error(),
-			})
-			return
-		}
+			if errors.Is(err, auth.ErrProviderUnavailable) {
+				slog.Error("rejecting read: authentication provider unavailable",
+					"method", r.Method, "url", r.URL, "error", err)
+				writeJSON(w, http.StatusServiceUnavailable, models.TaskStatus{
+					Status: "authentication provider unavailable",
+					Error:  err.Error(),
+				})
+				return
+			}
 
-		if err != nil {
-			slog.Warn("rejecting read with invalid credential",
-				"method", c.Request.Method, "url", c.Request.URL, "error", err)
-			c.AbortWithStatusJSON(http.StatusUnauthorized, models.TaskStatus{
+			if err != nil {
+				slog.Warn("rejecting read with invalid credential",
+					"method", r.Method, "url", r.URL, "error", err)
+				writeJSON(w, http.StatusUnauthorized, models.TaskStatus{
+					Status: unauthorizedMessage,
+					Error:  err.Error(),
+				})
+				return
+			}
+
+			slog.Warn("rejecting unauthenticated read", "method", r.Method, "url", r.URL)
+			writeJSON(w, http.StatusUnauthorized, models.TaskStatus{
 				Status: unauthorizedMessage,
-				Error:  err.Error(),
+				Error:  "authentication required (set " + oidcHeader + " header)",
 			})
-			return
-		}
-
-		slog.Warn("rejecting unauthenticated read", "method", c.Request.Method, "url", c.Request.URL)
-		c.AbortWithStatusJSON(http.StatusUnauthorized, models.TaskStatus{
-			Status: unauthorizedMessage,
-			Error:  "authentication required (set " + oidcHeader + " header)",
 		})
 	}
 }
@@ -375,20 +376,24 @@ func (env *Env) requireAuthenticatedRead() gin.HandlerFunc {
 // The count is recorded after the handler, which is what names the application behind
 // the read: a fleet-wide total says a migration is unfinished, the app label says
 // whose pipeline to go and upgrade.
-func (env *Env) countUnauthenticatedRead() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if !env.config.OIDC.Enabled || env.hasCredential(c.Request) {
-			c.Next()
-			return
-		}
+func (env *Env) countUnauthenticatedRead() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if !env.config.OIDC.Enabled || env.hasCredential(r) {
+				next.ServeHTTP(w, r)
+				return
+			}
 
-		c.Next()
+			labelled, holder := withTaskAppLabel(r)
 
-		app := c.GetString(taskAppKey)
-		if app == "" {
-			app = models.UnknownApp
-		}
-		env.metrics.AddUnauthenticatedRead(c.FullPath(), app)
+			next.ServeHTTP(w, labelled)
+
+			app := holder.app
+			if app == "" {
+				app = models.UnknownApp
+			}
+			env.metrics.AddUnauthenticatedRead(routePattern(labelled), app)
+		})
 	}
 }
 
@@ -408,10 +413,10 @@ func (env *Env) hasCredential(request *http.Request) bool {
 // When allowedAuthStrategy is empty, the validation delegates to the default authenticator,
 // which returns the last validation error when no strategies succeed. When allowedAuthStrategy
 // is provided, validation is restricted to that specific strategy header via the authenticator.
-func (env *Env) validateToken(c *gin.Context, allowedAuthStrategy string) (bool, error) {
+func (env *Env) validateToken(r *http.Request, allowedAuthStrategy string) (bool, error) {
 	if allowedAuthStrategy == "" {
-		return env.authenticator.Validate(c.Request)
+		return env.authenticator.Validate(r)
 	}
 
-	return env.authenticator.ValidateStrategy(c.Request, allowedAuthStrategy)
+	return env.authenticator.ValidateStrategy(r, allowedAuthStrategy)
 }

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gin-gonic/gin"
+	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -22,14 +22,13 @@ import (
 // TestArgoStatus verifies the read-only reachability endpoint reflects the
 // cached availability and names the unreachable subsystem in its JSON body.
 func TestArgoStatus(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
 	serve := func(argo *argocd.Argo) *httptest.ResponseRecorder {
 		env := &Env{argo: argo}
-		router := gin.New()
-		router.GET("/api/v1/reachability", env.reachability)
+		router := chi.NewRouter()
+		router.Get("/api/v1/reachability", env.reachability)
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/reachability", nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
@@ -87,18 +86,8 @@ func TestArgoStatus(t *testing.T) {
 // is registered unconditionally (unlike the OIDC-gated deploy-lock writes),
 // so the frontend banner can always bootstrap its state.
 func TestArgoStatusEndpointRegistration(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 
-	hasRoute := func(routes gin.RoutesInfo, method, path string) bool {
-		for _, r := range routes {
-			if r.Method == method && r.Path == path {
-				return true
-			}
-		}
-		return false
-	}
-
-	newRouter := func(t *testing.T, oidcEnabled bool) *gin.Engine {
+	newRouter := func(t *testing.T, oidcEnabled bool) *chi.Mux {
 		t.Helper()
 		serverConfig := &config.ServerConfig{
 			StaticFilePath: t.TempDir(),
@@ -114,8 +103,8 @@ func TestArgoStatusEndpointRegistration(t *testing.T) {
 	const statusPath = "/api/v1/reachability"
 
 	for _, oidcEnabled := range []bool{false, true} {
-		routes := newRouter(t, oidcEnabled).Routes()
-		assert.True(t, hasRoute(routes, http.MethodGet, statusPath),
+		routes := newRouter(t, oidcEnabled)
+		assert.True(t, routeExists(t, routes, http.MethodGet, statusPath),
 			"GET reachability must be registered regardless of OIDC (enabled=%v)", oidcEnabled)
 	}
 }

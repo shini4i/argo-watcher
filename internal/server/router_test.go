@@ -1,12 +1,10 @@
 package server
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -19,7 +17,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/gin-gonic/gin"
+	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -110,11 +108,10 @@ func newAuthStrategy(t testing.TB, valid bool, err error) *mocks.MockAuthStrateg
 }
 
 func TestGetVersion(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 
-	router := gin.Default()
+	router := chi.NewRouter()
 	env := &Env{}
-	router.GET("/api/v1/version", env.getVersion)
+	router.Get("/api/v1/version", env.getVersion)
 
 	req, err := http.NewRequest(http.MethodGet, "/api/v1/version", nil)
 	if err != nil {
@@ -131,18 +128,16 @@ func TestGetVersion(t *testing.T) {
 func TestDeployLock(t *testing.T) {
 	var err error
 
-	gin.SetMode(gin.TestMode)
-
 	dummyConfig := &config.ServerConfig{}
 
-	router := gin.Default()
+	router := chi.NewRouter()
 	env := &Env{config: dummyConfig}
 
 	env.lockdown, err = NewLockdown(dummyConfig.LockdownSchedule, lock.NewInMemoryDeployLockStore())
 	assert.NoError(t, err)
 
 	t.Run("SetDeployLock", func(t *testing.T) {
-		router.POST("/api/v1/deploy-lock", env.SetDeployLock)
+		router.Post("/api/v1/deploy-lock", env.SetDeployLock)
 
 		req, err := http.NewRequest(http.MethodPost, "/api/v1/deploy-lock", nil)
 		if err != nil {
@@ -157,7 +152,7 @@ func TestDeployLock(t *testing.T) {
 	})
 
 	t.Run("ReleaseDeployLock", func(t *testing.T) {
-		router.DELETE("/api/v1/deploy-lock", env.ReleaseDeployLock)
+		router.Delete("/api/v1/deploy-lock", env.ReleaseDeployLock)
 
 		req, err := http.NewRequest(http.MethodDelete, "/api/v1/deploy-lock", nil)
 		if err != nil {
@@ -172,7 +167,7 @@ func TestDeployLock(t *testing.T) {
 	})
 
 	t.Run("isDeployLockSet", func(t *testing.T) {
-		router.GET("/api/v1/deploy-lock", env.isDeployLockSet)
+		router.Get("/api/v1/deploy-lock", env.isDeployLockSet)
 
 		req, err := http.NewRequest(http.MethodGet, "/api/v1/deploy-lock", nil)
 		if err != nil {
@@ -187,23 +182,31 @@ func TestDeployLock(t *testing.T) {
 	})
 }
 
+// routeExists reports whether router serves method on exactly the given route
+// pattern, so a test can assert that an endpoint was never registered rather than
+// that it merely answers with an error.
+func routeExists(t *testing.T, router *chi.Mux, method, pattern string) bool {
+	t.Helper()
+
+	found := false
+	err := chi.Walk(router, func(walkMethod, route string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
+		if walkMethod == method && route == pattern {
+			found = true
+		}
+		return nil
+	})
+	require.NoError(t, err)
+
+	return found
+}
+
 // TestDeployLockEndpointRegistration verifies that the state-changing deploy-lock
 // endpoints only exist when OIDC auth is enabled. Without an auth backend they cannot
 // be protected, so they must not be exposed; the read-only GET stays available so the
 // banner and scheduled lockdown keep working.
 func TestDeployLockEndpointRegistration(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 
-	hasRoute := func(routes gin.RoutesInfo, method, path string) bool {
-		for _, r := range routes {
-			if r.Method == method && r.Path == path {
-				return true
-			}
-		}
-		return false
-	}
-
-	newRouter := func(t *testing.T, oidcEnabled bool) *gin.Engine {
+	newRouter := func(t *testing.T, oidcEnabled bool) *chi.Mux {
 		t.Helper()
 		serverConfig := &config.ServerConfig{
 			StaticFilePath: t.TempDir(),
@@ -219,19 +222,19 @@ func TestDeployLockEndpointRegistration(t *testing.T) {
 	const lockPath = "/api/v1/deploy-lock"
 
 	t.Run("registers lock write endpoints when OIDC is enabled", func(t *testing.T) {
-		routes := newRouter(t, true).Routes()
-		assert.True(t, hasRoute(routes, http.MethodPost, lockPath))
-		assert.True(t, hasRoute(routes, http.MethodDelete, lockPath))
-		assert.True(t, hasRoute(routes, http.MethodGet, lockPath))
+		routes := newRouter(t, true)
+		assert.True(t, routeExists(t, routes, http.MethodPost, lockPath))
+		assert.True(t, routeExists(t, routes, http.MethodDelete, lockPath))
+		assert.True(t, routeExists(t, routes, http.MethodGet, lockPath))
 	})
 
 	t.Run("omits lock write endpoints when OIDC is disabled", func(t *testing.T) {
-		routes := newRouter(t, false).Routes()
-		assert.False(t, hasRoute(routes, http.MethodPost, lockPath),
+		routes := newRouter(t, false)
+		assert.False(t, routeExists(t, routes, http.MethodPost, lockPath),
 			"POST deploy-lock must not be registered without an auth backend")
-		assert.False(t, hasRoute(routes, http.MethodDelete, lockPath),
+		assert.False(t, routeExists(t, routes, http.MethodDelete, lockPath),
 			"DELETE deploy-lock must not be registered without an auth backend")
-		assert.True(t, hasRoute(routes, http.MethodGet, lockPath),
+		assert.True(t, routeExists(t, routes, http.MethodGet, lockPath),
 			"read-only GET deploy-lock must stay registered")
 	})
 }
@@ -341,7 +344,6 @@ func TestNewEnvInvalidOIDCURL(t *testing.T) {
 // TestGetStateInvalidQueryParams verifies that the getState handler gracefully handles
 // invalid query parameters by logging debug messages and using default values.
 func TestGetStateInvalidQueryParams(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 
 	// Set up Argo with mock dependencies
 	ctrl := gomock.NewController(t)
@@ -354,8 +356,8 @@ func TestGetStateInvalidQueryParams(t *testing.T) {
 		config: &config.ServerConfig{},
 	}
 
-	router := gin.Default()
-	router.GET("/api/v1/tasks", env.getState)
+	router := chi.NewRouter()
+	router.Get("/api/v1/tasks", env.getState)
 
 	testCases := []struct {
 		name        string
@@ -411,7 +413,6 @@ func TestGetStateInvalidQueryParams(t *testing.T) {
 // TestGetStateForwardsFilters verifies that getState forwards `app` and `status`
 // query parameters to the underlying TaskRepository.
 func TestGetStateForwardsFilters(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 
 	ctrl := gomock.NewController(t)
 	repo, capture := newRepo(ctrl)
@@ -420,8 +421,8 @@ func TestGetStateForwardsFilters(t *testing.T) {
 
 	env := &Env{argo: argo, config: &config.ServerConfig{}}
 
-	router := gin.Default()
-	router.GET("/api/v1/tasks", env.getState)
+	router := chi.NewRouter()
+	router.Get("/api/v1/tasks", env.getState)
 
 	req, err := http.NewRequest(
 		http.MethodGet,
@@ -441,7 +442,6 @@ func TestGetStateForwardsFilters(t *testing.T) {
 // TestGetStateRejectsUnknownStatus verifies that getState returns 400 when
 // the `status` query param is not accepted by models.IsAllowedTaskStatus.
 func TestGetStateRejectsUnknownStatus(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 
 	ctrl := gomock.NewController(t)
 	repo, _ := newRepo(ctrl)
@@ -449,8 +449,8 @@ func TestGetStateRejectsUnknownStatus(t *testing.T) {
 	argo.Init(repo, newArgoAPI(ctrl), newMetrics(ctrl))
 	env := &Env{argo: argo, config: &config.ServerConfig{}}
 
-	router := gin.Default()
-	router.GET("/api/v1/tasks", env.getState)
+	router := chi.NewRouter()
+	router.Get("/api/v1/tasks", env.getState)
 
 	cases := []struct {
 		name     string
@@ -485,7 +485,6 @@ func TestGetStateRejectsUnknownStatus(t *testing.T) {
 // in a single request (the underlying repositories treat limit <= 0 as
 // "no LIMIT clause").
 func TestGetStateClampsLimit(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 
 	cases := []struct {
 		name     string
@@ -507,8 +506,8 @@ func TestGetStateClampsLimit(t *testing.T) {
 			argo.Init(repo, newArgoAPI(ctrl), newMetrics(ctrl))
 			env := &Env{argo: argo, config: &config.ServerConfig{}}
 
-			router := gin.Default()
-			router.GET("/api/v1/tasks", env.getState)
+			router := chi.NewRouter()
+			router.Get("/api/v1/tasks", env.getState)
 
 			req, err := http.NewRequest(
 				http.MethodGet,
@@ -527,7 +526,6 @@ func TestGetStateClampsLimit(t *testing.T) {
 }
 
 func TestStaticFileServing(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 
 	// Create a temporary directory for static files
 	tmpDir := t.TempDir()
@@ -691,7 +689,6 @@ func captureDebugLogs(t *testing.T) *logBuffer {
 }
 
 func TestWebSocketInterceptor(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 
 	// Create a minimal test environment
 	tmpDir := t.TempDir()
@@ -766,10 +763,9 @@ func TestWebSocketInterceptor(t *testing.T) {
 	}
 
 	t.Run("case-insensitive Upgrade header check", func(t *testing.T) {
-		// Test with different case variations - all should be intercepted by the WebSocket handler
-		// The handler will fail at websocket.Accept (missing Sec-WebSocket-Version), but the key
-		// assertion is that the response body does NOT contain "WebSocket upgrade required"
-		// (which would mean it fell through to the fallback route handler)
+		// However the header is spelled, the request must reach the upgrade path. The
+		// recorder is no http.Hijacker, so that path is identifiable by the response it
+		// gives when the connection cannot carry an upgrade.
 		testCases := []string{"websocket", "WebSocket", "WEBSOCKET", "Websocket"}
 
 		for _, upgradeValue := range testCases {
@@ -780,11 +776,9 @@ func TestWebSocketInterceptor(t *testing.T) {
 				w := httptest.NewRecorder()
 				router.ServeHTTP(w, req)
 
-				// The interceptor should have handled this, NOT the fallback route
-				// websocket.Accept will fail (missing proper headers), but it should NOT
-				// return our custom "WebSocket upgrade required" message
-				assert.NotContains(t, w.Body.String(), "WebSocket upgrade required",
-					"Upgrade header '%s' should be intercepted by WebSocket handler", upgradeValue)
+				assert.Equal(t, http.StatusInternalServerError, w.Code,
+					"Upgrade header %q should reach the WebSocket handler", upgradeValue)
+				assert.Contains(t, w.Body.String(), "WebSocket not supported")
 			})
 		}
 	})
@@ -797,7 +791,6 @@ func TestWebSocketInterceptor(t *testing.T) {
 // (wired in .github/workflows/run-tests.yml), since a plain run cannot observe
 // it. Keep the -race CI step if you touch this test.
 func TestWebSocketConnectionIntegration(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 
 	// Reset connections at start to ensure clean state
 	connectionsMutex.Lock()
@@ -887,7 +880,6 @@ func (s *readCountingStore) State() (lock.DeployLockState, error) {
 // Both handlers are covered: the release path is the one the desync story above
 // turns on, so pinning only the lock path would leave it free to regress.
 func TestDeployLockNotifiedOnlyByWatcher(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 
 	tests := []struct {
 		name        string
@@ -984,316 +976,6 @@ func TestDeployLockNotifiedOnlyByWatcher(t *testing.T) {
 			assert.ErrorIs(t, err, context.DeadlineExceeded, "unexpected second push: %q", string(extra))
 		})
 	}
-}
-
-func TestWsResponseWriterHijackNilConn(t *testing.T) {
-	w := &wsResponseWriter{
-		ResponseWriter: nil,
-		conn:           nil,
-		brw:            nil,
-	}
-	_, _, err := w.Hijack()
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "connection was not pre-hijacked")
-}
-
-func TestWsResponseWriterHijackSuccess(t *testing.T) {
-	// Create a pipe to simulate a connection
-	server, client := net.Pipe()
-	defer server.Close()
-	defer client.Close()
-
-	brw := bufio.NewReadWriter(bufio.NewReader(server), bufio.NewWriter(server))
-
-	w := &wsResponseWriter{
-		ResponseWriter: nil,
-		conn:           server,
-		brw:            brw,
-	}
-
-	conn, readWriter, err := w.Hijack()
-	assert.NoError(t, err)
-	assert.Equal(t, server, conn)
-	assert.Equal(t, brw, readWriter)
-}
-
-func TestWsResponseWriterWriteNilBrw(t *testing.T) {
-	w := &wsResponseWriter{
-		ResponseWriter: nil,
-		conn:           nil,
-		brw:            nil,
-	}
-	n, err := w.Write([]byte("test"))
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "buffered writer not available")
-	assert.Equal(t, 0, n)
-}
-
-func TestWsResponseWriterWriteSuccess(t *testing.T) {
-	// Create a pipe to simulate a connection
-	server, client := net.Pipe()
-	defer server.Close()
-	defer client.Close()
-
-	brw := bufio.NewReadWriter(bufio.NewReader(server), bufio.NewWriter(server))
-
-	w := &wsResponseWriter{
-		ResponseWriter: nil,
-		conn:           server,
-		brw:            brw,
-	}
-
-	// Write in a goroutine since pipes are synchronous
-	done := make(chan struct{})
-	go func() {
-		buf := make([]byte, 4)
-		_, _ = client.Read(buf)
-		close(done)
-	}()
-
-	n, err := w.Write([]byte("test"))
-	<-done
-
-	assert.NoError(t, err)
-	assert.Equal(t, 4, n)
-}
-
-func TestWsResponseWriterWriteHeaderNilBrw(t *testing.T) {
-	w := &wsResponseWriter{
-		ResponseWriter: nil,
-		conn:           nil,
-		brw:            nil,
-	}
-	// WriteHeader returns void, so we verify it doesn't panic
-	assert.NotPanics(t, func() {
-		w.WriteHeader(http.StatusSwitchingProtocols)
-	})
-}
-
-func TestWsResponseWriterWriteHeaderSuccess(t *testing.T) {
-	// Create a pipe to simulate a connection
-	server, client := net.Pipe()
-	defer server.Close()
-	defer client.Close()
-
-	brw := bufio.NewReadWriter(bufio.NewReader(server), bufio.NewWriter(server))
-
-	// Create a mock ResponseWriter that provides headers
-	mockRW := httptest.NewRecorder()
-	mockRW.Header().Set("Upgrade", "websocket")
-	mockRW.Header().Set("Connection", "Upgrade")
-
-	w := &wsResponseWriter{
-		ResponseWriter: &mockGinResponseWriter{ResponseRecorder: mockRW},
-		conn:           server,
-		brw:            brw,
-	}
-
-	// Read in a goroutine since pipes are synchronous
-	done := make(chan string)
-	go func() {
-		buf := make([]byte, 1024)
-		n, _ := client.Read(buf)
-		done <- string(buf[:n])
-	}()
-
-	w.WriteHeader(http.StatusSwitchingProtocols)
-	result := <-done
-
-	assert.Contains(t, result, "HTTP/1.1 101 Switching Protocols")
-	assert.Contains(t, result, "Upgrade: websocket")
-	assert.Contains(t, result, "Connection: Upgrade")
-}
-
-// mockGinResponseWriter implements gin.ResponseWriter for testing.
-type mockGinResponseWriter struct {
-	*httptest.ResponseRecorder
-}
-
-func (m *mockGinResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	return nil, nil, nil
-}
-
-func (m *mockGinResponseWriter) CloseNotify() <-chan bool {
-	return make(chan bool)
-}
-
-func (m *mockGinResponseWriter) Status() int {
-	return m.ResponseRecorder.Code
-}
-
-func (m *mockGinResponseWriter) Size() int {
-	return m.ResponseRecorder.Body.Len()
-}
-
-func (m *mockGinResponseWriter) WriteString(s string) (int, error) {
-	return m.ResponseRecorder.WriteString(s)
-}
-
-func (m *mockGinResponseWriter) Written() bool {
-	return m.ResponseRecorder.Code != 0
-}
-
-func (m *mockGinResponseWriter) WriteHeaderNow() {}
-
-func (m *mockGinResponseWriter) Pusher() http.Pusher {
-	return nil
-}
-
-func (m *mockGinResponseWriter) Flush() {}
-
-// errorWriter is a writer that always fails for testing error paths.
-type errorWriter struct {
-	failAfter int // Number of successful writes before failing
-	count     int
-}
-
-func (e *errorWriter) Write(p []byte) (n int, err error) {
-	e.count++
-	if e.failAfter > 0 && e.count <= e.failAfter {
-		return len(p), nil
-	}
-	return 0, fmt.Errorf("write error")
-}
-
-func (e *errorWriter) Read(p []byte) (n int, err error) {
-	return 0, nil
-}
-
-func TestWsResponseWriterWriteFlushError(t *testing.T) {
-	// Create a writer that always fails
-	// The error occurs on Flush, not on the initial Write (which buffers)
-	ew := &errorWriter{}
-	brw := bufio.NewReadWriter(bufio.NewReader(ew), bufio.NewWriter(ew))
-
-	w := &wsResponseWriter{
-		ResponseWriter: nil,
-		conn:           nil,
-		brw:            brw,
-	}
-
-	// Write succeeds (buffered), but Flush fails
-	n, err := w.Write([]byte("test"))
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "write error")
-	assert.Equal(t, 4, n) // Data was written to buffer
-}
-
-func TestWsResponseWriterWriteBufferOverflow(t *testing.T) {
-	// Create a writer with a tiny buffer that will overflow immediately
-	ew := &errorWriter{}
-	// Use a 1-byte buffer - any write larger than 1 byte will try to flush
-	brw := bufio.NewReadWriter(
-		bufio.NewReader(ew),
-		bufio.NewWriterSize(ew, 1),
-	)
-
-	w := &wsResponseWriter{
-		ResponseWriter: nil,
-		conn:           nil,
-		brw:            brw,
-	}
-
-	// Write larger than buffer forces immediate flush, which fails
-	n, err := w.Write([]byte("test data that exceeds buffer"))
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "write error")
-	assert.Equal(t, 0, n) // Write should fail with 0 bytes
-}
-
-func TestWsResponseWriterWriteHeaderErrors(t *testing.T) {
-	t.Run("status line write error with tiny buffer", func(t *testing.T) {
-		mockRW := httptest.NewRecorder()
-		mockRW.Header().Set("Test", "value")
-
-		ew := &errorWriter{failAfter: 0} // Fail immediately
-		// Use a 1-byte buffer to force immediate write failure
-		brw := bufio.NewReadWriter(
-			bufio.NewReader(ew),
-			bufio.NewWriterSize(ew, 1),
-		)
-
-		w := &wsResponseWriter{
-			ResponseWriter: &mockGinResponseWriter{ResponseRecorder: mockRW},
-			conn:           nil,
-			brw:            brw,
-		}
-
-		// Should not panic, just log error and return
-		assert.NotPanics(t, func() {
-			w.WriteHeader(http.StatusOK)
-		})
-	})
-
-	t.Run("header write error", func(t *testing.T) {
-		mockRW := httptest.NewRecorder()
-		// Add a header that will be written
-		mockRW.Header().Set("Upgrade", "websocket")
-
-		// Fail after status line succeeds (need enough writes for "HTTP/1.1 101 Switching Protocols\r\n")
-		// With 1-byte buffer and ~35 char status line, we need 35+ successful writes
-		ew := &errorWriter{failAfter: 40}
-		brw := bufio.NewReadWriter(
-			bufio.NewReader(ew),
-			bufio.NewWriterSize(ew, 1),
-		)
-
-		w := &wsResponseWriter{
-			ResponseWriter: &mockGinResponseWriter{ResponseRecorder: mockRW},
-			conn:           nil,
-			brw:            brw,
-		}
-
-		// Should not panic, just log error and return
-		assert.NotPanics(t, func() {
-			w.WriteHeader(http.StatusSwitchingProtocols)
-		})
-	})
-
-	t.Run("header terminator write error", func(t *testing.T) {
-		mockRW := httptest.NewRecorder()
-		// No headers - empty header section
-
-		// Status line (~20 chars) + empty headers, then fail on terminator "\r\n"
-		ew := &errorWriter{failAfter: 25}
-		brw := bufio.NewReadWriter(
-			bufio.NewReader(ew),
-			bufio.NewWriterSize(ew, 1),
-		)
-
-		w := &wsResponseWriter{
-			ResponseWriter: &mockGinResponseWriter{ResponseRecorder: mockRW},
-			conn:           nil,
-			brw:            brw,
-		}
-
-		// Should not panic, just log error and return
-		assert.NotPanics(t, func() {
-			w.WriteHeader(http.StatusOK)
-		})
-	})
-
-	t.Run("flush error", func(t *testing.T) {
-		mockRW := httptest.NewRecorder()
-
-		// Fail on flush (after all writes succeed) - need many successful writes
-		ew := &errorWriter{failAfter: 100}
-		brw := bufio.NewReadWriter(
-			bufio.NewReader(ew),
-			bufio.NewWriterSize(ew, 1),
-		)
-
-		w := &wsResponseWriter{
-			ResponseWriter: &mockGinResponseWriter{ResponseRecorder: mockRW},
-			conn:           nil,
-			brw:            brw,
-		}
-
-		// Should not panic, just log error and return
-		assert.NotPanics(t, func() {
-			w.WriteHeader(http.StatusOK)
-		})
-	})
 }
 
 // TestValidatePath tests the path validation function.
@@ -1638,7 +1320,6 @@ func TestStartLockdownWatcher(t *testing.T) {
 
 // TestStartRouter tests the StartRouter method.
 func TestStartRouter(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 
 	tmpDir := t.TempDir()
 	err := os.WriteFile(tmpDir+"/index.html", []byte("<html></html>"), 0644)
@@ -1867,7 +1548,6 @@ func TestConnWgTracking(t *testing.T) {
 
 // TestCreateRouterInitializesShutdownChannel tests that CreateRouter initializes the shutdown channel.
 func TestCreateRouterInitializesShutdownChannel(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 
 	tmpDir := t.TempDir()
 	err := os.WriteFile(tmpDir+"/index.html", []byte("<html></html>"), 0644)
@@ -1919,31 +1599,8 @@ func TestValidatePathEdgeCases(t *testing.T) {
 	})
 }
 
-// TestPrometheusHandler tests the prometheus handler wrapper.
-func TestPrometheusHandler(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	handler := prometheusHandler()
-	assert.NotNil(t, handler)
-
-	// Create a test request
-	req, _ := http.NewRequest(http.MethodGet, "/metrics", nil)
-	w := httptest.NewRecorder()
-
-	// Create a gin context
-	c, _ := gin.CreateTestContext(w)
-	c.Request = req
-
-	// Call the handler - should not panic
-	handler(c)
-
-	// Should return a valid response (prometheus metrics)
-	assert.Equal(t, http.StatusOK, w.Code)
-}
-
 // TestGetConfigEndpoint tests the getConfig endpoint.
 func TestGetConfigEndpoint(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 
 	serverConfig := &config.ServerConfig{
 		StateType:      "in-memory",
@@ -1953,8 +1610,8 @@ func TestGetConfigEndpoint(t *testing.T) {
 
 	env := &Env{config: serverConfig}
 
-	router := gin.New()
-	router.GET("/api/v1/config", env.getConfig)
+	router := chi.NewRouter()
+	router.Get("/api/v1/config", env.getConfig)
 
 	req, _ := http.NewRequest(http.MethodGet, "/api/v1/config", nil)
 	w := httptest.NewRecorder()
@@ -1968,7 +1625,6 @@ func TestGetConfigEndpoint(t *testing.T) {
 
 // TestGetTaskStatusEndpoint tests the getTaskStatus endpoint.
 func TestGetTaskStatusEndpoint(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 
 	t.Run("returns task when found", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
@@ -1988,8 +1644,8 @@ func TestGetTaskStatusEndpoint(t *testing.T) {
 
 		env := &Env{argo: argo}
 
-		router := gin.New()
-		router.GET("/api/v1/tasks/:id", env.getTaskStatus)
+		router := chi.NewRouter()
+		router.Get("/api/v1/tasks/{id}", env.getTaskStatus)
 
 		req, _ := http.NewRequest(http.MethodGet, "/api/v1/tasks/test-task-id", nil)
 		w := httptest.NewRecorder()
@@ -2009,8 +1665,8 @@ func TestGetTaskStatusEndpoint(t *testing.T) {
 
 		env := &Env{argo: argo}
 
-		router := gin.New()
-		router.GET("/api/v1/tasks/:id", env.getTaskStatus)
+		router := chi.NewRouter()
+		router.Get("/api/v1/tasks/{id}", env.getTaskStatus)
 
 		req, _ := http.NewRequest(http.MethodGet, "/api/v1/tasks/nonexistent", nil)
 		w := httptest.NewRecorder()
@@ -2030,8 +1686,8 @@ func TestGetTaskStatusEndpoint(t *testing.T) {
 
 		env := &Env{argo: argo}
 
-		router := gin.New()
-		router.GET("/api/v1/tasks/:id", env.getTaskStatus)
+		router := chi.NewRouter()
+		router.Get("/api/v1/tasks/{id}", env.getTaskStatus)
 
 		req, _ := http.NewRequest(http.MethodGet, "/api/v1/tasks/some-id", nil)
 		w := httptest.NewRecorder()
@@ -2047,7 +1703,6 @@ func TestGetTaskStatusEndpoint(t *testing.T) {
 
 // TestValidateTokenWithStrategies tests the validateToken method.
 func TestValidateTokenWithStrategies(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 
 	t.Run("returns result from authenticator when no allowed strategy", func(t *testing.T) {
 		strategies := make(map[string]auth.AuthStrategy)
@@ -2058,12 +1713,10 @@ func TestValidateTokenWithStrategies(t *testing.T) {
 			strategies:    strategies,
 		}
 
-		w := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(w)
-		c.Request, _ = http.NewRequest(http.MethodPost, "/test", nil)
+		req, _ := http.NewRequest(http.MethodPost, "/test", nil)
 
 		// With empty authenticator and no strategies, validation returns false
-		valid, err := env.validateToken(c, "")
+		valid, err := env.validateToken(req, "")
 		assert.False(t, valid)
 		assert.NoError(t, err)
 	})
@@ -2075,13 +1728,11 @@ func TestValidateTokenWithStrategies(t *testing.T) {
 			authenticator: auth.NewAuthenticator(strategies),
 		}
 
-		w := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(w)
-		c.Request, _ = http.NewRequest(http.MethodPost, "/test", nil)
-		c.Request.Header.Set("Authorization", "Bearer test-token")
+		req, _ := http.NewRequest(http.MethodPost, "/test", nil)
+		req.Header.Set("Authorization", "Bearer test-token")
 
 		// With no matching strategy, returns false
-		valid, err := env.validateToken(c, "Keycloak-Authorization")
+		valid, err := env.validateToken(req, "Keycloak-Authorization")
 		assert.False(t, valid)
 		assert.NoError(t, err)
 	})
@@ -2089,13 +1740,12 @@ func TestValidateTokenWithStrategies(t *testing.T) {
 
 // TestAddTaskEndpoint tests the addTask endpoint.
 func TestAddTaskEndpoint(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 
 	t.Run("returns error for invalid JSON payload", func(t *testing.T) {
 		env := &Env{}
 
-		router := gin.New()
-		router.POST("/api/v1/tasks", env.addTask)
+		router := chi.NewRouter()
+		router.Post("/api/v1/tasks", env.addTask)
 
 		req, _ := http.NewRequest(http.MethodPost, "/api/v1/tasks", strings.NewReader("invalid json"))
 		req.Header.Set("Content-Type", "application/json")
@@ -2114,8 +1764,8 @@ func TestAddTaskEndpoint(t *testing.T) {
 			lockdown: lockdown,
 		}
 
-		router := gin.New()
-		router.POST("/api/v1/tasks", env.addTask)
+		router := chi.NewRouter()
+		router.Post("/api/v1/tasks", env.addTask)
 
 		taskJSON := `{"app": "test-app", "author": "test-author", "project": "test-project", "images": [{"image": "test", "tag": "v1"}]}`
 		req, _ := http.NewRequest(http.MethodPost, "/api/v1/tasks", strings.NewReader(taskJSON))
@@ -2142,8 +1792,8 @@ func TestAddTaskEndpoint(t *testing.T) {
 			lockdown: lockdown,
 		}
 
-		router := gin.New()
-		router.POST("/api/v1/tasks", env.addTask)
+		router := chi.NewRouter()
+		router.Post("/api/v1/tasks", env.addTask)
 
 		taskJSON := `{"app": "test-app", "author": "test-author", "project": "test-project", "images": [{"image": "test", "tag": "v1"}]}`
 		req, _ := http.NewRequest(http.MethodPost, "/api/v1/tasks", strings.NewReader(taskJSON))
@@ -2169,8 +1819,8 @@ func TestAddTaskEndpoint(t *testing.T) {
 			authenticator: auth.NewAuthenticator(strategies),
 		}
 
-		router := gin.New()
-		router.POST("/api/v1/tasks", env.addTask)
+		router := chi.NewRouter()
+		router.Post("/api/v1/tasks", env.addTask)
 
 		taskJSON := `{"app": "test-app", "author": "test-author", "project": "test-project", "images": [{"image": "test", "tag": "v1"}]}`
 		req, _ := http.NewRequest(http.MethodPost, "/api/v1/tasks", strings.NewReader(taskJSON))
@@ -2201,8 +1851,8 @@ func TestAddTaskEndpoint(t *testing.T) {
 			argo:          argo,
 		}
 
-		router := gin.New()
-		router.POST("/api/v1/tasks", env.addTask)
+		router := chi.NewRouter()
+		router.Post("/api/v1/tasks", env.addTask)
 
 		taskJSON := `{"app": "test-app", "author": "test-author", "project": "test-project", "images": [{"image": "test", "tag": "v1"}]}`
 		req, _ := http.NewRequest(http.MethodPost, "/api/v1/tasks", strings.NewReader(taskJSON))
@@ -2244,8 +1894,8 @@ func TestAddTaskEndpoint(t *testing.T) {
 			argo:          argo,
 		}
 
-		router := gin.New()
-		router.POST("/api/v1/tasks", env.addTask)
+		router := chi.NewRouter()
+		router.Post("/api/v1/tasks", env.addTask)
 
 		taskJSON := `{"app": "test-app", "author": "test-author", "project": "test-project", "images": [{"image": "test", "tag": "v1"}], "validated": true}`
 		req, _ := http.NewRequest(http.MethodPost, "/api/v1/tasks", strings.NewReader(taskJSON))
@@ -2289,8 +1939,8 @@ func TestAddTaskEndpoint(t *testing.T) {
 			argo:          argo,
 		}
 
-		router := gin.New()
-		router.POST("/api/v1/tasks", env.addTask)
+		router := chi.NewRouter()
+		router.Post("/api/v1/tasks", env.addTask)
 
 		taskJSON := `{"app": "test-app", "author": "test-author", "project": "test-project", "images": [{"image": "test", "tag": "v1"}]}`
 		req, _ := http.NewRequest(http.MethodPost, "/api/v1/tasks", strings.NewReader(taskJSON))
@@ -2305,7 +1955,6 @@ func TestAddTaskEndpoint(t *testing.T) {
 
 // TestSetDeployLockWithKeycloak tests SetDeployLock with Keycloak authentication.
 func TestSetDeployLockWithKeycloak(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 
 	t.Run("returns 401 with reason when token is invalid", func(t *testing.T) {
 		// Strategy returned (false, err) — auth attempted but failed.
@@ -2324,8 +1973,8 @@ func TestSetDeployLockWithKeycloak(t *testing.T) {
 			},
 		}
 
-		router := gin.New()
-		router.POST("/api/v1/deploy-lock", env.SetDeployLock)
+		router := chi.NewRouter()
+		router.Post("/api/v1/deploy-lock", env.SetDeployLock)
 
 		req, _ := http.NewRequest(http.MethodPost, "/api/v1/deploy-lock", nil)
 		req.Header.Set(oidcHeader, "Bearer invalid-token")
@@ -2353,8 +2002,8 @@ func TestSetDeployLockWithKeycloak(t *testing.T) {
 			},
 		}
 
-		router := gin.New()
-		router.POST("/api/v1/deploy-lock", env.SetDeployLock)
+		router := chi.NewRouter()
+		router.Post("/api/v1/deploy-lock", env.SetDeployLock)
 
 		req, _ := http.NewRequest(http.MethodPost, "/api/v1/deploy-lock", nil)
 		// no auth header
@@ -2379,8 +2028,8 @@ func TestSetDeployLockWithKeycloak(t *testing.T) {
 			},
 		}
 
-		router := gin.New()
-		router.POST("/api/v1/deploy-lock", env.SetDeployLock)
+		router := chi.NewRouter()
+		router.Post("/api/v1/deploy-lock", env.SetDeployLock)
 
 		req, _ := http.NewRequest(http.MethodPost, "/api/v1/deploy-lock", nil)
 		req.Header.Set(oidcHeader, "Bearer valid-token")
@@ -2398,7 +2047,6 @@ func TestSetDeployLockWithKeycloak(t *testing.T) {
 // deploy lock is set must not be left with deployments still flowing. The store
 // error itself stays in the log.
 func TestDeployLockStoreFailure(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 
 	// newEnv builds an authenticated Env whose deploy lock store always fails.
 	newEnv := func(t *testing.T) *Env {
@@ -2420,19 +2068,19 @@ func TestDeployLockStoreFailure(t *testing.T) {
 	testCases := []struct {
 		name     string
 		method   string
-		register func(*gin.Engine, *Env)
+		register func(*chi.Mux, *Env)
 		message  string
 	}{
 		{
 			name:     "set",
 			method:   http.MethodPost,
-			register: func(r *gin.Engine, env *Env) { r.POST("/api/v1/deploy-lock", env.SetDeployLock) },
+			register: func(r *chi.Mux, env *Env) { r.Post("/api/v1/deploy-lock", env.SetDeployLock) },
 			message:  "failed to set deploy lock",
 		},
 		{
 			name:     "release",
 			method:   http.MethodDelete,
-			register: func(r *gin.Engine, env *Env) { r.DELETE("/api/v1/deploy-lock", env.ReleaseDeployLock) },
+			register: func(r *chi.Mux, env *Env) { r.Delete("/api/v1/deploy-lock", env.ReleaseDeployLock) },
 			message:  "failed to release deploy lock",
 		},
 	}
@@ -2440,7 +2088,7 @@ func TestDeployLockStoreFailure(t *testing.T) {
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
 			env := newEnv(t)
-			router := gin.New()
+			router := chi.NewRouter()
 			tt.register(router, env)
 
 			req, _ := http.NewRequest(tt.method, "/api/v1/deploy-lock", nil)
@@ -2459,7 +2107,6 @@ func TestDeployLockStoreFailure(t *testing.T) {
 // a client still sending the deprecated Keycloak-Authorization header (instead of
 // the canonical Oidc-Authorization) is authenticated exactly as before.
 func TestSetDeployLockAcceptsLegacyKeycloakHeader(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 
 	lockdown, _ := NewLockdown("", lock.NewInMemoryDeployLockStore())
 	strategies := make(map[string]auth.AuthStrategy)
@@ -2474,8 +2121,8 @@ func TestSetDeployLockAcceptsLegacyKeycloakHeader(t *testing.T) {
 		},
 	}
 
-	router := gin.New()
-	router.POST("/api/v1/deploy-lock", env.SetDeployLock)
+	router := chi.NewRouter()
+	router.Post("/api/v1/deploy-lock", env.SetDeployLock)
 
 	req, _ := http.NewRequest(http.MethodPost, "/api/v1/deploy-lock", nil)
 	req.Header.Set(legacyKeycloakHeader, "Bearer valid-token")
@@ -2491,7 +2138,6 @@ func TestSetDeployLockAcceptsLegacyKeycloakHeader(t *testing.T) {
 // surface a 401 with the reason), and a rejected canonical header returns
 // immediately without falling through to the legacy header.
 func TestRequireOIDCAuthHeaderPrecedence(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 
 	t.Run("invalid token on the legacy header surfaces the reason as 401", func(t *testing.T) {
 		lockdown, _ := NewLockdown("", lock.NewInMemoryDeployLockStore())
@@ -2504,8 +2150,8 @@ func TestRequireOIDCAuthHeaderPrecedence(t *testing.T) {
 			authenticator: auth.NewAuthenticator(strategies),
 			config:        &config.ServerConfig{OIDC: config.OIDCConfig{Enabled: true}},
 		}
-		router := gin.New()
-		router.POST("/api/v1/deploy-lock", env.SetDeployLock)
+		router := chi.NewRouter()
+		router.Post("/api/v1/deploy-lock", env.SetDeployLock)
 
 		req, _ := http.NewRequest(http.MethodPost, "/api/v1/deploy-lock", nil)
 		req.Header.Set(legacyKeycloakHeader, "Bearer invalid-token")
@@ -2530,8 +2176,8 @@ func TestRequireOIDCAuthHeaderPrecedence(t *testing.T) {
 			authenticator: auth.NewAuthenticator(strategies),
 			config:        &config.ServerConfig{OIDC: config.OIDCConfig{Enabled: true}},
 		}
-		router := gin.New()
-		router.POST("/api/v1/deploy-lock", env.SetDeployLock)
+		router := chi.NewRouter()
+		router.Post("/api/v1/deploy-lock", env.SetDeployLock)
 
 		req, _ := http.NewRequest(http.MethodPost, "/api/v1/deploy-lock", nil)
 		req.Header.Set(oidcHeader, "Bearer bad")
@@ -2546,7 +2192,6 @@ func TestRequireOIDCAuthHeaderPrecedence(t *testing.T) {
 
 // TestReleaseDeployLockWithKeycloak tests ReleaseDeployLock with Keycloak authentication.
 func TestReleaseDeployLockWithKeycloak(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 
 	t.Run("returns 401 with reason when token is invalid", func(t *testing.T) {
 		// Strategy returned (false, err): auth attempted but failed.
@@ -2565,8 +2210,8 @@ func TestReleaseDeployLockWithKeycloak(t *testing.T) {
 			},
 		}
 
-		router := gin.New()
-		router.DELETE("/api/v1/deploy-lock", env.ReleaseDeployLock)
+		router := chi.NewRouter()
+		router.Delete("/api/v1/deploy-lock", env.ReleaseDeployLock)
 
 		req, _ := http.NewRequest(http.MethodDelete, "/api/v1/deploy-lock", nil)
 		req.Header.Set(oidcHeader, "Bearer invalid-token")
@@ -2592,8 +2237,8 @@ func TestReleaseDeployLockWithKeycloak(t *testing.T) {
 			},
 		}
 
-		router := gin.New()
-		router.DELETE("/api/v1/deploy-lock", env.ReleaseDeployLock)
+		router := chi.NewRouter()
+		router.Delete("/api/v1/deploy-lock", env.ReleaseDeployLock)
 
 		req, _ := http.NewRequest(http.MethodDelete, "/api/v1/deploy-lock", nil)
 		req.Header.Set(oidcHeader, "Bearer valid-token")
@@ -2608,7 +2253,6 @@ func TestReleaseDeployLockWithKeycloak(t *testing.T) {
 
 // TestValidateTokenWithAllowedStrategy tests validateToken with an allowed strategy header.
 func TestValidateTokenWithAllowedStrategy(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 
 	t.Run("validates successfully with matching strategy", func(t *testing.T) {
 		strategies := make(map[string]auth.AuthStrategy)
@@ -2619,12 +2263,10 @@ func TestValidateTokenWithAllowedStrategy(t *testing.T) {
 			authenticator: auth.NewAuthenticator(strategies),
 		}
 
-		w := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(w)
-		c.Request, _ = http.NewRequest(http.MethodPost, "/test", nil)
-		c.Request.Header.Set(oidcHeader, "Bearer valid-token")
+		req, _ := http.NewRequest(http.MethodPost, "/test", nil)
+		req.Header.Set(oidcHeader, "Bearer valid-token")
 
-		valid, err := env.validateToken(c, oidcHeader)
+		valid, err := env.validateToken(req, oidcHeader)
 		assert.True(t, valid)
 		assert.NoError(t, err)
 	})
@@ -2638,12 +2280,10 @@ func TestValidateTokenWithAllowedStrategy(t *testing.T) {
 			authenticator: auth.NewAuthenticator(strategies),
 		}
 
-		w := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(w)
-		c.Request, _ = http.NewRequest(http.MethodPost, "/test", nil)
-		c.Request.Header.Set(oidcHeader, "Bearer my-token")
+		req, _ := http.NewRequest(http.MethodPost, "/test", nil)
+		req.Header.Set(oidcHeader, "Bearer my-token")
 
-		valid, err := env.validateToken(c, oidcHeader)
+		valid, err := env.validateToken(req, oidcHeader)
 		assert.True(t, valid)
 		assert.NoError(t, err)
 	})
@@ -2658,12 +2298,10 @@ func TestValidateTokenWithAllowedStrategy(t *testing.T) {
 			authenticator: auth.NewAuthenticator(strategies),
 		}
 
-		w := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(w)
-		c.Request, _ = http.NewRequest(http.MethodPost, "/test", nil)
-		c.Request.Header.Set(oidcHeader, "Bearer expired-token")
+		req, _ := http.NewRequest(http.MethodPost, "/test", nil)
+		req.Header.Set(oidcHeader, "Bearer expired-token")
 
-		valid, err := env.validateToken(c, oidcHeader)
+		valid, err := env.validateToken(req, oidcHeader)
 		assert.False(t, valid)
 		assert.Equal(t, expectedErr, err)
 	})
@@ -2678,14 +2316,257 @@ func TestValidateTokenWithAllowedStrategy(t *testing.T) {
 			authenticator: auth.NewAuthenticator(strategies),
 		}
 
-		w := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(w)
-		c.Request, _ = http.NewRequest(http.MethodPost, "/test", nil)
-		c.Request.Header.Set("Authorization", "Bearer token")
+		req, _ := http.NewRequest(http.MethodPost, "/test", nil)
+		req.Header.Set("Authorization", "Bearer token")
 
 		// Only oidcHeader is allowed, so Authorization should be skipped
-		valid, err := env.validateToken(c, oidcHeader)
+		valid, err := env.validateToken(req, oidcHeader)
 		assert.False(t, valid)
 		assert.NoError(t, err)
+	})
+}
+
+// TestRouterCompatibility pins the routing behaviour clients depend on: the
+// trailing-slash redirect, the /swagger mount, and the rule that anything the API
+// does not serve — unknown path or unhandled method — reaches the Web UI rather
+// than an error page.
+func TestRouterCompatibility(t *testing.T) {
+	env, _ := readAuthEnv(t, false, nil)
+	static := env.config.StaticFilePath
+	require.NoError(t, os.WriteFile(filepath.Join(static, "index.html"), []byte("SPA-INDEX"), 0o600))
+	require.NoError(t, os.MkdirAll(filepath.Join(static, "swagger"), 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(static, "swagger", "swagger.json"), []byte(`{"swagger":"2.0"}`), 0o600))
+
+	router := env.CreateRouter()
+
+	cases := []struct {
+		name     string
+		method   string
+		path     string
+		status   int
+		location string
+		body     string
+	}{
+		// Bodies are asserted, not just statuses: the SPA fallback also answers 200,
+		// so a route that silently failed to register would pass a status-only check.
+		{"probe", http.MethodGet, "/livez", http.StatusOK, "", `{"status":"up"}`},
+		{"probe trailing slash redirects", http.MethodGet, "/livez/", http.StatusMovedPermanently, "/livez", ""},
+		{"config", http.MethodGet, "/api/v1/config", http.StatusOK, "", ""},
+		{"config trailing slash redirects", http.MethodGet, "/api/v1/config/", http.StatusMovedPermanently, "/api/v1/config", ""},
+		// The body echoes the id, which is what proves chi's {id} reached the handler
+		// rather than an empty parameter after the :id -> {id} rename.
+		{"task lookup reaches the handler", http.MethodGet, "/api/v1/tasks/abc", http.StatusNotFound, "", `{"id":"abc","error":"task not found"}`},
+		{"a path naming no route is not redirected", http.MethodGet, "/dashboard/", http.StatusOK, "", "SPA-INDEX"},
+		{"task lookup trailing slash redirects", http.MethodGet, "/api/v1/tasks/abc/", http.StatusMovedPermanently, "/api/v1/tasks/abc", ""},
+		{"redirect keeps the query string", http.MethodGet, "/api/v1/config/?x=1", http.StatusMovedPermanently, "/api/v1/config?x=1", ""},
+		{"bare swagger redirects to the directory", http.MethodGet, "/swagger", http.StatusMovedPermanently, "/swagger/", ""},
+		// The other half of that redirect: /swagger/ must be served, not sent back to
+		// /swagger, or the two rules would bounce a client between them forever.
+		{"the swagger directory is not redirected back", http.MethodGet, "/swagger/", http.StatusOK, "", ""},
+		{"swagger spec is served", http.MethodGet, "/swagger/swagger.json", http.StatusOK, "", `{"swagger":"2.0"}`},
+		{"swagger spec answers HEAD", http.MethodHead, "/swagger/swagger.json", http.StatusOK, "", ""},
+		{"missing swagger file falls back to the UI", http.MethodGet, "/swagger/missing.json", http.StatusOK, "", "SPA-INDEX"},
+		// The swagger directory lives under the static root, so the fallback the
+		// unhandled method lands on serves the same file the GET route would.
+		{"unhandled method on swagger reaches the static handler", http.MethodPost, "/swagger/swagger.json", http.StatusOK, "", `{"swagger":"2.0"}`},
+		{"unhandled method on an API route falls back to the UI", http.MethodPut, "/api/v1/tasks", http.StatusOK, "", "SPA-INDEX"},
+		{"deploy-lock write is absent without OIDC", http.MethodDelete, "/api/v1/deploy-lock", http.StatusOK, "", "SPA-INDEX"},
+		{"deep link loads the UI", http.MethodGet, "/some/spa/route", http.StatusOK, "", "SPA-INDEX"},
+		{"root loads the UI", http.MethodGet, "/", http.StatusOK, "", "SPA-INDEX"},
+		// 307 rather than 301, because only 307 obliges the client to repeat the body.
+		{"non-GET trailing slash keeps the method", http.MethodPost, "/api/v1/tasks/", http.StatusTemporaryRedirect, "/api/v1/tasks", ""},
+		{"metrics is served", http.MethodGet, "/metrics", http.StatusOK, "", "@contains:go_goroutines"},
+		{"metrics is a GET-only endpoint", http.MethodPost, "/metrics", http.StatusOK, "", "SPA-INDEX"},
+		// A request line may carry an absolute URI, and a path may start with "//".
+		// Neither may put a foreign host in the Location header.
+		{"redirect never echoes the request host", http.MethodGet, "http://evil.example.com/livez/", http.StatusMovedPermanently, "/livez", ""},
+		{"protocol-relative path is not redirected", http.MethodGet, "//livez/", http.StatusOK, "", "SPA-INDEX"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(tc.method, tc.path, http.NoBody)
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+
+			assert.Equal(t, tc.status, w.Code)
+			if tc.location != "" {
+				assert.Equal(t, tc.location, w.Header().Get("Location"))
+			} else {
+				assert.Empty(t, w.Header().Get("Location"), "must not redirect")
+			}
+			if substring, ok := strings.CutPrefix(tc.body, "@contains:"); ok {
+				assert.Contains(t, w.Body.String(), substring)
+			} else if tc.body != "" {
+				assert.Equal(t, tc.body, strings.TrimSpace(w.Body.String()))
+			}
+		})
+	}
+}
+
+// TestCORSPolicy covers the origin gate. A cross-origin request from an origin
+// outside the allowlist must be refused before it reaches a handler: a simple
+// request arrives whatever the browser does with the response, so for POST /tasks
+// letting it through would mean the deployment already happened.
+func TestCORSPolicy(t *testing.T) {
+	const allowedOrigin = "http://localhost:5173"
+
+	newRouter := func(t *testing.T, dev bool) *chi.Mux {
+		t.Helper()
+		env, _ := readAuthEnv(t, false, nil)
+		env.config.DevEnvironment = dev
+		return env.CreateRouter()
+	}
+
+	do := func(router *chi.Mux, method, path string, headers map[string]string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, http.NoBody)
+		for k, v := range headers {
+			req.Header.Set(k, v)
+		}
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		return w
+	}
+
+	t.Run("dev mode refuses a deploy from an origin outside the allowlist", func(t *testing.T) {
+		// The state-changing route is the one that matters: a text/plain POST needs no
+		// preflight, so refusing it here is what stops the deployment happening.
+		router := newRouter(t, true)
+
+		w := do(router, http.MethodPost, "/api/v1/tasks", map[string]string{
+			"Origin":       "http://evil.test",
+			"Content-Type": "text/plain",
+		})
+
+		assert.Equal(t, http.StatusForbidden, w.Code)
+		assert.Empty(t, w.Header().Get("Access-Control-Allow-Origin"))
+	})
+
+	t.Run("dev mode refuses a read from an origin outside the allowlist", func(t *testing.T) {
+		router := newRouter(t, true)
+
+		w := do(router, http.MethodGet, "/api/v1/config", map[string]string{"Origin": "http://evil.test"})
+
+		assert.Equal(t, http.StatusForbidden, w.Code)
+		assert.Empty(t, w.Header().Get("Access-Control-Allow-Origin"))
+	})
+
+	t.Run("the origin gate runs before the trailing-slash redirect", func(t *testing.T) {
+		// Deliberately stricter than the framework this replaced, which redirected
+		// without consulting the origin at all.
+		router := newRouter(t, true)
+
+		w := do(router, http.MethodGet, "/api/v1/config/", map[string]string{"Origin": "http://evil.test"})
+
+		assert.Equal(t, http.StatusForbidden, w.Code)
+	})
+
+	t.Run("dev mode admits an allowlisted origin with credentials", func(t *testing.T) {
+		router := newRouter(t, true)
+
+		w := do(router, http.MethodGet, "/api/v1/config", map[string]string{"Origin": allowedOrigin})
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, allowedOrigin, w.Header().Get("Access-Control-Allow-Origin"))
+		assert.Equal(t, "true", w.Header().Get("Access-Control-Allow-Credentials"))
+	})
+
+	t.Run("preflight is answered with no content", func(t *testing.T) {
+		router := newRouter(t, true)
+
+		w := do(router, http.MethodOptions, "/api/v1/tasks", map[string]string{
+			"Origin":                        allowedOrigin,
+			"Access-Control-Request-Method": http.MethodPost,
+		})
+
+		assert.Equal(t, http.StatusNoContent, w.Code)
+		assert.Equal(t, allowedOrigin, w.Header().Get("Access-Control-Allow-Origin"))
+	})
+
+	t.Run("options without a requested method is still answered", func(t *testing.T) {
+		router := newRouter(t, true)
+
+		w := do(router, http.MethodOptions, "/api/v1/config", map[string]string{"Origin": allowedOrigin})
+
+		assert.Equal(t, http.StatusNoContent, w.Code)
+		// Echoing the origin is the whole reason this branch answers the request
+		// itself instead of letting it fall through to the SPA handler.
+		assert.Equal(t, allowedOrigin, w.Header().Get("Access-Control-Allow-Origin"))
+		assert.Empty(t, w.Body.String())
+	})
+
+	t.Run("every configured request header survives a preflight", func(t *testing.T) {
+		// rs/cors answers a preflight whose requested headers are not all allowed by
+		// returning the success status with no Access-Control-Allow-Origin at all, so
+		// dropping a header from corsOptions would break browser deploys silently.
+		router := newRouter(t, true)
+
+		for _, header := range []string{oidcHeader, legacyKeycloakHeader, "ARGO_WATCHER_DEPLOY_TOKEN", "Authorization", "Content-Type", "Accept"} {
+			t.Run(header, func(t *testing.T) {
+				w := do(router, http.MethodOptions, "/api/v1/tasks", map[string]string{
+					"Origin":                         allowedOrigin,
+					"Access-Control-Request-Method":  http.MethodPost,
+					"Access-Control-Request-Headers": strings.ToLower(header),
+				})
+
+				assert.Equal(t, http.StatusNoContent, w.Code)
+				assert.Equal(t, allowedOrigin, w.Header().Get("Access-Control-Allow-Origin"),
+					"a missing allow-origin means the header was refused")
+				assert.Contains(t, strings.ToLower(w.Header().Get("Access-Control-Allow-Headers")), strings.ToLower(header))
+			})
+		}
+	})
+
+	t.Run("production preflight never pairs the wildcard with credentials", func(t *testing.T) {
+		// A browser rejects Access-Control-Allow-Origin: * alongside credentials.
+		router := newRouter(t, false)
+
+		w := do(router, http.MethodOptions, "/api/v1/tasks", map[string]string{
+			"Origin":                        "http://anywhere.test",
+			"Access-Control-Request-Method": http.MethodPost,
+		})
+
+		assert.Equal(t, http.StatusNoContent, w.Code)
+		assert.Equal(t, "*", w.Header().Get("Access-Control-Allow-Origin"))
+		assert.Empty(t, w.Header().Get("Access-Control-Allow-Credentials"))
+	})
+
+	t.Run("production accepts any origin", func(t *testing.T) {
+		router := newRouter(t, false)
+
+		w := do(router, http.MethodGet, "/api/v1/config", map[string]string{"Origin": "http://anywhere.test"})
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, "*", w.Header().Get("Access-Control-Allow-Origin"))
+	})
+
+	t.Run("same-origin requests are served without CORS headers", func(t *testing.T) {
+		// Dev mode is where this matters: the server's own origin is not in the
+		// allowlist, so without the same-origin bypass the gate would 403 the Web UI.
+		for _, scheme := range []string{"http://", "https://"} {
+			t.Run(scheme, func(t *testing.T) {
+				router := newRouter(t, true)
+
+				req := httptest.NewRequest(http.MethodGet, "/api/v1/config", http.NoBody)
+				req.Header.Set("Origin", scheme+req.Host)
+				w := httptest.NewRecorder()
+				router.ServeHTTP(w, req)
+
+				assert.Equal(t, http.StatusOK, w.Code)
+				assert.Contains(t, w.Body.String(), "state_type", "the handler must have run")
+				assert.Empty(t, w.Header().Get("Access-Control-Allow-Origin"))
+			})
+		}
+	})
+
+	t.Run("the websocket handshake is never touched by CORS", func(t *testing.T) {
+		// The upgrade response goes to a hijacked connection, so a CORS header written
+		// here would be both useless and, before the migration, actively harmful.
+		router := newRouter(t, true)
+
+		w := do(router, http.MethodGet, "/ws", map[string]string{"Origin": "http://evil.test"})
+
+		assert.Equal(t, http.StatusBadRequest, w.Code, "a non-upgrade /ws request is still answered, not refused")
+		assert.Empty(t, w.Header().Get("Access-Control-Allow-Origin"))
 	})
 }

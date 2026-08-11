@@ -10,7 +10,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/shini4i/argo-watcher/internal/argocd"
@@ -43,7 +42,7 @@ const (
 )
 
 type Server struct {
-	router      *gin.Engine
+	router      http.Handler
 	config      *config.ServerConfig
 	argo        *argocd.Argo
 	metrics     *prom.Metrics
@@ -207,14 +206,14 @@ type httpShutdowner interface {
 //
 // Stop accepting new connections next and let outstanding HTTP requests drain,
 // then shut down the WebSocket goroutines. Closing the listener before env.Shutdown
-// means new handshakes can no longer arrive, which greatly narrows the window in
-// which a WebSocket handler could call connWg.Add(1) after env.Shutdown has begun
-// waiting on connWg (a WaitGroup misuse that could panic during shutdown). It does
-// not fully eliminate it: a handshake already past the hijack but not yet registered
-// is untracked by srv.Shutdown, so it can still register in that nanosecond gap — an
-// acceptable residual given it can only occur on an already-terminating process.
-// Hijacked WebSocket connections are not waited on by srv.Shutdown; they are drained
-// by env.Shutdown.
+// means new handshakes can no longer arrive, which is what keeps a WebSocket handler
+// from calling connWg.Add(1) after env.Shutdown has begun waiting on connWg (a
+// WaitGroup misuse that could panic during shutdown). The handler registers before it
+// upgrades, while net/http still counts the request as active, so srv.Shutdown waits
+// for handshakes that are in flight. The one remaining way to overlap the two is a
+// handshake still running when httpDrainBudget expires, since srv.Shutdown then
+// returns with that handler outstanding. Hijacked WebSocket connections are not
+// waited on by srv.Shutdown; they are drained by env.Shutdown.
 //
 // The phases run in sequence and share one deadline, so their total cannot
 // exceed shutdownBudget. Previously each carried its own independent timeout, letting
