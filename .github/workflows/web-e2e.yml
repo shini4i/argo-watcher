@@ -79,9 +79,10 @@ jobs:
       - name: Install Playwright browsers
         # --ignore-scripts above skips Playwright's own postinstall download, and
         # the version installed here is whatever web/package.json pins, so client
-        # and browser builds always match.
+        # and browser builds always match. Run through the npm script rather than
+        # npx: it resolves the pinned local binary instead of the registry.
         working-directory: web
-        run: npx playwright install --with-deps chromium
+        run: npm run test:e2e:install
 
       - name: Type-check the suite
         # Playwright transpiles specs without checking them, so without this the
@@ -119,7 +120,7 @@ jobs:
 
       - name: Run Playwright suite
         working-directory: web
-        run: npx playwright test
+        run: npm run test:e2e
 
       - name: Upload the Playwright report
         if: always()

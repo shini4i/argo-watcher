@@ -12,6 +12,7 @@
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
     "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install --with-deps chromium",
     "typecheck:e2e": "tsc -p tsconfig.node.json --noEmit"
   },
   "dependencies": {
