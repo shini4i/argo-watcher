@@ -135,7 +135,7 @@ The Web UI signs in with a **top-level redirect** (not a hidden iframe), so the 
 
 ### The `groups` claim
 
-Every provider must satisfy one requirement: emit a `groups` claim in **both** the ID token and the **userinfo** response. Both are used: the Web UI gates its buttons on userinfo — the same source the backend independently enforces on, so the two always agree — and falls back to the ID-token claim if that call fails. The claim must be gated behind a scope Argo Watcher actually requests. Argo Watcher only ever requests `openid profile email`, so the claim must be bound to `profile` or `email` (or the base `openid` scope) — a claim gated behind a separate `groups` scope is never evaluated, and group membership comes back empty.
+Every provider must satisfy one requirement: emit a `groups` claim in **both** the ID token and the **userinfo** response. Both are used: the Web UI gates its buttons on userinfo, the same source the backend independently enforces on, and falls back to the ID-token claim when that call fails. The backend has no such fallback — while userinfo is unreachable it refuses every privileged action, so the UI may still show a rollback button or a deploy-lock toggle that the API then rejects. The claim must be gated behind a scope Argo Watcher actually requests. Argo Watcher only ever requests `openid profile email`, so the claim must be bound to `profile` or `email` (or the base `openid` scope) — a claim gated behind a separate `groups` scope is never evaluated, and group membership comes back empty.
 
 The steps below are the same requirement expressed in each provider's configuration model.
 
