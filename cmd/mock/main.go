@@ -1,13 +1,17 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"slices"
+	"time"
 
-	"github.com/gin-gonic/gin"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
@@ -19,36 +23,59 @@ var (
 	requestsCount = 0
 )
 
-func setupRouter() *gin.Engine {
-	router := gin.Default()
+func setupRouter() *chi.Mux {
+	router := chi.NewRouter()
+	router.Use(middleware.Logger)
+	router.Use(middleware.Recoverer)
 
-	apiGroup := router.Group("/api/v1")
-	apiGroup.POST("/session", mockGenSession)
-	apiGroup.GET("/session/userinfo", mockUserinfo)
-	apiGroup.GET("/applications/:id", mockReturnAppStatus)
+	router.Route("/api/v1", func(r chi.Router) {
+		r.Post("/session", mockGenSession)
+		r.Get("/session/userinfo", mockUserinfo)
+		r.Get("/applications/{id}", mockReturnAppStatus)
+	})
 
 	return router
 }
 
-func mockGenSession(c *gin.Context) {
-	c.JSON(http.StatusOK, Token{
+// writeJSON renders payload as the response body with the given status code.
+func writeJSON(w http.ResponseWriter, status int, payload any) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		slog.Error("failed to marshal response body", "error", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	if _, err := w.Write(body); err != nil {
+		slog.Debug("failed to write response body", "error", err)
+	}
+}
+
+func mockGenSession(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, Token{
 		Token: "test_token",
 	})
 }
 
-func mockUserinfo(c *gin.Context) {
-	c.JSON(http.StatusOK, models.Userinfo{LoggedIn: true})
+func mockUserinfo(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, models.Userinfo{LoggedIn: true})
 }
 
-func mockReturnAppStatus(c *gin.Context) {
+func mockReturnAppStatus(w http.ResponseWriter, r *http.Request) {
 	var appStatus models.Application
 
 	apps := []string{"app", "app2", "app4"}
 
-	app := c.Param("id")
+	app := chi.URLParam(r, "id")
 
 	if !slices.Contains(apps, app) {
-		c.String(http.StatusNotFound, fmt.Sprintf("applications.argoproj.io \"%s\" not found", app))
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusNotFound)
+		// Reproduces the message Argo CD returns, which the updater matches on. The
+		// name is echoed into a text/plain body served only by this local test double.
+		fmt.Fprintf(w, "applications.argoproj.io \"%s\" not found", app) // #nosec G705 -- not HTML, and this server never runs outside a dev or e2e host
 		return
 	}
 
@@ -79,17 +106,20 @@ func mockReturnAppStatus(c *gin.Context) {
 		appStatus.Status.Health.Status = "Healthy"
 	}
 
-	c.JSON(http.StatusOK, appStatus)
+	writeJSON(w, http.StatusOK, appStatus)
 }
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	slog.Info("Starting mock web server")
 
-	router := setupRouter()
+	srv := &http.Server{
+		Addr:              ":8081",
+		Handler:           setupRouter(),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
 
-	err := router.Run(":8081")
-	if err != nil {
+	if err := srv.ListenAndServe(); err != nil {
 		slog.Error("mock web server stopped", "error", err)
 	}
 }

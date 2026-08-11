@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The HTTP server now routes with `chi` instead of `gin`. Endpoints, status codes,
+  response bodies and metric labels are unchanged, verified request by request against
+  the previous implementation — including the `/swagger` mount, the trailing-slash
+  redirect, the CORS origin rules and the `path="/api/v1/tasks/:id"` label on
+  `unauthenticated_reads`. Two deliberate differences: preflight replies now echo the
+  requested method and headers rather than the full configured lists, and a cross-origin
+  request to a URL that only differs by a trailing slash is now refused by the origin
+  check instead of being redirected before it. The set of origins, methods and headers
+  actually permitted is the same, and both differences only affect requests that were
+  already going to be rejected or are never sent by a browser.
+
+  Twenty transitive dependencies pulled in only by the previous framework are gone with
+  it, which takes about 15 MB off the binary.
+
 ## [0.15.0] - 2026-08-11
 
 ### Added

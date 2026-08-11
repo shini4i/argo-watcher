@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gin-gonic/gin"
+	"github.com/go-chi/chi/v5"
 	promclient "github.com/prometheus/client_golang/prometheus"
 	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
@@ -64,7 +64,6 @@ func readAuthEnv(t *testing.T, oidcEnabled bool, strategies map[string]auth.Auth
 // resolves to an application instead of answering 404.
 func readAuthEnvWithTask(t *testing.T, oidcEnabled bool, strategies map[string]auth.AuthStrategy, task *models.Task) (*Env, *prometheus.Metrics) {
 	t.Helper()
-	gin.SetMode(gin.TestMode)
 
 	ctrl := gomock.NewController(t)
 	repo, _ := newRepo(ctrl)
@@ -304,8 +303,8 @@ func TestReadAuthOpenEndpoints(t *testing.T) {
 func TestReadAuthCoversEveryRegisteredRead(t *testing.T) {
 	// Exemptions, each justified in CreateRouter.
 	openByDesign := map[string]bool{
-		"/api/v1/config":    true,
-		"/api/v1/tasks/:id": true,
+		"/api/v1/config":     true,
+		"/api/v1/tasks/{id}": true,
 	}
 
 	env, _ := readAuthEnv(t, true, map[string]auth.AuthStrategy{
@@ -314,31 +313,32 @@ func TestReadAuthCoversEveryRegisteredRead(t *testing.T) {
 	router := env.CreateRouter()
 
 	checked := 0
-	for _, route := range router.Routes() {
-		if route.Method != http.MethodGet || !strings.HasPrefix(route.Path, "/api/v1/") {
-			continue
+	err := chi.Walk(router, func(method, route string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
+		if method != http.MethodGet || !strings.HasPrefix(route, "/api/v1/") {
+			return nil
 		}
 
 		// Route patterns carry parameter placeholders; any concrete value reaches the
 		// same handler chain, which is all this assertion cares about.
-		path := strings.ReplaceAll(route.Path, ":id", "00000000-0000-0000-0000-000000000000")
+		path := strings.ReplaceAll(route, "{id}", "00000000-0000-0000-0000-000000000000")
 
-		req, err := http.NewRequest(route.Method, path, http.NoBody)
+		req, err := http.NewRequest(method, path, http.NoBody)
 		require.NoError(t, err)
 		recorder := httptest.NewRecorder()
 		router.ServeHTTP(recorder, req)
 
-		if openByDesign[route.Path] {
+		checked++
+		if openByDesign[route] {
 			assert.NotEqual(t, http.StatusUnauthorized, recorder.Code,
-				"%s is exempt by design and must stay reachable", route.Path)
-			checked++
-			continue
+				"%s is exempt by design and must stay reachable", route)
+			return nil
 		}
 
 		assert.Equal(t, http.StatusUnauthorized, recorder.Code,
-			"%s is a read with no documented exemption and must require a credential", route.Path)
-		checked++
-	}
+			"%s is a read with no documented exemption and must require a credential", route)
+		return nil
+	})
+	require.NoError(t, err)
 
 	assert.GreaterOrEqual(t, checked, 6, "the route table should have yielded every /api/v1 read")
 }
@@ -349,7 +349,7 @@ func TestReadAuthCoversEveryRegisteredRead(t *testing.T) {
 func TestReadAuthTaskLookupRemainsOpen(t *testing.T) {
 	const (
 		unknownTask = "/api/v1/tasks/00000000-0000-0000-0000-000000000000"
-		routePath   = "/api/v1/tasks/:id"
+		routePath   = "/api/v1/tasks/:id" // the metric label, unchanged since it is what dashboards select on
 	)
 
 	oidcStrategies := func() map[string]auth.AuthStrategy {
@@ -448,7 +448,7 @@ func TestReadAuthTaskLookupRemainsOpen(t *testing.T) {
 func TestReadAuthTaskLookupEnforced(t *testing.T) {
 	const (
 		unknownTask = "/api/v1/tasks/00000000-0000-0000-0000-000000000000"
-		routePath   = "/api/v1/tasks/:id"
+		routePath   = "/api/v1/tasks/:id" // the metric label, unchanged since it is what dashboards select on
 	)
 
 	enforcedEnv := func(t *testing.T, strategies map[string]auth.AuthStrategy) (*Env, *prometheus.Metrics) {

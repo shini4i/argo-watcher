@@ -4,8 +4,6 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/gin-gonic/gin"
-
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
@@ -22,15 +20,15 @@ import (
 // @Failure 401 {object} models.TaskStatus
 // @Failure 500 {object} models.TaskStatus
 // @Router /api/v1/deploy-lock [post]
-func (env *Env) SetDeployLock(c *gin.Context) {
-	if !env.requireOIDCAuth(c) {
+func (env *Env) SetDeployLock(w http.ResponseWriter, r *http.Request) {
+	if !env.requireOIDCAuth(w, r) {
 		return
 	}
 
 	if err := env.lockdown.SetLock(); err != nil {
 		// The caller must not believe deployments are frozen when they are not.
 		slog.Error("failed to set deploy lock", "error", err)
-		c.JSON(http.StatusInternalServerError, models.TaskStatus{
+		writeJSON(w, http.StatusInternalServerError, models.TaskStatus{
 			Status: "failed to set deploy lock",
 			Error:  "internal server error",
 		})
@@ -39,7 +37,7 @@ func (env *Env) SetDeployLock(c *gin.Context) {
 
 	slog.Debug("deploy lock is set")
 
-	c.JSON(http.StatusOK, "deploy lock is set")
+	writeJSON(w, http.StatusOK, "deploy lock is set")
 }
 
 // ReleaseDeployLock godoc
@@ -50,14 +48,14 @@ func (env *Env) SetDeployLock(c *gin.Context) {
 // @Failure 401 {object} models.TaskStatus
 // @Failure 500 {object} models.TaskStatus
 // @Router /api/v1/deploy-lock [delete]
-func (env *Env) ReleaseDeployLock(c *gin.Context) {
-	if !env.requireOIDCAuth(c) {
+func (env *Env) ReleaseDeployLock(w http.ResponseWriter, r *http.Request) {
+	if !env.requireOIDCAuth(w, r) {
 		return
 	}
 
 	if err := env.lockdown.ReleaseLock(); err != nil {
 		slog.Error("failed to release deploy lock", "error", err)
-		c.JSON(http.StatusInternalServerError, models.TaskStatus{
+		writeJSON(w, http.StatusInternalServerError, models.TaskStatus{
 			Status: "failed to release deploy lock",
 			Error:  "internal server error",
 		})
@@ -66,7 +64,7 @@ func (env *Env) ReleaseDeployLock(c *gin.Context) {
 
 	slog.Debug("deploy lock is released")
 
-	c.JSON(http.StatusOK, "deploy lock is released")
+	writeJSON(w, http.StatusOK, "deploy lock is released")
 }
 
 // isDeployLockSet godoc
@@ -77,6 +75,6 @@ func (env *Env) ReleaseDeployLock(c *gin.Context) {
 // @Failure 401 {object} models.TaskStatus "no credential, or the credential was rejected (only when OIDC auth is enabled)"
 // @Failure 503 {object} models.TaskStatus "the OIDC provider could not be consulted; retry"
 // @Router /api/v1/deploy-lock [get]
-func (env *Env) isDeployLockSet(c *gin.Context) {
-	c.JSON(http.StatusOK, env.lockdown.IsLocked())
+func (env *Env) isDeployLockSet(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, env.lockdown.IsLocked())
 }

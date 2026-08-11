@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -75,7 +74,6 @@ func activeConnections() int {
 
 // TestWebSocketAuthDisabled pins that an OIDC-less deployment keeps its open socket.
 func TestWebSocketAuthDisabled(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	_, url := wsAuthServer(t, false, nil)
 
 	status, _ := dialWS(t, url, nil)
@@ -87,7 +85,6 @@ func TestWebSocketAuthDisabled(t *testing.T) {
 // enabled, an anonymous socket could read every deploy-lock and reachability
 // transition even though the REST equivalents required a credential.
 func TestWebSocketAuthRejectsUncredentialed(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	env, url := wsAuthServer(t, true, map[string]auth.AuthStrategy{
 		oidcHeader: oidcLikeStrategy{authenticated: true},
 	})
@@ -108,7 +105,6 @@ func TestWebSocketAuthRejectsUncredentialed(t *testing.T) {
 // case would dominate the package's runtime. The two tests around this one prove the
 // decision is actually wired into the handshake.
 func TestAuthorizeWebSocket(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 
 	strategies := map[string]auth.AuthStrategy{
 		oidcHeader:                  oidcLikeStrategy{authenticated: true},
@@ -141,18 +137,17 @@ func TestAuthorizeWebSocket(t *testing.T) {
 			env, _ := readAuthEnv(t, true, strategies)
 
 			recorder := httptest.NewRecorder()
-			c, _ := gin.CreateTestContext(recorder)
-			c.Request = httptest.NewRequest(http.MethodGet, "/ws", http.NoBody)
+			req := httptest.NewRequest(http.MethodGet, "/ws", http.NoBody)
 			if tc.header != "" {
 				// Set, not a raw map write: only Set canonicalizes the key the way the
 				// net/http server does when the header arrives over the wire.
-				c.Request.Header.Set(tc.header, tc.value)
+				req.Header.Set(tc.header, tc.value)
 			}
 			if tc.subprotocol != "" {
-				c.Request.Header.Set("Sec-WebSocket-Protocol", wsSubprotocol+", "+tc.subprotocol)
+				req.Header.Set("Sec-WebSocket-Protocol", wsSubprotocol+", "+tc.subprotocol)
 			}
 
-			assert.Equal(t, tc.want, env.authorizeWebSocket(c))
+			assert.Equal(t, tc.want, env.authorizeWebSocket(recorder, req))
 			if tc.wantStatus != 0 {
 				assert.Equal(t, tc.wantStatus, recorder.Code)
 			}
@@ -163,17 +158,15 @@ func TestAuthorizeWebSocket(t *testing.T) {
 		env, _ := readAuthEnv(t, false, nil)
 
 		recorder := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(recorder)
-		c.Request = httptest.NewRequest(http.MethodGet, "/ws", http.NoBody)
+		req := httptest.NewRequest(http.MethodGet, "/ws", http.NoBody)
 
-		assert.True(t, env.authorizeWebSocket(c))
+		assert.True(t, env.authorizeWebSocket(recorder, req))
 	})
 }
 
 // TestWebSocketAuthAcceptsSubprotocolCredential covers the browser, which cannot set a
 // header on a handshake and must pass its token as a subprotocol instead.
 func TestWebSocketAuthAcceptsSubprotocolCredential(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	_, url := wsAuthServer(t, true, map[string]auth.AuthStrategy{
 		oidcHeader: oidcLikeStrategy{authenticated: true},
 	})
@@ -191,7 +184,6 @@ func TestWebSocketAuthAcceptsSubprotocolCredential(t *testing.T) {
 // TestWebSocketAuthRejectsBadSubprotocolCredential pins that the subprotocol is a
 // transport for the credential, not a way around checking it.
 func TestWebSocketAuthRejectsBadSubprotocolCredential(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	_, url := wsAuthServer(t, true, map[string]auth.AuthStrategy{
 		oidcHeader: oidcLikeStrategy{authenticated: false},
 	})
@@ -207,7 +199,6 @@ func TestWebSocketAuthRejectsBadSubprotocolCredential(t *testing.T) {
 // TestWebSocketAuthProviderUnavailable keeps the handshake consistent with the reads:
 // a provider outage is 503, so a reconnecting tab does not treat it as a dead session.
 func TestWebSocketAuthProviderUnavailable(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	_, url := wsAuthServer(t, true, map[string]auth.AuthStrategy{
 		oidcHeader: oidcLikeStrategy{unavailable: true},
 	})
