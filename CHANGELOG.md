@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Twenty transitive dependencies pulled in only by the previous framework are gone with
   it, which takes about 15 MB off the binary.
+- Database migrations now connect through the same PostgreSQL driver the server itself
+  uses (`pgx`), instead of a second driver linked only for migrations. The `DB_*`
+  variables, the migrations and the advisory lock that serializes them are unchanged, as
+  is running migrations with the external `migrate` CLI.
 
 ## [0.15.0] - 2026-08-11
 

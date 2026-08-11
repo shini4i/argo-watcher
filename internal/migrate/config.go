@@ -37,15 +37,18 @@ func NewMigrationConfig() (*MigrationConfig, error) {
 		return nil, helpers.PrettifyEnvError(err, "invalid argo-watcher migration configuration:")
 	}
 
-	// A non-positive connect timeout means "wait indefinitely" for libpq, silently
-	// defeating the fail-fast guard against an unreachable database.
+	// A connect timeout of 0 means "wait indefinitely", silently defeating the
+	// fail-fast guard against an unreachable database. Negatives are rejected here so
+	// the failure names the variable instead of surfacing as a DSN parse error.
 	if dbCfg.ConnectTimeout < 1 {
 		return nil, fmt.Errorf("invalid argo-watcher migration configuration: DB_CONNECT_TIMEOUT must be at least 1 second, got %d", dbCfg.ConnectTimeout)
 	}
 
-	// connect_timeout bounds the initial connection so an unreachable database
-	// fails fast instead of blocking on the OS TCP timeout.
-	dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s&connect_timeout=%d",
+	// The pgx5 scheme selects the driver registered in migrate.go; it rewrites the
+	// scheme to postgres before connecting, so the rest of the DSN is an ordinary
+	// PostgreSQL URI. connect_timeout bounds the initial connection so an
+	// unreachable database fails fast instead of blocking on the OS TCP timeout.
+	dsn := fmt.Sprintf("pgx5://%s:%s@%s:%s/%s?sslmode=%s&connect_timeout=%d",
 		url.QueryEscape(dbCfg.User),
 		url.QueryEscape(dbCfg.Password),
 		dbCfg.Host,

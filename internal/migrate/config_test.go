@@ -2,9 +2,11 @@
 package migrate
 
 import (
+	"net/url"
 	"os"
 	"testing"
 
+	"github.com/golang-migrate/migrate/v4/database"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -31,7 +33,7 @@ func TestNewMigrationConfig_Success(t *testing.T) {
 	// Verify the DSN is assembled correctly: DB_SSL_MODE flows into the sslmode
 	// segment, the password's special characters are URL-escaped, and the default
 	// connect_timeout (10s) is appended so an unreachable database fails fast.
-	assert.Equal(t, "postgres://testuser:testpassword%21%40%23@localhost:5432/testdb?sslmode=require&connect_timeout=10", cfg.DSN)
+	assert.Equal(t, "pgx5://testuser:testpassword%21%40%23@localhost:5432/testdb?sslmode=require&connect_timeout=10", cfg.DSN)
 }
 
 // TestNewMigrationConfig_ConnectTimeoutOverride verifies DB_CONNECT_TIMEOUT flows
@@ -48,7 +50,26 @@ func TestNewMigrationConfig_ConnectTimeoutOverride(t *testing.T) {
 	cfg, err := NewMigrationConfig()
 
 	require.NoError(t, err)
-	assert.Equal(t, "postgres://testuser:testpassword@localhost:5432/testdb?sslmode=require&connect_timeout=3", cfg.DSN)
+	assert.Equal(t, "pgx5://testuser:testpassword@localhost:5432/testdb?sslmode=require&connect_timeout=3", cfg.DSN)
+}
+
+// TestNewMigrationConfig_SchemeIsRegisteredDriver verifies the DSN scheme names a
+// driver this package actually registers. golang-migrate resolves the driver from
+// the scheme at runtime, so a scheme that no imported driver claims fails only when
+// migrations run against a live database — after the deployment is already rolling.
+func TestNewMigrationConfig_SchemeIsRegisteredDriver(t *testing.T) {
+	t.Setenv("DB_HOST", "localhost")
+	t.Setenv("DB_PORT", "5432")
+	t.Setenv("DB_USER", "testuser")
+	t.Setenv("DB_PASSWORD", "testpassword")
+	t.Setenv("DB_NAME", "testdb")
+
+	cfg, err := NewMigrationConfig()
+	require.NoError(t, err)
+
+	parsed, err := url.Parse(cfg.DSN)
+	require.NoError(t, err)
+	assert.Contains(t, database.List(), parsed.Scheme)
 }
 
 // TestNewMigrationConfig_CustomPath tests that a custom migration path from env vars is used.
@@ -70,8 +91,9 @@ func TestNewMigrationConfig_CustomPath(t *testing.T) {
 }
 
 // TestNewMigrationConfig_ConnectTimeoutRejectsNonPositive verifies that a
-// non-positive DB_CONNECT_TIMEOUT is rejected, since 0 (and negatives on libpq)
-// mean "wait indefinitely" and would silently defeat the fail-fast guard.
+// non-positive DB_CONNECT_TIMEOUT is rejected: 0 disables the dial timeout, which
+// defeats the fail-fast guard, and a negative value is rejected by pgx's own DSN
+// parsing. Both are turned into one early configuration error naming the variable.
 func TestNewMigrationConfig_ConnectTimeoutRejectsNonPositive(t *testing.T) {
 	for _, value := range []string{"0", "-1"} {
 		t.Run(value, func(t *testing.T) {

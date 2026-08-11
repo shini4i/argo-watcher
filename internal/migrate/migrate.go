@@ -7,8 +7,10 @@ import (
 	"log/slog"
 
 	"github.com/golang-migrate/migrate/v4"
-	// Registers the "postgres" database driver with golang-migrate.
-	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	// Registers the "pgx5" database driver with golang-migrate. It is preferred over
+	// the "postgres" driver because it reuses the pgx stack the state layer already
+	// links, instead of pulling a second PostgreSQL driver (lib/pq) into the binary.
+	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
 	// Registers the "file" migration source driver with golang-migrate.
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 )
