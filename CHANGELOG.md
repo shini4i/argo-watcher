@@ -92,6 +92,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The Web UI no longer leaks a WebSocket connection when a page remount closes and
+  immediately reopens its deployment-lock or Argo CD reachability subscription. A socket
+  reports closed asynchronously, so the closing one used to report back after its
+  replacement had already been opened, which discarded the replacement — leaving it
+  connected with nothing tracking it — and opened a third connection. Each remount could
+  do it again.
 - With OIDC enabled, opening a task detail page from a shared link and pressing Back no
   longer bounces through a fresh sign-in that lands back on the same page; it returns to
   the task list. The provider's authorize URL is also no longer left in browser history,

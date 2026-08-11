@@ -122,20 +122,23 @@ export abstract class WsStatusService<T extends NonNullable<unknown>> {
     }
 
     const url = resolveWebSocketUrl();
-    this.socket = new WebSocket(url, webSocketProtocols());
+    // Handlers close over this socket rather than reading `this.socket`, so a
+    // retired connection can never act on behalf of its replacement.
+    const socket = new WebSocket(url, webSocketProtocols());
+    this.socket = socket;
 
     // Re-bootstrap against the authoritative state on every (re)connect: the
     // server only pushes on transitions, and with multiple replicas a transition
     // can come from another one. A change that happened while this socket was
     // down — or before a failed bootstrap fetch — would otherwise leave the
     // client showing a stale state.
-    this.socket.onopen = () => {
+    socket.onopen = () => {
       this.fetchStatus().catch(error => {
         console.error(`[${this.logPrefix}] Failed to reconcile status on connect`, error);
       });
     };
 
-    this.socket.onmessage = event => {
+    socket.onmessage = event => {
       const payload = typeof event.data === 'string' ? event.data : '';
       const next = this.parseMessage(payload);
       if (next !== undefined) {
@@ -143,16 +146,23 @@ export abstract class WsStatusService<T extends NonNullable<unknown>> {
       }
     };
 
-    this.socket.onclose = () => {
+    socket.onclose = () => {
+      // A closing socket reports back asynchronously, so this can arrive after a
+      // teardown already replaced it (React remounts a subscriber often enough
+      // for that to be routine). Acting on it would abandon the live replacement
+      // and open a third connection.
+      if (this.socket !== socket) {
+        return;
+      }
       this.socket = null;
       if (this.listeners.size > 0) {
         this.scheduleReconnect();
       }
     };
 
-    this.socket.onerror = error => {
+    socket.onerror = error => {
       console.error(`[${this.logPrefix}] WebSocket error`, error);
-      this.socket?.close();
+      socket.close();
     };
   }
 

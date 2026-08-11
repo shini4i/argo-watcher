@@ -24,8 +24,22 @@ export class MockWebSocket {
     this.onopen?.();
   }
 
-  /** Fires the close handler; also the entry point when production code closes the socket. */
+  /**
+   * When true, `close()` only records the request and the test delivers the close
+   * event itself via {@link fireClose} — matching a real socket, which reports
+   * closed asynchronously. Defaults to false so the common case stays synchronous.
+   */
+  public deferClose = false;
+
+  /** Entry point when production code closes the socket. */
   public close() {
+    if (!this.deferClose) {
+      this.fireClose();
+    }
+  }
+
+  /** Delivers the close event to the handler. */
+  public fireClose() {
     this.onclose?.();
   }
 

@@ -348,6 +348,36 @@ describe('WsStatusService', () => {
     expect(listener).toHaveBeenLastCalledWith('changed while down');
   });
 
+  it('ignores a delayed close from a socket a re-subscribe already replaced', async () => {
+    // A real socket reports closed asynchronously, so a connection retired by
+    // teardown can deliver its close after a re-subscribe opened the replacement.
+    // React remounting a subscriber makes that sequence routine.
+    const service = new TestService();
+    const unsubscribe = service.subscribe(vi.fn());
+    await vi.waitUntil(() => MockWebSocket.instances.length === 1);
+    const retired = MockWebSocket.instances[0];
+    retired.deferClose = true;
+    const browserWindow = recordingWindow();
+    vi.spyOn(sharedUtils, 'getBrowserWindow').mockReturnValue(browserWindow as unknown as Window);
+
+    unsubscribe();
+    const unsubscribeReplacement = service.subscribe(vi.fn());
+    await vi.waitUntil(() => MockWebSocket.instances.length === 2);
+    const replacement = MockWebSocket.instances[1];
+
+    retired.fireClose();
+
+    // No third socket, and no reconnect armed to open one later.
+    expect(MockWebSocket.instances).toHaveLength(2);
+    expect(browserWindow.setTimeout).not.toHaveBeenCalled();
+
+    // The replacement is still the tracked socket, so teardown can still close
+    // it; had the stale close won, it would stay open with nobody holding it.
+    const closeSpy = vi.spyOn(replacement, 'close');
+    unsubscribeReplacement();
+    expect(closeSpy).toHaveBeenCalled();
+  });
+
   it('does not reconnect when the socket closes after the last listener left', async () => {
     const service = new TestService();
     const unsubscribe = service.subscribe(vi.fn());
