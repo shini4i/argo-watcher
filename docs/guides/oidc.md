@@ -111,11 +111,31 @@ reported as an authentication failure. Cached decisions (see
 
 ## Prerequisites
 
-You need a fully configured OIDC provider with a **public** client application (Authorization Code + PKCE) set up for Argo Watcher. Provider configuration is outside the scope of this guide — refer to your provider's documentation.
+You need a fully configured OIDC provider with a **public** client application (Authorization Code + PKCE) set up for Argo Watcher. Two client settings are dictated by how the Web UI signs in, and are covered below; anything else is provider-specific — refer to your provider's documentation.
+
+### Redirect URI and web origin
+
+The Web UI signs in with a **top-level redirect** (not a hidden iframe), so the provider must allow the browser back:
+
+- **Redirect URI** — the application's base URL **including the trailing slash**, e.g. `https://argo-watcher.example.com/`. When Argo Watcher is served under a sub-path, include it: `https://example.com/argo-watcher/`. The same value is used as the post-logout redirect URI. Providers match this exactly, and a mismatch fails the login on the provider's own error page, before Argo Watcher is ever reached.
+- **Web origin** — the application's origin (scheme, host, port; no path). After the redirect the browser reads group membership straight from the provider's userinfo endpoint, and that request carries an `Authorization` header, so the provider must allow it cross-origin. Providers differ here: Keycloak has a separate **Web origins** field, while others derive it from the registered redirect URI.
+
+    Get this wrong and **sign-in still succeeds** — the failure surfaces later, and quietly: the userinfo call is blocked, group membership comes back empty, and every privileged control stays hidden. That is the same symptom as a missing `groups` claim below, so check both when the rollback button or the deploy-lock toggle does not appear for a user who should have them.
+
+`test/keycloak/argo-watcher-e2e-realm.json` in the repository is a minimal working client definition — public, authorization code with PKCE (`S256`), an exact redirect URI, a web origin, and the `groups` mapper below. The browser test suite signs in against it on every run, so it stays a correct reference.
+
+!!! tip "Keycloak"
+    Set **Valid redirect URIs** and **Web origins** in the client's settings. Both are needed: with Web origins empty, users sign in normally and then have no privileged controls.
+
+!!! tip "Authentik"
+    Set **Redirect URI** on the OAuth2/OIDC provider to the same value.
+
+!!! note
+    The provider commonly runs on a different domain than Argo Watcher. That is supported — the flow is a top-level redirect precisely so it does not depend on third-party cookies — but it does mean the userinfo call is cross-origin, which is what the web origin setting is for.
 
 ### The `groups` claim
 
-Every provider must satisfy one requirement: emit a `groups` claim in **both** the ID token and the **userinfo** response (the Web UI reads it from the token to gate buttons; the backend independently enforces it via userinfo). The claim must be gated behind a scope Argo Watcher actually requests. Argo Watcher only ever requests `openid profile email`, so the claim must be bound to `profile` or `email` (or the base `openid` scope) — a claim gated behind a separate `groups` scope is never evaluated, and group membership comes back empty.
+Every provider must satisfy one requirement: emit a `groups` claim in **both** the ID token and the **userinfo** response. Both are used: the Web UI gates its buttons on userinfo — the same source the backend independently enforces on, so the two always agree — and falls back to the ID-token claim if that call fails. The claim must be gated behind a scope Argo Watcher actually requests. Argo Watcher only ever requests `openid profile email`, so the claim must be bound to `profile` or `email` (or the base `openid` scope) — a claim gated behind a separate `groups` scope is never evaluated, and group membership comes back empty.
 
 The steps below are the same requirement expressed in each provider's configuration model.
 
