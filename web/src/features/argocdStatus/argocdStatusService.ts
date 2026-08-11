@@ -1,6 +1,5 @@
 import { httpClient } from '../../data/httpClient';
-import { resolveWebSocketUrl, webSocketProtocols } from '../../data/webSocketUrl';
-import { getBrowserWindow } from '../../shared/utils';
+import { WsStatusService, type WsStatusListener } from '../../data/wsStatusService';
 
 /**
  * Which subsystem argo-watcher cannot reach, when unavailable. Mirrors the
@@ -20,15 +19,13 @@ export interface ArgocdStatus {
 }
 
 /** Subscribed listener signature invoked whenever reachability changes. */
-export type ArgocdStatusListener = (status: ArgocdStatus) => void;
+export type ArgocdStatusListener = WsStatusListener<ArgocdStatus>;
 
 /** Shape of the /api/v1/reachability response body (reason omitted when up). */
 interface ArgocdStatusResponse {
   available?: boolean;
   reason?: string;
 }
-
-const WS_RETRY_DELAY_MS = 5000;
 
 /**
  * WebSocket messages the server pushes on reachability transitions. A down
@@ -61,159 +58,38 @@ const toStatus = (data: ArgocdStatusResponse | null | undefined): ArgocdStatus =
     : { available: false, reason: parseReason(data?.reason) };
 
 /**
- * ArgocdStatusService mirrors the deploy-lock service for a different signal: it
- * bootstraps ArgoCD reachability over REST and then tracks live changes pushed
- * over the shared `/ws` WebSocket, so the frontend can surface an "ArgoCD
- * unreachable" banner (issue #498). It is read-only — there are no imperative
- * actions, unlike the deploy-lock service.
+ * ArgocdStatusService tracks whether argo-watcher can reach ArgoCD and its state
+ * backend, so the frontend can surface an "ArgoCD unreachable" banner (issue
+ * #498). It is read-only — there are no imperative actions, unlike the
+ * deploy-lock service.
  */
-export class ArgocdStatusService {
-  private currentStatus: ArgocdStatus | null = null;
-  private readonly listeners = new Set<ArgocdStatusListener>();
-  private socket: WebSocket | null = null;
-  private reconnectHandle: number | null = null;
-  // Ordering guards so an out-of-order async result can never revert the banner
-  // to a stale value. Both matter because a (re)connect can have a bootstrap and
-  // an onopen fetch in flight at once, alongside live WS pushes:
-  //   fetchSeq     - only the most recently issued fetch may apply its result;
-  //                  older concurrent fetches are dropped.
-  //   wsGeneration - bumped on every WebSocket transition; a fetch is dropped if
-  //                  one landed while it was in flight, so a slow REST response
-  //                  cannot clobber a fresher live update.
-  private fetchSeq = 0;
-  private wsGeneration = 0;
+export class ArgocdStatusService extends WsStatusService<ArgocdStatus> {
+  constructor() {
+    super('argocd-status');
+  }
 
-  /**
-   * Retrieves the latest reachability from the backend and notifies subscribers.
-   * The result is applied only if it is still the newest fetch AND no WebSocket
-   * transition landed while it was in flight; otherwise it is dropped so REST/WS
-   * ordering races cannot revert the banner to a stale value.
-   */
-  public async fetchStatus(): Promise<ArgocdStatus> {
-    const seq = ++this.fetchSeq;
-    const wsGen = this.wsGeneration;
+  /** Reads current reachability from the backend. */
+  protected async fetchState(): Promise<ArgocdStatus> {
     const response = await httpClient<ArgocdStatusResponse>('/api/v1/reachability');
-    const status = toStatus(response.data);
-    if (seq !== this.fetchSeq || wsGen !== this.wsGeneration) {
-      return this.currentStatus ?? status;
-    }
-    this.setStatus(status);
-    return status;
+    return toStatus(response.data);
   }
 
   /**
-   * Subscribes to reachability changes, establishing a WebSocket connection when
-   * needed. Returns an unsubscribe function for convenient cleanup.
+   * Recognises the reachability frames; the other signals on `/ws` are ignored.
+   * A down frame without a suffix, or with a cause this build does not know
+   * (forward-compat), still reports an outage with the reason narrowed to null.
    */
-  public subscribe(listener: ArgocdStatusListener): () => void {
-    this.listeners.add(listener);
-
-    if (this.currentStatus === null) {
-      this.fetchStatus().catch(error => {
-        console.error('[argocd-status] Failed to fetch initial status', error);
-      });
-    } else {
-      listener(this.currentStatus);
+  protected parseMessage(payload: string): ArgocdStatus | undefined {
+    if (payload === ARGOCD_UP_MESSAGE) {
+      return AVAILABLE_STATUS;
     }
-
-    this.ensureSocket();
-
-    return () => {
-      this.listeners.delete(listener);
-      if (this.listeners.size > 0) {
-        return;
-      }
-      this.teardownSocket();
-    };
-  }
-
-  /** Broadcasts the new reachability snapshot to all subscribers. */
-  private setStatus(status: ArgocdStatus) {
-    this.currentStatus = status;
-    for (const listener of this.listeners) {
-      listener(status);
+    if (payload === ARGOCD_DOWN_MESSAGE) {
+      return { available: false, reason: null };
     }
-  }
-
-  /** Ensures a websocket connection exists whenever there are active listeners. */
-  private ensureSocket() {
-    if (this.socket || this.listeners.size === 0) {
-      return;
+    if (payload.startsWith(ARGOCD_DOWN_PREFIX)) {
+      return { available: false, reason: parseReason(payload.slice(ARGOCD_DOWN_PREFIX.length)) };
     }
-
-    const url = resolveWebSocketUrl();
-    this.socket = new WebSocket(url, webSocketProtocols());
-
-    // Re-bootstrap against the authoritative cached state on every (re)connect:
-    // the server only pushes on transitions, so a transition during a socket
-    // drop would otherwise leave the reconnected client with a stale banner —
-    // and a false-negative here hides a real outage (issue #498).
-    this.socket.onopen = () => {
-      this.fetchStatus().catch(error => {
-        console.error('[argocd-status] Failed to reconcile status on connect', error);
-      });
-    };
-
-    this.socket.onmessage = event => {
-      const payload = typeof event.data === 'string' ? event.data : '';
-      if (payload === ARGOCD_UP_MESSAGE) {
-        this.wsGeneration++;
-        this.setStatus(AVAILABLE_STATUS);
-      } else if (payload === ARGOCD_DOWN_MESSAGE || payload.startsWith(ARGOCD_DOWN_PREFIX)) {
-        this.wsGeneration++;
-        const reason = payload.startsWith(ARGOCD_DOWN_PREFIX)
-          ? parseReason(payload.slice(ARGOCD_DOWN_PREFIX.length))
-          : null;
-        this.setStatus({ available: false, reason });
-      }
-    };
-
-    this.socket.onclose = () => {
-      this.socket = null;
-      if (this.listeners.size > 0) {
-        this.scheduleReconnect();
-      }
-    };
-
-    this.socket.onerror = error => {
-      console.error('[argocd-status] WebSocket error', error);
-      this.socket?.close();
-    };
-  }
-
-  /** Schedules a websocket reconnect attempt with basic backoff. */
-  private scheduleReconnect() {
-    if (this.reconnectHandle !== null) {
-      return;
-    }
-
-    const browserWindow = getBrowserWindow();
-    if (!browserWindow) {
-      return;
-    }
-
-    this.reconnectHandle = browserWindow.setTimeout(() => {
-      this.reconnectHandle = null;
-      this.ensureSocket();
-    }, WS_RETRY_DELAY_MS);
-  }
-
-  /** Closes any active websocket and cancels pending reconnect timers. */
-  private teardownSocket() {
-    if (this.reconnectHandle !== null) {
-      const browserWindow = getBrowserWindow();
-      browserWindow?.clearTimeout(this.reconnectHandle);
-      this.reconnectHandle = null;
-    }
-
-    this.socket?.close();
-    this.socket = null;
-    // Forget the cached reachability so a later re-subscribe bootstraps a fresh
-    // fetch instead of replaying a value that may have gone stale while nobody
-    // was listening. Bumping fetchSeq invalidates any fetch issued before the
-    // teardown, which would otherwise repopulate the cache as it resolves.
-    this.fetchSeq++;
-    this.currentStatus = null;
+    return undefined;
   }
 }
 

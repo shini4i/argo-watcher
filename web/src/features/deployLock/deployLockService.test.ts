@@ -1,49 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DeployLockListener } from './deployLockService';
-import { DeployLockService, __testing } from './deployLockService';
+import { DeployLockService } from './deployLockService';
+import { MockWebSocket } from '../../test/mockWebSocket';
 import * as sharedUtils from '../../shared/utils';
 import { clearAccessToken, setAccessToken } from '../../auth/tokenStore';
 
-class MockWebSocket {
-  public onopen: (() => void) | null = null;
-  public onmessage: ((event: { data: string }) => void) | null = null;
-  public onclose: (() => void) | null = null;
-  public onerror: ((error: unknown) => void) | null = null;
-
-  constructor(
-    public url: string,
-    public protocols?: string | string[],
-  ) {
-    MockWebSocket.instances.push(this);
-  }
-
-  public open() {
-    this.onopen?.();
-  }
-
-  public close() {
-    this.onclose?.();
-  }
-
-  public emit(message: string) {
-    this.onmessage?.({ data: message });
-  }
-
-  static readonly instances: MockWebSocket[] = [];
-
-  static reset() {
-    MockWebSocket.instances.length = 0;
-  }
-}
-
 describe('DeployLockService', () => {
-  const originalEnv = { ...import.meta.env };
-
   beforeEach(() => {
     vi.restoreAllMocks();
     MockWebSocket.reset();
     vi.stubGlobal('WebSocket', MockWebSocket as unknown as typeof WebSocket);
-    import.meta.env.VITE_WS_BASE_URL = originalEnv.VITE_WS_BASE_URL;
   });
 
   const mockFetch = (responses: Array<{ body: unknown; status?: number }>) => {
@@ -472,31 +438,5 @@ describe('DeployLockService', () => {
     expect(errorSpy).toHaveBeenCalledWith('[deploy-lock] WebSocket error', wsError);
     expect(closeSpy).toHaveBeenCalled();
     errorSpy.mockRestore();
-  });
-
-  it('builds websocket URLs from env overrides and window location', () => {
-    const customWindow = {
-      location: {
-        protocol: 'https:',
-        host: 'custom.example',
-      },
-    } as unknown as Window;
-    const windowSpy = vi.spyOn(sharedUtils, 'getBrowserWindow').mockReturnValue(customWindow);
-
-    import.meta.env.VITE_WS_BASE_URL = 'wss://custom.example';
-    expect(__testing.resolveWebSocketUrl()).toBe('wss://custom.example/ws');
-
-    windowSpy.mockReturnValue({
-      location: {
-        protocol: 'https:',
-        host: 'argo.example',
-      },
-    } as unknown as Window);
-    import.meta.env.VITE_WS_BASE_URL = 'wss://malicious.example';
-    expect(__testing.resolveWebSocketUrl()).toBe('wss://argo.example/ws');
-
-    import.meta.env.VITE_WS_BASE_URL = '';
-    expect(__testing.resolveWebSocketUrl()).toBe('wss://argo.example/ws');
-    windowSpy.mockRestore();
   });
 });
