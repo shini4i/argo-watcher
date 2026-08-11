@@ -15,6 +15,10 @@ client behaviour.
 
 Unlike the unit and integration suites, ArgoCD here is **not mocked**.
 
+This lab covers the backend and its real ArgoCD/git path only. Browser-level UI
+testing — the OIDC redirect, deep links, the deploy-lock WebSocket, rollback —
+lives separately in `web/e2e/` (Playwright, `task test-web-e2e`).
+
 ## Prerequisites
 
 `kind`, `kubectl`, `helm`, `go`, `git`, `jq`, `yq`, `curl`, `task`, `bats`, and

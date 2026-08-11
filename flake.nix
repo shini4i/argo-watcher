@@ -70,6 +70,22 @@
             corepack
           ]) ++ [ viteShim ];
 
+        # Browsers for the Playwright suite (web/e2e). Playwright refuses to run
+        # against a browser build it was not compiled for, so web/package.json
+        # pins @playwright/test to EXACTLY this derivation's version. CI installs
+        # its own browsers and would not catch a drift, so the dev shell asserts
+        # the pairing here and fails to evaluate with the mismatch named.
+        pinnedPlaywright =
+          (builtins.fromJSON (builtins.readFile ./web/package.json)).devDependencies."@playwright/test";
+
+        playwrightBrowsers =
+          assert pkgs.lib.assertMsg (pkgs.playwright-driver.version == pinnedPlaywright) ''
+            Playwright version mismatch: nixpkgs playwright-driver is ${pkgs.playwright-driver.version},
+            but web/package.json pins @playwright/test to ${pinnedPlaywright}.
+            Bump both together (the browsers must match the client build).
+          '';
+          pkgs.playwright-driver.browsers;
+
         # mkdocs-llmstxt is not packaged in nixpkgs, so we build it from its PyPI
         # sdist to keep the dev shell's `mkdocs build`/`serve` in sync with
         # docs/requirements.txt. Everything it needs — mkdocs, mdformat 1.0.0 and
@@ -133,6 +149,10 @@
             export GOMODCACHE="$PWD/.gomod"
             mkdir -p "$GOPATH" "$GOMODCACHE"
             export GO111MODULE=on
+
+            # Point Playwright at the Nix-provided browsers instead of the
+            # per-user download cache, which nothing here populates.
+            export PLAYWRIGHT_BROWSERS_PATH="${playwrightBrowsers}"
 
             export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath [
               pkgs.cairo

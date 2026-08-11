@@ -50,3 +50,10 @@ sandbox/
 
 # per-phase JUnit reports written by the e2e lab's bats run
 test/e2e/reports/
+
+# Playwright run output (HTML report, traces, screenshots)
+web/playwright-report/
+web/test-results/
+
+# TypeScript incremental build info (emitted by the composite node-side project)
+**/*.tsbuildinfo

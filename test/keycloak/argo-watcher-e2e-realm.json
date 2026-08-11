@@ -10,9 +10,15 @@
       "clientId": "argo-watcher",
       "enabled": true,
       "publicClient": true,
-      "standardFlowEnabled": false,
+      "standardFlowEnabled": true,
       "serviceAccountsEnabled": false,
       "directAccessGrantsEnabled": true,
+      "redirectUris": [ "http://localhost:8101/" ],
+      "webOrigins": [ "http://localhost:8101" ],
+      "attributes": {
+        "post.logout.redirect.uris": "http://localhost:8101/",
+        "pkce.code.challenge.method": "S256"
+      },
       "protocolMappers": [
         {
           "name": "groups",
