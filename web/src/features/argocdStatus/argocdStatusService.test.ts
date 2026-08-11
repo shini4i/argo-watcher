@@ -1,36 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ArgocdStatusListener } from './argocdStatusService';
 import { ArgocdStatusService } from './argocdStatusService';
+import { MockWebSocket } from '../../test/mockWebSocket';
 import * as sharedUtils from '../../shared/utils';
-
-class MockWebSocket {
-  public onopen: (() => void) | null = null;
-  public onmessage: ((event: { data: string }) => void) | null = null;
-  public onclose: (() => void) | null = null;
-  public onerror: ((error: unknown) => void) | null = null;
-
-  constructor(public url: string) {
-    MockWebSocket.instances.push(this);
-  }
-
-  public open() {
-    this.onopen?.();
-  }
-
-  public close() {
-    this.onclose?.();
-  }
-
-  public emit(message: string) {
-    this.onmessage?.({ data: message });
-  }
-
-  static readonly instances: MockWebSocket[] = [];
-
-  static reset() {
-    MockWebSocket.instances.length = 0;
-  }
-}
 
 describe('ArgocdStatusService', () => {
   beforeEach(() => {

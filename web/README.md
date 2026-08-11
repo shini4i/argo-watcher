@@ -15,11 +15,12 @@ React 19, React-admin 5, Material UI 9, Emotion, TypeScript, oxlint, and Vitest/
 | `src/main.tsx` | React entry point that mounts `AppSplash` immediately, runs `bootstrapAuth()` to consume any OIDC authorization-code callback before mounting React-admin, then wires React Router, shared providers, and the `App` component. |
 | `src/App.tsx` | Placeholder React-admin shell; extend this file with `<Admin>` resources as migration phases land. |
 | `src/auth/` | Authentication helpers. `authProvider.ts` drives the OIDC provider (via `oidc-client-ts`) using config from `/api/v1/config`, and `tokenStore.ts` holds the bearer token in memory. |
-| `src/data/` | HTTP layer and React-admin `dataProvider` implementation that targets `/api/v1/tasks` and related endpoints. |
+| `src/data/` | HTTP layer, React-admin `dataProvider` implementation targeting `/api/v1/tasks` and related endpoints, and `wsStatusService.ts`, the shared base for signals mirrored over REST + `/ws`. |
 | `src/features/` | Feature modules (currently `tasks/` and `deployLock/`). Each folder owns its components, hooks, and service logic. |
 | `src/layout/` | Reusable React-admin layout primitives (notifications, top bar, nav, etc.), plus `AppSplash.tsx`, the pre-mount loading screen. |
 | `src/shared/` | Cross-cutting hooks, context providers (timezone), and utilities (time formatting, OIDC toggle). |
 | `src/theme/` | Material UI theme factory plus `ThemeModeProvider` for light/dark persistence. |
+| `src/test/` | Test doubles shared across suites (currently the WebSocket stand-in). |
 | `e2e/` | Playwright browser specs, split into the `no-auth` and `auth` projects, plus `helpers.ts` (task seeding, Keycloak sign-in, token minting). |
 | `assets/` + `public/` | Static assets (logos, favicons) delivered verbatim by Vite. |
 | `dist/` | Build output consumed by the Go server (`STATIC_FILES_PATH`) or Docker images. Generated via `npm run build`. |
@@ -85,7 +86,7 @@ OIDC settings (issuer URL, client_id, privileged groups) come from `/api/v1/conf
 - **Auth provider (`src/auth/authProvider.ts`)** – fetches `/api/v1/config` and, when OIDC is enabled, drives an `oidc-client-ts` `UserManager` (Authorization Code + PKCE). `bootstrapAuth()` (called from `main.tsx` before React mounts) consumes the `?code=…&state=…` callback before the router's index redirect can strip it. It uses a top-level login redirect, relies on `automaticSilentRenew` for token renewal, keeps tokens in memory only, and reads group membership from the userinfo endpoint (the same source the backend enforces on) to expose permissions to React-admin. `checkAuth` never rejects for an unauthenticated user (which would trigger a logout loop) — it redirects instead. When OIDC is disabled, `bootstrapAuth()` is a no-op and the app renders immediately. `bootstrapAuth()` accepts an optional `onOidcEnabled` callback, invoked only once the config reports OIDC enabled and before any provider round trip; `main.tsx` uses it to narrow the splash status line from "Loading…" to "Signing in…", so an auth-less deployment is never told it is signing in.
 - **Pre-mount loading screen (`src/layout/AppSplash.tsx`)** – covers the window between page load and the React-admin mount, which is otherwise blank while `bootstrapAuth()` resolves the session. It brings its own dark theme and issues no requests: it must render outside `AppProviders`, whose deploy-lock and ArgoCD-status providers start polling the API on mount, before any token exists.
 - **OIDC toggle hook (`src/shared/hooks/useOidcEnabled.ts`)** – tiny helper for gating UI affordances when running without identity.
-- **Deploy lock service (`src/features/deployLock/deployLockService.ts`)** – shares lock state through REST endpoints plus the `/ws` channel. Automatic retries and subscriber management keep the UI in sync even if the socket drops.
+- **Live status services (`src/data/wsStatusService.ts`)** – shared base for a server-owned signal the UI mirrors: bootstrap over REST, then track transitions pushed on the `/ws` channel, with one socket per signal while listeners exist, reconnect-and-reconcile when the socket drops, and ordering guards so a slow REST response cannot overwrite a fresher push. `deployLockService` (`src/features/deployLock/`) extends it and adds the imperative lock/release operations; `argocdStatusService` (`src/features/argocdStatus/`) extends it read-only for ArgoCD reachability.
 - **Global providers (`src/shared/providers/AppProviders.tsx`)** – wraps the app with the theme mode, timezone, and deploy-lock providers, plus a global banner that reflects lock status.
 
 ## Shared UX Infrastructure
@@ -99,7 +100,7 @@ OIDC settings (issuer URL, client_id, privileged groups) come from `/api/v1/conf
 
 - Vitest runs in `jsdom` with globals + `vitest.setup.ts` (place shared mocks, `@testing-library/jest-dom`, etc.).
 - Tests live next to the code as `*.test.ts(x)` and are auto-discovered via `vitest.config.ts`.
-- Coverage reporters: text summary in CI plus LCOV for Codecov. Keep critical flows (auth provider, data provider, deploy-lock logic, utilities) covered.
+- Coverage reporters: text summary in CI plus LCOV for Codecov. Keep critical flows (auth provider, data provider, the shared WS status protocol, utilities) covered.
 - oxlint enforces React, hooks rules, and TypeScript correctness. Configure additional lint rules under `.oxlintrc.json` if new conventions emerge.
 
 ### Browser tests (Playwright)
