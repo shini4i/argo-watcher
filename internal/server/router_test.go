@@ -2377,10 +2377,13 @@ func TestRouterCompatibility(t *testing.T) {
 		{"non-GET trailing slash keeps the method", http.MethodPost, "/api/v1/tasks/", http.StatusTemporaryRedirect, "/api/v1/tasks", ""},
 		{"metrics is served", http.MethodGet, "/metrics", http.StatusOK, "", "@contains:go_goroutines"},
 		{"metrics is a GET-only endpoint", http.MethodPost, "/metrics", http.StatusOK, "", "SPA-INDEX"},
-		// A request line may carry an absolute URI, and a path may start with "//".
-		// Neither may put a foreign host in the Location header.
+		// Nothing may put a foreign host in the Location header. A request line may
+		// carry an absolute URI; a path may start with "//"; and percent-encoding hides
+		// both that and the backslash a browser resolves as a second leading slash.
 		{"redirect never echoes the request host", http.MethodGet, "http://evil.example.com/livez/", http.StatusMovedPermanently, "/livez", ""},
 		{"protocol-relative path is not redirected", http.MethodGet, "//livez/", http.StatusOK, "", "SPA-INDEX"},
+		{"encoded protocol-relative path is not redirected", http.MethodGet, "/%2f%2flivez/", http.StatusOK, "", "SPA-INDEX"},
+		{"backslash-rooted path is not redirected", http.MethodGet, "/%5clivez/", http.StatusOK, "", "SPA-INDEX"},
 	}
 
 	for _, tc := range cases {
