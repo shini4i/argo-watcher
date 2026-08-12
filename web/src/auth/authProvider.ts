@@ -132,13 +132,27 @@ const fetchServerConfig = async (): Promise<ServerConfig> => {
 };
 
 /**
+ * Reads a required OIDC setting, treating a blank or non-string value as absent.
+ *
+ * Blank counts as missing because the server applies the same rule (it refuses to
+ * start when the issuer or client id trims to empty), and because a whitespace
+ * issuer would otherwise reach discovery and be reported as an unreachable
+ * provider instead of the configuration mistake it is.
+ */
+const requiredOidcField = (value: unknown): string | undefined => {
+  const trimmed = typeof value === 'string' ? value.trim() : '';
+  return trimmed || undefined;
+};
+
+/**
  * Lists the OIDC fields required to build a UserManager that the server did not
  * supply, in configuration-key form so the message can name them.
  */
 const missingOidcFields = (config: OidcConfig): string[] =>
-  [!config.issuer_url && 'issuer_url', !config.client_id && 'client_id'].filter(
-    (field): field is string => typeof field === 'string',
-  );
+  [
+    !requiredOidcField(config.issuer_url) && 'issuer_url',
+    !requiredOidcField(config.client_id) && 'client_id',
+  ].filter((field): field is string => typeof field === 'string');
 
 /**
  * Verifies that the OIDC config contains the minimum fields required to build a
@@ -170,8 +184,10 @@ const ensureUserManager = async (): Promise<UserManager | null> => {
   if (!userManager) {
     const redirectUri = appBaseUrl();
     userManager = new UserManager({
-      authority: config.oidc.issuer_url!,
-      client_id: config.oidc.client_id!,
+      // Normalized, not raw: assertOidcFields has established both are non-blank,
+      // and surrounding whitespace would otherwise be sent to the provider.
+      authority: requiredOidcField(config.oidc.issuer_url)!,
+      client_id: requiredOidcField(config.oidc.client_id)!,
       redirect_uri: redirectUri,
       post_logout_redirect_uri: redirectUri,
       response_type: 'code',

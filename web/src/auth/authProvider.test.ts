@@ -143,6 +143,25 @@ describe('authProvider', () => {
     );
   });
 
+  it('sends the provider a trimmed issuer and client id', async () => {
+    mockConfig(
+      enabledConfig({ issuer_url: '  https://idp.example.com/realms/demo  ', client_id: ' argo ' }),
+    );
+    userManagerMock.getUser.mockResolvedValue(null);
+    const provider = await loadAuthProvider();
+
+    await provider.checkAuth({});
+
+    // Surrounding whitespace in a deployment value must not become part of the
+    // authority or the client id on the wire.
+    expect(MockUserManager).toHaveBeenCalledWith(
+      expect.objectContaining({
+        authority: 'https://idp.example.com/realms/demo',
+        client_id: 'argo',
+      }),
+    );
+  });
+
   it('never rejects checkAuth when the login redirect fails', async () => {
     mockConfig(enabledConfig());
     userManagerMock.getUser.mockResolvedValue(null);
@@ -516,6 +535,16 @@ describe('authProvider', () => {
     it.each([
       { missing: 'client_id', oidc: { enabled: true, issuer_url: 'https://idp/realms/demo' } },
       { missing: 'issuer_url', oidc: { enabled: true, client_id: 'argo' } },
+      // Blank counts as absent, or the whitespace reaches discovery and the
+      // configuration mistake is reported as an unreachable provider instead.
+      {
+        missing: 'issuer_url',
+        oidc: { enabled: true, issuer_url: '   ', client_id: 'argo' },
+      },
+      {
+        missing: 'client_id',
+        oidc: { enabled: true, issuer_url: 'https://idp/realms/demo', client_id: '  ' },
+      },
     ])('names $missing when the enabled OIDC block omits it', async ({ missing, oidc }) => {
       mockConfig({ oidc });
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
