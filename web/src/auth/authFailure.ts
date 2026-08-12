@@ -98,6 +98,20 @@ const optionalUrl = (value: unknown): string | undefined => {
   }
 };
 
+/**
+ * Drops trailing slashes so an issuer keeps exactly one before the discovery path.
+ *
+ * Written as a scan rather than a `/\/+$/` replace, whose backtracking is
+ * super-linear in the number of trailing slashes.
+ */
+const trimTrailingSlashes = (value: string): string => {
+  let end = value.length;
+  while (end > 0 && value[end - 1] === '/') {
+    end -= 1;
+  }
+  return value.slice(0, end);
+};
+
 /** Best-effort message for anything thrown, including non-Error values. */
 const messageOf = (error: unknown): string | undefined => {
   if (error instanceof Error) {
@@ -187,10 +201,10 @@ export const describeCallbackError = (error: unknown): AuthFailure => {
 export const describeRedirectError = (error: unknown, issuerUrl?: string): AuthFailure => {
   // Type-checked, not just truthiness-checked: the issuer comes from parsed but
   // unvalidated /api/v1/config JSON, and this must not throw (see optionalText).
-  const discoveryUrl =
-    typeof issuerUrl === 'string' && issuerUrl.trim()
-      ? `${issuerUrl.trim().replace(/\/+$/, '')}/.well-known/openid-configuration`
-      : undefined;
+  const issuer = typeof issuerUrl === 'string' ? issuerUrl.trim() : '';
+  const discoveryUrl = issuer
+    ? `${trimTrailingSlashes(issuer)}/.well-known/openid-configuration`
+    : undefined;
 
   return {
     kind: 'redirect_failed',

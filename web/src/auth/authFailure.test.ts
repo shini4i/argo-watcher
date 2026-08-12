@@ -229,8 +229,12 @@ describe('describeRedirectError', () => {
     expect(failure.hint).toContain('browser');
   });
 
-  it('does not duplicate the slash when the issuer has a trailing one', () => {
-    const failure = describeRedirectError(new Error('Failed to fetch'), 'https://idp/app/o/aw/');
+  it.each([
+    { label: 'one trailing slash', issuer: 'https://idp/app/o/aw/' },
+    { label: 'several trailing slashes', issuer: 'https://idp/app/o/aw///' },
+    { label: 'no trailing slash', issuer: 'https://idp/app/o/aw' },
+  ])('builds the discovery URL with exactly one slash given $label', ({ issuer }) => {
+    const failure = describeRedirectError(new Error('Failed to fetch'), issuer);
 
     expect(failure.hint).toContain('https://idp/app/o/aw/.well-known/openid-configuration');
   });
