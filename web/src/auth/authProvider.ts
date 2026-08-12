@@ -2,6 +2,12 @@ import { InMemoryWebStorage, User, UserManager, WebStorageStateStore } from 'oid
 import type { AuthProvider, Identifier } from 'react-admin';
 import { HttpError } from 'react-admin';
 import { getBrowserWindow } from '../shared/utils';
+import type { AuthFailure } from './authFailure';
+import {
+  describeCallbackError,
+  describeIncompleteConfig,
+  describeRedirectError,
+} from './authFailure';
 import { clearAccessToken, setAccessToken } from './tokenStore';
 
 interface OidcConfig {
@@ -126,11 +132,20 @@ const fetchServerConfig = async (): Promise<ServerConfig> => {
 };
 
 /**
+ * Lists the OIDC fields required to build a UserManager that the server did not
+ * supply, in configuration-key form so the message can name them.
+ */
+const missingOidcFields = (config: OidcConfig): string[] =>
+  [!config.issuer_url && 'issuer_url', !config.client_id && 'client_id'].filter(
+    (field): field is string => typeof field === 'string',
+  );
+
+/**
  * Verifies that the OIDC config contains the minimum fields required to build a
  * UserManager (issuer and client id).
  */
 const assertOidcFields = (config: OidcConfig) => {
-  if (!config.issuer_url || !config.client_id) {
+  if (missingOidcFields(config).length > 0) {
     throw new HttpError('OIDC configuration is incomplete', 500, config);
   }
 };
@@ -194,11 +209,6 @@ const ensureUserManager = async (): Promise<UserManager | null> => {
   return userManager;
 };
 
-// One-shot marker (per browser session) recording that the last interactive
-// sign-in came back as a provider error, so ensureAuthenticated does not
-// immediately redirect back to the provider and create a tight redirect loop.
-const SIGNIN_ERROR_FLAG = 'argo-watcher:oidc-signin-error';
-
 /**
  * True when the current URL carries an OIDC redirect callback — either a
  * successful authorization code (`code`) or a provider error (`error`), both
@@ -225,22 +235,23 @@ const replaceUrl = (target: string) => {
 
 /**
  * Completes an OIDC redirect callback: on success it exchanges the code for
- * tokens and returns to the pre-login path encoded in `url_state`; on a provider
- * error it consumes the response (stripping the query so a reload cannot
- * re-trigger it) and records a one-shot flag so the next auth check does not
- * immediately redirect back — breaking the error → redirect → error loop.
+ * tokens and returns to the pre-login path encoded in `url_state`; on failure it
+ * consumes the response (stripping the query so a reload cannot re-trigger it)
+ * and reports the reason, which the caller shows instead of retrying.
+ *
+ * @returns the failure to show the user, or null once a session exists.
  */
-const completeSignin = async (manager: UserManager) => {
+const completeSignin = async (manager: UserManager): Promise<AuthFailure | null> => {
   try {
     const user = await manager.signinRedirectCallback();
     setAccessToken(user.access_token);
     clearUserGroupsCache();
-    getBrowserWindow()?.sessionStorage.removeItem(SIGNIN_ERROR_FLAG);
     replaceUrl((typeof user.url_state === 'string' && user.url_state) || appBaseUrl());
+    return null;
   } catch (error) {
     console.warn('[auth] OIDC sign-in callback returned an error; not retrying automatically.', error);
-    getBrowserWindow()?.sessionStorage.setItem(SIGNIN_ERROR_FLAG, '1');
     replaceUrl(appBaseUrl());
+    return describeCallbackError(error);
   }
 };
 
@@ -252,32 +263,42 @@ const completeSignin = async (manager: UserManager) => {
  * makes React-admin call authProvider.logout(), which would terminate a still-valid
  * SSO session and bounce the browser between the app and the login page. An
  * unauthenticated user is redirected instead, and the call still resolves.
+ *
+ * @returns the failure to show the user, or null when a session exists or the
+ * browser is on its way to the provider.
  */
-const ensureAuthenticated = async (manager: UserManager): Promise<boolean> => {
+const ensureAuthenticated = async (manager: UserManager): Promise<AuthFailure | null> => {
   const user = await manager.getUser();
   if (user && !user.expired) {
     setAccessToken(user.access_token);
-    return true;
+    return null;
   }
 
   clearAccessToken();
   clearUserGroupsCache();
 
-  // If the last interactive sign-in just came back as a provider error, do not
-  // immediately redirect again (that is the loop). Consume the one-shot flag and
-  // resolve unauthenticated for now; a later navigation re-attempts cleanly.
-  const browserWindow = getBrowserWindow();
-  if (browserWindow?.sessionStorage.getItem(SIGNIN_ERROR_FLAG)) {
-    browserWindow.sessionStorage.removeItem(SIGNIN_ERROR_FLAG);
-    return true;
-  }
-
   try {
     await manager.signinRedirect({ url_state: currentPath() });
   } catch (error) {
     console.warn('[auth] Failed to initiate the OIDC login redirect.', error);
+    return describeRedirectError(error, serverConfig?.oidc?.issuer_url);
   }
-  return true;
+  return null;
+};
+
+/**
+ * Turns a failed UserManager construction into a displayable failure, but only for
+ * the one cause the operator can act on: OIDC enabled without the fields it needs.
+ * Anything else (a configuration request that did not answer) reports null so the
+ * app still renders.
+ */
+const incompleteConfigFailure = (): AuthFailure | null => {
+  const oidc = serverConfig?.oidc;
+  if (!oidc?.enabled) {
+    return null;
+  }
+  const missing = missingOidcFields(oidc);
+  return missing.length > 0 ? describeIncompleteConfig(missing) : null;
 };
 
 interface BootstrapOptions {
@@ -300,34 +321,44 @@ interface BootstrapOptions {
  *
  * OIDC is OPTIONAL: when disabled server-side, this returns without building a
  * UserManager or redirecting, so auth-less deployments render exactly as before.
- * Bootstrap failures are swallowed so rendering is never blocked; checkAuth re-runs
- * the same path on mount.
+ *
+ * @returns a failure the caller should show instead of mounting the app, or null
+ * when the app can render — either because a session exists, because the browser
+ * is leaving for the provider, or because OIDC is not in use. A configuration
+ * request that merely failed reports null: a restarting backend must still render
+ * the app, and checkAuth re-runs the same path on mount.
  */
-export const bootstrapAuth = async ({ onOidcEnabled }: BootstrapOptions = {}): Promise<void> => {
+export const bootstrapAuth = async ({
+  onOidcEnabled,
+}: BootstrapOptions = {}): Promise<AuthFailure | null> => {
+  let manager: UserManager | null = null;
+
   try {
-    const manager = await ensureUserManager();
-    if (!manager) {
-      setAccessToken(null);
-      clearUserGroupsCache();
-      return;
-    }
-
-    // Guarded: this callback only drives presentation, so a throw from it must not
-    // cancel the sign-in or be reported as an authentication failure.
-    try {
-      onOidcEnabled?.();
-    } catch (error) {
-      console.warn('[auth] onOidcEnabled callback threw; continuing with sign-in.', error);
-    }
-
-    if (isRedirectCallback()) {
-      await completeSignin(manager);
-    } else {
-      await ensureAuthenticated(manager);
-    }
+    manager = await ensureUserManager();
   } catch (error) {
     console.warn('[auth] Eager authentication bootstrap failed; deferring to checkAuth.', error);
+    return incompleteConfigFailure();
   }
+
+  if (!manager) {
+    setAccessToken(null);
+    clearUserGroupsCache();
+    return null;
+  }
+
+  // Guarded: this callback only drives presentation, so a throw from it must not
+  // cancel the sign-in or be reported as an authentication failure.
+  try {
+    onOidcEnabled?.();
+  } catch (error) {
+    console.warn('[auth] onOidcEnabled callback threw; continuing with sign-in.', error);
+  }
+
+  if (isRedirectCallback()) {
+    return completeSignin(manager);
+  }
+
+  return ensureAuthenticated(manager);
 };
 
 /**
@@ -373,6 +404,10 @@ export const authProvider: AuthProvider = {
       clearUserGroupsCache();
       return;
     }
+    // Any failure it reports is left on the console: the app is already mounted by
+    // the time checkAuth runs, and tearing a running session down over a failed
+    // renewal is the bouncing this provider avoids. Bootstrap is what surfaces a
+    // failure on screen, before the app exists.
     await ensureAuthenticated(manager);
   },
 

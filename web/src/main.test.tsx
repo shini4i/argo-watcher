@@ -1,13 +1,16 @@
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { ReactElement, ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-let resolveBootstrap: () => void = () => {};
+import type { AuthFailure } from './auth/authFailure';
+
+let resolveBootstrap: (failure?: AuthFailure | null) => void = () => {};
 let notifyOidcEnabled: () => void = () => {};
 const bootstrapAuthMock = vi.fn(
   (options?: { onOidcEnabled?: () => void }) =>
-    new Promise<void>(resolve => {
-      resolveBootstrap = resolve;
+    new Promise<AuthFailure | null>(resolve => {
+      resolveBootstrap = (failure = null) => resolve(failure);
       notifyOidcEnabled = () => options?.onOidcEnabled?.();
     }),
 );
@@ -17,8 +20,20 @@ vi.mock('./auth/authProvider', () => ({
   authProvider: {},
 }));
 
-const AppSplashStub = ({ message }: { message: string }) => (
-  <div data-testid="app-splash">{message}</div>
+const AppSplashStub = ({
+  message,
+  error,
+  onRetry,
+}: {
+  message: string;
+  error?: AuthFailure;
+  onRetry?: () => void;
+}) => (
+  <div data-testid="app-splash">
+    {message}
+    {error && <div data-testid="splash-error">{error.title}</div>}
+    {onRetry && <button data-testid="splash-retry" onClick={onRetry} type="button" />}
+  </div>
 );
 
 vi.mock('./layout/AppSplash', () => ({
@@ -156,14 +171,73 @@ describe('main entrypoint', () => {
     app.unmount();
   });
 
+  it('shows the failure on the splash instead of mounting the app', async () => {
+    document.body.innerHTML = '<div id="root"></div>';
+
+    await import('./main');
+
+    notifyOidcEnabled();
+    resolveBootstrap({
+      kind: 'redirect_failed',
+      title: 'Could not start the sign-in',
+      detail: 'Failed to fetch',
+    });
+    await waitFor(() => expect(renderMock).toHaveBeenCalledTimes(3));
+
+    const { unmount } = render(renderMock.mock.calls[2][0] as ReactElement);
+
+    expect(screen.getByTestId('splash-error')).toHaveTextContent('Could not start the sign-in');
+    // The status line still states what happened, next to the box saying why.
+    expect(screen.getByTestId('app-splash')).toHaveTextContent('Sign-in failed');
+    // Mounting react-admin here is what produced the silent, session-less app: it
+    // immediately re-runs checkAuth and heads back to the broken provider.
+    expect(screen.queryByTestId('app-component')).toBeNull();
+
+    unmount();
+  });
+
+  it('retries by reloading, and only when the user asks', async () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const reload = vi.fn();
+    // jsdom does not implement navigation, so the real reload would only log an
+    // error. Restored below so later tests keep the genuine location.
+    const realLocation = window.location;
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { ...realLocation, reload },
+    });
+
+    try {
+      await import('./main');
+
+      // Nothing to retry while the sign-in is still in flight.
+      const loading = render(renderMock.mock.calls[0][0] as ReactElement);
+      expect(screen.queryByTestId('splash-retry')).toBeNull();
+      loading.unmount();
+
+      resolveBootstrap({ kind: 'callback_failed', title: 'The sign-in response failed' });
+      await waitFor(() => expect(renderMock).toHaveBeenCalledTimes(2));
+
+      const { unmount } = render(renderMock.mock.calls[1][0] as ReactElement);
+      expect(reload).not.toHaveBeenCalled();
+
+      // The reload re-runs the whole bootstrap — the only escape from the screen.
+      await userEvent.click(screen.getByTestId('splash-retry'));
+      expect(reload).toHaveBeenCalledTimes(1);
+
+      unmount();
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: realLocation });
+    }
+  });
+
   it('still renders the app when the auth bootstrap rejects', async () => {
     document.body.innerHTML = '<div id="root"></div>';
     bootstrapAuthMock.mockReturnValueOnce(Promise.reject(new Error('bootstrap failed')));
 
     await import('./main');
 
-    // `finally`, not `then`: a rejected bootstrap must not leave the user stuck
-    // on the loading screen.
+    // A rejected bootstrap must not leave the user stuck on the loading screen.
     await waitFor(() => expect(renderMock).toHaveBeenCalledTimes(2));
 
     const renderedTree = renderMock.mock.calls[1][0] as ReactElement;

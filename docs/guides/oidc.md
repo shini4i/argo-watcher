@@ -16,6 +16,8 @@ With OIDC disabled, every endpoint stays open exactly as before — there is no 
 !!! note
     The backend discovers the userinfo endpoint lazily, on the first token validation — not at startup — so a provider that is briefly unreachable when Argo Watcher boots does not prevent it from starting.
 
+The browser performs discovery too, for the login redirect and the code exchange, so the issuer must be reachable **from the browser as well as from the server**. When a sign-in cannot be completed, the Web UI stops on its loading screen and states the reason — the provider's own error code, or the discovery URL it could not read — rather than returning to the provider: see [Web UI stops on "Sign-in failed"](../operations/troubleshooting.md#web-ui-stops-on-sign-in-failed).
+
 ## Protected endpoints
 
 Enabling OIDC closes the endpoints only the Web UI consumes. Nothing else reads

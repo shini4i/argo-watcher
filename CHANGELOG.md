@@ -27,6 +27,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   variables, the migrations and the advisory lock that serializes them are unchanged, as
   is running migrations with the external `migrate` CLI.
 
+### Fixed
+
+- A sign-in that cannot be completed — a provider error, a callback that cannot be
+  exchanged, a redirect that never starts, or a server reporting OIDC as enabled without an
+  issuer or client id — now stops on the Web UI's loading screen and states why, instead of
+  rendering a signed-out UI whose only explanation was a line in the browser console. The
+  screen shows the provider's own error code and description, or the discovery URL the
+  browser could not read — most often an `OIDC_ISSUER_URL` that resolves only inside the
+  cluster — and offers a retry rather than heading back to the provider that just failed.
+  Deployments without OIDC are untouched, as is a configuration request that merely fails
+  while the server restarts.
+
 ## [0.15.0] - 2026-08-11
 
 ### Added

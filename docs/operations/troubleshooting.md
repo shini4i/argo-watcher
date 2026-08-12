@@ -128,6 +128,31 @@ metadata:
 
 ---
 
+## Web UI stops on "Sign-in failed"
+
+**Symptom:** With [OIDC](../guides/oidc.md) enabled, the Web UI shows its loading screen with a red error box beneath the logo and never reaches the task list. It does not return to the identity provider on its own.
+
+**Likely causes:** the box names the one that applies.
+
+- *Could not start the sign-in* — the browser never got as far as the provider, almost always because it could not read the discovery document at `<issuer>/.well-known/openid-configuration`. Most often `OIDC_ISSUER_URL` is an address only the server can resolve (an in-cluster Service name), or the provider does not answer that document cross-origin. The box's second line carries the browser's own message, which also covers the rarer case of browser storage refusing the sign-in state.
+- *The identity provider rejected the sign-in* — the provider answered with an OAuth error. The box shows the provider's own code (`invalid_scope`, `access_denied`, `invalid_client`, …) and description.
+- *The sign-in response could not be completed* — the response came back but the browser could not match the sign-in it started: browser storage was cleared mid-flow, a callback URL was reopened from history or a bookmark, or the clock skew between browser and provider is too large.
+- *Argo Watcher is misconfigured for OIDC* — the server reports OIDC as enabled without an issuer URL or a client id.
+
+**How to verify:**
+
+- Open the discovery URL named in the box in the same browser. It must return JSON; a DNS error, a TLS warning, or a CORS failure in the browser console is the cause.
+- For a rejected sign-in, look up the shown code in your provider's documentation, and check the client registration against [Redirect URI and web origin](../guides/oidc.md#redirect-uri-and-web-origin).
+- Check the server's OIDC settings: `curl -s $ARGO_WATCHER_URL/api/v1/config | jq .oidc`.
+
+**Fix:**
+
+1. Set `OIDC_ISSUER_URL` to the issuer as users' browsers reach it, not as the pod reaches it. Both must work: the browser performs discovery and the code exchange, and the server validates tokens against the same issuer.
+2. Correct the client registration the shown error code points at — permitted scopes (`openid profile email`), exact redirect URI, web origin, and user or group assignment.
+3. Press **Try again** in the error box once the provider is fixed. Nothing is cached across the retry; it re-runs the whole sign-in.
+
+---
+
 ## Web UI does not update without a refresh
 
 **Symptom:** The Web UI loads, but task status and deploy-lock changes only appear after a manual page refresh.
