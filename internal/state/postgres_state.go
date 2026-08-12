@@ -10,8 +10,6 @@ import (
 	"github.com/avast/retry-go/v4"
 	"github.com/google/uuid"
 
-	// Registers the "postgres" SQL driver used by the database/sql-based tooling.
-	_ "github.com/lib/pq"
 	"gorm.io/datatypes"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
