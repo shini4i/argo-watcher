@@ -143,6 +143,25 @@ describe('authProvider', () => {
     );
   });
 
+  it('sends the provider a trimmed issuer and client id', async () => {
+    mockConfig(
+      enabledConfig({ issuer_url: '  https://idp.example.com/realms/demo  ', client_id: ' argo ' }),
+    );
+    userManagerMock.getUser.mockResolvedValue(null);
+    const provider = await loadAuthProvider();
+
+    await provider.checkAuth({});
+
+    // Surrounding whitespace in a deployment value must not become part of the
+    // authority or the client id on the wire.
+    expect(MockUserManager).toHaveBeenCalledWith(
+      expect.objectContaining({
+        authority: 'https://idp.example.com/realms/demo',
+        client_id: 'argo',
+      }),
+    );
+  });
+
   it('never rejects checkAuth when the login redirect fails', async () => {
     mockConfig(enabledConfig());
     userManagerMock.getUser.mockResolvedValue(null);
@@ -300,7 +319,7 @@ describe('authProvider', () => {
       mockConfig({ oidc: { enabled: false } });
       const module = await import('./authProvider');
 
-      await expect(module.bootstrapAuth()).resolves.toBeUndefined();
+      await expect(module.bootstrapAuth()).resolves.toBeNull();
       expect(MockUserManager).not.toHaveBeenCalled();
       expect(userManagerMock.signinRedirect).not.toHaveBeenCalled();
     });
@@ -384,7 +403,7 @@ describe('authProvider', () => {
       const replaceSpy = vi.spyOn(window.history, 'replaceState');
       const module = await import('./authProvider');
 
-      await expect(module.bootstrapAuth()).resolves.toBeUndefined();
+      await expect(module.bootstrapAuth()).resolves.toBeNull();
       expect(userManagerMock.signinRedirectCallback).toHaveBeenCalledTimes(1);
       expect(getAccessToken()).toBe('token');
       // The ?code&state query is stripped so a reload does not re-trigger the callback.
@@ -399,7 +418,7 @@ describe('authProvider', () => {
       userManagerMock.getUser.mockResolvedValue(null);
       const module = await import('./authProvider');
 
-      await expect(module.bootstrapAuth()).resolves.toBeUndefined();
+      await expect(module.bootstrapAuth()).resolves.toBeNull();
       expect(userManagerMock.signinRedirect).toHaveBeenCalledTimes(1);
     });
 
@@ -412,17 +431,148 @@ describe('authProvider', () => {
       const module = await import('./authProvider');
 
       // The error response is recognized as a callback and consumed — not turned
-      // into a fresh sign-in.
-      await expect(module.bootstrapAuth()).resolves.toBeUndefined();
+      // into a fresh sign-in. It is reported rather than retried, which is what
+      // keeps the caller from mounting an app that would redirect straight back.
+      await expect(module.bootstrapAuth()).resolves.not.toBeNull();
       expect(userManagerMock.signinRedirect).not.toHaveBeenCalled();
 
-      // The immediate follow-up auth check also refuses to redirect (loop broken).
-      await expect(module.authProvider.checkAuth!({})).resolves.toBeUndefined();
-      expect(userManagerMock.signinRedirect).not.toHaveBeenCalled();
+      // The query is stripped so a reload cannot replay the spent response.
+      expect(window.location.search).toBe('');
+      warnSpy.mockRestore();
+    });
 
-      // A later check re-attempts cleanly once the one-shot guard is cleared.
-      await module.authProvider.checkAuth!({});
-      expect(userManagerMock.signinRedirect).toHaveBeenCalledTimes(1);
+    it('reports a callback that could not be exchanged as a local failure', async () => {
+      mockConfig(enabledConfig());
+      window.history.replaceState({}, '', '/?code=abc&state=xyz');
+      userManagerMock.signinRedirectCallback.mockRejectedValue(
+        new Error('No matching state found in storage'),
+      );
+      userManagerMock.getUser.mockResolvedValue(null);
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const module = await import('./authProvider');
+
+      // The kind picks the title and hint, so a local exchange failure must not
+      // reach the screen dressed as a provider rejection.
+      const failure = await module.bootstrapAuth();
+
+      expect(failure).toMatchObject({
+        kind: 'callback_failed',
+        detail: 'No matching state found in storage',
+      });
+      expect(failure?.code).toBeUndefined();
+      warnSpy.mockRestore();
+    });
+
+    it('reports the provider error code and description to the caller', async () => {
+      mockConfig(enabledConfig());
+      window.history.replaceState({}, '', '/?error=invalid_scope&state=xyz');
+      userManagerMock.signinRedirectCallback.mockRejectedValue(
+        Object.assign(new Error('invalid_scope'), {
+          name: 'ErrorResponse',
+          error: 'invalid_scope',
+          error_description: 'Invalid scopes: groups',
+          error_uri: null,
+        }),
+      );
+      userManagerMock.getUser.mockResolvedValue(null);
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const module = await import('./authProvider');
+
+      // The whole point: what the provider said reaches the UI instead of the
+      // console, so the user is not left on a silent, session-less app.
+      await expect(module.bootstrapAuth()).resolves.toMatchObject({
+        kind: 'provider_error',
+        code: 'invalid_scope',
+        detail: 'Invalid scopes: groups',
+      });
+      warnSpy.mockRestore();
+    });
+
+    it('reports, rather than rejects, when the provider error body is non-conformant', async () => {
+      mockConfig(enabledConfig());
+      window.history.replaceState({}, '', '/?code=abc&state=xyz');
+      // The token-exchange path hands ErrorResponse the provider's parsed JSON
+      // as-is, so these fields need not be strings.
+      userManagerMock.signinRedirectCallback.mockRejectedValue(
+        Object.assign(new Error('invalid_grant'), {
+          name: 'ErrorResponse',
+          error: 'invalid_grant',
+          error_description: { message: 'not a string' },
+          error_uri: 42,
+        }),
+      );
+      userManagerMock.getUser.mockResolvedValue(null);
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const module = await import('./authProvider');
+
+      // A rejection here is what reopens the loop: main.tsx's catch renders the
+      // app, react-admin re-runs checkAuth, and the same failing exchange repeats
+      // on every navigation.
+      const failure = await module.bootstrapAuth();
+
+      expect(failure).toMatchObject({ kind: 'provider_error', code: 'invalid_grant' });
+      expect(failure?.detail).toBeUndefined();
+      expect(failure?.uri).toBeUndefined();
+      warnSpy.mockRestore();
+    });
+
+    it('reports an unreachable provider, naming the issuer, when the redirect cannot start', async () => {
+      mockConfig(enabledConfig());
+      userManagerMock.getUser.mockResolvedValue(null);
+      userManagerMock.signinRedirect.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const module = await import('./authProvider');
+
+      const failure = await module.bootstrapAuth();
+
+      expect(failure).toMatchObject({ kind: 'redirect_failed', detail: 'Failed to fetch' });
+      // An issuer the server can reach but the browser cannot is the failure this
+      // screen exists for, so the hint has to name the URL to try.
+      expect(failure?.hint).toContain('https://idp.example.com/realms/demo/.well-known');
+      warnSpy.mockRestore();
+    });
+
+    it.each([
+      { missing: 'client_id', oidc: { enabled: true, issuer_url: 'https://idp/realms/demo' } },
+      { missing: 'issuer_url', oidc: { enabled: true, client_id: 'argo' } },
+      // Blank counts as absent, or the whitespace reaches discovery and the
+      // configuration mistake is reported as an unreachable provider instead.
+      {
+        missing: 'issuer_url',
+        oidc: { enabled: true, issuer_url: '   ', client_id: 'argo' },
+      },
+      {
+        missing: 'client_id',
+        oidc: { enabled: true, issuer_url: 'https://idp/realms/demo', client_id: '  ' },
+      },
+    ])('names $missing when the enabled OIDC block omits it', async ({ missing, oidc }) => {
+      mockConfig({ oidc });
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const module = await import('./authProvider');
+
+      const failure = await module.bootstrapAuth();
+
+      expect(failure).toMatchObject({ kind: 'config_incomplete' });
+      expect(failure?.detail).toContain(missing);
+      expect(userManagerMock.signinRedirect).not.toHaveBeenCalled();
+      warnSpy.mockRestore();
+    });
+
+    it('still renders the app when a complete config fails to build a UserManager', async () => {
+      mockConfig(enabledConfig());
+      MockUserManager.mockImplementationOnce(() => {
+        throw new Error('constructor blew up');
+      });
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const module = await import('./authProvider');
+
+      // Only a configuration the operator can fix becomes a terminal screen.
+      // Anything else must still render, with checkAuth re-running the same path.
+      await expect(module.bootstrapAuth()).resolves.toBeNull();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Eager authentication bootstrap failed'),
+        expect.any(Error),
+      );
       warnSpy.mockRestore();
     });
 
@@ -431,7 +581,9 @@ describe('authProvider', () => {
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       const module = await import('./authProvider');
 
-      await expect(module.bootstrapAuth()).resolves.toBeUndefined();
+      // Reported as no failure on purpose: a backend that is merely restarting
+      // must still render the app, not a terminal sign-in error.
+      await expect(module.bootstrapAuth()).resolves.toBeNull();
       expect(warnSpy).toHaveBeenCalledWith(
         expect.stringContaining('Eager authentication bootstrap failed'),
         expect.any(Error),

@@ -1,9 +1,20 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { ThemeProvider } from '@mui/material/styles';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import type { AuthFailure } from '../auth/authFailure';
 import { lightTheme } from '../theme';
 import { tokens } from '../theme/tokens';
 import { AppSplash } from './AppSplash';
+
+const failure = (overrides: Partial<AuthFailure> = {}): AuthFailure => ({
+  kind: 'provider_error',
+  title: 'The identity provider rejected the sign-in',
+  code: 'invalid_scope',
+  detail: 'Invalid scopes: groups',
+  hint: 'Allow openid profile email for this client.',
+  ...overrides,
+});
 
 describe('AppSplash', () => {
   it('announces the caller-supplied status through a live region', () => {
@@ -80,6 +91,116 @@ describe('AppSplash', () => {
       position: 'fixed',
       inset: '0px',
       backgroundImage: tokens.appBarGradientDark,
+    });
+  });
+
+  it('shows no error box for an ordinary load', () => {
+    render(<AppSplash message="Loading…" />);
+
+    expect(screen.queryByTestId('app-splash-error')).toBeNull();
+  });
+
+  it('keeps the panel sized to its own contents while loading', () => {
+    render(<AppSplash message="Loading…" />);
+
+    // Stretching it to the error box's width would blow the compact loading
+    // panel up to a wide, mostly empty card.
+    expect(screen.getByTestId('app-splash-stack')).toHaveStyle({ alignItems: 'center' });
+  });
+
+  describe('with an authentication failure', () => {
+    it('renders the error box below the logo panel', () => {
+      render(<AppSplash message="Sign-in failed" error={failure()} />);
+
+      const panel = screen.getByTestId('app-splash-panel');
+      const errorBox = screen.getByTestId('app-splash-error');
+
+      // Reading order is the visual order here: the box has to sit under the
+      // panel, not replace or precede it.
+      expect(panel.compareDocumentPosition(errorBox)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+      // The logo card keeps its own size — the error box below it must not
+      // stretch the panel to match.
+      expect(screen.getByTestId('app-splash-stack')).toHaveStyle({ alignItems: 'center' });
+    });
+
+    it('shows the title, provider code, detail, and hint', () => {
+      render(<AppSplash message="Sign-in failed" error={failure()} />);
+
+      const errorBox = screen.getByTestId('app-splash-error');
+      expect(errorBox).toHaveTextContent('The identity provider rejected the sign-in');
+      expect(errorBox).toHaveTextContent('invalid_scope');
+      expect(errorBox).toHaveTextContent('Invalid scopes: groups');
+      expect(errorBox).toHaveTextContent('Allow openid profile email for this client.');
+    });
+
+    it('announces the failure assertively', () => {
+      render(<AppSplash message="Sign-in failed" error={failure()} />);
+
+      // A terminal error must interrupt, unlike the polite progress line.
+      expect(screen.getByRole('alert')).toHaveAttribute('aria-live', 'assertive');
+    });
+
+    it('omits the optional fields that were not supplied', () => {
+      render(
+        <AppSplash
+          message="Sign-in failed"
+          error={failure({ code: undefined, detail: undefined, hint: undefined, uri: undefined })}
+        />,
+      );
+
+      const errorBox = screen.getByTestId('app-splash-error');
+      expect(errorBox).toHaveTextContent('The identity provider rejected the sign-in');
+      expect(errorBox.textContent).not.toContain('undefined');
+      expect(screen.queryByRole('link')).toBeNull();
+    });
+
+    it('links to the provider documentation when the error carries a URI', () => {
+      render(
+        <AppSplash message="Sign-in failed" error={failure({ uri: 'https://idp/docs/err' })} />,
+      );
+
+      const link = screen.getByRole('link', { name: /more information/i });
+      expect(link).toHaveAttribute('href', 'https://idp/docs/err');
+      // Opened in a new tab, so the provider-supplied target must get neither the
+      // opener nor the referrer.
+      expect(link).toHaveAttribute('target', '_blank');
+      expect(link.getAttribute('rel')).toContain('noopener');
+      expect(link.getAttribute('rel')).toContain('noreferrer');
+    });
+
+    it('keeps the status line alongside the failure', () => {
+      render(<AppSplash message="Sign-in failed" error={failure()} />);
+
+      // Two different signals: the polite line says what state the app is in, the
+      // assertive box says why. Losing the line leaves the panel captionless.
+      expect(screen.getByRole('status').textContent).toContain('Sign-in failed');
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'The identity provider rejected the sign-in',
+      );
+    });
+
+    it('stops the progress dots so the screen does not look like work in flight', () => {
+      render(<AppSplash message="Sign-in failed" error={failure()} />);
+
+      expect(screen.queryAllByTestId('app-splash-dot')).toHaveLength(0);
+    });
+
+    it('retries only when the user asks', async () => {
+      const onRetry = vi.fn();
+      render(<AppSplash message="Sign-in failed" error={failure()} onRetry={onRetry} />);
+
+      // Nothing may happen on its own — automatic retries are the redirect loop
+      // this screen exists to replace.
+      expect(onRetry).not.toHaveBeenCalled();
+
+      await userEvent.click(screen.getByRole('button', { name: /try again/i }));
+      expect(onRetry).toHaveBeenCalledTimes(1);
+    });
+
+    it('hides the retry button when no handler is supplied', () => {
+      render(<AppSplash message="Sign-in failed" error={failure()} />);
+
+      expect(screen.queryByRole('button', { name: /try again/i })).toBeNull();
     });
   });
 });
