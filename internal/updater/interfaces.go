@@ -75,8 +75,6 @@ func (GitClient) AddSSHKey(user, path, passphrase string) (*ssh.PublicKeys, erro
 	return ssh.NewPublicKeysFromFile(user, path, passphrase)
 }
 
-// validateSSHKeyFile validates that the SSH key file exists, is readable,
-// is not empty, and contains a valid SSH private key format.
 func validateSSHKeyFile(path string) error {
 	if path == "" {
 		return ErrSSHKeyNotProvided
