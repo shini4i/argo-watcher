@@ -106,10 +106,6 @@ func TestIntegration_PushRaceRecovery_WithLatencyInjection(t *testing.T) {
 		toxiclient.Attributes{"latency": 300})
 	require.NoError(t, err)
 
-	// The race window is timing-sensitive: on a slow runner the competitor may
-	// push before A's fetch completes, leaving the retry path unexercised.
-	// Retry the race-injection sequence up to maxAttempts times until PlainOpen
-	// is called >= 2 times (proving the retry loop re-entered Clone()).
 	const maxAttempts = 3
 	var lastOpens int32
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
@@ -171,8 +167,7 @@ func TestIntegration_PushRaceRecovery_WithLatencyInjection(t *testing.T) {
 // entirely on UpdateGitImageTag's retry loop to succeed.
 //
 // N=2 with GIT_MAX_ATTEMPTS pinned to 3 gives the slower writer two chances to
-// retry after losing the race — comfortably more than the single retry the
-// previous architecture afforded.
+// retry after losing the race.
 func TestIntegration_PushRaceRecovery_Concurrent(t *testing.T) {
 	waitForGitea(t, 60*time.Second)
 	env := setupGitea(t)
@@ -197,7 +192,7 @@ func TestIntegration_PushRaceRecovery_Concurrent(t *testing.T) {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			<-startCh // wait for the barrier release
+			<-startCh
 			start := time.Now()
 			errs[idx] = UpdateGitImageTag(
 				context.Background(),
@@ -217,7 +212,7 @@ func TestIntegration_PushRaceRecovery_Concurrent(t *testing.T) {
 			durations[idx] = time.Since(start)
 		}(i)
 	}
-	close(startCh) // release all writers at once
+	close(startCh)
 	wg.Wait()
 	totalWall := time.Since(started)
 
@@ -232,7 +227,6 @@ func TestIntegration_PushRaceRecovery_Concurrent(t *testing.T) {
 		assert.Less(t, d, 90*time.Second,
 			"goroutine %d took %s — retry loop or network call exceeded budget", i, d)
 	}
-	// Both writers + worst-case retries should complete within 90s wall clock.
 	assert.Less(t, totalWall, 90*time.Second,
 		"total wall clock %s exceeds 90s", totalWall)
 }
@@ -342,9 +336,6 @@ func TestIntegration_GitTimeoutEnforcement_ReturnsWithinBudget(t *testing.T) {
 	require.Error(t, a.err, "A should fail under the latency toxin")
 	require.Error(t, b.err, "B should fail once it acquires the lock")
 
-	// A is bounded by either the GIT_OP_TIMEOUT context (if the stall hits
-	// post-handshake) or the SSH library's handshake timeout. Either is
-	// acceptable; the only failure mode is unbounded hang.
 	assert.Less(t, a.dur, perTaskCeiling,
 		"A took %s — operation hung beyond SSH handshake timeout (%s)",
 		a.dur, perTaskCeiling)

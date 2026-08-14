@@ -22,8 +22,7 @@ var errBatcherClosed = errors.New("git write-back batcher is shutting down")
 // per-app serialized path: an idle repo flushes immediately (no added latency),
 // while requests that arrive while a flush for the same key is in flight — cloning,
 // pushing, or waiting on the per-repo lock — queue into the next batch and flush
-// together the moment the current flush finishes. Batching therefore happens
-// exactly during the window a push occupies, i.e. precisely when contention exists.
+// together the moment the current flush finishes.
 type Batcher struct {
 	locker        lock.Locker
 	repoCachePath string
@@ -42,9 +41,8 @@ type Batcher struct {
 	// active exactly while a flush goroutine is draining its pending queue.
 	pending map[string][]*batchWriteRequest
 	active  map[string]bool
-	// wg tracks in-flight flush goroutines so Close can wait for them to drain.
-	wg     sync.WaitGroup
-	closed bool
+	wg      sync.WaitGroup
+	closed  bool
 	// drainCh is closed by Close to tell in-flight retry loops to stop after their
 	// current attempt. Without it a single flush can retry for
 	// GIT_OP_TIMEOUT * GIT_MAX_ATTEMPTS and outlive the shutdown deadline, leaving
@@ -77,9 +75,8 @@ func batchKey(repo *models.GitopsRepo) string {
 	return repo.RepoUrl + "\x00" + repo.BranchName
 }
 
-// Submit enqueues a write-back request and blocks until the batch it is folded
-// into has been flushed, returning that request's individual outcome. It returns
-// errBatcherClosed if the batcher is shutting down.
+// Submit blocks until the batch its request is folded into has been flushed, and
+// returns that request's individual outcome, or errBatcherClosed when shutting down.
 func (b *Batcher) Submit(req *batchWriteRequest) error {
 	key := batchKey(req.gitopsRepo)
 
@@ -89,9 +86,6 @@ func (b *Batcher) Submit(req *batchWriteRequest) error {
 		return errBatcherClosed
 	}
 	b.pending[key] = append(b.pending[key], req)
-	// Start a flush goroutine only if one is not already draining this key. An
-	// idle key therefore flushes immediately; a busy key coalesces into the next
-	// batch handled by the existing goroutine.
 	if !b.active[key] {
 		b.active[key] = true
 		b.wg.Add(1)
@@ -102,10 +96,9 @@ func (b *Batcher) Submit(req *batchWriteRequest) error {
 	return <-req.resultCh
 }
 
-// flushLoop drains a key's pending queue, flushing in batches of at most
-// maxBatchSize, until the queue is empty. It then clears the key's active flag
-// under the lock so a subsequent Submit starts a fresh loop. Holding the lock
-// across the empty-check and the clear is what makes the hand-off race-free.
+// flushLoop drains a key's pending queue in batches of at most maxBatchSize. Holding
+// the lock across the empty-check and the clear of the active flag is what makes the
+// hand-off to a later Submit race-free.
 func (b *Batcher) flushLoop(key string) {
 	defer b.wg.Done()
 	for {
@@ -131,9 +124,9 @@ func (b *Batcher) flushLoop(key string) {
 	}
 }
 
-// flush runs one batch under the per-repository lock and delivers each request's
-// outcome. All requests in a batch share the same repo URL and branch, so a single
-// GitRepo (one clone) and a single push serve the whole batch.
+// flush runs one batch under the per-repository lock. All requests in a batch share the
+// same repo URL and branch, so a single GitRepo (one clone) and a single push serve the
+// whole batch.
 func (b *Batcher) flush(batch []*batchWriteRequest) {
 	if len(batch) == 0 {
 		return
@@ -175,32 +168,26 @@ func (b *Batcher) flush(batch []*batchWriteRequest) {
 	}
 }
 
-// deliverAll sends the same error to every request in the batch. Used when the
-// whole batch fails before per-request outcomes exist (repo construction or lock
-// acquisition failure).
 func (b *Batcher) deliverAll(batch []*batchWriteRequest, err error) {
 	for _, req := range batch {
 		req.resultCh <- err
 	}
 }
 
-// Close stops accepting new requests and waits — bounded by ctx — for in-flight
-// flush goroutines to drain their pending queues and deliver all results. New
-// Submit calls return errBatcherClosed immediately.
+// Close stops accepting new requests and waits — bounded by ctx — for in-flight flush
+// goroutines to drain. New Submit calls return errBatcherClosed.
 //
 // Closing drainCh tells in-flight retry loops to stop at their next retry boundary,
 // so a flush that would otherwise spend GIT_OP_TIMEOUT × GIT_MAX_ATTEMPTS on an
 // unreachable remote instead resolves its requests with errWritebackDraining after
-// the attempt in flight. That is what makes the bounded wait below usually
-// sufficient rather than a near-certain abandonment.
+// the attempt in flight.
 //
 // It is not a hard bound, in two ways. One attempt is itself capped only by
 // GIT_OP_TIMEOUT (90s by default), which exceeds a typical shutdown budget, so a
 // flush already blocked on a slow remote can outlive ctx. And drainCh is observed
 // only at a retry boundary, never by flushLoop, so batches still queued behind a busy
 // key each get one more full attempt — the drain bounds the retry budget per batch,
-// not the number of queued batches. What the drain reliably removes is the multiplier
-// (attempts per batch), which is what made abandonment near-certain before.
+// not the number of queued batches.
 //
 // Requests abandoned when ctx expires are safe only because Run returns immediately
 // afterwards and the process exits. Do not reuse Close in a context where the process
@@ -210,11 +197,6 @@ func (b *Batcher) deliverAll(batch []*batchWriteRequest, err error) {
 // Deliberately NOT done: having flushLoop resolve every queued batch on sight of the
 // drain. That would discard write-backs that would have succeeded on their first
 // attempt, trading a real commit for a faster shutdown.
-//
-// The wait is still bounded so shutdown cannot exceed the caller's grace period. When
-// ctx expires first, Close returns and the still-running flushes are abandoned (they
-// end when the process does) — the same outcome a hung unbounded drain would force,
-// but without blocking termination.
 //
 // Close is safe to call more than once.
 func (b *Batcher) Close(ctx context.Context) {

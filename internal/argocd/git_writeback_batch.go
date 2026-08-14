@@ -80,7 +80,7 @@ func runBatchWriteBack(parentCtx context.Context, repo *updater.GitRepo, batch [
 			lastErr = err
 		}
 		if recordAttempt(batch, committed, outcomes, err, attempt, maxAttempts) {
-			break // permanent failure — retrying cannot help
+			break
 		}
 
 		// Keep retrying while anything is unresolved — a failed/pending push or a
@@ -106,9 +106,7 @@ func runBatchWriteBack(parentCtx context.Context, repo *updater.GitRepo, batch [
 	return outcomes
 }
 
-// recordAttempt applies one attempt's result to outcomes: on success it marks the
-// committed apps resolved; on a permanent error it fails every still-unresolved
-// app (retrying cannot help). It returns true when the retry loop must stop.
+// recordAttempt returns true when the retry loop must stop.
 func recordAttempt(batch, committed []*batchWriteRequest, outcomes map[*batchWriteRequest]error, err error, attempt, maxAttempts uint) bool {
 	if err == nil {
 		for _, req := range committed {
@@ -125,13 +123,10 @@ func recordAttempt(batch, committed []*batchWriteRequest, outcomes map[*batchWri
 	return false
 }
 
-// runBatchAttempt performs one clone + per-app commit + single push cycle. It
-// resolves outcomes[req] for terminally-resolved apps and records retriable per-app
-// commit errors in commitErrs (leaving those requests unresolved), returning the
-// requests that produced a local commit this attempt — whose fate depends on the
-// push. The returned error is non-nil when the clone or push failed; the caller
-// decides whether it is permanent or retriable. On a nil error every returned
-// committed request pushed successfully.
+// runBatchAttempt performs one clone + per-app commit + single push cycle. The
+// requests it returns produced a local commit this attempt — their fate still depends
+// on the push. Whether a returned error is permanent or retriable is the caller's
+// decision.
 func runBatchAttempt(parentCtx context.Context, repo *updater.GitRepo, opTimeout time.Duration, active []*batchWriteRequest, outcomes, commitErrs map[*batchWriteRequest]error) ([]*batchWriteRequest, error) {
 	ctx, cancel := context.WithTimeout(parentCtx, opTimeout)
 	defer cancel()
@@ -158,12 +153,10 @@ func runBatchAttempt(parentCtx context.Context, repo *updater.GitRepo, opTimeout
 	return committed, nil
 }
 
-// applyRequest resolves one request within a single attempt. It returns true when
-// the request produced a local commit (its fate then rides on the shared push).
-// Terminal outcomes are set for superseded / unsupported / generation cases; a
-// per-app commit error is recorded in commitErrs and the request is left
-// unresolved so the next attempt retries it — mirroring the single-app path, where
-// a commit failure is also retriable rather than fatal.
+// applyRequest returns true when the request produced a local commit (its fate then
+// rides on the shared push). A per-app commit error is recorded in commitErrs and the
+// request is left unresolved so the next attempt retries it — mirroring the single-app
+// path, where a commit failure is also retriable rather than fatal.
 func applyRequest(repo *updater.GitRepo, req *batchWriteRequest, outcomes, commitErrs map[*batchWriteRequest]error) bool {
 	// Re-check supersede every attempt so a task that keeps retrying under
 	// contention aborts the moment a newer deployment for the same app wins.
@@ -211,17 +204,14 @@ func applyRequest(repo *updater.GitRepo, req *batchWriteRequest, outcomes, commi
 	return true
 }
 
-// failUnresolved assigns err as the terminal outcome of every request without one.
 func failUnresolved(batch []*batchWriteRequest, outcomes map[*batchWriteRequest]error, err error) {
 	for _, req := range unresolvedRequests(batch, outcomes) {
 		outcomes[req] = err
 	}
 }
 
-// resolveRemaining assigns a final error to every request still unresolved after
-// the retry loop ends (exhausted attempts, a cancelled backoff, or a drain). A
-// per-app commit error takes precedence over the batch-level error so a persistently
-// misconfigured app reports its own cause.
+// resolveRemaining assigns a final error to every request still unresolved after the
+// retry loop ends (exhausted attempts, a cancelled backoff, or a drain).
 //
 // These errors become the task's stored failure reason, so two properties matter.
 // The attempt count is asserted only when the budget was actually spent — claiming
@@ -250,7 +240,7 @@ func resolveRemaining(batch []*batchWriteRequest, outcomes, commitErrs map[*batc
 
 // unresolvedRequests returns the requests in batch that do not yet have an outcome.
 // A nil value is a valid (successful) outcome, so resolution is tracked by key
-// presence, not by the value.
+// presence, not by value.
 func unresolvedRequests(batch []*batchWriteRequest, outcomes map[*batchWriteRequest]error) []*batchWriteRequest {
 	var active []*batchWriteRequest
 	for _, req := range batch {
@@ -261,9 +251,8 @@ func unresolvedRequests(batch []*batchWriteRequest, outcomes map[*batchWriteRequ
 	return active
 }
 
-// invalidateBatchCacheOnFinalAttempt clears the on-disk cache before the final
-// attempt so a poisoned cache self-heals with a fresh clone, mirroring the
-// single-app invalidateCacheOnFinalAttempt.
+// invalidateBatchCacheOnFinalAttempt mirrors the single-app
+// invalidateCacheOnFinalAttempt: a poisoned cache self-heals with a fresh clone.
 func invalidateBatchCacheOnFinalAttempt(repo *updater.GitRepo, batchSize int, attempt, maxAttempts uint) {
 	if attempt != maxAttempts {
 		return
@@ -275,11 +264,10 @@ func invalidateBatchCacheOnFinalAttempt(repo *updater.GitRepo, batchSize int, at
 	}
 }
 
-// backoffBeforeBatchRetry waits (jittered) before the next batch attempt, unless
-// this was the final one. It returns a non-nil error if parentCtx is cancelled or
-// the batcher starts draining during the wait, signalling the caller to stop
-// retrying. It reuses gitUpdateBackoff so batch and single-app retries share the
-// same anti-thundering-herd behaviour.
+// backoffBeforeBatchRetry waits (jittered) before the next batch attempt, unless this
+// was the final one. It returns a non-nil error if parentCtx is cancelled or the
+// batcher starts draining during the wait. It reuses gitUpdateBackoff so batch and
+// single-app retries share the same anti-thundering-herd behaviour.
 //
 // The drain is observed here — between attempts — rather than by cancelling the
 // per-attempt context, and that placement is the point. Cancelling mid-push would
@@ -288,8 +276,7 @@ func invalidateBatchCacheOnFinalAttempt(repo *updater.GitRepo, batchSize int, at
 // every reported outcome truthful, at the cost of one more in-flight attempt
 // (bounded by GIT_OP_TIMEOUT) before the drain completes.
 //
-// A nil drainCh (tests that pass no signal) blocks forever in the select, so the
-// backoff behaves exactly as it did before.
+// A nil drainCh (tests that pass no signal) blocks forever in the select.
 func backoffBeforeBatchRetry(parentCtx context.Context, attempt, maxAttempts uint, drainCh <-chan struct{}) error {
 	if attempt >= maxAttempts {
 		return nil

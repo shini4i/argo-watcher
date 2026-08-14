@@ -22,12 +22,10 @@ func TestArgoCheck(t *testing.T) {
 	defer ctrl.Finish()
 
 	t.Run("Argo Watcher - Up", func(t *testing.T) {
-		// mocks
 		apiMock := newArgoApiMock(ctrl)
 		metricsMock := mocks.NewMockMetricsInterface(ctrl)
 		stateMock := mocks.NewMockTaskRepository(ctrl)
 
-		// mock calls
 		stateMock.EXPECT().Check().Return(true)
 		testUserInfo := &models.Userinfo{
 			LoggedIn: true,
@@ -37,116 +35,93 @@ func TestArgoCheck(t *testing.T) {
 		metricsMock.EXPECT().SetArgoUnavailable(false)
 		metricsMock.EXPECT().SetStateUnavailable(false)
 
-		// argo manager
 		argo := &Argo{}
 		argo.Init(stateMock, apiMock, metricsMock)
 		status, err := argo.Check()
 
-		// assertions
 		assert.Nil(t, err)
 		assert.Equal(t, "up", status)
 	})
 
 	t.Run("Argo Watcher - Down - Cannot connect to State manager", func(t *testing.T) {
-		// mocks
 		api := newArgoApiMock(ctrl)
 		metrics := mocks.NewMockMetricsInterface(ctrl)
 		state := mocks.NewMockTaskRepository(ctrl)
 
-		// mock calls
 		state.EXPECT().Check().Return(false)
 		testUserInfo := &models.Userinfo{
 			LoggedIn: true,
 			Username: loggedInUsername,
 		}
 		api.EXPECT().GetUserInfo().Return(testUserInfo, nil)
-		// Only the state backend is down; ArgoCD stays reachable, so the two
-		// gauges must diverge.
 		metrics.EXPECT().SetArgoUnavailable(false)
 		metrics.EXPECT().SetStateUnavailable(true)
 
-		// argo manager
 		argo := &Argo{}
 		argo.Init(state, api, metrics)
 		status, err := argo.Check()
 
-		// assertions
 		assert.EqualError(t, err, models.StatusConnectionUnavailable)
 		assert.Equal(t, "down", status)
 		assert.Equal(t, ReasonDatabase, argo.UnavailableReason())
 	})
 
 	t.Run("Argo Watcher - Down - Cannot login", func(t *testing.T) {
-		// mocks
 		api := newArgoApiMock(ctrl)
 		metrics := mocks.NewMockMetricsInterface(ctrl)
 		state := mocks.NewMockTaskRepository(ctrl)
 
-		// mock calls
 		state.EXPECT().Check().Return(true)
 		testUserInfo := &models.Userinfo{
 			LoggedIn: false,
 			Username: loggedInUsername,
 		}
 		api.EXPECT().GetUserInfo().Return(testUserInfo, nil)
-		// Only ArgoCD is down (login rejected); the state backend stays reachable.
 		metrics.EXPECT().SetArgoUnavailable(true)
 		metrics.EXPECT().SetStateUnavailable(false)
 
-		// argo manager
 		argo := &Argo{}
 		argo.Init(state, api, metrics)
 		status, err := argo.Check()
 
-		// assertions
 		assert.EqualError(t, err, models.StatusArgoCDFailedLogin)
 		assert.Equal(t, "down", status)
 		assert.Equal(t, ReasonArgoCD, argo.UnavailableReason())
 	})
 
 	t.Run("Argo Watcher - Down - Unexpected login failure", func(t *testing.T) {
-		// mocks
 		api := newArgoApiMock(ctrl)
 		metrics := mocks.NewMockMetricsInterface(ctrl)
 		state := mocks.NewMockTaskRepository(ctrl)
 
-		// mock calls
 		state.EXPECT().Check().Return(true)
 		api.EXPECT().GetUserInfo().Return(nil, fmt.Errorf("unexpected login error"))
-		// Only ArgoCD is down (transport error); the state backend stays reachable.
 		metrics.EXPECT().SetArgoUnavailable(true)
 		metrics.EXPECT().SetStateUnavailable(false)
 
-		// argo manager
 		argo := &Argo{}
 		argo.Init(state, api, metrics)
 		status, err := argo.Check()
 
-		// assertions
 		assert.EqualError(t, err, models.StatusArgoCDUnavailableMessage)
 		assert.Equal(t, "down", status)
 		assert.Equal(t, ReasonArgoCD, argo.UnavailableReason())
 	})
 
 	t.Run("Argo Watcher - Down - Both ArgoCD and state backend unreachable", func(t *testing.T) {
-		// mocks
 		api := newArgoApiMock(ctrl)
 		metrics := mocks.NewMockMetricsInterface(ctrl)
 		state := mocks.NewMockTaskRepository(ctrl)
 
-		// mock calls: state backend down AND ArgoCD login fails at the same time,
-		// so both gauges must be raised.
 		state.EXPECT().Check().Return(false)
 		api.EXPECT().GetUserInfo().Return(nil, fmt.Errorf("unexpected login error"))
 		metrics.EXPECT().SetArgoUnavailable(true)
 		metrics.EXPECT().SetStateUnavailable(true)
 
-		// argo manager
 		argo := &Argo{}
 		argo.Init(state, api, metrics)
 		status, err := argo.Check()
 
-		// assertions: the reason names both, and the error mentions both causes.
 		assert.Equal(t, "down", status)
 		assert.Equal(t, ReasonBoth, argo.UnavailableReason())
 		assert.ErrorContains(t, err, models.StatusConnectionUnavailable)
@@ -154,7 +129,6 @@ func TestArgoCheck(t *testing.T) {
 	})
 
 	t.Run("Argo Watcher - Down - Both, ArgoCD login rejected", func(t *testing.T) {
-		// mocks
 		api := newArgoApiMock(ctrl)
 		metrics := mocks.NewMockMetricsInterface(ctrl)
 		state := mocks.NewMockTaskRepository(ctrl)
@@ -167,12 +141,10 @@ func TestArgoCheck(t *testing.T) {
 		metrics.EXPECT().SetArgoUnavailable(true)
 		metrics.EXPECT().SetStateUnavailable(true)
 
-		// argo manager
 		argo := &Argo{}
 		argo.Init(state, api, metrics)
 		status, err := argo.Check()
 
-		// assertions
 		assert.Equal(t, "down", status)
 		assert.Equal(t, ReasonBoth, argo.UnavailableReason())
 		assert.ErrorContains(t, err, models.StatusConnectionUnavailable)
@@ -230,50 +202,42 @@ func TestArgoAddTask(t *testing.T) {
 	defer ctrl.Finish()
 
 	t.Run("Argo Unavailable", func(t *testing.T) {
-		// mocks
 		api := newArgoApiMock(ctrl)
 		metrics := mocks.NewMockMetricsInterface(ctrl)
 		state := mocks.NewMockTaskRepository(ctrl)
 
-		// argo manager
 		argo := &Argo{}
 		argo.Init(state, api, metrics)
 		// Simulate a cached outage: AddTask must reject fast, without a live
 		// probe (no Check/GetUserInfo calls) so the client is not held on the
 		// retry budget (issue #498).
 		argo.reason.Store(ReasonArgoCD)
-		task := models.Task{} // empty task
+		task := models.Task{}
 		newTask, err := argo.AddTask(task)
 
-		// assertions
 		assert.Nil(t, newTask)
 		assert.EqualError(t, err, models.StatusArgoCDUnavailableMessage)
 	})
 
 	t.Run("Argo - Image not passed", func(t *testing.T) {
-		// mocks
 		api := newArgoApiMock(ctrl)
 		metrics := mocks.NewMockMetricsInterface(ctrl)
 		state := mocks.NewMockTaskRepository(ctrl)
 
-		// argo manager
 		argo := &Argo{}
 		argo.Init(state, api, metrics)
-		task := models.Task{} // empty task
+		task := models.Task{}
 		newTask, err := argo.AddTask(task)
 
-		// assertions
 		assert.Nil(t, newTask)
 		assert.EqualError(t, err, "trying to create task without images")
 	})
 
 	t.Run("Argo - App not passed", func(t *testing.T) {
-		// mocks
 		api := newArgoApiMock(ctrl)
 		metrics := mocks.NewMockMetricsInterface(ctrl)
 		state := mocks.NewMockTaskRepository(ctrl)
 
-		// argo manager
 		argo := &Argo{}
 		argo.Init(state, api, metrics)
 		task := models.Task{
@@ -283,24 +247,20 @@ func TestArgoAddTask(t *testing.T) {
 		}
 		newTask, err := argo.AddTask(task)
 
-		// assertions
 		assert.Nil(t, newTask)
 		assert.EqualError(t, err, "trying to create task without app name")
 	})
 
 	t.Run("Argo - State add failed", func(t *testing.T) {
-		// mocks
 		api := newArgoApiMock(ctrl)
 		metrics := mocks.NewMockMetricsInterface(ctrl)
 		state := mocks.NewMockTaskRepository(ctrl)
 
-		// mock calls to add task
 		stateError := fmt.Errorf("database error")
 		state.EXPECT().GetTasks(gomock.Any(), gomock.Any(), "test-app", models.StatusDeployedMessage, gomock.Any(), gomock.Any()).Return([]models.Task{}, int64(0))
 		state.EXPECT().CancelInProgressTasks("test-app", gomock.Any(), gomock.Any(), gomock.Any()).Return(int64(0), nil)
 		state.EXPECT().AddTask(gomock.Any()).Return(nil, stateError)
 
-		// argo manager
 		argo := &Argo{}
 		argo.Init(state, api, metrics)
 		task := models.Task{
@@ -311,7 +271,6 @@ func TestArgoAddTask(t *testing.T) {
 		}
 		newTask, err := argo.AddTask(task)
 
-		// assertions
 		assert.Nil(t, newTask)
 		assert.EqualError(t, err, stateError.Error())
 	})
@@ -321,7 +280,6 @@ func TestArgoAddTask(t *testing.T) {
 	// vulnerability the authority rule closes.
 	for _, validated := range []bool{true, false} {
 		t.Run(fmt.Sprintf("Argo - Task added (validated=%t)", validated), func(t *testing.T) {
-			// mocks
 			api := newArgoApiMock(ctrl)
 			metrics := mocks.NewMockMetricsInterface(ctrl)
 			state := mocks.NewMockTaskRepository(ctrl)
@@ -335,7 +293,6 @@ func TestArgoAddTask(t *testing.T) {
 			}
 			metrics.EXPECT().AddProcessedDeployment(expectedApp)
 
-			// tasks
 			task := models.Task{
 				App: "test-app",
 				Images: []models.Image{
@@ -364,12 +321,10 @@ func TestArgoAddTask(t *testing.T) {
 				state.EXPECT().AddTask(gomock.Any()).Return(&newTask, nil),
 			)
 
-			// argo manager
 			argo := &Argo{}
 			argo.Init(state, api, metrics)
 			newTaskReturned, err := argo.AddTask(task)
 
-			// assertions
 			assert.Nil(t, err)
 			assert.NotNil(t, newTaskReturned)
 			uuidRegexp := regexp.MustCompile("^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-4[a-fA-F0-9]{3}-[8|9|aA|bB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}$")
@@ -378,7 +333,6 @@ func TestArgoAddTask(t *testing.T) {
 	}
 
 	t.Run("Argo - Cancel failure does not block new deployment", func(t *testing.T) {
-		// mocks
 		api := newArgoApiMock(ctrl)
 		metrics := mocks.NewMockMetricsInterface(ctrl)
 		state := mocks.NewMockTaskRepository(ctrl)
@@ -388,8 +342,6 @@ func TestArgoAddTask(t *testing.T) {
 		task := models.Task{App: "test-app", Images: []models.Image{{Tag: taskImageTag}}, Validated: true}
 		newTask := models.Task{Id: uuid.NewString(), App: "test-app", Images: []models.Image{{Tag: taskImageTag}}}
 
-		// Cancelling prior in-progress tasks is best-effort: a failure here must not
-		// block the new deployment from being persisted.
 		state.EXPECT().GetTasks(gomock.Any(), gomock.Any(), "test-app", models.StatusDeployedMessage, gomock.Any(), gomock.Any()).Return([]models.Task{}, int64(0))
 		state.EXPECT().CancelInProgressTasks("test-app", gomock.Any(), supersededTaskReason, gomock.Any()).Return(int64(0), fmt.Errorf("cancel failed"))
 		state.EXPECT().AddTask(gomock.Any()).Return(&newTask, nil)
@@ -416,7 +368,6 @@ func TestArgoAddTask(t *testing.T) {
 		}
 		state.EXPECT().GetTasks(gomock.Any(), gomock.Any(), "test-app", models.StatusDeployedMessage, gomock.Any(), gomock.Any()).Return(deployed, int64(len(deployed)))
 
-		// Capture the task actually handed to the repository.
 		var captured models.Task
 		state.EXPECT().CancelInProgressTasks("test-app", gomock.Any(), gomock.Any(), gomock.Any()).Return(int64(0), nil)
 		state.EXPECT().AddTask(gomock.Any()).DoAndReturn(func(task models.Task) (*models.Task, error) {
@@ -441,7 +392,6 @@ func TestArgoAddTask(t *testing.T) {
 
 		metrics.EXPECT().AddProcessedDeployment(models.UnknownApp)
 
-		// Deploying a brand-new version (v3) with no earlier match: not a rollback.
 		deployed := []models.Task{
 			{Id: "current", App: "test-app", Images: []models.Image{{Image: "app", Tag: "v2"}}, Status: models.StatusDeployedMessage},
 		}
@@ -457,7 +407,6 @@ func TestArgoAddTask(t *testing.T) {
 
 		argo := &Argo{}
 		argo.Init(state, api, metrics)
-		// Client tries to spoof the rollback flag; the server must overwrite it.
 		_, err := argo.AddTask(models.Task{
 			App:              "test-app",
 			Images:           []models.Image{{Image: "app", Tag: "v3"}},
@@ -479,7 +428,6 @@ func TestArgoDetectRollback(t *testing.T) {
 		return []models.Image{{Image: image, Tag: tag}}
 	}
 
-	// deployedTask is one entry in the app's deployment history.
 	type deployedTask struct {
 		id     string
 		images []models.Image
@@ -488,7 +436,7 @@ func TestArgoDetectRollback(t *testing.T) {
 	tests := []struct {
 		name    string
 		history []deployedTask // successfully deployed tasks, oldest first
-		target  []models.Image // image set being deployed now
+		target  []models.Image
 		// wantTargetID is the expected rollback target task ID ("" = not a rollback).
 		wantTargetID string
 	}{

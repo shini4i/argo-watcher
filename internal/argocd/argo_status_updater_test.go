@@ -58,8 +58,6 @@ func (s failingStrategy) Send(models.Task) error {
 	return s.err
 }
 
-// capturingStrategy records every task passed to a notifier so tests can assert
-// on the status reported in the outgoing notification.
 type capturingStrategy struct {
 	sent []models.Task
 }
@@ -125,27 +123,21 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	// Use a real in-memory locker for testing the updater's logic,
-	// as its behavior is simple and predictable.
 	mockLocker := lock.NewInMemoryLocker()
 
 	t.Run("Status Updater - Application deployed", func(t *testing.T) {
-		// mocks
 		apiMock := newArgoApiMock(ctrl)
 		metricsMock := mocks.NewMockMetricsInterface(ctrl)
 		stateMock := mocks.NewMockTaskRepository(ctrl)
 
-		// argo manager
 		argo := &Argo{}
 		argo.Init(stateMock, apiMock, metricsMock)
 		stateMock.EXPECT().GetTask(gomock.Any()).Return(&models.Task{Status: models.StatusInProgressMessage}, nil).AnyTimes()
 
-		// argo updater
 		cfg := newUpdaterTestConfig(mockLocker)
 		cfg.RepoCachePath = "/tmp/"
 		updater := initTestUpdater(t, cfg, argo)
 
-		// prepare test data
 		task := models.Task{
 			Id:      "test-id",
 			App:     "test-app",
@@ -158,13 +150,11 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 			},
 		}
 
-		// application
 		application := models.Application{}
 		application.Status.Summary.Images = []string{"ghcr.io/shini4i/argo-watcher:dev"}
 		application.Status.Sync.Status = "Synced"
 		application.Status.Health.Status = "Healthy"
 
-		// mock calls
 		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(&application, nil).MinTimes(2).MaxTimes(3)
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().ResetFailedDeployment(task.App)
@@ -172,27 +162,22 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		metricsMock.EXPECT().RemoveInProgressTask()
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
 
-		// run the rollout
 		updater.WaitForRollout(task)
 	})
 
 	t.Run("Status Updater - Application deployed with Retry", func(t *testing.T) {
-		// mocks
 		apiMock := newArgoApiMock(ctrl)
 		metricsMock := mocks.NewMockMetricsInterface(ctrl)
 		stateMock := mocks.NewMockTaskRepository(ctrl)
 
-		// argo manager
 		argo := &Argo{}
 		argo.Init(stateMock, apiMock, metricsMock)
 		stateMock.EXPECT().GetTask(gomock.Any()).Return(&models.Task{Status: models.StatusInProgressMessage}, nil).AnyTimes()
 
-		// argo updater
 		cfg := newUpdaterTestConfig(mockLocker)
 		cfg.RetryAttempts = 3
 		updater := initTestUpdater(t, cfg, argo)
 
-		// prepare test data
 		task := models.Task{
 			Id:      "test-id",
 			App:     "test-app",
@@ -205,19 +190,16 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 			},
 		}
 
-		// unhealthyApp
 		unhealthyApp := models.Application{}
 		unhealthyApp.Status.Summary.Images = []string{"ghcr.io/shini4i/argo-watcher:dev"}
 		unhealthyApp.Status.Sync.Status = "Synced"
 		unhealthyApp.Status.Health.Status = "NotHealthy"
 
-		// healthy app
 		healthyApp := models.Application{}
 		healthyApp.Status.Summary.Images = []string{"ghcr.io/shini4i/argo-watcher:dev"}
 		healthyApp.Status.Sync.Status = "Synced"
 		healthyApp.Status.Health.Status = "Healthy"
 
-		// mock calls
 		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(&unhealthyApp, nil).MinTimes(1).MaxTimes(2)
 		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(&healthyApp, nil).Times(1)
 		metricsMock.EXPECT().AddInProgressTask()
@@ -226,25 +208,20 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		metricsMock.EXPECT().RemoveInProgressTask()
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
 
-		// run the rollout
 		updater.WaitForRollout(task)
 	})
 
 	t.Run("Status Updater - Application deployed with Registry proxy", func(t *testing.T) {
-		// mocks
 		apiMock := newArgoApiMock(ctrl)
 		metricsMock := mocks.NewMockMetricsInterface(ctrl)
 		stateMock := mocks.NewMockTaskRepository(ctrl)
 
-		// argo manager
 		argo := &Argo{}
 		argo.Init(stateMock, apiMock, metricsMock)
 		stateMock.EXPECT().GetTask(gomock.Any()).Return(&models.Task{Status: models.StatusInProgressMessage}, nil).AnyTimes()
 
-		// argo updater
 		updater := initTestUpdater(t, newUpdaterTestConfig(mockLocker), argo)
 
-		// prepare test data
 		task := models.Task{
 			Id:      "test-id",
 			App:     "test-app",
@@ -257,13 +234,11 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 			},
 		}
 
-		// application
 		application := models.Application{}
 		application.Status.Summary.Images = []string{"test-registry/ghcr.io/shini4i/argo-watcher:dev"}
 		application.Status.Sync.Status = "Synced"
 		application.Status.Health.Status = "Healthy"
 
-		// mock calls
 		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(&application, nil).MinTimes(2).MaxTimes(3)
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().ResetFailedDeployment(task.App)
@@ -271,27 +246,22 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		metricsMock.EXPECT().RemoveInProgressTask()
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
 
-		// run the rollout
 		updater.WaitForRollout(task)
 	})
 
 	t.Run("Status Updater - Application deployed without Registry proxy", func(t *testing.T) {
-		// mocks
 		apiMock := newArgoApiMock(ctrl)
 		metricsMock := mocks.NewMockMetricsInterface(ctrl)
 		stateMock := mocks.NewMockTaskRepository(ctrl)
 
-		// argo manager
 		argo := &Argo{}
 		argo.Init(stateMock, apiMock, metricsMock)
 		stateMock.EXPECT().GetTask(gomock.Any()).Return(&models.Task{Status: models.StatusInProgressMessage}, nil).AnyTimes()
 
-		// argo updater
 		cfg := newUpdaterTestConfig(mockLocker)
 		cfg.RegistryProxyURL = ""
 		updater := initTestUpdater(t, cfg, argo)
 
-		// prepare test data
 		task := models.Task{
 			Id:      "test-id",
 			App:     "test-app",
@@ -304,13 +274,11 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 			},
 		}
 
-		// application
 		application := models.Application{}
 		application.Status.Summary.Images = []string{"test-registry/ghcr.io/shini4i/argo-watcher:dev"}
 		application.Status.Sync.Status = "Synced"
 		application.Status.Health.Status = "Healthy"
 
-		// mock calls
 		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(&application, nil).Times(3)
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
@@ -322,22 +290,18 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 				"List of expected images:\n"+
 				"\tghcr.io/shini4i/argo-watcher:dev")
 
-		// run the rollout
 		updater.WaitForRollout(task)
 	})
 
 	t.Run("Status Updater - Application not found", func(t *testing.T) {
-		// mocks
 		apiMock := newArgoApiMock(ctrl)
 		metricsMock := mocks.NewMockMetricsInterface(ctrl)
 		stateMock := mocks.NewMockTaskRepository(ctrl)
 
-		// argo manager
 		argo := &Argo{}
 		argo.Init(stateMock, apiMock, metricsMock)
 		stateMock.EXPECT().GetTask(gomock.Any()).Return(&models.Task{Status: models.StatusInProgressMessage}, nil).AnyTimes()
 
-		// argo updater
 		updater := initTestUpdater(t, newUpdaterTestConfig(mockLocker), argo)
 
 		// prepare test data. Validated, so the failure is labelled with the app: a
@@ -349,39 +313,32 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 			Validated: true,
 		}
 
-		// mock calls
 		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(nil, fmt.Errorf("applications.argoproj.io \"test-app\" not found"))
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusAppNotFoundMessage, "ArgoCD API Error: applications.argoproj.io \"test-app\" not found")
 
-		// run the rollout
 		updater.WaitForRollout(task)
 	})
 
 	t.Run("Status Updater - ArgoCD unavailable", func(t *testing.T) {
-		// mocks
 		apiMock := newArgoApiMock(ctrl)
 		metricsMock := mocks.NewMockMetricsInterface(ctrl)
 		stateMock := mocks.NewMockTaskRepository(ctrl)
 
-		// argo manager
 		argo := &Argo{}
 		argo.Init(stateMock, apiMock, metricsMock)
 		stateMock.EXPECT().GetTask(gomock.Any()).Return(&models.Task{Status: models.StatusInProgressMessage}, nil).AnyTimes()
 
-		// argo updater
 		updater := initTestUpdater(t, newUpdaterTestConfig(mockLocker), argo)
 
-		// prepare test data
 		task := models.Task{
 			Id:        "test-id",
 			App:       "test-app",
 			Validated: true,
 		}
 
-		// mock calls
 		unavailableErr := &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connect: connection refused")}
 		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(nil, unavailableErr)
 		metricsMock.EXPECT().AddInProgressTask()
@@ -389,57 +346,46 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		metricsMock.EXPECT().RemoveInProgressTask()
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusAborted, "ArgoCD API Error: dial tcp: connect: connection refused")
 
-		// run the rollout
 		updater.WaitForRollout(task)
 	})
 
 	t.Run("Status Updater - Application API error", func(t *testing.T) {
-		// mocks
 		apiMock := newArgoApiMock(ctrl)
 		metricsMock := mocks.NewMockMetricsInterface(ctrl)
 		stateMock := mocks.NewMockTaskRepository(ctrl)
 
-		// argo manager
 		argo := &Argo{}
 		argo.Init(stateMock, apiMock, metricsMock)
 		stateMock.EXPECT().GetTask(gomock.Any()).Return(&models.Task{Status: models.StatusInProgressMessage}, nil).AnyTimes()
 
-		// argo updater
 		updater := initTestUpdater(t, newUpdaterTestConfig(mockLocker), argo)
 
-		// prepare test data
 		task := models.Task{
 			Id:        "test-id",
 			App:       "test-app",
 			Validated: true,
 		}
 
-		// mock calls
 		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(nil, fmt.Errorf("unexpected failure"))
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage, "ArgoCD API Error: unexpected failure")
 
-		// run the rollout
 		updater.WaitForRollout(task)
 	})
 
 	t.Run("Status Updater - Application not available", func(t *testing.T) {
-		// mocks
 		apiMock := newArgoApiMock(ctrl)
 		metricsMock := mocks.NewMockMetricsInterface(ctrl)
 		stateMock := mocks.NewMockTaskRepository(ctrl)
 
-		// argo manager
 		argo := &Argo{}
 		argo.Init(stateMock, apiMock, metricsMock)
 		stateMock.EXPECT().GetTask(gomock.Any()).Return(&models.Task{Status: models.StatusInProgressMessage}, nil).AnyTimes()
 
-		// argo updater
 		updater := initTestUpdater(t, newUpdaterTestConfig(mockLocker), argo)
 
-		// prepare test data
 		task := models.Task{
 			Id:      "test-id",
 			App:     "test-app",
@@ -452,11 +398,9 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 			},
 		}
 
-		// application
 		application := models.Application{}
 		application.Status.Summary.Images = []string{"test-image:v0.0.1"}
 
-		// mock calls
 		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(&application, nil).Times(3)
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
@@ -468,25 +412,20 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 				"List of expected images:\n"+
 				"\tghcr.io/shini4i/argo-watcher:dev")
 
-		// run the rollout
 		updater.WaitForRollout(task)
 	})
 
 	t.Run("Status Updater - Application out of Sync", func(t *testing.T) {
-		// mocks
 		apiMock := newArgoApiMock(ctrl)
 		metricsMock := mocks.NewMockMetricsInterface(ctrl)
 		stateMock := mocks.NewMockTaskRepository(ctrl)
 
-		// argo manager
 		argo := &Argo{}
 		argo.Init(stateMock, apiMock, metricsMock)
 		stateMock.EXPECT().GetTask(gomock.Any()).Return(&models.Task{Status: models.StatusInProgressMessage}, nil).AnyTimes()
 
-		// argo updater
 		updater := initTestUpdater(t, newUpdaterTestConfig(mockLocker), argo)
 
-		// prepare test data
 		task := models.Task{
 			Id:      "test-id",
 			App:     "test-app",
@@ -499,7 +438,6 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 			},
 		}
 
-		// application
 		application := models.Application{}
 		application.Status.Summary.Images = []string{"ghcr.io/shini4i/argo-watcher:dev"}
 		application.Status.Sync.Status = "Syncing"
@@ -507,7 +445,6 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		application.Status.OperationState.Phase = "NotWorking"
 		application.Status.OperationState.Message = "Not working test app"
 
-		// mock calls
 		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(&application, nil).Times(3)
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
@@ -519,25 +456,20 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 				"App status \"NotWorking\"\n"+
 				"App message \"Not working test app\"")
 
-		// run the rollout
 		updater.WaitForRollout(task)
 	})
 
 	t.Run("Status Updater - Application not healthy", func(t *testing.T) {
-		// mocks
 		apiMock := newArgoApiMock(ctrl)
 		metricsMock := mocks.NewMockMetricsInterface(ctrl)
 		stateMock := mocks.NewMockTaskRepository(ctrl)
 
-		// argo manager
 		argo := &Argo{}
 		argo.Init(stateMock, apiMock, metricsMock)
 		stateMock.EXPECT().GetTask(gomock.Any()).Return(&models.Task{Status: models.StatusInProgressMessage}, nil).AnyTimes()
 
-		// argo updater
 		updater := initTestUpdater(t, newUpdaterTestConfig(mockLocker), argo)
 
-		// prepare test data
 		task := models.Task{
 			Id:      "test-id",
 			App:     "test-app",
@@ -550,13 +482,11 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 			},
 		}
 
-		// application
 		application := models.Application{}
 		application.Status.Summary.Images = []string{"ghcr.io/shini4i/argo-watcher:dev"}
 		application.Status.Sync.Status = "Synced"
 		application.Status.Health.Status = "NotHealthy"
 
-		// mock calls
 		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(&application, nil).Times(3)
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
@@ -568,7 +498,6 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 				"App sync status \"Synced\"\n"+
 				"App health status \"NotHealthy\"")
 
-		// run the rollout
 		updater.WaitForRollout(task)
 	})
 }
@@ -885,7 +814,6 @@ func TestArgoStatusUpdaterAbortsWhenArgoBecomesUnreachableMidPoll(t *testing.T) 
 	application.Status.Sync.Status = "Synced"
 	application.Status.Health.Status = "Progressing"
 
-	// The initial fetch and the first poll succeed; ArgoCD then goes away mid-rollout.
 	gomock.InOrder(
 		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(&application, nil).Times(2),
 		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).
@@ -1510,7 +1438,6 @@ func TestArgoStatusUpdaterStopsWhenSuperseded(t *testing.T) {
 
 	updater.WaitForRollout(task)
 
-	// The final outgoing notification must report the cancelled status.
 	require.NotEmpty(t, capture.sent)
 	assert.Equal(t, models.StatusCancelledMessage, capture.sent[len(capture.sent)-1].Status)
 }
@@ -1598,9 +1525,7 @@ func TestArgoStatusUpdaterAppDisappearsMidRollout(t *testing.T) {
 	notFound := fmt.Errorf("applications.argoproj.io %q not found", task.App)
 
 	gomock.InOrder(
-		// Initial check and first poll succeed: the app is present but still progressing.
 		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(&inProgress, nil).Times(2),
-		// The app is then deleted mid-rollout; every subsequent fetch reports not found.
 		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(nil, notFound).MinTimes(1),
 	)
 
@@ -1647,14 +1572,12 @@ func TestArgoStatusUpdaterProceedsWhenStatusReadFails(t *testing.T) {
 	application.Status.Sync.Status = "Synced"
 	application.Status.Health.Status = "Healthy"
 
-	// Every supersession check fails to read the status; the rollout must carry on.
 	stateMock.EXPECT().GetTask(task.Id).Return(nil, errors.New("db unavailable")).AnyTimes()
 	apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(&application, nil).MinTimes(1)
 	metricsMock.EXPECT().AddInProgressTask()
 	metricsMock.EXPECT().ResetFailedDeployment(task.App)
 	metricsMock.EXPECT().ObserveDeploymentDuration(task.App, gomock.Any())
 	metricsMock.EXPECT().RemoveInProgressTask()
-	// Proceeds to a normal deployed result rather than stopping as superseded.
 	stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
 
 	updater.WaitForRollout(task)
@@ -1763,7 +1686,6 @@ func TestArgoStatusUpdater_processDeploymentResult(t *testing.T) {
 
 	updater := initTestUpdater(t, newUpdaterTestConfig(mockLocker), argo)
 
-	// success scenario
 	t.Run("processDeploymentResult - success", func(t *testing.T) {
 		task := models.Task{
 			Id:  "test-id",
@@ -1777,7 +1699,6 @@ func TestArgoStatusUpdater_processDeploymentResult(t *testing.T) {
 		app.Status.Sync.Status = "Synced"
 		app.Status.Health.Status = "Healthy"
 
-		// setup status mocks
 		metricsMock.EXPECT().ResetFailedDeployment(task.App)
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
 
@@ -1785,7 +1706,6 @@ func TestArgoStatusUpdater_processDeploymentResult(t *testing.T) {
 		assert.Equal(t, models.StatusDeployedMessage, task.Status)
 	})
 
-	// fire and forget scenario
 	t.Run("processDeploymentResult - fire and forget", func(t *testing.T) {
 		task := models.Task{Id: "test-id", App: "test-app"}
 		app := &models.Application{}
@@ -1819,7 +1739,6 @@ func TestArgoStatusUpdater_processDeploymentResult(t *testing.T) {
 		assert.Equal(t, models.StatusDeployedMessage, task.Status)
 	})
 
-	// failure scenario
 	t.Run("processDeploymentResult - failure", func(t *testing.T) {
 		task := models.Task{Id: "test-id", App: "test-app"}
 		app := &models.Application{}
@@ -2094,7 +2013,6 @@ func captureDebugLogs(t *testing.T) *logBuffer {
 	return logs
 }
 
-// logBuffer is a concurrency-safe io.Writer holding everything the logger emitted.
 type logBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer
@@ -2106,7 +2024,6 @@ func (b *logBuffer) Write(p []byte) (int, error) {
 	return b.buf.Write(p)
 }
 
-// String returns everything captured so far.
 func (b *logBuffer) String() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -2145,7 +2062,6 @@ func TestDeploymentMonitorResolveRefresh(t *testing.T) {
 	}
 }
 
-// newFetchTestMonitor builds a monitor wired to mock API + metrics for FetchApplication tests.
 func newFetchTestMonitor(t *testing.T) (*DeploymentMonitor, *mocks.MockArgoApiInterface, *mocks.MockMetricsInterface) {
 	t.Helper()
 	ctrl := gomock.NewController(t)
@@ -2191,8 +2107,6 @@ func TestDeploymentMonitorFetchApplicationRefreshRecordsDuration(t *testing.T) {
 	})
 }
 
-// TestDeploymentMonitorFetchApplicationNoRefresh verifies that when refresh is not requested, the call
-// is forwarded with refresh=false and no refresh duration is recorded.
 func TestDeploymentMonitorFetchApplicationNoRefresh(t *testing.T) {
 	monitor, api, _ := newFetchTestMonitor(t)
 	wantApp := &models.Application{}
@@ -2204,9 +2118,6 @@ func TestDeploymentMonitorFetchApplicationNoRefresh(t *testing.T) {
 	assert.Same(t, wantApp, app)
 }
 
-// TestDetermineFailureStatus verifies that unreachable-ArgoCD errors (transport
-// failures and 5xx responses) are classified as aborted, while genuine
-// application/API errors are classified as failed.
 func TestDetermineFailureStatus(t *testing.T) {
 	task := models.Task{App: "demo"}
 

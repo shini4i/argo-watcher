@@ -29,8 +29,8 @@ var errForceRetry = errors.New("force retry")
 // Degraded after the task's images landed, which makes the failure terminal. Like errForceRetry it
 // must never reach the user-visible task status: any error escaping WaitRollout is reported through
 // HandleArgoAPIFailure, which blames ArgoCD's API and carries no diagnostics. WaitRollout therefore
-// swallows it so the caller reports the degraded rollout together with its resource-level cause
-// (a failed hook, a crashlooping pod) instead.
+// swallows it so the caller reports the degraded rollout together with its resource-level
+// cause instead.
 var errAppDegraded = errors.New("application has degraded")
 
 // errTaskSuperseded is an internal sentinel returned by the poll loop when the task
@@ -105,9 +105,9 @@ func (monitor *DeploymentMonitor) ObserveDeploymentDuration(app string, seconds 
 	monitor.argo.metrics.ObserveDeploymentDuration(app, seconds)
 }
 
-// resolveRefresh reports whether this task's status check should request an ArgoCD refresh.
-// A per-task Refresh override wins over the instance-wide default; a nil override (field omitted
-// by the client) keeps the default, so old clients behave exactly as before (issue #334).
+// resolveRefresh reports whether this task's status check should request an ArgoCD
+// refresh. A per-task Refresh override wins over the instance-wide default; a nil
+// override (field omitted by the client) keeps the default (issue #334).
 func (monitor *DeploymentMonitor) resolveRefresh(task models.Task) bool {
 	if task.Refresh != nil {
 		return *task.Refresh
@@ -216,11 +216,8 @@ func (monitor *DeploymentMonitor) WaitRollout(task models.Task) (*models.Applica
 		return checkRolloutStatus(task, app, status)
 	}, retryOptions...)
 
-	// Whenever the loop ends with the app's real rollout state already observed, surface the last
-	// successfully-fetched application instead of the internal sentinel or the context error, so the
-	// caller can report that status (e.g. "not synced", "not healthy", "degraded") to the user.
-	// If no fetch ever succeeded (application is nil), the error is returned so the caller can classify
-	// the underlying failure (e.g. connection refused -> aborted).
+	// A nil application means no fetch ever succeeded, so the error is returned as-is for
+	// the caller to classify (e.g. connection refused -> aborted).
 	if application != nil && rolloutStateAlreadyObserved(err) {
 		err = nil
 	}
@@ -240,9 +237,7 @@ func rolloutStateAlreadyObserved(err error) bool {
 		errors.Is(err, context.Canceled)
 }
 
-// configureRetryOptions derives retry attempts by preferring per-task overrides, then monitor defaults, and finally a legacy retry window aligned with the current retry delay.
-//
-// Alongside the retry options it returns the wall-clock deadline for the whole polling loop,
+// configureRetryOptions returns the wall-clock deadline for the whole polling loop,
 // computed as attempts*delay. The attempt count still caps the number of polls, while the
 // deadline caps the elapsed time so that slow API responses cannot stretch the loop past the
 // intended timeout (see WaitRollout).
@@ -260,15 +255,14 @@ func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) ([]ret
 
 	defaultAttempts := monitor.defaultAttempts
 	if defaultAttempts == 0 {
-		// Legacy fallback: legacyRetryIntervals steps at ArgoSyncRetryDelay pace, scaled to the current delay.
 		fallbackWindow := time.Duration(legacyRetryIntervals) * ArgoSyncRetryDelay
 		defaultAttempts = helpers.SafeIntToUint(helpers.CeilDivDuration(fallbackWindow, delay))
 	}
 
 	if task.Timeout <= 0 {
-		// A zero timeout is the norm: the field is omitted whenever a client leaves TASK_TIMEOUT
-		// unset, so it stays at debug. A negative one can only come from a malformed request and
-		// is worth surfacing.
+		// A zero timeout is the norm: the field is omitted whenever a client leaves
+		// TASK_TIMEOUT unset, so it stays at debug. A negative one can only come from a
+		// malformed request.
 		if task.Timeout < 0 {
 			slog.Warn("Ignoring negative task timeout, falling back to the instance default",
 				"timeout_seconds", task.Timeout, "attempts", defaultAttempts, "id", task.Id)
@@ -388,7 +382,6 @@ func (monitor *DeploymentMonitor) fetchResourceTree(task *models.Task) *models.A
 	return tree
 }
 
-// handleApplicationFetchError ensures we don't retry for not found errors
 func handleApplicationFetchError(task models.Task, err error) error {
 	if task.IsAppNotFoundError(err) {
 		return retry.Unrecoverable(err)
@@ -407,9 +400,8 @@ func shouldValidateDesiredImages(app *models.Application, status string) bool {
 }
 
 // validateDesiredImages returns an *ImageNotPartOfAppError when an expected image is
-// provably absent from the application's desired state. Every uncertainty — the app
-// opted out, the lookup failed, or no images could be read — returns nil so the rollout
-// keeps polling; only positive proof of absence fails the task.
+// provably absent from the application's desired state. Every uncertainty returns nil so
+// the rollout keeps polling; only positive proof of absence fails the task.
 func (monitor *DeploymentMonitor) validateDesiredImages(ctx context.Context, task models.Task, app *models.Application) error {
 	if app.IsImageValidationSkipped() {
 		return nil
@@ -438,7 +430,9 @@ func (monitor *DeploymentMonitor) validateDesiredImages(ctx context.Context, tas
 	return nil
 }
 
-// checkRolloutStatus checks if the application completed rollout successfully
+// checkRolloutStatus returns nil when the rollout succeeded, errForceRetry while it is
+// not yet final, and errAppDegraded when it settled Degraded with the task's images
+// already applied — i.e. the image hash moved off the saved initial one.
 func checkRolloutStatus(task models.Task, application *models.Application, status string) error {
 	switch status {
 	case models.ArgoRolloutAppDegraded:
@@ -457,7 +451,6 @@ func checkRolloutStatus(task models.Task, application *models.Application, statu
 	return errForceRetry
 }
 
-// determineFailureStatus converts API errors into appropriate status messages
 func determineFailureStatus(task models.Task, err error) string {
 	if task.IsAppNotFoundError(err) {
 		return models.StatusAppNotFoundMessage

@@ -69,9 +69,6 @@ func localPresentCommitCount(t *testing.T, localRepoPath string) int {
 		count++
 		return nil
 	})
-	// The ONLY tolerated terminal error is running off the shallow boundary
-	// (the parent commit is absent locally). Any other error is a real failure
-	// that must not be silently swallowed into a falsely-low count.
 	if walkErr != nil {
 		require.ErrorIs(t, walkErr, plumbing.ErrObjectNotFound,
 			"commit walk failed for a reason other than the shallow boundary")
@@ -197,10 +194,8 @@ func TestIntegration_ShallowClone_UpgradeFromFullCache(t *testing.T) {
 		testGitHandler{},
 	)
 
-	// Invariant 1: the write-back succeeds against a pre-existing full cache.
 	require.NoError(t, err, "write-back must succeed against a pre-upgrade full-history cache")
 
-	// Invariant 2: the commit lands correctly on the remote.
 	_, content := cloneRemoteState(t, env.DirectRepoURL, env.SSHKeyPath, "master", overrideRel)
 	assert.Contains(t, content, "v1", "the upgrade write-back must commit the tag")
 
@@ -263,9 +258,6 @@ func TestIntegration_ShallowClone_WarmFetchOfExternallyAdvancedTip(t *testing.T)
 	require.NoError(t, writeBack("v2"),
 		"warm write-back must succeed against an externally-advanced tip")
 
-	// The pushed HEAD's tree must contain BOTH our v2 override AND the
-	// competitor's file — proving we committed on top of their tip rather than
-	// force-pushing over it.
 	_, overrideContent := cloneRemoteState(t, env.DirectRepoURL, env.SSHKeyPath, "master", overrideRel)
 	_, competitorContent := cloneRemoteState(t, env.DirectRepoURL, env.SSHKeyPath, "master", "competitor.txt")
 	assert.Contains(t, overrideContent, "v2", "our v2 tag must be committed")
@@ -316,8 +308,6 @@ func TestIntegration_ShallowClone_SelfHealFreshClone(t *testing.T) {
 	require.NoError(t, writeBack("v1"), "first self-heal write-back should succeed")
 	require.NoError(t, writeBack("v2"), "second self-heal write-back should succeed")
 
-	// Two commits landed, stacked linearly on top of the base — the fresh
-	// re-clone between them neither lost v1 nor rewrote history.
 	assert.Equal(t, base+2, remoteCommitCount(t, env.DirectRepoURL, env.SSHKeyPath, "master"),
 		"each self-heal write-back must add exactly one commit, preserving prior history")
 
@@ -334,16 +324,9 @@ func TestIntegration_ShallowClone_SelfHealFreshClone(t *testing.T) {
 // a cold clone followed by repeated warm write-backs (fetch + hard reset +
 // commit + push) against the SAME cache directory.
 //
-// It asserts two independent things:
-//   - correctness: every write-back's commit lands on the remote, and an
-//     unchanged write-back is skipped — the warm path must work on a shallow repo;
-//   - shallowness: the cache is shallow after the cold clone AND stays shallow
-//     across warm fetches (go-git must not silently deepen to full history,
-//     which would defeat the whole point on a 100k-commit repo).
-//
-// Before Depth:1 is implemented this fails on the shallowness assertion (a full
-// clone has no shallow boundary); after, all assertions must hold, or shallow
-// clone does not fit our flow and must not ship.
+// It asserts both correctness (every write-back's commit lands, an unchanged one is
+// skipped) and shallowness: go-git must not silently deepen to full history across
+// warm fetches, which would defeat the whole point on a 100k-commit repo.
 func TestIntegration_ShallowClone_WarmCacheWriteBacks(t *testing.T) {
 	waitForGitea(t, 60*time.Second)
 	env := setupGitea(t)
@@ -385,10 +368,8 @@ func TestIntegration_ShallowClone_WarmCacheWriteBacks(t *testing.T) {
 		)
 	}
 
-	// The deterministic on-disk cache path the code will actually use.
 	localRepoPath := computeRepoCachePath(cachePath, env.DirectRepoURL, "master")
 
-	// (1) Cold clone + commit v1.
 	require.NoError(t, writeBack("v1"), "cold write-back should succeed")
 
 	shallowMarker := filepath.Join(localRepoPath, ".git", "shallow")

@@ -15,7 +15,6 @@ import (
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
-// settledApp returns an application that finished rolling out without the expected image.
 func settledApp() *models.Application {
 	app := &models.Application{}
 	app.Status.Sync.Status = "Synced"
@@ -23,7 +22,6 @@ func settledApp() *models.Application {
 	return app
 }
 
-// managedResources wraps target-state manifests in a managed-resources response.
 func managedResources(manifests ...string) *models.ManagedResources {
 	resources := &models.ManagedResources{}
 	for _, manifest := range manifests {
@@ -32,7 +30,6 @@ func managedResources(manifests ...string) *models.ManagedResources {
 	return resources
 }
 
-// refreshMetrics returns a metrics mock tolerating the refresh timing a refreshed poll records.
 func refreshMetrics(ctrl *gomock.Controller) *mocks.MockMetricsInterface {
 	metrics := mocks.NewMockMetricsInterface(ctrl)
 	metrics.EXPECT().ObserveRefreshDuration(gomock.Any(), gomock.Any()).AnyTimes()
@@ -112,7 +109,6 @@ func TestValidateDesiredImages(t *testing.T) {
 		assert.NoError(t, newMonitor(api, "").validateDesiredImages(context.Background(), cronTask, settledApp()))
 	})
 
-	// The task's Image may already carry a tag; only the repository name is compared.
 	t.Run("ignoresTagOnTheRequestedImage", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
@@ -230,8 +226,6 @@ func TestWaitRolloutFailsFastOnImageNotPartOfApp(t *testing.T) {
 	require.ErrorAs(t, err, &imageErr)
 }
 
-// TestWaitRolloutValidatesDesiredImagesOnce verifies an inconclusive lookup does not repeat
-// on every poll, and that the rollout keeps waiting.
 func TestWaitRolloutValidatesDesiredImagesOnce(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -295,8 +289,6 @@ func TestWaitRolloutSkipsValidationWithoutRefresh(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// TestHandleImageNotPartOfApp pins the terminal wiring: the task is marked failed with the
-// actionable reason and the failure is counted.
 func TestHandleImageNotPartOfApp(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()

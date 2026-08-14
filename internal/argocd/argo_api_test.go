@@ -56,8 +56,6 @@ func (b *stubBody) Close() error {
 	return b.closeErr
 }
 
-// TestArgoApiInit verifies that the ArgoCD API client is properly initialized
-// with URL, token, timeout, and TLS settings.
 func TestArgoApiInit(t *testing.T) {
 	argoURL, err := url.Parse("https://example.com")
 	require.NoError(t, err)
@@ -103,8 +101,6 @@ func TestArgoApiInit(t *testing.T) {
 	})
 }
 
-// TestArgoApiGetUserInfoSuccess verifies that GetUserInfo returns user information
-// when the API call succeeds.
 func TestArgoApiGetUserInfoSuccess(t *testing.T) {
 	expected := models.Userinfo{Username: "tester", LoggedIn: true}
 
@@ -128,8 +124,6 @@ func TestArgoApiGetUserInfoSuccess(t *testing.T) {
 	assert.Equal(t, &expected, userInfo)
 }
 
-// TestArgoApiGetUserInfoErrors verifies error handling for various failure scenarios
-// in GetUserInfo including request errors, body read errors, and JSON parsing errors.
 func TestArgoApiGetUserInfoErrors(t *testing.T) {
 	baseURL, err := url.Parse("https://example.com")
 	require.NoError(t, err)
@@ -332,8 +326,6 @@ func TestArgoApiGetUserInfoErrors(t *testing.T) {
 	}
 }
 
-// TestArgoApiGetApplicationSuccess verifies that GetApplication returns application
-// details when the API call succeeds.
 func TestArgoApiGetApplicationSuccess(t *testing.T) {
 	app := models.Application{}
 	app.Status.Health.Status = "Healthy"
@@ -363,8 +355,8 @@ func TestArgoApiGetApplicationSuccess(t *testing.T) {
 	assert.Equal(t, app.Status.Summary.Images, result.Status.Summary.Images)
 }
 
-// TestArgoApiGetResourceTreeSuccess verifies that GetResourceTree hits the resource-tree
-// endpoint and decodes node health (the only place pod-level failure causes are exposed).
+// TestArgoApiGetResourceTreeSuccess covers the resource-tree endpoint — the only place
+// pod-level failure causes are exposed.
 func TestArgoApiGetResourceTreeSuccess(t *testing.T) {
 	tree := models.ApplicationTree{Nodes: []models.ApplicationTreeNode{
 		{Kind: "Pod", Name: "demo-xyz", Namespace: "demo"},
@@ -394,8 +386,6 @@ func TestArgoApiGetResourceTreeSuccess(t *testing.T) {
 	assert.Equal(t, `Back-off pulling image "demo:v2": ErrImagePull`, result.Nodes[0].Health.Message)
 }
 
-// TestArgoApiGetManagedResourcesSuccess verifies that GetManagedResources hits the
-// managed-resources endpoint and decodes the desired manifests.
 func TestArgoApiGetManagedResourcesSuccess(t *testing.T) {
 	manifest := `{"kind":"Deployment","spec":{"template":{"spec":{"containers":[{"image":"demo:v1"}]}}}}`
 
@@ -421,7 +411,6 @@ func TestArgoApiGetManagedResourcesSuccess(t *testing.T) {
 	assert.Equal(t, []string{"demo"}, result.DesiredImageNames())
 }
 
-// TestArgoApiGetManagedResourcesError verifies a non-200 response surfaces as an error.
 func TestArgoApiGetManagedResourcesError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
@@ -440,7 +429,6 @@ func TestArgoApiGetManagedResourcesError(t *testing.T) {
 	require.Error(t, err)
 }
 
-// TestArgoApiGetResourceTreeError verifies a non-200 response surfaces as an error.
 func TestArgoApiGetResourceTreeError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -461,8 +449,6 @@ func TestArgoApiGetResourceTreeError(t *testing.T) {
 	assert.Contains(t, err.Error(), "boom")
 }
 
-// TestArgoApiGetResourceTreeUnmarshalError verifies a 200 with a non-JSON body surfaces a
-// wrapped parse error rather than a nil tree.
 func TestArgoApiGetResourceTreeUnmarshalError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -483,8 +469,8 @@ func TestArgoApiGetResourceTreeUnmarshalError(t *testing.T) {
 	assert.Contains(t, err.Error(), "could not parse resource-tree response")
 }
 
-// TestArgoApiGetResourceTreeTransportError verifies a transport failure (unreachable server) is
-// returned as an error — the best-effort caller relies on this to fall back to a nil tree.
+// TestArgoApiGetResourceTreeTransportError pins the error the best-effort caller relies
+// on to fall back to a nil tree.
 func TestArgoApiGetResourceTreeTransportError(t *testing.T) {
 	// Port 1 is not listenable, so the request fails to connect.
 	parsedURL, err := url.Parse("http://127.0.0.1:1")
@@ -499,8 +485,8 @@ func TestArgoApiGetResourceTreeTransportError(t *testing.T) {
 	require.Error(t, err)
 }
 
-// TestArgoApiGetApplicationEscapesAppName verifies that special characters in app names
-// are properly URL-escaped to prevent path traversal and injection attacks.
+// TestArgoApiGetApplicationEscapesAppName covers URL-escaping of app names, which guards
+// against path traversal and injection.
 func TestArgoApiGetApplicationEscapesAppName(t *testing.T) {
 	testCases := []struct {
 		appName     string
@@ -535,8 +521,6 @@ func TestArgoApiGetApplicationEscapesAppName(t *testing.T) {
 	}
 }
 
-// TestArgoApiGetApplicationAddsRefreshQuery verifies that the refresh query parameter
-// is added when refresh is requested, and omitted otherwise.
 func TestArgoApiGetApplicationAddsRefreshQuery(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -569,8 +553,6 @@ func TestArgoApiGetApplicationAddsRefreshQuery(t *testing.T) {
 	}
 }
 
-// TestArgoApiGetApplicationErrors verifies error handling for various failure scenarios
-// in GetApplication including request errors, body read errors, and API error responses.
 func TestArgoApiGetApplicationErrors(t *testing.T) {
 	baseURL, err := url.Parse("https://example.com")
 	require.NoError(t, err)
@@ -802,8 +784,6 @@ func TestArgoApiGetApplicationErrors(t *testing.T) {
 	}
 }
 
-// TestArgoApiDoGetRetriesOnTransientError verifies that transient transport errors
-// trigger retries and succeed if a subsequent attempt works.
 func TestArgoApiDoGetRetriesOnTransientError(t *testing.T) {
 	var callCount atomic.Int32
 	successBody := []byte(`{"loggedIn":true,"username":"ok"}`)
@@ -835,8 +815,6 @@ func TestArgoApiDoGetRetriesOnTransientError(t *testing.T) {
 	assert.Equal(t, int32(3), callCount.Load())
 }
 
-// TestArgoApiDoGetExhaustsRetries verifies that when all retry attempts fail,
-// the final error is returned.
 func TestArgoApiDoGetExhaustsRetries(t *testing.T) {
 	var callCount atomic.Int32
 
@@ -861,8 +839,6 @@ func TestArgoApiDoGetExhaustsRetries(t *testing.T) {
 	assert.Equal(t, int32(3), callCount.Load())
 }
 
-// TestArgoApiDoGetNoRetryOnSuccess verifies that no unnecessary retries happen
-// when the first attempt succeeds.
 func TestArgoApiDoGetNoRetryOnSuccess(t *testing.T) {
 	var callCount atomic.Int32
 	successBody := []byte(`{"status":"ok"}`)
@@ -935,7 +911,7 @@ func TestArgoApiDoGetNoRequestWhenContextAlreadyDone(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // already done before doGet runs
+	cancel()
 
 	api := NewArgoApi()
 	api.baseUrl = *baseURL
@@ -953,9 +929,8 @@ func TestArgoApiDoGetNoRequestWhenContextAlreadyDone(t *testing.T) {
 	assert.Equal(t, int32(0), callCount.Load(), "an already-cancelled context must skip the HTTP round-trip entirely")
 }
 
-// TestArgoApiDoGetNoRetryOnNon2xx verifies that HTTP error responses (4xx/5xx)
-// are returned immediately without triggering retries, since they are valid API
-// responses — not transient transport errors.
+// TestArgoApiDoGetNoRetryOnNon2xx pins that 4xx/5xx are returned without retry: they are
+// valid API responses, not transient transport errors.
 func TestArgoApiDoGetNoRetryOnNon2xx(t *testing.T) {
 	var callCount atomic.Int32
 	errorBody := []byte(`{"message":"internal server error"}`)

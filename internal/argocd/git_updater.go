@@ -24,9 +24,7 @@ type GitUpdater struct {
 	batcher *Batcher
 }
 
-// NewGitUpdater creates a GitUpdater instance. metrics may be nil, in which case
-// duration observation is skipped. batcher may be nil to use the serialized
-// single-app write-back path; when non-nil, write-backs are routed through it.
+// NewGitUpdater creates a GitUpdater instance.
 func NewGitUpdater(locker lock.Locker, repoCachePath string, metrics prometheus.MetricsInterface, batcher *Batcher) *GitUpdater {
 	return &GitUpdater{
 		locker:        locker,
@@ -37,14 +35,13 @@ func NewGitUpdater(locker lock.Locker, repoCachePath string, metrics prometheus.
 }
 
 // Close releases resources held by the updater, draining any in-flight batch
-// write-backs bounded by ctx. It is a no-op when batching is disabled.
+// write-backs bounded by ctx.
 func (gitUpdater *GitUpdater) Close(ctx context.Context) {
 	if gitUpdater.batcher != nil {
 		gitUpdater.batcher.Close(ctx)
 	}
 }
 
-// observeLockWait records how long a task waited to acquire the per-repo lock.
 func (gitUpdater *GitUpdater) observeLockWait(app string, d time.Duration) {
 	if gitUpdater.metrics != nil {
 		gitUpdater.metrics.ObserveGitLockWaitDuration(app, d.Seconds())
@@ -74,9 +71,8 @@ func (gitUpdater *GitUpdater) UpdateIfNeeded(app *models.Application, task model
 		return err
 	}
 
-	// Batch mode routes the write-back through the coalescing batcher instead of
-	// taking the per-repo lock directly. The batcher owns the lock, clone, commit,
-	// and push for the whole batch.
+	// In batch mode the batcher owns the lock, clone, commit and push for the
+	// whole batch, so the per-repo lock is not taken here.
 	if gitUpdater.batcher != nil {
 		return gitUpdater.updateViaBatcher(app, &task, &gitopsRepo, isSuperseded...)
 	}
@@ -128,9 +124,8 @@ func (gitUpdater *GitUpdater) updateViaBatcher(app *models.Application, task *mo
 }
 
 func (gitUpdater *GitUpdater) updateGitRepo(app *models.Application, task *models.Task, gitopsRepo *models.GitopsRepo, isSuperseded ...func() bool) error {
-	// context.Background() is intentional: the call stack above this point
-	// does not carry a context. Propagating a cancellable context from
-	// WaitForRollout is a future improvement.
+	// context.Background() is intentional: the call stack above this point does
+	// not carry a context.
 	err := UpdateGitImageTag(context.Background(), app, task, gitopsRepo, updater.GitClient{}, isSuperseded...)
 	if err != nil {
 		slog.Error("Failed to update git repo", "error", err, "id", task.Id)
