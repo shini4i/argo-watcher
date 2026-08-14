@@ -19,8 +19,6 @@ import (
 	"github.com/shini4i/argo-watcher/internal/mocks"
 )
 
-// TestArgoStatus verifies the read-only reachability endpoint reflects the
-// cached availability and names the unreachable subsystem in its JSON body.
 func TestArgoStatus(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -65,8 +63,6 @@ func TestArgoStatus(t *testing.T) {
 	t.Run("reports unavailable and names ArgoCD after a failed login", func(t *testing.T) {
 		repo := mocks.NewMockTaskRepository(ctrl)
 		repo.EXPECT().Check().Return(true)
-		// State backend is up but ArgoCD login fails, so only ArgoCD is down and
-		// the reason must serialize as "argocd" at the HTTP layer.
 		api := mocks.NewMockArgoApiInterface(ctrl)
 		api.EXPECT().GetUserInfo().Return(nil, fmt.Errorf("login boom"))
 		argo := &argocd.Argo{}
@@ -132,14 +128,11 @@ func TestStartArgoWatcher(t *testing.T) {
 
 	select {
 	case <-done:
-		// goroutine exited and released its connWg slot
 	case <-time.After(2 * time.Second):
 		t.Fatal("StartArgoWatcher goroutine did not exit after shutdown")
 	}
 }
 
-// TestWatchArgoTransitions verifies the watcher pushes a message only when the
-// observed reachability actually changes, and that it stops on request.
 func TestWatchArgoTransitions(t *testing.T) {
 	recv := func(t *testing.T, msgs <-chan string) string {
 		t.Helper()
@@ -169,7 +162,6 @@ func TestWatchArgoTransitions(t *testing.T) {
 		go watchArgoTransitions(stop, 5*time.Millisecond, load, func(m string) { msgs <- m })
 		time.Sleep(20 * time.Millisecond) // allow the watcher to capture its baseline
 
-		// Reachable -> database down: down message carries the cause.
 		reason.Store(argocd.ReasonDatabase)
 		assert.Equal(t, argoDownMessage+":"+argocd.ReasonDatabase, recv(t, msgs))
 
@@ -178,7 +170,6 @@ func TestWatchArgoTransitions(t *testing.T) {
 		reason.Store(argocd.ReasonBoth)
 		assert.Equal(t, argoDownMessage+":"+argocd.ReasonBoth, recv(t, msgs))
 
-		// Recovery clears the banner with the plain up message.
 		reason.Store(argocd.ReasonNone)
 		assert.Equal(t, argoUpMessage, recv(t, msgs))
 	})
@@ -195,7 +186,6 @@ func TestWatchArgoTransitions(t *testing.T) {
 		case m := <-msgs:
 			t.Fatalf("unexpected notification: %q", m)
 		case <-time.After(50 * time.Millisecond):
-			// no transition occurred, so no notification is expected
 		}
 	})
 
@@ -213,7 +203,6 @@ func TestWatchArgoTransitions(t *testing.T) {
 
 		select {
 		case <-done:
-			// returned as expected
 		case <-time.After(time.Second):
 			t.Fatal("watchArgoTransitions did not return after stop was closed")
 		}

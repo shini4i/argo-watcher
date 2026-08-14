@@ -101,8 +101,6 @@ func TestReadinessFailsWhileDraining(t *testing.T) {
 		"an operator curling the endpoint mid-incident must be able to tell a drain from an outage")
 }
 
-// TestProbeRoutesAreRegistered guards the wiring: the handlers above are useless if
-// CreateRouter never exposes them.
 func TestProbeRoutesAreRegistered(t *testing.T) {
 	env, _ := readAuthEnv(t, false, nil)
 

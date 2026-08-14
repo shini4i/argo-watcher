@@ -204,8 +204,6 @@ func protectedReadServer(t *testing.T, env *Env) *httptest.Server {
 	return srv
 }
 
-// callProtectedRead issues an authenticated read, carrying the token in the
-// canonical OIDC header when one is given, and returns the HTTP status code.
 func callProtectedRead(t *testing.T, srv *httptest.Server, token string) int {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodGet, srv.URL+"/api/v1/version", nil)

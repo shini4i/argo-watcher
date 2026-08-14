@@ -293,7 +293,6 @@ func (env *Env) requireOIDCAuth(w http.ResponseWriter, r *http.Request) bool {
 			return false
 		}
 		if err != nil {
-			// A header was present and the strategy rejected the token. Surface the reason.
 			slog.Warn("rejected request with invalid token",
 				"method", r.Method, "url", r.URL, "error", err)
 			writeJSON(w, http.StatusUnauthorized, models.TaskStatus{

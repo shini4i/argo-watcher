@@ -30,8 +30,7 @@ type Env struct {
 	// report the pod out of service while it is still able to serve. It is separate
 	// from shutdownCh, which is closed later in the sequence (after the listener),
 	// and deliberately never reset: shutdown is terminal.
-	draining atomic.Bool
-	// shutdownOnce ensures Shutdown() can be called multiple times safely.
+	draining     atomic.Bool
 	shutdownOnce sync.Once
 	// connWg tracks active WebSocket connection goroutines for graceful shutdown.
 	connWg sync.WaitGroup
@@ -80,9 +79,6 @@ const (
 	argoDownMessage = "argocd_down"
 )
 
-// argoStatusMessage builds the WebSocket payload for a reachability reason:
-// argoUpMessage when everything is reachable, otherwise "argocd_down:<reason>"
-// so clients learn which subsystem is down (see argocd.Reason* constants).
 func argoStatusMessage(reason string) string {
 	if reason == argocd.ReasonNone {
 		return argoUpMessage
@@ -152,7 +148,6 @@ func (env *Env) beginDraining() {
 	env.draining.Store(true)
 }
 
-// isDraining reports whether graceful shutdown has begun.
 func (env *Env) isDraining() bool {
 	return env.draining.Load()
 }
@@ -174,7 +169,6 @@ func (env *Env) Shutdown(ctx context.Context) {
 		})
 	}
 
-	// Wait for all WebSocket connection goroutines to finish with timeout
 	done := make(chan struct{})
 	go func() {
 		env.connWg.Wait()
@@ -189,10 +183,8 @@ func (env *Env) Shutdown(ctx context.Context) {
 	}
 }
 
-// NewEnv wires up an Env from the server config: lockdown schedules backed by
-// the given deploy lock store and the enabled auth strategies (deploy token,
-// optional OIDC — registered under both the canonical and legacy Keycloak
-// headers — and optional JWT).
+// NewEnv wires up an Env from the server config: lockdown schedules backed by the
+// given deploy lock store, and the enabled auth strategies.
 func NewEnv(serverConfig *config.ServerConfig, argo *argocd.Argo, metrics *prometheus.Metrics, updater *argocd.ArgoStatusUpdater, deployLockStore lock.DeployLockStore) (*Env, error) {
 	var env *Env
 	var err error
