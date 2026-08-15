@@ -2,11 +2,9 @@ import { expect, test } from '@playwright/test';
 import { expectAppLoaded, KEYCLOAK_ORIGIN, mintToken, seedTask, signIn, waitForDeployed } from '../helpers';
 
 /**
- * The rollback write path, driven from the UI as a privileged user.
- *
- * It is the only flow that proves the browser's in-memory access token reaches a
- * write request, and that the author on the resulting task comes from the real
- * OIDC identity — component tests stub both the HTTP client and the identity.
+ * The only flow that proves the author on the resulting task comes from the
+ * real OIDC identity — component tests stub both the HTTP client and the
+ * identity, so neither the token nor the author is real there.
  */
 test('a privileged user can roll a task back, and the new task carries their identity', async ({ page, request }) => {
   const id = await seedTask(request, 'rollback-source');
@@ -27,7 +25,6 @@ test('a privileged user can roll a task back, and the new task carries their ide
   const since = Math.floor(Date.now() / 1000) - 1;
   await page.getByRole('button', { name: 'Yes' }).click();
 
-  // A confirmed rollback returns to the list.
   await expectAppLoaded(page);
   await expect(page).toHaveURL(/\/tasks(\?|$)/);
 

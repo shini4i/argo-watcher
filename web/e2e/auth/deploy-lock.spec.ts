@@ -4,7 +4,6 @@ import { expectAppLoaded, KEYCLOAK_ORIGIN, mintToken, signIn } from '../helpers'
 const BANNER = /Deploy lock is active/;
 const LOCK_SWITCH = 'Toggle deploy lock';
 
-/** Signs in as the privileged user and waits for the app shell. */
 const signInPrivileged = async (page: Page): Promise<void> => {
   await page.goto('/');
   await page.waitForURL(url => url.href.startsWith(KEYCLOAK_ORIGIN));
