@@ -36,7 +36,6 @@ export const DeployLockProvider = ({ children }: { children: ReactNode }) => {
   return <DeployLockContext.Provider value={value}>{children}</DeployLockContext.Provider>;
 };
 
-/** Hook exposing DeployLock context values (state + actions). */
 export const useDeployLock = (): DeployLockContextValue => {
   const context = useContext(DeployLockContext);
   if (!context) {

@@ -44,7 +44,6 @@ describe('DeployLockService', () => {
     return {
       started,
       count: () => pending.length,
-      // Resolves the nth outstanding fetch (0 = the oldest).
       resolveNth: (index: number, body: unknown) => pending[index](jsonResponse(body)),
       resolveWith: (body: unknown) => pending[pending.length - 1](jsonResponse(body)),
     };
@@ -118,8 +117,6 @@ describe('DeployLockService', () => {
   });
 
   it('does not let a slow REST fetch clobber a newer WebSocket transition', async () => {
-    // A reconcile fetch is held pending while a WS transition lands, then resolves
-    // with the now-stale value; the WS state must win.
     mockFetch([{ body: false }]);
     const service = new DeployLockService();
     const listener = vi.fn();
@@ -139,8 +136,6 @@ describe('DeployLockService', () => {
   });
 
   it('does not let a slow REST fetch clobber a just-issued lock operation', async () => {
-    // A reconnect reconcile can be in flight when the operator hits lock; the
-    // explicit operation is newer than the fetch and must not be reverted.
     mockFetch([{ body: false }]);
     const service = new DeployLockService();
     const listener = vi.fn();
@@ -269,7 +264,6 @@ describe('DeployLockService', () => {
     MockWebSocket.instances[0].onclose?.();
     await vi.waitUntil(() => MockWebSocket.instances.length === 2);
 
-    // The lock was set while the socket was down.
     mockFetch([{ body: true }]);
     listener.mockClear();
     MockWebSocket.instances[1].open();
@@ -345,7 +339,7 @@ describe('DeployLockService', () => {
 
     unsubscribe();
     resolveWith(true);
-    await pending; // the stale result has now been fully processed (or dropped)
+    await pending;
 
     mockFetch([{ body: false }]);
     const listener = vi.fn();

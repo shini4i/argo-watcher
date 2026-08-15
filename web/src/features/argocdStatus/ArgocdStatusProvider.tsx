@@ -10,7 +10,6 @@ export interface ArgocdStatusContextValue {
 
 const ArgocdStatusContext = createContext<ArgocdStatusContextValue | undefined>(undefined);
 
-/** Provides ArgoCD reachability state backed by the shared WebSocket service. */
 export const ArgocdStatusProvider = ({ children }: { children: ReactNode }) => {
   // Default to available so the banner never flashes before the initial fetch
   // resolves; the service corrects this within one round-trip.
@@ -31,7 +30,6 @@ export const ArgocdStatusProvider = ({ children }: { children: ReactNode }) => {
   return <ArgocdStatusContext.Provider value={value}>{children}</ArgocdStatusContext.Provider>;
 };
 
-/** Hook exposing ArgoCD reachability context. */
 export const useArgocdStatus = (): ArgocdStatusContextValue => {
   const context = useContext(ArgocdStatusContext);
   if (!context) {
