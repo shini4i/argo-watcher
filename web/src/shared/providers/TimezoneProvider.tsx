@@ -13,7 +13,6 @@ const STORAGE_KEY = 'argo-watcher:timezone';
 
 const TimezoneContext = createContext<TimezoneContextValue | undefined>(undefined);
 
-/** Reads the persisted timezone selection, defaulting to UTC when unset. */
 const readInitialTimezone = (): TimezoneMode => {
   const browserWindow = globalThis.window;
   if (!browserWindow) {
@@ -26,7 +25,6 @@ const readInitialTimezone = (): TimezoneMode => {
   return 'utc';
 };
 
-/** React context provider that exposes timezone selection and formatting helpers. */
 export const TimezoneProvider = ({ children }: { children: ReactNode }) => {
   const [timezone, setTimezone] = useState<TimezoneMode>(() => readInitialTimezone());
 
@@ -59,7 +57,7 @@ export const TimezoneProvider = ({ children }: { children: ReactNode }) => {
   return <TimezoneContext.Provider value={value}>{children}</TimezoneContext.Provider>;
 };
 
-/** Hook for consuming the timezone context (selection + formatter). */
+/** Unlike the other context hooks, falls back to UTC outside its provider rather than throwing. */
 export const useTimezone = () => {
   const context = useContext(TimezoneContext);
   if (!context) {

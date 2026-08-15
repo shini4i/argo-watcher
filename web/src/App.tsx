@@ -10,8 +10,6 @@ import { TaskShow } from './features/tasks/show/TaskShow';
 import { useThemeMode } from './theme';
 
 /**
- * Root React-admin application wiring data/auth providers, resources, and custom routes.
- *
  * `loginPage={false}` disables React-admin's built-in username/password login form.
  * This app authenticates exclusively via a top-level OIDC redirect (see
  * authProvider), so the stock form is never a valid entry point; leaving it enabled

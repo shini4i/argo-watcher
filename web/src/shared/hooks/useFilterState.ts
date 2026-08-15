@@ -4,9 +4,9 @@ import { useSearchParams } from 'react-router-dom';
 import { getBrowserWindow } from '../utils/browser';
 
 export interface FilterFieldSchema<V> {
-  /** Reads a URL search param (or null when missing) and returns the typed value. */
+  /** Receives null when the param is absent from the URL. */
   readonly fromUrl: (raw: string | null) => V;
-  /** Serialises a typed value back to a URL search param, or null to drop the param. */
+  /** Serialises a typed value to a URL search param, or null to drop the param. */
   readonly toUrl: (value: V) => string | null;
   /** Writes the value into the react-admin filterValues object (key may differ). */
   readonly toFilter?: (value: V) => unknown;
@@ -125,8 +125,8 @@ const valuesEqual = <T>(a: T, b: T): boolean => {
 /**
  * Single owner of URL ⇄ react-admin filterValues ⇄ localStorage reconciliation.
  *
- * On mount: reads URL params first, falls back to localStorage, then defaults.
- * Push the merged values into react-admin's filterValues.
+ * On mount: URL params win, then localStorage, then defaults; the merged values
+ * are pushed into react-admin's filterValues.
  *
  * `setValue` / `setMany` update local state only — call `apply()` to mirror
  * pending values into the URL, storage, and filterValues. `applied` reflects
@@ -159,7 +159,6 @@ export const useFilterState = <T extends Record<string, unknown>>(
   const [values, setValues] = useState<T>(initial);
   const [applied, setApplied] = useState<T>(initial);
 
-  // On first mount, project initial state into the react-admin filter context.
   const hasMountedRef = useRef(false);
   useEffect(() => {
     if (hasMountedRef.current) return;
@@ -187,13 +186,11 @@ export const useFilterState = <T extends Record<string, unknown>>(
     (override?: T) => {
       const target = override ?? values;
 
-      // Mirror to react-admin filterValues.
       if (setFilters) {
         const merged = buildFilterValues(schema, target, filterValues as Record<string, unknown>);
         setFilters(merged, {}, false);
       }
 
-      // Mirror to URL.
       const params = new URLSearchParams(searchParams);
       (Object.keys(schema) as Array<keyof T>).forEach(key => {
         const field = schema[key];
@@ -207,7 +204,6 @@ export const useFilterState = <T extends Record<string, unknown>>(
       });
       setSearchParams(params, { replace: true });
 
-      // Mirror to localStorage.
       (Object.keys(schema) as Array<keyof T>).forEach(key => {
         const field = schema[key];
         writeStorageValue(storageKey, field, key as string, target[key]);

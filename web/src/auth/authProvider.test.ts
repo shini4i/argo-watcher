@@ -152,8 +152,6 @@ describe('authProvider', () => {
 
     await provider.checkAuth({});
 
-    // Surrounding whitespace in a deployment value must not become part of the
-    // authority or the client id on the wire.
     expect(MockUserManager).toHaveBeenCalledWith(
       expect.objectContaining({
         authority: 'https://idp.example.com/realms/demo',
@@ -203,7 +201,6 @@ describe('authProvider', () => {
   });
 
   it('reads groups from userinfo (the source the backend enforces on), not the ID token', async () => {
-    // ID token carries stale/no groups; userinfo is authoritative.
     mockConfig(enabledConfig(), ['admins']);
     userManagerMock.getUser.mockResolvedValue(signedInUser({ groups: [] }));
     const provider = await loadAuthProvider();
@@ -216,7 +213,6 @@ describe('authProvider', () => {
   it('falls back to ID-token groups when the userinfo request fails', async () => {
     mockConfig(enabledConfig());
     userManagerMock.getUser.mockResolvedValue(signedInUser({ groups: ['token-only'] }));
-    // Make only the userinfo fetch fail; config fetch still succeeds.
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     vi.spyOn(globalThis, 'fetch').mockImplementation((input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : input.toString();
@@ -359,7 +355,6 @@ describe('authProvider', () => {
       mockConfig(enabledConfig());
       window.history.replaceState({}, '', '/?code=abc&state=xyz');
       userManagerMock.signinRedirectCallback.mockResolvedValue(signedInUser());
-      // Recorded rather than asserted inside the callback, as above.
       let exchangeCallsWhenNotified = -1;
       const onOidcEnabled = vi.fn(() => {
         exchangeCallsWhenNotified = userManagerMock.signinRedirectCallback.mock.calls.length;
@@ -387,7 +382,6 @@ describe('authProvider', () => {
       await module.bootstrapAuth({ onOidcEnabled });
 
       expect(onOidcEnabled).toHaveBeenCalledTimes(1);
-      // A broken loading screen must not cost the user their sign-in.
       expect(userManagerMock.signinRedirect).toHaveBeenCalledTimes(1);
       expect(warnSpy).toHaveBeenCalledWith(
         expect.stringContaining('onOidcEnabled callback threw'),
@@ -430,9 +424,6 @@ describe('authProvider', () => {
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       const module = await import('./authProvider');
 
-      // The error response is recognized as a callback and consumed — not turned
-      // into a fresh sign-in. It is reported rather than retried, which is what
-      // keeps the caller from mounting an app that would redirect straight back.
       await expect(module.bootstrapAuth()).resolves.not.toBeNull();
       expect(userManagerMock.signinRedirect).not.toHaveBeenCalled();
 
@@ -478,8 +469,6 @@ describe('authProvider', () => {
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       const module = await import('./authProvider');
 
-      // The whole point: what the provider said reaches the UI instead of the
-      // console, so the user is not left on a silent, session-less app.
       await expect(module.bootstrapAuth()).resolves.toMatchObject({
         kind: 'provider_error',
         code: 'invalid_scope',

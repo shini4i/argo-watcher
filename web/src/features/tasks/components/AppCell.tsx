@@ -6,7 +6,6 @@ interface AppCellProps {
   readonly app: string;
 }
 
-/** Stable hash → swatch index for a given app name. */
 const hashIndex = (name: string, modulo: number): number => {
   let hash = 0;
   for (let i = 0; i < name.length; i += 1) {
@@ -37,7 +36,10 @@ interface ProjectLinkInfo {
   readonly href?: string;
 }
 
-/** Splits a project string into either a plain label or a host + last-segment + href triple. */
+/**
+ * For a URL, `label` is host + the final path segment only — mid-path segments
+ * are dropped. Anything else passes through unchanged.
+ */
 export const describeProject = (project: string): ProjectLinkInfo => {
   const isUrl = project.startsWith('http://') || project.startsWith('https://');
   if (!isUrl) {
@@ -54,9 +56,6 @@ export const describeProject = (project: string): ProjectLinkInfo => {
   return { isUrl: true, label, href: project };
 };
 
-/**
- * Renders an application cell with a colour-coded monogram and the app name.
- */
 export const AppCell = ({ app }: AppCellProps) => {
   const theme = useTheme();
   const swatches = theme.palette.mode === 'dark' ? tokens.monogramSwatchesDark : tokens.monogramSwatches;

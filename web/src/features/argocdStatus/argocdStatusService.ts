@@ -18,7 +18,6 @@ export interface ArgocdStatus {
   reason: ArgocdUnavailableReason;
 }
 
-/** Subscribed listener signature invoked whenever reachability changes. */
 export type ArgocdStatusListener = WsStatusListener<ArgocdStatus>;
 
 /** Shape of the /api/v1/reachability response body (reason omitted when up). */
@@ -39,7 +38,6 @@ const ARGOCD_DOWN_PREFIX = `${ARGOCD_DOWN_MESSAGE}:`;
 /** Canonical "everything reachable" snapshot, reused to avoid re-allocation. */
 const AVAILABLE_STATUS: ArgocdStatus = { available: true, reason: null };
 
-/** Narrows an arbitrary reason string to a known ArgocdUnavailableReason. */
 const parseReason = (raw: string | undefined | null): ArgocdUnavailableReason => {
   switch (raw) {
     case 'argocd':
@@ -51,7 +49,6 @@ const parseReason = (raw: string | undefined | null): ArgocdUnavailableReason =>
   }
 };
 
-/** Builds a status snapshot from the reachability endpoint response body. */
 const toStatus = (data: ArgocdStatusResponse | null | undefined): ArgocdStatus =>
   data?.available
     ? AVAILABLE_STATUS
@@ -68,7 +65,6 @@ export class ArgocdStatusService extends WsStatusService<ArgocdStatus> {
     super('argocd-status');
   }
 
-  /** Reads current reachability from the backend. */
   protected async fetchState(): Promise<ArgocdStatus> {
     const response = await httpClient<ArgocdStatusResponse>('/api/v1/reachability');
     return toStatus(response.data);

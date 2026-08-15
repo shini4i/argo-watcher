@@ -8,7 +8,6 @@ interface DurationFieldProps {
   readonly record: Task;
 }
 
-/** Returns a 1-second ticker that re-renders the consumer for live duration updates. */
 const useNowTicker = (enabled: boolean, intervalMs: number = 1000) => {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {

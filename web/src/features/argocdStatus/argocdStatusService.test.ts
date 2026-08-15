@@ -74,7 +74,6 @@ describe('ArgocdStatusService', () => {
     await vi.waitUntil(() => MockWebSocket.instances.length === 1);
     const socket = MockWebSocket.instances[0];
 
-    // A down message carries the cause as a suffix.
     socket.emit('argocd_down:argocd');
     expect(listener).toHaveBeenLastCalledWith({ available: false, reason: 'argocd' });
 
@@ -121,7 +120,6 @@ describe('ArgocdStatusService', () => {
     await vi.waitUntil(() => MockWebSocket.instances.length === 1);
     listener.mockClear();
 
-    // Server now reports unreachable; the reconnect handshake must pick it up.
     MockWebSocket.instances[0].open();
 
     await vi.waitUntil(() => listener.mock.calls.length > 0);
@@ -143,7 +141,6 @@ describe('ArgocdStatusService', () => {
     MockWebSocket.instances[0].emit('argocd_down:argocd');
     expect(listener).toHaveBeenLastCalledWith({ available: false, reason: 'argocd' });
 
-    // The stale bootstrap now resolves "reachable" — it must be discarded.
     resolveFetch(new Response(JSON.stringify({ available: true }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
@@ -193,7 +190,7 @@ describe('ArgocdStatusService', () => {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     }));
-    await pending; // the stale result has now been fully processed (or dropped)
+    await pending;
 
     mockFetch([{ body: { available: false, reason: 'database' } }]);
     const listener = vi.fn();

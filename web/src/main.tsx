@@ -15,7 +15,6 @@ if (!rootElement) {
 
 const root = ReactDOM.createRoot(rootElement);
 
-/** Mounts the React application into the page root. */
 const renderApp = () => {
   root.render(
     <React.StrictMode>
@@ -29,9 +28,7 @@ const renderApp = () => {
 };
 
 /**
- * Mounts the loading screen shown while authentication is resolved.
- *
- * Nothing from `AppProviders` wraps it: the deploy-lock and ArgoCD-status
+ * Nothing from `AppProviders` wraps the splash: the deploy-lock and ArgoCD-status
  * providers start polling the API on mount, which must not happen before a token
  * exists. `AppSplash` carries its own theme.
  *

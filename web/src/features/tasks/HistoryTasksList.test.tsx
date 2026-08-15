@@ -60,7 +60,6 @@ vi.mock('./components/TasksDatagrid', () => ({
 
 const lastLayoutProps = () => layoutCalls.at(-1)!;
 
-/** Type guard ensuring a node is a concrete ReactElement before use in expectations. */
 const isReactElement = (node: ReactNode): node is ReactElement =>
   typeof node === 'object' && node !== null && 'type' in (node as Record<string, unknown>);
 

@@ -13,7 +13,6 @@ import {
 const ROLLBACK_BUTTON = 'Rollback to this version';
 const LOCK_SWITCH = 'Toggle deploy lock';
 
-/** Opens the configuration drawer, which holds the deploy-lock toggle. */
 const openConfigDrawer = async (page: Page): Promise<void> => {
   await page.getByRole('button', { name: 'Open configuration drawer' }).click();
   // MUI's temporary Drawer is a presentation modal, not a dialog, so wait on its
@@ -39,11 +38,9 @@ const openTaskAs = async (
 };
 
 /**
- * Privilege gating for the two destructive controls: the task rollback button
- * and the deploy-lock toggle.
- *
- * Both gate on `permissions.groups`, which the app resolves from the provider's
- * userinfo endpoint — the same source the backend enforces on. Component tests
+ * The rollback button and the deploy-lock toggle both gate on
+ * `permissions.groups`, which the app resolves from the provider's userinfo
+ * endpoint — the same source the backend enforces on. Component tests
  * inject that permission object directly, so only a browser signed in against a
  * real provider proves the full chain: token, userinfo call, `groups` claim, and
  * the rendered control. The last assertion in each test pins the documented

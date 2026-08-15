@@ -53,7 +53,6 @@ const appBarStyles: SxProps<Theme> = theme => {
   };
 };
 
-/** Returns true when the supplied pathname matches a nav target path. */
 const routeIsActive = (pathname: string, target: string) => {
   if (target === '/') {
     return pathname === target;
@@ -61,10 +60,6 @@ const routeIsActive = (pathname: string, target: string) => {
   return pathname.startsWith(target);
 };
 
-/**
- * Branded application bar providing navigation shortcuts, docs/GitHub links,
- * timezone context, and access to the configuration drawer.
- */
 export const AppTopBar = (props: AppBarProps) => {
   const { sx: appBarSxProp, ...appBarProps } = props;
   const composedSx: SxProps<Theme> = appBarSxProp ? [appBarStyles, appBarSxProp] : appBarStyles;

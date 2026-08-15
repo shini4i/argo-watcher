@@ -16,14 +16,10 @@ export const MOCK_APP = 'app';
 export const MOCK_TAG = 'v0.0.1';
 
 /**
- * Creates a task through the public API.
- *
  * `POST /api/v1/tasks` is exempt from OIDC read protection, so this seeds both
  * the authenticated and unauthenticated servers without a credential.
  *
- * @param request - Playwright request context bound to the project's baseURL.
- * @param author - author recorded on the task, used by specs to identify their own seed.
- * @returns the new task's id.
+ * @param author - recorded on the task, used by specs to identify their own seed.
  */
 export const seedTask = async (request: APIRequestContext, author: string): Promise<string> => {
   const response = await request.post('/api/v1/tasks', {
@@ -43,9 +39,6 @@ export const seedTask = async (request: APIRequestContext, author: string): Prom
 /**
  * Polls a task until it reaches `deployed`, so specs assert against a settled
  * row rather than one still transitioning under them.
- *
- * @param request - Playwright request context bound to the project's baseURL.
- * @param id - task id returned by {@link seedTask}.
  */
 export const waitForDeployed = async (request: APIRequestContext, id: string): Promise<void> => {
   await expect
@@ -64,15 +57,13 @@ export const waitForDeployed = async (request: APIRequestContext, id: string): P
 };
 
 /**
- * Signs in through the Keycloak login form and waits until the browser is back
- * on the application origin.
+ * Resolves once the browser has left the provider's origin — NOT once the app
+ * has loaded. Callers must still assert their own render or URL condition.
  *
  * Selectors are Keycloak's stable form element ids rather than visible labels,
  * which change with the login theme and locale.
  *
  * @param page - page currently showing the Keycloak login form.
- * @param username - realm user to sign in as.
- * @param password - that user's password.
  */
 export const signIn = async (
   page: Page,
@@ -90,15 +81,12 @@ export const signIn = async (
 };
 
 /**
- * Waits for group membership to be resolved from the provider's userinfo
- * endpoint.
- *
  * Every privilege-gated control renders its UNPRIVILEGED form while permissions
  * are still resolving, so a negative assertion made before this settles passes
  * whether the gating works or not. Arm this before signing in, await it after.
  *
- * @param page - page about to complete a sign-in.
- * @returns a promise resolving once userinfo has answered.
+ * Keys on the provider's `/protocol/openid-connect/userinfo` response, so a
+ * change to how groups are resolved has to update this helper too.
  */
 export const awaitPermissionsResolved = (page: Page): Promise<unknown> =>
   page.waitForResponse(
@@ -108,19 +96,15 @@ export const awaitPermissionsResolved = (page: Page): Promise<unknown> =>
       response.status() === 200,
   );
 
-/** Asserts the browser is on the application, not parked on the identity provider. */
+/** Asserts the browser is no longer parked on the identity provider. */
 export const expectOnApp = (page: Page): void => {
   expect(page.url(), 'expected to be on the application origin').not.toContain(KEYCLOAK_ORIGIN);
 };
 
 /**
- * Waits for the application shell to be up.
- *
  * Deliberately keys on the top bar rather than the task table: an empty task
  * list renders an empty state with no column headers, so a table-based wait
  * would silently depend on another spec having seeded data first.
- *
- * @param page - page expected to have mounted the app.
  */
 export const expectAppLoaded = async (page: Page): Promise<void> => {
   await expect(page.getByRole('link', { name: 'Recent' })).toBeVisible();
@@ -129,10 +113,6 @@ export const expectAppLoaded = async (page: Page): Promise<void> => {
 /**
  * Mints an access token via the direct access grant, for API calls a spec makes
  * outside the browser session.
- *
- * @param request - any Playwright request context; the provider is addressed absolutely.
- * @param user - realm credentials to authenticate with.
- * @returns a bearer token for that user.
  */
 export const mintToken = async (
   request: APIRequestContext,

@@ -1,10 +1,7 @@
 import { useEffect } from 'react';
 import { getBrowserWindow } from '../utils';
 
-/**
- * Triggers the provided handler at the given interval (in seconds).
- * When the interval is falsy the handler is not scheduled.
- */
+/** A falsy `intervalSeconds` disables the timer. */
 export const useAutoRefresh = (intervalSeconds: number, handler: () => void) => {
   useEffect(() => {
     if (!intervalSeconds) {

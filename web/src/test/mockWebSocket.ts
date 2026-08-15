@@ -1,8 +1,4 @@
 /**
- * Minimal WebSocket stand-in for unit tests. Records every constructed instance
- * and exposes hooks to drive the open/message/close callbacks by hand, so a test
- * can sequence a handshake, a pushed frame and a drop deterministically.
- *
  * Install with `vi.stubGlobal('WebSocket', MockWebSocket as unknown as typeof WebSocket)`
  * and call `MockWebSocket.reset()` in `beforeEach` to clear the instance list.
  */
@@ -19,7 +15,6 @@ export class MockWebSocket {
     MockWebSocket.instances.push(this);
   }
 
-  /** Fires the open handler, as the browser does once the handshake completes. */
   public open() {
     this.onopen?.();
   }
@@ -38,12 +33,10 @@ export class MockWebSocket {
     }
   }
 
-  /** Delivers the close event to the handler. */
   public fireClose() {
     this.onclose?.();
   }
 
-  /** Delivers a text frame to the message handler. */
   public emit(message: string) {
     this.onmessage?.({ data: message });
   }

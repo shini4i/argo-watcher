@@ -63,7 +63,6 @@ describe('AppSplash', () => {
     );
 
     expect(rule, `no reduced-motion rule emitted for .${dotClass}`).not.toBeNull();
-    // With the animation off, the resting dim state is what the user sees.
     expect(rule?.[1]).toContain('animation:none');
     expect(rule?.[1]).toContain('opacity:0.6');
   });

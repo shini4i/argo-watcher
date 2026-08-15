@@ -113,7 +113,6 @@ const computeRollbackState = (
   };
 };
 
-/** Builds the Argo CD application deep link from the config payload when possible. */
 const buildArgoCdUrl = (config: ConfigResponse | null, app?: string | null): string | null => {
   if (!config || !app) {
     return null;
@@ -132,7 +131,6 @@ const buildArgoCdUrl = (config: ConfigResponse | null, app?: string | null): str
   return null;
 };
 
-/** Derives the elapsed duration for the task, accounting for in-progress polling. */
 const computeDurationSeconds = (
   status: string | null,
   created: number | null,
@@ -147,7 +145,6 @@ const computeDurationSeconds = (
   return Math.max(0, effectiveUpdated - created);
 };
 
-/** Produces timeline entries for the created and updated timestamps shown in the UI. */
 const buildTimelineEntries = (
   created: number | null,
   updated: number | null,
@@ -175,7 +172,7 @@ const buildTimelineEntries = (
   return entries;
 };
 
-/** Displays the task detail screen at `/task/:id` mirroring the legacy Task View experience. */
+/** Routed at `/task/:id`. */
 export const TaskShow = () => {
   const { id } = useParams<{ id: string }>();
   const notify = useNotify();
@@ -580,7 +577,6 @@ interface InfoFieldProps {
 }
 
 /**
- * Displays a single piece of labeled metadata inside the task details view.
  * The label is block-level so that an inline value node, such as a link, still
  * starts on its own line below it.
  */
@@ -605,7 +601,6 @@ const InfoField = ({ label, value }: InfoFieldProps) => (
   </Box>
 );
 
-/** Renders the project field, converting URLs into external links. */
 const ProjectReference = ({ project }: { project?: string | null }) => {
   if (!project) {
     return <Typography variant="body1">—</Typography>;
@@ -632,7 +627,6 @@ const ProjectReference = ({ project }: { project?: string | null }) => {
   );
 };
 
-/** Visual row within the timeline stack with a connector to mimic the legacy UI flow. */
 const TimelineRow = ({
   entry,
   isLast,
@@ -674,7 +668,6 @@ const TimelineRow = ({
   </Stack>
 );
 
-/** Displays container images using monospace references and chip-style tags. */
 const ImagesList = ({
   images,
   hasAdditional,

@@ -7,8 +7,6 @@ import {
   relativeTimestamp,
 } from './time';
 
-/** Verifies the shared time formatting helpers cover edge cases and timer lifecycle management. */
-
 describe('time utilities', () => {
   beforeEach(() => {
     vi.useFakeTimers();

@@ -17,11 +17,9 @@ import { TimeCell } from './TimeCell';
 import { usePauseRefresh, useTaskListContext } from './TaskListContext';
 
 /**
- * Renders the shared task table used by both recent and history views.
- * The leading expand chevron and a row click both toggle the inline
- * status-reason panel for rows that have one. The trailing "View" button is
- * the explicit affordance for navigating to the task detail page so the row
- * body remains a quiet expander.
+ * Shared by both the recent and history views. `rowClick="expand"` means any
+ * click inside a row toggles the status-reason panel, so nested links and
+ * buttons must stopPropagation.
  *
  * The wrapping div emits `pause('hover')` reasons through TaskListContext so
  * the toolbar's auto-refresh countdown freezes while the cursor is over the
@@ -34,8 +32,6 @@ export const TasksDatagrid = () => {
 
   // onMouseLeave is not guaranteed to fire if the component unmounts while the
   // cursor is still over the table (e.g. filter change or page leave mid-hover).
-  // Always clear the hover pause on unmount so the auto-refresh timer never
-  // gets stuck.
   useEffect(() => () => resume('hover'), [resume]);
 
   return (
@@ -188,11 +184,6 @@ const datagridSx: SxProps<Theme> = theme => {
   };
 };
 
-/**
- * Renders the project field. URLs become external links (clicks stopPropagation
- * so following the link does not also expand the row); plain strings render as
- * muted monospace text and inherit the row's click-to-expand behavior.
- */
 const ProjectCell = ({ project }: { project?: string | null }) => {
   if (!project) {
     return <EmptyCell />;
@@ -238,10 +229,6 @@ const ProjectCell = ({ project }: { project?: string | null }) => {
   );
 };
 
-/**
- * Explicit "View" affordance in the trailing Details column. stopPropagation
- * prevents the row-level expand from firing when the button is clicked.
- */
 const ViewButton = ({ id }: { id: string }) => (
   <Button
     component={RouterLink}
@@ -255,9 +242,7 @@ const ViewButton = ({ id }: { id: string }) => (
 );
 
 /**
- * Empty-state shown by the Datagrid when the loaded page returns zero rows
- * but the user still has filters / search active. Wraps EmptyState with a
- * "Clear filters" CTA that drains all three sinks (URL, storage, react-admin
+ * The "Clear filters" CTA drains all three sinks (URL, storage, react-admin
  * filterValues) via the page's registered clearAll handler — react-admin's
  * default ListNoResults only resets filterValues, leaving the toolbar chips
  * stuck.
@@ -288,7 +273,6 @@ const FilteredEmptyState = () => {
   );
 };
 
-/** Expanded row rendering the detailed status reason for a task. */
 const StatusReasonPanel = () => {
   const record = useRecordContext<Task>();
   // The panel mounts when a row expands and unmounts when it collapses, so a
@@ -297,9 +281,7 @@ const StatusReasonPanel = () => {
   return <StatusReasonContent record={record} />;
 };
 
-/**
- * Renders the status reason body independent of React-admin context to simplify testing.
- */
+/** Split from StatusReasonPanel so tests need no react-admin record context. */
 const StatusReasonContent = ({ record }: { record?: Task | null }) => {
   if (!record) {
     return null;
@@ -323,9 +305,6 @@ const StatusReasonContent = ({ record }: { record?: Task | null }) => {
   );
 };
 
-/**
- * Internal testing helpers used to verify formatted sub-components without rendering Datagrid context.
- */
 export const __testing = {
   ProjectCell,
   StatusReasonContent,

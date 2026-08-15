@@ -10,7 +10,7 @@ const snackbarPosition: SxProps<Theme> = theme => ({
   },
 });
 
-/** Displays a warning banner anchored to the bottom of the viewport when the deploy lock is active. */
+/** Renders nothing when the lock is off, or when the reachability banner owns the slot. */
 export const DeployLockBanner = () => {
   const locked = useDeployLockState();
   const argocdUnreachable = useArgocdUnreachable();

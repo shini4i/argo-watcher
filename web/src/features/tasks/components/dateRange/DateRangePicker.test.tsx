@@ -71,7 +71,6 @@ describe('DateRangePicker', () => {
     fireEvent.click(screen.getByRole('button', { name: /Select date range/ }));
     const grid = screen.getByRole('grid', { name: 'Calendar' });
 
-    // Click "27" (today, Apr 27 in-month) then "20" (earlier, in-month) → swap.
     const cells = within(grid).getAllByRole('gridcell');
     const cell27 = cells.find(c => c.textContent === '27' && !c.hasAttribute('disabled'));
     const cell20 = cells.find(c => c.textContent === '20' && !c.hasAttribute('disabled'));

@@ -26,7 +26,6 @@ describe('ArgocdStatusProvider', () => {
       wrapper: ArgocdStatusProvider,
     });
 
-    // Optimistic default before the first update arrives.
     expect(result.current.available).toBe(true);
     expect(result.current.reason).toBeNull();
 

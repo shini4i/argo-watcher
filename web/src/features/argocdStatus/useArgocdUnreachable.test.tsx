@@ -38,7 +38,6 @@ describe('useArgocdUnreachable', () => {
     );
 
     const { result } = renderHook(() => useArgocdUnreachable(), { wrapper });
-    // Available by default -> not unreachable.
     expect(result.current).toBe(false);
 
     act(() => listener?.({ available: false, reason: 'argocd' }));

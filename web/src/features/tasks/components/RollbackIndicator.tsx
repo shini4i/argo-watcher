@@ -6,9 +6,8 @@ export interface RollbackIndicatorProps {
 }
 
 /**
- * Compact marker rendered next to a task's status to flag that the deployment
- * returns to a previously deployed version. Renders nothing for regular
- * (non-rollback) deployments so it can be dropped into any status cell without
+ * Flags a deployment that returns to a previously deployed version. Renders
+ * nothing otherwise, so it can be dropped into any status cell without
  * reserving layout space.
  */
 export const RollbackIndicator = ({ isRollback }: RollbackIndicatorProps) => {

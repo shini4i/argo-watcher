@@ -8,7 +8,10 @@ import { tokens } from '../../../theme/tokens';
 
 const DEFAULT_STORAGE_KEY = 'recentTasks.app';
 
-/** Normalizes application filter inputs, collapsing null-like strings into empty values. */
+/**
+ * The literal string "null" collapses to '' alongside blanks and non-strings:
+ * storage and URL round-trips turn an absent filter into that literal.
+ */
 export const normalizeApplicationFilterValue = (value?: string | null): string => {
   if (typeof value !== 'string') {
     return '';
@@ -22,13 +25,9 @@ export const normalizeApplicationFilterValue = (value?: string | null): string =
   return value;
 };
 
-/** Reads the persisted application filter (if any) from localStorage. */
 const readStoredApp = (storageKey: string) =>
   normalizeApplicationFilterValue(getBrowserWindow()?.localStorage?.getItem(storageKey));
 
-/**
- * Autocomplete component used to filter tasks by application name.
- */
 export const ApplicationFilter = ({
   records,
   value,
@@ -98,6 +97,6 @@ export const ApplicationFilter = ({
   );
 };
 
-/** Convenience helper for initializing filters from localStorage. */
+/** The persisted filter, normalised; "" when nothing usable is stored. */
 export const readInitialApplication = (storageKey: string = DEFAULT_STORAGE_KEY): string =>
   readStoredApp(storageKey);

@@ -112,8 +112,6 @@ describe('ConfigDrawer', () => {
   });
 
   it('hides the deploy lock toggle while OIDC status is unknown', async () => {
-    // Default-deny during the config-loading / request-failed window: the toggle
-    // must not be rendered until OIDC status is known.
     oidcEnabledMock.mockReturnValue(null);
     renderDrawer();
 

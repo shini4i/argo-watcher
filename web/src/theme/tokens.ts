@@ -4,12 +4,10 @@
  * and only then be referenced from `theme/index.ts` or component code.
  */
 export const tokens = {
-  // brand
   ink: '#2E3B55',
   accent: '#5B7CFA',
   accentSoft: '#EEF2FF',
 
-  // status pill backgrounds/foregrounds (light mode)
   statusDeployedBg: '#E8F5E9',
   statusDeployedFg: '#2E7D32',
   statusFailedBg: '#FDECEA',
@@ -36,13 +34,15 @@ export const tokens = {
   liveFg: '#2E7D32',
   liveFgDark: '#81C784',
 
-  // monogram swatches (AppCell) — picked by stable hash of the app name
+  // monogram swatches (AppCell) — picked by stable hash of the app name. Index N
+  // of both lists must be the same hue: AppCell picks the index, then the mode,
+  // so a mismatch recolours an app's monogram when the theme is toggled.
   monogramSwatches: [
-    { bg: '#EEF2FF', fg: '#5B7CFA' }, // blue
-    { bg: '#FFF4E5', fg: '#ED6C02' }, // amber
-    { bg: '#E8F5E9', fg: '#2E7D32' }, // green
-    { bg: '#FBEAFF', fg: '#7B1FA2' }, // purple
-    { bg: '#FDECEA', fg: '#D32F2F' }, // red
+    { bg: '#EEF2FF', fg: '#5B7CFA' },
+    { bg: '#FFF4E5', fg: '#ED6C02' },
+    { bg: '#E8F5E9', fg: '#2E7D32' },
+    { bg: '#FBEAFF', fg: '#7B1FA2' },
+    { bg: '#FDECEA', fg: '#D32F2F' },
   ],
   monogramSwatchesDark: [
     { bg: 'rgba(91, 124, 250, 0.20)', fg: '#A5B4FC' },
@@ -52,7 +52,6 @@ export const tokens = {
     { bg: 'rgba(211, 47, 47, 0.22)', fg: '#FCA5A5' },
   ],
 
-  // surfaces
   canvas: '#F6F7F9',
   surface: '#FFFFFF',
   surface2: '#FAFBFD',
@@ -64,13 +63,11 @@ export const tokens = {
   surfaceDark: '#15213B',
   surface2Dark: '#1A2746',
 
-  // lines
   divider: 'rgba(46, 59, 85, 0.12)',
   dividerStrong: 'rgba(46, 59, 85, 0.22)',
   dividerDark: 'rgba(226, 232, 240, 0.12)',
   dividerStrongDark: 'rgba(226, 232, 240, 0.22)',
 
-  // text
   textPrimary: '#1A2238',
   textSecondary: '#5A6478',
   textDisabled: '#8B94A8',
@@ -78,17 +75,14 @@ export const tokens = {
   textSecondaryDark: '#CBD5F5',
   textDisabledDark: '#64748B',
 
-  // type
   fontSans: '"Roboto","Helvetica","Arial",sans-serif',
   fontMono: '"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace',
 
-  // radii
   radiusSm: 6,
   radiusMd: 8,
   radiusLg: 12,
   radiusPill: 999,
 
-  // row hover (subtle wash on table rows)
   rowHoverLight: '#F9FAFC',
   rowHoverDark: 'rgba(91, 124, 250, 0.08)',
 } as const;

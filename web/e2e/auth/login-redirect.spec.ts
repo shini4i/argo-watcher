@@ -2,9 +2,8 @@ import { expect, test } from '@playwright/test';
 import { expectAppLoaded, expectOnApp, KEYCLOAK_ORIGIN, signIn } from '../helpers';
 
 /**
- * The top-level OIDC redirect: leaving the document for the provider and coming
- * back with an authorization code. jsdom implements no cross-document
- * navigation, so this whole flow is invisible to the unit suite.
+ * jsdom implements no cross-document navigation, so the top-level OIDC redirect
+ * is invisible to the unit suite.
  */
 test('an unauthenticated visit signs in through the provider and returns to the app', async ({ page }) => {
   await page.goto('/');

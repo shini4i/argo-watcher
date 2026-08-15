@@ -16,7 +16,6 @@ export class DeployLockService extends WsStatusService<boolean> {
     super('deploy-lock');
   }
 
-  /** Reads the current lock state from the backend. */
   protected async fetchState(): Promise<boolean> {
     const response = await httpClient<boolean>('/api/v1/deploy-lock');
     return Boolean(response.data);
@@ -33,18 +32,12 @@ export class DeployLockService extends WsStatusService<boolean> {
     return undefined;
   }
 
-  /**
-   * Issues a POST request to enable the deploy lock and propagates the new state.
-   */
   public async setLock(): Promise<HttpResponse<unknown>> {
     const response = await httpClient('/api/v1/deploy-lock', { method: 'POST' });
     this.applyAuthoritative(true);
     return response;
   }
 
-  /**
-   * Issues a DELETE request to release the deploy lock and propagates the new state.
-   */
   public async releaseLock(): Promise<HttpResponse<unknown>> {
     const response = await httpClient('/api/v1/deploy-lock', { method: 'DELETE' });
     this.applyAuthoritative(false);

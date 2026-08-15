@@ -34,7 +34,6 @@ const SCHEMA: FilterStateSchema<RecentFiltersValues> = {
   },
 };
 
-/** Toolbar with status tabs, application filter, search, and the refresh control. */
 export const RecentTasksToolbar = ({ storageKey = 'recentTasks' }: { storageKey?: string }) => {
   const { data } = useListContext<Task>();
   const records = useMemo(() => (Array.isArray(data) ? data : []), [data]);

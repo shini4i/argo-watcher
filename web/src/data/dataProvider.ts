@@ -42,7 +42,6 @@ const ALLOWED_TASK_STATUSES: ReadonlySet<string> = new Set([
   'cancelled',
 ]);
 
-/** Normalizes various date/timestamp inputs to seconds since epoch. */
 const toUnixSeconds = (value: Date | string | number | undefined, fallback: number): number => {
   if (value === undefined || value === null) {
     return fallback;
@@ -60,7 +59,6 @@ const toUnixSeconds = (value: Date | string | number | undefined, fallback: numb
   return Math.floor(parsed / 1000);
 };
 
-/** Builds the time window and filters for list queries based on React-admin params. */
 const selectListWindow = (params: GetListParams) => {
   const nowSeconds = Math.floor(Date.now() / 1000);
   const defaultFrom = nowSeconds - 24 * 60 * 60;
@@ -78,24 +76,18 @@ const selectListWindow = (params: GetListParams) => {
   };
 };
 
-/**
- * Converts backend task list responses into React-admin's list structure.
- * The backend always returns `total` for non-empty pages; when the result
- * set is empty Go's `omitempty` drops the field, so we coalesce to 0.
- */
+/** Go's `omitempty` drops `total` on an empty result set, hence the coalesce to 0. */
 const toRaListResult = (response: TasksResponse): GetListResult<Task> => ({
   data: response.tasks ?? [],
   total: response.total ?? 0,
 });
 
-/** Guards against consumers requesting unsupported resources via the data provider. */
 const ensureSupportedResource = (resource: string) => {
   if (resource !== RESOURCE_TASKS) {
     throw new HttpError(`Unsupported resource: ${resource}`, 404);
   }
 };
 
-/** Fetches a page of tasks applying time range filters, pagination, and app filters. */
 const getList = async (params: GetListParams): Promise<GetListResult<Task>> => {
   const timeframe = selectListWindow(params);
   const { perPage, page } = params.pagination;
@@ -115,8 +107,8 @@ const getList = async (params: GetListParams): Promise<GetListResult<Task>> => {
   const response = data ?? { tasks: [], total: 0 };
 
   // Backend returns HTTP 200 with a non-empty `error` field when ArgoCD is unreachable.
-  // Treat it as an empty result rather than rejecting, so the empty-state placeholder
-  // can render instead of leaving the Datagrid in its loading skeleton forever.
+  // Not rejecting lets the empty-state placeholder render instead of leaving the
+  // Datagrid in its loading skeleton forever.
   if (response.error) {
     console.warn(`Tasks endpoint reported a soft error: ${String(response.error).slice(0, 200)}`);
   }
@@ -124,7 +116,6 @@ const getList = async (params: GetListParams): Promise<GetListResult<Task>> => {
   return toRaListResult(response);
 };
 
-/** Retrieves a single task detail, throwing when the backend reports an error. */
 const getOne = async (params: GetOneParams): Promise<GetOneResult<TaskStatus>> => {
   const { data } = await httpClient<TaskStatus>(`/api/v1/${RESOURCE_TASKS}/${params.id}`);
   if (!data) {
@@ -139,7 +130,6 @@ const getOne = async (params: GetOneParams): Promise<GetOneResult<TaskStatus>> =
   };
 };
 
-/** Posts a task to the backend and returns the accepted record with its identifier. */
 const createTask = async (params: CreateParams): Promise<CreateResult<TaskStatus & RaRecord>> => {
   const { data: payload } = params;
 
@@ -155,11 +145,9 @@ const createTask = async (params: CreateParams): Promise<CreateResult<TaskStatus
   return { data: data as TaskStatus & RaRecord };
 };
 
-/** Utility helper for methods that the data provider intentionally does not implement. */
 const unsupported = (method: string): Promise<never> =>
   Promise.reject(new HttpError(`${method} is not supported by this resource`, 405));
 
-/** React-admin DataProvider backed by the Go API used to list/create tasks. */
 export const dataProvider: DataProvider = {
   getList: async (resource, params: GetListParams) => {
     ensureSupportedResource(resource);

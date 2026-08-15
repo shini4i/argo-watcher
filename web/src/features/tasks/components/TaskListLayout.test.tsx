@@ -50,8 +50,7 @@ vi.mock('react-admin', () => ({
   List: ListMock,
   Pagination: PaginationMock,
   useRefresh: () => refreshMock,
-  // SearchFilteredView + TaskListLayout body both read useListContext; expose a
-  // mutable stub so individual tests can drive the empty/populated branches.
+  // SearchFilteredView + TaskListLayout body both read useListContext.
   useListContext: () => listContextRef.current,
   ListContextProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
@@ -73,7 +72,6 @@ describe('TaskListLayout', () => {
 
   it('fills react-admin list props and renders header content when provided', () => {
     readPersistentPerPageMock.mockReturnValue(40);
-    // Non-empty result so the body renders children rather than the empty state.
     listContextRef.current = { data: [{ id: 1 }], total: 1 };
 
     render(
@@ -142,10 +140,8 @@ describe('TaskListLayout', () => {
       </TaskListLayout>,
     );
 
-    // The header (filters) stays mounted so the user can still pick a date range.
     expect(screen.getByText('Date filter')).toBeInTheDocument();
     expect(screen.getByTestId('empty-state')).toBeInTheDocument();
-    // The datagrid children are replaced by the placeholder.
     expect(screen.queryByTestId('datagrid')).not.toBeInTheDocument();
   });
 
@@ -168,7 +164,6 @@ describe('TaskListLayout', () => {
       </TaskListLayout>,
     );
 
-    // With active filters, defer to the datagrid's own filtered empty state.
     expect(screen.getByText('Date filter')).toBeInTheDocument();
     expect(screen.getByTestId('datagrid')).toBeInTheDocument();
     expect(screen.queryByTestId('empty-state')).not.toBeInTheDocument();
@@ -196,9 +191,7 @@ describe('TaskListLayout', () => {
       </TaskListLayout>,
     );
 
-    // The header/filters stay mounted so the user can adjust the query and retry.
     expect(screen.getByText('Date filter')).toBeInTheDocument();
-    // A backend error must never masquerade as genuine emptiness.
     expect(screen.getByText('Couldn’t load tasks')).toBeInTheDocument();
     expect(screen.queryByTestId('datagrid')).not.toBeInTheDocument();
     expect(screen.queryByTestId('empty-state')).not.toBeInTheDocument();
@@ -238,8 +231,6 @@ describe('TaskListLayout', () => {
 
   it('keeps showing the skeleton (defers to children) while a request is pending', () => {
     readPersistentPerPageMock.mockReturnValue(25);
-    // isPending must win over an error left over from a prior fetch so a refetch
-    // shows the loading state rather than flashing the error panel.
     listContextRef.current = {
       data: [],
       total: 0,

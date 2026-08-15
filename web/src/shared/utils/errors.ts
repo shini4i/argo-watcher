@@ -6,11 +6,10 @@ export interface NormalizedError {
   details?: unknown;
 }
 
-/** Type guard that checks whether the provided value is a react-admin HttpError. */
 const isHttpError = (error: unknown): error is HttpError =>
   typeof error === 'object' && error !== null && 'status' in error && 'message' in error;
 
-/** Normalizes various thrown values into a consistent error payload for the UI. */
+/** Accepts anything thrown — HttpError, Error, string, or an unrecognised value. */
 export const normalizeError = (error: unknown): NormalizedError => {
   if (isHttpError(error)) {
     return {
