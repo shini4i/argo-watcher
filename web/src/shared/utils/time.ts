@@ -9,7 +9,6 @@ export const DEFAULT_DATE_FORMAT: Intl.DateTimeFormatOptions = {
 
 type SupportedTimestamp = Date | number | string | null | undefined;
 
-/** Converts supported timestamp inputs into a Date instance, returning null when invalid. */
 const toDate = (value: SupportedTimestamp): Date | null => {
   if (value === null || value === undefined) {
     return null;
@@ -20,8 +19,8 @@ const toDate = (value: SupportedTimestamp): Date | null => {
   }
 
   if (typeof value === 'number') {
-    // Unix timestamps stay below 10_000_000_000 seconds until the year 2286,
-    // so values under that threshold are interpreted as seconds instead of ms.
+    // Unix timestamps stay below 10_000_000_000 seconds until the year 2286, so
+    // values under that threshold are interpreted as seconds instead of ms.
     const normalized = value < 10_000_000_000 ? value * 1000 : value;
     return new Date(normalized);
   }
@@ -34,7 +33,6 @@ const toDate = (value: SupportedTimestamp): Date | null => {
   return new Date(parsed);
 };
 
-/** Formats timestamps with locale-aware date+time options, defaulting to en-GB. */
 export const formatDateTime = (
   value: SupportedTimestamp,
   locale: string | string[] = 'en-GB',
@@ -50,7 +48,6 @@ export const formatDateTime = (
 
 const pluralize = (value: number, unit: string) => `${value} ${unit}${value === 1 ? '' : 's'}`;
 
-/** Converts elapsed seconds into a human-readable relative duration string. */
 export const formatDuration = (seconds: number): string => {
   if (!Number.isFinite(seconds) || seconds < 0) {
     return '—';
@@ -85,10 +82,9 @@ export const formatDuration = (seconds: number): string => {
 };
 
 /**
- * Formats elapsed seconds in dense monospace form ("1m 04s", "2h 03m", "—").
- * Used for table cells where vertical alignment matters; the legacy
- * `formatDuration` is preserved for prose contexts (status reasons, detail
- * pages) that read better as "2 minutes" rather than "2m 00s".
+ * Dense monospace form ("1m 04s", "2h 03m", "—") for table cells, where vertical
+ * alignment matters. `formatDuration` is kept for prose contexts (status
+ * reasons, detail pages) that read better as "2 minutes" than as "2m 00s".
  */
 export const formatDurationCompact = (seconds: number): string => {
   if (!Number.isFinite(seconds) || seconds < 0) {
@@ -116,7 +112,6 @@ export const formatDurationCompact = (seconds: number): string => {
   return `${days}d ${pad(remHours)}h`;
 };
 
-/** Formats timestamps as "X minutes ago" relative to now. */
 export const formatRelativeTime = (value: SupportedTimestamp) => {
   const date = toDate(value);
   if (!date) {
@@ -128,7 +123,6 @@ export const formatRelativeTime = (value: SupportedTimestamp) => {
   return `${formatDuration(differenceSeconds)} ago`;
 };
 
-/** Returns a UNIX timestamp offset by the provided seconds from the current moment. */
 export const relativeTimestamp = (offsetSeconds: number) => {
   if (!Number.isFinite(offsetSeconds) || offsetSeconds < 0) {
     return Math.floor(Date.now() / 1000);

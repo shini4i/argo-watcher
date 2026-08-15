@@ -10,10 +10,6 @@ interface AppProvidersProps {
   children: ReactNode;
 }
 
-/**
- * Hosts the global React providers (theme, timezone, ArgoCD-status, deploy-lock)
- * that wrap the React-admin workspace.
- */
 export const AppProviders = ({ children }: AppProvidersProps) => (
   <ThemeModeProvider>
     <TimezoneProvider>

@@ -8,10 +8,9 @@ interface ServerConfigResponse {
 }
 
 /**
- * Fetches server configuration to determine whether OIDC authentication is
- * enabled. Returns `null` while the request is in flight or when it fails so
- * callers can gate privileged actions conservatively (treating "unknown" as
- * "denied") instead of falling open if the /api/v1/config request errors.
+ * Returns `null` while the request is in flight or when it fails, so callers
+ * gate privileged actions conservatively (treating "unknown" as "denied")
+ * instead of falling open if the /api/v1/config request errors.
  */
 export const useOidcEnabled = (): boolean | null => {
   const [enabled, setEnabled] = useState<boolean | null>(null);
