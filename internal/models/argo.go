@@ -40,15 +40,15 @@ type ApplicationOperationResource struct {
 }
 
 type ApplicationResource struct {
-	Kind      string `json:"kind"`      // example: Pod | Job
-	Name      string `json:"name"`      // example: app-migrations
-	Namespace string `json:"namespace"` // example: app
+	Kind      string `json:"kind"`
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
 	// Status is the resource's current sync state (example: OutOfSync). ArgoCD omits it for
 	// resources it does not compare, so an empty value means "not assessed", not "in sync".
 	Status string `json:"status"`
 	Health struct {
-		Message string `json:"message"` // example: Job has reached the specified backoff limit
-		Status  string `json:"status"`  // example: Synced
+		Message string `json:"message"`
+		Status  string `json:"status"`
 	} `json:"health"`
 }
 
@@ -68,12 +68,12 @@ type ApplicationTree struct {
 }
 
 type ApplicationTreeNode struct {
-	Kind      string `json:"kind"`      // example: Pod | Job
-	Name      string `json:"name"`      // example: app-6b7f-abcde
-	Namespace string `json:"namespace"` // example: app
+	Kind      string `json:"kind"`
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
 	Health    struct {
-		Status  string `json:"status"`  // example: Degraded
-		Message string `json:"message"` // example: Back-off pulling image "app:v2": ErrImagePull
+		Status  string `json:"status"`
+		Message string `json:"message"`
 	} `json:"health"`
 }
 
@@ -81,8 +81,8 @@ type ApplicationTreeNode struct {
 // type) or an advisory warning (a "*Warning" type). A manifest-generation failure surfaces here
 // and nowhere in the sync status itself, which merely reports "Unknown".
 type ApplicationCondition struct {
-	Type    string `json:"type"`    // example: ComparisonError
-	Message string `json:"message"` // example: Failed to load target state
+	Type    string `json:"type"`
+	Message string `json:"message"`
 }
 
 type ApplicationStatus struct {
@@ -169,9 +169,7 @@ func (app *Application) GetRolloutStatus(rolloutImages []string, registryProxyUr
 // describe (see buildSyncFailureDiagnostics).
 func (app *Application) GetRolloutMessage(status string, rolloutImages []string, tree *ApplicationTree) string {
 	switch status {
-	// not all expected images were deployed
 	case ArgoRolloutAppNotAvailable:
-		// Image-mismatch is the bare minimum we always show, then append any diagnostics.
 		base := fmt.Sprintf(
 			"List of current images (last app check):\n"+
 				"\t%s\n\n"+
@@ -182,7 +180,6 @@ func (app *Application) GetRolloutMessage(status string, rolloutImages []string,
 		)
 		// Base message has no resource listing, so fall back to Status.Resources when no tree.
 		return appendDiagnostics(base, app.buildFailureDiagnostics(tree, true))
-	// sync status was not "Synced"
 	case ArgoRolloutAppNotSynced:
 		base := fmt.Sprintf(
 			"App status \"%s\"\n"+
@@ -194,11 +191,9 @@ func (app *Application) GetRolloutMessage(status string, rolloutImages []string,
 			appendResourceListing(base, app.ListSyncResultResources()),
 			app.buildSyncFailureDiagnostics(tree),
 		)
-	// app is unhealthy or degraded
 	case ArgoRolloutAppNotHealthy, ArgoRolloutAppDegraded:
-		// display current health of the top-level resources, then append the same
-		// diagnostics as the "not available" path — a stalled rollout caused by a
-		// failing pod surfaces here just as often, and its cause lives in the tree.
+		// Appends the same diagnostics as the "not available" path — a stalled rollout
+		// caused by a failing pod surfaces here just as often, and its cause lives in the tree.
 		base := fmt.Sprintf(
 			"App sync status \"%s\"\n"+
 				"App health status \"%s\"",
@@ -246,8 +241,7 @@ func formatSyncResultResource(r ApplicationOperationResource) string {
 	return fmt.Sprintf("%s(%s) %s %s with message %s", r.Kind, r.Name, r.HookType, r.HookPhase, r.Message)
 }
 
-// ListSyncResultResources returns one formatted line per sync-result resource
-// (see formatSyncResultResource for the format).
+// ListSyncResultResources returns one formatted line per sync-result resource.
 func (app *Application) ListSyncResultResources() []string {
 	list := make([]string, len(app.Status.OperationState.SyncResult.Resources))
 	for index := range app.Status.OperationState.SyncResult.Resources {
@@ -266,8 +260,7 @@ func formatHealthResource(r ApplicationResource) string {
 	return line
 }
 
-// ListUnhealthyResources returns one formatted line per resource with a non-empty
-// health status (see formatHealthResource for the format).
+// ListUnhealthyResources returns one formatted line per resource with a non-empty health status.
 func (app *Application) ListUnhealthyResources() []string {
 	var list []string
 
@@ -366,7 +359,6 @@ func isProblemHealthStatus(status string) bool {
 }
 
 // listFailedSyncResultResources returns formatted lines for sync-result resources whose hook phase indicates failure.
-// Reuses the same one-line format as ListSyncResultResources via formatSyncResultResource.
 func (app *Application) listFailedSyncResultResources() []string {
 	var list []string
 	for index := range app.Status.OperationState.SyncResult.Resources {
@@ -380,7 +372,6 @@ func (app *Application) listFailedSyncResultResources() []string {
 }
 
 // listProblemResources returns formatted lines for resources whose health status indicates a problem.
-// Reuses formatHealthResource for output formatting; applies the stricter problem-only filter via isProblemHealthStatus.
 func (app *Application) listProblemResources() []string {
 	var list []string
 	for index := range app.Status.Resources {
@@ -502,8 +493,7 @@ func (app *Application) IsFireAndForgetModeActive() bool {
 	return app.Metadata.Annotations[fireAndForgetAnnotation] == "true"
 }
 
-// IsImageValidationSkipped reports whether the app opted out of the desired-state
-// image check via the "argo-watcher/skip-image-validation=true" annotation.
+// IsImageValidationSkipped reports whether the app carries "argo-watcher/skip-image-validation=true".
 func (app *Application) IsImageValidationSkipped() bool {
 	if app.Metadata.Annotations == nil {
 		return false

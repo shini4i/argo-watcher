@@ -11,19 +11,15 @@ import (
 
 func TestNewServerConfig(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
-		// Set up the required environment variables
 		t.Setenv("ARGO_URL", "https://example.com")
 		t.Setenv("ARGO_TOKEN", "secret-token")
 		t.Setenv("STATE_TYPE", "postgres")
 
-		// Call the NewServerConfig function
 		cfg, err := NewServerConfig()
 
-		// Assert that the configuration was parsed successfully
 		assert.NoError(t, err)
 		assert.NotNil(t, cfg)
 
-		// Assert specific field values
 		expectedUrl, _ := url.Parse("https://example.com")
 		assert.Equal(t, *expectedUrl, cfg.ArgoUrl)
 		assert.Equal(t, "secret-token", cfg.ArgoToken)
@@ -55,10 +51,8 @@ func TestNewServerConfig(t *testing.T) {
 	})
 }
 
-// TestNewServerConfig_DatabaseConnectTimeout verifies that the database DSN
-// carries a connect_timeout so an unreachable Postgres fails fast at startup
-// instead of blocking on the OS TCP timeout, and that DB_CONNECT_TIMEOUT
-// overrides the default.
+// The database DSN carries a connect_timeout so an unreachable Postgres fails fast at
+// startup instead of blocking on the OS TCP timeout.
 func TestNewServerConfig_DatabaseConnectTimeout(t *testing.T) {
 	t.Run("Default", func(t *testing.T) {
 		t.Setenv("ARGO_URL", "https://example.com")
@@ -86,13 +80,8 @@ func TestNewServerConfig_DatabaseConnectTimeout(t *testing.T) {
 	})
 }
 
-// TestNewServerConfig_ConnectTimeoutValidation verifies that a non-positive
-// DB_CONNECT_TIMEOUT is rejected with a readable error, since 0 (and negatives on
-// libpq) mean "wait indefinitely" and would silently defeat the fail-fast guard.
-// TestNewServerConfig_ConnectTimeoutInjectedIntoCustomDSN verifies that an
-// explicitly supplied DB_DSN (which bypasses the default template) still gets a
-// connect_timeout so the fail-fast guard cannot be silently defeated, while an
-// operator-provided connect_timeout is left untouched.
+// An explicitly supplied DB_DSN bypasses the default template, so it still gets a
+// connect_timeout — while an operator-provided one is left untouched.
 func TestNewServerConfig_ConnectTimeoutInjectedIntoCustomDSN(t *testing.T) {
 	base := func(t *testing.T) {
 		t.Setenv("ARGO_URL", "https://example.com")
@@ -132,6 +121,8 @@ func TestNewServerConfig_ConnectTimeoutInjectedIntoCustomDSN(t *testing.T) {
 	})
 }
 
+// A non-positive DB_CONNECT_TIMEOUT is rejected: 0 (and negatives on libpq) mean
+// "wait indefinitely" and would silently defeat the fail-fast guard.
 func TestNewServerConfig_ConnectTimeoutValidation(t *testing.T) {
 	for _, value := range []string{"0", "-1"} {
 		t.Run(value, func(t *testing.T) {
@@ -157,19 +148,12 @@ func TestNewServerConfig_RequiredFieldsMissing(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.Nil(t, cfg)
-	// Assert the formatter is wired in: the message must use the grouped
-	// header, and ARGO_TOKEN (which this test never sets) must appear under
-	// it. STATE_TYPE is intentionally not asserted because the project's
-	// Taskfile sets STATE_TYPE=in-memory for `task test` runs.
+	// STATE_TYPE is intentionally not asserted: the project's Taskfile sets
+	// STATE_TYPE=in-memory for `task test` runs.
 	assert.Contains(t, err.Error(), "missing required environment variables:")
 	assert.Contains(t, err.Error(), "ARGO_TOKEN")
 }
 
-// TestNewServerConfig_InvalidStateType_IsReadable verifies that the
-// validator error names the field, the constraint, and the offending value
-// — replacing the unreadable
-// "Key: 'ServerConfig.StateType' Error:Field validation for ... 'oneof' tag"
-// blob with something an operator can act on directly.
 func TestNewServerConfig_InvalidStateType_IsReadable(t *testing.T) {
 	t.Setenv("ARGO_URL", "https://example.com")
 	t.Setenv("ARGO_TOKEN", "secret-token")
@@ -180,12 +164,9 @@ func TestNewServerConfig_InvalidStateType_IsReadable(t *testing.T) {
 	assert.Contains(t, err.Error(), "StateType")
 	assert.Contains(t, err.Error(), "must be one of [postgres in-memory]")
 	assert.Contains(t, err.Error(), `"invalid"`)
-	// We no longer leak go-playground/validator's blob format.
 	assert.NotContains(t, err.Error(), "Key: 'ServerConfig.StateType'")
 }
 
-// TestNewServerConfig_InvalidArgoApiRetries_IsReadable verifies the same for
-// numeric range validation.
 func TestNewServerConfig_InvalidArgoApiRetries_IsReadable(t *testing.T) {
 	t.Setenv("ARGO_URL", "https://example.com")
 	t.Setenv("ARGO_TOKEN", "secret-token")
@@ -199,10 +180,8 @@ func TestNewServerConfig_InvalidArgoApiRetries_IsReadable(t *testing.T) {
 	assert.Contains(t, err.Error(), "got 11")
 }
 
-// TestNewServerConfig_EmptyRequiredRejected verifies that a required variable
-// that is present but empty is rejected at parse time (the `,notEmpty` tag),
-// not silently accepted and left to fail later. This guards the empty-value
-// rejection that replaced go-playground/validator.
+// A required variable that is present but empty is rejected at parse time (the
+// `,notEmpty` tag), not silently accepted and left to fail later.
 func TestNewServerConfig_EmptyRequiredRejected(t *testing.T) {
 	t.Setenv("ARGO_URL", "https://example.com")
 	t.Setenv("STATE_TYPE", "in-memory")
@@ -215,20 +194,15 @@ func TestNewServerConfig_EmptyRequiredRejected(t *testing.T) {
 }
 
 func TestServerConfig_GetRetryAttempts(t *testing.T) {
-	// Create a ServerConfig instance with a specific DeploymentTimeout value
 	config := &ServerConfig{
 		DeploymentTimeout: 60,
 	}
 
-	// Call the GetRetryAttempts function
 	retryAttempts := config.GetRetryAttempts()
 
-	// Assert that the retryAttempts value matches the expected result
 	assert.Equal(t, uint(5), retryAttempts)
 }
 
-// TestNewServerConfig_ArgoApiRetriesDefault verifies that the ArgoApiRetries field
-// defaults to 3 when not explicitly set via environment variable.
 func TestNewServerConfig_ArgoApiRetriesDefault(t *testing.T) {
 	t.Setenv("ARGO_URL", "https://example.com")
 	t.Setenv("ARGO_TOKEN", "secret-token")
@@ -239,8 +213,6 @@ func TestNewServerConfig_ArgoApiRetriesDefault(t *testing.T) {
 	assert.Equal(t, uint(3), cfg.ArgoApiRetries)
 }
 
-// TestNewServerConfig_ArgoApiRetriesCustom verifies that the ArgoApiRetries field
-// can be overridden via the ARGO_API_RETRIES environment variable.
 func TestNewServerConfig_ArgoApiRetriesCustom(t *testing.T) {
 	t.Setenv("ARGO_URL", "https://example.com")
 	t.Setenv("ARGO_TOKEN", "secret-token")
@@ -252,8 +224,7 @@ func TestNewServerConfig_ArgoApiRetriesCustom(t *testing.T) {
 	assert.Equal(t, uint(5), cfg.ArgoApiRetries)
 }
 
-// TestNewServerConfig_ArgoApiRetriesZeroRejected verifies that setting ARGO_API_RETRIES=0
-// fails validation, since zero attempts would cause infinite retries with retry-go.
+// Zero attempts would cause infinite retries with retry-go.
 func TestNewServerConfig_ArgoApiRetriesZeroRejected(t *testing.T) {
 	t.Setenv("ARGO_URL", "https://example.com")
 	t.Setenv("ARGO_TOKEN", "secret-token")
@@ -264,8 +235,7 @@ func TestNewServerConfig_ArgoApiRetriesZeroRejected(t *testing.T) {
 	assert.Error(t, err)
 }
 
-// TestNewServerConfig_ArgoApiRetriesTooHighRejected verifies that setting ARGO_API_RETRIES
-// above the maximum (10) fails validation.
+// 10 is the maximum.
 func TestNewServerConfig_ArgoApiRetriesTooHighRejected(t *testing.T) {
 	t.Setenv("ARGO_URL", "https://example.com")
 	t.Setenv("ARGO_TOKEN", "secret-token")
@@ -276,10 +246,9 @@ func TestNewServerConfig_ArgoApiRetriesTooHighRejected(t *testing.T) {
 	assert.Error(t, err)
 }
 
-// TestNewServerConfig_OIDCKeycloakFallback verifies that the deprecated
-// KEYCLOAK_* variables are mapped onto the generic OIDC config, with the issuer
-// synthesized from KEYCLOAK_URL + KEYCLOAK_REALM, so existing Keycloak
-// deployments keep working after the rename without any config change.
+// The deprecated KEYCLOAK_* variables map onto the generic OIDC config, with the issuer
+// synthesized from KEYCLOAK_URL + KEYCLOAK_REALM, so existing Keycloak deployments keep
+// working after the rename without any config change.
 func TestNewServerConfig_OIDCKeycloakFallback(t *testing.T) {
 	t.Setenv("ARGO_URL", "https://example.com")
 	t.Setenv("ARGO_TOKEN", "secret-token")
@@ -301,18 +270,15 @@ func TestNewServerConfig_OIDCKeycloakFallback(t *testing.T) {
 	assert.Equal(t, []string{"admins", "operators"}, cfg.OIDC.PrivilegedGroups)
 }
 
-// TestNewServerConfig_OIDCMixedFallback verifies the per-field fallback that a
-// real upgrade hits: an operator sets the new OIDC_ISSUER_URL but still relies on
-// the deprecated KEYCLOAK_CLIENT_ID / KEYCLOAK_PRIVILEGED_GROUPS. Each field must
-// resolve independently — the OIDC issuer plus the Keycloak-sourced client id and
-// groups.
+// The per-field fallback a real upgrade hits: an operator sets the new OIDC_ISSUER_URL
+// but still relies on the deprecated KEYCLOAK_CLIENT_ID / KEYCLOAK_PRIVILEGED_GROUPS.
+// Each field must resolve independently.
 func TestNewServerConfig_OIDCMixedFallback(t *testing.T) {
 	t.Setenv("ARGO_URL", "https://example.com")
 	t.Setenv("ARGO_TOKEN", "secret-token")
 	t.Setenv("STATE_TYPE", "in-memory")
 	t.Setenv("OIDC_ENABLED", "true")
 	t.Setenv("OIDC_ISSUER_URL", "https://authentik.example.com/application/o/aw/")
-	// Deprecated aliases still supply the fields OIDC_* leaves unset.
 	t.Setenv("KEYCLOAK_CLIENT_ID", "legacy-client")
 	t.Setenv("KEYCLOAK_PRIVILEGED_GROUPS", "admins,operators")
 
@@ -324,9 +290,8 @@ func TestNewServerConfig_OIDCMixedFallback(t *testing.T) {
 	assert.Equal(t, []string{"admins", "operators"}, cfg.OIDC.PrivilegedGroups)
 }
 
-// TestNewServerConfig_KeycloakPartialIssuer verifies that a half-configured legacy
-// Keycloak (URL without realm) does not synthesize a malformed issuer; with auth
-// enabled it must surface as the OIDC.IssuerURL validation error.
+// A half-configured legacy Keycloak (URL without realm) must not synthesize a
+// malformed issuer.
 func TestNewServerConfig_KeycloakPartialIssuer(t *testing.T) {
 	t.Setenv("ARGO_URL", "https://example.com")
 	t.Setenv("ARGO_TOKEN", "secret-token")
@@ -342,8 +307,7 @@ func TestNewServerConfig_KeycloakPartialIssuer(t *testing.T) {
 	assert.Contains(t, err.Error(), "OIDC.IssuerURL")
 }
 
-// TestNewServerConfig_KeycloakMalformedValuesRejected verifies that a malformed
-// deprecated value fails startup rather than silently disabling auth: a typo like
+// A malformed deprecated value must fail startup rather than silently disable auth: a typo like
 // KEYCLOAK_ENABLED=yes must never quietly drop the protected OIDC routes from an
 // otherwise healthy deployment (fail closed, not open).
 func TestNewServerConfig_KeycloakMalformedValuesRejected(t *testing.T) {
@@ -376,8 +340,6 @@ func TestNewServerConfig_KeycloakMalformedValuesRejected(t *testing.T) {
 	})
 }
 
-// TestNewServerConfig_OIDCPrecedence verifies that OIDC_* takes precedence over
-// the deprecated KEYCLOAK_* aliases when both are set.
 func TestNewServerConfig_OIDCPrecedence(t *testing.T) {
 	t.Setenv("ARGO_URL", "https://example.com")
 	t.Setenv("ARGO_TOKEN", "secret-token")
@@ -385,7 +347,6 @@ func TestNewServerConfig_OIDCPrecedence(t *testing.T) {
 	t.Setenv("OIDC_ENABLED", "true")
 	t.Setenv("OIDC_ISSUER_URL", "https://authentik.example.com/application/o/argo-watcher/")
 	t.Setenv("OIDC_CLIENT_ID", "aw-oidc")
-	// Legacy values that must be ignored because OIDC_* is set.
 	t.Setenv("KEYCLOAK_URL", "https://kc.example.com")
 	t.Setenv("KEYCLOAK_REALM", "legacy")
 	t.Setenv("KEYCLOAK_CLIENT_ID", "legacy-client")
@@ -397,8 +358,6 @@ func TestNewServerConfig_OIDCPrecedence(t *testing.T) {
 	assert.Equal(t, "aw-oidc", cfg.OIDC.ClientId)
 }
 
-// TestNewServerConfig_OIDCValidation verifies that enabling OIDC without an
-// issuer or client id is rejected with a readable, field-named error.
 func TestNewServerConfig_OIDCValidation(t *testing.T) {
 	t.Setenv("ARGO_URL", "https://example.com")
 	t.Setenv("ARGO_TOKEN", "secret-token")
@@ -412,8 +371,7 @@ func TestNewServerConfig_OIDCValidation(t *testing.T) {
 	assert.Contains(t, err.Error(), "OIDC.ClientId")
 }
 
-// TestNewServerConfig_RequireTaskReadAuth covers the switch that closes
-// GET /api/v1/tasks/{id}. It only has meaning while the reads are protected at all,
+// The switch that closes GET /api/v1/tasks/{id} only has meaning while reads are protected at all,
 // so setting it with OIDC disabled is a misconfiguration the operator must see: it
 // would otherwise leave the endpoint open while reading as if it were closed.
 func TestNewServerConfig_RequireTaskReadAuth(t *testing.T) {
@@ -475,9 +433,8 @@ func TestNewServerConfig_RequireTaskReadAuth(t *testing.T) {
 	})
 }
 
-// TestServerConfig_JSONDualKey verifies that /api/v1/config exposes the OIDC
-// block under both the canonical "oidc" key and the legacy "keycloak" mirror
-// with identical content, preserving backward compatibility for old consumers.
+// /api/v1/config exposes the OIDC block under both the canonical "oidc" key and the
+// legacy "keycloak" mirror, preserving backward compatibility for old consumers.
 func TestServerConfig_JSONDualKey(t *testing.T) {
 	cfg := &ServerConfig{
 		OIDC: OIDCConfig{
@@ -510,31 +467,25 @@ func TestServerConfig_JSONDualKey(t *testing.T) {
 
 func TestServerConfig_JSONExcludesSensitiveFields(t *testing.T) {
 	databaseConfig := DatabaseConfig{}
-	// Create a ServerConfig instance with some dummy data
 	config := &ServerConfig{
 		ArgoToken:   "secret-token",
 		DeployToken: "deploy-token",
 		Db:          databaseConfig,
 	}
 
-	// Marshal the ServerConfig instance to JSON
 	jsonBytes, err := json.Marshal(config)
 	assert.NoError(t, err)
 
-	// Convert the JSON bytes to a string
 	jsonString := string(jsonBytes)
 
-	// Check that the sensitive fields are not present in the JSON string
 	assert.NotContains(t, jsonString, "secret-token")
 	assert.NotContains(t, jsonString, "db-password")
 	assert.NotContains(t, jsonString, "deploy-token")
 }
 
-// TestServerConfig_JSONOmitsNotificationTargets pins the payload of the
-// unauthenticated GET /api/v1/config: how to reach a notification receiver must not be
-// readable by anyone who can reach the server, since a webhook URL is itself the
-// credential. The `enabled` flags stay — they name no target, and downstream consumers
-// (argo-watcher-mcp) forward them.
+// GET /api/v1/config is unauthenticated: how to reach a notification receiver must not be
+// readable by anyone who can reach the server, since a webhook URL is itself the credential.
+// The `enabled` flags stay — they name no target, and argo-watcher-mcp forwards them.
 func TestServerConfig_JSONOmitsNotificationTargets(t *testing.T) {
 	config := &ServerConfig{
 		SkipTlsVerify:    true,
@@ -562,8 +513,6 @@ func TestServerConfig_JSONOmitsNotificationTargets(t *testing.T) {
 	assert.NotContains(t, jsonString, "mattermost-token")
 	assert.NotContains(t, jsonString, "channel-id")
 
-	// What other consumers read must survive: the enabled flags, the schedule and the
-	// TLS posture are all allowlisted downstream.
 	var decoded map[string]any
 	require.NoError(t, json.Unmarshal(jsonBytes, &decoded))
 	assert.Equal(t, true, decoded["webhook"].(map[string]any)["enabled"])
@@ -574,9 +523,7 @@ func TestServerConfig_JSONOmitsNotificationTargets(t *testing.T) {
 	assert.Contains(t, jsonString, "oidc")
 }
 
-// TestServerConfig_DefaultValidationIntervalMatchesTokenLifetime guards the
-// caching default: revalidating every 10s (the previously documented but never
-// implemented value) would turn every UI refresh into provider traffic.
+// Revalidating every 10s would turn every UI refresh into provider traffic.
 func TestServerConfig_DefaultValidationInterval(t *testing.T) {
 	t.Setenv("ARGO_URL", "https://example.com")
 	t.Setenv("ARGO_TOKEN", "secret-token")
