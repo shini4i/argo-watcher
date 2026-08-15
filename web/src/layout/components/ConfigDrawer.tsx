@@ -27,9 +27,6 @@ interface ConfigDrawerProps {
   version: string;
 }
 
-/**
- * Side drawer that surfaces appearance, timezone, and deploy lock controls.
- */
 export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
   const [lockUpdating, setLockUpdating] = useState(false);
   const { mode, toggleMode } = useThemeMode();
@@ -59,7 +56,6 @@ export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
     lockHelperText = 'Deploy lock requires privileged access.';
   }
 
-  /** Toggles the deploy lock via the REST API and surfaces user feedback. */
   const handleDeployLockToggle = useCallback(async () => {
     if (!canToggleLock) {
       return;

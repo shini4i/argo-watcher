@@ -25,7 +25,6 @@ const EmptyMenu = (): ReactElement | null => null;
  */
 const EmptySidebar = (_props: SidebarProps): ReactElement | null => null;
 
-/** Wraps react-admin Layout to inject our custom app bar, menu, and sidebar. */
 export const AppLayout = (props: LayoutProps) => (
   <Layout
     {...props}

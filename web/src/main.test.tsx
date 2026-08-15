@@ -121,7 +121,6 @@ describe('main entrypoint', () => {
     const { unmount } = render(secondTree);
 
     expect(screen.getByTestId('app-splash')).toHaveTextContent('Signing in…');
-    // Still the splash — the app tree waits for the bootstrap to settle.
     expect(screen.queryByTestId('app-component')).toBeNull();
 
     unmount();
@@ -157,8 +156,6 @@ describe('main entrypoint', () => {
     resolveBootstrap();
     await waitFor(() => expect(renderMock).toHaveBeenCalledTimes(2));
 
-    // Exactly two renders — neutral splash, then the app. A "Signing in…" render
-    // must never appear in between.
     expect(renderMock.mock.calls).toHaveLength(2);
 
     const splash = render(renderMock.mock.calls[0][0] as ReactElement);
@@ -187,7 +184,6 @@ describe('main entrypoint', () => {
     const { unmount } = render(renderMock.mock.calls[2][0] as ReactElement);
 
     expect(screen.getByTestId('splash-error')).toHaveTextContent('Could not start the sign-in');
-    // The status line still states what happened, next to the box saying why.
     expect(screen.getByTestId('app-splash')).toHaveTextContent('Sign-in failed');
     // Mounting react-admin here is what produced the silent, session-less app: it
     // immediately re-runs checkAuth and heads back to the broken provider.
@@ -210,7 +206,6 @@ describe('main entrypoint', () => {
     try {
       await import('./main');
 
-      // Nothing to retry while the sign-in is still in flight.
       const loading = render(renderMock.mock.calls[0][0] as ReactElement);
       expect(screen.queryByTestId('splash-retry')).toBeNull();
       loading.unmount();
@@ -237,7 +232,6 @@ describe('main entrypoint', () => {
 
     await import('./main');
 
-    // A rejected bootstrap must not leave the user stuck on the loading screen.
     await waitFor(() => expect(renderMock).toHaveBeenCalledTimes(2));
 
     const renderedTree = renderMock.mock.calls[1][0] as ReactElement;
