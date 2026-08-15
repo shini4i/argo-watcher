@@ -13,14 +13,12 @@ interface SearchInputProps {
 }
 
 /**
- * Lightweight client-side search input for the toolbar.
- * Debounces user input by 200 ms before bubbling up so callers can filter
- * the loaded page without thrashing. Holds the auto-refresh paused while
- * focused (and briefly after blur) so the list does not reshuffle mid-keystroke.
+ * Callers filter the already-loaded page with this; it is not a server query.
+ * Auto-refresh is held paused while focused (and briefly after blur) so the
+ * list does not reshuffle mid-keystroke.
  *
- * Below 1200 px (or when there is no value to display), the input collapses
- * into a search icon button to keep the toolbar from squeezing other
- * controls; clicking expands it and auto-focuses for typing.
+ * Below 1200 px the input collapses into an icon button when it has no value,
+ * to keep the toolbar from squeezing the other controls.
  */
 export const SearchInput = ({
   value,
@@ -48,8 +46,8 @@ export const SearchInput = ({
     return () => globalThis.clearTimeout(handle);
   }, [draft, debounceMs, onChange, value]);
 
-  // Keep refresh paused while focused; release after a short grace period
-  // so the trailing debounced onChange does not race a fresh refetch.
+  // The release is delayed by a grace period so the trailing debounced
+  // onChange does not race a fresh refetch.
   useEffect(() => {
     if (focused) {
       setPauseActive(true);
@@ -59,11 +57,10 @@ export const SearchInput = ({
     return () => globalThis.clearTimeout(handle);
   }, [focused, debounceMs]);
 
-  // Keep the expanded/collapsed state in sync with the viewport and the
-  // active value. A non-empty value forces expansion so the query is always
-  // visible — collapsing it would hide the user's own input. While the user
-  // is typing we leave `expanded` alone; otherwise backspacing the last char
-  // (value → '') would collapse the input mid-keystroke on narrow viewports.
+  // A non-empty value forces expansion so the query stays visible — collapsing
+  // it would hide the user's own input. While the user is typing `expanded` is
+  // left alone; otherwise backspacing the last char (value → '') would collapse
+  // the input mid-keystroke on narrow viewports.
   useEffect(() => {
     if (focused) return;
     setExpanded(isWide || Boolean(value));

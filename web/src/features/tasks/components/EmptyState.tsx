@@ -59,7 +59,6 @@ interface EmptyStateCtaProps {
   readonly onClick: () => void;
 }
 
-/** Convenience CTA button that matches the design's "Clear filters" affordance. */
 export const EmptyStateCta = ({ label, onClick }: EmptyStateCtaProps) => (
   <Button variant="outlined" size="small" onClick={onClick} sx={{ mt: 1 }}>
     {label}

@@ -8,10 +8,8 @@ export interface StatusPillProps {
 }
 
 /**
- * Inline status badge that replaces MUI Chip on the task tables. Renders as a
- * 24 px pill so a row of statuses reads as labels (not actionable buttons).
- * Picks light/dark background+foreground from `describeTaskStatus()` based on
- * the active palette mode.
+ * Renders as a 24 px pill so a row of statuses reads as labels, not as
+ * actionable buttons.
  */
 export const StatusPill = ({ status }: StatusPillProps) => {
   const theme = useTheme();

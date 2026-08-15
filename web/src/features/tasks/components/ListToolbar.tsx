@@ -7,7 +7,6 @@ interface ListToolbarProps {
 }
 
 /**
- * Layout shell for the toolbar row above the task tables.
  * Left slot is page-specific (status tabs or date-range picker); right slot
  * holds search + refresh controls (Recent only).
  */

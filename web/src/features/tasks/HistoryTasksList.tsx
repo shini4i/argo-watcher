@@ -7,9 +7,6 @@ import { EmptyState } from './components/EmptyState';
 
 const STORAGE_KEY_PER_PAGE = 'historyTasks.perPage';
 
-/**
- * React-admin list page surfacing historical tasks with filters.
- */
 export const HistoryTasksList = () => {
   useEffect(() => {
     const previousTitle = document.title;

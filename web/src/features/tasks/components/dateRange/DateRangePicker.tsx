@@ -51,7 +51,6 @@ const formatTriggerLabel = (range: DateRangeValue, formatDate: (ts: number, opts
 const MONTH_FORMAT: Intl.DateTimeFormatOptions = { month: 'long', year: 'numeric' };
 
 /**
- * Date range picker with preset shortcuts and a custom Monday-first calendar.
  * `value` is in Unix seconds; `onApply` fires only when the user clicks Apply
  * with a complete and dirty range. Computation honours the active timezone.
  */
@@ -64,7 +63,6 @@ export const DateRangePicker = ({ value, onApply }: DateRangePickerProps) => {
   const [viewYear, setViewYear] = useState(() => ymd(new Date(), timezone).year);
   const [viewMonth, setViewMonth] = useState(() => ymd(new Date(), timezone).month);
 
-  // Sync external value into the popover whenever it (re)opens.
   useEffect(() => {
     if (anchor) {
       setDraft(value);
@@ -104,7 +102,6 @@ export const DateRangePicker = ({ value, onApply }: DateRangePickerProps) => {
       }
 
       if (startSec < draft.start) {
-        // Swap: clicked date becomes the new start, previous start becomes the end.
         const previousStartDate = new Date(draft.start * 1000);
         setDraft({
           start: startSec,

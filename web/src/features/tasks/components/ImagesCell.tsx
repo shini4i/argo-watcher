@@ -19,13 +19,11 @@ interface ImageRowProps {
   readonly image: Image;
 }
 
-/** Widest, in px, a tag badge may grow before its label is trimmed with an ellipsis. */
 export const TAG_MAX_WIDTH = 120;
 
 /**
- * Single repo + tag-chip row, rendered identically for primary and expanded entries.
- * The tag badge never wraps or shrinks — a hyphenated tag would otherwise break after
- * the hyphen and spill out of the fixed-height pill. The full tag stays in the tooltip.
+ * The tag badge never wraps or shrinks — a hyphenated tag would otherwise break
+ * after the hyphen and spill out of the fixed-height pill.
  */
 const ImageRow = ({ image }: ImageRowProps) => (
   <Stack
@@ -78,11 +76,7 @@ const ImageRow = ({ image }: ImageRowProps) => (
   </Stack>
 );
 
-/**
- * Compact image cell. Renders the first image:tag inline; remaining images
- * collapse behind a "+N more" toggle that expands the cell in-place. The
- * toggle stops propagation so it doesn't trigger a row navigation.
- */
+/** The "+N more" toggle stops propagation so it does not also expand the row. */
 export const ImagesCell = ({ images }: ImagesCellProps) => {
   const [expanded, setExpanded] = useState(false);
   const handleToggle = useCallback(

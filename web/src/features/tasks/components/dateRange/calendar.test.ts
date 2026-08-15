@@ -43,7 +43,6 @@ describe('calendar helpers', () => {
     expect(grid).toHaveLength(42);
     // April 1, 2026 is a Wednesday → grid starts on Mon Mar 30 2026.
     expect(grid[0].date.toISOString().slice(0, 10)).toBe('2026-03-30');
-    // The first cell that lands inside April should be index 2 (Wed Apr 1).
     expect(grid[2].date.toISOString().slice(0, 10)).toBe('2026-04-01');
     expect(grid[2].inMonth).toBe(true);
     expect(grid[0].inMonth).toBe(false);

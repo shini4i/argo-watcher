@@ -80,7 +80,6 @@ interface TaskListContextValue {
    * list returns no rows under active filters. Returns an unregister fn.
    */
   readonly registerClearAll: (handler: () => void) => () => void;
-  /** Invokes whichever clear-all handler the current page registered. */
   readonly clearAll: () => void;
 }
 
@@ -160,10 +159,7 @@ export const useTaskListContext = (): TaskListContextValue => {
   return ctx ?? noopValue;
 };
 
-/**
- * Pauses auto-refresh under a named reason for the lifetime of the calling
- * component. Pass `active=false` to opt out conditionally.
- */
+/** Pauses auto-refresh under a named reason for the calling component's lifetime. */
 export const usePauseRefresh = (reason: string, active = true): void => {
   const { pause, resume } = useTaskListContext();
   useEffect(() => {

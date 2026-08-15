@@ -56,9 +56,8 @@ const readStoredInterval = (storageKey: string, fallback: number) => {
 };
 
 /**
- * Three-segment refresh pill: live indicator (with pulsing dot + countdown),
- * interval select, manual reload button. Reads pause reasons + interval from
- * the surrounding TaskListProvider so hover/expand can freeze the timer.
+ * Reads pause reasons and the interval from the surrounding TaskListProvider,
+ * so hover and row-expand elsewhere can freeze this timer.
  */
 export const RefreshControl = ({ onRefresh, storageKey = 'recentTasks.refreshInterval' }: RefreshControlProps) => {
   const theme = useTheme();
@@ -83,20 +82,17 @@ export const RefreshControl = ({ onRefresh, storageKey = 'recentTasks.refreshInt
     }
   }, [storageKey, intervalSec, setIntervalSec]);
 
-  // Persist interval changes.
   useEffect(() => {
     safeSetItem(storageKey, String(intervalSec));
   }, [storageKey, intervalSec]);
 
-  // Reset remaining when interval changes or after a refetch.
   useEffect(() => {
     setRemaining(intervalSec);
   }, [intervalSec, state.lastRefetchedAt]);
 
-  // Tick down once per second when not paused. The state-updater function
-  // intentionally has no side effects (firing onRefresh from inside the
-  // updater would run twice under StrictMode and is discouraged by React);
-  // the separate effect below watches `remaining === 0` to refetch.
+  // The state-updater function intentionally has no side effects: firing
+  // onRefresh from inside the updater would run twice under StrictMode. The
+  // separate effect below watches `remaining === 0` to refetch.
   useEffect(() => {
     if (intervalSec === 0 || paused) {
       return undefined;

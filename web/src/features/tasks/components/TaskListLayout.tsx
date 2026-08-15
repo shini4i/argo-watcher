@@ -18,14 +18,10 @@ interface TaskListLayoutProps {
 }
 
 /**
- * Renders the list body: the children (datagrid) normally, or the page-specific
- * empty placeholder when the backend returned zero rows and no filters are active.
- *
- * This gate lives here — inside <List> — rather than on <List empty>, because
- * react-admin renders the `empty` element *instead of* the entire list, which
- * drops the filter toolbar with it. Users would then land on an empty history
- * page with no way to widen the date range. Rendering the placeholder in the
- * body keeps the header/filters mounted above it. When filters are active we
+ * The empty gate lives here — inside <List> — rather than on <List empty>,
+ * because react-admin renders the `empty` element *instead of* the entire list,
+ * which drops the filter toolbar with it. Users would then land on an empty
+ * history page with no way to widen the date range. When filters are active we
  * defer to the datagrid's own filtered empty state (with its "Clear filters"
  * CTA), matching react-admin's original `shouldRenderEmptyPage` condition
  * (`!error && !isPending && total === 0 && !filterValues`).
@@ -33,15 +29,12 @@ interface TaskListLayoutProps {
  * A fetch error (a 5xx, a network drop, or the request timing out — see
  * REQUEST_TIMEOUT_MS in httpClient) is rendered as an explicit error state with
  * a retry, NOT as the empty placeholder or the datagrid's "no tasks" message: a
- * load failure must never masquerade as genuine emptiness. The header/filters
- * stay mounted above it so the user can still adjust the query and retry.
+ * load failure must never masquerade as genuine emptiness.
  *
  * The error panel is gated on `total === 0` so it only replaces the body when
  * there is nothing to show. react-admin keeps the previously loaded rows across
  * a refetch, so a transient auto-refresh failure keeps the populated grid (the
  * error is surfaced via react-admin's notification) instead of blanking it.
- * Its retry reloads every active query so the header's status counts recover
- * along with the rows.
  */
 const ListBody = ({
   emptyComponent,
@@ -75,10 +68,6 @@ const ListBody = ({
   return <>{children}</>;
 };
 
-/**
- * Shared scaffold for task list pages: wraps React-admin's <List> with the
- * toolbar/header, pagination persistence, and the empty/error body states.
- */
 export const TaskListLayout = ({
   title,
   perPageStorageKey,

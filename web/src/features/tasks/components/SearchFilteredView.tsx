@@ -19,17 +19,9 @@ interface SearchFilteredViewProps {
 }
 
 /**
- * Client-side filter for the task table. Reads the active search query
- * from `TaskListContext`, narrows the *currently loaded page* to records
- * whose app / author / image substring matches, and re-publishes a
- * filtered list context for the children.
- *
- * Important: this is intentionally a page-scoped filter, not a search
- * across the entire backend. Callers (placeholder text, active-filter
- * chip) should reflect that scope so users do not assume a global search.
- *
- * When the query is empty this component is a no-op pass-through, so it
- * is safe to slot above any task list page.
+ * Narrows the *currently loaded page*, not the whole backend, and that scope is
+ * intentional. Callers (placeholder text, active-filter chip) should reflect it
+ * so users do not assume a global search.
  */
 export const SearchFilteredView = ({ children }: SearchFilteredViewProps) => {
   const ctx = useListContext<Task>();

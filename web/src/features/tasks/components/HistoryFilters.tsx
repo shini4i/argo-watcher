@@ -48,7 +48,6 @@ const STORAGE_KEY = 'historyTasks';
 
 const TRIGGER_FORMAT: Intl.DateTimeFormatOptions = { day: '2-digit', month: 'short', year: 'numeric' };
 
-/** Date range + application filters powering the history list. */
 export const HistoryFilters = () => {
   const { data } = useListContext<Task>();
   const { formatDate } = useTimezone();

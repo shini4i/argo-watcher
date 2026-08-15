@@ -22,9 +22,8 @@ const FULL_FORMAT: Intl.DateTimeFormatOptions = {
 };
 
 /**
- * Single-line time cell. The Created column passes `mode="date"` for the
- * absolute timestamp; the Updated column passes `mode="relative"` for the
- * relative-to-now string.
+ * The Created column passes `mode="date"`; the Updated column passes
+ * `mode="relative"`.
  */
 export const TimeCell = ({ ts, mode }: TimeCellProps) => {
   const { formatDate } = useTimezone();

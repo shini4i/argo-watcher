@@ -8,9 +8,7 @@ import { EmptyState } from './components/EmptyState';
 const STORAGE_KEY_PER_PAGE = 'recentTasks.perPage';
 const DEFAULT_PER_PAGE = 25;
 
-/**
- * Recent tasks list routed at `/` providing sortable columns, pagination, application filtering, and auto-refresh controls.
- */
+/** Routed at `/`. */
 export const RecentTasksList = () => {
   useEffect(() => {
     const previousTitle = document.title;

@@ -24,7 +24,6 @@ const mondayIndex = (date: Date, mode: TimezoneMode): number => {
   return (day + 6) % 7;
 };
 
-/** Returns a new Date set to 00:00:00.000 in the given timezone mode. */
 export const startOfDay = (input: Date, mode: TimezoneMode): Date => {
   const date = new Date(input);
   if (mode === 'utc') {
@@ -35,7 +34,6 @@ export const startOfDay = (input: Date, mode: TimezoneMode): Date => {
   return date;
 };
 
-/** Returns a new Date set to 23:59:59.000 in the given timezone mode. */
 export const endOfDay = (input: Date, mode: TimezoneMode): Date => {
   const date = new Date(input);
   if (mode === 'utc') {
@@ -54,7 +52,6 @@ export const ymd = (date: Date, mode: TimezoneMode): { year: number; month: numb
   return { year: date.getFullYear(), month: date.getMonth(), day: date.getDate() };
 };
 
-/** Builds a Date object representing midnight (in `mode`) for the given calendar coordinates. */
 export const dateAt = (year: number, month: number, day: number, mode: TimezoneMode): Date => {
   if (mode === 'utc') {
     return new Date(Date.UTC(year, month, day, 0, 0, 0));
@@ -77,7 +74,6 @@ export const addDays = (date: Date, days: number, mode: TimezoneMode): Date => {
   return next;
 };
 
-/** Returns true when two dates resolve to the same day in `mode`. */
 export const isSameDay = (a: Date, b: Date, mode: TimezoneMode): boolean => {
   const left = ymd(a, mode);
   const right = ymd(b, mode);
@@ -109,7 +105,6 @@ export interface PresetDescriptor {
   readonly compute: (mode: TimezoneMode) => DateRangeValue;
 }
 
-/** Converts a Date into Unix seconds. */
 const toSeconds = (date: Date): number => Math.floor(date.getTime() / MS_PER_SECOND);
 
 const today = (mode: TimezoneMode): DateRangeValue => {
@@ -161,7 +156,6 @@ export const PRESETS: ReadonlyArray<PresetDescriptor> = [
   { id: 'this-month', label: 'This month', compute: thisMonth },
 ];
 
-/** Identifies the preset that matches the given range (or null when no preset matches). */
 export const matchPreset = (value: DateRangeValue, mode: TimezoneMode): string | null => {
   if (value.start === null || value.end === null) return null;
   for (const preset of PRESETS) {

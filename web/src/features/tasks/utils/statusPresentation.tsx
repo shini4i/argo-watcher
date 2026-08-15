@@ -20,7 +20,6 @@ export interface TaskStatusPresentation {
   readonly pillFgDark: string;
 }
 
-/** Fallback rendering instructions when a status is unknown or missing. */
 const DEFAULT_PRESENTATION: TaskStatusPresentation = {
   label: 'Unknown',
   displayLabel: 'Unknown',
@@ -34,7 +33,6 @@ const DEFAULT_PRESENTATION: TaskStatusPresentation = {
   pillFgDark: tokens.statusInfoFgDark,
 };
 
-/** Describes how a task status should be rendered across chips, timelines, and alerts. */
 export const describeTaskStatus = (status?: string | null): TaskStatusPresentation => {
   if (!status) {
     return DEFAULT_PRESENTATION;

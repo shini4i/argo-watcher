@@ -65,10 +65,6 @@ const FilterChip = ({ chip }: { chip: FilterChipDescriptor }) => {
   );
 };
 
-/**
- * Renders the active-filter row beneath the toolbar. Hidden entirely when no
- * filters are active; otherwise lists removable chips and a "Clear all" link.
- */
 export const ActiveFilterBar = ({ chips, onClearAll }: ActiveFilterBarProps) => {
   if (chips.length === 0) {
     return null;
