@@ -1,14 +1,11 @@
 /**
- * User-facing descriptions of the ways an OIDC sign-in can fail.
- *
- * A misconfigured provider is otherwise invisible: the browser leaves for the
+ * Nothing else surfaces a misconfigured provider: the browser leaves for the
  * provider, comes back with an error it cannot act on, and the app renders
- * without a session. These descriptions turn what the provider (or the library)
- * reported into something an operator can act on, so the failure is shown once
- * instead of being retried silently.
+ * without a session. The descriptions here turn what the provider (or the
+ * library) reported into something an operator can act on, so the failure is
+ * shown once instead of being retried silently.
  */
 
-/** Longest run of provider-supplied text rendered verbatim. */
 const MAX_DETAIL_LENGTH = 300;
 
 /**
@@ -34,7 +31,7 @@ export interface AuthFailure {
   readonly code?: string;
   /** Provider- or library-supplied explanation, truncated for display. */
   readonly detail?: string;
-  /** What to check to fix it. */
+  /** Argo Watcher's own suggested remedy — never provider-supplied. */
   readonly hint?: string;
   /**
    * Provider-supplied documentation link (`error_uri`), present only when the
@@ -49,8 +46,7 @@ export interface AuthFailure {
  * The optional fields are `unknown` because they are not guaranteed to be strings:
  * on the token-exchange path the library builds `ErrorResponse` from the provider's
  * parsed JSON body without coercing it, so a non-conformant provider can put any
- * value here (RFC 6749 §5.2 asks for strings). Only `error` is checked, by
- * {@link asProviderError}.
+ * value here (RFC 6749 §5.2 asks for strings).
  */
 interface ProviderErrorShape {
   error: string;
@@ -63,9 +59,7 @@ const clamp = (text: string): string =>
   text.length > MAX_DETAIL_LENGTH ? `${text.slice(0, MAX_DETAIL_LENGTH)}…` : text;
 
 /**
- * Normalizes optional provider text, dropping anything that is not usable text.
- *
- * Total by design: these descriptions are produced while handling a sign-in
+ * Never throws, by design: these descriptions are produced while handling a sign-in
  * failure, so a throw in here would reject the bootstrap, mount the app on a
  * failed callback, and start the redirect loop this screen exists to end.
  */
@@ -79,11 +73,10 @@ const optionalText = (value: unknown): string | undefined => {
 
 /**
  * Keeps `error_uri` only when it is an absolute http(s) address short enough to
- * show in full, so the error box offers a link exclusively when the provider sent
- * something followable. Over-length values are dropped rather than truncated: a
- * clamped URL keeps its host and still resolves, to a path the provider does not
- * have. It also keeps a `javascript:` or `data:` payload — the value arrives in
- * the callback query — from ever becoming a link target.
+ * show in full. Over-length values are dropped rather than truncated: a clamped
+ * URL keeps its host and still resolves, to a path the provider does not have.
+ * It also keeps a `javascript:` or `data:` payload — the value arrives in the
+ * callback query — from ever becoming a link target.
  */
 const optionalUrl = (value: unknown): string | undefined => {
   const text = typeof value === 'string' ? value.trim() : '';
@@ -99,8 +92,6 @@ const optionalUrl = (value: unknown): string | undefined => {
 };
 
 /**
- * Drops trailing slashes so an issuer keeps exactly one before the discovery path.
- *
  * Written as a scan rather than a `/\/+$/` replace, whose backtracking is
  * super-linear in the number of trailing slashes.
  */
@@ -112,7 +103,6 @@ const trimTrailingSlashes = (value: string): string => {
   return value.slice(0, end);
 };
 
-/** Best-effort message for anything thrown, including non-Error values. */
 const messageOf = (error: unknown): string | undefined => {
   if (error instanceof Error) {
     return optionalText(error.message);
@@ -139,9 +129,8 @@ const asProviderError = (error: unknown): ProviderErrorShape | null => {
 };
 
 /**
- * Maps an OAuth error code to the setting that produces it. Only the codes with
- * a specific, checkable cause are called out; anything else gets the general
- * pointer at the client registration.
+ * Only the codes with a specific, checkable cause are called out; anything else
+ * gets the general pointer at the client registration.
  */
 const hintForCode = (code: string): string => {
   switch (code) {
@@ -158,8 +147,6 @@ const hintForCode = (code: string): string => {
 };
 
 /**
- * Describes a failure to complete a sign-in callback.
- *
  * A provider error response is reported with its own code and description; any
  * other throw means the response arrived but could not be exchanged locally,
  * which is a different problem and is labelled as one.
@@ -189,14 +176,9 @@ export const describeCallbackError = (error: unknown): AuthFailure => {
 };
 
 /**
- * Describes a failure to start the sign-in redirect. Unreadable OIDC discovery is
- * the usual cause, but the same call also fails when the PKCE state cannot be
- * stored, so the title claims only that the sign-in did not start and the hint
- * carries the likely cause.
- *
- * That hint names the discovery URL and insists on the browser as the vantage
- * point: an issuer reachable from the Argo Watcher pod but not from the user's
- * browser is the misconfiguration this screen exists to make visible.
+ * Unreadable OIDC discovery is the usual reason the redirect never starts, but
+ * the same call also fails when the PKCE state cannot be stored, so the title
+ * claims only that the sign-in did not start and the hint carries the likely cause.
  */
 export const describeRedirectError = (error: unknown, issuerUrl?: string): AuthFailure => {
   // Type-checked, not just truthiness-checked: the issuer comes from parsed but
@@ -216,11 +198,7 @@ export const describeRedirectError = (error: unknown, issuerUrl?: string): AuthF
   };
 };
 
-/**
- * Describes an OIDC block that is enabled but missing required settings.
- *
- * @param missing - configuration field names the server did not supply.
- */
+/** @param missing - configuration field names the server did not supply. */
 export const describeIncompleteConfig = (missing: readonly string[]): AuthFailure => ({
   kind: 'config_incomplete',
   title: 'Argo Watcher is misconfigured for OIDC',

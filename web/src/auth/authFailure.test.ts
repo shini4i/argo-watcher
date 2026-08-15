@@ -31,9 +31,6 @@ describe('describeCallbackError', () => {
     expect(failure.uri).toBe('https://idp/docs/err');
   });
 
-  // Only a real, followable address is worth offering. Everything else — a
-  // relative path, a bare phrase, or a script payload arriving through the
-  // callback query — is dropped rather than rendered as a link.
   it.each([
     { label: 'a relative path', uri: '/docs/errors' },
     { label: 'plain text', uri: 'see the manual' },
@@ -107,7 +104,6 @@ describe('describeCallbackError', () => {
 
     expect(failure.kind).toBe('provider_error');
     expect(failure.code).toBe('access_denied');
-    // Unusable values are dropped, never coerced onto the screen.
     if ('error_description' in overrides) {
       expect(failure.detail).toBeUndefined();
     }

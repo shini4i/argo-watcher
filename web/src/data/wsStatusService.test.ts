@@ -56,10 +56,9 @@ class BooleanService extends WsStatusService<boolean> {
 }
 
 /**
- * Window stub that records armed timers and lets the test fire them with
- * `flush()`. A browser never runs the callback before `setTimeout` returns, so
- * firing it synchronously would leave the service's timer handle assigned after
- * the timer had already run — hiding whether a second reconnect can be armed.
+ * A browser never runs the callback before `setTimeout` returns, so firing it
+ * synchronously would leave the service's timer handle assigned after the timer
+ * had already run — hiding whether a second reconnect can be armed.
  */
 const recordingWindow = () => {
   const pendingTimers: Array<() => void> = [];
@@ -70,7 +69,6 @@ const recordingWindow = () => {
       return nextHandle++ as unknown as number;
     }),
     clearTimeout: vi.fn(),
-    /** Runs every timer armed since the last flush, as the event loop would. */
     flush: () => {
       pendingTimers.splice(0, pendingTimers.length).forEach(cb => cb());
     },
@@ -272,7 +270,6 @@ describe('WsStatusService', () => {
   });
 
   it('arms only one reconnect timer while one is already pending', async () => {
-    // Repeated close events must not fan out into parallel sockets to /ws.
     const { socket } = await subscribedService();
     const browserWindow = recordingWindow();
     vi.spyOn(sharedUtils, 'getBrowserWindow').mockReturnValue(browserWindow as unknown as Window);
@@ -367,7 +364,6 @@ describe('WsStatusService', () => {
 
     retired.fireClose();
 
-    // No third socket, and no reconnect armed to open one later.
     expect(MockWebSocket.instances).toHaveLength(2);
     expect(browserWindow.setTimeout).not.toHaveBeenCalled();
 
@@ -387,7 +383,6 @@ describe('WsStatusService', () => {
 
     unsubscribe();
 
-    // No socket appeared, and no timer was left armed to create one later.
     expect(MockWebSocket.instances).toHaveLength(1);
     expect(browserWindow.setTimeout).not.toHaveBeenCalled();
   });

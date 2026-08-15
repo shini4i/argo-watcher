@@ -31,7 +31,7 @@ let serverConfig: ServerConfig | null = null;
 let userManager: UserManager | null = null;
 let cachedUserGroups: string[] | null = null;
 
-/** Reads the `groups` claim from a signed-in user's ID-token profile, defaulting to []. */
+/** Reads the `groups` claim from the ID-token profile, not from userinfo. */
 const extractProfileGroups = (user: User): string[] => {
   const groups = (user.profile as { groups?: unknown }).groups;
   return Array.isArray(groups) ? [...(groups as string[])] : [];
@@ -43,12 +43,11 @@ const clearUserGroupsCache = () => {
 };
 
 /**
- * Resolves the user's group membership from the provider's userinfo endpoint —
- * the SAME source the backend uses for its privileged-group check — so the UI's
- * button gating always agrees with server-side enforcement. This does not depend
- * on a requested scope or on groups being present in the ID token. Falls back to
- * the ID-token `groups` claim if the userinfo call fails (mirrors the previous
- * keycloak-js loadUserInfo() behaviour and its fallback).
+ * Resolves group membership from the provider's userinfo endpoint — the SAME
+ * source the backend uses for its privileged-group check — so the UI's button
+ * gating always agrees with server-side enforcement. This does not depend on a
+ * requested scope or on groups being present in the ID token. Falls back to the
+ * ID-token `groups` claim when the userinfo call fails.
  */
 const loadGroups = async (manager: UserManager, user: User): Promise<string[]> => {
   try {
@@ -71,7 +70,6 @@ const loadGroups = async (manager: UserManager, user: User): Promise<string[]> =
   return extractProfileGroups(user);
 };
 
-/** Returns cached groups or resolves them once from userinfo and caches the result. */
 const ensureGroups = async (manager: UserManager, user: User): Promise<string[]> => {
   if (cachedUserGroups) {
     return cachedUserGroups;
@@ -81,9 +79,8 @@ const ensureGroups = async (manager: UserManager, user: User): Promise<string[]>
 };
 
 /**
- * Resolves the app's base URL (origin + Vite BASE_URL), used as the OIDC
- * redirect and post-logout URIs. When no browser window is available (SSR/tests)
- * it returns the normalized base path alone.
+ * The app's base URL, used as the OIDC redirect and post-logout URIs. With no
+ * browser window (SSR/tests) it returns the normalized base path alone.
  */
 const appBaseUrl = (): string => {
   const base = import.meta.env.BASE_URL ?? '/';
@@ -103,9 +100,6 @@ const currentPath = (): string | undefined => {
   return `${browserWindow.location.pathname}${browserWindow.location.search}`;
 };
 
-/**
- * Fetches the backend configuration once and caches the promise for subsequent calls.
- */
 const fetchServerConfig = async (): Promise<ServerConfig> => {
   serverConfigPromise ??= fetch('/api/v1/config', {
     headers: {
@@ -132,8 +126,6 @@ const fetchServerConfig = async (): Promise<ServerConfig> => {
 };
 
 /**
- * Reads a required OIDC setting, treating a blank or non-string value as absent.
- *
  * Blank counts as missing because the server applies the same rule (it refuses to
  * start when the issuer or client id trims to empty), and because a whitespace
  * issuer would otherwise reach discovery and be reported as an unreachable
@@ -144,20 +136,13 @@ const requiredOidcField = (value: unknown): string | undefined => {
   return trimmed || undefined;
 };
 
-/**
- * Lists the OIDC fields required to build a UserManager that the server did not
- * supply, in configuration-key form so the message can name them.
- */
+/** Names the missing fields in configuration-key form, for a user-facing message. */
 const missingOidcFields = (config: OidcConfig): string[] =>
   [
     !requiredOidcField(config.issuer_url) && 'issuer_url',
     !requiredOidcField(config.client_id) && 'client_id',
   ].filter((field): field is string => typeof field === 'string');
 
-/**
- * Verifies that the OIDC config contains the minimum fields required to build a
- * UserManager (issuer and client id).
- */
 const assertOidcFields = (config: OidcConfig) => {
   if (missingOidcFields(config).length > 0) {
     throw new HttpError('OIDC configuration is incomplete', 500, config);
@@ -165,7 +150,7 @@ const assertOidcFields = (config: OidcConfig) => {
 };
 
 /**
- * Lazily constructs the singleton UserManager when OIDC is enabled server-side.
+ * Returns null when OIDC is disabled server-side.
  *
  * Tokens are held in an in-memory store (never localStorage) to preserve the
  * original security posture: on a full page reload the in-memory user is gone and
@@ -226,11 +211,9 @@ const ensureUserManager = async (): Promise<UserManager | null> => {
 };
 
 /**
- * True when the current URL carries an OIDC redirect callback — either a
- * successful authorization code (`code`) or a provider error (`error`), both
- * paired with `state`. Recognizing the error form is essential: otherwise an
- * error response (denied consent, `login_required`, …) is not consumed and
- * bootstrap starts a fresh sign-in, bouncing between the app and the provider.
+ * Recognizing the `error` form matters as much as `code`: otherwise an error
+ * response (denied consent, `login_required`, …) is not consumed and bootstrap
+ * starts a fresh sign-in, bouncing between the app and the provider.
  */
 const isRedirectCallback = (): boolean => {
   const browserWindow = getBrowserWindow();
@@ -241,7 +224,6 @@ const isRedirectCallback = (): boolean => {
   return params.has('state') && (params.has('code') || params.has('error'));
 };
 
-/** Rewrites the URL to `target`, dropping the callback query params. */
 const replaceUrl = (target: string) => {
   const browserWindow = getBrowserWindow();
   if (browserWindow) {
@@ -250,10 +232,10 @@ const replaceUrl = (target: string) => {
 };
 
 /**
- * Completes an OIDC redirect callback: on success it exchanges the code for
- * tokens and returns to the pre-login path encoded in `url_state`; on failure it
- * consumes the response (stripping the query so a reload cannot re-trigger it)
- * and reports the reason, which the caller shows instead of retrying.
+ * On success the browser returns to the pre-login path carried in `url_state`.
+ * On failure the response is still consumed — the query is stripped so a reload
+ * cannot re-trigger it — and the reason is reported for the caller to show
+ * instead of retrying.
  *
  * @returns the failure to show the user, or null once a session exists.
  */
@@ -272,10 +254,7 @@ const completeSignin = async (manager: UserManager): Promise<AuthFailure | null>
 };
 
 /**
- * Ensures the user is authenticated, redirecting to the provider's login page
- * when no valid session exists.
- *
- * It deliberately NEVER rejects for an unauthenticated user: a rejected checkAuth
+ * Deliberately NEVER rejects for an unauthenticated user: a rejected checkAuth
  * makes React-admin call authProvider.logout(), which would terminate a still-valid
  * SSO session and bounce the browser between the app and the login page. An
  * unauthenticated user is redirected instead, and the call still resolves.
@@ -303,10 +282,9 @@ const ensureAuthenticated = async (manager: UserManager): Promise<AuthFailure | 
 };
 
 /**
- * Turns a failed UserManager construction into a displayable failure, but only for
- * the one cause the operator can act on: OIDC enabled without the fields it needs.
- * Anything else (a configuration request that did not answer) reports null so the
- * app still renders.
+ * Only the one cause an operator can act on becomes a displayable failure: OIDC
+ * enabled without the fields it needs. Anything else (a configuration request
+ * that did not answer) reports null so the app still renders.
  */
 const incompleteConfigFailure = (): AuthFailure | null => {
   const oidc = serverConfig?.oidc;
@@ -328,7 +306,7 @@ interface BootstrapOptions {
 }
 
 /**
- * Eagerly processes authentication before the React tree is mounted.
+ * Must run before the React tree is mounted.
  *
  * The authorization-code callback (`?code=...&state=...`) must be consumed while
  * it is still on the URL: the SPA router performs its default index redirect
@@ -377,10 +355,6 @@ export const bootstrapAuth = async ({
   return ensureAuthenticated(manager);
 };
 
-/**
- * React-admin AuthProvider implementation backed by a generic OIDC provider for
- * login, logout, permissions, and identity.
- */
 export const authProvider: AuthProvider = {
   async login(params) {
     const manager = await ensureUserManager();
@@ -411,9 +385,8 @@ export const authProvider: AuthProvider = {
   },
 
   async checkAuth() {
-    // Resolves for a valid or redirecting session; throws only for genuine
-    // failures (config errors, unreachable backend). An unauthenticated user is
-    // redirected rather than rejected — see ensureAuthenticated.
+    // Throws only for genuine failures (config errors, unreachable backend). An
+    // unauthenticated user is redirected rather than rejected — see ensureAuthenticated.
     const manager = await ensureUserManager();
     if (!manager) {
       setAccessToken(null);
@@ -450,7 +423,6 @@ export const authProvider: AuthProvider = {
     const privilegedGroups = config.oidc.privileged_groups ?? [];
     const user = await manager.getUser();
     if (!user || user.expired) {
-      // No usable session — kick off the login redirect and report empty groups.
       await ensureAuthenticated(manager);
       return { groups: [], privilegedGroups } satisfies Permissions;
     }
@@ -476,7 +448,6 @@ export const authProvider: AuthProvider = {
 };
 
 export const __testing = {
-  /** Resets cached OIDC state for unit tests so each test starts fresh. */
   reset() {
     serverConfigPromise = null;
     serverConfig = null;
@@ -484,6 +455,5 @@ export const __testing = {
     clearAccessToken();
     clearUserGroupsCache();
   },
-  /** Exposes base-URL resolution for direct verification in tests. */
   appBaseUrl,
 };

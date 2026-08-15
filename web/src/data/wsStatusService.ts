@@ -13,10 +13,6 @@ const WS_RETRY_DELAY_MS = 5000;
  * (single connection while listeners exist, reconnect with a fixed delay,
  * teardown when the last listener leaves) and the ordering guards below.
  *
- * Subclasses supply the transport specifics — {@link fetchState} for the REST
- * bootstrap and {@link parseMessage} for the frames they recognise — and may call
- * {@link applyAuthoritative} to publish a state this client set itself.
- *
  * `T` must be non-nullable: `null` is reserved for "nothing cached yet".
  */
 export abstract class WsStatusService<T extends NonNullable<unknown>> {
@@ -37,9 +33,6 @@ export abstract class WsStatusService<T extends NonNullable<unknown>> {
   private fetchSeq = 0;
   private stateGeneration = 0;
 
-  /**
-   * @param logPrefix Tag for this signal's console diagnostics, logged as `[<prefix>] …`.
-   */
   protected constructor(private readonly logPrefix: string) {}
 
   /** Reads the authoritative state from the backend. */
@@ -54,11 +47,10 @@ export abstract class WsStatusService<T extends NonNullable<unknown>> {
   protected abstract parseMessage(payload: string): T | undefined;
 
   /**
-   * Retrieves the latest state from the backend and notifies subscribers of the
-   * result. The result is applied only if it is still the newest fetch AND no
-   * authoritative update landed while it was in flight; otherwise it is dropped
-   * and the winning state is returned instead, so REST/WebSocket ordering races
-   * cannot revert subscribers to a stale value.
+   * Fetches the authoritative state and broadcasts it, but only if it is still
+   * the newest fetch AND no authoritative update landed while it was in flight;
+   * otherwise it is dropped and the winning state is returned instead, so
+   * REST/WebSocket ordering races cannot revert subscribers to a stale value.
    */
   public async fetchStatus(): Promise<T> {
     const seq = ++this.fetchSeq;
@@ -71,10 +63,6 @@ export abstract class WsStatusService<T extends NonNullable<unknown>> {
     return state;
   }
 
-  /**
-   * Subscribes to state changes, establishing a WebSocket connection when needed.
-   * Returns an unsubscribe function for convenient cleanup.
-   */
   public subscribe(listener: WsStatusListener<T>): () => void {
     this.listeners.add(listener);
 
@@ -107,7 +95,6 @@ export abstract class WsStatusService<T extends NonNullable<unknown>> {
     this.updateStatus(state);
   }
 
-  /** Broadcasts the new state to all subscribers. */
   private updateStatus(state: T) {
     this.currentStatus = state;
     for (const listener of this.listeners) {
@@ -115,7 +102,6 @@ export abstract class WsStatusService<T extends NonNullable<unknown>> {
     }
   }
 
-  /** Ensures a websocket connection exists whenever there are active listeners. */
   private ensureSocket() {
     if (this.socket || this.listeners.size === 0) {
       return;
@@ -166,7 +152,6 @@ export abstract class WsStatusService<T extends NonNullable<unknown>> {
     };
   }
 
-  /** Schedules a websocket reconnect attempt after a fixed delay. */
   private scheduleReconnect() {
     if (this.reconnectHandle !== null) {
       return;
@@ -183,7 +168,6 @@ export abstract class WsStatusService<T extends NonNullable<unknown>> {
     }, WS_RETRY_DELAY_MS);
   }
 
-  /** Closes any active websocket and cancels pending reconnect timers. */
   private teardownSocket() {
     if (this.reconnectHandle !== null) {
       const browserWindow = getBrowserWindow();

@@ -19,7 +19,6 @@ const createListParams = () => ({
 });
 
 const getQueryParams = (call: string) => new URL(call, 'https://example.test').searchParams;
-/** Exercises the custom dataProvider against pagination, auth, and error-handling scenarios. */
 describe('dataProvider', () => {
   beforeEach(() => {
     vi.restoreAllMocks();

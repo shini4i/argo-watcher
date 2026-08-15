@@ -148,7 +148,6 @@ describe('httpClient', () => {
       const response = await httpClient<{ status: string }>('/status');
       expect(response.data).toEqual({ status: 'ok' });
 
-      // Advancing past the timeout must not abort the already-completed request.
       const init = mockFetch.mock.calls[0][1] as RequestInit;
       await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS * 2);
       expect((init.signal as AbortSignal).aborted).toBe(false);
