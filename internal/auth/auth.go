@@ -158,8 +158,7 @@ func (a *Authenticator) walk(request *http.Request, check func(AuthStrategy, str
 	return false, rejectedErr
 }
 
-// ValidateStrategy restricts validation to a single allowed strategy header.
-// Only the strategy registered under allowedHeader is considered; all other headers are skipped.
+// ValidateStrategy restricts validation to the strategy registered under allowedHeader.
 func (a *Authenticator) ValidateStrategy(request *http.Request, allowedHeader string) (bool, error) {
 	if a == nil || request == nil {
 		return false, nil
@@ -188,8 +187,7 @@ func (a *Authenticator) Strategy(header string) (AuthStrategy, bool) {
 	return strategy, ok
 }
 
-// NewOIDCAuthService initializes a new OIDC authentication service using the given server config.
-// It validates the issuer URL and returns an error if the config is nil or the URL is malformed.
+// NewOIDCAuthService initializes an OIDC authentication service from the given server config.
 func NewOIDCAuthService(config *config.ServerConfig) (*OIDCAuthService, error) {
 	if config == nil {
 		return nil, fmt.Errorf("server config must not be nil")
@@ -207,16 +205,14 @@ func NewOIDCAuthService(config *config.ServerConfig) (*OIDCAuthService, error) {
 	return oidcAuthService, nil
 }
 
-// NewDeployTokenAuthService initializes a new deploy token authentication service.
-// Accepts a token string and returns a pointer to a DeployTokenAuthService.
+// NewDeployTokenAuthService initializes a deploy token authentication service.
 func NewDeployTokenAuthService(token string) *DeployTokenAuthService {
 	return &DeployTokenAuthService{
 		token: token,
 	}
 }
 
-// NewJWTAuthService initializes a new JWT authentication service.
-// It takes a secret key string and returns a pointer to a JWTAuthService.
+// NewJWTAuthService initializes a JWT authentication service.
 func NewJWTAuthService(secret string) *JWTAuthService {
 	return &JWTAuthService{
 		secretKey: []byte(secret),

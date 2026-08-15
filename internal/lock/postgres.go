@@ -7,8 +7,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// PostgresLocker is an implementation of the Locker interface that uses
-// PostgreSQL advisory locks.
+// PostgresLocker is a Locker backed by PostgreSQL advisory locks.
 type PostgresLocker struct {
 	db *gorm.DB
 }

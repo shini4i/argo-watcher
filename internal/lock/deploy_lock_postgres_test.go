@@ -79,8 +79,6 @@ func TestPostgresDeployLockStore_MissingRowIsUnlocked(t *testing.T) {
 func TestPostgresDeployLockStore_StateSurfacesReadErrors(t *testing.T) {
 	db := newDeployLockTestDB(t)
 
-	// A dedicated connection, closed underneath the store: no other test shares
-	// this handle, so nothing else is affected.
 	sqlDB, err := db.DB()
 	require.NoError(t, err)
 	require.NoError(t, sqlDB.Close())

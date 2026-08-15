@@ -13,11 +13,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// newOIDCTestServer spins up an httptest server that serves both the OIDC
-// discovery document and a userinfo endpoint. The discovery document advertises
-// this same server's /userinfo path, so the service resolves it via discovery
-// exactly as it would against a real provider. discoveryHits (optional) counts
-// discovery requests so tests can assert caching / retry behaviour.
+// The discovery document advertises this same server's /userinfo path, so the service
+// resolves it via discovery exactly as it would against a real provider. discoveryHits
+// (optional) counts discovery requests so tests can assert caching / retry behaviour.
 func newOIDCTestServer(t *testing.T, userinfoStatus int, userinfoBody string, discoveryHits *int32, failFirstDiscovery bool) *httptest.Server {
 	t.Helper()
 
@@ -65,7 +63,6 @@ func TestOIDCAuthService_Init(t *testing.T) {
 		assert.Equal(t, issuer, service.IssuerURL)
 		assert.Equal(t, "test", service.ClientId)
 		assert.IsType(t, &http.Client{}, service.client)
-		// Discovery is lazy: no userinfo URL is resolved during Init.
 		assert.Empty(t, service.userinfoURL)
 	})
 
@@ -115,9 +112,6 @@ func TestOIDCAuthService_Init(t *testing.T) {
 	})
 }
 
-// TestOIDCAuthService_Validate covers token validation through discovery-resolved
-// userinfo: privileged-group membership, invalid tokens, malformed responses, and
-// unreachable providers.
 func TestOIDCAuthService_Validate(t *testing.T) {
 	newService := func(t *testing.T, server *httptest.Server, groups []string) *OIDCAuthService {
 		t.Helper()
@@ -211,21 +205,17 @@ func TestOIDCAuthService_Validate(t *testing.T) {
 
 		service := newService(t, server, []string{"group1"})
 
-		// First attempt: discovery returns 500, so validation fails but nothing is cached.
 		ok, err := service.Validate("test")
 		assert.Error(t, err)
 		assert.False(t, ok)
 
-		// Second attempt: discovery succeeds and the token validates.
 		ok, err = service.Validate("test")
 		assert.NoError(t, err)
 		assert.True(t, ok)
 	})
 }
 
-// newCountingOIDCServer serves a working discovery document and a userinfo
-// endpoint that reports the given groups, counting userinfo requests so tests can
-// assert how often the provider is actually consulted.
+// Counts userinfo requests so tests can assert how often the provider is actually consulted.
 func newCountingOIDCServer(t *testing.T, groups string) (*httptest.Server, *int32) {
 	t.Helper()
 
