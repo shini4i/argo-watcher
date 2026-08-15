@@ -19,7 +19,6 @@ import (
 	"github.com/shini4i/argo-watcher/internal/state/state_models"
 )
 
-// whereStatusEquals is the GORM condition matching a task by its status column.
 const whereStatusEquals = "status = ?"
 
 type PostgresState struct {
@@ -42,7 +41,7 @@ func (state *PostgresState) Connect(serverConfig *config.ServerConfig) error {
 	return nil
 }
 
-// AddTask inserts a new in-progress task and returns it with the DB-generated id and creation time.
+// AddTask returns the task with the DB-generated id and creation time.
 func (state *PostgresState) AddTask(task models.Task) (*models.Task, error) {
 	ormTask := state_models.TaskModel{
 		Images:           datatypes.NewJSONSlice(task.Images),
@@ -132,8 +131,7 @@ func (state *PostgresState) GetTask(id string) (*models.Task, error) {
 	return ormTask.ConvertToExternalTask(), nil
 }
 
-// SetTaskStatus updates a task's status and status_reason. It returns an error
-// if the id is malformed or no matching task exists.
+// SetTaskStatus errors if the id is malformed or no matching task exists.
 func (state *PostgresState) SetTaskStatus(id, status, reason string) error {
 	uuidv4, err := uuid.Parse(id)
 	if err != nil {
@@ -191,7 +189,7 @@ func (state *PostgresState) CancelInProgressTasks(app string, images []models.Im
 	return result.RowsAffected, nil
 }
 
-// Check reports whether the database connection is alive by pinging it.
+// Check reports whether the database connection is alive.
 func (state *PostgresState) Check() bool {
 	connection, err := state.orm.DB()
 	if err != nil {
@@ -230,8 +228,6 @@ func (state *PostgresState) ProcessObsoleteTasks(retryTimes uint) {
 	}
 }
 
-// doProcessPostgresObsoleteTasks deletes "app not found" tasks older than 1 hour
-// and marks "in progress" tasks older than 1 hour as "aborted".
 func (state *PostgresState) doProcessPostgresObsoleteTasks() error {
 	slog.Debug("Removing obsolete tasks...")
 
@@ -251,8 +247,7 @@ func (state *PostgresState) doProcessPostgresObsoleteTasks() error {
 	return nil
 }
 
-// GetDB returns the underlying GORM database instance.
-// This allows sharing the database connection pool with other components.
+// GetDB exposes the connection pool so other components can share it.
 func (state *PostgresState) GetDB() *gorm.DB {
 	return state.orm
 }

@@ -106,13 +106,11 @@ func statusReason(status string) string {
 }
 
 func TestAddTaskServerError(t *testing.T) {
-	// Create a test server that always returns a 500 status code
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		rw.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer server.Close()
 
-	// Create a new Watcher instance
 	watcher := NewWatcher(server.URL, false, 30*time.Second)
 
 	task := models.Task{
@@ -131,10 +129,6 @@ func TestAddTaskServerError(t *testing.T) {
 	assert.Error(t, err)
 }
 
-// TestAddTask_AuthFailureSurfacesServerReason verifies that when the server
-// rejects the task (e.g. 401 with `{"error":"deploy token is invalid"}`),
-// the client surfaces the server's reason and a hint about which env vars
-// govern auth, instead of the old opaque "response code 401".
 func TestAddTask_AuthFailureSurfacesServerReason(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		rw.WriteHeader(http.StatusUnauthorized)
@@ -155,12 +149,9 @@ func TestAddTask_AuthFailureSurfacesServerReason(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "401")
 	assert.Contains(t, err.Error(), "deploy token is invalid")
-	// The client should hint at which env vars to check on auth failures.
 	assert.Contains(t, err.Error(), "ARGO_WATCHER_DEPLOY_TOKEN")
 }
 
-// TestAddTask_NonAuthFailureSurfacesServerReason verifies the same body-
-// surfacing behaviour for non-auth errors (e.g. 503 with a reason).
 func TestAddTask_NonAuthFailureSurfacesServerReason(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		rw.WriteHeader(http.StatusServiceUnavailable)
@@ -367,32 +358,24 @@ func TestGetTaskStatus(t *testing.T) {
 		assert.Equal(t, models.StatusFailedMessage, task.Status)
 	})
 
-	// Test case: server returns invalid JSON
 	t.Run("server returns invalid JSON", func(t *testing.T) {
-		// Create a test server that always returns an invalid JSON response
 		server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 			_, _ = rw.Write([]byte(`invalid JSON`))
 		}))
 		defer server.Close()
 
-		// Create a new Watcher instance
 		watcher := NewWatcher(server.URL, false, 30*time.Second)
 
-		// Call the function
 		_, err := watcher.getTaskStatus("test-id")
 
-		// We expect an error
 		assert.Error(t, err)
 	})
 }
 
 func TestGetWatcherConfig(t *testing.T) {
-	// Create a test server
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		// Test request parameters
 		assert.Equal(t, req.URL.String(), "/api/v1/config")
 
-		// Create the response data
 		configResponse := struct {
 			ArgoCDURL      url.URL `json:"argo_cd_url"`
 			ArgoCDURLAlias string  `json:"argo_cd_url_alias"`
@@ -401,31 +384,24 @@ func TestGetWatcherConfig(t *testing.T) {
 			ArgoCDURLAlias: "https://argo-cd.example.com",
 		}
 
-		// Marshal the response data to JSON
 		jsonData, err := json.Marshal(configResponse)
 		if err != nil {
 			t.Error(err)
 			return
 		}
 
-		// Write the JSON data to the response writer
 		if _, err := rw.Write(jsonData); err != nil {
 			t.Error(err)
 		}
 	}))
-	// Close the server when test finishes
 	defer server.Close()
 
-	// Create a new Watcher instance
 	watcher := NewWatcher(server.URL, false, 30*time.Second)
 
-	// Call getWatcherConfig method
 	serverConfig, err := watcher.getWatcherConfig()
 
-	// Assert there was no error
 	assert.NoError(t, err)
 
-	// Assert the response was as expected
 	expectedUrl, _ := url.Parse("http://localhost:8080")
 	assert.Equal(t, expectedUrl, &serverConfig.ArgoUrl)
 	assert.Equal(t, "https://argo-cd.example.com", serverConfig.ArgoUrlAlias)
@@ -481,7 +457,6 @@ func TestWaitForDeployment(t *testing.T) {
 		},
 	}
 
-	// Run test cases
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			err := client.waitForDeployment(tc.taskId, "test", testVersion)

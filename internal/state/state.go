@@ -41,8 +41,6 @@ func imageNamesOverlap(a, b []models.Image) bool {
 }
 
 // TaskRepository defines the contract for task persistence.
-// Implementations are responsible for connecting to the underlying storage and
-// offering CRUD-like operations for deployment tasks.
 type TaskRepository interface {
 	Connect(serverConfig *config.ServerConfig) error
 	AddTask(task models.Task) (*models.Task, error)
@@ -66,9 +64,7 @@ type TaskRepository interface {
 	ProcessObsoleteTasks(retryTimes uint)
 }
 
-// NewState creates a new task repository based on the provided server configuration.
-// It initializes the appropriate repository according to the StateType field and
-// ensures that the returned implementation is already connected to the storage backend.
+// NewState returns a task repository for the configured StateType, already connected.
 func NewState(serverConfig *config.ServerConfig) (TaskRepository, error) {
 	slog.Debug("Initializing argo-watcher state...")
 	var state TaskRepository

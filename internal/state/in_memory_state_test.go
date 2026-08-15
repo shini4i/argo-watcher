@@ -12,7 +12,6 @@ import (
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
-// createTestTask creates a task with default test values.
 func createTestTask(app string) models.Task {
 	return models.Task{
 		App:     app,
@@ -28,17 +27,13 @@ func createTestTask(app string) models.Task {
 	}
 }
 
-// taskWithImage returns an in-progress task for the given app deploying a single
-// named image, used to exercise image-aware cancellation.
 func taskWithImage(app, image string) models.Task {
 	task := createTestTask(app)
 	task.Images = []models.Image{{Image: image, Tag: "v0.0.1"}}
 	return task
 }
 
-// TestImageNamesOverlap locks the boundary contract of the overlap helper:
-// empty/nil inputs never match, tags are ignored, and a single shared image
-// name (even within larger disjoint sets) counts as an overlap.
+// Tags are ignored, and a single shared image name counts as an overlap.
 func TestImageNamesOverlap(t *testing.T) {
 	tests := []struct {
 		name string
@@ -60,8 +55,6 @@ func TestImageNamesOverlap(t *testing.T) {
 	}
 }
 
-// TestInMemoryState_AddTask verifies that tasks can be added to the in-memory state
-// and receive unique IDs.
 func TestInMemoryState_AddTask(t *testing.T) {
 	state := InMemoryState{}
 
@@ -76,7 +69,6 @@ func TestInMemoryState_AddTask(t *testing.T) {
 	assert.NotEqual(t, firstTask.Id, secondTask.Id, "Each task should have a unique ID")
 }
 
-// TestInMemoryState_GetTask verifies that a task can be retrieved by its ID.
 func TestInMemoryState_GetTask(t *testing.T) {
 	state := InMemoryState{}
 
@@ -90,8 +82,6 @@ func TestInMemoryState_GetTask(t *testing.T) {
 	assert.Equal(t, models.StatusInProgressMessage, retrievedTask.Status)
 }
 
-// TestInMemoryState_GetTask_NotFound verifies that GetTask returns an error
-// when the task ID does not exist.
 func TestInMemoryState_GetTask_NotFound(t *testing.T) {
 	state := InMemoryState{}
 	task, err := state.GetTask("non-existent-id")
@@ -99,8 +89,6 @@ func TestInMemoryState_GetTask_NotFound(t *testing.T) {
 	assert.ErrorIs(t, err, ErrTaskNotFound)
 }
 
-// TestInMemoryState_GetTasks verifies that tasks can be retrieved within a time range
-// and optionally filtered by app name.
 func TestInMemoryState_GetTasks(t *testing.T) {
 	state := InMemoryState{}
 
@@ -148,8 +136,6 @@ func TestInMemoryState_GetTasks(t *testing.T) {
 	})
 }
 
-// TestInMemoryState_GetTasks_EdgeCases verifies edge cases in GetTasks including
-// empty state, pagination, and negative parameters.
 func TestInMemoryState_GetTasks_EdgeCases(t *testing.T) {
 	t.Run("empty state returns empty slice", func(t *testing.T) {
 		state := InMemoryState{}
@@ -213,7 +199,6 @@ func TestInMemoryState_GetTasks_EdgeCases(t *testing.T) {
 	})
 }
 
-// TestInMemoryState_SetTaskStatus verifies that a task's status can be updated.
 func TestInMemoryState_SetTaskStatus(t *testing.T) {
 	state := InMemoryState{}
 
@@ -229,8 +214,6 @@ func TestInMemoryState_SetTaskStatus(t *testing.T) {
 	assert.Equal(t, "deployed successfully", updatedTask.StatusReason)
 }
 
-// TestInMemoryState_SetTaskStatus_NotFound verifies that SetTaskStatus returns an error
-// when the task ID does not exist.
 func TestInMemoryState_SetTaskStatus_NotFound(t *testing.T) {
 	state := InMemoryState{}
 	err := state.SetTaskStatus("non-existent-id", models.StatusDeployedMessage, "")
@@ -238,17 +221,12 @@ func TestInMemoryState_SetTaskStatus_NotFound(t *testing.T) {
 	assert.Equal(t, "task not found", err.Error())
 }
 
-// TestInMemoryState_CancelInProgressTasks verifies that only in-progress tasks
-// for the target app that share an image name with the new deployment are
-// switched to cancelled, and that same-app-different-image tasks, already-
-// finished tasks, and tasks for other apps are left untouched.
 func TestInMemoryState_CancelInProgressTasks(t *testing.T) {
 	state := InMemoryState{}
 
 	inProgress, err := state.AddTask(taskWithImage("app-a", "image-a"))
 	require.NoError(t, err)
 
-	// Same app, but a different image deployed independently.
 	sameAppOtherImage, err := state.AddTask(taskWithImage("app-a", "image-b"))
 	require.NoError(t, err)
 
@@ -259,8 +237,6 @@ func TestInMemoryState_CancelInProgressTasks(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, state.SetTaskStatus(finished.Id, models.StatusDeployedMessage, ""))
 
-	// A new deployment of image-a for app-a supersedes only the in-progress
-	// image-a task.
 	count, err := state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-a", Tag: "v2"}}, "superseded", false)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), count, "only the in-progress app-a task sharing image-a should be cancelled")
@@ -270,17 +246,14 @@ func TestInMemoryState_CancelInProgressTasks(t *testing.T) {
 	assert.Equal(t, models.StatusCancelledMessage, got.Status)
 	assert.Equal(t, "superseded", got.StatusReason)
 
-	// Same app but a different image is untouched.
 	gotSameApp, err := state.GetTask(sameAppOtherImage.Id)
 	require.NoError(t, err)
 	assert.Equal(t, models.StatusInProgressMessage, gotSameApp.Status)
 
-	// A different app is untouched.
 	gotOther, err := state.GetTask(otherApp.Id)
 	require.NoError(t, err)
 	assert.Equal(t, models.StatusInProgressMessage, gotOther.Status)
 
-	// An already-deployed task is untouched.
 	gotFinished, err := state.GetTask(finished.Id)
 	require.NoError(t, err)
 	assert.Equal(t, models.StatusDeployedMessage, gotFinished.Status)
@@ -303,7 +276,6 @@ func TestInMemoryState_CancelInProgressTasks_MultiImageOverlap(t *testing.T) {
 	disjointTask, err := state.AddTask(disjoint)
 	require.NoError(t, err)
 
-	// New deployment shares only image-b with the first task and nothing with the second.
 	count, err := state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-b", Tag: "v2"}, {Image: "image-e", Tag: "v1"}}, "superseded", false)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), count, "only the task sharing an image name should be cancelled")
@@ -317,9 +289,6 @@ func TestInMemoryState_CancelInProgressTasks_MultiImageOverlap(t *testing.T) {
 	assert.Equal(t, models.StatusInProgressMessage, gotDisjoint.Status)
 }
 
-// TestInMemoryState_CancelInProgressTasks_Count verifies the returned count:
-// every matching in-progress task is cancelled (aggregation), and a deployment
-// that overlaps nothing in flight cancels nothing.
 func TestInMemoryState_CancelInProgressTasks_Count(t *testing.T) {
 	state := InMemoryState{}
 
@@ -328,12 +297,10 @@ func TestInMemoryState_CancelInProgressTasks_Count(t *testing.T) {
 	second, err := state.AddTask(taskWithImage("app-a", "image-a"))
 	require.NoError(t, err)
 
-	// No overlap: nothing is cancelled and both tasks stay in progress.
 	count, err := state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-z", Tag: "v1"}}, "superseded", false)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), count, "a deployment sharing no image should cancel nothing")
 
-	// Overlap: both in-progress tasks sharing image-a are cancelled.
 	count, err = state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-a", Tag: "v2"}}, "superseded", false)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), count, "every matching in-progress task must be cancelled")
@@ -420,20 +387,15 @@ func TestInMemoryState_CancelInProgressTasks_AuthorityMixedFleet(t *testing.T) {
 	assert.Equal(t, models.StatusCancelledMessage, gotAnonymous.Status)
 }
 
-// TestInMemoryState_ProcessObsoleteTasks verifies that stale in-progress tasks
-// are marked as aborted after the threshold period.
 func TestInMemoryState_ProcessObsoleteTasks(t *testing.T) {
 	state := InMemoryState{}
 
-	// Add a fresh task
 	freshTask, err := state.AddTask(createTestTask("Fresh"))
 	require.NoError(t, err)
 
-	// Add a stale task by directly manipulating internal state
 	staleTask, err := state.AddTask(createTestTask("Stale"))
 	require.NoError(t, err)
 
-	// Make the stale task appear old by adjusting its Updated timestamp
 	state.mu.Lock()
 	for idx := range state.tasks {
 		if state.tasks[idx].Id == staleTask.Id {
@@ -445,67 +407,53 @@ func TestInMemoryState_ProcessObsoleteTasks(t *testing.T) {
 	// Run processing with 1 attempt (will complete immediately)
 	state.ProcessObsoleteTasks(1)
 
-	// Verify the fresh task is unchanged
 	retrievedFresh, err := state.GetTask(freshTask.Id)
 	require.NoError(t, err)
 	assert.Equal(t, models.StatusInProgressMessage, retrievedFresh.Status)
 
-	// Verify the stale task was marked as aborted with the stale-task reason
 	retrievedStale, err := state.GetTask(staleTask.Id)
 	require.NoError(t, err)
 	assert.Equal(t, models.StatusAborted, retrievedStale.Status)
 	assert.Equal(t, StaleTaskAbortReason, retrievedStale.StatusReason)
 }
 
-// TestInMemoryState_ProcessObsoleteTasks_RemovesAppNotFound verifies that tasks with
-// "app not found" status are removed during obsolete task processing.
 func TestInMemoryState_ProcessObsoleteTasks_RemovesAppNotFound(t *testing.T) {
 	state := InMemoryState{}
 
-	// Add a normal task
 	normalTask, err := state.AddTask(createTestTask("Normal"))
 	require.NoError(t, err)
 
-	// Add a task and set it to "app not found"
 	appNotFoundTask, err := state.AddTask(createTestTask("AppNotFound"))
 	require.NoError(t, err)
 	err = state.SetTaskStatus(appNotFoundTask.Id, models.StatusAppNotFoundMessage, "")
 	require.NoError(t, err)
 
-	// Run processing
 	state.ProcessObsoleteTasks(1)
 
-	// Verify normal task still exists
 	_, err = state.GetTask(normalTask.Id)
 	assert.NoError(t, err)
 
-	// Verify "app not found" task was removed
 	_, err = state.GetTask(appNotFoundTask.Id)
 	assert.ErrorIs(t, err, ErrTaskNotFound)
 }
 
-// TestInMemoryState_Check verifies that the Check method returns true for in-memory state.
 func TestInMemoryState_Check(t *testing.T) {
 	state := InMemoryState{}
 	assert.True(t, state.Check())
 }
 
-// TestInMemoryState_Connect verifies that Connect method returns nil error.
 func TestInMemoryState_Connect(t *testing.T) {
 	state := InMemoryState{}
 	err := state.Connect(nil)
 	assert.NoError(t, err)
 }
 
-// TestInMemoryState_ConcurrentAccess verifies thread safety of the in-memory state
-// by exercising concurrent reads and writes.
 func TestInMemoryState_ConcurrentAccess(t *testing.T) {
 	state := InMemoryState{}
 	var wg sync.WaitGroup
 	taskCount := 50
 	errCh := make(chan error, taskCount)
 
-	// Spawn goroutines to add tasks concurrently
 	for i := 0; i < taskCount; i++ {
 		wg.Add(1)
 		go func(i int) {
@@ -517,7 +465,6 @@ func TestInMemoryState_ConcurrentAccess(t *testing.T) {
 		}(i)
 	}
 
-	// Spawn goroutines to read tasks concurrently
 	for i := 0; i < taskCount; i++ {
 		wg.Add(1)
 		go func() {
@@ -529,12 +476,10 @@ func TestInMemoryState_ConcurrentAccess(t *testing.T) {
 	wg.Wait()
 	close(errCh)
 
-	// Check for any errors from goroutines
 	for err := range errCh {
 		t.Errorf("AddTask failed: %v", err)
 	}
 
-	// Verify all tasks were added
 	tasks, total := state.GetTasks(0, float64(time.Now().Unix())+10, "", "", 0, 0)
 	assert.Equal(t, int64(taskCount), total)
 	assert.Len(t, tasks, taskCount)

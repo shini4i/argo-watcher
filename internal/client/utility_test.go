@@ -27,9 +27,6 @@ func newTestWatcher(url string) *Watcher {
 	return watcher
 }
 
-// flakyTransport fails the first `failures` round-trips with a network error,
-// then delegates to fallback. It counts every attempt so tests can assert how
-// many requests actually left the client.
 type flakyTransport struct {
 	failures int32
 	calls    int32
@@ -44,8 +41,6 @@ func (f *flakyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f.fallback.RoundTrip(req)
 }
 
-// TestGetJSON_RetriesOn5xxThenSucceeds verifies a transient 5xx is retried and
-// the eventual 200 is decoded, rather than aborting the whole process.
 func TestGetJSON_RetriesOn5xxThenSucceeds(t *testing.T) {
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
@@ -69,8 +64,7 @@ func TestGetJSON_RetriesOn5xxThenSucceeds(t *testing.T) {
 	assert.Equal(t, int32(3), calls.Load(), "two 503s then a 200 should be three requests")
 }
 
-// TestGetJSON_RetriesNetworkErrorThenSucceeds verifies a transport-level failure
-// (connection refused/reset, DNS, timeout) is retried.
+// Stands in for the whole transport-failure class: connection refused/reset, DNS, timeout.
 func TestGetJSON_RetriesNetworkErrorThenSucceeds(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		_, _ = rw.Write([]byte(`{"message":"OK"}`))
@@ -91,8 +85,6 @@ func TestGetJSON_RetriesNetworkErrorThenSucceeds(t *testing.T) {
 	assert.Equal(t, int32(3), atomic.LoadInt32(&transport.calls), "two dial failures then success should be three attempts")
 }
 
-// TestGetJSON_ExhaustsRetriesOnPersistent5xx verifies retries are bounded and
-// the final error surfaces the server status.
 func TestGetJSON_ExhaustsRetriesOnPersistent5xx(t *testing.T) {
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
@@ -130,15 +122,12 @@ func TestGetJSON_DoesNotRetryMalformedBody(t *testing.T) {
 	assert.Equal(t, int32(1), calls.Load(), "a malformed 200 body must not be retried")
 }
 
-// TestGetJSON_ExhaustsRetriesOnNetworkError verifies a persistent transport-level
-// failure is retried up to the bound and then surfaces the underlying error.
 func TestGetJSON_ExhaustsRetriesOnNetworkError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		_, _ = rw.Write([]byte(`{"message":"OK"}`))
 	}))
 	defer server.Close()
 
-	// Fail every attempt so the retry budget is exhausted.
 	transport := &flakyTransport{failures: maxTransientRetries + 1, fallback: server.Client().Transport}
 	watcher := newTestWatcher(server.URL)
 	watcher.client.Transport = transport
@@ -172,7 +161,6 @@ func TestGetJSON_DoesNotRetryTerminalError(t *testing.T) {
 }
 
 func TestDoRequest(t *testing.T) {
-	// Test case 1: The server returns a 200 OK status code
 	t.Run("200 status code", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
@@ -192,7 +180,6 @@ func TestDoRequest(t *testing.T) {
 		assert.Equal(t, "OK", string(body))
 	})
 
-	// Test case 2: An error occurs while creating the request
 	t.Run("invalid URL", func(t *testing.T) {
 		watcher := NewWatcher("http://invalid-url", false, 30*time.Second)
 		_, err := watcher.doRequest(http.MethodGet, "http://invalid-url", nil)
@@ -202,42 +189,30 @@ func TestDoRequest(t *testing.T) {
 }
 
 func TestGetJSON(t *testing.T) {
-	// Create a test server
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		// Test request parameters
 		assert.Equal(t, req.URL.String(), "/test")
-		// Send response to be tested
 		if _, err := rw.Write([]byte(`{"message": "OK"}`)); err != nil {
 			t.Error(err)
 		}
 	}))
-	// Close the server when test finishes
 	defer server.Close()
 
-	// Create a new Watcher instance
 	watcher := NewWatcher(server.URL, false, 30*time.Second)
 
-	// Define a struct to hold the response
 	type response struct {
 		Message string `json:"message"`
 	}
 	var resp response
 
-	// Call getJSON method
 	err := watcher.getJSON(server.URL+"/test", &resp)
 
-	// Assert there was no error
 	assert.NoError(t, err)
 
-	// Assert the response was as expected
 	assert.Equal(t, "OK", resp.Message)
 }
 
-// TestGetJSON_NonOKResponseSurfacesBody verifies that when the server returns
-// a non-200 status, the client error includes whatever the server sent in the
-// response body — not just the status code. This is the difference between
-// "received non-200 status code: 401" (useless) and "received status 401:
-// deploy token is invalid" (actionable).
+// The error must carry the server's response body, not just the status code: "received
+// status 401: deploy token is invalid" beats "received non-200 status code: 401".
 func TestGetJSON_NonOKResponseSurfacesBody(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		rw.WriteHeader(http.StatusUnauthorized)
@@ -254,9 +229,6 @@ func TestGetJSON_NonOKResponseSurfacesBody(t *testing.T) {
 	assert.Contains(t, err.Error(), "deploy token is invalid")
 }
 
-// TestServerErrorFromResponse exercises the branches of serverErrorFromResponse
-// directly: the empty-body fallback (status code only), the 401/403 auth hint,
-// and the raw-body fallback when the body is not TaskStatus JSON.
 func TestServerErrorFromResponse(t *testing.T) {
 	const authHint = "check ARGO_WATCHER_DEPLOY_TOKEN or BEARER_TOKEN"
 
@@ -410,7 +382,6 @@ func TestCreateTask(t *testing.T) {
 }
 
 func TestPrintClientConfiguration(t *testing.T) {
-	// Initialize clientConfig
 	clientConfig = &Config{
 		Url:     "http://localhost:8080",
 		Images:  []string{"image1", "image2"},
@@ -423,7 +394,6 @@ func TestPrintClientConfiguration(t *testing.T) {
 		Debug:   true,
 	}
 
-	// Create a Watcher and Task for testing
 	watcher := NewWatcher("http://localhost:8080", true, 30*time.Second)
 	task := models.Task{
 		App:     "test-app",
@@ -441,7 +411,6 @@ func TestPrintClientConfiguration(t *testing.T) {
 		},
 	}
 
-	// Expected output
 	expectedOutput := "Got the following configuration:\n" +
 		"ARGO_WATCHER_URL: http://localhost:8080\n" +
 		"ARGO_APP: test-app\n" +
@@ -451,36 +420,28 @@ func TestPrintClientConfiguration(t *testing.T) {
 		"IMAGES: [{image1 test-tag} {image2 test-tag}]\n\n" +
 		"Neither deploy token nor JSON Web token found, git commit will not be performed\n"
 
-	// Redirect standard output to a buffer
 	oldStdout := os.Stdout
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	// Call the function
 	printClientConfiguration(watcher, task)
 
-	// Restore standard output
 	err := w.Close()
 	assert.NoError(t, err)
 
 	os.Stdout = oldStdout
 
-	// Read the buffer
 	var buf bytes.Buffer
 	_, _ = io.Copy(&buf, r)
 
-	// Compare the buffer's content with the expected output
 	assert.Equal(t, expectedOutput, buf.String())
 }
 
 func TestGenerateAppUrl(t *testing.T) {
 	t.Run("SuccessScenarioAlias", func(t *testing.T) {
-		// Create a test server
 		server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-			// Test request parameters
 			assert.Equal(t, req.URL.String(), "/api/v1/config")
 
-			// Create and send the response data
 			configResponse := struct {
 				ArgoCDURL      url.URL `json:"argo_cd_url"`
 				ArgoCDURLAlias string  `json:"argo_cd_url_alias"`
@@ -497,34 +458,25 @@ func TestGenerateAppUrl(t *testing.T) {
 		}))
 		defer server.Close()
 
-		// Create a new Watcher instance
 		watcher := NewWatcher(server.URL, false, 30*time.Second)
 
-		// Create a Task for testing
 		task := models.Task{
 			App: "test-app",
 		}
 
-		// Call the function
 		appUrl, err := generateAppUrl(watcher, task)
 
-		// Assert no error
 		assert.Nil(t, err)
 
-		// Expected output
 		expectedOutput := "https://argo-cd.example.com/applications/test-app"
 
-		// Compare the function's output with the expected output
 		assert.Equal(t, expectedOutput, appUrl)
 	})
 
 	t.Run("SuccessScenarioNoAlias", func(t *testing.T) {
-		// Create a test server
 		server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-			// Test request parameters
 			assert.Equal(t, req.URL.String(), "/api/v1/config")
 
-			// Create and send the response data
 			configResponse := struct {
 				ArgoCDURL url.URL `json:"argo_cd_url"`
 			}{
@@ -539,25 +491,18 @@ func TestGenerateAppUrl(t *testing.T) {
 		}))
 		defer server.Close()
 
-		// Create a new Watcher instance
 		watcher := NewWatcher(server.URL, false, 30*time.Second)
 
-		// Create a Task for testing
 		task := models.Task{
 			App: "test-app",
-			// other task fields...
 		}
 
-		// Call the function
 		appUrl, err := generateAppUrl(watcher, task)
 
-		// Assert no error
 		assert.Nil(t, err)
 
-		// Expected output
 		expectedOutput := "http://localhost:8080/applications/test-app"
 
-		// Compare the function's output with the expected output
 		assert.Equal(t, expectedOutput, appUrl)
 	})
 
@@ -567,33 +512,26 @@ func TestGenerateAppUrl(t *testing.T) {
 		invalidURL := "http://invalid-url"
 		watcher := newTestWatcher(invalidURL)
 
-		// Create a Task for testing
 		task := models.Task{
 			App: "test-app",
 		}
 
-		// Call the function
 		appUrl, err := generateAppUrl(watcher, task)
 
-		// Assert that an error is returned
 		assert.NotNil(t, err)
 
-		// Assert that the returned URL is empty
 		assert.Equal(t, "", appUrl)
 	})
 }
 
 func TestSetupWatcher(t *testing.T) {
-	// Define the input
 	config := &Config{
 		Url:   "http://localhost:8080",
 		Debug: true,
 	}
 
-	// Call the function
 	watcher := setupWatcher(config)
 
-	// Assert the watcher's properties
 	assert.Equal(t, config.Url, watcher.baseUrl)
 	assert.Equal(t, config.Debug, watcher.debugMode)
 	assert.Equal(t, credential{}, watcher.auth, "a client with no token configured carries no credential")
