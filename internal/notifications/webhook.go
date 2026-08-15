@@ -27,7 +27,6 @@ type NotificationStrategy interface {
 }
 
 // HTTPClient defines the interface for a client that can perform HTTP requests.
-// This allows for mocking in unit tests.
 type HTTPClient interface {
 	Do(req *http.Request) (*http.Response, error)
 }
@@ -77,8 +76,7 @@ type WebhookStrategy struct {
 	template             *template.Template
 }
 
-// NewWebhookStrategy creates and initializes the webhook strategy.
-// It requires an HTTPClient and a non-empty format template, keeping the strategy testable and predictable.
+// NewWebhookStrategy requires an HTTPClient and a non-empty format template.
 func NewWebhookStrategy(cfg *config.WebhookConfig, client HTTPClient) (*WebhookStrategy, error) {
 	if cfg == nil {
 		return nil, errors.New("webhook configuration cannot be nil")

@@ -22,7 +22,6 @@ type MetricsInterface interface {
 	AddUnauthenticatedRead(path, app string)
 }
 
-// Metrics contains all the prometheus collectors.
 type Metrics struct {
 	FailedDeployment     *prometheus.GaugeVec
 	ProcessedDeployments *prometheus.CounterVec
@@ -37,7 +36,7 @@ type Metrics struct {
 	UnauthenticatedReads *prometheus.CounterVec
 }
 
-// NewMetrics creates and registers the metrics with the provided Registerer.
+// NewMetrics registers the collectors with the provided Registerer.
 func NewMetrics(reg prometheus.Registerer) *Metrics {
 	m := &Metrics{
 		FailedDeployment: prometheus.NewGaugeVec(prometheus.GaugeOpts{
@@ -121,22 +120,18 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 	return m
 }
 
-// AddProcessedDeployment increments the ProcessedDeployments counter.
 func (m *Metrics) AddProcessedDeployment(app string) {
 	m.ProcessedDeployments.WithLabelValues(app).Inc()
 }
 
-// AddFailedDeployment increments the FailedDeployment gauge for the given app.
 func (m *Metrics) AddFailedDeployment(app string) {
 	m.FailedDeployment.WithLabelValues(app).Inc()
 }
 
-// ResetFailedDeployment resets the FailedDeployment gauge for the given app.
 func (m *Metrics) ResetFailedDeployment(app string) {
 	m.FailedDeployment.WithLabelValues(app).Set(0)
 }
 
-// SetArgoUnavailable sets the ArgocdUnavailable gauge.
 func (m *Metrics) SetArgoUnavailable(unavailable bool) {
 	if unavailable {
 		m.ArgocdUnavailable.Set(1)
@@ -145,7 +140,7 @@ func (m *Metrics) SetArgoUnavailable(unavailable bool) {
 	}
 }
 
-// SetStateUnavailable sets the StateUnavailable gauge (state backend reachability).
+// SetStateUnavailable sets the StateUnavailable gauge.
 func (m *Metrics) SetStateUnavailable(unavailable bool) {
 	if unavailable {
 		m.StateUnavailable.Set(1)
@@ -154,17 +149,14 @@ func (m *Metrics) SetStateUnavailable(unavailable bool) {
 	}
 }
 
-// AddInProgressTask increments the InProgressTasks gauge.
 func (m *Metrics) AddInProgressTask() {
 	m.InProgressTasks.Inc()
 }
 
-// RemoveInProgressTask decrements the InProgressTasks gauge.
 func (m *Metrics) RemoveInProgressTask() {
 	m.InProgressTasks.Dec()
 }
 
-// ObserveRefreshDuration records how long an ArgoCD refresh request took for the given app.
 func (m *Metrics) ObserveRefreshDuration(app string, seconds float64) {
 	m.RefreshDuration.WithLabelValues(app).Observe(seconds)
 }
@@ -187,8 +179,7 @@ func (m *Metrics) ObserveDeploymentDuration(app string, seconds float64) {
 	m.DeploymentDuration.WithLabelValues(app).Observe(seconds)
 }
 
-// ObserveGitBatchSize records how many applications were coalesced into a single
-// batch write-back flush.
+// ObserveGitBatchSize records how many applications were coalesced into one flush.
 func (m *Metrics) ObserveGitBatchSize(size int) {
 	m.GitBatchSize.Observe(float64(size))
 }

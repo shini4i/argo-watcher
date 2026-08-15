@@ -17,10 +17,8 @@ import (
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
-// TestNewWebhookStrategy tests the constructor for WebhookStrategy.
 func TestNewWebhookStrategy(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
-		// arrange
 		ctrl := gomock.NewController(t)
 		cfg := &config.WebhookConfig{
 			Enabled:              true,
@@ -33,10 +31,8 @@ func TestNewWebhookStrategy(t *testing.T) {
 		}
 		client := mocks.NewMockHTTPClient(ctrl)
 
-		// act
 		service, err := NewWebhookStrategy(cfg, client)
 
-		// assert
 		require.NoError(t, err)
 		assert.NotNil(t, service)
 		assert.Equal(t, cfg.Url, service.url)
@@ -49,16 +45,13 @@ func TestNewWebhookStrategy(t *testing.T) {
 	})
 
 	t.Run("Nil HTTPClient", func(t *testing.T) {
-		// arrange
 		cfg := &config.WebhookConfig{
 			Enabled: true,
 			Format:  `{"id":"{{.Id}}"}`,
 		}
 
-		// act
 		service, err := NewWebhookStrategy(cfg, nil)
 
-		// assert
 		require.Error(t, err)
 		assert.Nil(t, service)
 		assert.Equal(t, "HTTPClient cannot be nil", err.Error())
@@ -103,20 +96,16 @@ func TestNewWebhookStrategy(t *testing.T) {
 	})
 }
 
-// TestSend tests the Send method of the WebhookStrategy.
 func TestSend(t *testing.T) {
 	task := models.Task{Id: "test-task-123"}
 
-	// Pre-compile a valid template for reuse in tests
 	tmpl, err := template.New("webhook").Parse(`{"id":"{{.Id}}"}`)
 	require.NoError(t, err)
 
 	t.Run("Successful Webhook", func(t *testing.T) {
-		// arrange
 		ctrl := gomock.NewController(t)
 		mockClient := mocks.NewMockHTTPClient(ctrl)
 		mockClient.EXPECT().Do(gomock.Any()).DoAndReturn(func(req *http.Request) (*http.Response, error) {
-			// Assert request details
 			assert.Equal(t, http.MethodPost, req.Method)
 			assert.Equal(t, "http://testhost/hook", req.URL.String())
 			assert.Equal(t, "application/json", req.Header.Get("Content-Type"))
@@ -141,48 +130,38 @@ func TestSend(t *testing.T) {
 			template:             tmpl,
 		}
 
-		// act
 		err := service.Send(task)
 
-		// assert
 		assert.NoError(t, err)
 	})
 
 	t.Run("Failed Template Execution", func(t *testing.T) {
-		// arrange
-		// Use a template that requires a field not present in the task model
 		invalidTmpl, err := template.New("webhook").Parse(`{"missing_field":"{{.Missing}}>"}`)
 		require.NoError(t, err)
 
 		service := &WebhookStrategy{
-			template: invalidTmpl, // a template that will fail
+			template: invalidTmpl,
 		}
 
-		// act
 		err = service.Send(task)
 
-		// assert
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to execute webhook template")
 	})
 
 	t.Run("Failed Request Creation", func(t *testing.T) {
-		// arrange
 		service := &WebhookStrategy{
 			url:      ":invalid-url:", // This will cause http.NewRequestWithContext to fail
 			template: tmpl,
 		}
 
-		// act
 		err := service.Send(task)
 
-		// assert
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to create webhook request")
 	})
 
 	t.Run("Client Throws Error", func(t *testing.T) {
-		// arrange
 		ctrl := gomock.NewController(t)
 		mockClient := mocks.NewMockHTTPClient(ctrl)
 		mockClient.EXPECT().Do(gomock.Any()).Return(nil, errors.New("network error"))
@@ -193,16 +172,13 @@ func TestSend(t *testing.T) {
 			template: tmpl,
 		}
 
-		// act
 		err := service.Send(task)
 
-		// assert
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to send webhook: network error")
 	})
 
 	t.Run("Non-Allowed Status Code", func(t *testing.T) {
-		// arrange
 		ctrl := gomock.NewController(t)
 		mockClient := mocks.NewMockHTTPClient(ctrl)
 		mockClient.EXPECT().Do(gomock.Any()).Return(&http.Response{
@@ -217,18 +193,14 @@ func TestSend(t *testing.T) {
 			template:             tmpl,
 		}
 
-		// act
 		err := service.Send(task)
 
-		// assert
 		require.Error(t, err)
 		assert.Equal(t, "received non-allowed status code 500: {\"error\":\"internal server error\"}", err.Error())
 	})
 
 	t.Run("Non-Allowed Status Code with Body Read Error", func(t *testing.T) {
-		// arrange
 		ctrl := gomock.NewController(t)
-		// Custom reader that returns an error on Read
 		errorReader := &errorReader{err: errors.New("read error")}
 
 		mockClient := mocks.NewMockHTTPClient(ctrl)
@@ -244,10 +216,8 @@ func TestSend(t *testing.T) {
 			template:             tmpl,
 		}
 
-		// act
 		err := service.Send(task)
 
-		// assert
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "received non-allowed status code 403, and failed to read response body: read error")
 	})
@@ -280,15 +250,12 @@ func TestNotifierSend(t *testing.T) {
 	})
 }
 
-// NotificationStrategyFunc allows defining inline notification strategies for tests.
 type NotificationStrategyFunc func(models.Task) error
 
-// Send executes the wrapped function.
 func (f NotificationStrategyFunc) Send(task models.Task) error {
 	return f(task)
 }
 
-// errorReader is a helper struct that implements io.Reader and always returns an error.
 type errorReader struct {
 	err error
 }

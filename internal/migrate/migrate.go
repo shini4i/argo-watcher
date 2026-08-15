@@ -11,11 +11,9 @@ import (
 	// the "postgres" driver because it reuses the pgx stack the state layer already
 	// links, instead of pulling a second PostgreSQL driver (lib/pq) into the binary.
 	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
-	// Registers the "file" migration source driver with golang-migrate.
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 )
 
-// migrator is an interface that wraps the Up method for testing.
 type migrator interface {
 	Up() error
 }
@@ -37,7 +35,7 @@ func NewMigrator(cfg *MigrationConfig) (*Migrator, error) {
 	return NewMigratorWithDriver(m), nil
 }
 
-// NewMigratorWithDriver initializes a new Migrator with a provided driver for testing.
+// NewMigratorWithDriver wraps an already-constructed migrate driver.
 func NewMigratorWithDriver(driver migrator) *Migrator {
 	return &Migrator{
 		migrator: driver,

@@ -1,5 +1,3 @@
-// Package migrate handles database migrations. This file defines the
-// configuration loading specific to the migration process.
 package migrate
 
 import (
@@ -11,7 +9,6 @@ import (
 	"github.com/shini4i/argo-watcher/internal/helpers"
 )
 
-// dbConfig holds the database connection components required to build a migration-compatible DSN.
 type dbConfig struct {
 	User           string `env:"DB_USER,required,notEmpty"`
 	Password       string `env:"DB_PASSWORD,required,notEmpty"`
@@ -29,8 +26,7 @@ type MigrationConfig struct {
 	MigrationsPath string
 }
 
-// NewMigrationConfig creates a new configuration by parsing environment variables
-// and constructing a URI-based DSN suitable for golang-migrate.
+// NewMigrationConfig parses environment variables into a URI-based DSN for golang-migrate.
 func NewMigrationConfig() (*MigrationConfig, error) {
 	dbCfg, err := envConfig.ParseAs[dbConfig]()
 	if err != nil {

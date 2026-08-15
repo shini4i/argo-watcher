@@ -12,7 +12,6 @@ import (
 )
 
 func TestMetrics_AddProcessedDeployment(t *testing.T) {
-	// Arrange
 	reg := prometheus.NewRegistry()
 	m := NewMetrics(reg)
 	expectedMetric := `
@@ -21,16 +20,13 @@ func TestMetrics_AddProcessedDeployment(t *testing.T) {
 		processed_deployments{app="test-app"} 1
 	`
 
-	// Act
 	m.AddProcessedDeployment("test-app")
 
-	// Assert
 	err := testutil.CollectAndCompare(m.ProcessedDeployments, strings.NewReader(expectedMetric))
 	assert.NoError(t, err)
 }
 
 func TestMetrics_AddFailedDeployment(t *testing.T) {
-	// Arrange
 	reg := prometheus.NewRegistry()
 	m := NewMetrics(reg)
 	appName := "test-app"
@@ -40,16 +36,13 @@ func TestMetrics_AddFailedDeployment(t *testing.T) {
 		failed_deployment{app="test-app"} 1
 	`
 
-	// Act
 	m.AddFailedDeployment(appName)
 
-	// Assert
 	err := testutil.CollectAndCompare(m.FailedDeployment, strings.NewReader(expectedMetric))
 	assert.NoError(t, err)
 }
 
 func TestMetrics_ResetFailedDeployment(t *testing.T) {
-	// Arrange
 	reg := prometheus.NewRegistry()
 	m := NewMetrics(reg)
 	appName := "test-app"
@@ -61,10 +54,8 @@ func TestMetrics_ResetFailedDeployment(t *testing.T) {
 		failed_deployment{app="test-app"} 0
 	`
 
-	// Act
 	m.ResetFailedDeployment(appName)
 
-	// Assert
 	err := testutil.CollectAndCompare(m.FailedDeployment, strings.NewReader(expectedMetric))
 	assert.NoError(t, err)
 }
@@ -81,14 +72,11 @@ func TestMetrics_SetArgoUnavailable(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Arrange
 			reg := prometheus.NewRegistry()
 			m := NewMetrics(reg)
 
-			// Act
 			m.SetArgoUnavailable(tc.unavailable)
 
-			// Assert
 			assert.Equal(t, tc.expectedValue, testutil.ToFloat64(m.ArgocdUnavailable))
 		})
 	}
@@ -106,21 +94,16 @@ func TestMetrics_SetStateUnavailable(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Arrange
 			reg := prometheus.NewRegistry()
 			m := NewMetrics(reg)
 
-			// Act
 			m.SetStateUnavailable(tc.unavailable)
 
-			// Assert
 			assert.Equal(t, tc.expectedValue, testutil.ToFloat64(m.StateUnavailable))
 		})
 	}
 }
 
-// histogramSampleForApp reads the sample count and sum recorded for a given app label
-// on a HistogramVec, so tests can assert the exact value that was observed.
 func histogramSampleForApp(t *testing.T, vec *prometheus.HistogramVec, app string) (count uint64, sum float64) {
 	t.Helper()
 	obs, err := vec.GetMetricWithLabelValues(app)
@@ -131,43 +114,34 @@ func histogramSampleForApp(t *testing.T, vec *prometheus.HistogramVec, app strin
 }
 
 func TestMetrics_ObserveGitWritebackDuration(t *testing.T) {
-	// Arrange
 	reg := prometheus.NewRegistry()
 	m := NewMetrics(reg)
 
-	// Act
 	m.ObserveGitWritebackDuration("test-app", 3.5)
 
-	// Assert: exactly one observation of the passed value for the app.
 	count, sum := histogramSampleForApp(t, m.GitWritebackDuration, "test-app")
 	assert.Equal(t, uint64(1), count)
 	assert.Equal(t, 3.5, sum)
 }
 
 func TestMetrics_ObserveGitLockWaitDuration(t *testing.T) {
-	// Arrange
 	reg := prometheus.NewRegistry()
 	m := NewMetrics(reg)
 
-	// Act
 	m.ObserveGitLockWaitDuration("test-app", 12)
 
-	// Assert: exactly one observation of the passed value for the app.
 	count, sum := histogramSampleForApp(t, m.GitLockWaitDuration, "test-app")
 	assert.Equal(t, uint64(1), count)
 	assert.Equal(t, float64(12), sum)
 }
 
 func TestMetrics_ObserveGitBatchSize(t *testing.T) {
-	// Arrange
 	reg := prometheus.NewRegistry()
 	m := NewMetrics(reg)
 
-	// Act
 	m.ObserveGitBatchSize(3)
 
-	// Assert: exactly one observation of value 3. GitBatchSize is a plain
-	// Histogram (no per-app label), so read it directly rather than via a Vec.
+	// GitBatchSize is a plain Histogram (no per-app label), so read it directly.
 	var metric dto.Metric
 	require.NoError(t, m.GitBatchSize.Write(&metric))
 	assert.Equal(t, uint64(1), metric.GetHistogram().GetSampleCount())
@@ -175,32 +149,25 @@ func TestMetrics_ObserveGitBatchSize(t *testing.T) {
 }
 
 func TestMetrics_ObserveDeploymentDuration(t *testing.T) {
-	// Arrange
 	reg := prometheus.NewRegistry()
 	m := NewMetrics(reg)
 
-	// Act
 	m.ObserveDeploymentDuration("test-app", 42)
 
-	// Assert: exactly one observation of the passed value for the app.
 	count, sum := histogramSampleForApp(t, m.DeploymentDuration, "test-app")
 	assert.Equal(t, uint64(1), count)
 	assert.Equal(t, float64(42), sum)
 }
 
 func TestMetrics_InProgressTasks(t *testing.T) {
-	// Arrange
 	reg := prometheus.NewRegistry()
 	m := NewMetrics(reg)
 
-	// Assert initial state
 	assert.Equal(t, float64(0), testutil.ToFloat64(m.InProgressTasks))
 
-	// Act: Add a task
 	m.AddInProgressTask()
 	assert.Equal(t, float64(1), testutil.ToFloat64(m.InProgressTasks))
 
-	// Act: Remove a task
 	m.RemoveInProgressTask()
 	assert.Equal(t, float64(0), testutil.ToFloat64(m.InProgressTasks))
 }

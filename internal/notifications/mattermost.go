@@ -84,8 +84,6 @@ func NewMattermostStrategy(cfg *config.MattermostConfig, client HTTPClient) (*Ma
 }
 
 // Send delivers the Mattermost notification for the provided task.
-// A task with the "in progress" status creates a root post whose id is
-// remembered; any other status replies in that post's thread and forgets it.
 func (s *MattermostStrategy) Send(task models.Task) error {
 	var message bytes.Buffer
 	if err := s.template.Execute(&message, task); err != nil {
@@ -128,7 +126,6 @@ func (s *MattermostStrategy) Send(task models.Task) error {
 	return err
 }
 
-// createPost sends POST /api/v4/posts and returns the created post id.
 func (s *MattermostStrategy) createPost(post mattermostPostRequest) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

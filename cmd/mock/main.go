@@ -37,7 +37,6 @@ func setupRouter() *chi.Mux {
 	return router
 }
 
-// writeJSON renders payload as the response body with the given status code.
 func writeJSON(w http.ResponseWriter, status int, payload any) {
 	body, err := json.Marshal(payload)
 	if err != nil {

@@ -8,7 +8,6 @@ import (
 )
 
 func TestInit(t *testing.T) {
-	// A valid level is parsed and applied to the shared levelVar.
 	Init("debug")
 	assert.Equal(t, slog.LevelDebug, levelVar.Level())
 
