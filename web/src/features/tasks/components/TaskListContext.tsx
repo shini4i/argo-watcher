@@ -80,6 +80,7 @@ interface TaskListContextValue {
    * list returns no rows under active filters. Returns an unregister fn.
    */
   readonly registerClearAll: (handler: () => void) => () => void;
+  /** Invokes whichever clear-all handler the current page registered. */
   readonly clearAll: () => void;
 }
 

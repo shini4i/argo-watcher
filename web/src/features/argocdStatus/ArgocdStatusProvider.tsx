@@ -30,6 +30,7 @@ export const ArgocdStatusProvider = ({ children }: { children: ReactNode }) => {
   return <ArgocdStatusContext.Provider value={value}>{children}</ArgocdStatusContext.Provider>;
 };
 
+/** Throws outside an ArgocdStatusProvider. */
 export const useArgocdStatus = (): ArgocdStatusContextValue => {
   const context = useContext(ArgocdStatusContext);
   if (!context) {

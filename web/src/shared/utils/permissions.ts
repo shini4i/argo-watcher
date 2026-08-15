@@ -13,6 +13,7 @@ const getPrivilegedSet = (groups: GroupList): ReadonlySet<string> => {
   return cachedPrivilegedSet;
 };
 
+/** False unless `userGroups` is an array sharing a member with the privileged set. */
 export const hasPrivilegedAccess = (
   userGroups?: GroupList | null,
   privilegedGroups?: GroupList | null,

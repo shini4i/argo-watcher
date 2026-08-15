@@ -33,6 +33,7 @@ const DEFAULT_PRESENTATION: TaskStatusPresentation = {
   pillFgDark: tokens.statusInfoFgDark,
 };
 
+/** An unrecognised status is echoed as its own label with neutral styling. */
 export const describeTaskStatus = (status?: string | null): TaskStatusPresentation => {
   if (!status) {
     return DEFAULT_PRESENTATION;

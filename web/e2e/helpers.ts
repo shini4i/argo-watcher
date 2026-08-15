@@ -96,6 +96,7 @@ export const awaitPermissionsResolved = (page: Page): Promise<unknown> =>
       response.status() === 200,
   );
 
+/** Asserts the browser is no longer parked on the identity provider. */
 export const expectOnApp = (page: Page): void => {
   expect(page.url(), 'expected to be on the application origin').not.toContain(KEYCLOAK_ORIGIN);
 };

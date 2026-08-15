@@ -9,6 +9,7 @@ export interface NormalizedError {
 const isHttpError = (error: unknown): error is HttpError =>
   typeof error === 'object' && error !== null && 'status' in error && 'message' in error;
 
+/** Accepts anything thrown — HttpError, Error, string, or an unrecognised value. */
 export const normalizeError = (error: unknown): NormalizedError => {
   if (isHttpError(error)) {
     return {

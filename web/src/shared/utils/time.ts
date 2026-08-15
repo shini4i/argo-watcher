@@ -33,6 +33,7 @@ const toDate = (value: SupportedTimestamp): Date | null => {
   return new Date(parsed);
 };
 
+/** Returns "—" when the value cannot be parsed as a timestamp. */
 export const formatDateTime = (
   value: SupportedTimestamp,
   locale: string | string[] = 'en-GB',
@@ -48,6 +49,7 @@ export const formatDateTime = (
 
 const pluralize = (value: number, unit: string) => `${value} ${unit}${value === 1 ? '' : 's'}`;
 
+/** Prose form ("2 minutes"); "—" for a negative or non-finite input. */
 export const formatDuration = (seconds: number): string => {
   if (!Number.isFinite(seconds) || seconds < 0) {
     return '—';
@@ -112,6 +114,7 @@ export const formatDurationCompact = (seconds: number): string => {
   return `${days}d ${pad(remHours)}h`;
 };
 
+/** "<duration> ago", never negative; "—" when the value cannot be parsed. */
 export const formatRelativeTime = (value: SupportedTimestamp) => {
   const date = toDate(value);
   if (!date) {
@@ -123,6 +126,7 @@ export const formatRelativeTime = (value: SupportedTimestamp) => {
   return `${formatDuration(differenceSeconds)} ago`;
 };
 
+/** UNIX seconds `offsetSeconds` in the past; a negative or non-finite offset yields now. */
 export const relativeTimestamp = (offsetSeconds: number) => {
   if (!Number.isFinite(offsetSeconds) || offsetSeconds < 0) {
     return Math.floor(Date.now() / 1000);

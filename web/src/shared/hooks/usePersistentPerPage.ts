@@ -22,6 +22,7 @@ const writePerPage = (storageKey: string, value: number) => {
   storage.setItem(storageKey, String(value));
 };
 
+/** Falls back to `fallback` when nothing is stored or the stored value is unusable. */
 export const readPersistentPerPage = (storageKey: string, fallback: number) => readPerPage(storageKey, fallback);
 
 /** Must be rendered within a React-admin `<List>` for the pagination context. */

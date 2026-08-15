@@ -24,6 +24,7 @@ const mondayIndex = (date: Date, mode: TimezoneMode): number => {
   return (day + 6) % 7;
 };
 
+/** 00:00:00.000 on `input`'s day, in the given timezone mode. */
 export const startOfDay = (input: Date, mode: TimezoneMode): Date => {
   const date = new Date(input);
   if (mode === 'utc') {
@@ -34,6 +35,7 @@ export const startOfDay = (input: Date, mode: TimezoneMode): Date => {
   return date;
 };
 
+/** 23:59:59.000 — not .999 — on `input`'s day, in the given timezone mode. */
 export const endOfDay = (input: Date, mode: TimezoneMode): Date => {
   const date = new Date(input);
   if (mode === 'utc') {
@@ -52,6 +54,7 @@ export const ymd = (date: Date, mode: TimezoneMode): { year: number; month: numb
   return { year: date.getFullYear(), month: date.getMonth(), day: date.getDate() };
 };
 
+/** Midnight in `mode` for the given coordinates; `month` is 0-11, as in `Date`. */
 export const dateAt = (year: number, month: number, day: number, mode: TimezoneMode): Date => {
   if (mode === 'utc') {
     return new Date(Date.UTC(year, month, day, 0, 0, 0));
@@ -74,6 +77,7 @@ export const addDays = (date: Date, days: number, mode: TimezoneMode): Date => {
   return next;
 };
 
+/** Compares calendar days in `mode`, ignoring the time of day. */
 export const isSameDay = (a: Date, b: Date, mode: TimezoneMode): boolean => {
   const left = ymd(a, mode);
   const right = ymd(b, mode);
@@ -156,6 +160,7 @@ export const PRESETS: ReadonlyArray<PresetDescriptor> = [
   { id: 'this-month', label: 'This month', compute: thisMonth },
 ];
 
+/** The matching preset id, or null when the range is open or matches none. */
 export const matchPreset = (value: DateRangeValue, mode: TimezoneMode): string | null => {
   if (value.start === null || value.end === null) return null;
   for (const preset of PRESETS) {

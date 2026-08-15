@@ -97,5 +97,6 @@ export const ApplicationFilter = ({
   );
 };
 
+/** The persisted filter, normalised; "" when nothing usable is stored. */
 export const readInitialApplication = (storageKey: string = DEFAULT_STORAGE_KEY): string =>
   readStoredApp(storageKey);

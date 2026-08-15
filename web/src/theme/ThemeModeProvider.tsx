@@ -81,6 +81,7 @@ export const ThemeModeProvider = ({ children }: { children: ReactNode }) => {
   );
 };
 
+/** Throws outside a ThemeModeProvider. */
 export const useThemeMode = (): ThemeModeContextValue => {
   const context = useContext(ThemeModeContext);
   if (!context) {

@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { getBrowserWindow } from '../utils/browser';
 
 export interface FilterFieldSchema<V> {
+  /** Receives null when the param is absent from the URL. */
   readonly fromUrl: (raw: string | null) => V;
   /** Serialises a typed value to a URL search param, or null to drop the param. */
   readonly toUrl: (value: V) => string | null;

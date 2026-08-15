@@ -49,6 +49,7 @@ export class MockWebSocket {
     this.onmessage?.({ data } as { data: string });
   }
 
+  /** Every instance constructed since the last reset, in creation order. */
   static readonly instances: MockWebSocket[] = [];
 
   static reset() {

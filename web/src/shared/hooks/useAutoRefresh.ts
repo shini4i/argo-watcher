@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { getBrowserWindow } from '../utils';
 
+/** A falsy `intervalSeconds` disables the timer. */
 export const useAutoRefresh = (intervalSeconds: number, handler: () => void) => {
   useEffect(() => {
     if (!intervalSeconds) {

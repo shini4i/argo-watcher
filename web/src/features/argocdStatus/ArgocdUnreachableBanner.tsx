@@ -29,6 +29,7 @@ const messageForReason = (reason: ArgocdUnavailableReason): string => {
   }
 };
 
+/** Renders nothing while ArgoCD and its state backend are reachable. */
 export const ArgocdUnreachableBanner = () => {
   const { available, reason } = useArgocdStatus();
 

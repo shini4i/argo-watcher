@@ -36,6 +36,7 @@ export const DeployLockProvider = ({ children }: { children: ReactNode }) => {
   return <DeployLockContext.Provider value={value}>{children}</DeployLockContext.Provider>;
 };
 
+/** Throws outside a DeployLockProvider. */
 export const useDeployLock = (): DeployLockContextValue => {
   const context = useContext(DeployLockContext);
   if (!context) {

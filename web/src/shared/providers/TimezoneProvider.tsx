@@ -57,6 +57,7 @@ export const TimezoneProvider = ({ children }: { children: ReactNode }) => {
   return <TimezoneContext.Provider value={value}>{children}</TimezoneContext.Provider>;
 };
 
+/** Unlike the other context hooks, falls back to UTC outside its provider rather than throwing. */
 export const useTimezone = () => {
   const context = useContext(TimezoneContext);
   if (!context) {

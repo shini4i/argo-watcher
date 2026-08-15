@@ -19,6 +19,7 @@ interface ImageRowProps {
   readonly image: Image;
 }
 
+/** Widest a tag badge may grow, in px, before its label is ellipsised. */
 export const TAG_MAX_WIDTH = 120;
 
 /**

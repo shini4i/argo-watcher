@@ -10,6 +10,7 @@ const snackbarPosition: SxProps<Theme> = theme => ({
   },
 });
 
+/** Renders nothing when the lock is off, or when the reachability banner owns the slot. */
 export const DeployLockBanner = () => {
   const locked = useDeployLockState();
   const argocdUnreachable = useArgocdUnreachable();
