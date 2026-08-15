@@ -62,7 +62,7 @@ func TestBatcher_IdleKeyFlushesImmediately(t *testing.T) {
 
 	started := make(chan int, 1)
 	release := make(chan struct{})
-	close(release) // never block
+	close(release)
 	b.flushFn = gatedFlush(started, release, nil)
 
 	require.NoError(t, b.Submit(newBatchReq("repo", "main")))
@@ -78,11 +78,9 @@ func TestBatcher_CoalescesRequestsDuringInFlightFlush(t *testing.T) {
 	b.flushFn = gatedFlush(started, release, nil)
 
 	done := make(chan error, 3)
-	// First request: idle key, its flush starts immediately and blocks on release.
 	go func() { done <- b.Submit(newBatchReq("repo", "main")) }()
 	assert.Equal(t, 1, <-started, "req1 flushes alone")
 
-	// Two more arrive while flush #1 is in flight: they coalesce into pending.
 	go func() { done <- b.Submit(newBatchReq("repo", "main")) }()
 	go func() { done <- b.Submit(newBatchReq("repo", "main")) }()
 	waitForPendingLen(t, b, key, 2)
@@ -115,13 +113,11 @@ func TestBatcher_SizeCapBoundsFlush(t *testing.T) {
 		}
 	}
 
-	// First request starts an immediate flush that blocks on release.
 	r0 := newBatchReq("repo", "main")
 	done := make(chan error, 5)
 	go func() { done <- b.Submit(r0) }()
 	assert.Equal(t, 1, <-started)
 
-	// Four more coalesce while flush #1 is in flight.
 	rest := make([]*batchWriteRequest, 4)
 	for i := range rest {
 		rest[i] = newBatchReq("repo", "main")
@@ -131,7 +127,6 @@ func TestBatcher_SizeCapBoundsFlush(t *testing.T) {
 	waitForPendingLen(t, b, key, 4)
 
 	close(release)
-	// The 4 queued are drained in caps of 2: two flushes of size 2.
 	assert.Equal(t, 2, <-started)
 	assert.Equal(t, 2, <-started)
 	for i := 0; i < 5; i++ {
@@ -159,7 +154,6 @@ func TestBatcher_FanOutDeliversPerRequestOutcome(t *testing.T) {
 	b.flushFn = func(batch []*batchWriteRequest) {
 		started <- len(batch)
 		<-release
-		// Deliver a distinct outcome per request by position.
 		for i, req := range batch {
 			if i == 1 {
 				req.resultCh <- errForSecond
@@ -340,7 +334,7 @@ func TestBatcher_CloseSignalsDrain(t *testing.T) {
 	}
 
 	b.Close(context.Background())
-	b.Close(context.Background()) // must not panic on a second close
+	b.Close(context.Background())
 
 	select {
 	case <-b.drainCh:

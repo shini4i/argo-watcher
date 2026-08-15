@@ -150,9 +150,6 @@ func TestNewBatchConfig(t *testing.T) {
 	})
 }
 
-// TestLegacyGitTimeoutMapping covers the backward-compat shim that maps the
-// deprecated GIT_TIMEOUT directly to GIT_OP_TIMEOUT (1:1, no division), so
-// the per-attempt budget is unchanged for operators that have not migrated.
 func TestLegacyGitTimeoutMapping(t *testing.T) {
 	t.Run("GIT_TIMEOUT alone is used directly as GIT_OP_TIMEOUT", func(t *testing.T) {
 		t.Setenv("SSH_KEY_PATH", "/test/key")
@@ -171,8 +168,6 @@ func TestLegacyGitTimeoutMapping(t *testing.T) {
 		t.Setenv("SSH_KEY_PATH", "/test/key")
 		t.Setenv("GIT_TIMEOUT", "2m")
 		t.Setenv("GIT_MAX_ATTEMPTS", "4")
-		// Still a 1:1 map: GIT_OP_TIMEOUT = 2m.
-		// GIT_MAX_ATTEMPTS only affects total wall-clock ceiling, not the per-attempt budget.
 
 		config, err := NewGitConfig()
 

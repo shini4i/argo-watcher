@@ -34,9 +34,8 @@ type GitConfig struct {
 	// competing writer (another argo-watcher instance, other CI, or a human)
 	// advances the branch, each write-back attempt re-fetches, re-applies, and
 	// re-pushes. Combined with tight early backoff, 5 attempts clear typical
-	// contention; the old default of 3 gave up too soon. A superseded task aborts
-	// the loop early, so a larger budget does not let an older deployment
-	// overwrite a newer one.
+	// contention. A superseded task aborts the loop early, so raising this budget
+	// cannot let an older deployment overwrite a newer one.
 	GitMaxAttempts uint `env:"GIT_MAX_ATTEMPTS" envDefault:"5"`
 }
 
@@ -98,11 +97,9 @@ func NewGitConfig() (*GitConfig, error) {
 	return &config, nil
 }
 
-// applyLegacyGitTimeout maps the deprecated GIT_TIMEOUT env var to GIT_OP_TIMEOUT
-// when the latter was not set explicitly. The mapping is 1:1 — GIT_TIMEOUT is used
-// directly as GIT_OP_TIMEOUT — to preserve the original per-call budget unchanged.
-// Retries are opt-in via GIT_MAX_ATTEMPTS; the old single-attempt wall clock is
-// preserved per attempt rather than divided across retries.
+// applyLegacyGitTimeout maps the deprecated GIT_TIMEOUT to GIT_OP_TIMEOUT when the
+// latter was not set explicitly. Retries are opt-in via GIT_MAX_ATTEMPTS; the old
+// single-attempt wall clock is preserved per attempt, not divided across retries.
 func applyLegacyGitTimeout(config *GitConfig) error {
 	legacyRaw, legacySet := os.LookupEnv("GIT_TIMEOUT")
 	if !legacySet {

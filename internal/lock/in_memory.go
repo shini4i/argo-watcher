@@ -2,20 +2,17 @@ package lock
 
 import "sync"
 
-// mutexMap is a thread-safe map to hold mutexes for different keys.
 type mutexMap struct {
 	mu sync.Mutex
 	m  map[string]*sync.Mutex
 }
 
-// newMutexMap creates a new, initialized mutexMap.
 func newMutexMap() *mutexMap {
 	return &mutexMap{
 		m: make(map[string]*sync.Mutex),
 	}
 }
 
-// get returns the mutex for a given key, creating it if it doesn't exist.
 func (m *mutexMap) get(key string) *sync.Mutex {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -27,8 +24,7 @@ func (m *mutexMap) get(key string) *sync.Mutex {
 	return mu
 }
 
-// InMemoryLocker is an implementation of the Locker interface that uses
-// an in-memory mutex map.
+// InMemoryLocker is a Locker backed by an in-memory mutex map.
 type InMemoryLocker struct {
 	mutexMap *mutexMap
 }

@@ -23,7 +23,6 @@ type userInfoResponse struct {
 	Groups   []string `json:"groups"`
 }
 
-// discoveryDocument is the subset of the OIDC discovery metadata we consume.
 type discoveryDocument struct {
 	UserinfoEndpoint string `json:"userinfo_endpoint"`
 }
@@ -294,8 +293,6 @@ func (o *OIDCAuthService) allowedToRollback(username string, groups []string) bo
 	return false
 }
 
-// closeBody closes an HTTP response body and logs any error, keeping the call
-// sites free of repeated deferred-close boilerplate.
 func closeBody(body io.ReadCloser) {
 	if err := body.Close(); err != nil {
 		slog.Error("error closing response body", "error", err)

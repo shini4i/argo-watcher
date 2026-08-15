@@ -60,7 +60,6 @@ func CurlCommandFromRequest(request *http.Request, redactHeaders ...string) (str
 	}
 
 	if len(clonedRequest) > 0 {
-		// Skip past the request line and headers to the body.
 		headerEndIndex := strings.Index(string(clonedRequest), "\r\n\r\n")
 		if headerEndIndex != -1 && headerEndIndex+4 <= len(clonedRequest) {
 			body := string(clonedRequest[headerEndIndex+4:])
@@ -103,7 +102,7 @@ func GenerateHash(s string) []byte {
 	return hash.Sum(nil)
 }
 
-// NormalizeImages returns a sorted copy of the provided image slice to guarantee stable ordering without mutating the original.
+// NormalizeImages returns a sorted copy, leaving the original untouched.
 func NormalizeImages(images []string) []string {
 	copied := append([]string(nil), images...)
 	slices.Sort(copied)

@@ -117,8 +117,6 @@ func TestLockdown_SetLock_ReleaseLock(t *testing.T) {
 	}
 }
 
-// TestLockdown_ReleaseLockOverride covers the temporary override that releasing
-// the lock creates while a scheduled lockdown is active, and its expiry.
 func TestLockdown_ReleaseLockOverride(t *testing.T) {
 	t.Run("release overrides an active scheduled lockdown", func(t *testing.T) {
 		l := newTestLockdown(t, "")
@@ -310,7 +308,7 @@ func TestTimeWithinSchedule(t *testing.T) {
 			endDay:    time.Monday,
 			startHour: 10,
 			startMin:  0,
-			endHour:   10, // end time is earlier than current time in hours
+			endHour:   10,
 			endMin:    30,
 			expected:  false, // because 11:00 on Monday is after the end time on Monday
 		},
@@ -375,12 +373,10 @@ func TestNewLockdown(t *testing.T) {
 	}
 }
 
-// TestLockdown_ConcurrentAccess verifies that the lockdown struct is thread-safe.
 func TestLockdown_ConcurrentAccess(t *testing.T) {
 	l := newTestLockdown(t, "")
 	var wg sync.WaitGroup
 
-	// Multiple goroutines setting and releasing locks
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
 		go func() {
@@ -396,17 +392,13 @@ func TestLockdown_ConcurrentAccess(t *testing.T) {
 		}()
 	}
 
-	// Wait for all goroutines to complete
 	wg.Wait()
 
 	// No race conditions should have occurred (test passes if no data race detected with -race flag)
 	assert.False(t, l.IsLocked())
 }
 
-// TestLockdown_WatchTransitions verifies that the watcher notifies clients only
-// when the computed lock state actually changes, and that it stops on request.
 func TestLockdown_WatchTransitions(t *testing.T) {
-	// recv waits for a single message or fails the test on timeout.
 	recv := func(t *testing.T, msgs <-chan string) string {
 		t.Helper()
 		select {
@@ -460,8 +452,6 @@ func TestLockdown_WatchTransitions(t *testing.T) {
 	})
 
 	t.Run("notifies on a schedule-derived transition", func(t *testing.T) {
-		// A schedule window spanning four minutes around now locks the system
-		// without a manual lock, so the transition below is schedule-derived.
 		l := newTestLockdown(t, "")
 		l.Schedules = []LockdownSchedule{scheduleAround(-2*time.Minute, 2*time.Minute)}
 		assert.True(t, l.IsLocked(), "schedule should lock the system at baseline")
@@ -491,7 +481,6 @@ func TestLockdown_WatchTransitions(t *testing.T) {
 		case m := <-msgs:
 			t.Fatalf("unexpected notification: %q", m)
 		case <-time.After(50 * time.Millisecond):
-			// no transition occurred, so no notification is expected
 		}
 	})
 
@@ -510,7 +499,6 @@ func TestLockdown_WatchTransitions(t *testing.T) {
 		case m := <-msgs:
 			t.Fatalf("unexpected notification while the store was failing: %q", m)
 		case <-time.After(50 * time.Millisecond):
-			// staying silent is the expected outcome
 		}
 	})
 
@@ -528,15 +516,12 @@ func TestLockdown_WatchTransitions(t *testing.T) {
 
 		select {
 		case <-done:
-			// returned as expected
 		case <-time.After(time.Second):
 			t.Fatal("WatchTransitions did not return after stop was closed")
 		}
 	})
 }
 
-// TestLockdown_IsLockedWith covers how the shared state and the local schedules
-// combine into the resolved lock state.
 func TestLockdown_IsLockedWith(t *testing.T) {
 	now := time.Now()
 	openWindow := scheduleAround(-2*time.Minute, 2*time.Minute)

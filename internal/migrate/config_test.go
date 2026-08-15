@@ -1,4 +1,3 @@
-// internal/migrate/config_test.go
 package migrate
 
 import (
@@ -11,9 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestNewMigrationConfig_Success tests that the default configuration is loaded correctly.
 func TestNewMigrationConfig_Success(t *testing.T) {
-	// Arrange
 	t.Setenv("DB_HOST", "localhost")
 	t.Setenv("DB_PORT", "5432")
 	t.Setenv("DB_USER", "testuser")
@@ -23,21 +20,14 @@ func TestNewMigrationConfig_Success(t *testing.T) {
 	// Unset the custom path to ensure the default is used.
 	t.Setenv("DB_MIGRATIONS_PATH", "")
 
-	// Act
 	cfg, err := NewMigrationConfig()
 
-	// Assert
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
 	assert.Equal(t, "/app/db/migrations", cfg.MigrationsPath)
-	// Verify the DSN is assembled correctly: DB_SSL_MODE flows into the sslmode
-	// segment, the password's special characters are URL-escaped, and the default
-	// connect_timeout (10s) is appended so an unreachable database fails fast.
 	assert.Equal(t, "pgx5://testuser:testpassword%21%40%23@localhost:5432/testdb?sslmode=require&connect_timeout=10", cfg.DSN)
 }
 
-// TestNewMigrationConfig_ConnectTimeoutOverride verifies DB_CONNECT_TIMEOUT flows
-// into the connect_timeout segment of the migration DSN.
 func TestNewMigrationConfig_ConnectTimeoutOverride(t *testing.T) {
 	t.Setenv("DB_HOST", "localhost")
 	t.Setenv("DB_PORT", "5432")
@@ -72,9 +62,7 @@ func TestNewMigrationConfig_SchemeIsRegisteredDriver(t *testing.T) {
 	assert.Contains(t, database.List(), parsed.Scheme)
 }
 
-// TestNewMigrationConfig_CustomPath tests that a custom migration path from env vars is used.
 func TestNewMigrationConfig_CustomPath(t *testing.T) {
-	// Arrange
 	t.Setenv("DB_HOST", "localhost")
 	t.Setenv("DB_PORT", "5432")
 	t.Setenv("DB_USER", "testuser")
@@ -82,10 +70,8 @@ func TestNewMigrationConfig_CustomPath(t *testing.T) {
 	t.Setenv("DB_NAME", "testdb")
 	t.Setenv("DB_MIGRATIONS_PATH", "/my/custom/path")
 
-	// Act
 	cfg, err := NewMigrationConfig()
 
-	// Assert
 	require.NoError(t, err)
 	assert.Equal(t, "/my/custom/path", cfg.MigrationsPath)
 }
@@ -114,16 +100,11 @@ func TestNewMigrationConfig_ConnectTimeoutRejectsNonPositive(t *testing.T) {
 	}
 }
 
-// TestNewMigrationConfig_ValidationError tests the failure case where a required
-// environment variable is missing. This test covers the validation error path.
 func TestNewMigrationConfig_ValidationError(t *testing.T) {
-	// Arrange
 	os.Clearenv() // Ensure no conflicting variables are set.
 
-	// Act
 	cfg, err := NewMigrationConfig()
 
-	// Assert
 	require.Error(t, err)
 	assert.Nil(t, cfg)
 	assert.Contains(t, err.Error(), "missing required environment variables")

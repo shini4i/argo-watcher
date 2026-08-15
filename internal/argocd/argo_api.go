@@ -78,16 +78,15 @@ func (api *ArgoApi) Init(serverConfig *config.ServerConfig) error {
 	return nil
 }
 
-// doGet creates a GET request for the given URL, sets the Accept header for JSON responses,
-// executes it with retry logic for transient transport errors, and returns the response body
-// bytes along with the HTTP status code. Only the HTTP round-trip is retried; request creation
-// and body reading errors are not retried. HTTP error responses (4xx, 5xx) are valid API
-// responses and are returned as-is without retry.
+// doGet executes a GET against reqURL and returns the response body and status code.
+// Only the HTTP round-trip is retried; request creation and body reading errors are
+// not. HTTP error responses (4xx, 5xx) are valid API responses and are returned as-is
+// without retry.
 //
-// The supplied context bounds both the in-flight HTTP round-trip and the retry/backoff loop:
-// once it is cancelled or its deadline is exceeded, any pending request is aborted and no
-// further attempts are made, so a slow ArgoCD cannot stretch a single call past the caller's
-// deadline.
+// The supplied context bounds both the in-flight round-trip and the retry/backoff loop:
+// once it is cancelled or its deadline is exceeded, any pending request is aborted and
+// no further attempts are made, so a slow ArgoCD cannot stretch a single call past the
+// caller's deadline.
 func (api *ArgoApi) doGet(ctx context.Context, reqURL string) ([]byte, int, error) {
 	req, err := api.requestFn("GET", reqURL, nil)
 	if err != nil {
@@ -144,8 +143,6 @@ func (e *ArgoAPIError) Error() string {
 	return e.Message
 }
 
-// parseArgoErrorResponse builds an *ArgoAPIError from a non-200 ArgoCD API response.
-// It checks the message field first, then the error field, and falls back to the raw body.
 func parseArgoErrorResponse(statusCode int, body []byte) error {
 	var argoErrorResponse models.ArgoApiErrorResponse
 	if err := json.Unmarshal(body, &argoErrorResponse); err != nil {

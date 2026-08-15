@@ -16,18 +16,11 @@ type safeFileSystem struct {
 	basePath string
 }
 
-// validatePath checks if a path is safe before any I/O operations.
-// Returns the cleaned path if valid, or an error if the path would escape the base directory.
-// This performs validation without any I/O operations by checking the cleaned path.
 func (fs safeFileSystem) validatePath(name string) (string, error) {
-	// Clean the path to remove any .. or . components
 	cleanName := filepath.Clean("/" + name)
 
-	// Construct the would-be full path and verify it stays within bounds
-	// filepath.Join handles path separators and cleaning
 	fullPath := filepath.Join(fs.basePath, cleanName)
 
-	// Clean the full path to resolve any remaining . or .. components
 	cleanedFull := filepath.Clean(fullPath)
 
 	// Verify the cleaned path is still within the base directory
@@ -43,9 +36,8 @@ func (fs safeFileSystem) validatePath(name string) (string, error) {
 	return cleanName, nil
 }
 
-// Open implements http.FileSystem interface with path validation and symlink protection.
+// Open rejects any name that escapes the root, including via a symlink.
 func (fs safeFileSystem) Open(name string) (http.File, error) {
-	// Validate path before any I/O operation
 	cleanName, err := fs.validatePath(name)
 	if err != nil {
 		return nil, err
@@ -58,7 +50,6 @@ func (fs safeFileSystem) Open(name string) (http.File, error) {
 		return nil, err
 	}
 
-	// Additional symlink protection: verify the real path is within bounds
 	osFile, ok := f.(*os.File)
 	if !ok {
 		return f, nil
@@ -82,19 +73,15 @@ func (fs safeFileSystem) Open(name string) (http.File, error) {
 	return f, nil
 }
 
-// createStaticFileHandler returns a handler for serving static files with SPA fallback.
-// It attempts to serve the requested file, falling back to index.html for SPA routing.
 func (env *Env) createStaticFileHandler(fs safeFileSystem, staticPath string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if tryServeStaticFile(w, r, fs) {
 			return
 		}
-		// Fall back to index.html for SPA routing
 		http.ServeFile(w, r, filepath.Join(staticPath, "index.html"))
 	}
 }
 
-// tryServeStaticFile attempts to serve a static file and returns true if successful.
 func tryServeStaticFile(w http.ResponseWriter, r *http.Request, fs safeFileSystem) bool {
 	f, err := fs.Open(r.URL.Path)
 	if err != nil {

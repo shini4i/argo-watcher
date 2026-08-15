@@ -28,8 +28,7 @@ const (
 	// transient failure (network error or 5xx) before giving up. Deployments
 	// can poll for many minutes, so a single blip must not abort the process.
 	maxTransientRetries = 3
-	// defaultRetryDelay is the fixed backoff between transient retries.
-	defaultRetryDelay = 2 * time.Second
+	defaultRetryDelay   = 2 * time.Second
 )
 
 type Watcher struct {
@@ -75,8 +74,6 @@ func credentialFrom(config *Config) credential {
 	}
 }
 
-// apply sets the credential on a request, leaving it untouched when no credential is
-// configured or the configured value is empty.
 func (c credential) apply(request *http.Request) {
 	if c.header == "" || c.value == "" {
 		return
@@ -118,8 +115,7 @@ func dropCredentialOnHostChange(request *http.Request, via []*http.Request) erro
 	return nil
 }
 
-// addTask adds a given task to the watcher, presenting the watcher's credential.
-// It returns the task ID or an error.
+// addTask presents the watcher's credential and returns the new task ID.
 func (watcher *Watcher) addTask(task models.Task) (string, error) {
 	requestBody, err := json.Marshal(task)
 	if err != nil {
@@ -174,8 +170,6 @@ func (watcher *Watcher) addTask(task models.Task) (string, error) {
 	return accepted.Id, nil
 }
 
-// getTaskStatus retrieves the status of the task identified by the given ID,
-// returning a TaskStatus or an error.
 func (watcher *Watcher) getTaskStatus(id string) (*models.TaskStatus, error) {
 	url := fmt.Sprintf("%s/api/v1/tasks/%s", watcher.baseUrl, id)
 	var taskStatus models.TaskStatus
@@ -185,8 +179,6 @@ func (watcher *Watcher) getTaskStatus(id string) (*models.TaskStatus, error) {
 	return &taskStatus, nil
 }
 
-// getWatcherConfig retrieves the watcher's server configuration,
-// returning a ServerConfig or an error.
 func (watcher *Watcher) getWatcherConfig() (*config.ServerConfig, error) {
 	url := fmt.Sprintf("%s/api/v1/config", watcher.baseUrl)
 	var serverConfig config.ServerConfig
@@ -196,8 +188,6 @@ func (watcher *Watcher) getWatcherConfig() (*config.ServerConfig, error) {
 	return &serverConfig, nil
 }
 
-// waitForDeployment waits for the deployment identified by the given ID,
-// performing retries if necessary, and returns an error if deployment fails.
 func (watcher *Watcher) waitForDeployment(id, appName, version string) error {
 	retryCount := 0
 
@@ -238,9 +228,6 @@ func (watcher *Watcher) waitForDeployment(id, appName, version string) error {
 	}
 }
 
-// handleDeploymentError logs the given error,
-// generates an application URL in case of deployment failure
-// and exits the program with code 1.
 func handleDeploymentError(watcher *Watcher, task models.Task, err error) {
 	log.Println(err)
 	if strings.Contains(err.Error(), "The deployment has failed") {
@@ -253,20 +240,15 @@ func handleDeploymentError(watcher *Watcher, task models.Task, err error) {
 	os.Exit(1)
 }
 
-// handleFatalError logs a provided error message and terminates the program with status 1.
 func handleFatalError(err error, message string) {
 	log.Fatalf("%s Got the following error: %s", message, err)
 }
 
-// isDeploymentOverTime checks if the deployment has exceeded the expected deployment time,
-// returning a boolean value.
 func isDeploymentOverTime(retryCount int, retryInterval time.Duration, expectedDeploymentTime time.Duration) bool {
 	return time.Duration(retryCount)*retryInterval > expectedDeploymentTime
 }
 
-// Run initializes the client configuration, sets up the watcher,
-// creates the task, adds the task to the watcher,
-// waits for deployment and handles any errors in the process.
+// Run is the client entrypoint: it builds the task, submits it, and waits for the deployment.
 func Run() {
 	var err error
 
@@ -288,7 +270,6 @@ func Run() {
 		handleFatalError(err, "Couldn't add task.")
 	}
 
-	// Giving Argo-Watcher some time to process the task
 	time.Sleep(5 * time.Second)
 
 	if err = watcher.waitForDeployment(id, task.App, clientConfig.Tag); err != nil {

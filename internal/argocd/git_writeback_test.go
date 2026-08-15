@@ -124,7 +124,6 @@ func TestExtractManagedImages(t *testing.T) {
 	}
 }
 
-// newAppWithImages builds an Application with managed-image annotations for testing.
 func newAppWithImages(name string) *models.Application {
 	return &models.Application{
 		Metadata: models.ApplicationMetadata{
@@ -137,7 +136,6 @@ func newAppWithImages(name string) *models.Application {
 	}
 }
 
-// newImageTask builds a Task with a single image for testing.
 func newImageTask() *models.Task {
 	return &models.Task{
 		Id: "test-id",
@@ -357,7 +355,6 @@ func TestUpdateGitImageTag(t *testing.T) {
 		const branchName = "master"
 		const repoURL = "git@example.com:test/recovery-race.git"
 
-		// 1. Create a bare remote with an initial empty commit.
 		remotePath := t.TempDir()
 		sourcePath := t.TempDir()
 		sourceRepo, err := gogit.PlainInit(sourcePath, false)
@@ -465,7 +462,6 @@ func TestUpdateGitImageTag(t *testing.T) {
 		mockHandler := mocks.NewMockGitHandler(ctrl)
 		mockHandler.EXPECT().AddSSHKey(gomock.Any(), gomock.Any(), gomock.Any()).
 			Return(nil, nil).AnyTimes()
-		// Both attempts fail at the clone step. Default cache-miss path on each.
 		mockHandler.EXPECT().PlainOpen(gomock.Any()).
 			Return(nil, gogit.ErrRepositoryNotExists).Times(2)
 		mockHandler.EXPECT().PlainClone(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
@@ -485,7 +481,6 @@ func TestUpdateGitImageTag(t *testing.T) {
 		)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "git update failed after 2 attempts")
-		// Verify the original error is preserved through the wrap chain.
 		assert.Contains(t, err.Error(), "upstream unreachable")
 	})
 

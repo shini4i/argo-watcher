@@ -1,7 +1,6 @@
-// Package updater provides the core logic for interacting with Git repositories.
-// This includes cloning, caching, updating, and pushing changes to application manifests.
-// It is designed to be safe for concurrent use, with locking mechanisms handled upstream
-// and a robust caching strategy to ensure efficiency and resilience.
+// Package updater clones, caches, updates and pushes application manifests in Git.
+// Concurrent write-back to one repository must be serialised by the caller; that
+// locking lives upstream, not in this package.
 package updater
 
 import (
@@ -41,35 +40,27 @@ type ArgoParameterOverride struct {
 	ForceString bool   `yaml:"forceString"`
 }
 
-// GitRepo encapsulates all the necessary information and state for performing
-// operations on a single Git repository branch.
+// GitRepo holds the state for operations on a single Git repository branch.
 type GitRepo struct {
 	// RepoURL is the SSH URL of the repository to be cloned.
-	RepoURL string
-	// BranchName is the target branch for all operations.
+	RepoURL    string
 	BranchName string
 	// Path is the directory within the repository where the manifest file is located.
-	Path string
-	// FileName is the name of the override file to be updated.
-	FileName string
-	// repoCachePath is the base directory on the local filesystem for storing cached repositories.
+	Path          string
+	FileName      string
 	repoCachePath string
 	// localRepoPath is the full path to the cached clone of this specific repository and branch.
 	localRepoPath string
-	// localRepo is the go-git object representing the repository on disk.
-	localRepo *git.Repository
-	// sshAuth holds the SSH authentication method.
-	sshAuth *ssh.PublicKeys
+	localRepo     *git.Repository
+	sshAuth       *ssh.PublicKeys
 	// gitConfig contains user-configurable git settings like commit author and email.
-	gitConfig *GitConfig
-	// GitHandler is an interface for git operations, allowing for easier testing and mocking.
+	gitConfig  *GitConfig
 	GitHandler GitHandler
 }
 
 // getRepoCachePath generates a unique, deterministic local path for the repository cache.
-// It uses an FNV-1a hash of the combined repository URL and branch name to ensure that
-// concurrent operations on different branches of the same repository do not conflict.
-// This approach provides filesystem-level isolation.
+// Hashing URL+branch gives filesystem-level isolation, so concurrent operations on
+// different branches of the same repository do not conflict.
 func (repo *GitRepo) getRepoCachePath() string {
 	hasher := fnv.New64a()
 	// The Write method on hash.Hash is documented to never return an error.
@@ -78,16 +69,13 @@ func (repo *GitRepo) getRepoCachePath() string {
 	return filepath.Join(repo.repoCachePath, strconv.FormatUint(hashUint64, 16))
 }
 
-// Clone handles the initial setup of the local repository cache.
+// Clone handles the initial setup of the local repository cache. A cache that opens
+// cleanly and has an "origin" remote is fetched and hard-reset to the remote branch
+// HEAD, so the worktree is always clean and at origin on return; anything else
+// (missing, corrupt, no "origin") is re-cloned from scratch rather than repaired.
 //
-// The logic is designed to be resilient against incomplete or corrupt clones. It first attempts
-// to open an existing repository at the expected cache path.
-//   - If opening succeeds, it means a valid cache exists. The function then proceeds to fetch the
-//     latest changes from the remote and performs a hard reset to ensure the working directory
-//     is clean and up-to-date with the remote branch's HEAD.
-//   - If opening fails (for any reason, including the directory not existing or being corrupt),
-//     the function assumes the cache is invalid. It safely removes the directory and then
-//     performs a fresh, single-branch clone from the remote.
+// commitLocal's byte-compare skip depends on that reset: it treats equal bytes as
+// "no change", which only holds because this function leaves the worktree at origin.
 //
 // Both the fresh clone and the warm-cache fetch are shallow (Depth:1, no tags):
 // argo-watcher only reads the branch tip and commits one file on top of it, so
@@ -113,13 +101,10 @@ func (repo *GitRepo) Clone(ctx context.Context) error {
 
 	repo.localRepo, err = repo.GitHandler.PlainOpen(repo.localRepoPath)
 	if err == nil {
-		// If open succeeded, ensure the 'origin' remote exists.
 		_, err = repo.localRepo.Remote("origin")
 	}
 
-	// Handle the case where the cache is invalid or does not exist.
 	if err != nil {
-		// Differentiate between a simple "not found" and a real corruption issue for logging.
 		if errors.Is(err, git.ErrRepositoryNotExists) {
 			slog.Debug("No cache found for repo, cloning fresh", "repo", repo.RepoURL, "path", repo.localRepoPath)
 		} else {
@@ -129,7 +114,6 @@ func (repo *GitRepo) Clone(ctx context.Context) error {
 			}
 		}
 
-		// Shallow, single-branch, no tags — see the Clone doc comment for why.
 		repo.localRepo, err = repo.GitHandler.PlainClone(ctx, repo.localRepoPath, false, &git.CloneOptions{
 			URL:           repo.RepoURL,
 			ReferenceName: plumbing.ReferenceName("refs/heads/" + repo.BranchName),
@@ -141,7 +125,6 @@ func (repo *GitRepo) Clone(ctx context.Context) error {
 		return err
 	}
 
-	// If we get here, the cache is valid and has an 'origin' remote.
 	slog.Debug("Successfully opened cached repository", "path", repo.localRepoPath)
 	// Keep the fetch shallow too; otherwise go-git deepens the clone toward full
 	// history on the first fetch, undoing the shallow clone's win.
@@ -276,9 +259,6 @@ func assertInsideRoot(root, path string) error {
 	return nil
 }
 
-// mergeOverrideFileContent reads an existing override file (if one exists) and
-// merges the new parameter overrides into it. If no file exists, it returns the
-// new content directly.
 func (repo *GitRepo) mergeOverrideFileContent(fullPath string, overrideContent *ArgoOverrideFile) (*ArgoOverrideFile, error) {
 	existingContent, err := os.ReadFile(fullPath) // #nosec G304 -- path already validated by assertInsideRoot in UpdateApp
 	if err != nil {
@@ -298,9 +278,6 @@ func (repo *GitRepo) mergeOverrideFileContent(fullPath string, overrideContent *
 	return &existingOverrideFile, nil
 }
 
-// commitLocal writes the override file, stages it, and creates a local commit.
-// It reports whether a commit was actually created: if the file already contains
-// exactly the content to be written, it skips the commit and returns (false, nil).
 func (repo *GitRepo) commitLocal(fullPath, commitMsg string, overrideContent *ArgoOverrideFile) (bool, error) {
 	worktree, err := repo.localRepo.Worktree()
 	if err != nil {
@@ -331,7 +308,6 @@ func (repo *GitRepo) commitLocal(fullPath, commitMsg string, overrideContent *Ar
 	// go-git hashes and stages only that file (new or modified).
 	relativePath, err := filepath.Rel(repo.localRepoPath, fullPath)
 	if err != nil {
-		// This is a programmatic error, should not happen in practice.
 		return false, fmt.Errorf("could not determine relative path: %w", err)
 	}
 	if err := worktree.AddWithOptions(&git.AddOptions{Path: relativePath, SkipStatus: true}); err != nil {
@@ -376,9 +352,6 @@ func (repo *GitRepo) push(ctx context.Context) error {
 	return repo.localRepo.PushContext(ctx, pushOpts)
 }
 
-// mergeParameters updates the `existing` parameters with values from `newContent`.
-// If a parameter from `newContent` already exists by name in `existing`, it is overwritten.
-// If it does not exist, it is appended.
 func mergeParameters(existing, newContent *ArgoOverrideFile) {
 	for _, newParam := range newContent.Helm.Parameters {
 		found := false
@@ -395,8 +368,7 @@ func mergeParameters(existing, newContent *ArgoOverrideFile) {
 	}
 }
 
-// NewGitRepo is the constructor for the GitRepo struct. It initializes the struct
-// with all necessary information for git operations, including loading the git configuration.
+// NewGitRepo constructs a GitRepo, loading the git configuration from the environment.
 func NewGitRepo(repoURL, branchName, path, fileName, repoCachePath string, gitHandler GitHandler) (*GitRepo, error) {
 	gitConfig, err := NewGitConfig()
 	if err != nil {

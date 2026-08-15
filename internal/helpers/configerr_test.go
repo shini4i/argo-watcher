@@ -50,9 +50,6 @@ func TestPrettifyEnvError_GroupsMissingAndInvalid(t *testing.T) {
 }
 
 func TestPrettifyEnvError_InvalidOnlyOmitsMissingHeader(t *testing.T) {
-	// All required vars are present, but one value fails to parse. The output
-	// must report the invalid value without emitting an empty "missing
-	// required environment variables:" header.
 	t.Setenv("SAMPLE_PRETTIFY_URL", "http://example.com")
 	t.Setenv("SAMPLE_PRETTIFY_NAME", "sample")
 	t.Setenv("SAMPLE_PRETTIFY_TIMEOUT", "nope")

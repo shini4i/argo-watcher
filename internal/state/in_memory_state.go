@@ -15,17 +15,14 @@ import (
 )
 
 const (
-	// TaskStaleThresholdSeconds is the time in seconds after which an in-progress task is considered stale and aborted.
 	TaskStaleThresholdSeconds = 3600
-	// ObsoleteTaskCheckInterval is the interval between checks for obsolete tasks.
 	ObsoleteTaskCheckInterval = 60 * time.Minute
 	// StaleTaskAbortReason is the status reason set when an in-progress task is
 	// aborted for exceeding the staleness window (distinct from an ArgoCD outage).
 	StaleTaskAbortReason = "Deployment did not complete within the staleness window; marked aborted by argo-watcher."
 )
 
-// InMemoryState provides a thread-safe in-memory implementation of task storage.
-// It uses a read-write mutex to protect concurrent access to the tasks slice.
+// InMemoryState is a thread-safe in-memory implementation of task storage.
 type InMemoryState struct {
 	mu    sync.RWMutex
 	tasks []models.Task
@@ -83,8 +80,6 @@ func paginate(tasks []models.Task, limit, offset int) []models.Task {
 	return tasks[offset:end]
 }
 
-// GetTasks retrieves tasks from the in-memory state based on the provided time range, app, and status filters.
-// Empty filter values (app == "" or status == "") are treated as wildcards.
 func (state *InMemoryState) GetTasks(startTime float64, endTime float64, app string, status string, limit int, offset int) ([]models.Task, int64) {
 	state.mu.RLock()
 	defer state.mu.RUnlock()
@@ -118,7 +113,7 @@ func (state *InMemoryState) GetTasks(startTime float64, endTime float64, app str
 	return paginate(tasks, limit, offset), int64(len(tasks))
 }
 
-// GetTask returns the task with the given id, or ErrTaskNotFound if none matches.
+// GetTask returns ErrTaskNotFound when no task matches.
 func (state *InMemoryState) GetTask(id string) (*models.Task, error) {
 	state.mu.RLock()
 	defer state.mu.RUnlock()
@@ -131,8 +126,7 @@ func (state *InMemoryState) GetTask(id string) (*models.Task, error) {
 	return nil, ErrTaskNotFound
 }
 
-// SetTaskStatus updates the status and status reason of the task with the given
-// id, or returns an error if no task matches.
+// SetTaskStatus errors when no task matches the given id.
 func (state *InMemoryState) SetTaskStatus(id, status, reason string) error {
 	state.mu.Lock()
 	defer state.mu.Unlock()
@@ -199,8 +193,6 @@ func (state *InMemoryState) ProcessObsoleteTasks(retryTimes uint) {
 	}
 }
 
-// processInMemoryObsoleteTasks returns tasks with "app not found" entries dropped
-// and "in progress" entries older than TaskStaleThresholdSeconds marked "aborted".
 func processInMemoryObsoleteTasks(tasks []models.Task) []models.Task {
 	var updatedTasks []models.Task
 	for _, task := range tasks {

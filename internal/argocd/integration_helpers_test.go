@@ -38,8 +38,6 @@ const (
 	toxiproxyUpstrm  = "gitea:22" // resolved on the docker network shared by both services
 )
 
-// giteaEnv captures everything a test needs to push to an isolated Gitea repo
-// over SSH, with both direct (port 2222) and toxiproxy-fronted (port 12222) URLs.
 type giteaEnv struct {
 	User          string
 	Password      string
@@ -75,7 +73,6 @@ func setupGitea(t *testing.T) *giteaEnv {
 	stamp := time.Now().UnixNano()
 	user := fmt.Sprintf("u%d", stamp)
 	repoName := fmt.Sprintf("repo-%d", stamp)
-	// Generate a random password: 16 random bytes encoded as hex.
 	randBytes := make([]byte, 16)
 	_, _ = rand.Read(randBytes)
 	password := fmt.Sprintf("pass_%x", randBytes)
@@ -124,7 +121,6 @@ func setupGitea(t *testing.T) *giteaEnv {
 	}
 }
 
-// giteaAPIPost sends a JSON POST to Gitea with basic auth and asserts a 2xx response.
 func giteaAPIPost(t *testing.T, user, pass, path string, body map[string]any) {
 	t.Helper()
 	buf, err := json.Marshal(body)
@@ -141,8 +137,6 @@ func giteaAPIPost(t *testing.T, user, pass, path string, body map[string]any) {
 	require.Less(t, resp.StatusCode, 300, "gitea %s returned %d", path, resp.StatusCode)
 }
 
-// setupToxiproxy creates an SSH proxy listening on 12222 and forwarding to
-// gitea:22. Returns the proxy handle so tests can add/remove toxins.
 func setupToxiproxy(t *testing.T) *toxiclient.Proxy {
 	t.Helper()
 	waitForToxiproxy(t, 30*time.Second)

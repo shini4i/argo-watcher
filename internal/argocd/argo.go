@@ -32,13 +32,12 @@ const rollbackHistoryWindow = 100
 
 // Unavailability reasons reported by Check and UnavailableReason. They identify
 // which subsystem is unreachable so the frontend banner can name the exact cause
-// (ArgoCD vs the state backend) instead of hedging with "one or the other". An
-// empty reason means everything is reachable.
+// (ArgoCD vs the state backend) instead of hedging with "one or the other".
 const (
 	ReasonNone     = ""         // Everything reachable.
 	ReasonArgoCD   = "argocd"   // ArgoCD API is unreachable or login failed.
 	ReasonDatabase = "database" // The state backend (database) is unreachable.
-	ReasonBoth     = "both"     // ArgoCD and the state backend are both unreachable.
+	ReasonBoth     = "both"
 )
 
 const (
@@ -65,7 +64,8 @@ type Argo struct {
 	reason *atomic.Value
 }
 
-// Init initializes the Argo controller with its dependencies.
+// Init initializes the Argo controller with its dependencies. It allocates the
+// reason cache, so it must run before any read of it.
 func (argo *Argo) Init(state state.TaskRepository, api ArgoApiInterface, metrics prometheus.MetricsInterface) {
 	argo.api = api
 	argo.State = state
@@ -87,8 +87,6 @@ func (argo *Argo) Check() (string, error) {
 	databaseUp := argo.State.Check()
 	userLoggedIn, loginError := argo.api.GetUserInfo()
 
-	// Resolve the ArgoCD side to a specific error (nil when reachable) before
-	// combining it with the database result.
 	var argoErr error
 	switch {
 	case loginError != nil:
@@ -116,11 +114,9 @@ func (argo *Argo) Check() (string, error) {
 	}
 }
 
-// setReason records the latest unavailability cause in one place, keeping the
-// synchronously-readable cache (IsAvailable / UnavailableReason) and the two
-// per-subsystem gauges in lockstep. The gauges are independent: a state-backend
-// outage must NOT raise argocd_unavailable, and vice versa, so a ReasonBoth
-// raises both while a single-cause reason raises only its own.
+// setReason keeps the synchronously-readable cache and the two per-subsystem gauges
+// in lockstep. The gauges are independent: a state-backend outage must NOT raise
+// argocd_unavailable, and vice versa.
 func (argo *Argo) setReason(reason string) {
 	argo.reason.Store(reason)
 	argo.metrics.SetArgoUnavailable(reason == ReasonArgoCD || reason == ReasonBoth)
@@ -135,24 +131,20 @@ func (argo *Argo) IsAvailable() bool {
 }
 
 // UnavailableReason reports which subsystem was unreachable at the most recent
-// Check (ReasonArgoCD or ReasonDatabase), or ReasonNone when everything was
-// reachable. It lets the frontend banner name the exact cause.
+// Check, or ReasonNone when everything was reachable.
 func (argo *Argo) UnavailableReason() string {
 	return argo.reason.Load().(string)
 }
 
 // StartLivenessProbe periodically runs Check() so the argocd_unavailable metric
 // keeps reflecting ArgoCD reachability even during read-only periods (no new
-// deployments). Check() refreshes that gauge as a side effect; the probe's
-// return value is intentionally discarded. This is the single ambient refresher:
-// it lives here, off every request path, so listing tasks never blocks on a
-// live ArgoCD call (see GetTasks). It runs until ctx is cancelled and is meant
-// to be launched in its own goroutine.
+// deployments). This is the single ambient refresher: it lives here, off every
+// request path, so listing tasks never blocks on a live ArgoCD call (see GetTasks).
+// It runs until ctx is cancelled and is meant to be launched in its own goroutine.
 func (argo *Argo) StartLivenessProbe(ctx context.Context, interval time.Duration) {
-	// Probe once immediately so the gauge is populated at startup instead of
-	// only after the first interval elapses. Check() updates the metric itself;
-	// log at debug so an outage leaves a correlatable trace without spamming
-	// logs every interval.
+	// Probe once immediately so the gauge is populated at startup instead of only
+	// after the first interval elapses. Log at debug so an outage leaves a
+	// correlatable trace without spamming logs every interval.
 	if _, err := argo.Check(); err != nil {
 		slog.Debug("ArgoCD liveness probe failed", "error", err)
 	}
@@ -197,9 +189,8 @@ func (argo *Argo) AddTask(task models.Task) (*models.Task, error) {
 	task.RollbackTargetId = argo.detectRollback(task)
 	task.IsRollback = task.RollbackTargetId != ""
 
-	// Supersede any in-flight deployment for this app that targets one of the same
-	// images before starting a new one, so the watcher stops polling ArgoCD for a
-	// rollout nobody is waiting on anymore (issue #353). Matching on image name
+	// Superseding stops the watcher polling ArgoCD for a rollout nobody is waiting
+	// on anymore (issue #353). Matching on image name
 	// (not just the app) keeps independent per-image deployments of the same app
 	// from cancelling each other. This runs against the shared state, so in an HA
 	// setup it also cancels rollouts being watched by other replicas. Best-effort:
@@ -224,13 +215,11 @@ func (argo *Argo) AddTask(task models.Task) (*models.Task, error) {
 	return newTask, nil
 }
 
-// detectRollback reports whether deploying task represents a rollback and, if
-// so, returns the ID of the task it rolls back to. A rollback is a deployment
-// whose image set was successfully deployed at some earlier point for the app
-// AND differs from the current (most recently deployed) version; redeploying
-// the current version is not a rollback. The returned ID is the most recent
-// earlier task carrying that image set. An empty string means "not a rollback".
-// The lookup is bounded by rollbackHistoryWindow.
+// detectRollback returns the ID of the task this deployment rolls back to, or an
+// empty string when it is not a rollback. A rollback is a deployment whose image set
+// was successfully deployed at some earlier point for the app AND differs from the
+// current (most recently deployed) version; redeploying the current version is not a
+// rollback. The returned ID is the most recent earlier task carrying that image set.
 func (argo *Argo) detectRollback(task models.Task) string {
 	deployed, _ := argo.State.GetTasks(0, float64(time.Now().Unix()), task.App, models.StatusDeployedMessage, rollbackHistoryWindow, 0)
 	if len(deployed) == 0 {
@@ -245,8 +234,6 @@ func (argo *Argo) detectRollback(task models.Task) string {
 		return ""
 	}
 
-	// deployed[1:] is scanned newest-first, so the first match is the most
-	// recent earlier deployment of the target image set.
 	for _, previous := range deployed[1:] {
 		if imageSignature(previous) == target {
 			return previous.Id
@@ -256,25 +243,19 @@ func (argo *Argo) detectRollback(task models.Task) string {
 	return ""
 }
 
-// imageSignature returns a stable, order-independent key for a task's image set
-// so two deployments of the same images compare equal regardless of ordering.
+// imageSignature returns a key for a task's image set that is independent of the
+// order the images arrived in.
 func imageSignature(task models.Task) string {
 	return strings.Join(helpers.NormalizeImages(task.ListImages()), ",")
 }
 
-// GetTasks retrieves tasks from the state within a given time range and optional app/status filters and pagination window.
+// GetTasks retrieves tasks from the state.
 //
-// Listing is a pure read from the state store and is deliberately NOT gated on
-// ArgoCD reachability. Stored task history must stay viewable even when ArgoCD
-// is unavailable (e.g. a DNS/network outage): coupling the read to a live
-// ArgoCD `session/userinfo` call would otherwise make the whole list hang on the
-// API retry budget and then hide existing tasks behind an error. Write paths
-// (AddTask) no longer run a live Check() either: they gate on the cached
-// reachability (IsAvailable) so a deploy fails fast during an outage. The
-// background liveness probe (StartLivenessProbe) is therefore the single place
-// the argocd_unavailable metric and the cached state are refreshed. Note the
-// /readyz endpoint probes only the state backend (SimpleHealthCheck), not
-// ArgoCD.
+// Listing is deliberately NOT gated on ArgoCD reachability. Stored task history must
+// stay viewable even when ArgoCD is unavailable (e.g. a DNS/network outage): coupling
+// the read to a live ArgoCD `session/userinfo` call would make the whole list hang on
+// the API retry budget and then hide existing tasks behind an error. Note the /readyz
+// endpoint probes only the state backend (SimpleHealthCheck), not ArgoCD.
 func (argo *Argo) GetTasks(startTime float64, endTime float64, app string, status string, limit int, offset int) models.TasksResponse {
 	tasks, total := argo.State.GetTasks(startTime, endTime, app, status, limit, offset)
 
@@ -284,7 +265,7 @@ func (argo *Argo) GetTasks(startTime float64, endTime float64, app string, statu
 	}
 }
 
-// SimpleHealthCheck checks only the state backend connection.
+// SimpleHealthCheck checks the state backend only, never ArgoCD.
 func (argo *Argo) SimpleHealthCheck() bool {
 	return argo.State.Check()
 }

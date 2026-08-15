@@ -15,9 +15,8 @@ import (
 
 const testJWT = "eyJhbGciOiJIUzI1NiJ9.eyJleHAiOjF9.signature"
 
-// TestCredentialFrom pins how the client picks the credential it presents. A JWT
-// wins over a deploy token when both are configured, and the "Bearer " prefix is
-// normalized away so the wire format never depends on how BEARER_TOKEN was set.
+// The "Bearer " prefix is normalized away so the wire format never depends on how
+// BEARER_TOKEN was set.
 func TestCredentialFrom(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -155,9 +154,6 @@ func TestCredentialDroppedOnCrossHostRedirect(t *testing.T) {
 	})
 }
 
-// TestReadsWithoutCredentialStayBare guards backward compatibility from the other
-// side: a client configured with no token must keep talking to a server that
-// requires none, sending no auth header at all.
 func TestReadsWithoutCredentialStayBare(t *testing.T) {
 	var headers http.Header
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

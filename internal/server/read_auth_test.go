@@ -60,8 +60,6 @@ func readAuthEnv(t *testing.T, oidcEnabled bool, strategies map[string]auth.Auth
 	return readAuthEnvWithTask(t, oidcEnabled, strategies, nil)
 }
 
-// readAuthEnvWithTask is readAuthEnv with a task the state backend knows, so a lookup
-// resolves to an application instead of answering 404.
 func readAuthEnvWithTask(t *testing.T, oidcEnabled bool, strategies map[string]auth.AuthStrategy, task *models.Task) (*Env, *prometheus.Metrics) {
 	t.Helper()
 
@@ -97,13 +95,10 @@ func readAuthEnvWithTask(t *testing.T, oidcEnabled bool, strategies map[string]a
 	return env, metrics
 }
 
-// unauthenticatedReads reads the counter value the server would export for one
-// path/app series.
 func unauthenticatedReads(metrics *prometheus.Metrics, path, app string) float64 {
 	return promtestutil.ToFloat64(metrics.UnauthenticatedReads.WithLabelValues(path, app))
 }
 
-// getWith issues a GET through the full router, optionally carrying a credential.
 func getWith(t *testing.T, env *Env, path, header, value string) *httptest.ResponseRecorder {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodGet, path, http.NoBody)
@@ -117,7 +112,6 @@ func getWith(t *testing.T, env *Env, path, header, value string) *httptest.Respo
 	return recorder
 }
 
-// protectedReads are the endpoints that require a credential once OIDC is enabled.
 var protectedReads = []string{
 	"/api/v1/tasks?from_timestamp=0",
 	"/api/v1/version",
@@ -253,8 +247,6 @@ func TestDeployLockProviderUnavailable(t *testing.T) {
 	assert.False(t, env.lockdown.IsLocked(), "a failed authorization must not set the lock")
 }
 
-// TestReadAuthOpenEndpoints covers what stays reachable without a credential when
-// OIDC is enabled, and why each one has to.
 func TestReadAuthOpenEndpoints(t *testing.T) {
 	env, _ := readAuthEnv(t, true, map[string]auth.AuthStrategy{
 		oidcHeader: oidcLikeStrategy{authenticated: true},
@@ -301,7 +293,6 @@ func TestReadAuthOpenEndpoints(t *testing.T) {
 // route table rather than a hand-kept list, so a read added later to the wrong group
 // fails here without anyone remembering to extend a test.
 func TestReadAuthCoversEveryRegisteredRead(t *testing.T) {
-	// Exemptions, each justified in CreateRouter.
 	openByDesign := map[string]bool{
 		"/api/v1/config":     true,
 		"/api/v1/tasks/{id}": true,

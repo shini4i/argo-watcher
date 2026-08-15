@@ -17,11 +17,9 @@ import (
 	"github.com/shini4i/argo-watcher/internal/updater"
 )
 
-// retryingGitHandler returns a MockGitHandler that drives runGitUpdateWithRetry
-// without a real remote: PlainOpen reports no cache so Clone takes the
-// fresh-clone path, AddSSHKey succeeds, and PlainClone returns cloneErr exactly
-// wantClones times. The Times(wantClones) expectation verifies how many attempts
-// actually reached the clone, replacing a manual counter.
+// retryingGitHandler returns a MockGitHandler whose PlainClone always fails with
+// cloneErr. The Times(wantClones) expectation fails the test at controller finish
+// unless exactly that many attempts reached the clone.
 func retryingGitHandler(ctrl *gomock.Controller, cloneErr error, wantClones int) *mocks.MockGitHandler {
 	h := mocks.NewMockGitHandler(ctrl)
 	h.EXPECT().PlainOpen(gomock.Any()).Return(nil, git.ErrRepositoryNotExists).AnyTimes()
@@ -30,7 +28,6 @@ func retryingGitHandler(ctrl *gomock.Controller, cloneErr error, wantClones int)
 	return h
 }
 
-// gitTestRepo builds a GitopsRepo pointing at a throwaway cache dir.
 func gitTestRepo(t *testing.T) *models.GitopsRepo {
 	return &models.GitopsRepo{
 		RepoUrl:       "git@example.com:test/repo.git",
@@ -41,19 +38,15 @@ func gitTestRepo(t *testing.T) *models.GitopsRepo {
 }
 
 // TestGitUpdateSupersededOnLaterAttempt proves the supersession guard is
-// re-checked on a LATER attempt, not just once up front: attempt 1 proceeds
-// (reaches the clone) and fails transiently; the predicate flips to true before
-// attempt 2, which must abort with ErrDeploymentSuperseded before cloning again.
+// re-checked on a LATER attempt, not just once up front.
 func TestGitUpdateSupersededOnLaterAttempt(t *testing.T) {
 	t.Setenv("SSH_KEY_PATH", "/nonexistent/key")
 	t.Setenv("GIT_OP_TIMEOUT", "5s")
 	t.Setenv("GIT_MAX_ATTEMPTS", "5")
 
-	// attempt 1 reaches the clone (Times(1)); the guard fires on attempt 2 before
-	// any second clone, which gomock verifies at controller finish.
 	h := retryingGitHandler(gomock.NewController(t), errors.New("transient clone failure"), 1)
 	checks := 0
-	supersede := func() bool { checks++; return checks >= 2 } // false on attempt 1, true on attempt 2
+	supersede := func() bool { checks++; return checks >= 2 }
 
 	err := UpdateGitImageTag(
 		context.Background(), newAppWithImages("test-app"), newImageTask(), gitTestRepo(t), h, supersede,
@@ -62,16 +55,11 @@ func TestGitUpdateSupersededOnLaterAttempt(t *testing.T) {
 	require.ErrorIs(t, err, ErrDeploymentSuperseded)
 }
 
-// TestGitUpdateExhaustsRetries covers the multi-attempt retry mechanics on the
-// changed loop: a transient error on every attempt exhausts the budget and the
-// error wraps with the attempt count.
 func TestGitUpdateExhaustsRetries(t *testing.T) {
 	t.Setenv("SSH_KEY_PATH", "/nonexistent/key")
 	t.Setenv("GIT_OP_TIMEOUT", "5s")
 	t.Setenv("GIT_MAX_ATTEMPTS", "3")
 
-	// all 3 attempts must reach the clone when every one fails transiently;
-	// Times(3) enforces that at controller finish.
 	h := retryingGitHandler(gomock.NewController(t), errors.New("transient clone failure"), 3)
 
 	err := UpdateGitImageTag(
@@ -82,11 +70,8 @@ func TestGitUpdateExhaustsRetries(t *testing.T) {
 	assert.Contains(t, err.Error(), "git update failed after 3 attempts")
 }
 
-// TestUpdateGitImageTagSupersededGuard verifies the write-back aborts with
-// ErrDeploymentSuperseded — before touching git — when the supersede predicate
-// returns true, and does NOT abort with that error when it returns false. This
-// is what keeps a larger retry budget from letting an older deployment overwrite
-// a newer one.
+// TestUpdateGitImageTagSupersededGuard covers the guard that keeps a larger retry
+// budget from letting an older deployment overwrite a newer one.
 func TestUpdateGitImageTagSupersededGuard(t *testing.T) {
 	// SSH_KEY_PATH need only be set (not exist) for config load; the guard fires
 	// before the key is ever read, so a nonexistent path is fine here.
@@ -114,18 +99,15 @@ func TestUpdateGitImageTagSupersededGuard(t *testing.T) {
 			context.Background(), newAppWithImages("test-app"), newImageTask(), repo(t), updater.GitClient{},
 			func() bool { return false },
 		)
-		require.Error(t, err) // fails on the missing SSH key, having passed the guard
+		require.Error(t, err)
 		assert.NotErrorIs(t, err, ErrDeploymentSuperseded)
 	})
 }
 
-// TestGitUpdateBackoff verifies the retry backoff is capped-exponential with
-// full jitter: every sample stays within [0, ceiling] where the ceiling grows
-// with the attempt number until it saturates at gitUpdateMaxBackoff. Fast early
-// retries are what let the write-back win a git push race against a competing
-// writer before it advances the branch again.
+// TestGitUpdateBackoff verifies the retry backoff is capped-exponential with full
+// jitter. Fast early retries are what let the write-back win a git push race
+// against a competing writer before it advances the branch again.
 func TestGitUpdateBackoff(t *testing.T) {
-	// ceiling(attempt) = min(gitUpdateMaxBackoff, base * 2^(attempt-1))
 	ceiling := func(attempt uint) time.Duration {
 		c := gitUpdateBaseBackoff << (attempt - 1)
 		if c <= 0 || c > gitUpdateMaxBackoff {
@@ -153,11 +135,9 @@ func TestGitUpdateBackoff(t *testing.T) {
 		}
 	}
 
-	// The ceiling must actually grow early on (fast first retry, slower later).
 	if ceiling(1) >= ceiling(4) {
 		t.Fatalf("ceiling should increase: ceiling(1)=%s ceiling(4)=%s", ceiling(1), ceiling(4))
 	}
-	// And saturate at the cap.
 	if ceiling(12) != gitUpdateMaxBackoff {
 		t.Fatalf("ceiling(12)=%s, want cap %s", ceiling(12), gitUpdateMaxBackoff)
 	}

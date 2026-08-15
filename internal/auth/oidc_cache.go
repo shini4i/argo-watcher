@@ -40,8 +40,6 @@ type validationCache struct {
 	entries map[string]cachedValidation
 }
 
-// newValidationCache builds a cache whose entries live for at most ttl. A
-// non-positive ttl yields a cache that stores nothing.
 func newValidationCache(ttl time.Duration) *validationCache {
 	return &validationCache{
 		ttl:     ttl,
@@ -49,14 +47,12 @@ func newValidationCache(ttl time.Duration) *validationCache {
 	}
 }
 
-// cacheKey derives the storage key for a token.
 func cacheKey(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
 }
 
-// get returns the remembered decision for a token, or ok=false when there is
-// none or it has expired.
+// get returns ok=false when there is no remembered decision or it has expired.
 func (c *validationCache) get(token string) (cachedValidation, bool) {
 	if c == nil || c.ttl <= 0 {
 		return cachedValidation{}, false

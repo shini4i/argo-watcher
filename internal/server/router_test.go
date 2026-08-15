@@ -32,9 +32,6 @@ import (
 	"github.com/shini4i/argo-watcher/internal/state"
 )
 
-// repoCapture records the arguments of the most recent GetTasks call so
-// handler-level tests can assert that query params are forwarded to the
-// repository.
 type repoCapture struct {
 	lastApp    string
 	lastStatus string
@@ -43,10 +40,8 @@ type repoCapture struct {
 }
 
 // newRepo returns a permissive TaskRepository mock plus the capture struct its
-// GetTasks stub writes to. GetTasks always returns an empty result (its return
-// value is never customized in these tests); Connect, SetTaskStatus,
-// CancelInProgressTasks and ProcessObsoleteTasks are permissive no-ops. Tests
-// that exercise Check, GetTask or AddTask add those expectations themselves.
+// GetTasks stub writes to. Tests that exercise Check, GetTask or AddTask add those
+// expectations themselves.
 func newRepo(ctrl *gomock.Controller) (*mocks.MockTaskRepository, *repoCapture) {
 	repo := mocks.NewMockTaskRepository(ctrl)
 	capture := &repoCapture{}
@@ -65,9 +60,6 @@ func newRepo(ctrl *gomock.Controller) (*mocks.MockTaskRepository, *repoCapture) 
 	return repo, capture
 }
 
-// newArgoAPI returns an ArgoApiInterface mock whose calls all succeed with
-// empty/logged-in values, so it can stand in as a passive dependency for
-// handlers that never touch ArgoCD.
 func newArgoAPI(ctrl *gomock.Controller) *mocks.MockArgoApiInterface {
 	api := mocks.NewMockArgoApiInterface(ctrl)
 	api.EXPECT().Init(gomock.Any()).Return(nil).AnyTimes()
@@ -77,9 +69,6 @@ func newArgoAPI(ctrl *gomock.Controller) *mocks.MockArgoApiInterface {
 	return api
 }
 
-// newMetrics returns a MetricsInterface mock with permissive no-op expectations
-// for every metric, so it can be passed to argo.Init without each test having
-// to anticipate which counters a handler touches.
 func newMetrics(ctrl *gomock.Controller) *mocks.MockMetricsInterface {
 	metrics := mocks.NewMockMetricsInterface(ctrl)
 	metrics.EXPECT().AddProcessedDeployment(gomock.Any()).AnyTimes()
@@ -97,9 +86,9 @@ func newMetrics(ctrl *gomock.Controller) *mocks.MockMetricsInterface {
 	return metrics
 }
 
-// newAuthStrategy returns an AuthStrategy mock whose Validate always yields the
-// given result, callable any number of times (some strategies are skipped when
-// their header does not match the request).
+// newAuthStrategy returns an AuthStrategy mock whose Validate always yields the given
+// result, callable any number of times (some strategies are skipped when their header
+// does not match the request).
 func newAuthStrategy(t testing.TB, valid bool, err error) *mocks.MockAuthStrategy {
 	t.Helper()
 	strategy := mocks.NewMockAuthStrategy(gomock.NewController(t))
@@ -200,8 +189,8 @@ func routeExists(t *testing.T, router *chi.Mux, method, pattern string) bool {
 	return found
 }
 
-// TestDeployLockEndpointRegistration verifies that the state-changing deploy-lock
-// endpoints only exist when OIDC auth is enabled. Without an auth backend they cannot
+// TestDeployLockEndpointRegistration covers why the state-changing deploy-lock
+// endpoints only exist when OIDC auth is enabled: without an auth backend they cannot
 // be protected, so they must not be exposed; the read-only GET stays available so the
 // banner and scheduled lockdown keep working.
 func TestDeployLockEndpointRegistration(t *testing.T) {
@@ -251,12 +240,10 @@ func TestRemoveWebSocketConnection(t *testing.T) {
 }
 
 func TestWebSocketConnectionsConcurrentAccess(t *testing.T) {
-	// Reset connections slice
 	connectionsMutex.Lock()
 	connections = nil
 	connectionsMutex.Unlock()
 
-	// Test concurrent add and remove operations don't cause race conditions
 	var wg sync.WaitGroup
 	numGoroutines := 10
 
@@ -274,7 +261,6 @@ func TestWebSocketConnectionsConcurrentAccess(t *testing.T) {
 
 	wg.Wait()
 
-	// All connections should have been removed
 	connectionsMutex.Lock()
 	assert.Empty(t, connections)
 	connectionsMutex.Unlock()
@@ -321,8 +307,6 @@ func TestNewEnv(t *testing.T) {
 	assert.NotNil(t, env.authenticator)
 }
 
-// TestNewEnvInvalidOIDCURL verifies that NewEnv returns an error when OIDC is
-// enabled but the issuer URL is invalid.
 func TestNewEnvInvalidOIDCURL(t *testing.T) {
 	serverConfig := &config.ServerConfig{
 		Host:        "localhost",
@@ -341,11 +325,10 @@ func TestNewEnvInvalidOIDCURL(t *testing.T) {
 	assert.Nil(t, env)
 }
 
-// TestGetStateInvalidQueryParams verifies that the getState handler gracefully handles
-// invalid query parameters by logging debug messages and using default values.
+// TestGetStateInvalidQueryParams pins that bad query params fall back to defaults and
+// are logged at debug rather than rejected.
 func TestGetStateInvalidQueryParams(t *testing.T) {
 
-	// Set up Argo with mock dependencies
 	ctrl := gomock.NewController(t)
 	repo, _ := newRepo(ctrl)
 	argo := &argocd.Argo{}
@@ -403,15 +386,11 @@ func TestGetStateInvalidQueryParams(t *testing.T) {
 			w := httptest.NewRecorder()
 			router.ServeHTTP(w, req)
 
-			// The handler should return 200 OK even with invalid params
-			// (it falls back to defaults and logs debug messages)
 			assert.Equal(t, http.StatusOK, w.Code)
 		})
 	}
 }
 
-// TestGetStateForwardsFilters verifies that getState forwards `app` and `status`
-// query parameters to the underlying TaskRepository.
 func TestGetStateForwardsFilters(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
@@ -439,8 +418,8 @@ func TestGetStateForwardsFilters(t *testing.T) {
 	assert.Equal(t, "in progress", capture.lastStatus)
 }
 
-// TestGetStateRejectsUnknownStatus verifies that getState returns 400 when
-// the `status` query param is not accepted by models.IsAllowedTaskStatus.
+// TestGetStateRejectsUnknownStatus covers the 400 returned when the `status` query
+// param is not accepted by models.IsAllowedTaskStatus.
 func TestGetStateRejectsUnknownStatus(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
@@ -480,10 +459,9 @@ func TestGetStateRejectsUnknownStatus(t *testing.T) {
 	}
 }
 
-// TestGetStateClampsLimit verifies that getState bounds the limit query
-// param to maxTaskListLimit so callers cannot drain the entire task table
-// in a single request (the underlying repositories treat limit <= 0 as
-// "no LIMIT clause").
+// TestGetStateClampsLimit covers the bound on the limit query param, so callers cannot
+// drain the entire task table in a single request (the underlying repositories treat
+// limit <= 0 as "no LIMIT clause").
 func TestGetStateClampsLimit(t *testing.T) {
 
 	cases := []struct {
@@ -527,10 +505,8 @@ func TestGetStateClampsLimit(t *testing.T) {
 
 func TestStaticFileServing(t *testing.T) {
 
-	// Create a temporary directory for static files
 	tmpDir := t.TempDir()
 
-	// Create test files
 	indexContent := []byte("<html><body>Index</body></html>")
 	jsContent := []byte("console.log('test');")
 
@@ -574,26 +550,20 @@ func TestStaticFileServing(t *testing.T) {
 	})
 
 	t.Run("prevents path traversal attack", func(t *testing.T) {
-		// Try to access /etc/passwd via path traversal
 		// Note: Go's net/http rejects malformed URLs with 400, which is also protection
 		req, _ := http.NewRequest(http.MethodGet, "/../../../etc/passwd", nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
 		// Should either return 400 (Go's built-in protection) or index.html (our protection)
-		// Either way, /etc/passwd should NOT be served
 		assert.NotContains(t, w.Body.String(), "root:")
 	})
 
 	t.Run("prevents encoded path traversal", func(t *testing.T) {
-		// URL-encoded path traversal attempt
-		// Note: Go's net/http rejects malformed URLs with 400, which is also protection
 		req, _ := http.NewRequest(http.MethodGet, "/..%2F..%2F..%2Fetc%2Fpasswd", nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
-		// Should either return 400 (Go's built-in protection) or index.html (our protection)
-		// Either way, /etc/passwd should NOT be served
 		assert.NotContains(t, w.Body.String(), "root:")
 	})
 
@@ -603,7 +573,6 @@ func TestStaticFileServing(t *testing.T) {
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
-		// Should not serve /etc/passwd
 		assert.NotContains(t, w.Body.String(), "root:")
 	})
 
@@ -650,7 +619,6 @@ func (b *logBuffer) Write(p []byte) (int, error) {
 	return b.buf.Write(p)
 }
 
-// String returns everything captured so far.
 func (b *logBuffer) String() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -663,10 +631,10 @@ func (b *logBuffer) reset() {
 	b.buf.Reset()
 }
 
-// captureDebugLogs redirects the global slog logger into a buffer at debug level
-// for the duration of the test and returns that buffer. It proves the capture is
-// live before handing the buffer back, so a test whose only assertion is
-// NotContains or Empty cannot pass because logging was silently broken.
+// captureDebugLogs redirects the global slog logger into a buffer at debug level for
+// the duration of the test and returns it. It proves the capture is live before handing
+// the buffer back, so a test whose only assertion is NotContains or Empty cannot pass
+// because logging was silently broken.
 //
 // Not safe under t.Parallel: it swaps the process-global default logger.
 //
@@ -690,7 +658,6 @@ func captureDebugLogs(t *testing.T) *logBuffer {
 
 func TestWebSocketInterceptor(t *testing.T) {
 
-	// Create a minimal test environment
 	tmpDir := t.TempDir()
 	err := os.WriteFile(tmpDir+"/index.html", []byte("<html></html>"), 0644)
 	assert.NoError(t, err)
@@ -792,12 +759,10 @@ func TestWebSocketInterceptor(t *testing.T) {
 // it. Keep the -race CI step if you touch this test.
 func TestWebSocketConnectionIntegration(t *testing.T) {
 
-	// Reset connections at start to ensure clean state
 	connectionsMutex.Lock()
 	connections = nil
 	connectionsMutex.Unlock()
 
-	// Create a temporary directory for static files
 	tmpDir := t.TempDir()
 	err := os.WriteFile(tmpDir+"/index.html", []byte("<html></html>"), 0644)
 	assert.NoError(t, err)
@@ -829,7 +794,6 @@ func TestWebSocketConnectionIntegration(t *testing.T) {
 	// floods debug output again.
 	logs := captureDebugLogs(t)
 
-	// Convert http:// to ws://
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws"
 
 	// Use a generous timeout — the WebSocket handshake through httptest can take several
@@ -837,14 +801,12 @@ func TestWebSocketConnectionIntegration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	// Attempt WebSocket connection
 	conn, _, err := websocket.Dial(ctx, wsURL, nil)
 	if err != nil {
 		t.Fatalf("WebSocket connection failed: %v", err)
 	}
 	defer conn.Close(websocket.StatusNormalClosure, "test complete")
 
-	// Connection succeeded - the pre-hijack wrapper works
 	t.Log("WebSocket connection established successfully")
 
 	// Empty, not just "no diagnostic": the upgrade path must emit no per-request
@@ -1020,18 +982,12 @@ func TestValidatePath(t *testing.T) {
 	})
 
 	t.Run("leading dotdot at root level is normalized and joined safely", func(t *testing.T) {
-		// Input: /../etc/passwd → Cleaned: /etc/passwd → Joined: /tmp/etc/passwd
-		// This is SAFE because the joined path /tmp/etc/passwd IS within basePath /tmp/
-		// The file that would be served is /tmp/etc/passwd, NOT /etc/passwd
 		cleanPath, err := fs.validatePath("/../etc/passwd")
 		assert.NoError(t, err)
 		assert.Equal(t, "/etc/passwd", cleanPath)
 	})
 
 	t.Run("dotdot in path is normalized and joined safely", func(t *testing.T) {
-		// Input: /subdir/../../etc/passwd → Cleaned: /etc/passwd → Joined: /tmp/etc/passwd
-		// This is SAFE because the joined path /tmp/etc/passwd IS within basePath /tmp/
-		// The file that would be served is /tmp/etc/passwd, NOT /etc/passwd
 		cleanPath, err := fs.validatePath("/subdir/../../etc/passwd")
 		assert.NoError(t, err)
 		assert.Equal(t, "/etc/passwd", cleanPath)
@@ -1044,11 +1000,9 @@ func TestValidatePath(t *testing.T) {
 	})
 }
 
-// TestSafeFileSystem tests the safe file system implementation.
 func TestSafeFileSystem(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// Create test files
 	err := os.WriteFile(filepath.Join(tmpDir, "file.txt"), []byte("content"), 0644)
 	require.NoError(t, err)
 
@@ -1114,16 +1068,13 @@ func TestSafeFileSystem(t *testing.T) {
 	})
 }
 
-// TestSafeFileSystemSymlinkProtection tests symlink escape prevention.
 func TestSafeFileSystemSymlinkProtection(t *testing.T) {
 	tmpDir := t.TempDir()
 	outsideDir := t.TempDir()
 
-	// Create a file outside the static directory
 	err := os.WriteFile(filepath.Join(outsideDir, "secret.txt"), []byte("secret data"), 0644)
 	require.NoError(t, err)
 
-	// Create a symlink inside tmpDir that points outside
 	symlinkPath := filepath.Join(tmpDir, "escape")
 	err = os.Symlink(outsideDir, symlinkPath)
 	require.NoError(t, err)
@@ -1153,7 +1104,6 @@ func shutdownEnv(env *Env) {
 	env.Shutdown(ctx)
 }
 
-// TestEnvShutdown tests the graceful shutdown functionality.
 func TestEnvShutdown(t *testing.T) {
 	t.Run("shutdown closes channel", func(t *testing.T) {
 		shutdownCh := make(chan struct{})
@@ -1161,21 +1111,16 @@ func TestEnvShutdown(t *testing.T) {
 			shutdownCh: shutdownCh,
 		}
 
-		// Verify channel is not closed
 		select {
 		case <-env.shutdownCh:
 			t.Fatal("channel should not be closed yet")
 		default:
-			// expected
 		}
 
-		// Call shutdown
 		env.Shutdown(context.Background())
 
-		// Verify channel is now closed
 		select {
 		case <-env.shutdownCh:
-			// expected - channel is closed
 		default:
 			t.Fatal("channel should be closed after Shutdown()")
 		}
@@ -1186,7 +1131,6 @@ func TestEnvShutdown(t *testing.T) {
 			shutdownCh: nil,
 		}
 
-		// Should not panic
 		env.Shutdown(context.Background())
 	})
 
@@ -1196,15 +1140,12 @@ func TestEnvShutdown(t *testing.T) {
 			shutdownCh: shutdownCh,
 		}
 
-		// Should not panic when called multiple times
 		env.Shutdown(context.Background())
 		env.Shutdown(context.Background())
 		env.Shutdown(context.Background())
 
-		// Verify channel is closed
 		select {
 		case <-env.shutdownCh:
-			// expected - channel is closed
 		default:
 			t.Fatal("channel should be closed")
 		}
@@ -1236,31 +1177,24 @@ func TestEnvShutdown(t *testing.T) {
 			shutdownCh: shutdownCh,
 		}
 
-		// Simulate an active connection by incrementing the WaitGroup
 		env.connWg.Add(1)
 
-		// Start Shutdown in a goroutine and track when it completes
 		shutdownDone := make(chan struct{})
 		go func() {
 			env.Shutdown(context.Background())
 			close(shutdownDone)
 		}()
 
-		// Verify Shutdown is blocked waiting for connWg
 		select {
 		case <-shutdownDone:
 			t.Fatal("Shutdown should be blocked waiting for connWg")
 		case <-time.After(300 * time.Millisecond):
-			// Expected - Shutdown is still waiting
 		}
 
-		// Now release the WaitGroup
 		env.connWg.Done()
 
-		// Shutdown should now complete
 		select {
 		case <-shutdownDone:
-			// Expected - Shutdown completed after connWg.Done()
 		case <-time.After(time.Second):
 			t.Fatal("Shutdown should have completed after connWg.Done()")
 		}
@@ -1272,7 +1206,6 @@ func TestEnvShutdown(t *testing.T) {
 // store it is how clients learn about a lock another replica set — and it is
 // tracked by connWg so it stops when the shutdown channel is closed.
 func TestStartLockdownWatcher(t *testing.T) {
-	// waitTracked reports whether connWg reaches zero within the timeout.
 	waitTracked := func(env *Env, timeout time.Duration) bool {
 		done := make(chan struct{})
 		go func() {
@@ -1310,7 +1243,6 @@ func TestStartLockdownWatcher(t *testing.T) {
 
 		env.StartLockdownWatcher()
 
-		// The watcher is running; connWg must not drain until shutdown.
 		assert.False(t, waitTracked(env, 100*time.Millisecond), "watcher should keep connWg non-zero before shutdown")
 
 		close(env.shutdownCh)
@@ -1318,7 +1250,6 @@ func TestStartLockdownWatcher(t *testing.T) {
 	})
 }
 
-// TestStartRouter tests the StartRouter method.
 func TestStartRouter(t *testing.T) {
 
 	tmpDir := t.TempDir()
@@ -1343,16 +1274,13 @@ func TestStartRouter(t *testing.T) {
 	assert.Equal(t, 10*time.Second, srv.ReadHeaderTimeout)
 }
 
-// TestNotifyWebSocketClients tests the WebSocket notification functionality.
 func TestNotifyWebSocketClients(t *testing.T) {
 	t.Run("notifies with no connections", func(t *testing.T) {
-		// Reset connections
 		connectionsMutex.Lock()
 		connections = nil
 		closedConns = make(map[*websocket.Conn]bool)
 		connectionsMutex.Unlock()
 
-		// Cleanup to prevent test pollution
 		t.Cleanup(func() {
 			connectionsMutex.Lock()
 			connections = nil
@@ -1360,21 +1288,17 @@ func TestNotifyWebSocketClients(t *testing.T) {
 			connectionsMutex.Unlock()
 		})
 
-		// Should not panic with empty connections
 		notifyWebSocketClients("test message")
 	})
 }
 
-// TestRemoveWebSocketConnectionCleanup tests the connection removal cleanup functionality.
 func TestRemoveWebSocketConnectionCleanup(t *testing.T) {
 	t.Run("removes connection and cleans up closedConns", func(t *testing.T) {
-		// Reset state
 		connectionsMutex.Lock()
 		connections = nil
 		closedConns = make(map[*websocket.Conn]bool)
 		connectionsMutex.Unlock()
 
-		// Cleanup to prevent test pollution
 		t.Cleanup(func() {
 			connectionsMutex.Lock()
 			connections = nil
@@ -1382,24 +1306,20 @@ func TestRemoveWebSocketConnectionCleanup(t *testing.T) {
 			connectionsMutex.Unlock()
 		})
 
-		// This test verifies the function doesn't panic with nil
 		removeWebSocketConnection(nil)
 
 		connectionsMutex.RLock()
 		assert.Len(t, connections, 0)
-		// closedConns should be empty after cleanup
 		assert.Len(t, closedConns, 0)
 		connectionsMutex.RUnlock()
 	})
 
 	t.Run("removes actual connection from slice", func(t *testing.T) {
-		// Reset state
 		connectionsMutex.Lock()
 		connections = nil
 		closedConns = make(map[*websocket.Conn]bool)
 		connectionsMutex.Unlock()
 
-		// Cleanup to prevent test pollution
 		t.Cleanup(func() {
 			connectionsMutex.Lock()
 			connections = nil
@@ -1416,13 +1336,11 @@ func TestRemoveWebSocketConnectionCleanup(t *testing.T) {
 
 		connectionsMutex.RLock()
 		assert.NotContains(t, connections, conn)
-		// Entry should be deleted after removal
 		assert.Len(t, closedConns, 0)
 		connectionsMutex.RUnlock()
 	})
 
 	t.Run("removes connection from middle of slice", func(t *testing.T) {
-		// Reset state
 		connectionsMutex.Lock()
 		connections = nil
 		closedConns = make(map[*websocket.Conn]bool)
@@ -1442,7 +1360,6 @@ func TestRemoveWebSocketConnectionCleanup(t *testing.T) {
 		connections = append(connections, conn1, conn2, conn3)
 		connectionsMutex.Unlock()
 
-		// Remove middle connection
 		removeWebSocketConnection(conn2)
 
 		connectionsMutex.RLock()
@@ -1470,9 +1387,7 @@ func TestRemoveWebSocketConnectionCleanup(t *testing.T) {
 	})
 }
 
-// TestNotifyWebSocketClientsFiltersClosedConnections tests that closed connections are filtered.
 func TestNotifyWebSocketClientsFiltersClosedConnections(t *testing.T) {
-	// Reset state
 	connectionsMutex.Lock()
 	connections = nil
 	closedConns = make(map[*websocket.Conn]bool)
@@ -1485,18 +1400,15 @@ func TestNotifyWebSocketClientsFiltersClosedConnections(t *testing.T) {
 		connectionsMutex.Unlock()
 	})
 
-	// Add a connection and mark it as closed
 	conn := &websocket.Conn{}
 	connectionsMutex.Lock()
 	connections = append(connections, conn)
 	closedConns[conn] = true
 	connectionsMutex.Unlock()
 
-	// Should not panic and should skip the closed connection
 	notifyWebSocketClients("test message")
 }
 
-// TestConnWgTracking tests that connWg is properly incremented and decremented.
 func TestConnWgTracking(t *testing.T) {
 	env := &Env{
 		shutdownCh: make(chan struct{}),
@@ -1509,44 +1421,35 @@ func TestConnWgTracking(t *testing.T) {
 	checkDone := make(chan struct{})
 	go func() {
 		defer env.connWg.Done()
-		// Simulate waiting for shutdown signal
 		<-env.shutdownCh
 		close(checkDone)
 	}()
 
-	// Verify the goroutine is running (WaitGroup has 1)
 	select {
 	case <-checkDone:
 		t.Fatal("goroutine should not have exited yet")
 	case <-time.After(50 * time.Millisecond):
-		// Expected - goroutine is waiting
 	}
 
-	// Trigger shutdown
 	shutdownComplete := make(chan struct{})
 	go func() {
 		shutdownEnv(env)
 		close(shutdownComplete)
 	}()
 
-	// The checkDone should close first (simulating goroutine exit)
 	select {
 	case <-checkDone:
-		// Expected
 	case <-time.After(time.Second):
 		t.Fatal("goroutine should have received shutdown signal")
 	}
 
-	// Then shutdown should complete
 	select {
 	case <-shutdownComplete:
-		// Expected
 	case <-time.After(time.Second):
 		t.Fatal("Shutdown should have completed")
 	}
 }
 
-// TestCreateRouterInitializesShutdownChannel tests that CreateRouter initializes the shutdown channel.
 func TestCreateRouterInitializesShutdownChannel(t *testing.T) {
 
 	tmpDir := t.TempDir()
@@ -1557,22 +1460,18 @@ func TestCreateRouterInitializesShutdownChannel(t *testing.T) {
 		StaticFilePath: tmpDir,
 	}
 
-	// Create env without shutdown channel
 	env := &Env{
 		config:     serverConfig,
 		shutdownCh: nil,
 	}
 	env.lockdown, _ = NewLockdown("", lock.NewInMemoryDeployLockStore())
 
-	// CreateRouter should initialize the shutdown channel
 	_ = env.CreateRouter()
 
 	assert.NotNil(t, env.shutdownCh, "CreateRouter should initialize shutdownCh")
 }
 
-// TestValidatePathEdgeCases tests edge cases in path validation.
 func TestValidatePathEdgeCases(t *testing.T) {
-	// Create a temp directory with a specific structure
 	tmpDir := t.TempDir()
 
 	fs := safeFileSystem{
@@ -1599,7 +1498,6 @@ func TestValidatePathEdgeCases(t *testing.T) {
 	})
 }
 
-// TestGetConfigEndpoint tests the getConfig endpoint.
 func TestGetConfigEndpoint(t *testing.T) {
 
 	serverConfig := &config.ServerConfig{
@@ -1623,7 +1521,6 @@ func TestGetConfigEndpoint(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "devEnvironment")
 }
 
-// TestGetTaskStatusEndpoint tests the getTaskStatus endpoint.
 func TestGetTaskStatusEndpoint(t *testing.T) {
 
 	t.Run("returns task when found", func(t *testing.T) {
@@ -1701,7 +1598,6 @@ func TestGetTaskStatusEndpoint(t *testing.T) {
 	})
 }
 
-// TestValidateTokenWithStrategies tests the validateToken method.
 func TestValidateTokenWithStrategies(t *testing.T) {
 
 	t.Run("returns result from authenticator when no allowed strategy", func(t *testing.T) {
@@ -1715,7 +1611,6 @@ func TestValidateTokenWithStrategies(t *testing.T) {
 
 		req, _ := http.NewRequest(http.MethodPost, "/test", nil)
 
-		// With empty authenticator and no strategies, validation returns false
 		valid, err := env.validateToken(req, "")
 		assert.False(t, valid)
 		assert.NoError(t, err)
@@ -1731,14 +1626,12 @@ func TestValidateTokenWithStrategies(t *testing.T) {
 		req, _ := http.NewRequest(http.MethodPost, "/test", nil)
 		req.Header.Set("Authorization", "Bearer test-token")
 
-		// With no matching strategy, returns false
 		valid, err := env.validateToken(req, "Keycloak-Authorization")
 		assert.False(t, valid)
 		assert.NoError(t, err)
 	})
 }
 
-// TestAddTaskEndpoint tests the addTask endpoint.
 func TestAddTaskEndpoint(t *testing.T) {
 
 	t.Run("returns error for invalid JSON payload", func(t *testing.T) {
@@ -1953,7 +1846,6 @@ func TestAddTaskEndpoint(t *testing.T) {
 	})
 }
 
-// TestSetDeployLockWithKeycloak tests SetDeployLock with Keycloak authentication.
 func TestSetDeployLockWithKeycloak(t *testing.T) {
 
 	t.Run("returns 401 with reason when token is invalid", func(t *testing.T) {
@@ -2006,7 +1898,6 @@ func TestSetDeployLockWithKeycloak(t *testing.T) {
 		router.Post("/api/v1/deploy-lock", env.SetDeployLock)
 
 		req, _ := http.NewRequest(http.MethodPost, "/api/v1/deploy-lock", nil)
-		// no auth header
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
@@ -2048,7 +1939,6 @@ func TestSetDeployLockWithKeycloak(t *testing.T) {
 // error itself stays in the log.
 func TestDeployLockStoreFailure(t *testing.T) {
 
-	// newEnv builds an authenticated Env whose deploy lock store always fails.
 	newEnv := func(t *testing.T) *Env {
 		t.Helper()
 
@@ -2165,7 +2055,7 @@ func TestRequireOIDCAuthHeaderPrecedence(t *testing.T) {
 	t.Run("a rejected canonical header does not fall through to the legacy header", func(t *testing.T) {
 		lockdown, _ := NewLockdown("", lock.NewInMemoryDeployLockStore())
 		legacy := mocks.NewMockAuthStrategy(gomock.NewController(t))
-		legacy.EXPECT().Validate(gomock.Any()).Times(0) // must never be consulted
+		legacy.EXPECT().Validate(gomock.Any()).Times(0)
 		strategies := map[string]auth.AuthStrategy{
 			oidcHeader:           newAuthStrategy(t, false, fmt.Errorf("canonical rejected")),
 			legacyKeycloakHeader: legacy,
@@ -2190,7 +2080,6 @@ func TestRequireOIDCAuthHeaderPrecedence(t *testing.T) {
 	})
 }
 
-// TestReleaseDeployLockWithKeycloak tests ReleaseDeployLock with Keycloak authentication.
 func TestReleaseDeployLockWithKeycloak(t *testing.T) {
 
 	t.Run("returns 401 with reason when token is invalid", func(t *testing.T) {
@@ -2251,7 +2140,6 @@ func TestReleaseDeployLockWithKeycloak(t *testing.T) {
 	})
 }
 
-// TestValidateTokenWithAllowedStrategy tests validateToken with an allowed strategy header.
 func TestValidateTokenWithAllowedStrategy(t *testing.T) {
 
 	t.Run("validates successfully with matching strategy", func(t *testing.T) {
@@ -2319,7 +2207,6 @@ func TestValidateTokenWithAllowedStrategy(t *testing.T) {
 		req, _ := http.NewRequest(http.MethodPost, "/test", nil)
 		req.Header.Set("Authorization", "Bearer token")
 
-		// Only oidcHeader is allowed, so Authorization should be skipped
 		valid, err := env.validateToken(req, oidcHeader)
 		assert.False(t, valid)
 		assert.NoError(t, err)
@@ -2455,8 +2342,6 @@ func TestCORSPolicy(t *testing.T) {
 	})
 
 	t.Run("the origin gate runs before the trailing-slash redirect", func(t *testing.T) {
-		// Deliberately stricter than the framework this replaced, which redirected
-		// without consulting the origin at all.
 		router := newRouter(t, true)
 
 		w := do(router, http.MethodGet, "/api/v1/config/", map[string]string{"Origin": "http://evil.test"})

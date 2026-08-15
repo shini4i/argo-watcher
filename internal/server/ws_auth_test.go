@@ -39,8 +39,6 @@ func wsAuthServer(t *testing.T, oidcEnabled bool, strategies map[string]auth.Aut
 	return env, "ws" + strings.TrimPrefix(server.URL, "http") + "/ws"
 }
 
-// dialWS attempts a handshake and returns the HTTP response status, closing any
-// connection it establishes. A status of 0 means the dial failed before a response.
 func dialWS(t *testing.T, url string, opts *websocket.DialOptions) (int, string) {
 	t.Helper()
 
@@ -65,14 +63,12 @@ func dialWS(t *testing.T, url string, opts *websocket.DialOptions) (int, string)
 	return status, subprotocol
 }
 
-// activeConnections reports how many sockets the server currently tracks.
 func activeConnections() int {
 	connectionsMutex.RLock()
 	defer connectionsMutex.RUnlock()
 	return len(connections)
 }
 
-// TestWebSocketAuthDisabled pins that an OIDC-less deployment keeps its open socket.
 func TestWebSocketAuthDisabled(t *testing.T) {
 	_, url := wsAuthServer(t, false, nil)
 
@@ -98,9 +94,8 @@ func TestWebSocketAuthRejectsUncredentialed(t *testing.T) {
 	shutdownEnv(env)
 }
 
-// TestWebSocketAuthAcceptsHeaderCredential covers non-browser clients, which can set
-// headers: the CLI, wsprobe, and anything else driving the socket directly.
-// TestAuthorizeWebSocket covers the credential matrix without opening sockets: closing
+// TestAuthorizeWebSocket covers the credential matrix — including the header path used by
+// non-browser clients such as the CLI and wsprobe — without opening sockets: closing
 // an established connection waits out a close-handshake timeout, so a real handshake per
 // case would dominate the package's runtime. The two tests around this one prove the
 // decision is actually wired into the handshake.
@@ -181,8 +176,6 @@ func TestWebSocketAuthAcceptsSubprotocolCredential(t *testing.T) {
 	assert.Equal(t, wsSubprotocol, negotiated)
 }
 
-// TestWebSocketAuthRejectsBadSubprotocolCredential pins that the subprotocol is a
-// transport for the credential, not a way around checking it.
 func TestWebSocketAuthRejectsBadSubprotocolCredential(t *testing.T) {
 	_, url := wsAuthServer(t, true, map[string]auth.AuthStrategy{
 		oidcHeader: oidcLikeStrategy{authenticated: false},

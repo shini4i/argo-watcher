@@ -83,7 +83,7 @@ type ServerConfig struct {
 	ArgoUrlAlias       string           `env:"ARGO_URL_ALIAS" json:"argo_cd_url_alias,omitempty"` // Used to generate App Url. Can be omitted if ArgoUrl is reachable from outside.
 	ArgoToken          string           `env:"ARGO_TOKEN,required,notEmpty" json:"-"`
 	ArgoApiTimeout     int64            `env:"ARGO_API_TIMEOUT" envDefault:"60" json:"argo_api_timeout"`
-	AcceptSuspendedApp bool             `env:"ACCEPT_SUSPENDED_APP" envDefault:"false" json:"accept_suspended_app"` // If true, we will accept "Suspended" health status as valid
+	AcceptSuspendedApp bool             `env:"ACCEPT_SUSPENDED_APP" envDefault:"false" json:"accept_suspended_app"`
 	DeploymentTimeout  uint             `env:"DEPLOYMENT_TIMEOUT" envDefault:"900" json:"deployment_timeout"`
 	ArgoRefreshApp     bool             `env:"ARGO_REFRESH_APP" envDefault:"true" json:"argo_refresh_app"`
 	RegistryProxyUrl   string           `env:"DOCKER_IMAGES_PROXY" json:"registry_proxy_url,omitempty"`
@@ -174,7 +174,6 @@ func applyKeycloakCompat(cfg *ServerConfig) error {
 	return nil
 }
 
-// anyKeycloakVarSet reports whether any deprecated KEYCLOAK_* variable is present.
 func anyKeycloakVarSet() bool {
 	for _, v := range []string{
 		"KEYCLOAK_ENABLED", "KEYCLOAK_URL", "KEYCLOAK_REALM", "KEYCLOAK_CLIENT_ID",
@@ -188,8 +187,7 @@ func anyKeycloakVarSet() bool {
 }
 
 // legacyValue returns the deprecated legacyKey's value, but only when the
-// canonical primaryKey is unset (the OIDC_* variable always wins). It returns
-// ("", false) when the primary is set or the legacy variable is absent.
+// canonical primaryKey is unset — the OIDC_* variable always wins.
 func legacyValue(primaryKey, legacyKey string) (string, bool) {
 	if _, ok := os.LookupEnv(primaryKey); ok {
 		return "", false
@@ -197,8 +195,8 @@ func legacyValue(primaryKey, legacyKey string) (string, bool) {
 	return os.LookupEnv(legacyKey)
 }
 
-// keycloakIssuer synthesizes the OIDC issuer a Keycloak realm advertises from the
-// deprecated KEYCLOAK_URL + KEYCLOAK_REALM pair, or "" if either is missing.
+// keycloakIssuer synthesizes the issuer a Keycloak realm advertises from the deprecated
+// KEYCLOAK_URL + KEYCLOAK_REALM pair, or "" if either is missing.
 func keycloakIssuer() string {
 	url := strings.TrimSpace(os.Getenv("KEYCLOAK_URL"))
 	realm := strings.TrimSpace(os.Getenv("KEYCLOAK_REALM"))
@@ -208,7 +206,6 @@ func keycloakIssuer() string {
 	return strings.TrimRight(url, "/") + "/realms/" + realm
 }
 
-// splitGroups parses a comma-separated privileged-groups list, trimming blanks.
 func splitGroups(val string) []string {
 	var groups []string
 	for _, g := range strings.Split(val, ",") {
@@ -257,10 +254,8 @@ func NewServerConfig() (*ServerConfig, error) {
 	return &config, nil
 }
 
-// ensureConnectTimeout appends a connect_timeout parameter (in seconds) to a
-// PostgreSQL DSN when it does not already specify one. An operator-provided
-// connect_timeout is left untouched. Both the URI form (postgres://...) and the
-// keyword/value form (host=... port=...) are supported.
+// ensureConnectTimeout appends a connect_timeout parameter (in seconds) to a PostgreSQL
+// DSN, in either the URI or keyword/value form, when it does not already specify one.
 func ensureConnectTimeout(dsn string, timeout int) string {
 	if strings.Contains(dsn, "connect_timeout=") {
 		return dsn

@@ -23,7 +23,6 @@ import (
 	"github.com/shini4i/argo-watcher/internal/mocks"
 )
 
-// newTestRepo creates a valid GitRepo instance for testing purposes.
 func newTestRepo(t *testing.T, handler GitHandler) *GitRepo {
 	t.Helper()
 	t.Setenv("SSH_KEY_PATH", "/dev/null")
@@ -77,7 +76,6 @@ func TestInvalidateCache(t *testing.T) {
 		repo, err := NewGitRepo("url", "branch", "path", "file", cacheBase, &GitClient{})
 		require.NoError(t, err)
 
-		// Pre-create the cache path so InvalidateCache has something to remove.
 		repo.localRepoPath = filepath.Join(cacheBase, "cached-repo")
 		require.NoError(t, os.MkdirAll(repo.localRepoPath, 0755))
 		marker := filepath.Join(repo.localRepoPath, "marker")
@@ -97,7 +95,6 @@ func TestInvalidateCache(t *testing.T) {
 		repo, err := NewGitRepo("url", "branch", "path", "file", cacheBase, &GitClient{})
 		require.NoError(t, err)
 
-		// Path inside cacheBase but does not exist on disk — RemoveAll should succeed silently.
 		repo.localRepoPath = filepath.Join(cacheBase, "does-not-exist")
 		assert.NoError(t, repo.InvalidateCache())
 	})
@@ -171,9 +168,7 @@ func TestGetRepoCachePath(t *testing.T) {
 }
 
 func TestGenerateOverrideFileName(t *testing.T) {
-	// Custom filename is used verbatim under the path.
 	assert.Equal(t, "apps/custom.yaml", generateOverrideFileNameForApp("apps", "custom.yaml", "my-app"))
-	// Empty filename falls back to the per-app default name.
 	assert.Equal(t, "apps/.argocd-source-my-app.yaml", generateOverrideFileNameForApp("apps", "", "my-app"))
 }
 
@@ -281,20 +276,17 @@ func TestClone(t *testing.T) {
 		// No AddSSHKey expectation — strict controller fails the test if it is called.
 
 		assert.NoError(t, repo.Clone(context.Background()))
-		repo.sshAuth = nil // reset for any future subtests
+		repo.sshAuth = nil
 	})
 }
 
-// setupGitForTest is a helper to create a clean git environment for each sub-test.
 func setupGitForTest(t *testing.T) (sourceRepo, remoteRepo, localRepo *git.Repository, remotePath, localPath string) {
 	t.Helper()
 
-	// 1. Create a NON-BARE repository first, which will be the source.
 	sourcePath := t.TempDir()
 	sourceRepo, err := git.PlainInit(sourcePath, false)
 	require.NoError(t, err)
 
-	// 2. Create an initial commit in the source repository so it's not empty.
 	sourceWorktree, err := sourceRepo.Worktree()
 	require.NoError(t, err)
 	_, err = sourceWorktree.Commit("initial commit", &git.CommitOptions{
@@ -303,14 +295,12 @@ func setupGitForTest(t *testing.T) (sourceRepo, remoteRepo, localRepo *git.Repos
 	})
 	require.NoError(t, err)
 
-	// 3. Create a BARE repository to act as the "origin" remote, by cloning the source.
 	remotePath = t.TempDir()
 	remoteRepo, err = git.PlainClone(remotePath, true, &git.CloneOptions{
 		URL: sourcePath,
 	})
 	require.NoError(t, err)
 
-	// 4. Create the final "local" clone that our code will operate on.
 	localPath = t.TempDir()
 	localRepo, err = git.PlainClone(localPath, false, &git.CloneOptions{
 		URL: remotePath,
@@ -357,13 +347,11 @@ func TestFullUpdateAppCycle(t *testing.T) {
 		appDir := filepath.Join(localPath, "apps")
 		require.NoError(t, os.Mkdir(appDir, 0755))
 
-		// First, perform a successful change.
 		initialParams := &ArgoOverrideFile{}
 		initialParams.Helm.Parameters = []ArgoParameterOverride{{Name: "image.tag", Value: "v2.0.0"}}
 		err := repo.UpdateApp(context.Background(), "my-app", initialParams, nil)
 		require.NoError(t, err)
 
-		// Now, try again with the same content.
 		headBefore, err := localRepo.Head()
 		require.NoError(t, err)
 
@@ -385,7 +373,7 @@ func TestFullUpdateAppCycle(t *testing.T) {
 		require.NoError(t, os.Mkdir(appDir, 0755))
 
 		ctx, cancel := context.WithCancel(context.Background())
-		cancel() // already expired before UpdateApp runs
+		cancel()
 
 		newParams := &ArgoOverrideFile{}
 		newParams.Helm.Parameters = []ArgoParameterOverride{{Name: "image.tag", Value: "v2.0.0"}}
@@ -404,29 +392,24 @@ func TestFullUpdateAppCycle(t *testing.T) {
 		appDir := filepath.Join(localPath, "apps")
 		require.NoError(t, os.Mkdir(appDir, 0755))
 
-		// Get the worktree from the non-bare source repo.
 		sourceWorktree, err := sourceRepo.Worktree()
 		require.NoError(t, err)
 
-		// Add the bare repository as a remote to the source repo.
 		_, err = sourceRepo.CreateRemote(&config.RemoteConfig{
 			Name: "origin",
 			URLs: []string{remotePath},
 		})
 		require.NoError(t, err)
 
-		// Commit a conflicting change to the source repo.
 		_, err = sourceWorktree.Commit("a conflicting commit", &git.CommitOptions{
 			Author:            &object.Signature{Name: "Other", Email: "other@test.com", When: time.Now()},
 			AllowEmptyCommits: true,
 		})
 		require.NoError(t, err)
 
-		// Push the conflicting commit from source to the bare remote.
 		err = sourceRepo.Push(&git.PushOptions{})
 		require.NoError(t, err)
 
-		// Now, try to update our local repo, which will fail on push.
 		newParams := &ArgoOverrideFile{}
 		newParams.Helm.Parameters = []ArgoParameterOverride{{Name: "image.tag", Value: "v3.0.0"}}
 
@@ -473,10 +456,8 @@ func TestCommitAppLocalAndPush_MultipleAppsSinglePush(t *testing.T) {
 	}
 	assert.Equal(t, 2, commitCount)
 
-	// Nothing pushed yet: the remote must still be at its initial commit.
 	require.NoError(t, repo.Push(context.Background()))
 
-	// Both files landed on the remote after the single push.
 	head, err := remoteRepo.Head()
 	require.NoError(t, err)
 	commit, err := remoteRepo.CommitObject(head.Hash())
@@ -510,7 +491,6 @@ func TestCommitAppLocal_NoChangeReportsNotCommitted(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, committed)
 
-	// Byte-identical content on the second call: no new commit.
 	committed, err = repo.CommitAppLocal("app-a", "apps", "", params, nil)
 	require.NoError(t, err)
 	assert.False(t, committed, "unchanged content must report not committed so the push is skipped")
@@ -577,13 +557,11 @@ func TestCommitLocal_SkipsWhenContentUnchanged(t *testing.T) {
 	params := &ArgoOverrideFile{}
 	params.Helm.Parameters = []ArgoParameterOverride{{Name: "image.tag", Value: "v2.0.0"}}
 
-	// First write creates the commit.
 	commitLocalAndPush(t, repo, fullPath, "msg", params)
 
 	headBefore, err := localRepo.Head()
 	require.NoError(t, err)
 
-	// Second call with byte-identical content must skip: no new commit, no error.
 	committed, err := repo.commitLocal(fullPath, "msg", params)
 	require.NoError(t, err)
 	assert.False(t, committed, "unchanged content must report not committed")
@@ -603,7 +581,6 @@ func TestCommitLocalAndPush_RestagesModifiedTrackedFile(t *testing.T) {
 	require.NoError(t, os.Mkdir(appDir, 0755))
 	fullPath := filepath.Join(appDir, "values.yaml")
 
-	// First commit tracks the file at v1.
 	v1 := &ArgoOverrideFile{}
 	v1.Helm.Parameters = []ArgoParameterOverride{{Name: "image.tag", Value: "v1.0.0"}}
 	commitLocalAndPush(t, repo, fullPath, "v1", v1)
@@ -679,7 +656,6 @@ func TestCommitLocal_WriteFileError(t *testing.T) {
 }
 
 func TestGitClient_Coverage(t *testing.T) {
-	// 1. Create a source repository with a commit, so it's not empty.
 	sourcePath := t.TempDir()
 	sourceRepo, err := git.PlainInit(sourcePath, false)
 	require.NoError(t, err)
@@ -691,20 +667,15 @@ func TestGitClient_Coverage(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// 2. Create an instance of the concrete client.
 	client := GitClient{}
 
-	// 3. Execute and cover PlainClone.
 	clonePath := t.TempDir()
 	_, err = client.PlainClone(context.Background(), clonePath, false, &git.CloneOptions{URL: sourcePath})
 	require.NoError(t, err, "PlainClone method failed")
 
-	// 4. Execute and cover PlainOpen on the new clone.
 	_, err = client.PlainOpen(clonePath)
 	require.NoError(t, err, "PlainOpen method failed")
 
-	// 5. Execute and cover AddSSHKey.
-	// We expect an error because it's not a real key, but the call will cover the line.
 	keyFile := filepath.Join(t.TempDir(), "dummy_key")
 	err = os.WriteFile(keyFile, []byte("not-a-real-key"), 0600)
 	require.NoError(t, err)
@@ -724,8 +695,6 @@ func TestUpdateApp_ErrorHandling(t *testing.T) {
 		appDir := filepath.Join(localPath, "apps")
 		require.NoError(t, os.Mkdir(appDir, 0755))
 
-		// A bad template must NOT abort the update — it falls back to the default
-		// commit message and the write succeeds.
 		err := repo.UpdateApp(context.Background(), "my-app", newParams, nil)
 		assert.NoError(t, err)
 	})
@@ -753,7 +722,6 @@ func TestAssertInsideRoot(t *testing.T) {
 	})
 
 	t.Run("Root itself is rejected (not strictly inside)", func(t *testing.T) {
-		// The override file must be inside the root, not the root itself.
 		err := assertInsideRoot(root, root)
 		require.Error(t, err)
 	})
@@ -780,7 +748,6 @@ func TestInvalidateCache_PathEscapeGuard(t *testing.T) {
 	repo, err := NewGitRepo("url", "branch", "path", "file", cacheBase, &GitClient{})
 	require.NoError(t, err)
 
-	// Simulate misuse: localRepoPath set to a path outside repoCachePath.
 	repo.localRepoPath = "/tmp/dangerous-removal-target"
 
 	err = repo.InvalidateCache()
@@ -788,7 +755,6 @@ func TestInvalidateCache_PathEscapeGuard(t *testing.T) {
 	assert.Contains(t, err.Error(), "refusing to remove")
 }
 
-// TestCorruptedGitRepo_ErrorPaths covers failures on an invalid git repo.
 func TestCorruptedGitRepo_ErrorPaths(t *testing.T) {
 	corruptRepoPath := t.TempDir()
 	gitDir := filepath.Join(corruptRepoPath, ".git")
@@ -811,7 +777,6 @@ func TestCorruptedGitRepo_ErrorPaths(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-// TestValidateSSHKeyFile tests the SSH key validation function.
 func TestValidateSSHKeyFile(t *testing.T) {
 	t.Run("Empty path returns error", func(t *testing.T) {
 		err := validateSSHKeyFile("")

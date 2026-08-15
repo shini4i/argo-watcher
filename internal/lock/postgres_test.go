@@ -12,8 +12,7 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// This test requires a running PostgreSQL database.
-// Run with: go test -v -tags integration ./...
+// Requires a running PostgreSQL database; gated on POSTGRES_DSN and skipped in short mode.
 func TestPostgresLocker(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode.")
@@ -35,7 +34,6 @@ func TestPostgresLocker(t *testing.T) {
 	// The buffer must be large enough to hold all sent values before they are read.
 	executionOrder := make(chan int, 4)
 
-	// Goroutine 1
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -52,7 +50,6 @@ func TestPostgresLocker(t *testing.T) {
 	// Give the first goroutine a moment to acquire the lock
 	time.Sleep(10 * time.Millisecond)
 
-	// Goroutine 2
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -67,7 +64,6 @@ func TestPostgresLocker(t *testing.T) {
 	wg.Wait()
 	close(executionOrder)
 
-	// Verify execution order
 	var order []int
 	for i := range executionOrder {
 		order = append(order, i)

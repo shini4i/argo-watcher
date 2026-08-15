@@ -28,10 +28,8 @@ type Config struct {
 	Debug                  bool          `env:"DEBUG"`
 }
 
-// NewClientConfig parses environment variables into a Config and returns the
-// new instance or an error. When parsing fails the returned error groups
-// missing required variables and invalid values under separate headers, so
-// the user can fix everything in one pass.
+// NewClientConfig parses environment variables into a Config. A parse failure groups
+// missing required variables and invalid values under separate headers.
 func NewClientConfig() (*Config, error) {
 	config, err := envConfig.ParseAs[Config]()
 	if err != nil {

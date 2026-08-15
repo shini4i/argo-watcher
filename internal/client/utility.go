@@ -24,8 +24,7 @@ type transientError struct {
 func (e transientError) Error() string { return e.err.Error() }
 func (e transientError) Unwrap() error { return e.err }
 
-// doRequest creates a new HTTP request, presents the configured credential on it
-// and sends it using the watcher's client, returning the response or an error.
+// doRequest presents the configured credential on every request it sends.
 func (watcher *Watcher) doRequest(method, url string, body io.Reader) (*http.Response, error) {
 	req, err := http.NewRequest(method, url, body)
 	if err != nil {
@@ -59,9 +58,7 @@ func (watcher *Watcher) getJSON(url string, v interface{}) error {
 	}
 }
 
-// getJSONOnce performs a single GET request and decodes the JSON response into
-// v. It classifies failures as transient (retryable) or terminal by wrapping
-// the former in transientError.
+// getJSONOnce wraps retryable failures in transientError; terminal ones are returned as-is.
 func (watcher *Watcher) getJSONOnce(url string, v interface{}) error {
 	resp, err := watcher.doRequest(http.MethodGet, url, nil)
 	if err != nil {
@@ -106,10 +103,8 @@ func serverErrorFromResponse(statusCode int, body []byte) error {
 	return fmt.Errorf("argo-watcher returned status %d: %s", statusCode, reason)
 }
 
-// serverReason extracts a useful message from the response body. Argo-watcher
-// returns errors as JSON with `error` and `status` fields (models.TaskStatus);
-// if neither is present we fall back to the raw body, which still beats the
-// status-code-only message we used to surface.
+// serverReason extracts a message from the response body, falling back to the raw body
+// when neither the `error` nor the `status` field of models.TaskStatus is present.
 func serverReason(body []byte) string {
 	body = []byte(strings.TrimSpace(string(body)))
 	if len(body) == 0 {
@@ -127,8 +122,6 @@ func serverReason(body []byte) string {
 	return string(body)
 }
 
-// getImagesList takes a list of image names and a tag,
-// then returns a list of Image structs with these properties.
 func getImagesList(list []string, tag string) []models.Image {
 	var images []models.Image
 	for _, image := range list {
@@ -140,8 +133,6 @@ func getImagesList(list []string, tag string) []models.Image {
 	return images
 }
 
-// createTask takes a config struct, generates the images list and returns a Task object
-// filled with the respective properties from the config.
 func createTask(config *Config) models.Task {
 	images := getImagesList(config.Images, config.Tag)
 	return models.Task{
@@ -154,8 +145,7 @@ func createTask(config *Config) models.Task {
 	}
 }
 
-// printClientConfiguration logs the current configuration of the client including the assigned images and tokens.
-// It also warns if auth tokens are missing.
+// printClientConfiguration logs the client configuration and warns when no auth token is set.
 func printClientConfiguration(watcher *Watcher, task models.Task) {
 	fmt.Printf("Got the following configuration:\n"+
 		"ARGO_WATCHER_URL: %s\n"+
@@ -170,8 +160,6 @@ func printClientConfiguration(watcher *Watcher, task models.Task) {
 	}
 }
 
-// generateAppUrl fetches the watcher config and uses it to construct
-// and return the URL for the Argo application.
 func generateAppUrl(watcher *Watcher, task models.Task) (string, error) {
 	cfg, err := watcher.getWatcherConfig()
 	if err != nil {

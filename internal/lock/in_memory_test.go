@@ -15,7 +15,6 @@ func TestInMemoryLocker(t *testing.T) {
 	// The buffer must be large enough to hold all sent values before they are read.
 	executionOrder := make(chan int, 4)
 
-	// Goroutine 1
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -32,7 +31,6 @@ func TestInMemoryLocker(t *testing.T) {
 	// Give the first goroutine a moment to acquire the lock
 	time.Sleep(1 * time.Millisecond)
 
-	// Goroutine 2
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -47,7 +45,6 @@ func TestInMemoryLocker(t *testing.T) {
 	wg.Wait()
 	close(executionOrder)
 
-	// Verify execution order
 	// Expected: 1 (start), 1 (end), 2 (start), 2 (end)
 	var order []int
 	for i := range executionOrder {

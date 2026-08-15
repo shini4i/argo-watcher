@@ -93,7 +93,6 @@ func TestAuthenticatorValidateWithBearerPrefix(t *testing.T) {
 
 	request.Header.Set("Authorization", "Bearer trimmed-token")
 
-	// The "Bearer " prefix must be stripped before the strategy sees the token.
 	strategy := mocks.NewMockAuthStrategy(gomock.NewController(t))
 	strategy.EXPECT().Validate("trimmed-token").Return(true, nil).AnyTimes()
 
@@ -403,7 +402,6 @@ func TestAuthenticatorValidateStrategy(t *testing.T) {
 
 		request, err := http.NewRequest(http.MethodGet, "http://example.com", http.NoBody)
 		assert.NoError(t, err)
-		// Do not set the Authorization header
 
 		valid, validateErr := authenticator.ValidateStrategy(request, "Authorization")
 		assert.False(t, valid)
@@ -496,7 +494,6 @@ func TestAuthenticatorValidateStrategy(t *testing.T) {
 
 		request, err := http.NewRequest(http.MethodGet, "http://example.com", http.NoBody)
 		assert.NoError(t, err)
-		// Set both headers, but only ARGO_WATCHER_DEPLOY_TOKEN should be evaluated
 		request.Header.Set("Authorization", "jwt-token")
 		request.Header.Set("ARGO_WATCHER_DEPLOY_TOKEN", "deploy-token")
 
@@ -558,11 +555,9 @@ func TestNewAuthenticatorSkipsNilStrategies(t *testing.T) {
 		"ARGO_WATCHER_DEPLOY_TOKEN": NewDeployTokenAuthService("token"),
 	})
 
-	// The nil strategy should have been filtered out
 	_, found := authenticator.Strategy("Authorization")
 	assert.False(t, found)
 
-	// The non-nil strategy should be present
 	_, found = authenticator.Strategy("ARGO_WATCHER_DEPLOY_TOKEN")
 	assert.True(t, found)
 }

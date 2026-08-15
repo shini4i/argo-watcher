@@ -30,7 +30,6 @@ func (j *JWTAuthService) Validate(tokenStr string) (bool, error) {
 		return false, err
 	}
 
-	// Explicitly verify token validity after parsing
 	if !token.Valid {
 		return false, errors.New("invalid token")
 	}
@@ -44,7 +43,6 @@ func (j *JWTAuthService) Validate(tokenStr string) (bool, error) {
 		return false, errors.New("missing exp claim")
 	}
 
-	// Validate "iat" (issued at) claim
 	if iatVal, ok := claims["iat"].(float64); ok {
 		if time.Now().Unix() < int64(iatVal) {
 			return false, errors.New("token used before issued")

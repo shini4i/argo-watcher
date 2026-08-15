@@ -27,9 +27,6 @@ func batchReqFor(app *models.Application, path string, superseded func() bool) *
 	}
 }
 
-// newBatchTestRepo builds a real *updater.GitRepo backed by the given mock handler,
-// so the batch retry loop runs against controllable Clone/Push behaviour without a
-// live remote.
 func newBatchTestRepo(t *testing.T, handler updater.GitHandler) *updater.GitRepo {
 	t.Helper()
 	repo, err := updater.NewGitRepo("git@example.com:test/repo.git", "main", "", "", t.TempDir(), handler)
@@ -66,8 +63,6 @@ func TestRunBatchWriteBack_ExhaustsRetriesResolvesEveryRequest(t *testing.T) {
 	}
 }
 
-// TestRunBatchWriteBack_PermanentErrorFailsAllImmediately verifies a permanent
-// error (auth failure) is not retried and fails every request in the batch at once.
 func TestRunBatchWriteBack_PermanentErrorFailsAllImmediately(t *testing.T) {
 	t.Setenv("SSH_KEY_PATH", "/nonexistent/key")
 	t.Setenv("GIT_OP_TIMEOUT", "5s")
@@ -91,10 +86,6 @@ func TestRunBatchWriteBack_PermanentErrorFailsAllImmediately(t *testing.T) {
 	}
 }
 
-// TestRunBatchWriteBack_MixedPerAppOutcomes proves per-app isolation and the
-// one-outcome-per-request invariant in a single successful clone attempt: a
-// superseded app aborts, an unmanaged (no path) app is a no-op success, and a
-// misconfigured app fails only itself — none poisons the others.
 func TestRunBatchWriteBack_MixedPerAppOutcomes(t *testing.T) {
 	t.Setenv("SSH_KEY_PATH", "/nonexistent/key")
 	t.Setenv("GIT_OP_TIMEOUT", "5s")
@@ -157,9 +148,6 @@ func TestRunBatchWriteBack_CommitErrorIsRetried(t *testing.T) {
 	assert.Contains(t, outcomes[req].Error(), "after 2 attempts", "the commit error must be retried, not terminal on attempt 1")
 }
 
-// TestRunBatchWriteBack_CancelledDuringBackoffResolvesEveryRequest verifies that a
-// context cancelled during the inter-attempt backoff stops the loop early and still
-// resolves every request with the cancellation error (never leaving one hanging).
 func TestRunBatchWriteBack_CancelledDuringBackoffResolvesEveryRequest(t *testing.T) {
 	t.Setenv("SSH_KEY_PATH", "/nonexistent/key")
 	t.Setenv("GIT_OP_TIMEOUT", "5s")

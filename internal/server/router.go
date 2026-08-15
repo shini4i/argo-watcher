@@ -17,7 +17,6 @@ import (
 
 const deployLockEndpoint = "/deploy-lock"
 
-// swaggerPrefix is where the generated API specification is mounted.
 const swaggerPrefix = "/swagger"
 
 // CreateRouter initialize router.

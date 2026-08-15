@@ -12,8 +12,7 @@ import (
 )
 
 // TestWriteJSONUnmarshalableBody covers why writeJSON marshals before it touches the
-// writer: a value that cannot be encoded must produce an error status rather than a
-// 200 with a truncated body.
+// writer: an unencodable value must produce an error status, not a truncated 200.
 func TestWriteJSONUnmarshalableBody(t *testing.T) {
 	w := httptest.NewRecorder()
 

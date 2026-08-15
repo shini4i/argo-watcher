@@ -37,7 +37,6 @@ func unusedHTTPClient(t *testing.T) *mocks.MockHTTPClient {
 	return mocks.NewMockHTTPClient(gomock.NewController(t))
 }
 
-// TestNewMattermostStrategy tests the constructor for MattermostStrategy.
 func TestNewMattermostStrategy(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		cfg := validMattermostConfig()
@@ -150,7 +149,6 @@ func decodePostBody(t *testing.T, req *http.Request) map[string]any {
 	return decoded
 }
 
-// TestMattermostSend tests the Send method of the MattermostStrategy.
 func TestMattermostSend(t *testing.T) {
 	t.Run("Start Creates Root Post And Stores Post Id", func(t *testing.T) {
 		mockClient := mocks.NewMockHTTPClient(gomock.NewController(t))

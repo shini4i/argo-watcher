@@ -68,7 +68,6 @@ func NewServer(serverConfig *config.ServerConfig, reg prometheus.Registerer) (*S
 	if err != nil {
 		return nil, err
 	}
-	// Background cleanup of obsolete tasks.
 	go s.ProcessObsoleteTasks(0)
 
 	argo := &argocd.Argo{}
@@ -172,14 +171,12 @@ func (s *Server) Run() {
 		}
 	}()
 
-	// Wait for interrupt signal
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
 	slog.Info("shutting down server...")
 
-	// Stop the background ArgoCD liveness probe.
 	if s.probeCancel != nil {
 		s.probeCancel()
 	}
@@ -215,11 +212,10 @@ type httpShutdowner interface {
 // returns with that handler outstanding. Hijacked WebSocket connections are not
 // waited on by srv.Shutdown; they are drained by env.Shutdown.
 //
-// The phases run in sequence and share one deadline, so their total cannot
-// exceed shutdownBudget. Previously each carried its own independent timeout, letting
-// the sequence run far longer than any realistic terminationGracePeriodSeconds — the
-// kubelet then SIGKILLed the process partway through, which defeats the phase that
-// matters most (draining queued git write-backs, last in line).
+// The phases run in sequence and share one deadline, so their total cannot exceed
+// shutdownBudget. It must stay inside terminationGracePeriodSeconds: a SIGKILL partway
+// through defeats the phase that matters most (draining queued git write-backs, last
+// in line).
 //
 // No phase failure short-circuits the sequence: a forced HTTP shutdown is logged and
 // the later phases still get their share, because dropping a queued commit over an
@@ -240,9 +236,6 @@ func (s *Server) shutdown(srv httpShutdowner) {
 		}
 	}
 
-	// Phase 1: let outstanding HTTP requests finish. Capped well below the total
-	// because argo-watcher's handlers are short-lived; hijacked WebSocket
-	// connections are not waited on here at all (they are phase 2).
 	httpCtx, cancelHTTP := context.WithTimeout(shutdownCtx, httpDrainBudget)
 	err := srv.Shutdown(httpCtx)
 	cancelHTTP()
@@ -250,8 +243,6 @@ func (s *Server) shutdown(srv httpShutdowner) {
 		slog.Error("server forced to shutdown", "error", err)
 	}
 
-	// Phase 2: now that the listener is closed, signal the WebSocket connection
-	// goroutines to stop and wait for them to finish.
 	wsCtx, cancelWS := context.WithTimeout(shutdownCtx, shutdownTimeout)
 	s.env.Shutdown(wsCtx)
 	cancelWS()

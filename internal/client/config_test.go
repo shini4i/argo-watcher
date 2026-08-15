@@ -7,8 +7,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// setValidClientEnv populates every required client env var with a valid value.
-// Tests can override individual vars to exercise specific failure modes.
 func setValidClientEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("ARGO_WATCHER_URL", "http://localhost:8080")
@@ -60,7 +58,7 @@ func TestNewClientConfig_InvalidDuration(t *testing.T) {
 // tag), not silently accepted.
 func TestNewClientConfig_EmptyRequiredRejected(t *testing.T) {
 	setValidClientEnv(t)
-	t.Setenv("ARGO_APP", "") // set, but empty
+	t.Setenv("ARGO_APP", "")
 
 	_, err := NewClientConfig()
 

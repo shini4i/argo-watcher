@@ -12,9 +12,9 @@ import (
 
 var levelVar = new(slog.LevelVar)
 
-// Init configures the global slog logger to emit JSON to stderr at the level
-// parsed from level. An unparseable level is logged as a warning and leaves the
-// logger at its default (info) level.
+// Init configures the global slog logger to emit JSON to stderr at the level parsed
+// from level. An unparseable level is logged as a warning and leaves the level
+// unchanged -- info on the first call, otherwise whatever a prior call set.
 func Init(level string) {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: levelVar})))
 	if lvl, err := parseLevel(level); err != nil {

@@ -79,7 +79,6 @@ func (env *Env) authorizeWebSocket(w http.ResponseWriter, r *http.Request) bool 
 	return false
 }
 
-// wsSubprotocolToken returns the credential offered in Sec-WebSocket-Protocol, or "".
 func wsSubprotocolToken(request *http.Request) string {
 	for _, offered := range strings.Split(request.Header.Get("Sec-WebSocket-Protocol"), ",") {
 		if token, found := strings.CutPrefix(strings.TrimSpace(offered), wsTokenSubprotocolPrefix); found {
@@ -90,10 +89,6 @@ func wsSubprotocolToken(request *http.Request) string {
 	return ""
 }
 
-// handleWebSocketConnection accepts a WebSocket connection, adds it to a slice,
-// and initiates a goroutine to ping the connection regularly. If WebSocket
-// acceptance fails, an error is logged. The goroutine serves to monitor
-// the connection's activity and removes it from the slice if it's inactive.
 func (env *Env) handleWebSocketConnection(w http.ResponseWriter, r *http.Request) {
 	// Before the upgrade, so a rejection is an ordinary HTTP response.
 	if !env.authorizeWebSocket(w, r) {
@@ -120,7 +115,7 @@ func (env *Env) handleWebSocketConnection(w http.ResponseWriter, r *http.Request
 	defer env.connWg.Done()
 
 	options := &websocket.AcceptOptions{
-		InsecureSkipVerify: env.config.DevEnvironment, // It will disable websocket host validation if set to true
+		InsecureSkipVerify: env.config.DevEnvironment, // dev only: skips the WebSocket origin/host check
 		Subprotocols:       []string{wsSubprotocol},
 	}
 
@@ -130,18 +125,14 @@ func (env *Env) handleWebSocketConnection(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Append the connection before starting the goroutine
 	connectionsMutex.Lock()
 	connections = append(connections, conn)
 	connectionsMutex.Unlock()
 
-	// Track the goroutine for graceful shutdown
 	env.connWg.Add(1)
 	go env.checkConnection(conn)
 }
 
-// checkConnection is a method for the Env struct that continuously checks the
-// health of a WebSocket connection by sending periodic "heartbeat" messages.
 func (env *Env) checkConnection(c *websocket.Conn) {
 	defer env.connWg.Done()
 
@@ -170,13 +161,9 @@ func (env *Env) checkConnection(c *websocket.Conn) {
 	}
 }
 
-// notifyWebSocketClients sends message to every active WebSocket connection.
-// A connection that fails the write is closed and removed from the slice.
 func notifyWebSocketClients(message string) {
 	var wg sync.WaitGroup
 
-	// Copy connections slice under mutex to avoid race condition during iteration
-	// Also filter out closed connections
 	connectionsMutex.RLock()
 	connsCopy := make([]*websocket.Conn, 0, len(connections))
 	for _, c := range connections {

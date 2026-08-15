@@ -32,10 +32,8 @@ func extractGitOverrides(annotations map[string]string, app *Application, isSour
 	fields := make(map[string]*string)
 
 	if isSourceNil {
-		// when app.Spec.Sources is nil, just include the managedGitFile
 		fields[managedGitFile] = &gr.Filename
 	} else {
-		// when app.Spec.Sources is not nil, include all fields
 		fields = map[string]*string{
 			managedGitRepo:   &gr.RepoUrl,
 			managedGitBranch: &gr.BranchName,

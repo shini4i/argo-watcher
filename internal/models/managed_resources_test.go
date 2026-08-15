@@ -6,7 +6,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// resource builds a ManagedResource around a raw target-state manifest.
 func resource(targetState string) ManagedResource {
 	return ManagedResource{TargetState: targetState}
 }
@@ -44,15 +43,11 @@ const cronJobManifest = `{
 
 const serviceManifest = `{"apiVersion": "v1", "kind": "Service", "spec": {"ports": [{"port": 80}]}}`
 
-// TestDesiredImageNamesCollectsWorkloadKinds verifies that images are extracted from
-// arbitrarily nested pod templates, that tags are stripped, and that duplicates are
-// collapsed into a single sorted list.
 func TestDesiredImageNamesCollectsWorkloadKinds(t *testing.T) {
 	resources := ManagedResources{Items: []ManagedResource{
 		resource(deploymentManifest),
 		resource(cronJobManifest),
 		resource(serviceManifest),
-		// A second workload repeating an image already seen must not duplicate it.
 		resource(deploymentManifest),
 	}}
 
@@ -63,9 +58,7 @@ func TestDesiredImageNamesCollectsWorkloadKinds(t *testing.T) {
 	}, resources.DesiredImageNames())
 }
 
-// TestDesiredImageNamesSkipsUnusableItems verifies that an unparsable or empty
-// target state is ignored rather than aborting the whole extraction — a single bad
-// manifest must not blind the check to the images it can read.
+// A single unparsable manifest must not blind the check to the images it can read.
 func TestDesiredImageNamesSkipsUnusableItems(t *testing.T) {
 	resources := ManagedResources{Items: []ManagedResource{
 		resource(""),
@@ -78,8 +71,8 @@ func TestDesiredImageNamesSkipsUnusableItems(t *testing.T) {
 	assert.Equal(t, []string{"busybox", "ghcr.io/shini4i/app"}, resources.DesiredImageNames())
 }
 
-// TestDesiredImageNamesCollectsNonTemplateImages verifies that an image declared outside a
-// pod template — an operator CR is the common case — still counts as part of the application.
+// An image declared outside a pod template — an operator CR is the common case — still
+// counts as part of the application.
 func TestDesiredImageNamesCollectsNonTemplateImages(t *testing.T) {
 	resources := ManagedResources{Items: []ManagedResource{
 		resource(`{"kind":"Workflow","spec":{"templates":[{"container":{"image":"ghcr.io/shini4i/step:v1"}}]}}`),
@@ -90,8 +83,7 @@ func TestDesiredImageNamesCollectsNonTemplateImages(t *testing.T) {
 	assert.Equal(t, []string{"ghcr.io/shini4i/step"}, resources.DesiredImageNames())
 }
 
-// TestDesiredImageNamesEmpty verifies that an application whose manifests declare no
-// images yields an empty list, which callers treat as "cannot conclude".
+// An empty list is what callers treat as "cannot conclude".
 func TestDesiredImageNamesEmpty(t *testing.T) {
 	resources := ManagedResources{Items: []ManagedResource{resource(serviceManifest)}}
 	assert.Empty(t, resources.DesiredImageNames())

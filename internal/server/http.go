@@ -45,7 +45,6 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 	}
 }
 
-// writeString renders a plain-text response body with the given status code.
 func writeString(w http.ResponseWriter, status int, body string) {
 	w.Header().Set("Content-Type", textContentType)
 	w.WriteHeader(status)
@@ -84,8 +83,6 @@ type taskAppLabel struct {
 	app string
 }
 
-// withTaskAppLabel returns a request carrying a holder for the resolved app name,
-// along with the holder itself.
 func withTaskAppLabel(r *http.Request) (*http.Request, *taskAppLabel) {
 	holder := &taskAppLabel{}
 	return r.WithContext(context.WithValue(r.Context(), taskAppContextKey, holder)), holder
@@ -100,7 +97,6 @@ func setTaskApp(r *http.Request, app string) {
 	}
 }
 
-// routeParam matches a chi path parameter, which routePattern rewrites.
 var routeParam = regexp.MustCompile(`\{([^}]+)\}`)
 
 // routePattern returns the matched route in the `/api/v1/tasks/:id` form.

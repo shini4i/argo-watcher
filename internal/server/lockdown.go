@@ -39,7 +39,6 @@ type LockdownSchedule struct {
 	EndMin    int
 }
 
-// parseSchedule parses a single schedule from a string and returns a LockdownSchedule struct.
 func parseSchedule(schedule string) (LockdownSchedule, error) {
 	times := strings.Split(strings.TrimSpace(schedule), "-")
 	if len(times) != 2 {
@@ -83,7 +82,6 @@ func parseSchedule(schedule string) (LockdownSchedule, error) {
 	}, nil
 }
 
-// parseTime parses a time from a string and returns the hour and minute as integers.
 func parseTime(timeStr string) (int, int, error) {
 	timeParts := strings.Split(timeStr, ":")
 	hour, err := strconv.Atoi(timeParts[0])
@@ -158,7 +156,6 @@ func (l *Lockdown) isLockedWith(state lock.DeployLockState, now time.Time) bool 
 	return l.scheduleActive(now)
 }
 
-// scheduleActive reports whether now falls within any configured lockdown window.
 func (l *Lockdown) scheduleActive(now time.Time) bool {
 	for _, s := range l.Schedules {
 		if timeWithinSchedule(now, s.StartDay, s.EndDay, s.StartHour, s.StartMin, s.EndHour, s.EndMin) {
@@ -233,9 +230,7 @@ func (l *Lockdown) WatchTransitions(stop <-chan struct{}, interval time.Duration
 	}
 }
 
-// NewLockdown initializes a new Lockdown structure backed by the given store and
-// parses the lockdown schedules if provided. If the schedule parsing is
-// successful, it returns the new Lockdown. Otherwise, it returns an error.
+// NewLockdown parses the schedule string and binds the lockdown to the given store.
 func NewLockdown(schedules string, store lock.DeployLockStore) (*Lockdown, error) {
 	lockdown := &Lockdown{
 		store:            store,
@@ -257,19 +252,16 @@ func timeWithinSchedule(now time.Time, startDay, endDay time.Weekday, startHour,
 	currHour := now.Hour()
 	currMin := now.Minute()
 
-	// If it's the same day
 	if startDay == endDay {
 		return currDay == startDay &&
 			timeAtOrAfter(currHour, currMin, startHour, startMin) &&
 			timeBefore(currHour, currMin, endHour, endMin)
 	}
 
-	// For different days
 	if !dayInRange(currDay, startDay, endDay) {
 		return false
 	}
 
-	// Check times for start and end day
 	switch currDay {
 	case startDay:
 		return timeAtOrAfter(currHour, currMin, startHour, startMin)
@@ -280,12 +272,10 @@ func timeWithinSchedule(now time.Time, startDay, endDay time.Weekday, startHour,
 	}
 }
 
-// timeAtOrAfter reports whether hour:min is at or after ref hour:min on the same day.
 func timeAtOrAfter(hour, min, refHour, refMin int) bool {
 	return hour > refHour || (hour == refHour && min >= refMin)
 }
 
-// timeBefore reports whether hour:min is strictly before ref hour:min on the same day.
 func timeBefore(hour, min, refHour, refMin int) bool {
 	return hour < refHour || (hour == refHour && min < refMin)
 }
@@ -299,8 +289,6 @@ func dayInRange(day, start, end time.Weekday) bool {
 	return day >= start || day <= end
 }
 
-// dayToWeekday converts a three-letter abbreviation of a weekday (e.g., "Mon") to its corresponding time.Weekday enum value.
-// If the input doesn't match a valid weekday abbreviation, it returns an error.
 func dayToWeekday(day string) (time.Weekday, error) {
 	switch day {
 	case "Sun":

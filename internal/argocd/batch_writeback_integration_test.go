@@ -25,7 +25,7 @@ import (
 )
 
 // testSSHAuth builds go-git SSH auth from a key file with host-key verification
-// disabled (the Gitea instance is ephemeral), matching the other integration helpers.
+// disabled (the Gitea instance is ephemeral).
 func testSSHAuth(t *testing.T, sshKeyPath string) *gogitssh.PublicKeys {
 	t.Helper()
 	auth, err := gogitssh.NewPublicKeysFromFile("git", sshKeyPath, "")
@@ -50,8 +50,6 @@ func newBatchReqFor(name, tag string, superseded func() bool) *batchWriteRequest
 	}
 }
 
-// countArgoCommits clones the remote and counts commits whose message marks an
-// argo-watcher image-tag update, so a test can assert one commit landed per app.
 func countArgoCommits(t *testing.T, repoURL, sshKeyPath, branch string) int {
 	t.Helper()
 	dir := t.TempDir()
@@ -75,9 +73,6 @@ func countArgoCommits(t *testing.T, repoURL, sshKeyPath, branch string) int {
 	return count
 }
 
-// TestIntegration_BatchWriteBack_SingleCloneCommitPerApp verifies the core batch
-// promise: N apps sharing a repo are written with one clone and one commit per
-// app, and all their override files land on the remote after a single flush.
 func TestIntegration_BatchWriteBack_SingleCloneCommitPerApp(t *testing.T) {
 	waitForGitea(t, 60*time.Second)
 	env := setupGitea(t)
@@ -106,11 +101,9 @@ func TestIntegration_BatchWriteBack_SingleCloneCommitPerApp(t *testing.T) {
 	// Clone; a value >1 would mean a retry re-cloned).
 	assert.Equal(t, int32(1), atomic.LoadInt32(&handler.openCount), "the whole batch must share a single clone")
 
-	// One commit per app landed on the remote.
 	assert.Equal(t, 3, countArgoCommits(t, env.DirectRepoURL, env.SSHKeyPath, "master"),
 		"expected one commit per app in the batch")
 
-	// Each app's override file carries its own tag.
 	for _, tc := range []struct{ name, tag string }{{"app-a", "v1"}, {"app-b", "v2"}, {"app-c", "v3"}} {
 		_, content := cloneRemoteState(t, env.DirectRepoURL, env.SSHKeyPath, "master",
 			fmt.Sprintf("apps/.argocd-source-%s.yaml", tc.name))
@@ -118,9 +111,6 @@ func TestIntegration_BatchWriteBack_SingleCloneCommitPerApp(t *testing.T) {
 	}
 }
 
-// TestIntegration_BatchWriteBack_PartialSupersede verifies per-app isolation: a
-// superseded app is dropped from the batch (its file is never written) while the
-// rest are committed and pushed normally.
 func TestIntegration_BatchWriteBack_PartialSupersede(t *testing.T) {
 	waitForGitea(t, 60*time.Second)
 	env := setupGitea(t)
@@ -145,7 +135,6 @@ func TestIntegration_BatchWriteBack_PartialSupersede(t *testing.T) {
 	assert.NoError(t, outcomes[batch[0]])
 	assert.NoError(t, outcomes[batch[2]])
 
-	// The two live apps landed; the superseded one did not.
 	assert.Equal(t, 2, countArgoCommits(t, env.DirectRepoURL, env.SSHKeyPath, "master"))
 	_, superContent := cloneRemoteState(t, env.DirectRepoURL, env.SSHKeyPath, "master",
 		"apps/.argocd-source-app-super.yaml")
@@ -194,7 +183,6 @@ func TestIntegration_BatchWriteBack_PushRaceRecovery(t *testing.T) {
 			for _, req := range batch {
 				require.NoError(t, outcomes[req], "app %s should succeed after recovery (attempt %d)", req.app.Metadata.Name, attempt)
 			}
-			// The competitor's commit must survive the recovery.
 			_, competitorContent := cloneRemoteState(t, env.DirectRepoURL, env.SSHKeyPath, "master", "competitor.txt")
 			assert.Contains(t, competitorContent, "batch-race",
 				"recovery must preserve the competitor's commit, not force-push over it (attempt %d)", attempt)

@@ -19,8 +19,6 @@ type PostgresDeployLockStore struct {
 	db *gorm.DB
 }
 
-// NewPostgresDeployLockStore creates a DeployLockStore backed by the deploy_lock
-// table of the given database.
 func NewPostgresDeployLockStore(db *gorm.DB) DeployLockStore {
 	return &PostgresDeployLockStore{db: db}
 }
@@ -48,7 +46,6 @@ func (s *PostgresDeployLockStore) State() (DeployLockState, error) {
 	}, nil
 }
 
-// Lock engages the manual lockdown and drops any pending override.
 func (s *PostgresDeployLockStore) Lock() error {
 	return s.write(true, time.Time{})
 }

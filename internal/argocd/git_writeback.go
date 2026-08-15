@@ -14,10 +14,9 @@ import (
 )
 
 // ErrDeploymentSuperseded is returned by the git write-back when the task is
-// found to be superseded by a newer deployment for the same app. The retry loop
-// re-checks this before each attempt and aborts rather than committing a stale
-// image tag — so a larger retry budget cannot let an older deployment win over a
-// newer one. Callers treat it as "cancelled", not a failure.
+// superseded by a newer deployment for the same app, so a larger retry budget
+// cannot let an older deployment win over a newer one. Callers treat it as
+// "cancelled", not a failure.
 var ErrDeploymentSuperseded = errors.New("deployment superseded before write-back; aborting to avoid committing a stale image tag")
 
 const (
@@ -25,10 +24,8 @@ const (
 	managedImageTagPattern  = "argo-watcher/%s.helm.image-tag"
 )
 
-// generateOverrideFileContent builds the Helm override file for the task's
-// managed images from the app's annotations. It returns nil (no error) when no
-// managed images are declared, and errors if a managed image is missing its
-// tag-path annotation.
+// generateOverrideFileContent builds the Helm override file for the task's managed
+// images. It returns nil (no error) when no managed images are declared.
 func generateOverrideFileContent(annotations map[string]string, task *models.Task) (*updater.ArgoOverrideFile, error) {
 	overrideFileContent := updater.ArgoOverrideFile{}
 	managedImages, err := extractManagedImages(annotations)
@@ -47,10 +44,9 @@ func generateOverrideFileContent(annotations map[string]string, task *models.Tas
 				tagAnnotation := fmt.Sprintf(managedImageTagPattern, appAlias)
 				tagPath, exists := annotations[tagAnnotation]
 				if !exists {
-					// The image is declared managed but has no tag-path annotation, so
-					// we cannot know which Helm value to override. Silently skipping here
-					// would let the write-back report success while never updating git;
-					// fail loudly so the misconfiguration surfaces on the task instead.
+					// Without the tag-path annotation we cannot know which Helm value to
+					// override. Silently skipping would let the write-back report success
+					// while never updating git, so fail loudly instead.
 					return nil, fmt.Errorf("managed image %q (alias %q) is missing its %s annotation", appImage, appAlias, tagAnnotation)
 				}
 				overrideFileContent.Helm.Parameters = append(overrideFileContent.Helm.Parameters, updater.ArgoParameterOverride{
@@ -68,15 +64,13 @@ func generateOverrideFileContent(annotations map[string]string, task *models.Tas
 // UpdateGitImageTag writes the new image tag for app into the GitOps repository.
 // gitHandler is injected to enable testing; production callers pass updater.GitClient{}.
 //
-// ctx is propagated into the retry loop and each per-attempt context so that
-// a caller can cancel in-flight git operations (e.g. on graceful shutdown).
+// Cancelling ctx cancels in-flight git operations (e.g. on graceful shutdown).
 // Production callers that lack a context chain may pass context.Background()
 // until a proper context is wired through the call stack.
 //
 // isSuperseded is an optional (at most one) predicate re-checked before each
 // write-back attempt; when it returns true the loop aborts with
-// ErrDeploymentSuperseded instead of committing, so a newer deployment for the
-// same app is never overwritten by an older one that keeps retrying.
+// ErrDeploymentSuperseded instead of committing.
 func UpdateGitImageTag(ctx context.Context, app *models.Application, task *models.Task, gitopsRepo *models.GitopsRepo, gitHandler updater.GitHandler, isSuperseded ...func() bool) error {
 	if gitopsRepo.Path == "" {
 		slog.Warn("No path found for app, unsupported Application configuration", "app", app.Metadata.Name, "id", task.Id)
@@ -118,10 +112,7 @@ const (
 )
 
 // gitUpdateBackoff returns the delay before the next retry, given the 1-based
-// number of the attempt that just failed. It computes base*2^(attempt-1),
-// capped at gitUpdateMaxBackoff, then applies full jitter (a uniform random
-// value in [0, ceiling]). Full jitter keeps early retries tight — the key to
-// winning a push race under sustained concurrent-writer contention — and also
+// number of the attempt that just failed. The full jitter it applies also
 // de-synchronises multiple argo-watcher instances contending on one repo.
 func gitUpdateBackoff(attempt uint) time.Duration {
 	ceiling := gitUpdateBaseBackoff << (attempt - 1)
@@ -136,32 +127,23 @@ func gitUpdateBackoff(attempt uint) time.Duration {
 	return time.Duration(rand.Int63n(int64(ceiling) + 1)) // NOSONAR: pseudorandom is safe here (retry jitter, not a security context)
 }
 
-// runGitUpdateWithRetry runs the clone+update sequence with per-attempt
-// bounded contexts and a fixed-backoff retry loop. The final attempt always
-// invalidates the on-disk cache before running so a poisoned cache (partial
-// commit, stale ref, half-written file) is replaced by a fresh clone and
-// self-heals without operator intervention — regardless of the attempt count.
+// runGitUpdateWithRetry runs the clone+update sequence with per-attempt bounded
+// contexts and a retry loop. The final attempt always invalidates the on-disk cache,
+// so a poisoned cache (partial commit, stale ref, half-written file) self-heals.
 //
-// Each attempt derives its context from parentCtx via WithTimeout(opTimeout),
-// so one stuck attempt cannot consume the budget of subsequent attempts. If
-// parentCtx is already cancelled, the loop exits early without sleeping.
-// The total worst-case wall clock is GitOpTimeout * GitMaxAttempts plus the
-// sum of the inter-attempt backoffs, each bounded by gitUpdateMaxBackoff.
+// One stuck attempt cannot consume the budget of subsequent attempts. If parentCtx
+// is already cancelled, the loop exits early without sleeping. The total worst-case
+// wall clock is GitOpTimeout * GitMaxAttempts plus the sum of the inter-attempt
+// backoffs, each bounded by gitUpdateMaxBackoff.
 //
-// Permanent errors (see updater.IsPermanent) short-circuit the loop — for
-// example, a bad SSH key or auth failure will fail the same way on every
-// attempt and retrying just wastes the budget.
+// Permanent errors (see updater.IsPermanent) short-circuit the loop — a bad SSH key
+// or auth failure fails the same way on every attempt.
 func runGitUpdateWithRetry(parentCtx context.Context, repo *updater.GitRepo, appName string, releaseOverrides *updater.ArgoOverrideFile, task *models.Task, isSuperseded func() bool) error {
 	maxAttempts := repo.GitMaxAttempts()
 	opTimeout := repo.GitOpTimeout()
 
 	var lastErr error
 	for attempt := uint(1); attempt <= maxAttempts; attempt++ {
-		// Abort before touching git if a newer deployment for the same app has
-		// superseded this task. Re-checked every attempt (not just once up front)
-		// so a task that keeps retrying under contention cannot commit a stale tag
-		// on top of a newer one — the correctness guard that makes a larger retry
-		// budget safe.
 		if isSuperseded != nil && isSuperseded() {
 			slog.Info("Git update aborted: task superseded by a newer deployment", "attempt", attempt, "max_attempts", maxAttempts, "id", task.Id)
 			return ErrDeploymentSuperseded
@@ -191,9 +173,6 @@ func runGitUpdateWithRetry(parentCtx context.Context, repo *updater.GitRepo, app
 	return fmt.Errorf("git update failed after %d attempts: %w", maxAttempts, lastErr)
 }
 
-// invalidateCacheOnFinalAttempt clears the on-disk cache before the final
-// attempt so a poisoned cache (partial commit, stale ref, half-written file) is
-// replaced by a fresh clone and self-heals without operator intervention.
 func invalidateCacheOnFinalAttempt(repo *updater.GitRepo, task *models.Task, attempt, maxAttempts uint) {
 	if attempt != maxAttempts {
 		return
@@ -204,9 +183,6 @@ func invalidateCacheOnFinalAttempt(repo *updater.GitRepo, task *models.Task, att
 	}
 }
 
-// backoffBeforeRetry waits (jittered) before the next attempt, unless this was
-// the final one. It returns a non-nil error only if parentCtx is cancelled
-// during the wait, signalling the caller to stop retrying.
 func backoffBeforeRetry(parentCtx context.Context, task *models.Task, attemptErr error, attempt, maxAttempts uint) error {
 	if attempt >= maxAttempts {
 		return nil
@@ -221,11 +197,7 @@ func backoffBeforeRetry(parentCtx context.Context, task *models.Task, attemptErr
 	}
 }
 
-// runGitUpdateAttempt performs one clone+update cycle. It derives a per-attempt
-// context from parentCtx bounded by opTimeout, so a hung network call is
-// capped at opTimeout while still honouring cancellation from the parent.
-// Errors are returned wrapped with the failed phase so the retry loop's logs
-// indicate where the attempt failed.
+// runGitUpdateAttempt performs one clone+update cycle, bounded by opTimeout.
 func runGitUpdateAttempt(parentCtx context.Context, repo *updater.GitRepo, opTimeout time.Duration, appName string, releaseOverrides *updater.ArgoOverrideFile, task *models.Task) error {
 	ctx, cancel := context.WithTimeout(parentCtx, opTimeout)
 	defer cancel()
@@ -241,8 +213,7 @@ func runGitUpdateAttempt(parentCtx context.Context, repo *updater.GitRepo, opTim
 	return nil
 }
 
-// extractManagedImages extracts the managed images from the application's annotations.
-// It returns a map of the managed images, where the key is the application alias and the value is the image name.
+// extractManagedImages maps each application alias from the annotations to its image name.
 func extractManagedImages(annotations map[string]string) (map[string]string, error) {
 	managedImages := map[string]string{}
 

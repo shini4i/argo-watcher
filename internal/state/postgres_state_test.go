@@ -18,8 +18,7 @@ type postgresTestEnv struct {
 	state *PostgresState
 }
 
-// newPostgresTestEnv prepares an isolated Postgres-backed repository for integration testing.
-// Tests are skipped automatically when no Postgres configuration is present in the environment.
+// Skips the test automatically when no Postgres configuration is present.
 func newPostgresTestEnv(t *testing.T) *postgresTestEnv {
 	t.Helper()
 
@@ -47,7 +46,6 @@ func newPostgresTestEnv(t *testing.T) *postgresTestEnv {
 	return env
 }
 
-// addTask persists a task fixture and returns the stored record.
 func (env *postgresTestEnv) addTask(t *testing.T, task models.Task) *models.Task {
 	t.Helper()
 	result, err := env.state.AddTask(task)
@@ -65,7 +63,6 @@ func (env *postgresTestEnv) storedModel(t *testing.T, id string) state_models.Ta
 	return stored
 }
 
-// sampleTask builds a reusable task definition for integration tests.
 func sampleTask(app string) models.Task {
 	return models.Task{
 		App:     app,
@@ -224,7 +221,6 @@ func TestPostgresState_CancelInProgressTasks(t *testing.T) {
 	assert.Equal(t, models.StatusCancelledMessage, got.Status)
 	assert.Equal(t, "superseded", got.StatusReason)
 
-	// Same app but a different image is untouched.
 	gotSameApp, err := env.state.GetTask(sameAppOtherImage.Id)
 	require.NoError(t, err)
 	assert.Equal(t, models.StatusInProgressMessage, gotSameApp.Status)
