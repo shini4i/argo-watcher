@@ -88,7 +88,7 @@ Read when the built-in [GitOps updater](../guides/gitops-updater.md) is in use.
 |---|---|---|
 | `SSH_KEY_PATH` | Private SSH key used to push (required to enable the updater) | |
 | `SSH_KEY_PASS` | Passphrase for that key | |
-| `SSH_KNOWN_HOSTS` | `known_hosts` file used to verify the remote host | SSH defaults |
+| `SSH_KNOWN_HOSTS` | `known_hosts` file(s) used to verify the remote host, colon-separated | `~/.ssh/known_hosts`, `/etc/ssh/ssh_known_hosts` |
 | `SSH_COMMIT_USER` | Commit author name | `argo-watcher` |
 | `SSH_COMMIT_MAIL` | Commit author email | `argo-watcher@example.com` |
 | `COMMIT_MESSAGE_FORMAT` | Go template for the commit message | built-in format |
@@ -98,7 +98,7 @@ Read when the built-in [GitOps updater](../guides/gitops-updater.md) is in use.
 | `GIT_BATCH_MAX_SIZE` | Applications committed per batch flush | `20` |
 | `GIT_TIMEOUT` | **Deprecated.** Used as `GIT_OP_TIMEOUT` when that is unset | |
 
-Host key verification is on: a remote missing from `SSH_KNOWN_HOSTS` fails the push. The chart writes the file and sets this variable for you.
+Host key verification is on: a remote whose key is not listed fails the push. `SSH_KNOWN_HOSTS` is read by go-git rather than by argo-watcher's own configuration, which is why it has no `GitConfig` field. The chart writes the file and sets the variable for you.
 
 ### Retry and timeout budget
 
