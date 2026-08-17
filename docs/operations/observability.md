@@ -12,7 +12,7 @@ scrape_configs:
 
 ## Exposed metrics
 
-The server emits eleven metrics today, all defined in [`internal/prometheus/metrics.go`](https://github.com/shini4i/argo-watcher/blob/main/internal/prometheus/metrics.go).
+The server emits twelve metrics today, all defined in [`internal/prometheus/metrics.go`](https://github.com/shini4i/argo-watcher/blob/main/internal/prometheus/metrics.go).
 
 | Metric | Type | Labels | Description |
 |---|---|---|---|
@@ -26,6 +26,7 @@ The server emits eleven metrics today, all defined in [`internal/prometheus/metr
 | `gitops_lock_wait_duration_seconds` | histogram | `app` | Time spent waiting to acquire the per-repository git write-back lock. High values mean tasks are queued behind concurrent write-backs to the same repo. |
 | `deployment_duration_seconds` | histogram | `app` | End-to-end wall-clock time of a successful deployment, from the start of rollout monitoring until the app reached the deployed state. Only successful deployments are observed (a failure's duration is dominated by the timeout). |
 | `gitops_batch_size` | histogram | (none) | Number of applications coalesced into a single batch write-back flush. Only observed when `GIT_BATCH_WRITEBACK` is enabled; a distribution skewed toward 1 means little batching is happening (low contention). See the [GitOps Updater](../guides/gitops-updater.md#batch-write-back) guide. |
+| `gitops_writeback_skipped_unvalidated` | counter | `app` | Deployments of an application annotated `argo-watcher/managed: "true"` whose task carried no valid credential, so the new image tag was never committed. Any non-zero value is a misconfiguration. The deployment that follows normally fails blaming the image or the timeout rather than the credential, which is what this counter identifies — see [Image tag is never committed](troubleshooting.md#image-tag-is-never-committed-write-back-skipped). Task submission takes an optional credential by design, so anyone who can reach the endpoint and knows a managed application's name can also raise this counter; treat a rise as "investigate", not automatically "a pipeline of ours regressed". |
 | `unauthenticated_reads` | counter | `path`, `app` | Reads served without a credential on the endpoints deliberately left open while OIDC auth is enabled (currently `GET /api/v1/tasks/{id}`). Zero only when every caller presents a credential; `app` names the application whose pipeline still polls without one, and is `unknown` when the read matched no task or one whose submission carried no credential (an app name from an uncredentialed caller is unbounded, so it never becomes a label). See [Tracking the read-auth migration](#tracking-the-read-auth-migration). |
 
 !!! note "The `app` label and uncredentialed submissions"
@@ -102,6 +103,22 @@ groups:
             slow transfer of that tree (history depth is not a factor — clone and fetch are
             shallow). Check gitops_lock_wait_duration_seconds for the same app to see whether
             it is queued behind other write-backs to the same repository.
+
+      - alert: ArgoWatcherWritebackSkipped
+        expr: increase(gitops_writeback_skipped_unvalidated[1h]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.app }} deploys without git write-back"
+          description: |
+            The application is annotated for write-back but its deployments arrive without a
+            valid credential, so the image tag is never committed. Those deployments then
+            fail blaming the image or the timeout (or, under fire-and-forget, report success),
+            which is why this counter is the signal. Check that the pipeline sets
+            ARGO_WATCHER_DEPLOY_TOKEN or BEARER_TOKEN, and that nothing between the client
+            and argo-watcher redirects to a different host — a credential is not carried
+            across a host change.
 ```
 
 ## Example dashboard

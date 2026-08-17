@@ -20,6 +20,7 @@ type MetricsInterface interface {
 	ObserveDeploymentDuration(app string, seconds float64)
 	ObserveGitBatchSize(size int)
 	AddUnauthenticatedRead(path, app string)
+	AddSkippedWriteback(app string)
 }
 
 type Metrics struct {
@@ -34,6 +35,7 @@ type Metrics struct {
 	DeploymentDuration   *prometheus.HistogramVec
 	GitBatchSize         prometheus.Histogram
 	UnauthenticatedReads *prometheus.CounterVec
+	SkippedWritebacks    *prometheus.CounterVec
 }
 
 // NewMetrics registers the collectors with the provided Registerer.
@@ -113,9 +115,20 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 			Name: "unauthenticated_reads",
 			Help: "Reads served without a credential on the deliberately open read endpoints while OIDC auth was enabled.",
 		}, []string{"path", "app"}),
+		// SkippedWritebacks counts deployments of an app annotated for write-back whose
+		// task carried no valid credential, so the commit never happened. The deployment
+		// that follows normally fails blaming the image or the timeout, and reports success
+		// only under argo-watcher/fire-and-forget — which is why this counter, not the
+		// deployment status, is the signal. Any value above zero is a misconfiguration
+		// worth alerting on; the usual cause is a credential dropped by a redirect that
+		// leaves the host the client was pointed at.
+		SkippedWritebacks: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "gitops_writeback_skipped_unvalidated",
+			Help: "Write-backs skipped because a task for a watcher-managed application presented no valid credential.",
+		}, []string{"app"}),
 	}
 
-	reg.MustRegister(m.FailedDeployment, m.ProcessedDeployments, m.ArgocdUnavailable, m.StateUnavailable, m.InProgressTasks, m.RefreshDuration, m.GitWritebackDuration, m.GitLockWaitDuration, m.DeploymentDuration, m.GitBatchSize, m.UnauthenticatedReads)
+	reg.MustRegister(m.FailedDeployment, m.ProcessedDeployments, m.ArgocdUnavailable, m.StateUnavailable, m.InProgressTasks, m.RefreshDuration, m.GitWritebackDuration, m.GitLockWaitDuration, m.DeploymentDuration, m.GitBatchSize, m.UnauthenticatedReads, m.SkippedWritebacks)
 
 	return m
 }
@@ -189,4 +202,10 @@ func (m *Metrics) ObserveGitBatchSize(size int) {
 // resolve to a task.
 func (m *Metrics) AddUnauthenticatedRead(path, app string) {
 	m.UnauthenticatedReads.WithLabelValues(path, app).Inc()
+}
+
+// AddSkippedWriteback increments SkippedWritebacks for app; see that field for what a
+// non-zero value means.
+func (m *Metrics) AddSkippedWriteback(app string) {
+	m.SkippedWritebacks.WithLabelValues(app).Inc()
 }

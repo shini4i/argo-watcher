@@ -113,6 +113,24 @@ func histogramSampleForApp(t *testing.T, vec *prometheus.HistogramVec, app strin
 	return metric.GetHistogram().GetSampleCount(), metric.GetHistogram().GetSampleSum()
 }
 
+func TestMetrics_AddSkippedWriteback(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := NewMetrics(reg)
+	expectedMetric := `
+		# HELP gitops_writeback_skipped_unvalidated Write-backs skipped because a task for a watcher-managed application presented no valid credential.
+		# TYPE gitops_writeback_skipped_unvalidated counter
+		gitops_writeback_skipped_unvalidated{app="test-app"} 1
+	`
+
+	m.AddSkippedWriteback("test-app")
+
+	// Collected through the registry rather than the collector, so this also fails if the
+	// collector is never handed to MustRegister — in which case it would be correct and
+	// simply never scraped.
+	err := testutil.CollectAndCompare(reg, strings.NewReader(expectedMetric), "gitops_writeback_skipped_unvalidated")
+	assert.NoError(t, err)
+}
+
 func TestMetrics_ObserveGitWritebackDuration(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	m := NewMetrics(reg)

@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/shini4i/argo-watcher/internal/config"
@@ -37,6 +38,10 @@ type Watcher struct {
 	debugMode  bool
 	retryDelay time.Duration
 	auth       credential
+	// redirectWarning keeps the dropped-credential warning to one line per run. Every
+	// status poll of a deployment takes the same redirect, so warning per request would
+	// bury the rest of the CI log.
+	redirectWarning sync.Once
 }
 
 const (
@@ -74,8 +79,14 @@ func credentialFrom(config *Config) credential {
 	}
 }
 
+func (c credential) isSet() bool {
+	return c.header != "" && c.value != ""
+}
+
+// apply sets the credential's header on request. An unset credential is a no-op, which is
+// how a client with no token configured talks to a server that requires none.
 func (c credential) apply(request *http.Request) {
-	if c.header == "" || c.value == "" {
+	if !c.isSet() {
 		return
 	}
 	request.Header.Set(c.header, c.value)
@@ -83,15 +94,18 @@ func (c credential) apply(request *http.Request) {
 
 // NewWatcher creates a new Watcher instance with the given base URL, timeout, and debug mode.
 func NewWatcher(baseUrl string, debugMode bool, timeout time.Duration) *Watcher {
-	return &Watcher{
-		baseUrl: baseUrl,
-		client: &http.Client{
-			Timeout:       timeout,
-			CheckRedirect: dropCredentialOnHostChange,
-		},
+	watcher := &Watcher{
+		baseUrl:    baseUrl,
 		debugMode:  debugMode,
 		retryDelay: defaultRetryDelay,
 	}
+	// The redirect hook is a method so it reads the credential at request time: the
+	// caller assigns it after construction (see setupWatcher).
+	watcher.client = &http.Client{
+		Timeout:       timeout,
+		CheckRedirect: watcher.dropCredentialOnHostChange,
+	}
+	return watcher
 }
 
 // maxRedirects mirrors net/http's default redirect limit, which setting CheckRedirect
@@ -103,13 +117,40 @@ const maxRedirects = 10
 // already covered) but not for custom headers, and the deploy token authorizes git
 // write-back for every application — it must not be handed to a host the operator did
 // not configure.
-func dropCredentialOnHostChange(request *http.Request, via []*http.Request) error {
+//
+// Dropping it turns off git write-back, which surfaces later as a rollout that fails
+// blaming the image or the timeout, so the loss is reported here where the cause is still
+// known. The warning covers both credentials by asking whether the outgoing request still
+// carries one, rather than assuming a host change drops it: net/http compares hostnames
+// with the port excluded, so it keeps Authorization across a port-only change and across
+// apex-to-subdomain, both of which this function still treats as a host change.
+func (watcher *Watcher) dropCredentialOnHostChange(request *http.Request, via []*http.Request) error {
 	if len(via) >= maxRedirects {
 		return fmt.Errorf("stopped after %d redirects", maxRedirects)
 	}
 
-	if request.URL.Host != via[0].URL.Host {
-		request.Header.Del(deployTokenHeader)
+	if request.URL.Host == via[0].URL.Host {
+		return nil
+	}
+
+	request.Header.Del(deployTokenHeader)
+
+	// net/http has already applied its own stripping to this request, so an empty header
+	// here means the credential genuinely did not survive the hop.
+	if watcher.auth.isSet() && request.Header.Get(watcher.auth.header) == "" {
+		watcher.redirectWarning.Do(func() {
+			// %q, not %s: the redirect target comes from the server's Location header,
+			// which is exactly the untrusted input this function guards against. Quoting
+			// escapes any control character rather than letting it forge a log line.
+			// #nosec G706 -- a host cannot carry CR/LF to forge a log line: a raw one
+			// cannot survive an HTTP header value, and url.Parse rejects the escaped form
+			// ("invalid URL escape %0a"), so Location never parses and this hook is never
+			// reached. The %q above covers it regardless.
+			log.Printf("warning: %q redirected to %q. A credential is not carried across a host change, "+
+				"so this deployment will proceed without git write-back. "+
+				"Point ARGO_WATCHER_URL at the host that serves the API.",
+				via[0].URL.Host, request.URL.Host)
+		})
 	}
 
 	return nil
