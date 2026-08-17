@@ -36,4 +36,4 @@ required.
 
 ## Retry Behavior
 
-While polling for deployment status, the client automatically retries transient failures (network errors or `5xx` responses from the server) up to 3 times with a fixed 2-second delay before giving up. This retry count and delay are not configurable. Terminal failures (`4xx` responses, invalid tokens, malformed responses) fail immediately, and task submission (the initial `POST`) is not retried.
+While polling for deployment status, the client automatically retries transient failures (network errors or `5xx` responses from the server) up to 3 times with a fixed 2-second delay before giving up. This retry count and delay are not configurable. Terminal failures (`4xx` responses, invalid tokens, malformed responses, a redirect that steps down from `https`) fail immediately, and task submission (the initial `POST`) is not retried.

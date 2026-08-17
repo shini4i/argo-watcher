@@ -62,6 +62,9 @@ func (watcher *Watcher) getJSON(url string, v interface{}) error {
 func (watcher *Watcher) getJSONOnce(url string, v interface{}) error {
 	resp, err := watcher.doRequest(http.MethodGet, url, nil)
 	if err != nil {
+		if errors.Is(err, errInsecureRedirect) {
+			return err // a misconfiguration, not a blip — retrying never clears it
+		}
 		// Network-level failure: connection refused/reset, DNS, timeout.
 		return transientError{err}
 	}

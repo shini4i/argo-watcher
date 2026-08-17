@@ -137,6 +137,25 @@ GitOps repository — whoever answers for the redirect target receives it on eve
 
 ---
 
+## Client refuses a redirect away from https
+
+**Symptom:** The deployment fails immediately with
+`refused to follow a redirect away from https`, naming the endpoint that answered and the
+plain-`http` target it pointed at.
+
+**Meaning:** `ARGO_WATCHER_URL` is an `https` URL, but something on the path answers it
+with a `Location` on plain `http`. Go's HTTP client carries `Authorization` across such a
+redirect as long as the hostname is unchanged, so following it would put the deploy token
+or CI JWT on the wire in the clear. The client refuses instead, and does not retry — the
+redirect is a property of the configuration, not a transient failure.
+
+**Fix:** Point `ARGO_WATCHER_URL` at the endpoint that serves the API over TLS, or stop
+the ingress in front of it from downgrading API requests. Only stepping down from TLS is
+refused — a client deliberately pointed at an `http://` URL keeps working, unless the
+chain has already reached `https` by the time it is redirected back.
+
+---
+
 ## Image is not part of application
 
 **Symptom:** The deployment fails immediately with `Image "<name>" is not part of application "<app>"`, followed by the list of images the application defines.
