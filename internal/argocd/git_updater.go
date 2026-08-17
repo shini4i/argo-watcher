@@ -48,6 +48,16 @@ func (gitUpdater *GitUpdater) observeLockWait(app string, d time.Duration) {
 	}
 }
 
+// countSkippedWriteback records that a managed application's write-back was skipped for
+// want of a credential. task.App is safe as a label here: reaching this point means
+// ArgoCD already resolved the application, so the value is not caller-chosen (see
+// models.Task.MetricApp).
+func (gitUpdater *GitUpdater) countSkippedWriteback(app string) {
+	if gitUpdater.metrics != nil {
+		gitUpdater.metrics.AddSkippedWriteback(app)
+	}
+}
+
 // observeWriteback records how long the git write-back took while holding the lock.
 func (gitUpdater *GitUpdater) observeWriteback(app string, d time.Duration) {
 	if gitUpdater.metrics != nil {
@@ -60,8 +70,19 @@ func (gitUpdater *GitUpdater) observeWriteback(app string, d time.Duration) {
 // predicate forwarded to the write-back retry loop so a task superseded by a
 // newer deployment aborts instead of committing a stale image tag.
 func (gitUpdater *GitUpdater) UpdateIfNeeded(app *models.Application, task models.Task, isSuperseded ...func() bool) error {
-	if !app.IsManagedByWatcher() || !task.Validated {
-		slog.Debug("Skipping git repo update: application not managed by watcher or task not validated.", "id", task.Id)
+	if !app.IsManagedByWatcher() {
+		slog.Debug("Skipping git repo update: application is not managed by the watcher.", "id", task.Id)
+		return nil
+	}
+
+	// The managed annotation asks for write-back, so a task that cannot authorize it is a
+	// misconfiguration, not a routine skip. Warn rather than debug because the rollout
+	// that follows fails blaming the image or the timeout — never the missing credential —
+	// so this is the only place the real cause is still known.
+	if !task.Validated {
+		slog.Warn("Skipping git repo update: application is managed by the watcher but the task presented no valid credential.",
+			"app", task.App, "id", task.Id)
+		gitUpdater.countSkippedWriteback(task.App)
 		return nil
 	}
 

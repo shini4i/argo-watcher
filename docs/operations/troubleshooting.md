@@ -66,12 +66,74 @@ Each entry follows the same shape: **Symptom · Likely cause · How to verify ·
 **How to verify:**
 - Check the Argo CD UI to confirm the application is syncing and the new image is being deployed.
 - Verify that the image tag annotation was correctly set: `kubectl describe app <ARGO_APP> -o yaml | grep -A5 argo-watcher`.
-- Confirm the CI job actually supplied `ARGO_WATCHER_DEPLOY_TOKEN` or `BEARER_TOKEN`; with `LOG_LEVEL=debug` a skipped write-back logs "Skipping git repo update".
+- Confirm the CI job actually supplied `ARGO_WATCHER_DEPLOY_TOKEN` or `BEARER_TOKEN`. For an application annotated `argo-watcher/managed: "true"` the server logs a warning — "application is managed by the watcher but the task presented no valid credential" — and increments `gitops_writeback_skipped_unvalidated`; see [Image tag is never committed](#image-tag-is-never-committed-write-back-skipped).
 
 **Fix:**
 1. Increase `DEPLOYMENT_TIMEOUT` to accommodate your typical rollout duration.
 2. If using the built-in GitOps updater, verify the SSH key has write access to the target repository.
 3. Check Argo CD logs for sync errors: `kubectl logs -l app.kubernetes.io/name=argocd-application-controller`.
+
+---
+
+## Image tag is never committed (write-back skipped)
+
+**Symptom:** The server logs `Skipping git repo update: application is managed by the
+watcher but the task presented no valid credential` and
+`gitops_writeback_skipped_unvalidated` rises for that application.
+
+Write-back requires a credential on `POST /api/v1/tasks`. Without one the task is still
+accepted and monitored — submission is deliberately open — but the new tag is never
+committed, so what the pipeline reports next does not name the real cause:
+
+| Application | What the deployment reports |
+|---|---|
+| Normal | Fails as `Image "<name>" is not part of application "<app>"` — the image is genuinely absent, because the commit that would have added it never happened. |
+| Normal, with image validation off (`ARGO_REFRESH_APP=false`, `refresh: false`, or `argo-watcher/skip-image-validation`) | Waits out `DEPLOYMENT_TIMEOUT`, then fails. |
+| `argo-watcher/fire-and-forget: "true"` | **Reports success.** The rollout is never checked, so nothing contradicts it. |
+| Redeploy of a tag the application already runs | Reports success, correctly — there was nothing to commit. |
+
+So a failure here usually blames the image or the clock. The server-side warning and
+counter above are what identify the credential as the cause.
+
+**Likely causes:**
+- The pipeline sets neither `ARGO_WATCHER_DEPLOY_TOKEN` nor `BEARER_TOKEN`.
+- The value does not match the server's `ARGO_WATCHER_DEPLOY_TOKEN` / `JWT_SECRET`.
+- **Something between the client and the server redirects to a different host.** A
+  credential is generally not carried across a host change, so it never reaches the server.
+  The two credentials behave differently:
+    - `Authorization` (`BEARER_TOKEN`) is stripped by Go's HTTP client on **every** client
+      version — but only when the *hostname* changes. Go compares hostnames with the port
+      excluded, so it is preserved across a port-only change (`host:8080` → `host:9090`) and
+      when the target is a subdomain of the original (`example.com` → `sub.example.com`).
+      A sibling hostname is not a subdomain: `watcher.example.com` →
+      `watcher.int.example.com` drops it.
+    - `ARGO_WATCHER_DEPLOY_TOKEN` is a custom header, which Go always forwards, so the
+      client deletes it itself on any change of host **or port** — from v0.15.0 onwards.
+      Earlier clients forwarded it, so this can appear on a client upgrade with nothing
+      else changing.
+
+  Clients from this release onward log a warning naming both hosts, once per run, whenever
+  a credential does not survive the hop.
+
+**How to verify:**
+```bash
+curl -sSI "$ARGO_WATCHER_URL/api/v1/config"
+```
+A `200` means there is no redirect. A `301`, `302`, `307` or `308` with a `Location`
+pointing at a different hostname is the cause. (A `301`/`302` on the API path breaks
+submission outright, since Go rewrites the `POST` to a `GET`; a `307`/`308` preserves the
+request and loses only the credential.)
+
+**Fix:**
+1. Point `ARGO_WATCHER_URL` at the hostname that actually serves the API.
+2. If the pipelines cannot be changed, serve both hostnames from the same ingress instead
+   of redirecting one to the other — then there is no host change. Redirecting browser
+   navigation while passing `/api/v1/*` and `/ws` through keeps the canonical URL in the
+   address bar.
+
+Do not work around this by allowing the credential to follow the redirect. The deploy
+token does not expire, is not scoped to an application, and authorizes commits to the
+GitOps repository — whoever answers for the redirect target receives it on every request.
 
 ---
 

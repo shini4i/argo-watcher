@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A new `gitops_writeback_skipped_unvalidated` counter (labelled by `app`) reports
+  deployments of an application annotated `argo-watcher/managed: "true"` whose task
+  presented no valid credential, so the image tag was never committed. Any non-zero value
+  is a misconfiguration, and it is the only signal that names the cause: the deployment
+  that follows fails as `Image "<name>" is not part of application "<app>"` — the image
+  really is absent, because the commit that would have added it never happened — or waits
+  out `DEPLOYMENT_TIMEOUT` when image validation is off. Under
+  `argo-watcher/fire-and-forget` it reports success instead. The matching server log moved
+  from debug to warn and now names the application; an application that is simply not
+  managed by the watcher still logs at debug, since skipping it is routine.
+
+  The usual cause is a credential dropped in transit by a redirect that leaves the host
+  the client was pointed at. A client from this release on also logs one warning naming
+  both hosts when that happens, rather than dropping the credential silently.
+
 ### Changed
 
 - The HTTP server now routes with `chi` instead of `gin`. Endpoints, status codes,

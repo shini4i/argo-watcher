@@ -921,6 +921,59 @@ func TestGitUpdaterUpdateIfNeeded(t *testing.T) {
 		assert.False(t, locker.called)
 	})
 
+	// The warn level and the message text are asserted, not just the counter:
+	// docs/operations/troubleshooting.md tells operators to search the server log for this
+	// wording, so a regression back to debug would leave that instruction wrong.
+	t.Run("warnsAndCountsSkippedWritebackWhenManagedAppTaskNotValidated", func(t *testing.T) {
+		// Registered before the controller so the LIFO cleanup restores the logger last.
+		logs := captureDebugLogs(t)
+
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		metrics := mocks.NewMockMetricsInterface(ctrl)
+		metrics.EXPECT().AddSkippedWriteback(validTask.App).Times(1)
+
+		locker := &spyLocker{}
+		updater := NewGitUpdater(locker, "/tmp/cache", metrics, nil)
+		task := validTask
+		task.Validated = false
+
+		err := updater.UpdateIfNeeded(makeApp(true), task)
+		assert.NoError(t, err)
+		assert.False(t, locker.called)
+
+		output := logs.String()
+		assert.Contains(t, output, "managed by the watcher but the task presented no valid credential")
+		assert.Contains(t, output, `"level":"WARN"`)
+		// Both attributes are needed to act on it: the app to go fix, the id to correlate.
+		assert.Contains(t, output, `"app":"demo"`)
+		assert.Contains(t, output, `"id":"task-id"`)
+	})
+
+	// An app that is not managed by the watcher never wanted write-back, so skipping it
+	// is routine: debug only, no counter. Otherwise every deployment of every app that
+	// does not use the feature would warn and inflate the metric.
+	t.Run("staysQuietAndDoesNotCountWhenAppNotManaged", func(t *testing.T) {
+		logs := captureDebugLogs(t)
+
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		metrics := mocks.NewMockMetricsInterface(ctrl)
+
+		locker := &spyLocker{}
+		updater := NewGitUpdater(locker, "/tmp/cache", metrics, nil)
+		task := validTask
+		task.Validated = false
+
+		err := updater.UpdateIfNeeded(makeApp(false), task)
+		assert.NoError(t, err)
+		assert.False(t, locker.called)
+
+		output := logs.String()
+		assert.Contains(t, output, "not managed by the watcher")
+		assert.NotContains(t, output, `"level":"WARN"`)
+	})
+
 	t.Run("failsWhenRepoInvalid", func(t *testing.T) {
 		locker := &spyLocker{}
 		updater := NewGitUpdater(locker, "/tmp/cache", nil, nil)
