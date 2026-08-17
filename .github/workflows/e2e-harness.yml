@@ -33,6 +33,10 @@ jobs:
 
       - name: Install Task
         uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+        with:
+          # An exact version skips the unauthenticated go-task tags API
+          # lookup, which shares the runner IP 60 req/h anonymous quota.
+          version: 3.52.0
 
       # bats is absent from the runner image; shellcheck is present but pinned here
       # anyway, because the runner ships 0.9.0 while the flake devshell provides
