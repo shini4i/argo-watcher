@@ -21,7 +21,7 @@ There are two tables. `tasks` stores every deployment task and its status; index
 | `author` | `varchar(255) NOT NULL` | Deployment author identifier. |
 | `project` | `varchar(255) NOT NULL` | Business project identifier. |
 
-`deploy_lock` holds the [manual deploy lock](../guides/gitops-updater.md#deployment-locking) so it applies to every replica and survives restarts. It is seeded by the migration and always holds exactly one row.
+`deploy_lock` holds the [manual deploy lock](../guides/deployment-lock.md#manual-lockdown) so it applies to every replica and survives restarts. It is seeded by the migration and always holds exactly one row.
 
 | Column | Type | Notes |
 |---|---|---|
@@ -71,7 +71,7 @@ pg_dump --no-owner --no-acl \
   | gzip > "argo-watcher-$(date -u +%Y%m%d).sql.gz"
 ```
 
-A daily dump retained for 30 days is a sensible baseline. If the deployment volume is high or you treat the audit history as critical, increase retention rather than frequency — there's no point dumping more than once an hour given the workload.
+A daily dump retained for 30 days is a sensible baseline. If you treat the deployment history as an audit trail, increase retention rather than frequency.
 
 Restore with `psql` after recreating the database:
 

@@ -1,253 +1,134 @@
 # Development
 
-This guide covers setting up a local development environment for Argo Watcher.
+Setting up a local environment. What a change must satisfy before it can be merged is in [CONTRIBUTING.md](https://github.com/shini4i/argo-watcher/blob/main/.github/CONTRIBUTING.md).
 
 ## Prerequisites
 
-- **Go 1.26+**
-- **Node.js 24+** (for frontend development; `nix develop` provides it)
-- **Docker** and **Docker Compose** (for running dependencies locally)
-- **[Task](https://taskfile.dev/)** (task runner, replaces Make)
-- **[pre-commit](https://pre-commit.com/)** (Git hooks for code quality)
+- **Go** — the version in `go.mod` is authoritative
+- **Node.js 24+** for the frontend
+- **Docker** and Docker Compose
+- **[Task](https://taskfile.dev/)** — every automation lives in `Taskfile.yml`
+- **[pre-commit](https://pre-commit.com/)** — `pre-commit install`
 
-Install the Git hooks:
+`nix develop` provides all of the above plus the scanners CI runs (`trufflehog`, `gosec`, `govulncheck`, `trivy`, `zizmor`). Without Nix, install `trufflehog` yourself — one pre-commit hook is a secret scan and fails without it.
 
-```bash
-pre-commit install
-```
-
-One hook is a [TruffleHog](https://github.com/trufflesecurity/trufflehog) secret scan that needs the `trufflehog` binary on `$PATH`. `nix develop` provides it along with the other scanners used in CI (`gosec`, `govulncheck`, `trivy`, `zizmor`); without Nix, install `trufflehog` manually.
-
-Install Go tooling (mock generator, swagger, migration tool):
+Then install the Go tooling (`swag`, `mockgen`, `migrate`):
 
 ```bash
 task install-deps
 ```
 
-## Task Runner
-
-The project uses [Task](https://taskfile.dev/) as a build and automation tool. All common development operations are defined in `Taskfile.yml`.
-
-### Available Tasks
-
-| Task                | Description                                                       |
-|---------------------|-------------------------------------------------------------------|
-| `task install-deps` | Install Go development tools (swag, mockgen, migrate)              |
-| `task mocks`        | Generate mock interfaces for unit tests                            |
-| `task docs`         | Generate the Swagger JSON spec                                     |
-| `task test`         | Run the full test suite (generates mocks and docs first)           |
-| `task test-integration` | Run integration tests against live Gitea, Toxiproxy + Keycloak (requires Docker) |
-| `task build`        | Build the Go binary                                                 |
-| `task build-ui`     | Build the React frontend bundle                                    |
-| `task lint-web`     | Lint the React frontend code                                       |
-| `task test-web`     | Run React frontend unit tests                                      |
-| `task test-web-e2e` | Run the Playwright browser suite against the built UI (requires Docker) |
-| `task bootstrap`    | Start all Docker Compose services                                  |
-| `task teardown`     | Stop all Docker Compose services                                   |
-
-Run any task with:
+## Everything with Docker Compose
 
 ```bash
-task <task-name>
-```
-
-## Quick Start with Docker Compose
-
-The fastest way to get a full development environment running:
-
-```bash
-task bootstrap
-```
-
-This starts PostgreSQL, runs database migrations, and prepares the backend and frontend services via Docker Compose.
-
-To stop everything:
-
-```bash
+task bootstrap    # postgres + migrations + backend + frontend + mock Argo CD
 task teardown
 ```
 
-## Back-End Development
+The Web UI is then on [http://localhost:3100](http://localhost:3100) and the API on `8080`. See the [Quick Start](../getting-started/quick-start.md) for driving a task through it.
 
-If you prefer to run services individually without Docker Compose, follow the steps below.
+## Running the pieces directly
 
-### Generate Mocks and Swagger Spec
-
-Before compiling or testing, generate the required mock classes and swagger spec:
+Generated mocks and the Swagger spec are inputs to the build, so create them first:
 
 ```bash
 task mocks
 task docs
 ```
 
-### Start the Mock Argo CD Server
-
-The project includes a mock Argo CD server for local development:
+Start the mock Argo CD (port `8081`):
 
 ```bash
-cd cmd/mock
-go run .
+go run ./cmd/mock
 ```
 
-This starts a mock server on port `8081` that simulates the Argo CD API.
-
-### Start Argo Watcher (In-Memory Mode)
-
-For development without a database:
+Then the server, in-memory:
 
 ```bash
-cd cmd/argo-watcher
-go mod download
-LOG_LEVEL=debug ARGO_URL=http://localhost:8081 ARGO_TOKEN=example STATE_TYPE=in-memory go run .
+LOG_LEVEL=debug ARGO_URL=http://localhost:8081 ARGO_TOKEN=example \
+  STATE_TYPE=in-memory go run ./cmd/argo-watcher
 ```
 
-### Start Argo Watcher (PostgreSQL Mode)
-
-Start the database and run migrations:
+Or against Postgres:
 
 ```bash
 docker compose up -d postgres migrations
+
+LOG_LEVEL=debug ARGO_URL=http://localhost:8081 ARGO_TOKEN=example \
+  STATE_TYPE=postgres DB_HOST=localhost DB_PORT=5432 \
+  DB_USER=watcher DB_PASSWORD=watcher DB_NAME=watcher \
+  go run ./cmd/argo-watcher
 ```
 
-Then start the server:
-
-```bash
-cd cmd/argo-watcher
-go mod tidy
-LOG_LEVEL=debug \
-  ARGO_URL=http://localhost:8081 \
-  ARGO_TOKEN=example \
-  STATE_TYPE=postgres \
-  DB_USER=watcher \
-  DB_PASSWORD=watcher \
-  DB_NAME=watcher \
-  go run .
-```
-
-## Front-End Development
+The frontend dev server, with hot reload on [http://localhost:5173](http://localhost:5173), proxies `/api` and `/ws` to `localhost:8080`:
 
 ```bash
 cd web
 npm install
-npm start
+npm run dev
 ```
 
-The development server opens at [http://localhost:3000](http://localhost:3000).
+## Tasks
 
-## Running Tests
+| Task | Description |
+|---|---|
+| `task install-deps` | Install `swag`, `mockgen` and `migrate` |
+| `task mocks` | Generate the gomock mocks (into the gitignored `internal/mocks/`) |
+| `task docs` | Generate the Swagger spec into `web/public/swagger/` |
+| `task build` | Build the server binary |
+| `task build-ui` | Build the frontend bundle into `web/dist` |
+| `task test` | Backend tests (generates mocks and docs first) |
+| `task test-integration` | GitOps updater against real Gitea + Toxiproxy, and the Keycloak auth flow (Docker) |
+| `task test-web` | Frontend unit tests (Vitest) |
+| `task test-web-e2e` | Playwright browser suite against the built UI (Docker) |
+| `task lint-web` | Lint the frontend (oxlint) |
+| `task bootstrap` / `task teardown` | Bring the Compose stack up / down |
 
-### Full Test Suite
+`task --list` shows the rest, including the kind-cluster helpers.
 
-Run all backend tests (this also generates mocks and swagger docs automatically):
+## Tests
 
-```bash
-task test
-```
-
-### Backend Unit Tests Only
-
-```bash
-cd cmd/argo-watcher
-go test -v ./...
-```
-
-To run a specific test suite:
+`task test` needs Postgres on `localhost:5432` with the credentials above — `docker compose up -d postgres migrations` provides exactly that. A single suite:
 
 ```bash
 go test -v -run TestArgoStatusUpdaterCheck ./...
 ```
 
-### Integration Tests
+**Integration tests** (`task test-integration`) exercise the GitOps updater against a real Gitea with TCP fault injection through Toxiproxy, plus privileged and unprivileged access to the deploy lock against a real Keycloak. The task brings the `integration` Compose profile up and tears it down afterwards; if a previous run is still up, `docker compose --profile integration down -v` first to avoid port conflicts.
 
-Integration tests exercise the GitOps updater against a real Gitea instance with TCP fault injection via Toxiproxy, and the Keycloak auth flow (privileged vs non-privileged access to the deploy lock) against a real Keycloak. Docker must be running before you start them.
+**Browser tests** (`task test-web-e2e`) cover what jsdom cannot: the top-level OIDC redirect and the path it returns to, session recovery across a reload, the server's SPA fallback for deep-linked task URLs, the live WebSocket behind the deploy-lock banner, and the privileged write flows for a privileged versus a regular user. The task builds `web/dist`, brings Keycloak up, and lets Playwright start two servers (`8100` without OIDC, `8101` with) plus the mock Argo CD. Specs live in `web/e2e/`.
 
-```bash
-task test-integration
-```
+**The end-to-end lab** in [`test/e2e/`](https://github.com/shini4i/argo-watcher/tree/main/test/e2e) runs real Argo CD, Gitea and a race-detector build on a kind cluster, once per release. Its README covers the phases and how to add one.
 
-This command brings up the `integration` Docker Compose profile (Gitea, Toxiproxy, and Keycloak), runs the tests, then tears the stack down automatically. If the integration stack is already running from a previous session, run `docker compose --profile integration down -v` before re-running the task to avoid port conflicts.
+## Swagger spec
 
-### Frontend Tests
+The spec is generated from [swag](https://github.com/swaggo/swag) annotations on the handlers — the annotations are the source of truth, so update them in the same commit as a route or model change. `task docs` regenerates `web/public/swagger/swagger.json` (gitignored); `task build-ui` copies the Swagger UI assets next to it into `web/dist/swagger/`. The server then serves the explorer at `/swagger/index.html`.
 
-```bash
-task test-web
-```
-
-### Browser (Playwright) Tests
-
-The jsdom suite above mounts components directly and has no real navigation, so a
-separate Playwright suite covers what only a browser can show: the top-level OIDC
-redirect and the path it returns to, session recovery across a reload, the Go
-server's SPA fallback for deep-linked task URLs, the live WebSocket driving the
-deploy-lock banner, and the privileged write flows (rollback, toggling the lock)
-with their gating for a privileged vs a regular user. Docker must be running.
-
-```bash
-task test-web-e2e
-```
-
-The task builds `web/dist`, brings Keycloak up from the `integration` Compose
-profile, and lets Playwright start the servers it drives: two `argo-watcher`
-instances (ports 8100 without OIDC, 8101 with) plus the mock Argo CD API. Both
-serve the built bundle as static files, which is how the production image runs.
-Specs live in `web/e2e/`, split into the `no-auth` and `auth` projects.
-
-### Frontend Linting
-
-```bash
-task lint-web
-```
-
-## Swagger Documentation
-
-The Swagger spec is generated from Go annotations in the source code using [swag](https://github.com/swaggo/swag).
-
-To regenerate the spec:
-
-```bash
-task docs
-```
-
-This outputs `web/public/swagger/swagger.json`. During `task build-ui`, Vite copies the Swagger UI assets alongside the spec into `web/dist/swagger/`.
-
-!!! note
-    Regenerate the spec whenever API annotations, request/response models, or documented routes change.
-
-Once the server is running, the Swagger UI is accessible at:
-
-```text
-http://localhost:8080/swagger/index.html
-```
-
-For a summary of available API endpoints, see the [API Reference](../reference/api.md) page.
-
-## Project Structure
+## Layout
 
 ```text
 cmd/
-  argo-watcher/     # Main server binary
+  argo-watcher/     # server binary
   client/           # CLI client binary
-  mock/             # Mock Argo CD server for development
-db/
-  migrations/       # PostgreSQL migration files
-docs/               # MkDocs documentation source
+  mock/             # mock Argo CD for local development
+db/migrations/      # PostgreSQL migrations
+docs/               # this documentation (MkDocs)
 internal/
-  argocd/           # Argo CD API client and git write-back
-  auth/             # Authentication (OIDC, JWT, deploy token)
-  client/           # CLI client logic
-  config/           # Environment-variable configuration
-  helpers/          # Shared utility functions
-  lock/             # Deployment lock logic
+  argocd/           # Argo CD client, rollout monitoring, git write-back
+  auth/             # OIDC, JWT and deploy-token authentication
+  client/           # client logic
+  config/           # environment-variable configuration
+  helpers/          # shared utilities
+  lock/             # deployment lock
   logging/          # slog setup
-  migrate/          # Database migration runner
-  mocks/            # Generated gomock mocks for tests (gitignored, `task mocks`)
-  models/           # Data models
-  notifications/    # Webhook notification sender
-  prometheus/       # Metrics definitions
-  server/           # HTTP server and routes
-  state/            # State management (in-memory and PostgreSQL)
-  updater/          # GitOps updater logic
-test/
-  e2e/              # Disposable kind-based end-to-end lab
+  migrate/          # migration runner
+  mocks/            # generated mocks (gitignored)
+  models/           # data models
+  notifications/    # webhook and Mattermost notifiers
+  prometheus/       # metrics
+  server/           # HTTP server, routes, WebSocket
+  state/            # in-memory and PostgreSQL state
+  updater/          # git operations
+test/e2e/           # kind-based end-to-end lab
 web/                # React/TypeScript frontend
 ```

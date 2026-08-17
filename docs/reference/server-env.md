@@ -1,80 +1,113 @@
 # Server Environment Variables
 
-The Argo Watcher server supports the following environment variables. When using the Helm chart, most of these are set through chart values automatically.
+Every setting the server reads from the environment. With the Helm chart most of these are set for you from chart values; anything the chart has no value for goes in `extraEnvs`.
 
-On startup, any missing required or invalid variables are reported together in a single error that lists every offending variable, so you can fix them all in one pass instead of one restart at a time.
+On startup all missing or invalid variables are reported together in one error, so a broken configuration takes one restart to fix, not one per variable.
 
-## Core Settings
+## Core
 
-| Variable            | Description                                                     | Default     | Required    |
-|---------------------|-----------------------------------------------------------------|-------------|-------------|
-| `ARGO_URL`          | Argo CD server URL                                              |             | Yes         |
-| `ARGO_TOKEN`        | Argo CD API token                                               |             | Yes         |
-| `ARGO_API_TIMEOUT`    | Timeout for Argo CD API calls, in seconds                       | `60`        | No          |
-| `DEPLOYMENT_TIMEOUT`  | Maximum time (in seconds) to wait for a deployment to complete  | `900`       | No          |
-| `ARGO_REFRESH_APP`    | Refresh the application during status checks                    | `true`      | No          |
-| `ARGO_API_RETRIES`    | Total retry attempts for Argo CD API calls (1-10)               | `3`         | No          |
-| `ACCEPT_SUSPENDED_APP`| Accept "Suspended" health status as valid                       | `false`     | No          |
-| `STATE_TYPE`          | Storage backend: `in-memory` (non-HA) or `postgres` (HA)       |             | Yes         |
+| Variable | Description | Default | Required |
+|---|---|---|---|
+| `ARGO_URL` | Argo CD server URL | | Yes |
+| `ARGO_TOKEN` | Argo CD API token | | Yes |
+| `STATE_TYPE` | Storage backend: `in-memory` (single replica) or `postgres` | | Yes |
+| `DEPLOYMENT_TIMEOUT` | Seconds to wait for a deployment to finish | `900` | No |
+| `ARGO_API_TIMEOUT` | Timeout for Argo CD API calls, in seconds | `60` | No |
+| `ARGO_API_RETRIES` | Total attempts per Argo CD API call (1–10) | `3` | No |
+| `ARGO_REFRESH_APP` | Refresh the application during status checks | `true` | No |
+| `ACCEPT_SUSPENDED_APP` | Treat a `Suspended` health status as deployed | `false` | No |
 
-## Server Settings
+Turning `ARGO_REFRESH_APP` off also disables the [fail-fast image check](../operations/troubleshooting.md#image-is-not-part-of-application), which needs a freshly reconciled application.
 
-| Variable            | Description                                                     | Default     | Required    |
-|---------------------|-----------------------------------------------------------------|-------------|-------------|
-| `HOST`              | Host address for the Argo Watcher server                        | `0.0.0.0`  | No          |
-| `PORT`              | Port for the Argo Watcher server                                | `8080`      | No          |
-| `STATIC_FILES_PATH` | Path to the Web UI static files                                 | `static`    | No          |
-| `SKIP_TLS_VERIFY`     | Skip TLS certificate verification for API calls                 | `false`     | No          |
-| `DOCKER_IMAGES_PROXY` | Registry proxy URL for image existence checks                   |             | No          |
-| `ARGO_URL_ALIAS`      | URL alias for generating externally visible Argo CD app links   |             | No          |
+## Server
 
-## Logging
+| Variable | Description | Default | Required |
+|---|---|---|---|
+| `HOST` | Listen address | `0.0.0.0` | No |
+| `PORT` | Listen port | `8080` | No |
+| `STATIC_FILES_PATH` | Directory holding the built Web UI | `static` | No |
+| `LOG_LEVEL` | `debug`, `info`, `warn` or `error` | `info` | No |
+| `SKIP_TLS_VERIFY` | Skip TLS verification on outgoing API calls | `false` | No |
+| `ARGO_URL_ALIAS` | Externally reachable Argo CD URL, used in generated app links | | No |
+| `DOCKER_IMAGES_PROXY` | Registry proxy prefix to tolerate when matching images | | No |
+| `REPO_CACHE_PATH` | Where GitOps repository clones are cached | `/data` | No |
 
-| Variable     | Description                                                            | Default | Required |
-|--------------|------------------------------------------------------------------------|---------|----------|
-| `LOG_LEVEL`  | Log verbosity level (`debug`, `info`, `warn`, `error`)                | `info`  | No       |
+The chart mounts its persistent volume at `REPO_CACHE_PATH`; change one and you must change the other.
 
-## Authentication & Feature Flags
+## Authentication
 
-These variables control authentication and optional features. See the linked guides for full configuration details.
+| Variable | Description | Default | Required |
+|---|---|---|---|
+| `ARGO_WATCHER_DEPLOY_TOKEN` | Shared token clients present to authorize a write-back | | No |
+| `JWT_SECRET` | HMAC secret for validating client JWTs | | No |
+| `OIDC_ENABLED` | Enable OIDC authentication | `false` | No |
+| `OIDC_ISSUER_URL` | Provider issuer URL, used for discovery | | When OIDC is on |
+| `OIDC_CLIENT_ID` | Client id registered with the provider | | When OIDC is on |
+| `OIDC_PRIVILEGED_GROUPS` | Groups allowed to roll back a task and manage the deploy lock | | No |
+| `OIDC_TOKEN_VALIDATION_INTERVAL` | How long (ms) a provider decision may be reused | `300000` | No |
+| `OIDC_REQUIRE_TASK_READ_AUTH` | Require a credential on `GET /api/v1/tasks/{id}` too | `false` | No |
 
-| Variable                    | Description                                                                  | Default | Required    |
-|-----------------------------|------------------------------------------------------------------------------|---------|-------------|
-| `ARGO_WATCHER_DEPLOY_TOKEN` | Shared token for validating client requests. See [GitOps Updater](../guides/gitops-updater.md). |         | No          |
-| `JWT_SECRET`                | Secret key for signing and validating JWT tokens. See [GitOps Updater](../guides/gitops-updater.md#jwt-configuration). |         | No          |
-| `OIDC_ENABLED`              | Enable OIDC authentication (Keycloak, Authentik, …). Also makes the Web UI's read endpoints require a credential — see [Protected endpoints](../guides/oidc.md#protected-endpoints). The legacy `KEYCLOAK_*` variables remain honored but are deprecated. | `false` | No          |
-| `OIDC_REQUIRE_TASK_READ_AUTH` | Require a credential on `GET /api/v1/tasks/{id}`, the last read left open. Requires `OIDC_ENABLED=true`; the server refuses to start otherwise. Fails every deployment driven by a client that sends no credential — which includes **every client older than v0.15.0**, since presenting a credential on status polls was added in that release. Check `unauthenticated_reads` before enabling; see [Closing the task lookup](../guides/oidc.md#closing-the-task-lookup). | `false` | No          |
-| `WEBHOOK_ENABLED`           | Enable webhook notifications. See [Notifications](../guides/notifications.md).         | `false` | No          |
-| `LOCKDOWN_SCHEDULE`         | Recurring deployment lock schedule. See [Deployment Locking](../guides/gitops-updater.md#deployment-locking). |         | No          |
+Enabling OIDC also makes the Web UI's read endpoints require a credential — see [Protected endpoints](../guides/oidc.md#protected-endpoints). The legacy `KEYCLOAK_*` variables are still honored but deprecated ([migration table](../guides/oidc.md#migrating-from-keycloak_)).
 
-## Database Settings
+`OIDC_REQUIRE_TASK_READ_AUTH` fails every deployment driven by a client that sends no credential on reads, which includes **every client older than v0.15.0**. It also requires `OIDC_ENABLED=true`; the server refuses to start otherwise. Check `unauthenticated_reads` first — see [Closing the task lookup](../guides/oidc.md#closing-the-task-lookup).
 
-These variables are required when `STATE_TYPE` is set to `postgres`.
+## Features
 
-| Variable      | Description       | Default     | Required      |
-|---------------|-------------------|-------------|---------------|
-| `DB_HOST`     | Database host     |             | Conditional   |
-| `DB_PORT`     | Database port     |             | Conditional   |
-| `DB_NAME`     | Database name     |             | Conditional   |
-| `DB_USER`     | Database username |             | Conditional   |
-| `DB_PASSWORD` | Database password |             | Conditional   |
-| `DB_SSL_MODE` | PostgreSQL SSL mode | `disable` | No            |
-| `DB_TIMEZONE` | Database timezone | `UTC`       | No            |
-| `DB_CONNECT_TIMEOUT` | Max seconds to wait for the initial DB connection before failing (must be at least 1) | `10` | No |
+| Variable | Description | Default | Required |
+|---|---|---|---|
+| `LOCKDOWN_SCHEDULE` | Recurring deploy freeze, e.g. `Fri 20:00 - Mon 08:00` | | No |
+| `WEBHOOK_ENABLED` | Enable webhook notifications | `false` | No |
+| `MATTERMOST_ENABLED` | Enable Mattermost notifications | `false` | No |
 
-## Git Integration Settings
+The remaining `WEBHOOK_*` and `MATTERMOST_*` variables are documented in [Notifications](../guides/notifications.md); the schedule format in [Deployment Lock](../guides/deployment-lock.md).
 
-These variables are required when using the built-in GitOps updater. See the [GitOps Updater](../guides/gitops-updater.md) guide for full details.
+## Database
 
-| Variable              | Description                                             | Default | Required    |
-|-----------------------|---------------------------------------------------------|---------|-------------|
-| `SSH_KEY_PATH`        | Path to the SSH key for Git repository access           |         | Conditional |
-| `SSH_KEY_PASS`        | Passphrase for the SSH key                              |         | No          |
-| `SSH_COMMIT_USER`     | Git commit author name                                  | `argo-watcher` | No          |
-| `SSH_COMMIT_MAIL`     | Git commit author email                                 | `argo-watcher@example.com` | No          |
-| `COMMIT_MESSAGE_FORMAT` | Go template string for commit messages                |         | No          |
-| `GIT_OP_TIMEOUT`      | Per-attempt wall-clock budget for one clone + update cycle. The worst-case total wall clock for the full retry loop is `GIT_OP_TIMEOUT × GIT_MAX_ATTEMPTS`, plus a small jittered backoff between attempts (capped-exponential, starting near 250ms and never exceeding 2s per retry — early retries fire fast to win a git push race under contention). Accepts a Go duration string (e.g. `30s`, `2m`). Must be greater than zero. During a graceful shutdown the write-back drain gets only what is left of the server's fixed 25s shutdown budget (shared with the HTTP and WebSocket drain phases), so an attempt at the 90s default cannot finish — keep this comfortably below 25s if in-flight commits should land rather than be abandoned on restart. This affects whether the commit reaches git, not whether the task's final status is recorded; see [Tasks stay "in progress" after a server restart](../operations/troubleshooting.md). | `90s` | No |
-| `GIT_MAX_ATTEMPTS`    | Total attempts (initial + retries) before giving up on a git update. The final attempt invalidates the on-disk cache and performs a fresh clone, so a poisoned cache self-heals without operator intervention. Raising this hardens the write-back against a competing writer on a shared repo; a task superseded by a newer deployment for the same app aborts its write-back (re-checked before every attempt) instead of committing a stale tag, so a larger value does not let an older deployment overwrite a newer one. Must be greater than zero. | `5` | No |
-| `GIT_TIMEOUT`         | **Deprecated.** Legacy per-call budget. When set and `GIT_OP_TIMEOUT` is unset, the value is used directly as `GIT_OP_TIMEOUT` (1:1 mapping, preserving the original per-call budget). Set `GIT_OP_TIMEOUT` explicitly to silence the deprecation warning. | — | No |
-| `GIT_BATCH_WRITEBACK` | Opt-in batch write-back mode. When enabled, concurrent write-backs to the same repository are coalesced into a single clone and push instead of each taking the per-repo lock on its own, collapsing the tail latency seen when many apps deploy to one GitOps repo at once. Off by default; the serialized per-app path is unchanged when disabled. See the [GitOps Updater](../guides/gitops-updater.md#batch-write-back) guide. | `false` | No |
-| `GIT_BATCH_MAX_SIZE`  | Maximum number of applications committed in a single batch flush (one commit per app, then one push). Only meaningful when `GIT_BATCH_WRITEBACK` is enabled, where it must be greater than zero. The pending queue keeps accumulating across flushes until drained, so this bounds one flush, not total in-flight work. | `20` | No |
+Required when `STATE_TYPE=postgres`. The server builds its DSN from these; `DB_DSN` overrides the result if you need connection parameters the individual variables do not cover.
+
+| Variable | Description | Default |
+|---|---|---|
+| `DB_HOST` | Database host | |
+| `DB_PORT` | Database port | |
+| `DB_NAME` | Database name | |
+| `DB_USER` | Database user | |
+| `DB_PASSWORD` | Database password | |
+| `DB_SSL_MODE` | PostgreSQL SSL mode | `disable` |
+| `DB_TIMEZONE` | Session timezone | `UTC` |
+| `DB_CONNECT_TIMEOUT` | Seconds to wait for the initial connection (at least 1) | `10` |
+| `DB_DSN` | Full DSN, replacing the one built from the variables above | built from `DB_*` |
+| `DB_MIGRATIONS_PATH` | Migrations directory used by `argo-watcher --migrate` | `/app/db/migrations` |
+
+`DB_CONNECT_TIMEOUT` is enforced even when `DB_DSN` is set explicitly, so an unreachable database fails fast instead of hanging on the OS TCP timeout.
+
+## GitOps updater
+
+Read when the built-in [GitOps updater](../guides/gitops-updater.md) is in use.
+
+| Variable | Description | Default |
+|---|---|---|
+| `SSH_KEY_PATH` | Private SSH key used to push (required to enable the updater) | |
+| `SSH_KEY_PASS` | Passphrase for that key | |
+| `SSH_KNOWN_HOSTS` | `known_hosts` file(s) used to verify the remote host, colon-separated | `~/.ssh/known_hosts`, `/etc/ssh/ssh_known_hosts` |
+| `SSH_COMMIT_USER` | Commit author name | `argo-watcher` |
+| `SSH_COMMIT_MAIL` | Commit author email | `argo-watcher@example.com` |
+| `COMMIT_MESSAGE_FORMAT` | Go template for the commit message | built-in format |
+| `GIT_OP_TIMEOUT` | Wall-clock budget for **one** clone + update attempt | `90s` |
+| `GIT_MAX_ATTEMPTS` | Total attempts (initial + retries) before giving up | `5` |
+| `GIT_BATCH_WRITEBACK` | Coalesce concurrent write-backs to one repo | `false` |
+| `GIT_BATCH_MAX_SIZE` | Applications committed per batch flush | `20` |
+| `GIT_TIMEOUT` | **Deprecated.** Used as `GIT_OP_TIMEOUT` when that is unset | |
+
+Host key verification is on: a remote whose key is not listed fails the push. `SSH_KNOWN_HOSTS` is read by go-git rather than by argo-watcher's own configuration, which is why it has no `GitConfig` field. The chart writes the file and sets the variable for you.
+
+### Retry and timeout budget
+
+`GIT_OP_TIMEOUT` bounds a single attempt, not the whole loop — worst case is `GIT_OP_TIMEOUT × GIT_MAX_ATTEMPTS` plus jittered backoff between attempts (capped-exponential, from roughly 250ms to at most 2s, deliberately tight so a retry can win a push race).
+
+Retries exist for contention on a shared repository: each attempt re-fetches, re-applies and re-pushes, and the final attempt discards the on-disk cache and clones fresh, so a poisoned cache heals itself. Raising `GIT_MAX_ATTEMPTS` cannot let an older deployment overwrite a newer one — a superseded task aborts its write-back before every attempt.
+
+### During shutdown
+
+The whole shutdown sequence has a fixed 25-second budget (it must fit the default 30-second `terminationGracePeriodSeconds`), shared with the HTTP and WebSocket drains. An attempt already running is not interrupted, so at the 90-second default a write-back stuck on an unreachable remote is cut off mid-attempt. Keep `GIT_OP_TIMEOUT` below 25s if in-flight commits should land rather than be abandoned on restart.
+
+This decides whether the **commit** reaches Git, not whether the task's final status is recorded — see [Tasks stay "in progress" after a server restart](../operations/troubleshooting.md#tasks-stay-in-progress-after-a-server-restart).

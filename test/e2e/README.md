@@ -1,23 +1,20 @@
 # argo-watcher end-to-end lab
 
-A disposable, reproducible lab that runs **real** ArgoCD, Gitea, and
-argo-rollouts (the latter only for the `accept-suspended` canary-pause phase) on
-a single-node [kind](https://kind.sigs.k8s.io/) cluster and deploys argo-watcher
-built with the Go **race detector**. It exercises the code paths the fast test
-suites cannot: the real ArgoCD polling loop, sustained-concurrency data races,
-and the real git push path — once per release, not on every PR. The `smoke`,
-`failure-diagnostics`, and `race` phases drive the **real `cmd/client` binary**
-(not a hand-rolled HTTP call), so the tool users actually run is covered
-end-to-end: success (exit 0), a surfaced failure reason (exit 1), and the
-superseded/cancelled path (exit 1). The `load` soak stays a purpose-built
-concurrent driver (`load/`) — it asserts server behaviour under contention, not
-client behaviour.
+A disposable lab that runs **real** ArgoCD, Gitea, and argo-rollouts (the last
+only for the `accept-suspended` phase) on a single-node
+[kind](https://kind.sigs.k8s.io/) cluster, with argo-watcher built under the Go
+**race detector**. Nothing is mocked here, which is the point: it covers the real
+ArgoCD polling loop, the real git push path, and data races under sustained
+concurrency — once per release, not on every PR.
 
-Unlike the unit and integration suites, ArgoCD here is **not mocked**.
+The `smoke`, `failure-diagnostics` and `race` phases drive the **real
+`cmd/client` binary**, so the tool users actually run is covered end to end:
+success (exit 0), a surfaced failure reason (exit 1), and the superseded path
+(exit 1). The `load` soak keeps its purpose-built concurrent driver (`load/`) —
+it asserts server behaviour under contention, not client behaviour.
 
-This lab covers the backend and its real ArgoCD/git path only. Browser-level UI
-testing — the OIDC redirect, deep links, the deploy-lock WebSocket, rollback —
-lives separately in `web/e2e/` (Playwright, `task test-web-e2e`).
+Browser-level UI testing lives separately in `web/e2e/` (Playwright,
+`task test-web-e2e`).
 
 ## Prerequisites
 
@@ -207,8 +204,9 @@ again instead of re-establishing a forward.
 - **`shutdown-drain` follows the pod's logs before deleting it.** A recreated
   StatefulSet pod is a new object, so `kubectl logs --previous` would not have the
   terminated instance's shutdown logs; the script streams `logs -f` to a file
-  first, then deletes the pod with `--grace-period=60` so the full drain
-  (`srv.Shutdown` 30s + WS drain 10s) completes before SIGKILL.
+  first, then deletes the pod with `--grace-period=60` so the whole drain (the
+  server's fixed 25s shutdown budget: readiness delay, HTTP, WebSockets, then the
+  git write-back) completes before SIGKILL.
 - **Several config toggles are set globally via `values/argo-watcher.yaml`
   `extraEnvs`** so a single boot can assert them: `JWT_SECRET` (jwt-auth),
   `COMMIT_MESSAGE_FORMAT` (commit-format), `ACCEPT_SUSPENDED_APP` +

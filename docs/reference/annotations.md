@@ -1,27 +1,18 @@
-# Argo Application Annotations
+# Annotations
 
-Argo Watcher uses Kubernetes annotations on Argo CD Application objects to configure per-application behavior.
+Argo Watcher reads these annotations from the Argo CD `Application` resource. All are optional; see the [GitOps Updater guide](../guides/gitops-updater.md) for how they fit together.
 
-All annotations are prefixed with `argo-watcher/` and are optional unless otherwise noted.
+| Annotation | Example | Description |
+|---|---|---|
+| `argo-watcher/managed` | `"true"` | Enables Argo Watcher management, and with it the GitOps write-back. |
+| `argo-watcher/managed-images` | `app=registry.example.com/group/project` | Maps an alias to a full image name; comma-separated for several. |
+| `argo-watcher/<alias>.helm.image-tag` | `app.image.tag` | Helm value path the new tag is written to, keyed by an alias from `managed-images`. |
+| `argo-watcher/write-back-filename` | `values-override.yaml` | Overrides the override-file name (derived from the app name by default). |
+| `argo-watcher/write-back-repo` | `git@github.com:example/gitops.git` | Write-back repository. **Multi-source applications only.** |
+| `argo-watcher/write-back-branch` | `main` | Write-back branch. **Multi-source applications only.** |
+| `argo-watcher/write-back-path` | `sandbox/charts/demo` | Write-back path. **Multi-source applications only.** |
+| `argo-watcher/fire-and-forget` | `"true"` | Commits the tag and marks the task `deployed` without monitoring the rollout. |
+| `argo-watcher/skip-image-validation` | `"true"` | Turns off the [fail-fast image check](../operations/troubleshooting.md#image-is-not-part-of-application), so deployments wait for the timeout instead. |
 
-## Annotation Reference
-
-| Annotation | Scope | Example | Description |
-|---|---|---|---|
-| `argo-watcher/managed` | Application | `true` | Enables Argo Watcher management (and the GitOps write-back) for this application. |
-| `argo-watcher/managed-images` | Application | `app=registry.example.com/group/project` | Maps an alias to a full image name; comma-separated for multiple. |
-| `argo-watcher/<alias>.helm.image-tag` | Application | `app.image.tag` | Helm value path the new tag is written to, keyed by the alias from `managed-images`. |
-| `argo-watcher/write-back-repo` | Application (multi-source only) | `git@github.com:example/gitops.git` | Overrides the write-back repo. Honored only when the app uses `spec.sources` (plural). |
-| `argo-watcher/write-back-branch` | Application (multi-source only) | `main` | Overrides the write-back branch (multi-source only). |
-| `argo-watcher/write-back-path` | Application (multi-source only) | `sandbox/charts/demo` | Overrides the write-back path (multi-source only). |
-| `argo-watcher/write-back-filename` | Application | `values-override.yaml` | Overrides the override-file name (default is derived from the app name). |
-| `argo-watcher/fire-and-forget` | Application | `true` | Commits the tag and marks the deployment `deployed` without monitoring status. |
-| `argo-watcher/skip-image-validation` | Application | `true` | Turns off the [fail-fast image check](../operations/troubleshooting.md#image-is-not-part-of-application) for this application, so its deployments wait for the timeout instead. |
-
-See the [Git Integration guide](../guides/gitops-updater.md) for full usage and examples.
-
-## Usage in Guides
-
-For detailed examples of how to use annotations in your deployments, see:
-- [GitOps Updater Guide](../guides/gitops-updater.md)
-- [Deployment Locking](../guides/gitops-updater.md#deployment-locking)
+!!! warning
+    The three `write-back-*` location annotations are honored only when the application uses `spec.sources` (plural). On a single-source application they are silently ignored — the location comes from the application's own source.

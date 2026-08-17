@@ -1,23 +1,16 @@
-# Git Integration
+# GitOps Updater
 
-Argo Watcher includes a built-in GitOps updater that commits image tag changes directly to your GitOps repository. This eliminates the need for Argo CD Image Updater and removes the additional deployment latency it can introduce when managing a large number of images.
+Argo Watcher can commit image-tag changes to your GitOps repository itself, replacing Argo CD Image Updater. The commit happens as part of the deployment, so there is no scan interval to wait through — which is what makes it faster when many images are in play.
 
-!!! tip
-    If you are currently using Argo CD Image Updater and want to migrate, see the [Migrating from Argo CD Image Updater](#migrating-from-argo-cd-image-updater) section.
+Already on Argo CD Image Updater? See [Migrating from Argo CD Image Updater](#migrating-from-argo-cd-image-updater).
 
 ## Prerequisites
 
-This guide assumes you already have a working Argo Watcher installation. If not, complete the [Installation](install.md) guide first.
+A working [installation](install.md), plus:
 
-Before enabling the GitOps updater, you need to:
-
-1. **Create an authentication secret** (choose one approach):
-    - **Deploy token** -- Generate an arbitrary string and add it to the Argo Watcher Kubernetes secret under the `ARGO_WATCHER_DEPLOY_TOKEN` key. This approach is planned for deprecation in v1.0.0.
-    - **JWT secret (recommended)** -- Generate a secret for signing JWT tokens (see [Generating the JWT Secret](#generating-the-jwt-secret)) and add it to the Argo Watcher Kubernetes secret under the `JWT_SECRET` key.
-
-2. **Create an SSH key secret** -- Generate an SSH key pair and store the private key in a Kubernetes secret. By default, Argo Watcher expects the key under the `sshPrivateKey` field, but this is configurable via the Helm chart.
-
-3. **Update the Helm chart values** -- Add the updater configuration:
+1. **A credential the client can present.** Either a **JWT** (recommended, see [JWT configuration](#jwt-configuration)) stored under the `JWT_SECRET` key of the Argo Watcher secret, or an arbitrary string under `ARGO_WATCHER_DEPLOY_TOKEN` — the deploy token is planned for deprecation in v1.0.0. Without a valid credential the write-back is skipped, and the deployment fails blaming the image instead ([why](../operations/troubleshooting.md#image-tag-is-never-committed-write-back-skipped)).
+2. **An SSH key with write access** to the GitOps repository, stored in a Kubernetes secret (the chart reads the `sshPrivateKey` key by default).
+3. **Chart values pointing at that key:**
 
     ```yaml
     updater:
@@ -26,64 +19,11 @@ Before enabling the GitOps updater, you need to:
       commitEmail: "argo-watcher@example.com"
     ```
 
-## JWT Configuration
+    The chart also mounts a `ssh_known_hosts` file and points `SSH_KNOWN_HOSTS` at it. Host key verification is on, so a host missing from it fails the push — add yours via `updater.extraKnownHosts` or `updater.knownHostsConfigMap`.
 
-JWT is the recommended authentication method for the GitOps updater. It provides fine-grained control over which applications a token can deploy to.
+## Application configuration
 
-### Generating the JWT Secret
-
-The `JWT_SECRET` is a symmetric key used to sign and verify tokens (HMAC). It is not generated for you -- you create it once and store it in the Argo Watcher Kubernetes secret under the `JWT_SECRET` key. The same secret is later used to sign tokens (see [Generating a JWT Token](#generating-a-jwt-token)).
-
-Generate a 256-bit random secret with `openssl`:
-
-```bash
-openssl rand -base64 32
-```
-
-!!! warning
-    Treat this value as a credential. Anyone who knows it can mint valid deployment tokens. Store it only in the Kubernetes secret, never commit it to Git, and rotate it if it is ever exposed.
-
-### JWT Payload Structure
-
-```json
-{
-  "sub": "argo-watcher-client",
-  "cluster": "prod",
-  "allowed_apps": ["app1", "app2"],
-  "iat": 1773352800,
-  "exp": 1804888800
-}
-```
-
-| Field          | Validated | Description                                                                 |
-|----------------|-----------|-----------------------------------------------------------------------------|
-| `exp`          | Yes       | Expiration timestamp (Unix epoch). **Required.** Tokens without `exp` are rejected. |
-| `iat`          | Yes       | Issued-at timestamp (Unix epoch). Tokens with a future `iat` are rejected. Use `date +%s` to generate. |
-| `nbf`          | Yes       | Not-before timestamp (Unix epoch). Optional. Enforced by the underlying JWT library -- tokens used before this time are rejected. |
-| `sub`          | No        | Token subject. Informational only (e.g., service name or team identifier). Not validated by the server. |
-| `cluster`      | No        | Cluster identifier. Informational only. Not validated by the server.        |
-| `allowed_apps` | No        | List of Argo CD application names this token can deploy to. Use `"*"` to allow all applications. |
-
-!!! note
-    Application-level filtering based on `allowed_apps` is not yet implemented and is expected in a future release. The `sub` and `cluster` claims are reserved for future use.
-
-### Generating a JWT Token
-
-You can use [jwt-cli](https://github.com/mike-engel/jwt-cli) to generate tokens:
-
-```bash
-jwt encode \
-  --secret="YOUR_JWT_SECRET" \
-  '{"sub":"argo-watcher-client","cluster":"prod","allowed_apps":["app1"],"iat":1773352800,"exp":1804888800}'
-```
-
-Replace `YOUR_JWT_SECRET` with the value stored in the `JWT_SECRET` key of your Kubernetes secret. Update the `iat` and `exp` timestamps as appropriate.
-
-## Application Configuration
-
-Argo Watcher uses Argo CD application annotations to determine how to manage image tag updates. All configuration is applied directly to the Argo CD Application resource.
-
-### Required Annotations
+Argo Watcher reads annotations on the Argo CD `Application` resource. The minimum is:
 
 ```yaml
 metadata:
@@ -93,18 +33,18 @@ metadata:
     argo-watcher/app.helm.image-tag: "app.image.tag"
 ```
 
-**How annotations work:**
+- `managed` enables write-back for this application.
+- `managed-images` maps an alias (`app`) to a full image name; comma-separate several.
+- `<alias>.helm.image-tag` is the Helm value path the new tag is written to.
 
-- `argo-watcher/managed` -- Enables Argo Watcher management for this application.
-- `argo-watcher/managed-images` -- Maps an alias (`app`) to a full image name. The alias is used to reference the image in other annotations.
-- `argo-watcher/ALIAS.helm.image-tag` -- Specifies the Helm value path where the image tag should be written. Replace `ALIAS` with the alias defined in `managed-images`.
+Every annotation is listed in the [annotations reference](../reference/annotations.md).
 
 !!! warning
-    When processing annotations, Argo Watcher associates an image with all aliases that share the same image name. You cannot use different release strategies for aliases that use the same image.
+    An image is associated with **every** alias sharing its name, so two aliases pointing at the same image cannot use different release strategies.
 
-### Multi-Source Applications
+### Multi-source applications
 
-Argo CD supports applications with multiple sources. To use the GitOps updater with multi-source applications, add the following annotations:
+For an application built from `spec.sources` (plural), name the write-back target explicitly:
 
 ```yaml
 metadata:
@@ -118,22 +58,17 @@ metadata:
 ```
 
 !!! warning
-    `write-back-repo`, `write-back-branch`, and `write-back-path` are honored **only** for applications using `spec.sources` (plural, multi-source). For a single-`spec.source` application these three annotations are silently ignored — Argo Watcher derives the repo, branch, and path from the application's existing source instead; only `write-back-filename` is still read.
+    `write-back-repo`, `write-back-branch` and `write-back-path` are honored **only** for multi-source applications. On a single-`spec.source` application they are silently ignored — the repo, branch and path come from the application's own source, and only `write-back-filename` is still read.
 
-For an application named `Demo`, Argo Watcher creates or updates the override file at:
+The override file name is derived from the application name, so application `Demo` gets:
 
 ```text
 sandbox/charts/demo/.argocd-source-demo.yaml
 ```
 
-!!! note
-    The override file path is derived from the application name. This is the currently supported approach for reliably identifying the correct file to update.
+### Fire-and-forget mode
 
-### Fire-and-Forget Mode
-
-In some cases, you may want to update the image tag without waiting for the deployment to complete. This is useful for applications that only contain `CronJob` resources, where the updated image won't be running immediately.
-
-Add the following annotation to enable this mode:
+When the new image will not run on its own — an application containing only `CronJob` resources, for instance — annotate it:
 
 ```yaml
 metadata:
@@ -141,17 +76,11 @@ metadata:
     argo-watcher/fire-and-forget: "true"
 ```
 
-When this annotation is set, Argo Watcher commits the image tag change and immediately marks the deployment as `deployed` without monitoring the application status.
+Argo Watcher then commits the tag and marks the task `deployed` immediately, without monitoring the rollout.
 
-### Custom Commit Messages
+### Custom commit messages
 
-The default commit message format is:
-
-```text
-argo-watcher(appName): update image tag
-```
-
-You can customize the commit message using a Go template in the `COMMIT_MESSAGE_FORMAT` environment variable:
+The default message is `argo-watcher(appName): update image tag`. Override it with a Go template in `COMMIT_MESSAGE_FORMAT`:
 
 ```yaml
 extraEnvs:
@@ -165,35 +94,76 @@ extraEnvs:
       {{end}}
 ```
 
-For available template variables, see the [Notifications](notifications.md#available-template-variables) page.
+The available fields are the same ones the [notification templates](notifications.md#template-variables) use.
 
-## CI/CD Configuration
+## JWT configuration
 
-After configuring the server and application annotations, update your CI/CD pipeline to provide the authentication token.
+JWT is the recommended credential: unlike the shared deploy token, each pipeline can hold its own, with an expiry.
 
-**Using a deploy token** (planned for deprecation):
+### The signing secret
+
+`JWT_SECRET` is a symmetric HMAC key you generate once and store in the Argo Watcher secret:
 
 ```bash
+openssl rand -base64 32
+```
+
+!!! warning
+    Anyone holding this value can mint deployment tokens. Keep it in the Kubernetes secret only, never in Git, and rotate it if it leaks.
+
+### Claims
+
+```json
+{
+  "sub": "argo-watcher-client",
+  "cluster": "prod",
+  "allowed_apps": ["app1", "app2"],
+  "iat": 1773352800,
+  "exp": 1804888800
+}
+```
+
+| Claim | Validated | Notes |
+|---|---|---|
+| `exp` | Yes | **Required.** A token without it is rejected. |
+| `iat` | Yes | A future `iat` is rejected. `date +%s` gives you the current value. |
+| `nbf` | Yes | Optional; enforced by the JWT library. |
+| `sub` | No | Informational — service or team name. |
+| `cluster` | No | Informational. |
+| `allowed_apps` | No | **Not enforced yet.** Per-application restriction is planned; today any valid token authorizes any application. |
+
+### Minting a token
+
+With [jwt-cli](https://github.com/mike-engel/jwt-cli):
+
+```bash
+jwt encode \
+  --secret="YOUR_JWT_SECRET" \
+  '{"sub":"argo-watcher-client","cluster":"prod","allowed_apps":["app1"],"iat":1773352800,"exp":1804888800}'
+```
+
+## Pipeline configuration
+
+Pass the credential to the client:
+
+```bash
+# JWT (recommended). The raw token, with no "Bearer " prefix, so CI can mask it.
+export BEARER_TOKEN="your_jwt_token"
+
+# Or the deploy token (planned for deprecation)
 export ARGO_WATCHER_DEPLOY_TOKEN=your_deploy_token
 ```
 
-**Using JWT (recommended):**
-
-```bash
-# Set the raw token — no "Bearer " prefix — so it can be masked as a CI variable.
-export BEARER_TOKEN="your_jwt_token"
-```
-
-See the [Installation](install.md#client-setup) guide for complete CI/CD pipeline examples.
+The [installation guide](install.md#run-the-client-in-ci) has complete pipeline examples.
 
 !!! warning
-    Argo Watcher uses the provided image tag value as-is, without validation. Ensure the tag is valid and corresponds to an image that exists in the registry.
+    The image tag is used as given, without validation. A tag that does not exist in the registry is committed anyway, and the deployment then fails on the pull.
 
-## Batch Write-Back
+## Batch write-back
 
-By default, each application's write-back is serialized behind a per-repository lock: when many applications deploy to the **same** GitOps repository at once, each one clones, commits, and pushes on its own, one after another. Under heavy concurrency (for example, ten simultaneous deployments to a shared repo) this serialized tail can grow to minutes.
+By default each application's write-back takes a per-repository lock and clones, commits, and pushes on its own. When many applications deploy to the **same** repository at once, that serialized tail can reach minutes.
 
-Batch write-back is an **opt-in** mode that coalesces concurrent write-backs to the same repository into a single clone and a single push. Enable it with:
+Batch mode coalesces write-backs to one repository into a single clone and push:
 
 ```yaml
 extraEnvs:
@@ -203,110 +173,20 @@ extraEnvs:
     value: "20"
 ```
 
-### How it works
+Batching is contention-driven, so it costs nothing when there is no contention: a write-back for an idle repository flushes immediately, while ones arriving during an in-flight flush are queued and flushed together as soon as it completes. Each flush makes **one commit per application** — preserving per-app history and `COMMIT_MESSAGE_FORMAT` — followed by a single push. `GIT_BATCH_MAX_SIZE` bounds one flush; the rest carries into the next.
 
-Batching is **contention-driven**, so it adds no latency when there is no contention:
+Correctness is unchanged. Each application writes its own `.argocd-source-<app>.yaml`, so applications in a batch cannot conflict; a misconfigured application fails alone; a superseded deployment is dropped from the batch rather than committing a stale tag; and a push that loses a race re-clones onto the new tip and re-applies, exactly as the serialized path does. `GIT_OP_TIMEOUT` and `GIT_MAX_ATTEMPTS` apply to the batch as a whole. With multiple replicas each coalesces its own write-backs, and the Postgres advisory lock still serializes pushes between them.
 
-- A write-back for an **idle** repository flushes immediately, exactly as before.
-- Write-backs that arrive while a flush for the same repository is already in flight — cloning, pushing, or waiting on the lock — are queued and flushed **together** the moment the current flush completes.
-
-Each flush produces **one commit per application** (preserving per-app history and your `COMMIT_MESSAGE_FORMAT`), followed by a **single push**. `GIT_BATCH_MAX_SIZE` bounds how many applications are committed in one flush; anything beyond it is carried into the next flush.
-
-### Reliability
-
-Batching does not change the correctness guarantees of the write-back:
-
-- Each application writes its own override file (`.argocd-source-<app>.yaml`), so applications in a batch never conflict with each other.
-- A misconfigured application fails on its own without affecting the rest of the batch.
-- A deployment superseded by a newer one for the same app is dropped from the batch and never commits a stale tag.
-- If the push loses a race with an external commit, the whole batch re-clones onto the new remote tip, re-applies, and re-pushes — the same no-clobber recovery used by the serialized path.
-- The retry budget (`GIT_OP_TIMEOUT`, `GIT_MAX_ATTEMPTS`) applies to the batch as a whole.
-- On a graceful shutdown, in-flight retries stop at the next retry boundary instead of spending the remaining budget, so queued commits get a chance to land before the process exits. Two limits are worth knowing. An attempt already running is not interrupted and is bounded only by `GIT_OP_TIMEOUT` (90s by default, longer than the shutdown budget), so a write-back stuck on an unreachable remote can still be cut off mid-attempt — keep `GIT_OP_TIMEOUT` under 25s if that matters. And a clean drain still does not guarantee the task's **final status** is recorded: nothing waits for the deployment tracker to persist it once the write-back returns, so a task interrupted by a restart may stay `in progress` until the obsolete-task sweep marks it `aborted`, whatever the write-back did. Treat the GitOps repository, not the task status, as the record of what was committed across a restart.
-
-In a high-availability (multi-replica) deployment, each replica coalesces its own in-flight write-backs; the cross-replica Postgres advisory lock still serializes pushes between replicas, so correctness is unchanged.
-
-The `gitops_batch_size` metric records how many applications were coalesced into each flush — a distribution skewed toward `1` means little batching is happening (low contention).
-
-## Deployment Locking
-
-Argo Watcher supports a deployment lock mechanism to prevent changes during maintenance windows or other critical periods. When a lock is active, all new deployment tasks are rejected.
-
-### Scheduled Lockdown
-
-Define recurring maintenance windows using a schedule:
-
-```yaml
-extraEnvs:
-  - name: LOCKDOWN_SCHEDULE
-    value: "Wed 20:00 - Thu 08:00, Fri 20:00 - Mon 08:00"
-```
-
-Or use the Helm chart values:
-
-```yaml
-scheduledLockdown:
-  - "Wed 20:00 - Thu 08:00"
-  - "Fri 20:00 - Mon 08:00"
-```
-
-In this example, deployments are blocked between Wednesday 20:00 and Thursday 08:00, and between Friday 20:00 and Monday 08:00.
-
-The Web UI lockdown banner updates automatically (within a few seconds) when a scheduled window begins or ends — no page refresh is needed.
-
-### Manual Lockdown
-
-!!! note
-    Manual locking requires OIDC authentication (`OIDC_ENABLED=true`; the legacy `KEYCLOAK_ENABLED=true` still works). Without an auth backend the server does not register the `POST`/`DELETE /api/v1/deploy-lock` endpoints (requests return `404 Not Found`) and the Web UI does not show the lock toggle. Scheduled lockdown (above) works regardless of authentication. Reading the lock status needs no privileged group, but with OIDC enabled it does need a credential — see [Protected endpoints](oidc.md#protected-endpoints). See also [OIDC / SSO Integration](oidc.md).
-
-#### Via API
-
-Set a lock:
-
-```bash
-curl -X POST https://argo-watcher.example.com/api/v1/deploy-lock
-```
-
-Release a lock:
-
-```bash
-curl -X DELETE https://argo-watcher.example.com/api/v1/deploy-lock
-```
-
-!!! note
-    When OIDC authentication is enabled, the deploy lock API endpoints require a token from a user in one of the `OIDC_PRIVILEGED_GROUPS`, sent via the `Oidc-Authorization` header (the legacy `Keycloak-Authorization` header is still accepted).
-
-#### Via Web UI
-
-Click the **Argo Watcher** logo in the Web UI and toggle the **Lockdown Mode** switch.
-
-![Deployment Lock UI](https://raw.githubusercontent.com/shini4i/assets/main/src/argo-watcher/deployment-lock.png)
-
-!!! note
-    When OIDC authentication is enabled, you must be authenticated to manage the deployment lock.
-
-#### Releasing a Lock During a Scheduled Window
-
-Releasing the lock while a scheduled lockdown window is open does not cancel the schedule: it suppresses it for 15 minutes, after which the window takes effect again (unless it has closed meanwhile). Setting the lock again clears a pending suppression.
-
-### Behaviour With Multiple Replicas
-
-With `STATE_TYPE=postgres`, the manual lock and its temporary suppression are stored in the database, so a lock set through any replica rejects deployments on all of them, and it survives a restart. Enforcement is immediate: every deploy request resolves the lock state at that moment, so a lock set on one replica rejects the next deploy that reaches any other replica. Web UI clients see the banner update within a few seconds, when their replica's watcher next samples the state — including on the replica that served the lock request. The operator who set or released the lock sees their own change reflected right away.
-
-With `STATE_TYPE=in-memory` the lock lives in the process that served the request. That is correct for a single replica — the only supported configuration for in-memory state — but the lock is lost on restart.
+Watch `gitops_batch_size` to see whether batching is doing anything: a distribution clustered at `1` means there is no contention to collapse.
 
 !!! warning
-    If the database is unreachable, the lock state cannot be read and deployments are rejected as if a lock were active. Rejecting a deployment during an outage is recoverable; letting one through during a freeze is not.
+    A graceful shutdown stops retries at the next boundary but never interrupts the attempt in flight, and that attempt is bounded by `GIT_OP_TIMEOUT` (90s default) rather than the 25s shutdown budget. Keep `GIT_OP_TIMEOUT` under 25s if queued commits should land instead of being abandoned on restart. A clean drain still says nothing about the task's final **status** — see [Tasks stay "in progress" after a server restart](../operations/troubleshooting.md#tasks-stay-in-progress-after-a-server-restart).
 
 ## Migrating from Argo CD Image Updater
 
-If you are currently using Argo CD Image Updater, follow these steps to migrate an application to Argo Watcher:
-
-**1. Replace the Image Updater annotations:**
-
-Remove the existing Argo CD Image Updater annotations:
+**1. Remove the Image Updater annotations:**
 
 ```yaml
-# Remove these annotations
 argocd-image-updater.argoproj.io/image-list: app=registry.example.com/group-name/project-name
 argocd-image-updater.argoproj.io/app.update-strategy: latest
 argocd-image-updater.argoproj.io/app.helm.image-name: app.image.repository
@@ -314,15 +194,14 @@ argocd-image-updater.argoproj.io/app.helm.image-tag: app.image.tag
 argocd-image-updater.argoproj.io/app.allow-tags: regexp:^\d{7}-stage
 ```
 
-**2. Add the Argo Watcher annotations:**
+**2. Add the Argo Watcher ones:**
 
 ```yaml
-# Add these annotations
 argo-watcher/managed: "true"
 argo-watcher/managed-images: "app=registry.example.com/group-name/project-name"
 argo-watcher/app.helm.image-tag: "app.image.tag"
 ```
 
-**3. Update your CI/CD pipeline** to include the Argo Watcher client step and authentication token (see [CI/CD Configuration](#cicd-configuration)).
+**3. Add the client step** and its credential to the pipeline (see [Pipeline configuration](#pipeline-configuration)).
 
-**4. Test the migration** on a non-production application first, then roll out to the rest of your applications.
+**4. Test on a non-production application** before rolling out to the rest.

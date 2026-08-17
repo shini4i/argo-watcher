@@ -1,89 +1,56 @@
 # Concepts
 
-## What is Argo Watcher?
+## The problem
 
-A feedback loop for your GitOps workflow. Argo Watcher bridges the gap between your CI pipeline and Argo CD, providing real-time status and visibility into your deployments. Stop guessing whether your deployment succeeded — Argo Watcher tells your pipeline exactly what happened.
+A CI pipeline builds an image, pushes it, and updates a Git repository. Argo CD picks the change up and deploys it. The pipeline never learns the outcome: it cannot tell a successful rollout from a failed one, so it reports success as soon as the commit lands.
 
-## The Problem
+## The solution
 
-In a typical GitOps workflow, a CI pipeline builds an image, pushes it to a registry, and updates a Git repository. Argo CD then detects the change and deploys the new image. The problem is that the CI pipeline has **no direct knowledge of the deployment outcome**. Did it succeed? Did it fail? The pipeline is left in the dark.
+Argo Watcher watches the Argo CD application for the images the pipeline just built and reports the deployment's final state back to it — turning an asynchronous process into a result the pipeline can branch on.
 
-## The Solution
+## Server, client, and updater
 
-Argo Watcher introduces a control loop that monitors your Argo CD applications for health and sync status changes. It acts as a bridge, reporting the deployment's final state back to the CI pipeline. This provides a clear, synchronous result for an asynchronous process.
+- **Server** — the long-running service. It talks to Argo CD, persists task state, exposes the HTTP API, and serves the Web UI, which shows every task in real time.
+- **Client** — a small CLI for CI/CD pipelines. It creates a task, waits for the result, and exits with a matching status code.
+- **Updater** — an optional part of the server that commits image-tag changes to your GitOps repository, replacing Argo CD Image Updater.
 
-## Architecture: Server, Client, and Updater
+## Task lifecycle
 
-Argo Watcher is composed of three concerns. The **Server** is the long-running service that talks to Argo CD, persists task state, exposes the HTTP API, and serves the Web UI. The **Client** is a lightweight CLI that runs inside CI/CD pipelines — it creates a task, waits for the result, and exits with a status code that the pipeline can branch on. The **Updater** is an optional subsystem inside the server that commits image-tag changes to your GitOps repository, replacing Argo CD Image Updater for projects that prefer a single tool.
+`POST /api/v1/tasks` answers `202 Accepted` with `"status": "accepted"`; the task itself is stored as **in progress** and then moves to one of the terminal states below.
 
-The Web UI is bundled with the server and gives operators a real-time view of every task as it transitions through its lifecycle.
+| Status | Meaning |
+|---|---|
+| `in progress` | Waiting for the requested images to be running, synced, and healthy. |
+| `deployed` | The application is synced and healthy with the requested images. |
+| `failed` | Argo CD reported a health or sync failure, `DEPLOYMENT_TIMEOUT` elapsed, or the application finished rolling out without ever declaring the requested image (see [Image is not part of application](../operations/troubleshooting.md#image-is-not-part-of-application)). |
+| `app not found` | Argo CD has no application with that name, or the token cannot see it. |
+| `aborted` | The outcome could not be confirmed: Argo CD was unreachable during the check, or the task sat in progress past the staleness window. Counts as a failure (`failed_deployment`); `argocd_unavailable` tells you whether Argo CD was the reason. |
+| `cancelled` | Superseded by a newer deployment of one of the same images before reaching a final state; polling stops. Not counted as a failure. |
 
-## Task Lifecycle
+Two rules keep supersession from cancelling unrelated work: only in-progress tasks that share an image with the new deployment are cancelled, and a deployment can only cancel one that presented no more authority than itself — a task submitted without a credential never cancels one submitted with a valid deploy token or JWT.
 
-A task in Argo Watcher moves through the following states:
+## Deployment locking
 
-1. **Pending** — Task created, waiting for the expected image to appear in Argo CD.
-2. **In Progress** — Image detected in Argo CD, deployment is syncing or running.
-3. **Deployed** — Deployment succeeded; application is healthy and synced.
-4. **Failed** — Deployment did not become healthy and synced before `DEPLOYMENT_TIMEOUT` elapsed, Argo CD reported a health/sync failure, or the application finished rolling out without ever defining the requested image (see [Image is not part of application](../operations/troubleshooting.md#image-is-not-part-of-application)).
-5. **App Not Found** — Argo CD has no application with the requested name (or the token lacks permission to see it).
-6. **Aborted** — Argo Watcher could not confirm the deployment's outcome: Argo CD (or a proxy in front of it) was unreachable during the check (connection refused, DNS failure, TLS error, a timed-out API request, or a 5xx response), or the task remained in progress past the staleness window. The status reason records the cause. An aborted deployment still counts as a failure (`failed_deployment`); the `argocd_unavailable` gauge indicates when Argo CD itself was the reason.
-7. **Cancelled** — Superseded by a newer deployment of one of the same images before reaching a final state; polling stops. Only in-progress tasks that share an image with the new deployment are cancelled, so independent per-image deployments of the same application do not cancel each other. A deployment can also only cancel one that presented no more authority than itself: a task submitted without a credential never cancels one submitted with a valid deploy token or JWT. Unlike Failed, a cancelled task is not counted as a deployment failure.
+A lock pauses new deployments, either on a [schedule](../guides/deployment-lock.md#scheduled-lockdown) or [manually](../guides/deployment-lock.md#manual-lockdown), for maintenance windows and emergencies. While it is held every deploy request is rejected. The lock is server-global; there is no per-application lock.
 
-## Deployment Locking
+## Built-in updater vs Argo CD Image Updater
 
-Deployment locking allows you to pause new deployments during maintenance windows or emergency situations. When a deployment is locked, new tasks will fail if their application is locked. Locks can be scheduled or manual and include annotations describing why the lock was applied.
+Argo Watcher can reach your GitOps repository in two ways:
 
-## Built-in GitOps Updater vs Argo CD Image Updater
+- **Built-in GitOps updater** — Argo Watcher commits the image tag itself. One tool, and the commit happens at deploy time instead of on a scan interval.
+- **Argo CD Image Updater** — a separate tool watches the registry and commits; Argo Watcher only monitors the rollout.
 
-Argo Watcher can update image tags in your GitOps repository in two ways:
-
-- **Argo CD Image Updater** — A separate tool that watches registries and commits tag updates. Argo Watcher only monitors the deployment.
-- **Built-in GitOps Updater** — Argo Watcher commits image updates itself, eliminating the need for a separate tool.
-
-Use the built-in updater if you want a simpler architecture. Use Argo CD Image Updater if you prefer a decoupled design or have complex image scanning requirements.
-
-## Deployment Workflows
-
-Argo Watcher supports two primary workflows depending on how image tags are updated in your GitOps repository.
-
-### With Argo CD Image Updater
-
-In this workflow, Argo Watcher only monitors the deployment. The image tag update is handled by Argo CD Image Updater.
+Pick the built-in updater for a simpler architecture, Image Updater if you want registry scanning or a decoupled design. Either way the monitoring half is identical:
 
 ```mermaid
 graph LR
-    Dev[Developer] --> Commit{Commit}
-    Commit --> Pipeline[Pipeline Triggered]
-    Pipeline --> Docker[Image Built]
-    Docker --> Task[Task Added to Argo Watcher]
-    Task --> Check[Check Argo CD API]
-    Check --> Decision{Expected Image?}
-    Decision -->|Yes| Success[Success]
-    Decision -->|No, image not defined by the app| Failed
-    Decision -->|No| Retry[Retry API Check]
-    Retry --> Timeout{Timeout?}
-    Timeout -->|Yes| Failed[Failed]
-    Timeout -->|No| Check
-```
-
-### With Built-in GitOps Updater
-
-In this workflow, Argo Watcher handles both the image tag update and deployment monitoring, eliminating the need for Argo CD Image Updater entirely.
-
-```mermaid
-graph LR
-    Dev[Developer] --> Commit{Commit}
-    Commit --> Pipeline[Pipeline Triggered]
-    Pipeline --> Docker[Image Built]
-    Docker --> Task[Task Added to Argo Watcher]
-    Task --> ImageUpdate[Commit to GitOps Repo]
-    ImageUpdate --> Check[Check Argo CD API]
-    Check --> Decision{Expected Image?}
-    Decision -->|Yes| Success[Success]
-    Decision -->|No, image not defined by the app| Failed
-    Decision -->|No| Retry[Retry API Check]
-    Retry --> Timeout{Timeout?}
-    Timeout -->|Yes| Failed[Failed]
-    Timeout -->|No| Check
+    Pipeline[Pipeline] --> Docker[Image built]
+    Docker --> Task[Task created in Argo Watcher]
+    Task --> Update["Commit to GitOps repo<br/>(built-in updater only)"]
+    Update --> Check[Check Argo CD API]
+    Check --> Decision{Expected image?}
+    Decision -->|Yes| Success[deployed]
+    Decision -->|Not declared by the app| Failed[failed]
+    Decision -->|Not yet| Retry[Retry until timeout]
+    Retry --> Check
 ```
