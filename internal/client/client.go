@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -103,7 +104,7 @@ func NewWatcher(baseUrl string, debugMode bool, timeout time.Duration) *Watcher 
 	// caller assigns it after construction (see setupWatcher).
 	watcher.client = &http.Client{
 		Timeout:       timeout,
-		CheckRedirect: watcher.dropCredentialOnHostChange,
+		CheckRedirect: watcher.guardRedirect,
 	}
 	return watcher
 }
@@ -112,21 +113,31 @@ func NewWatcher(baseUrl string, debugMode bool, timeout time.Duration) *Watcher 
 // replaces.
 const maxRedirects = 10
 
-// dropCredentialOnHostChange strips the deploy-token header from a redirect that
-// leaves the original host. net/http does this for Authorization (so the JWT is
-// already covered) but not for custom headers, and the deploy token authorizes git
-// write-back for every application — it must not be handed to a host the operator did
-// not configure.
+var errInsecureRedirect = errors.New("refused to follow a redirect away from https")
+
+// guardRedirect decides whether a redirect may be followed and with which headers.
 //
-// Dropping it turns off git write-back, which surfaces later as a rollout that fails
-// blaming the image or the timeout, so the loss is reported here where the cause is still
-// known. The warning covers both credentials by asking whether the outgoing request still
-// carries one, rather than assuming a host change drops it: net/http compares hostnames
-// with the port excluded, so it keeps Authorization across a port-only change and across
-// apex-to-subdomain, both of which this function still treats as a host change.
-func (watcher *Watcher) dropCredentialOnHostChange(request *http.Request, via []*http.Request) error {
+// A step down from https to http is refused: net/http compares only hostnames when
+// deciding to carry Authorization, so the credential would otherwise reach a plaintext
+// hop. The scheme is compared against the hop just taken, so a deployment that starts on
+// http keeps working.
+//
+// The deploy-token header is stripped when the redirect leaves the original host: net/http
+// does that for Authorization but not for custom headers, and the deploy token authorizes
+// git write-back for every application. Losing it turns off write-back, which surfaces
+// later as a rollout that fails blaming the image or the timeout, so it is reported here
+// where the cause is still known. The warning asks whether the outgoing request still
+// carries a credential rather than assuming a host change drops it — net/http compares
+// hostnames with the port excluded, so Authorization survives a port-only change.
+func (watcher *Watcher) guardRedirect(request *http.Request, via []*http.Request) error {
 	if len(via) >= maxRedirects {
 		return fmt.Errorf("stopped after %d redirects", maxRedirects)
+	}
+
+	previous := via[len(via)-1]
+	if previous.URL.Scheme == "https" && request.URL.Scheme != "https" {
+		return fmt.Errorf("%w: %q redirected to %q. Point ARGO_WATCHER_URL at the https endpoint",
+			errInsecureRedirect, previous.URL.Host, request.URL.Scheme+"://"+request.URL.Host)
 	}
 
 	if request.URL.Host == via[0].URL.Host {

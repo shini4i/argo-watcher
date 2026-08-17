@@ -404,12 +404,12 @@ func TestCrossHostRedirectIsReported(t *testing.T) {
 	})
 }
 
-// TestDropCredentialOnHostChangeRedirectLimit drives the hook directly rather than through
+// TestGuardRedirectLimit drives the hook directly rather than through
 // httptest, so the redirect-limit arm is not paid for at getJSON's transient-retry
 // backoff. Setting CheckRedirect replaces net/http's own limit, making this branch the only
 // thing bounding a redirect loop — and it must return before the credential is touched, or
 // a request that is never sent would still report write-back as lost.
-func TestDropCredentialOnHostChangeRedirectLimit(t *testing.T) {
+func TestGuardRedirectLimit(t *testing.T) {
 	newRequest := func(t *testing.T, rawURL string) *http.Request {
 		t.Helper()
 		req, err := http.NewRequest(http.MethodGet, rawURL, nil)
@@ -443,7 +443,7 @@ func TestDropCredentialOnHostChangeRedirectLimit(t *testing.T) {
 
 		var err error
 		output := capture(t, func() {
-			err = watcher.dropCredentialOnHostChange(request, via(t, maxRedirects))
+			err = watcher.guardRedirect(request, via(t, maxRedirects))
 		})
 
 		require.EqualError(t, err, "stopped after 10 redirects")
@@ -459,13 +459,114 @@ func TestDropCredentialOnHostChangeRedirectLimit(t *testing.T) {
 
 		var err error
 		output := capture(t, func() {
-			err = watcher.dropCredentialOnHostChange(request, via(t, maxRedirects-1))
+			err = watcher.guardRedirect(request, via(t, maxRedirects-1))
 		})
 
 		require.NoError(t, err)
 		assert.Empty(t, request.Header.Get(deployTokenHeader))
 		assert.Contains(t, output, "without git write-back")
 	})
+}
+
+// net/http keeps Authorization across an https -> http redirect to the same hostname, so
+// without this guard a Location header can move a credentialed request onto plaintext. A
+// deployment that starts on http is a deliberate choice and must keep working.
+func TestRedirectSchemeDowngrade(t *testing.T) {
+	newRequest := func(t *testing.T, rawURL string) *http.Request {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodGet, rawURL, nil)
+		require.NoError(t, err)
+		return req
+	}
+
+	newWatcher := func() *Watcher {
+		return setupWatcher(&Config{Url: "https://origin.example.com", Token: "s3cr3t-deploy-token", Timeout: time.Second})
+	}
+
+	cases := []struct {
+		name    string
+		via     []string
+		target  string
+		refused bool
+	}{
+		{name: "https to http on the same host", via: []string{"https://origin.example.com/"}, target: "http://origin.example.com/", refused: true},
+		{name: "https to http on another host", via: []string{"https://origin.example.com/"}, target: "http://elsewhere.example.com/", refused: true},
+		{name: "https to https", via: []string{"https://origin.example.com/"}, target: "https://origin.example.com/moved"},
+		{name: "http to http", via: []string{"http://origin.example.com/"}, target: "http://origin.example.com/moved"},
+		{name: "http to https", via: []string{"http://origin.example.com/"}, target: "https://origin.example.com/"},
+		{
+			// Compared against the hop just taken, not the first request.
+			name:    "http upgraded to https then downgraded",
+			via:     []string{"http://origin.example.com/", "https://origin.example.com/"},
+			target:  "http://origin.example.com/",
+			refused: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			via := make([]*http.Request, 0, len(tc.via))
+			for _, rawURL := range tc.via {
+				via = append(via, newRequest(t, rawURL))
+			}
+
+			err := newWatcher().guardRedirect(newRequest(t, tc.target), via)
+
+			if !tc.refused {
+				assert.NoError(t, err)
+				return
+			}
+			require.ErrorIs(t, err, errInsecureRedirect)
+			// The operator has to be able to tell which hop downgraded, and the secret
+			// must never reach a CI log.
+			assert.Contains(t, err.Error(), mustHost(t, tc.via[len(tc.via)-1]))
+			assert.Contains(t, err.Error(), mustHost(t, tc.target))
+			assert.Contains(t, err.Error(), "ARGO_WATCHER_URL")
+			assert.NotContains(t, err.Error(), "s3cr3t-deploy-token")
+		})
+	}
+
+	// The refusal is unconditional: a plaintext hop is refused even with nothing to
+	// expose, so the guard cannot be defeated by adding a token to a working pipeline.
+	t.Run("refused with no credential configured", func(t *testing.T) {
+		watcher := setupWatcher(&Config{Url: "https://origin.example.com", Timeout: time.Second})
+
+		err := watcher.guardRedirect(
+			newRequest(t, "http://origin.example.com/"),
+			[]*http.Request{newRequest(t, "https://origin.example.com/")},
+		)
+
+		require.ErrorIs(t, err, errInsecureRedirect)
+	})
+}
+
+func TestRedirectDowngradeIsRefusedInFlight(t *testing.T) {
+	var plainSaw string
+	var plainHits int
+	plain := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		plainHits++
+		plainSaw = r.Header.Get(deployTokenHeader)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(models.TaskStatus{Status: models.StatusDeployedMessage, Id: taskId})
+	}))
+	defer plain.Close()
+
+	var originHits int
+	origin := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		originHits++
+		http.Redirect(w, r, plain.URL, http.StatusFound)
+	}))
+	defer origin.Close()
+
+	watcher := setupWatcher(&Config{Url: origin.URL, Token: "s3cr3t-deploy-token", Timeout: 30 * time.Second})
+	watcher.client.Transport = origin.Client().Transport // trust the test server's certificate
+
+	_, err := watcher.getTaskStatus(taskId)
+
+	require.ErrorIs(t, err, errInsecureRedirect)
+	assert.Zero(t, plainHits, "the plaintext hop must never be made")
+	assert.Empty(t, plainSaw)
+	assert.Equal(t, 1, originHits, "a downgrade is permanent, so it must not be retried")
 }
 
 func mustPort(t *testing.T, rawURL string) string {
