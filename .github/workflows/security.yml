@@ -46,8 +46,8 @@ jobs:
         uses: securego/gosec@9e6a9843d7a4a6e3e9a8539b02612c8a4aa3f889 # v2.27.1
         env:
           # The gosec image bundles an older Go with GOTOOLCHAIN=local, so it
-          # refuses a go.mod that requires a newer patch (go 1.26.4). Allow it to
-          # fetch the toolchain named in go.mod instead of failing.
+          # refuses a go.mod whose toolchain directive names a newer patch. Allow
+          # it to fetch the toolchain named in go.mod instead of failing.
           GOTOOLCHAIN: auto
         with:
           # Exclude the e2e lab tooling (test/e2e): it is not shipped in any

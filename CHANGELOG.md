@@ -56,6 +56,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Deployments without OIDC are untouched, as is a configuration request that merely fails
   while the server restarts.
 
+### Security
+
+- Bumped the Go toolchain to `1.26.6`, resolving six standard library vulnerabilities
+  reachable from this code base in `go1.26.5`: `GO-2026-6218` (`net/url`), `GO-2026-6090`
+  (`crypto/tls`), `GO-2026-6089` and `GO-2026-5026` (`net/http`), `GO-2026-6088`
+  (`encoding/xml`) and `GO-2026-5972` (`encoding/asn1`). The `go` directive stays at
+  `1.26.5`, so the minimum language version required to build is unchanged.
+
 ## [0.15.0] - 2026-08-11
 
 ### Added
