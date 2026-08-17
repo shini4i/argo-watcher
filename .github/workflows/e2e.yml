@@ -51,6 +51,10 @@ jobs:
 
       - name: Install Task
         uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+        with:
+          # An exact version skips the unauthenticated go-task tags API
+          # lookup, which shares the runner IP 60 req/h anonymous quota.
+          version: 3.52.0
 
       - name: Install build dependencies (swag for the UI's swagger step)
         run: task install-deps
