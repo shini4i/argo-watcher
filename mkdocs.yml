@@ -59,10 +59,14 @@ nav:
     - Installation: 'guides/install.md'
     - GitOps Updater: 'guides/gitops-updater.md'
     - Notifications: 'guides/notifications.md'
+    - Deployment Lock: 'guides/deployment-lock.md'
     - OIDC / SSO: 'guides/oidc.md'
   - Reference:
     - Overview: 'reference/index.md'
     - API Reference: 'reference/api.md'
+    - Server Variables: 'reference/server-env.md'
+    - Client Variables: 'reference/client-env.md'
+    - Annotations: 'reference/annotations.md'
   - Operations:
     - Overview: 'operations/index.md'
     - Observability: 'operations/observability.md'
@@ -72,6 +76,12 @@ nav:
     - Overview: 'contributing/index.md'
     - Development: 'contributing/development.md'
     - Style Guide: 'contributing/style.md'
+
+# A link to a heading that no longer exists is as broken as a link to a missing
+# page, so `mkdocs build --strict` must fail on both.
+validation:
+  links:
+    anchors: warn
 
 markdown_extensions:
   - pymdownx.tasklist:
@@ -103,12 +113,17 @@ markdown_extensions:
 
 plugins:
   - search
+  # git-committers needs the GitHub API and social fetches fonts, so both are
+  # limited to the Read the Docs build (READTHEDOCS=True there) — a local
+  # `mkdocs build --strict` must pass offline, without a token.
   - git-committers:
       repository: shini4i/argo-watcher
       branch: main
+      enabled: !ENV [READTHEDOCS, false]
   - git-revision-date-localized:
       enable_creation_date: true
-  - social
+  - social:
+      enabled: !ENV [READTHEDOCS, false]
   - glightbox
   - swagger-ui-tag
   - redirects:
@@ -137,27 +152,28 @@ plugins:
         GitOps repository.
       sections:
         Getting Started:
-          - getting-started/index.md: Starting point for new users, linking to Quick Start and Concepts.
+          - getting-started/index.md: Starting point for new users.
           - getting-started/quick-start.md: Run a local instance in five minutes with Docker Compose.
-          - getting-started/concepts.md: The problem Argo Watcher solves, its architecture, and key terms.
+          - getting-started/concepts.md: The problem Argo Watcher solves, its parts, and the task lifecycle.
         Guides:
           - guides/index.md: Index of task-oriented guides.
           - guides/install.md: Installing the server and client.
           - guides/gitops-updater.md: Configuring the GitOps Updater to commit image tag changes.
-          - guides/notifications.md: Sending deployment notifications.
+          - guides/notifications.md: Sending deployment notifications via webhook or Mattermost.
+          - guides/deployment-lock.md: Freezing deployments on a schedule or on demand.
           - guides/oidc.md: Securing the Web UI with OIDC (Keycloak, Authentik, or any OIDC provider).
         Reference:
           - reference/index.md: Index of technical reference material.
-          - reference/api.md: REST API endpoints, authentication, and examples.
+          - reference/api.md: REST API endpoints, authentication, and health probes.
           - reference/server-env.md: Server environment variables.
           - reference/client-env.md: Client environment variables.
-          - reference/annotations.md: Argo CD application annotations recognised by Argo Watcher.
+          - reference/annotations.md: The argo-watcher/* annotations on an Argo CD Application.
         Operations:
           - operations/index.md: Index of operational guides.
           - operations/observability.md: Prometheus metrics, suggested alerts, and an example Grafana dashboard.
-          - operations/database.md: Database backends and configuration.
+          - operations/database.md: Schema, migrations, backups, and sizing.
           - operations/troubleshooting.md: Diagnosing common problems.
         Contributing:
           - contributing/index.md: How to contribute.
           - contributing/development.md: Setting up a development environment.
-          - contributing/style.md: Documentation and code style guide.
+          - contributing/style.md: Documentation style guide.

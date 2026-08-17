@@ -1,130 +1,86 @@
 # Notifications
 
-Argo Watcher can send deployment status notifications to external services via webhooks. This is useful for integrating with Slack, Microsoft Teams, PagerDuty, or any custom service that accepts HTTP POST requests.
+Argo Watcher reports deployments to external services in two ways: a generic webhook (Slack, Teams, PagerDuty, anything accepting an HTTP POST) and a Mattermost integration that threads its messages. Both can be enabled at once; each enabled strategy receives every event.
 
-## Webhook Events
+Two events are sent per deployment: one when the task is accepted (status `in progress`) and one when it reaches a final state (`deployed`, `failed`, `aborted`, `cancelled`, or `app not found`).
 
-The following events trigger a webhook notification:
+## Generic webhook
 
-- **Deployment started** -- Sent when a new deployment task is accepted.
-- **Deployment finished** -- Sent when a deployment succeeds or fails.
+| Variable | Description | Default | Example |
+|---|---|---|---|
+| `WEBHOOK_ENABLED` | Enable webhook notifications | `false` | |
+| `WEBHOOK_URL` | Where to POST | | `https://example.com/events` |
+| `WEBHOOK_CONTENT_TYPE` | `Content-Type` of the request | `application/json` | |
+| `WEBHOOK_FORMAT` | Go template rendering the request body | | `{"app": "{{.App}}", "status": "{{.Status}}"}` |
+| `WEBHOOK_AUTHORIZATION_HEADER_NAME` | Header carrying the credential | `Authorization` | `X-Token` |
+| `WEBHOOK_AUTHORIZATION_HEADER_VALUE` | Its value | | `Bearer token` |
+| `WEBHOOK_ALLOWED_RESPONSE_CODES` | Response codes treated as success | `200` | `200,201,202` |
 
-## Configuration
+Argo Watcher does not sign the payload; the receiver authenticates the request through the authorization header above, so treat `WEBHOOK_URL` itself as a secret when the receiver has no other check.
 
-| Variable                             | Description                                          | Default         | Example                                       |
-|--------------------------------------|------------------------------------------------------|-----------------|-----------------------------------------------|
-| `WEBHOOK_ENABLED`                    | Enable webhook notifications                         | `false`         |                                               |
-| `WEBHOOK_URL`                        | URL to send the webhook POST request to             |                 | `https://example.com/events`                  |
-| `WEBHOOK_CONTENT_TYPE`               | Content-Type header for webhook requests             | `application/json` |                                            |
-| `WEBHOOK_FORMAT`                     | Go template string defining the webhook payload     |                 | `{"app": "{{.App}}", "status": "{{.Status}}"}` |
-| `WEBHOOK_AUTHORIZATION_HEADER_NAME`  | Name of the authorization header                     | `Authorization` |                                               |
-| `WEBHOOK_AUTHORIZATION_HEADER_VALUE` | Value of the authorization header                    |                 | `Bearer token`                                |
-| `WEBHOOK_ALLOWED_RESPONSE_CODES`     | Comma-separated list of accepted HTTP response codes | `200`           | `200,201,202`                                 |
+### Template variables
 
-## Available Template Variables
+`WEBHOOK_FORMAT` (and `MATTERMOST_FORMAT`) is a [Go template](https://pkg.go.dev/text/template) rendered over the task:
 
-The `WEBHOOK_FORMAT` value is a [Go template](https://pkg.go.dev/text/template) string. The following variables are available:
-
-| Variable  | Type      | Description                               | Example          |
-|-----------|-----------|-------------------------------------------|------------------|
-| `Id`      | `string`  | Unique task identifier (UUID)             | `"be8c42c0-..."` |
-| `Created` | `float64` | Task creation time (Unix timestamp)       | `1648390029.0`   |
-| `Updated` | `float64` | Last update time (Unix timestamp)         | `1648390145.0`   |
-| `App`     | `string`  | Argo CD application name                  | `"my-app"`       |
-| `Author`  | `string`  | Person who triggered the deployment       | `"John Doe"`     |
-| `Project` | `string`  | Business project identifier               | `"Demo"`         |
-| `Images`  | `[]Image` | List of images being deployed (see below) |                  |
-| `Status`  | `string`  | Current deployment status                 | `"deployed"`     |
-| `IsRollback` | `bool` | `true` when the deployment returns to a previously deployed version | `true` |
-| `RollbackTargetId` | `string` | ID of the earlier task this deployment rolls back to (empty when not a rollback) | `"be8c42c0-..."` |
-
-### The Image Object
-
-Each item in the `Images` list has the following fields:
-
-| Field   | Type     | Description               | Example                                |
-|---------|----------|---------------------------|----------------------------------------|
-| `Image` | `string` | Full image name (no tag)  | `"ghcr.io/shini4i/argo-watcher"`       |
-| `Tag`   | `string` | Image tag being deployed  | `"v0.8.0"`                             |
+| Variable | Type | Description |
+|---|---|---|
+| `Id` | `string` | Task id (UUID) |
+| `Created` | `float64` | Creation time, Unix seconds |
+| `Updated` | `float64` | Last update, Unix seconds |
+| `App` | `string` | Argo CD application name |
+| `Author` | `string` | Who triggered the deployment |
+| `Project` | `string` | Business project identifier |
+| `Images` | `[]Image` | Images being deployed; each has `.Image` (name, no tag) and `.Tag` |
+| `Status` | `string` | Current status, e.g. `deployed` |
+| `StatusReason` | `string` | Why it failed; empty on success |
+| `IsRollback` | `bool` | `true` when returning to a previously deployed version |
+| `RollbackTargetId` | `string` | Id of the task being rolled back to; empty otherwise |
 
 !!! tip
-    Use `{{range .Images}}` to iterate over the images list in your template. Pay attention to variable types -- for example, `Created` and `Updated` are `float64` values, not strings.
+    `Created` and `Updated` are numbers, not strings. Iterate images with `{{range .Images}}`.
 
-## Examples
+### Examples
 
-### Simple JSON Payload
+A minimal JSON body:
 
 ```bash
 WEBHOOK_FORMAT='{"app": "{{.App}}", "status": "{{.Status}}", "author": "{{.Author}}"}'
 ```
 
-Produces:
-
-```json
-{
-  "app": "my-app",
-  "status": "deployed",
-  "author": "John Doe"
-}
-```
-
-### Detailed Payload with Images
+Every image, with tags:
 
 ```bash
-WEBHOOK_FORMAT='{"app": "{{.App}}", "status": "{{.Status}}", "author": "{{.Author}}", "project": "{{.Project}}", "images": [{{range $i, $img := .Images}}{{if $i}},{{end}}{"image": "{{$img.Image}}", "tag": "{{$img.Tag}}"}{{end}}]}'
+WEBHOOK_FORMAT='{"app": "{{.App}}", "status": "{{.Status}}", "images": [{{range $i, $img := .Images}}{{if $i}},{{end}}{"image": "{{$img.Image}}", "tag": "{{$img.Tag}}"}{{end}}]}'
 ```
 
-Produces:
-
-```json
-{
-  "app": "my-app",
-  "status": "deployed",
-  "author": "John Doe",
-  "project": "Demo",
-  "images": [
-    {"image": "ghcr.io/shini4i/argo-watcher", "tag": "v0.8.0"}
-  ]
-}
-```
-
-### Slack-Compatible Payload
+A Slack message that calls out rollbacks and failure reasons:
 
 ```bash
-WEBHOOK_FORMAT='{"text": "Deployment of *{{.App}}* by {{.Author}}: {{.Status}}"}'
-```
-
-### Highlighting Rollbacks
-
-Use `IsRollback` to call out deployments that return to a previously deployed version:
-
-```bash
-WEBHOOK_FORMAT='{"text": "{{if .IsRollback}}:rewind: ROLLBACK of {{else}}Deployment of {{end}}*{{.App}}* by {{.Author}}: {{.Status}}"}'
+WEBHOOK_FORMAT='{"text": "{{if .IsRollback}}:rewind: ROLLBACK of {{else}}Deployment of {{end}}*{{.App}}* by {{.Author}}: {{.Status}}{{with .StatusReason}} — {{.}}{{end}}"}'
 ```
 
 ## Mattermost
 
-The generic webhook sends an independent message per event, which gets noisy. The Mattermost strategy uses the Mattermost REST API instead: the deployment start creates a root channel post, and the deployment result is posted as a **thread reply** to it, mentioning the task author (`@<Author>`).
+The generic webhook posts each event independently, which gets noisy. The Mattermost strategy uses the REST API instead: the start event creates a root post and the result is a **thread reply** to it, mentioning the author.
 
-It requires a [bot account](https://docs.mattermost.com/integrations/cloud-bot-accounts.html) with access to the target channel; incoming webhooks cannot reply in threads.
+It needs a [bot account](https://docs.mattermost.com/integrations/cloud-bot-accounts.html) with access to the channel — incoming webhooks cannot reply in threads.
 
-### Configuration
+| Variable | Description | Default |
+|---|---|---|
+| `MATTERMOST_ENABLED` | Enable Mattermost notifications | `false` |
+| `MATTERMOST_URL` | Base URL of the instance, without `/api/v4` | |
+| `MATTERMOST_TOKEN` | Bot access token | |
+| `MATTERMOST_CHANNEL_ID` | Target channel id (the 26-character id, not the name) | |
+| `MATTERMOST_FORMAT` | Go template rendering the post (markdown) | |
+| `MATTERMOST_MENTION_AUTHOR` | Prepend `@<Author>` to every post | `false` |
 
-| Variable                | Description                                                     | Default | Example                        |
-|-------------------------|-----------------------------------------------------------------|---------|--------------------------------|
-| `MATTERMOST_ENABLED`    | Enable Mattermost notifications                                 | `false` |                                |
-| `MATTERMOST_URL`        | Base URL of the Mattermost instance (without `/api/v4`)         |         | `https://mattermost.example.com` |
-| `MATTERMOST_TOKEN`      | Bot account access token                                        |         |                                |
-| `MATTERMOST_CHANNEL_ID` | Target channel id (26-character id, not the channel name)       |         | `qz3c4kx8w3nqir6nqz3c4kx8w3`   |
-| `MATTERMOST_FORMAT`     | Go template rendering the post message (markdown)               |         | see below                      |
-| `MATTERMOST_MENTION_AUTHOR` | Prepend `@<Author>` to every post to notify the deploy author | `false` | `true`                       |
-
-`MATTERMOST_FORMAT` uses the same template variables as `WEBHOOK_FORMAT`. The rendered text becomes the post `message`; branch on `{{.Status}}` to distinguish the start and result posts. With `MATTERMOST_MENTION_AUTHOR=true` the author mention is prepended automatically to every post, so the template does not need `{{.Author}}`. The mention only notifies when `Author` matches a Mattermost username.
+Branch on `{{.Status}}` to tell the start post from the result:
 
 ```bash
 MATTERMOST_FORMAT='{{if eq .Status "in progress"}}:rocket: Deploying **{{.App}}** {{range $i, $img := .Images}}{{if $i}}, {{end}}`{{$img.Tag}}`{{end}}{{else if eq .Status "deployed"}}:white_check_mark: **{{.App}}** deployed{{else}}:x: **{{.App}}**: {{.Status}}{{end}}'
 ```
 
-Both strategies can be enabled at the same time; each enabled strategy receives every event.
+With `MATTERMOST_MENTION_AUTHOR=true` the mention is prepended for you, so the template does not need `{{.Author}}`. It only notifies someone when `Author` happens to match a Mattermost username.
 
-> **Note:** the mapping between the start post and its thread is kept in memory. If argo-watcher restarts mid-deployment (or runs with multiple replicas), the result is posted as a regular channel message instead of a thread reply.
+!!! note
+    The link between a start post and its thread is held in memory. If Argo Watcher restarts mid-deployment — or runs with several replicas — the result is posted as a normal channel message instead of a reply.

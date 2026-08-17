@@ -1,7 +1,5 @@
 # Contributing
 
-Guidelines for contributing to Argo Watcher.
-
-- **[Contribution Guide](https://github.com/shini4i/argo-watcher/blob/main/.github/CONTRIBUTING.md)** — What is expected of a change before it can be merged: project standards, test coverage, and the issue-first workflow.
-- **[Development](development.md)** — Set up a local development environment and build from source.
-- **[Style Guide](style.md)** — Documentation style conventions.
+- **[Contribution Guide](https://github.com/shini4i/argo-watcher/blob/main/.github/CONTRIBUTING.md)** — what a change must satisfy before it can be merged.
+- **[Development](development.md)** — set up a local environment and run the suites.
+- **[Style Guide](style.md)** — documentation conventions.

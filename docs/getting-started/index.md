@@ -1,6 +1,4 @@
 # Getting Started
 
-New to Argo Watcher? Start here.
-
-- **[Quick Start](quick-start.md)** — Get a running instance in 5 minutes with Docker Compose.
-- **[Concepts](concepts.md)** — Understand the architecture, problem, and key ideas behind Argo Watcher.
+- **[Quick Start](quick-start.md)** — a running instance in five minutes, with Docker Compose.
+- **[Concepts](concepts.md)** — the problem, the pieces, and the task lifecycle.

@@ -17,27 +17,25 @@ Argo Watcher bridges the gap between your CI pipeline and Argo CD, providing rea
 
 </div>
 
-## The Problem
+## The problem
 
-In a typical GitOps workflow, a CI pipeline builds an image, pushes it to a registry, and updates a Git repository. Argo CD then detects the change and deploys the new image. The problem is that the CI pipeline has no direct knowledge of the deployment's outcome. Did it succeed? Did it fail? The pipeline is left in the dark.
+A CI pipeline builds an image, pushes it, and updates a Git repository. Argo CD picks the change up and deploys it — and the pipeline never learns the outcome. Did the rollout succeed? Did it fail? It reports success either way.
 
-## The Solution
+## The solution
 
-Argo Watcher introduces a control loop that monitors your Argo CD applications for health and sync status changes. It acts as a bridge, reporting the deployment's final state back to the CI pipeline. This provides a clear, synchronous result for an asynchronous process.
+Argo Watcher watches the Argo CD application for the images the pipeline just built and reports the deployment's final state back to it, turning an asynchronous process into a result the pipeline can branch on.
 
-## Key Features
+## Features
 
-- **Deployment Tracking**: Monitors Argo CD applications and reports on their health and sync status.
-- **CI Integration**: A lightweight client that can be integrated into any CI/CD pipeline to wait for a successful deployment.
-- **Real-time Web UI**: A comprehensive dashboard to visualize deployment status, history, and application state.
-- **Built-in GitOps Updater**: An optional, standalone service to update image tags in your GitOps repository, as an alternative to the Argo CD Image Updater.
-- **Deployment Locking**: Schedule maintenance windows or manually lock deployments to prevent unintended changes.
-- **Notifications**: Send deployment status notifications to webhooks.
-- **Authentication**: Supports JWT and any OIDC provider (Keycloak, Authentik, …) for secure access to the server and UI.
+- **Deployment tracking** — monitors health and sync status of Argo CD applications.
+- **CI client** — a small binary that waits for the deployment and exits with a matching status code.
+- **Real-time Web UI** — deployment status, history, and per-task detail, pushed over a WebSocket.
+- **Built-in GitOps updater** — optionally commits image tags to your GitOps repository, replacing Argo CD Image Updater.
+- **Deployment lock** — freeze deployments on a schedule or on demand.
+- **Notifications** — webhook or Mattermost, on deployment start and result.
+- **Authentication** — a deploy token or JWT for pipelines, any OIDC provider (Keycloak, Authentik, …) for the Web UI.
 
 ## Architecture
-
-Argo Watcher consists of three main components: the **Server**, the **Client**, and the **Web UI**.
 
 ```mermaid
 graph LR
@@ -69,16 +67,14 @@ graph LR
     Server -- "Report Result" --> Client
 ```
 
-## How It Works
+## How it works
 
-1.  **Trigger**: Your CI pipeline builds a new image and pushes it to a registry.
-2.  **Monitor**: The pipeline then runs the Argo Watcher client, telling it which application and image to track.
-3.  **Update**: The image tag is updated in your GitOps repository, either by the Argo CD Image Updater or Argo Watcher's built-in updater.
-4.  **Deploy**: Argo CD detects the change and starts deploying the new image.
-5.  **Track & Report**: The Argo Watcher server continuously polls the Argo CD API. As the deployment progresses, it streams status updates to the Web UI and reports the final status (e.g., `deployed`, `failed`) back to the client.
-6.  **Complete**: The client exits with a status code that reflects the deployment outcome, allowing your CI pipeline to proceed or fail accordingly.
+1. Your pipeline builds and pushes an image, then runs the Argo Watcher client with the application and image to track.
+2. The tag is updated in your GitOps repository — by Argo Watcher's built-in updater, or by Argo CD Image Updater.
+3. Argo CD syncs, while the server polls its API and streams the task's progress to the Web UI.
+4. The final status (`deployed`, `failed`, …) goes back to the client, which exits accordingly, and your pipeline proceeds or fails.
 
-## Getting Started
+## Getting started
 
 The fastest way to try Argo Watcher is the bundled Docker Compose stack. It runs the server, a Postgres database, the Web UI, and a mock Argo CD, so you can exercise the full task lifecycle locally without a cluster:
 
@@ -94,11 +90,11 @@ To deploy to a real Kubernetes cluster with Helm and wire the client (`ghcr.io/s
 
 ## Documentation
 
-For more detailed information on configuration, API usage, and advanced features, please visit our documentation at [argo-watcher.readthedocs.io](https://argo-watcher.readthedocs.io).
+Configuration, the API, and every guide: [argo-watcher.readthedocs.io](https://argo-watcher.readthedocs.io).
 
 ## Contributing
 
-Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
+Contributions are welcome — **open an issue before writing code**. What a change needs to satisfy is in [CONTRIBUTING.md](.github/CONTRIBUTING.md); local setup is in the [Development guide](https://argo-watcher.readthedocs.io/en/latest/contributing/development/).
 
 ## License
 

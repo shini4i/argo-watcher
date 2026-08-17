@@ -1,16 +1,14 @@
 # Quick Start
 
-Get a running Argo Watcher instance in five minutes. This walkthrough uses the project's bundled Docker Compose stack, which includes the server, a Postgres database, the Web UI, and a mock Argo CD service so you can exercise the full task lifecycle without a real Argo CD cluster.
+Run Argo Watcher locally in five minutes. The bundled Docker Compose stack includes the server, Postgres, the Web UI, and a mock Argo CD, so you can drive a full task lifecycle without a cluster.
 
 ## Prerequisites
 
 - [Docker](https://docs.docker.com/get-docker/) and Docker Compose
-- [Git](https://git-scm.com/) for cloning the repository
-- [`curl`](https://curl.se/) (or any HTTP client)
+- [Git](https://git-scm.com/)
+- [`curl`](https://curl.se/) and [`jq`](https://jqlang.github.io/jq/)
 
 ## 1. Start the stack
-
-Clone the repository and bring everything up:
 
 ```bash
 git clone https://github.com/shini4i/argo-watcher.git
@@ -18,32 +16,21 @@ cd argo-watcher
 docker compose up
 ```
 
-Compose starts five services:
+Five services come up: `postgres` (task storage), `migrations` (schema), `mock` (a stand-in Argo CD API on `8081`), `backend` (the server on `8080`), and `frontend` (the Web UI on `3100`).
 
-- `postgres` — Storage backend for tasks.
-- `migrations` — Applies the database schema.
-- `mock` — Stand-in for the Argo CD API on port `8081`.
-- `backend` — The Argo Watcher server on port `8080`.
-- `frontend` — The Web UI on port `3100`.
+The first run spends a couple of minutes compiling the Go binaries.
 
-The first run takes a couple of minutes to compile the Go binaries. Subsequent restarts are much faster.
-
-## 2. Verify the server is healthy
-
-In a new terminal:
+## 2. Check the server is healthy
 
 ```bash
 curl -s http://localhost:8080/readyz
 ```
 
-You should see a `200 OK` response with `{"status":"up"}`, meaning the server is
-serving and its state backend is reachable. See
-[Health and probe endpoints](../reference/api.md#health-and-probe-endpoints) for the
-full set.
+`{"status":"up"}` means the server is serving and its state backend is reachable. See [Health and probe endpoints](../reference/api.md#health-and-probe-endpoints) for the difference between `/readyz` and `/livez`.
 
 ## 3. Submit a task
 
-Create a task that asks Argo Watcher to verify a particular image is deployed:
+The mock Argo CD knows three applications — `app`, `app2` and `app4` — and reports `app` as synced, healthy, and running `app:v0.0.1`. Ask Argo Watcher to confirm exactly that:
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/tasks \
@@ -53,28 +40,26 @@ curl -X POST http://localhost:8080/api/v1/tasks \
 EOF
 ```
 
-The server responds with `202 Accepted` and the task ID:
+The server answers `202 Accepted` with the task id:
 
 ```json
 { "id": "...", "status": "accepted" }
 ```
 
-## 4. Watch the task transition states
-
-Poll the task to see it transition through its lifecycle:
+## 4. Watch the task reach its final state
 
 ```bash
 curl -s "http://localhost:8080/api/v1/tasks/<task-id>" | jq
 ```
 
-Because the mock Argo CD service simulates a successful deployment, the task progresses from `in progress` to `deployed` within a few seconds. Refer to [Concepts → Task Lifecycle](concepts.md#task-lifecycle) for an explanation of each state.
+The task starts as `in progress` and becomes `deployed` within a few seconds. Submit one for an application the mock does not know and it ends as `app not found` instead — [Concepts → Task Lifecycle](concepts.md#task-lifecycle) explains each state.
 
 ## 5. Open the Web UI
 
-Visit [http://localhost:3100](http://localhost:3100) to see the dashboard. You should find your task listed, along with its current status and timing details.
+Visit [http://localhost:3100](http://localhost:3100). Your task is listed with its status and timings.
 
 ## Where to next
 
-- **[Installation](../guides/install.md)** — Deploy Argo Watcher to a real Kubernetes cluster.
-- **[Concepts](concepts.md)** — Understand how the components fit together.
-- **[API Reference](../reference/api.md)** — Explore the full HTTP API.
+- **[Installation](../guides/install.md)** — deploy to a real Kubernetes cluster.
+- **[Concepts](concepts.md)** — how the components fit together.
+- **[API Reference](../reference/api.md)** — the full HTTP API.
