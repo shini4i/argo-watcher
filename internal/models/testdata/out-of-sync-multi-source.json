@@ -1,0 +1,46 @@
+{
+  "spec": {
+    "syncPolicy": {
+      "automated": {
+        "prune": true,
+        "selfHeal": true,
+        "enabled": false
+      }
+    }
+  },
+  "status": {
+    "health": {
+      "status": "Healthy"
+    },
+    "operationState": {
+      "phase": "Succeeded",
+      "message": "successfully synced (all tasks run)",
+      "syncResult": {
+        "revisions": [
+          "b6a9f1c4e2d8a7b5c3f1e9d7c5b3a1f9e7d5c3b1",
+          "1.14.2"
+        ]
+      }
+    },
+    "resources": [
+      {
+        "kind": "Deployment",
+        "name": "product-catalog",
+        "namespace": "app",
+        "status": "OutOfSync"
+      }
+    ],
+    "summary": {
+      "images": [
+        "product-catalog:v0.0.2"
+      ]
+    },
+    "sync": {
+      "status": "OutOfSync",
+      "revisions": [
+        "b6a9f1c4e2d8a7b5c3f1e9d7c5b3a1f9e7d5c3b1",
+        "1.15.0"
+      ]
+    }
+  }
+}

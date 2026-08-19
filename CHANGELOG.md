@@ -43,6 +43,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   uses (`pgx`), instead of a second driver linked only for migrations. The `DB_*`
   variables, the migrations and the advisory lock that serializes them are unchanged, as
   is running migrations with the external `migrate` CLI.
+- A deployment that fails while the application is still out of sync now leads with what
+  Argo CD reports and how long the rollout was waited on — `Deployment failed: ArgoCD
+  reports sync status OutOfSync after waiting 3m45s.` — and answers the obvious question
+  next. When the revision the last sync applied differs from the one Argo CD now compares
+  against, the report names both and says the desired state has changed since that sync;
+  when they match, it says applying it did not converge the live state and lists the usual
+  causes. Either way it states whether auto-sync is enabled, which decides whether anyone
+  has to act. The last sync operation, which routinely reads `Succeeded` / `successfully
+  synced (all tasks run)`, now closes the report as context instead of opening it and
+  reading as a contradiction. Resources that only reach `Synced` by being deleted are
+  flagged `(requires pruning)`, and a report with none of this still names the last sync
+  operation rather than being blank.
+- Failure reports no longer list resources that applied cleanly. Argo CD reports a
+  successful apply with the hook phase `Running` and kubectl's own `configured` message, so
+  those resources used to appear as `Deployment(app)  Running with message
+  deployment.apps/app configured` in a list of things that had gone wrong — the single most
+  misleading line in the report. Only resources that actually failed are listed, the
+  section is now headed `Failed resources:` rather than `Failed hooks:` (a failed apply is
+  not a hook), and each line names the outcome that describes it instead of always the hook
+  phase, so a resource whose live object went unhealthy mid-sync no longer reads `Synced`.
 
 ### Fixed
 

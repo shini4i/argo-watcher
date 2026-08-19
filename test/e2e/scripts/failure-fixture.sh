@@ -6,7 +6,7 @@
 #
 # Actions:
 #   hook      a failing PreSync hook Job. The hook aborts the sync before the main wave, so the
-#             app keeps its old image and the failure surfaces under "Failed hooks:".
+#             app keeps its old image and the failure surfaces under "Failed resources:".
 #   degraded  a failing PLAIN Job (no hook annotations). It applies in the same wave as the
 #             Deployment, so the new image DOES roll out while the Job exhausts its backoff
 #             limit: the app settles Synced + Degraded, the terminal-degraded rollout.

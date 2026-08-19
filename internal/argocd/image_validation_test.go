@@ -220,7 +220,7 @@ func TestWaitRolloutFailsFastOnImageNotPartOfApp(t *testing.T) {
 	)
 	monitor.refreshApp = true
 
-	_, err := monitor.WaitRollout(task)
+	_, _, err := monitor.WaitRollout(task)
 
 	var imageErr *ImageNotPartOfAppError
 	require.ErrorAs(t, err, &imageErr)
@@ -253,7 +253,7 @@ func TestWaitRolloutValidatesDesiredImagesOnce(t *testing.T) {
 	)
 	monitor.refreshApp = true
 
-	_, err := monitor.WaitRollout(task)
+	_, _, err := monitor.WaitRollout(task)
 	require.NoError(t, err)
 }
 
@@ -285,7 +285,7 @@ func TestWaitRolloutSkipsValidationWithoutRefresh(t *testing.T) {
 	)
 
 	// No GetManagedResources expectation: any call is a failure.
-	_, err := monitor.WaitRollout(task)
+	_, _, err := monitor.WaitRollout(task)
 	require.NoError(t, err)
 }
 

@@ -1,4 +1,11 @@
 {
+  "spec": {
+    "syncPolicy": {
+      "automated": {
+        "prune": true
+      }
+    }
+  },
   "status": {
     "health": {
       "status": "Healthy"
@@ -17,6 +24,7 @@
       "phase": "Succeeded",
       "message": "successfully synced (all tasks run)",
       "syncResult": {
+        "revision": "b6a9f1c4e2d8a7b5c3f1e9d7c5b3a1f9e7d5c3b1",
         "resources": [
           {
             "hookPhase": "Running",
@@ -39,6 +47,13 @@
         "status": "OutOfSync"
       },
       {
+        "kind": "ConfigMap",
+        "name": "product-catalog-legacy",
+        "namespace": "app",
+        "status": "OutOfSync",
+        "requiresPruning": true
+      },
+      {
         "kind": "Service",
         "name": "product-catalog",
         "namespace": "app",
@@ -56,7 +71,8 @@
       ]
     },
     "sync": {
-      "status": "OutOfSync"
+      "status": "OutOfSync",
+      "revision": "d4c2b0a8f6e4d2c0b8a6f4e2d0c8b6a4f2e0d8c6"
     }
   }
 }
