@@ -315,20 +315,23 @@ func formatSyncResultResource(r ApplicationOperationResource) string {
 	if len(outcome) > 0 {
 		line += " " + strings.Join(outcome, " ")
 	}
-	if r.Message != "" {
-		line += " with message " + r.Message
+	return withMessage(line, r.Message)
+}
+
+// withMessage appends a resource's own message to its rendered line. Every resource formatter goes
+// through it, so a resource that carries no message never trails an empty "with message" and all
+// three listings of the failure report read the same way.
+func withMessage(line, message string) string {
+	if message == "" {
+		return line
 	}
-	return line
+	return line + " with message " + message
 }
 
 // formatHealthResource renders a single health-bearing resource line. Shared between full and filtered listings
 // so the user-facing failure-report format stays consistent if it ever changes.
 func formatHealthResource(r ApplicationResource) string {
-	line := fmt.Sprintf("%s(%s) %s", r.Kind, r.Name, r.Health.Status)
-	if r.Health.Message != "" {
-		line += " with message " + r.Health.Message
-	}
-	return line
+	return withMessage(fmt.Sprintf("%s(%s) %s", r.Kind, r.Name, r.Health.Status), r.Health.Message)
 }
 
 // ListUnhealthyResources returns one formatted line per resource with a non-empty health status.
@@ -613,11 +616,7 @@ func (app *Application) listProblemResources() []string {
 // formatTreeNode renders a single resource-tree node line, mirroring formatHealthResource so
 // tree-sourced and Status.Resources-sourced "Unhealthy resources" lines look identical.
 func formatTreeNode(n ApplicationTreeNode) string {
-	line := fmt.Sprintf("%s(%s) %s", n.Kind, n.Name, n.Health.Status)
-	if n.Health.Message != "" {
-		line += " with message " + n.Health.Message
-	}
-	return line
+	return withMessage(fmt.Sprintf("%s(%s) %s", n.Kind, n.Name, n.Health.Status), n.Health.Message)
 }
 
 // ListProblemNodes returns formatted lines for resource-tree nodes whose health indicates a
