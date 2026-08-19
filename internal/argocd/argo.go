@@ -207,10 +207,15 @@ func (argo *Argo) AddTask(task models.Task) (*models.Task, error) {
 	}
 
 	// This replica is about to start monitoring the rollout, so it claims the task
-	// before any sweep can offer it to another replica. Best-effort: an unclaimed
-	// task is dropped by this replica at its first renewal, which finds no claim to
-	// extend, and taken up by the next sweep instead — a failed claim costs a reap
-	// interval, not the deployment.
+	// before any sweep can offer it to another replica.
+	//
+	// Best-effort on purpose: a claim that cannot be written is a database blip, and
+	// refusing the deployment over it would be a worse outcome than proceeding. An
+	// unclaimed task is nobody else's to take for a full lease — the sweep leaves
+	// rows that young alone — so this replica monitors it unopposed, discovers at
+	// its first renewal that it holds no claim, and stops without writing a status.
+	// A sweep then picks the task up and resumes it, re-running the write-back
+	// idempotently. The cost is a delayed deployment, not a lost or duplicated one.
 	if err := argo.State.ClaimTask(newTask.Id); err != nil {
 		slog.Warn("Failed to claim the new task for this replica", "error", err, "id", newTask.Id)
 	}

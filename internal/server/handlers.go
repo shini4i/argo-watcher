@@ -92,6 +92,15 @@ func (env *Env) addTask(w http.ResponseWriter, r *http.Request) {
 
 	task.Validated = tokenValid
 
+	// Resolve the rollout window now, while this replica's configuration is the one
+	// that applies. Left at zero it would mean "whatever the default is", and a task
+	// resumed by a replica configured differently — during a rollout that changes
+	// DEPLOYMENT_TIMEOUT, say — would silently be judged against the new value
+	// instead of the one it was accepted under.
+	if task.Timeout <= 0 {
+		task.Timeout = int(env.config.DeploymentTimeout)
+	}
+
 	newTask, err := env.argo.AddTask(task)
 	if err != nil {
 		slog.Error("failed to add task", "error", err)

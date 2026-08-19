@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -1742,6 +1743,7 @@ func TestAddTaskEndpoint(t *testing.T) {
 			strategies:    strategies,
 			authenticator: auth.NewAuthenticator(strategies),
 			argo:          argo,
+			config:        &config.ServerConfig{DeploymentTimeout: 900},
 		}
 
 		router := chi.NewRouter()
@@ -1785,6 +1787,7 @@ func TestAddTaskEndpoint(t *testing.T) {
 			strategies:    strategies,
 			authenticator: auth.NewAuthenticator(strategies),
 			argo:          argo,
+			config:        &config.ServerConfig{DeploymentTimeout: 900},
 		}
 
 		router := chi.NewRouter()
@@ -1830,6 +1833,7 @@ func TestAddTaskEndpoint(t *testing.T) {
 			strategies:    strategies,
 			authenticator: auth.NewAuthenticator(strategies),
 			argo:          argo,
+			config:        &config.ServerConfig{DeploymentTimeout: 900},
 		}
 
 		router := chi.NewRouter()
@@ -2457,4 +2461,75 @@ func TestCORSPolicy(t *testing.T) {
 		assert.Equal(t, http.StatusBadRequest, w.Code, "a non-upgrade /ws request is still answered, not refused")
 		assert.Empty(t, w.Header().Get("Access-Control-Allow-Origin"))
 	})
+}
+
+// TestAddTaskResolvesTheDeploymentWindow pins that a task accepted without an
+// explicit timeout is stored with this replica's configured window rather than
+// with zero. Zero would mean "whatever the default is", and a replica that later
+// resumes the task would apply its own default — so a fleet mid-way through a
+// DEPLOYMENT_TIMEOUT change would judge a deployment against a window it was
+// never accepted under.
+func TestAddTaskResolvesTheDeploymentWindow(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	tests := []struct {
+		name        string
+		requestJSON string
+		want        int
+	}{
+		{
+			name:        "an omitted timeout is resolved to the instance default",
+			requestJSON: `{"app":"test-app","author":"a","project":"p","images":[{"image":"test","tag":"v1"}]}`,
+			want:        900,
+		},
+		{
+			name:        "an explicit timeout is kept as sent",
+			requestJSON: `{"app":"test-app","author":"a","project":"p","timeout":120,"images":[{"image":"test","tag":"v1"}]}`,
+			want:        120,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stateMock := mocks.NewMockTaskRepository(ctrl)
+			metricsMock := mocks.NewMockMetricsInterface(ctrl)
+
+			argo := &argocd.Argo{}
+			argo.Init(stateMock, mocks.NewMockArgoApiInterface(ctrl), metricsMock)
+
+			stateMock.EXPECT().GetTasks(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+				Return([]models.Task{}, int64(0)).AnyTimes()
+			stateMock.EXPECT().CancelInProgressTasks(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+				Return(int64(0), nil).AnyTimes()
+			stateMock.EXPECT().ClaimTask(gomock.Any()).Return(nil).AnyTimes()
+			metricsMock.EXPECT().AddProcessedDeployment(gomock.Any()).AnyTimes()
+
+			var stored models.Task
+			stateMock.EXPECT().AddTask(gomock.Any()).DoAndReturn(func(task models.Task) (*models.Task, error) {
+				stored = task
+				// Returning an error stops the handler before it spawns a rollout, which
+				// this test is not about.
+				return nil, errors.New("stop here")
+			})
+
+			lockdown, err := NewLockdown("", lock.NewInMemoryDeployLockStore())
+			require.NoError(t, err)
+
+			env := &Env{
+				argo:     argo,
+				lockdown: lockdown,
+				config:   &config.ServerConfig{DeploymentTimeout: 900},
+			}
+
+			router := chi.NewRouter()
+			router.Post("/api/v1/tasks", env.addTask)
+
+			req, _ := http.NewRequest(http.MethodPost, "/api/v1/tasks", strings.NewReader(tt.requestJSON))
+			req.Header.Set("Content-Type", "application/json")
+			router.ServeHTTP(httptest.NewRecorder(), req)
+
+			assert.Equal(t, tt.want, stored.Timeout)
+		})
+	}
 }

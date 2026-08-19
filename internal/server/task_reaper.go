@@ -61,7 +61,7 @@ func reapAbandonedTasks(stop <-chan struct{}, draining func() bool, interval tim
 			}
 
 			for _, task := range claimed {
-				go resumeSafely(task, resume)
+				go resumeSafely(task, draining, resume)
 			}
 		}
 	}
@@ -92,12 +92,24 @@ func (env *Env) releaseTaskLeases() {
 // A task is only ever abandoned back to the other replicas, so a panic that took
 // the process down would be re-claimed elsewhere and take that replica down too,
 // walking one bad deployment through the whole fleet.
-func resumeSafely(task models.Task, resume func(models.Task)) {
+//
+// Draining is re-checked here because it can begin between the sweep's own check
+// and this goroutine starting. Monitoring a rollout this replica cannot finish is
+// worse than not starting it: once shutdown closes the write-back batcher, the
+// resumed task's write-back fails and records a terminal status for a deployment
+// that is otherwise healthy. Giving up before starting leaves the claim to be
+// released with the rest, so another replica takes it instead.
+func resumeSafely(task models.Task, draining func() bool, resume func(models.Task)) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			slog.Error("Resuming an abandoned deployment panicked", "id", task.Id, "app", task.App, "panic", recovered)
 		}
 	}()
+
+	if draining() {
+		slog.Info("Not resuming a claimed deployment: this replica is shutting down", "id", task.Id, "app", task.App)
+		return
+	}
 
 	resume(task)
 }

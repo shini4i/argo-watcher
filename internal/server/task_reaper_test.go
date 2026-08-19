@@ -146,6 +146,19 @@ func TestReapAbandonedTasks_ClaimsNothingWhileDraining(t *testing.T) {
 	assert.Empty(t, recorder.recorded())
 }
 
+// Draining can begin after a sweep has already claimed work, so the check is
+// repeated in the goroutine that would do the monitoring. Starting it anyway
+// means the write-back lands after shutdown closed the batcher, and a healthy
+// deployment gets a terminal failure no other replica will revisit.
+func TestResumeSafely_DoesNotStartWhileDraining(t *testing.T) {
+	resumed := false
+	resumeSafely(models.Task{Id: "claimed"}, func() bool { return true }, func(models.Task) {
+		resumed = true
+	})
+
+	assert.False(t, resumed, "a replica on its way out must leave the claim for another")
+}
+
 // A panic in one resumed deployment must not take the replica down, or the task
 // would be re-claimed elsewhere and walk the crash through the fleet.
 func TestReapAbandonedTasks_ContainsAPanickingResume(t *testing.T) {
