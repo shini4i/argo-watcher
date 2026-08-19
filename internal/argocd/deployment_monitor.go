@@ -44,6 +44,12 @@ var errTaskSuperseded = errors.New("task superseded by a newer deployment")
 // rollout without writing a status: the new owner records the outcome.
 var errLeaseLost = errors.New("task taken over by another replica")
 
+// errReplicaDraining is an internal sentinel returned when this replica began
+// shutting down while it was monitoring a resumed rollout. It stops the rollout
+// without writing a status, like errLeaseLost: the claim is released at the end of
+// shutdown and the replica that resumes the task records the outcome.
+var errReplicaDraining = errors.New("replica is shutting down")
+
 // ImageNotPartOfAppError reports that a task expects an image the application's desired
 // state never declares, so waiting for it to appear is pointless (issue #519).
 // Image is a repository name without tag or digest, as are DesiredImages.
@@ -171,7 +177,7 @@ func (monitor *DeploymentMonitor) StoreInitialAppStatus(task *models.Task, appli
 // time the deployment waited. It covers this loop alone: the initial fetch, the status write and
 // the git write-back all precede it, and counting them would report a rollout that failed on the
 // first poll as one that waited out a slow write-back.
-func (monitor *DeploymentMonitor) WaitRollout(task models.Task, leaseLost func() bool) (*models.Application, time.Duration, error) {
+func (monitor *DeploymentMonitor) WaitRollout(task models.Task, abandoned func() bool) (*models.Application, time.Duration, error) {
 	// application holds the most recent successfully-fetched state. It is deliberately assigned only
 	// inside the success branch so that a fetch aborted by the deadline (which returns a nil application)
 	// cannot clobber the last-known-good status we want to report on timeout.
@@ -203,9 +209,10 @@ func (monitor *DeploymentMonitor) WaitRollout(task models.Task, leaseLost func()
 			return retry.Unrecoverable(errTaskSuperseded)
 		}
 
-		// Checked alongside supersession so a takeover stops the polling within one
-		// iteration instead of at the deadline, leaving only the new owner watching.
-		if leaseLost() {
+		// Checked alongside supersession so a rollout this replica gave up — taken over,
+		// or left behind by a shutdown — stops polling within one iteration instead of at
+		// the deadline, leaving only its next owner watching.
+		if abandoned() {
 			return retry.Unrecoverable(errLeaseLost)
 		}
 

@@ -32,7 +32,7 @@ func (env *Env) StartTaskReaper() {
 // unreachable database is an outage to ride out, not a reason to stop taking
 // over abandoned deployments. Dependencies are parameters so the loop can be
 // unit-tested. It runs until stop is closed.
-func reapAbandonedTasks(stop <-chan struct{}, draining func() bool, interval time.Duration, repository state.TaskRepository, resume func(models.Task)) {
+func reapAbandonedTasks(stop <-chan struct{}, draining func() bool, interval time.Duration, repository state.TaskRepository, resume func(models.Task, func() bool)) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -99,7 +99,11 @@ func (env *Env) releaseTaskLeases() {
 // resumed task's write-back fails and records a terminal status for a deployment
 // that is otherwise healthy. Giving up before starting leaves the claim to be
 // released with the rest, so another replica takes it instead.
-func resumeSafely(task models.Task, draining func() bool, resume func(models.Task)) {
+//
+// The same predicate is handed to resume, which keeps watching it: shutdown can
+// also begin after a rollout is under way, and that rollout must be given up
+// rather than raced against the teardown.
+func resumeSafely(task models.Task, draining func() bool, resume func(models.Task, func() bool)) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			slog.Error("Resuming an abandoned deployment panicked", "id", task.Id, "app", task.App, "panic", recovered)
@@ -111,5 +115,5 @@ func resumeSafely(task models.Task, draining func() bool, resume func(models.Tas
 		return
 	}
 
-	resume(task)
+	resume(task, draining)
 }

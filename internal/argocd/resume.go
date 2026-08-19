@@ -21,7 +21,12 @@ const StaleResumedTaskReason = "Deployment window elapsed while the task was una
 // deployment polls. A task whose window has already elapsed is aborted here
 // instead of being resumed, which is the outcome it would reach on the first
 // poll anyway.
-func (updater *ArgoStatusUpdater) ResumeRollout(task models.Task) {
+//
+// draining reports that this replica has begun shutting down. A rollout resumed
+// shortly before shutdown is given up as soon as that happens: the claim is
+// released in the last shutdown phase, so the next replica to sweep resumes the
+// deployment and records its outcome.
+func (updater *ArgoStatusUpdater) ResumeRollout(task models.Task, draining func() bool) {
 	remaining, resumable := updater.monitor.remainingWindow(task, time.Now())
 	if !resumable {
 		slog.Info("Not resuming a deployment whose window already elapsed", "id", task.Id, "app", task.App)
@@ -37,7 +42,7 @@ func (updater *ArgoStatusUpdater) ResumeRollout(task models.Task) {
 		"id", task.Id, "app", task.App, "remaining", remaining)
 
 	task.Timeout = int(remaining.Seconds())
-	updater.WaitForRollout(task, true)
+	updater.waitForRollout(task, true, draining)
 }
 
 // remainingWindow returns how much of the task's rollout window is left at now,

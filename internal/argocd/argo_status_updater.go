@@ -120,6 +120,20 @@ func (updater *ArgoStatusUpdater) Close(ctx context.Context) {
 // already sent by the replica that accepted it, so sending a second one would
 // announce the same deployment twice.
 func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task, resumed bool) {
+	updater.waitForRollout(task, resumed, neverDraining)
+}
+
+// neverDraining is the abandon predicate for a rollout monitored by the replica
+// that accepted the deployment. Such a task has nowhere to be handed back to:
+// nothing else holds its claim, so it is watched until it finishes or until the
+// process ends with it.
+func neverDraining() bool { return false }
+
+// waitForRollout is WaitForRollout with the condition under which this replica
+// gives the rollout up: draining reports that shutdown has begun, which ends the
+// monitoring as a takeover would — without a status, so the replica that resumes
+// the task records the outcome instead.
+func (updater *ArgoStatusUpdater) waitForRollout(task models.Task, resumed bool, draining func() bool) {
 	updater.monitor.BeginTracking()
 	defer updater.monitor.EndTracking()
 
@@ -139,19 +153,43 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task, resumed bool)
 	// reports waited instead, which covers the rollout polling alone.
 	start := time.Now()
 
-	application, waited, err := updater.waitForApplicationDeployment(task, lease.Lost)
+	// Both conditions end the rollout the same way, so the poll loop and the
+	// write-back are given one predicate: stop at the next boundary, without a
+	// status. Composing them here rather than inside the lease guard keeps the guard
+	// about the claim alone.
+	abandoned := func() bool { return lease.Lost() || draining() }
+
+	application, waited, err := updater.waitForApplicationDeployment(task, abandoned)
 
 	// Re-checked here because only the poll loop and the write-back consult the
-	// lease themselves. Every other way out — a failed fetch, a write-back error,
+	// predicate themselves. Every other way out — a failed fetch, a write-back error,
 	// or an ordinary success — would otherwise write a status and notify on a task
-	// this replica lost during the last poll interval.
-	if lease.Lost() {
+	// this replica lost during the last poll interval, or no longer finishes.
+	switch {
+	case lease.Lost():
+		// Whatever the rollout ended as, the replica that took the claim is monitoring
+		// it too and reaches the same outcome — a supersession included. Reporting it
+		// here as well would announce one deployment twice.
 		err = errLeaseLost
+	case errors.Is(err, errTaskSuperseded):
+		// Left as it is even while draining: the cancellation is already persisted by
+		// the deployment that caused it, and a cancelled task is never re-claimed by a
+		// sweep — so this replica is the last one able to announce it.
+	case draining():
+		err = errReplicaDraining
 	}
 
 	var imageErr *ImageNotPartOfAppError
 
 	switch {
+	case errors.Is(err, errReplicaDraining):
+		// This replica finishes nothing from here on: its claims are released in the
+		// last shutdown phase and another replica resumes the deployment. A status
+		// written now would be decided by a monitor that is about to disappear — and
+		// once the write-back batcher is closed, it would be a failure for a rollout
+		// that is otherwise healthy.
+		slog.Info("Stopped monitoring a deployment while shutting down; another replica will resume it.", "id", task.Id)
+		return
 	case errors.Is(err, errLeaseLost):
 		// Another replica owns this task now and is monitoring the same rollout.
 		// Writing a status here would clobber the outcome it is about to record, and
@@ -182,7 +220,20 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task, resumed bool)
 	sendNotification(task, updater.notifier)
 }
 
-func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task, leaseLost func() bool) (*models.Application, time.Duration, error) {
+// abortedWriteBackCause names why a write-back gave up. Both of its stop conditions
+// surface as ErrDeploymentSuperseded, so the shared state decides which one is
+// reported: a task cancelled there is reported as superseded even when this replica
+// is also giving the rollout up, because a cancelled task is never re-claimed by a
+// sweep and no successor could announce it.
+func (updater *ArgoStatusUpdater) abortedWriteBackCause(taskId string, abandoned bool) error {
+	if abandoned && !updater.monitor.taskSuperseded(taskId) {
+		return errLeaseLost
+	}
+
+	return errTaskSuperseded
+}
+
+func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task, abandoned func() bool) (*models.Application, time.Duration, error) {
 	if updater.monitor.taskSuperseded(task.Id) {
 		return nil, 0, errTaskSuperseded
 	}
@@ -200,22 +251,19 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task,
 
 	// The stop predicate is re-checked inside the write-back retry loop so a task
 	// that keeps retrying under contention aborts the moment a newer deployment
-	// supersedes it — rather than overwriting that deployment — or the moment
-	// another replica takes it over, which would otherwise have two replicas
-	// pushing the same write-back.
+	// supersedes it — rather than overwriting that deployment — or the moment this
+	// replica gives the rollout up, which would otherwise have two replicas pushing
+	// the same write-back, or push after the batcher was drained.
 	if err := updater.gitUpdater.UpdateIfNeeded(app, task, func() bool {
-		return updater.monitor.taskSuperseded(task.Id) || leaseLost()
+		return updater.monitor.taskSuperseded(task.Id) || abandoned()
 	}); err != nil {
 		if errors.Is(err, ErrDeploymentSuperseded) {
-			if leaseLost() {
-				return nil, 0, errLeaseLost
-			}
-			return nil, 0, errTaskSuperseded
+			return nil, 0, updater.abortedWriteBackCause(task.Id, abandoned())
 		}
 		return nil, 0, err
 	}
 
-	return updater.monitor.WaitRollout(task, leaseLost)
+	return updater.monitor.WaitRollout(task, abandoned)
 }
 
 func sendNotification(task models.Task, notifier *notifications.Notifier) {

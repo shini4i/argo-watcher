@@ -2,6 +2,8 @@ package argocd
 
 import (
 	"context"
+	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -152,7 +154,7 @@ func TestResumeRollout_AbortsAnElapsedWindow(t *testing.T) {
 	// No GetApplication expectation: polling a deployment past its deadline would
 	// only end in the same abort.
 
-	updater.ResumeRollout(task)
+	updater.ResumeRollout(task, neverDraining)
 
 	require.Len(t, capture.sent, 1, "the deployment must still be reported as finished")
 	assert.Equal(t, models.StatusAborted, capture.sent[0].Status)
@@ -210,7 +212,7 @@ func TestResumeRollout_KeepsTheOriginalDeadline(t *testing.T) {
 	metricsMock.EXPECT().ObserveDeploymentDuration(task.App, gomock.Any())
 	stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
 
-	updater.ResumeRollout(task)
+	updater.ResumeRollout(task, neverDraining)
 
 	require.NotEmpty(t, polledWindows, "the resumed rollout must be polled under a deadline")
 	for _, window := range polledWindows {
@@ -221,4 +223,186 @@ func TestResumeRollout_KeepsTheOriginalDeadline(t *testing.T) {
 	require.Len(t, capture.sent, 1,
 		"a resumed deployment was already announced as started by the replica that accepted it")
 	assert.Equal(t, models.StatusDeployedMessage, capture.sent[0].Status)
+}
+
+// Shutdown can begin after the reaper handed the task over but before the rollout
+// finishes. From that point on this replica finishes nothing: its claim is released
+// in the last shutdown phase and another replica resumes the deployment. Writing a
+// status here would record an outcome for a rollout this replica no longer decides —
+// and once the write-back batcher is closed, that outcome is a failure for a
+// deployment that is otherwise healthy.
+func TestResumeRollout_StopsWhenTheReplicaStartsDraining(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	apiMock := newArgoApiMock(ctrl)
+	metricsMock := mocks.NewMockMetricsInterface(ctrl)
+	stateMock := newTaskRepositoryMock(ctrl)
+
+	argo := &Argo{}
+	argo.Init(stateMock, apiMock, metricsMock)
+	stateMock.EXPECT().GetTask(gomock.Any()).
+		Return(&models.Task{Status: models.StatusInProgressMessage}, nil).AnyTimes()
+
+	updater := initTestUpdater(t, newUpdaterTestConfig(lock.NewInMemoryLocker()), argo)
+	capture := &capturingStrategy{}
+	updater.notifier = notifications.NewNotifier(capture)
+
+	task := models.Task{
+		Id:        "draining-id",
+		App:       "test-app",
+		Timeout:   600,
+		Created:   float64(time.Now().Unix()),
+		Validated: true,
+		Images:    []models.Image{{Image: "app", Tag: "v1"}},
+	}
+
+	// The rollout has already succeeded, so a monitor that keeps going records a
+	// terminal status — which is what must not happen here.
+	application := models.Application{}
+	application.Status.Summary.Images = []string{"app:v1"}
+	application.Status.Sync.Status = "Synced"
+	application.Status.Health.Status = "Healthy"
+
+	// The call count is load-bearing: shutdown begins during the fetch that precedes
+	// the polling loop, so the loop must give up on its first check and never reach a
+	// fetch of its own. A second call here means the rollout kept polling ArgoCD for
+	// a deployment this replica had already abandoned.
+	var draining atomic.Bool
+	apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).
+		DoAndReturn(func(context.Context, string, bool) (*models.Application, error) {
+			draining.Store(true)
+			return &application, nil
+		}).Times(1)
+
+	metricsMock.EXPECT().AddInProgressTask()
+	metricsMock.EXPECT().RemoveInProgressTask()
+	// No SetTaskStatus and no deployment metrics are expected: gomock fails the test
+	// if the abandoned monitor records anything.
+
+	updater.ResumeRollout(task, draining.Load)
+
+	assert.Empty(t, capture.sent,
+		"a deployment left to another replica must not be announced as finished")
+}
+
+// A superseded task is the one outcome a draining replica must still announce. The
+// newer deployment already wrote "cancelled", and a cancelled task is never
+// re-claimed by a sweep — so the replica that resumes nothing here is the last one
+// able to report it, and staying silent loses the notification for good.
+func TestResumeRollout_AnnouncesASupersededTaskEvenWhileDraining(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	apiMock := newArgoApiMock(ctrl)
+	metricsMock := mocks.NewMockMetricsInterface(ctrl)
+	stateMock := newTaskRepositoryMock(ctrl)
+
+	argo := &Argo{}
+	argo.Init(stateMock, apiMock, metricsMock)
+	// A newer deployment for the same app already cancelled this task.
+	stateMock.EXPECT().GetTask(gomock.Any()).
+		Return(&models.Task{Status: models.StatusCancelledMessage}, nil).AnyTimes()
+
+	updater := initTestUpdater(t, newUpdaterTestConfig(lock.NewInMemoryLocker()), argo)
+	capture := &capturingStrategy{}
+	updater.notifier = notifications.NewNotifier(capture)
+
+	task := models.Task{
+		Id:        "superseded-id",
+		App:       "test-app",
+		Timeout:   600,
+		Created:   float64(time.Now().Unix()),
+		Validated: true,
+		Images:    []models.Image{{Image: "app", Tag: "v1"}},
+	}
+
+	metricsMock.EXPECT().AddInProgressTask()
+	metricsMock.EXPECT().RemoveInProgressTask()
+	// No SetTaskStatus: the superseding deployment already recorded "cancelled".
+
+	updater.ResumeRollout(task, func() bool { return true })
+
+	require.Len(t, capture.sent, 1, "the cancellation must still be announced")
+	assert.Equal(t, models.StatusCancelledMessage, capture.sent[0].Status)
+}
+
+// Shutdown is not observed at a single point: the poll loop checks it at the top of
+// an iteration, while the rollout's outcome is decided later in that same iteration.
+// A rollout that finishes — or fails — in that gap reaches the end of monitoring with
+// an ordinary result, and only the re-check that follows keeps this replica from
+// recording it. Both arms are covered: an outcome that would be written as a success,
+// and a fetch failure that would be written as a terminal failure.
+func TestResumeRollout_WritesNothingWhenShutdownBeginsMidPoll(t *testing.T) {
+	tests := []struct {
+		name           string
+		inLoopFetchErr error
+	}{
+		{name: "the rollout succeeded in the same iteration"},
+		{
+			name:           "the fetch failed terminally in the same iteration",
+			inLoopFetchErr: errors.New(`rpc error: code = NotFound desc = applications.argoproj.io "test-app" not found`),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			apiMock := newArgoApiMock(ctrl)
+			metricsMock := mocks.NewMockMetricsInterface(ctrl)
+			stateMock := newTaskRepositoryMock(ctrl)
+
+			argo := &Argo{}
+			argo.Init(stateMock, apiMock, metricsMock)
+			stateMock.EXPECT().GetTask(gomock.Any()).
+				Return(&models.Task{Status: models.StatusInProgressMessage}, nil).AnyTimes()
+
+			updater := initTestUpdater(t, newUpdaterTestConfig(lock.NewInMemoryLocker()), argo)
+			capture := &capturingStrategy{}
+			updater.notifier = notifications.NewNotifier(capture)
+
+			task := models.Task{
+				Id:        "mid-poll-id",
+				App:       "test-app",
+				Timeout:   600,
+				Created:   float64(time.Now().Unix()),
+				Validated: true,
+				Images:    []models.Image{{Image: "app", Tag: "v1"}},
+			}
+
+			application := models.Application{}
+			application.Status.Summary.Images = []string{"app:v1"}
+			application.Status.Sync.Status = "Synced"
+			application.Status.Health.Status = "Healthy"
+
+			// Shutdown begins during the poll loop's own fetch — after the abandon check
+			// that opens the iteration, and before its outcome is classified.
+			var draining atomic.Bool
+			var fetches int
+			apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).
+				DoAndReturn(func(context.Context, string, bool) (*models.Application, error) {
+					fetches++
+					if fetches == 1 {
+						return &application, nil
+					}
+					draining.Store(true)
+					if tt.inLoopFetchErr != nil {
+						return nil, tt.inLoopFetchErr
+					}
+					return &application, nil
+				}).Times(2)
+
+			metricsMock.EXPECT().AddInProgressTask()
+			metricsMock.EXPECT().RemoveInProgressTask()
+			// Nothing else is declared: gomock fails the test if this replica records a
+			// status, a deployment metric or a failure for a rollout it is abandoning.
+
+			updater.ResumeRollout(task, draining.Load)
+
+			assert.Empty(t, capture.sent,
+				"a rollout left to another replica must not be announced")
+		})
+	}
 }

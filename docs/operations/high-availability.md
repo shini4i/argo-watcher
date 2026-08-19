@@ -34,9 +34,11 @@ committed yet, and records the outcome.
 
 Two properties make that safe to run everywhere at once. Claims are taken with
 `FOR UPDATE SKIP LOCKED`, so simultaneous sweeps partition the abandoned tasks
-instead of handing the same one to two replicas. And a replica that lost its
-claim discovers this on its next renewal and stops without writing a status, so
-it cannot clobber the outcome the new owner records.
+instead of handing the same one to two replicas. And a replica stops watching a
+rollout as soon as it is no longer the one to finish it — because it lost its
+claim, which it discovers on its next renewal, or because it has begun shutting
+down and is about to release the claim itself. Either way it stops without
+writing a status, so it cannot clobber the outcome the new owner records.
 
 ### How long a deployment is unattended
 

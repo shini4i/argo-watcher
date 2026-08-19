@@ -2488,3 +2488,103 @@ func TestWaitForApplicationDeploymentStopPredicates(t *testing.T) {
 		})
 	}
 }
+
+// A supersession that lands after the claim was taken over is the new owner's to
+// announce: it monitors the same rollout and hits the same check, so announcing it
+// here as well reports one deployment twice. Only a replica that is shutting down
+// still owes that announcement — a cancelled task is never re-claimed, so nobody
+// else would ever make it.
+func TestWaitForRollout_LeavesASupersessionItLostToTheNewOwner(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	apiMock := newArgoApiMock(ctrl)
+	metricsMock := mocks.NewMockMetricsInterface(ctrl)
+	stateMock := mocks.NewMockTaskRepository(ctrl)
+
+	argo := &Argo{}
+	argo.Init(stateMock, apiMock, metricsMock)
+
+	// Closed by the renewal that reports the claim lost, so the supersession below is
+	// observed after the takeover rather than racing it.
+	takenOver := make(chan struct{})
+	var once sync.Once
+	stateMock.EXPECT().RenewLease(gomock.Any()).DoAndReturn(func(string) (bool, error) {
+		once.Do(func() { close(takenOver) })
+		return false, nil
+	}).AnyTimes()
+
+	stateMock.EXPECT().GetTask(gomock.Any()).
+		DoAndReturn(func(string) (*models.Task, error) {
+			<-takenOver
+			// The signal is sent from inside the renewal, a few instructions before the
+			// guard records the loss; yielding lets it land.
+			time.Sleep(20 * time.Millisecond)
+			return &models.Task{Status: models.StatusCancelledMessage}, nil
+		}).AnyTimes()
+
+	// Only the in-flight gauge may move: no SetTaskStatus is declared, so gomock fails
+	// the test if this replica records anything for a task it no longer owns.
+	metricsMock.EXPECT().AddInProgressTask()
+	metricsMock.EXPECT().RemoveInProgressTask()
+
+	updater := initTestUpdater(t, newUpdaterTestConfig(lock.NewInMemoryLocker()), argo)
+	updater.leaseRenewInterval = time.Millisecond
+	updater.leaseTTL = time.Hour
+	capture := &capturingStrategy{}
+	updater.notifier = notifications.NewNotifier(capture)
+
+	task := models.Task{
+		Id:      "lost-and-superseded",
+		App:     "test-app",
+		Status:  models.StatusInProgressMessage,
+		Timeout: 15,
+		Images:  []models.Image{{Image: "demo", Tag: "v1"}},
+	}
+
+	updater.WaitForRollout(task, false)
+
+	for _, sent := range capture.sent {
+		assert.Equal(t, models.StatusInProgressMessage, sent.Status,
+			"only the start notification may be sent; the new owner announces the cancellation")
+	}
+}
+
+// The write-back reports both of its stop conditions as one error, so the cause has
+// to be recovered from the shared state. Guessing it from the predicate loses a
+// cancellation whenever both conditions hold at once, and a cancelled task is never
+// re-claimed, so nothing else would announce it.
+func TestAbortedWriteBackCause(t *testing.T) {
+	tests := []struct {
+		name      string
+		cancelled bool
+		abandoned bool
+		want      error
+	}{
+		{name: "cancelled by a newer deployment", cancelled: true, want: errTaskSuperseded},
+		{name: "given up by this replica", abandoned: true, want: errLeaseLost},
+		{name: "cancelled and given up at once reports the cancellation", cancelled: true, abandoned: true, want: errTaskSuperseded},
+		{name: "neither, so the abort was the supersede check racing itself", want: errTaskSuperseded},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			stateMock := newTaskRepositoryMock(ctrl)
+			status := models.StatusInProgressMessage
+			if tt.cancelled {
+				status = models.StatusCancelledMessage
+			}
+			stateMock.EXPECT().GetTask(gomock.Any()).
+				Return(&models.Task{Status: status}, nil).AnyTimes()
+
+			argo := &Argo{}
+			argo.Init(stateMock, newArgoApiMock(ctrl), mocks.NewMockMetricsInterface(ctrl))
+			updater := initTestUpdater(t, newUpdaterTestConfig(lock.NewInMemoryLocker()), argo)
+
+			assert.ErrorIs(t, updater.abortedWriteBackCause("task-id", tt.abandoned), tt.want)
+		})
+	}
+}

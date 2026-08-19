@@ -26,7 +26,7 @@ func newResumeRecorder() *resumeRecorder {
 	return &resumeRecorder{resume: make(chan struct{}, 8)}
 }
 
-func (r *resumeRecorder) record(task models.Task) {
+func (r *resumeRecorder) record(task models.Task, _ func() bool) {
 	r.mu.Lock()
 	r.tasks = append(r.tasks, task)
 	r.mu.Unlock()
@@ -152,7 +152,7 @@ func TestReapAbandonedTasks_ClaimsNothingWhileDraining(t *testing.T) {
 // deployment gets a terminal failure no other replica will revisit.
 func TestResumeSafely_DoesNotStartWhileDraining(t *testing.T) {
 	resumed := false
-	resumeSafely(models.Task{Id: "claimed"}, func() bool { return true }, func(models.Task) {
+	resumeSafely(models.Task{Id: "claimed"}, func() bool { return true }, func(models.Task, func() bool) {
 		resumed = true
 	})
 
@@ -172,7 +172,7 @@ func TestReapAbandonedTasks_ContainsAPanickingResume(t *testing.T) {
 	stop := make(chan struct{})
 	defer close(stop)
 
-	go reapAbandonedTasks(stop, notDraining, time.Millisecond, stateMock, func(models.Task) {
+	go reapAbandonedTasks(stop, notDraining, time.Millisecond, stateMock, func(models.Task, func() bool) {
 		attempts.Add(1)
 		panic("resume blew up")
 	})
@@ -180,4 +180,22 @@ func TestReapAbandonedTasks_ContainsAPanickingResume(t *testing.T) {
 	// Sweeping past the first panic is the property: the panic was contained rather
 	// than unwinding the process, and the reaper is still taking on work.
 	require.Eventually(t, func() bool { return attempts.Load() >= 2 }, time.Second, time.Millisecond)
+}
+
+// The check must reach the resumed rollout live, not as a snapshot: shutdown can
+// begin after monitoring started, and from that point the rollout has to be given
+// up rather than raced against the teardown.
+func TestResumeSafely_HandsTheDrainingCheckToResume(t *testing.T) {
+	var draining atomic.Bool
+	var handed func() bool
+
+	resumeSafely(models.Task{Id: "claimed"}, draining.Load, func(_ models.Task, check func() bool) {
+		handed = check
+	})
+
+	require.NotNil(t, handed, "the resumed rollout was given no way to observe shutdown")
+	assert.False(t, handed())
+
+	draining.Store(true)
+	assert.True(t, handed(), "a rollout under way must still see shutdown begin")
 }
