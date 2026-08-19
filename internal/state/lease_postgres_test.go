@@ -171,6 +171,31 @@ func TestPostgresState_ClaimExpiredTasks(t *testing.T) {
 		assert.Nil(t, findTask(claimed, inserted.Id))
 	})
 
+	// The scenario this guards: a replica dies mid-rollout, a newer deployment for
+	// the same app lands elsewhere and commits its own tag, and only then does a
+	// sweep notice the abandoned task. Resuming it would re-run its write-back and
+	// commit the superseded tag over the newer one. Superseding marks the old task
+	// cancelled before the new one is even inserted, so it leaves the claimable set
+	// entirely — a lapsed lease on it is irrelevant.
+	t.Run("a superseded task is never reclaimed", func(t *testing.T) {
+		require.NoError(t, env.state.orm.Exec("TRUNCATE TABLE tasks").Error)
+
+		old := env.addTask(t, sampleTask("Superseded"))
+		require.NoError(t, env.state.ClaimTask(old.Id))
+		env.expireLease(t, old.Id)
+
+		// What accepting a newer deployment for the same app does first.
+		cancelled, err := env.state.CancelInProgressTasks(
+			"Superseded", []models.Image{{Image: "test", Tag: "v0.0.2"}}, "superseded", true)
+		require.NoError(t, err)
+		require.Equal(t, int64(1), cancelled)
+
+		claimed, err := env.secondReplica(t).ClaimExpiredTasks(TaskReapBatchSize)
+		require.NoError(t, err)
+		assert.Nil(t, findTask(claimed, old.Id),
+			"resuming it would commit the tag the newer deployment just replaced")
+	})
+
 	t.Run("a task already claimed is not handed to a second owner", func(t *testing.T) {
 		require.NoError(t, env.state.orm.Exec("TRUNCATE TABLE tasks").Error)
 
