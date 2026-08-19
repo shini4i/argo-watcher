@@ -289,11 +289,35 @@ func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) ([]ret
 		return append(retryOptions, retry.Attempts(defaultAttempts)), helpers.MulDurationSaturating(defaultAttempts, delay)
 	}
 
-	attempts := helpers.SafeIntToUint(int64(task.Timeout)/delaySeconds + 1)
+	attempts := monitor.rolloutAttempts(task, delay)
 
 	slog.Debug("Overriding task timeout", "timeout_seconds", task.Timeout, "retry_delay", delay, "delay_step_seconds", delaySeconds, "attempts", attempts, "id", task.Id)
 
 	return append(retryOptions, retry.Attempts(attempts)), helpers.MulDurationSaturating(attempts, delay)
+}
+
+// rolloutAttempts is how many polls a task is given: its timeout in whole delay steps
+// plus the poll that lands on the deadline itself, or this instance's default when the
+// task carries no timeout of its own.
+func (monitor *DeploymentMonitor) rolloutAttempts(task models.Task, delay time.Duration) uint {
+	if task.Timeout <= 0 {
+		return monitor.resolvedDefaultAttempts(delay)
+	}
+
+	return helpers.SafeIntToUint(int64(task.Timeout)/helpers.CeilDivDuration(delay, time.Second) + 1)
+}
+
+// rolloutWindow is the wall-clock span the poll loop is given for task, which is the
+// attempts it is configured with times the delay between them — a whole number of
+// polls, so it is the task's timeout rounded up rather than the timeout itself.
+//
+// remainingWindow measures a handover against this, so a resumed rollout is judged by
+// the same budget the replica that accepted it was polling under; measuring against
+// the raw timeout would abort a handover that lands in the final poll interval.
+func (monitor *DeploymentMonitor) rolloutWindow(task models.Task) time.Duration {
+	delay := monitor.resolvedDelay()
+
+	return helpers.MulDurationSaturating(monitor.rolloutAttempts(task, delay), delay)
 }
 
 // ProcessDeploymentResult determines if the deployment was successful and updates the appropriate

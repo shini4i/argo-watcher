@@ -36,11 +36,13 @@ func TestRemainingWindow(t *testing.T) {
 		wantResumable bool
 	}{
 		{
+			// The window is a whole number of polls, so a 600s timeout at a 1s delay is
+			// polled for 601s — and that is what the remainder is measured against.
 			name:          "a task resumed early keeps the rest of its own window",
 			taskTimeout:   600,
 			createdAgo:    100 * time.Second,
 			defaultWindow: 60 * time.Second,
-			want:          500 * time.Second,
+			want:          501 * time.Second,
 			wantResumable: true,
 		},
 		{
@@ -58,11 +60,14 @@ func TestRemainingWindow(t *testing.T) {
 			wantResumable: false,
 		},
 		{
-			name:          "a task resumed exactly at its deadline is not resumed",
+			// The replica that accepted this task would still be polling here: its last
+			// attempt is the one that lands on the configured timeout.
+			name:          "a task at its configured timeout still has its final poll",
 			taskTimeout:   60,
 			createdAgo:    60 * time.Second,
 			defaultWindow: 60 * time.Second,
-			wantResumable: false,
+			want:          time.Second,
+			wantResumable: true,
 		},
 		{
 			// A sub-second remainder rounds down to a zero timeout, which the rollout
@@ -70,17 +75,9 @@ func TestRemainingWindow(t *testing.T) {
 			// must not be resumable, or the deadline silently restarts.
 			name:          "a task with under a second left is not resumed",
 			taskTimeout:   60,
-			createdAgo:    59500 * time.Millisecond,
+			createdAgo:    60500 * time.Millisecond,
 			defaultWindow: 60 * time.Second,
 			wantResumable: false,
-		},
-		{
-			name:          "a task with exactly a second left is still resumed",
-			taskTimeout:   60,
-			createdAgo:    59 * time.Second,
-			defaultWindow: 60 * time.Second,
-			want:          time.Second,
-			wantResumable: true,
 		},
 	}
 
@@ -116,7 +113,7 @@ func TestRemainingWindow_ShrinksAcrossSuccessiveHandoffs(t *testing.T) {
 	assert.True(t, resumable)
 
 	assert.Less(t, second, first)
-	assert.Equal(t, 2*time.Minute, second)
+	assert.Equal(t, 2*time.Minute+time.Second, second)
 }
 
 // TestResumeRollout_AbortsAnElapsedWindow covers the arm remainingWindow only
@@ -405,4 +402,56 @@ func TestResumeRollout_WritesNothingWhenShutdownBeginsMidPoll(t *testing.T) {
 				"a rollout left to another replica must not be announced")
 		})
 	}
+}
+
+// The window a handover is judged against must be the window the rollout is actually
+// given: the poll loop is configured in whole attempts, so a task carrying a timeout
+// polls for that timeout rounded up to the next attempt. Measuring the remainder
+// against the raw timeout instead would abort a handover that lands in the last
+// interval — while the replica that accepted it would still have been polling.
+func TestRemainingWindow_MatchesThePollBudget(t *testing.T) {
+	// 900s at a 15s delay is 61 attempts, so the rollout polls for 915s.
+	monitor := &DeploymentMonitor{retryDelay: 15 * time.Second, defaultAttempts: 61}
+	created := time.Unix(1000, 0)
+	task := models.Task{Timeout: 900, Created: float64(created.Unix())}
+
+	_, deadline := monitor.configureRetryOptions(task)
+	require.Equal(t, 915*time.Second, deadline, "the poll budget is the attempts times the delay")
+
+	remaining, resumable := monitor.remainingWindow(task, created.Add(900*time.Second))
+
+	assert.True(t, resumable, "the accepting replica would still be polling at this age")
+	assert.Equal(t, deadline-900*time.Second, remaining)
+}
+
+// The bound the documentation states: a handover costs at most one extra poll
+// interval, because the remainder is re-expressed in whole attempts, and it does not
+// widen however often the task changes hands. Each handover is measured against the
+// persisted task — ResumeRollout rewrites Timeout on its own copy only — so this
+// walks the real sequence rather than a chain of rewritten tasks.
+func TestRemainingWindow_HandoverOvershootStaysBounded(t *testing.T) {
+	const delay = 15 * time.Second
+	monitor := &DeploymentMonitor{retryDelay: delay, defaultAttempts: 61}
+	created := time.Unix(1000, 0)
+	task := models.Task{Timeout: 900, Created: float64(created.Unix())}
+
+	_, unattended := monitor.configureRetryOptions(task)
+	bound := unattended + delay
+
+	var worst time.Duration
+	for _, handoverAt := range []time.Duration{time.Second, 100 * time.Second, 450 * time.Second, 899 * time.Second, 914 * time.Second} {
+		remaining, resumable := monitor.remainingWindow(task, created.Add(handoverAt))
+		require.True(t, resumable, "a handover at %s is still inside the window", handoverAt)
+
+		resumed := task
+		resumed.Timeout = int(remaining.Seconds())
+		_, deadline := monitor.configureRetryOptions(resumed)
+
+		if end := handoverAt + deadline; end > worst {
+			worst = end
+		}
+	}
+
+	assert.LessOrEqual(t, worst, bound,
+		"a resumed rollout must not poll more than one interval past the un-handed-over budget")
 }

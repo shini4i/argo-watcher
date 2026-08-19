@@ -54,9 +54,12 @@ its claims, rather than leaving them to lapse.
 
 A resumed deployment keeps the window it was accepted with: the remaining time
 is measured from when the task was created, not from when it was taken over.
-A deployment cannot outlive its `DEPLOYMENT_TIMEOUT` (or its per-task
-`TASK_TIMEOUT`) by being passed between replicas. One whose window already
-elapsed while unattended is marked `aborted` rather than resumed.
+The window is a whole number of poll intervals, so a rollout ends at most one
+interval past its `DEPLOYMENT_TIMEOUT` (or its per-task `TASK_TIMEOUT`), and a
+resumed one at most two — the remainder it is handed is rounded up to whole polls
+again. That overshoot does not grow with further handovers, because every
+takeover measures what is left from the moment the task was accepted. One whose
+window already elapsed while unattended is marked `aborted` rather than resumed.
 
 ## What is shared, and what is not
 
