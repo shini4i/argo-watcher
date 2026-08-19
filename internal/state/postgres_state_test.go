@@ -400,3 +400,61 @@ func TestPostgresState_Check(t *testing.T) {
 	env := newPostgresTestEnv(t)
 	assert.True(t, env.state.Check())
 }
+
+// TestPostgresState_ResumptionFieldsPersist locks the storage contract the HA
+// handoff depends on: a replica that claims a task after its owner stopped
+// rebuilds it from the row alone, so the row must carry every setting the
+// rollout acts on. A dropped timeout silently re-deadlines the deployment; a
+// dropped refresh override silently changes how its status is read.
+func TestPostgresState_ResumptionFieldsPersist(t *testing.T) {
+	env := newPostgresTestEnv(t)
+
+	t.Run("timeout and refresh overrides survive the round trip", func(t *testing.T) {
+		refresh := true
+		task := sampleTask("Overridden")
+		task.Timeout = 900
+		task.Refresh = &refresh
+		task.Validated = true
+		inserted := env.addTask(t, task)
+
+		stored := env.storedModel(t, inserted.Id)
+		assert.Equal(t, 900, stored.Timeout)
+		require.True(t, stored.Refresh.Valid)
+		assert.True(t, stored.Refresh.Bool)
+
+		resumed := stored.ConvertToResumedTask()
+		assert.Equal(t, 900, resumed.Timeout)
+		require.NotNil(t, resumed.Refresh)
+		assert.True(t, *resumed.Refresh)
+		assert.True(t, resumed.Validated)
+	})
+
+	t.Run("an omitted refresh stays null rather than becoming false", func(t *testing.T) {
+		inserted := env.addTask(t, sampleTask("Default"))
+
+		stored := env.storedModel(t, inserted.Id)
+		assert.Equal(t, 0, stored.Timeout)
+		assert.False(t, stored.Refresh.Valid,
+			"NULL means the instance default applies; false would force refresh off")
+		assert.Nil(t, stored.ConvertToResumedTask().Refresh)
+	})
+
+	t.Run("an explicit false is stored as false, not null", func(t *testing.T) {
+		refresh := false
+		task := sampleTask("ExplicitOff")
+		task.Refresh = &refresh
+		inserted := env.addTask(t, task)
+
+		stored := env.storedModel(t, inserted.Id)
+		require.True(t, stored.Refresh.Valid)
+		assert.False(t, stored.Refresh.Bool)
+	})
+
+	t.Run("a fresh task is unowned until a replica claims it", func(t *testing.T) {
+		inserted := env.addTask(t, sampleTask("Unowned"))
+
+		stored := env.storedModel(t, inserted.Id)
+		assert.False(t, stored.OwnerId.Valid)
+		assert.False(t, stored.LeaseExpiresAt.Valid)
+	})
+}

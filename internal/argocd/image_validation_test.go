@@ -220,7 +220,7 @@ func TestWaitRolloutFailsFastOnImageNotPartOfApp(t *testing.T) {
 	)
 	monitor.refreshApp = true
 
-	_, _, err := monitor.WaitRollout(task)
+	_, _, err := monitor.WaitRollout(task, neverLost)
 
 	var imageErr *ImageNotPartOfAppError
 	require.ErrorAs(t, err, &imageErr)
@@ -253,7 +253,7 @@ func TestWaitRolloutValidatesDesiredImagesOnce(t *testing.T) {
 	)
 	monitor.refreshApp = true
 
-	_, _, err := monitor.WaitRollout(task)
+	_, _, err := monitor.WaitRollout(task, neverLost)
 	require.NoError(t, err)
 }
 
@@ -285,7 +285,7 @@ func TestWaitRolloutSkipsValidationWithoutRefresh(t *testing.T) {
 	)
 
 	// No GetManagedResources expectation: any call is a failure.
-	_, _, err := monitor.WaitRollout(task)
+	_, _, err := monitor.WaitRollout(task, neverLost)
 	require.NoError(t, err)
 }
 
@@ -294,7 +294,7 @@ func TestHandleImageNotPartOfApp(t *testing.T) {
 	defer ctrl.Finish()
 
 	metrics := mocks.NewMockMetricsInterface(ctrl)
-	state := mocks.NewMockTaskRepository(ctrl)
+	state := newTaskRepositoryMock(ctrl)
 
 	monitor := NewDeploymentMonitor(Argo{metrics: metrics, State: state}, "", nil, false, time.Millisecond)
 	task := models.Task{Id: "task-id", App: "demo"}

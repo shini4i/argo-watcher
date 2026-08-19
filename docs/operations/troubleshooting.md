@@ -156,22 +156,36 @@ metadata:
 
 **Symptom:** after a rolling restart or eviction, tasks that were deploying stay `in progress` and are later marked `aborted`, even though Argo CD shows the deployment succeeded.
 
-**Cause:** a deployment being tracked when the process exits is not handed to another replica, and nothing waits for the tracker to persist a final status. The row is later reaped by the obsolete-task sweep, which marks `in progress` rows older than an hour as `aborted` — bookkeeping only, so the recorded status can disagree with what really happened.
+**Cause with `STATE_TYPE=postgres`:** normally none — a deployment whose replica stops is claimed by another one and monitored through to its real outcome, within about 15 seconds of a graceful shutdown or 45 seconds of a crash. See [High Availability](high-availability.md#task-ownership).
 
-This is expected on any restart and is **not** fixed by tuning the shutdown budget: a graceful shutdown protects the git commit, not the task status. Until task ownership survives a pod replacement, treat the GitOps repository and Argo CD as the record of what happened.
+A task that still ends up `aborted` means its rollout window elapsed while no replica was watching it. The window is measured from when the deployment was accepted and is not restarted by a handover, so a restart late in a long rollout can exhaust it. The recorded reason names this case specifically:
+`Deployment window elapsed while the task was unattended; marked aborted by argo-watcher.`
+
+The other possibility is that no replica was left to take it over: with a single replica, nothing claims the task until that pod is back.
+
+**Cause with `STATE_TYPE=in-memory`:** the task lives only in the process that accepted it, so it cannot be handed over at all. The row is later reaped by the obsolete-task sweep, which marks `in progress` rows older than an hour as `aborted` — bookkeeping only, so the recorded status can disagree with what really happened. This is expected, and is **not** fixed by tuning the shutdown budget: a graceful shutdown protects the git commit, not the task status. Treat the GitOps repository and Argo CD as the record of what happened, or move to Postgres.
 
 **How to verify**
 
 ```bash
+# Which replica owns the task, and when its claim lapses
+psql -c "SELECT id, status, owner_id, lease_expires_at FROM tasks WHERE status = 'in progress'"
+
+# The takeover, on the replica that picked the deployment up
+kubectl logs <pod> | grep -i "abandoned by another replica"
+
 kubectl logs <pod> --previous | grep -i shutdown
 ```
+
+An `owner_id` of `NULL` on an in-progress task means it is waiting to be claimed; a `lease_expires_at` in the past means the same. Either should resolve within one sweep.
 
 `git write-back batch drain did not finish before the shutdown deadline` means queued commits were abandoned mid-flush — that part *is* tunable.
 
 **Fix**
 
-1. Check the GitOps repository for the commit. If it is missing, re-run the pipeline job — an interrupted write-back is not resumed.
+1. Check the GitOps repository for the commit. A resumed deployment re-runs the write-back, and skips it when the tag is already committed, so a missing commit means no replica ever got that far: re-run the pipeline job.
 2. Graceful shutdown needs up to 25s: raise `terminationGracePeriodSeconds` if it is below the Kubernetes default of 30s, and keep `GIT_OP_TIMEOUT` under the shutdown budget so an in-flight attempt can finish.
+3. If tasks are consistently aborted with the unattended-window reason, the rollout window is too tight for how long your pods take to be replaced. Raise `DEPLOYMENT_TIMEOUT`, or run at least two replicas so a handover does not wait for a restart.
 
 ## Web UI is not accessible
 

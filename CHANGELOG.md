@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Argo Watcher can now run with more than one replica when `STATE_TYPE=postgres`. Each
+  in-progress deployment is owned by exactly one replica, recorded as a lease on the task
+  row. A replica that stops mid-rollout — crash, eviction, or a rolling update — has its
+  deployments claimed and finished by another replica instead of leaving them stuck in
+  progress until the hourly stale sweep marked them aborted. Takeover happens within about
+  15 seconds of a graceful shutdown, or 45 seconds of a crash.
+
+  A resumed deployment keeps the window it was accepted with, measured from its creation,
+  so passing between replicas cannot extend how long it polls; one whose window elapsed
+  while unattended is recorded as `aborted` with a reason naming that cause. There are no
+  new environment variables and no API changes, and `STATE_TYPE=in-memory` is unaffected —
+  it remains single-replica only. The new High Availability page in the documentation
+  covers what is shared between replicas and what is not.
+
+  Note for the upgrade itself: deployments already in flight when the first new replica
+  starts carry no lease, so for the duration of the rollout one of them may briefly be
+  watched by both an old and a new replica and reported twice. No duplicate commit results
+  — a write-back whose tag is already committed is skipped.
+
 - A new `gitops_writeback_skipped_unvalidated` counter (labelled by `app`) reports
   deployments of an application annotated `argo-watcher/managed: "true"` whose task
   presented no valid credential, so the image tag was never committed. Any non-zero value

@@ -33,6 +33,14 @@ Twelve metrics, all defined in [`internal/prometheus/metrics.go`](https://github
 
     The same openness means anyone who can reach the endpoint and knows a managed application's name can raise `gitops_writeback_skipped_unvalidated`. Treat a rise as "investigate", not automatically "our pipeline regressed".
 
+!!! note "Aggregate the gauges across replicas"
+    `failed_deployment` and `in_progress_tasks` count what one process saw. Each
+    deployment is monitored by a single replica, so a failing application reads as
+    healthy on every replica that did not handle it, and the backlog on any one pod
+    is only its own share. Aggregate before alerting — `max by (app)` for the former,
+    `sum` for the latter, as the examples below do. The aggregation is harmless on a
+    single replica. See [High Availability](high-availability.md#known-limits).
+
 The cached reachability behind `argocd_unavailable` and `state_unavailable` is also readable at `GET /api/v1/reachability`, which returns `{"available":bool,"reason":"argocd"|"database"|"both"}` (`reason` omitted when available). The Web UI's banner uses `reason` to name what is down.
 
 ## Suggested alerts
@@ -64,7 +72,7 @@ groups:
             rejected as locked because the lock state cannot be read.
 
       - alert: ArgoWatcherFailingDeployments
-        expr: failed_deployment > 3
+        expr: max by (app) (failed_deployment) > 3
         for: 10m
         labels:
           severity: warning
@@ -73,7 +81,7 @@ groups:
           description: Check the most recent task in the Web UI for the failure reason.
 
       - alert: ArgoWatcherTaskBacklog
-        expr: in_progress_tasks > 50
+        expr: sum(in_progress_tasks) > 50
         for: 15m
         labels:
           severity: warning
@@ -139,7 +147,7 @@ The **Git Write-back Duration** and **Git Lock Wait Duration** panels only fill 
 
 ```promql
 sum(in_progress_tasks)                          # live workload
-topk(5, failed_deployment)                      # which apps need attention
+topk(5, max by (app) (failed_deployment))       # which apps need attention
 sum(rate(processed_deployments[1h])) by (app)    # deployment frequency per app
 ```
 

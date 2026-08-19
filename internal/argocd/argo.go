@@ -206,6 +206,15 @@ func (argo *Argo) AddTask(task models.Task) (*models.Task, error) {
 		return nil, err
 	}
 
+	// This replica is about to start monitoring the rollout, so it claims the task
+	// before any sweep can offer it to another replica. Best-effort: an unclaimed
+	// task is dropped by this replica at its first renewal, which finds no claim to
+	// extend, and taken up by the next sweep instead — a failed claim costs a reap
+	// interval, not the deployment.
+	if err := argo.State.ClaimTask(newTask.Id); err != nil {
+		slog.Warn("Failed to claim the new task for this replica", "error", err, "id", newTask.Id)
+	}
+
 	slog.Info("A new task was triggered", "id", newTask.Id)
 	for index, value := range newTask.Images {
 		slog.Info("Task image expecting tag", "index", index, "tag", value.Tag, "app", task.App, "id", newTask.Id)

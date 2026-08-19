@@ -23,6 +23,9 @@ const whereStatusEquals = "status = ?"
 
 type PostgresState struct {
 	orm *gorm.DB
+	// ownerId identifies this process as the holder of task leases. It is unique
+	// per process, so a restarted pod never inherits its predecessor's claims.
+	ownerId string
 }
 
 var _ TaskRepository = (*PostgresState)(nil)
@@ -38,6 +41,14 @@ func (state *PostgresState) Connect(serverConfig *config.ServerConfig) error {
 	} else {
 		state.orm = orm
 	}
+
+	ownerId, err := newOwnerId()
+	if err != nil {
+		return err
+	}
+	state.ownerId = ownerId
+	slog.Debug("Task lease owner id assigned", "owner_id", ownerId)
+
 	return nil
 }
 
@@ -52,6 +63,8 @@ func (state *PostgresState) AddTask(task models.Task) (*models.Task, error) {
 		IsRollback:       task.IsRollback,
 		RollbackTargetId: task.RollbackTargetId,
 		Validated:        task.Validated,
+		Timeout:          task.Timeout,
+		Refresh:          nullBoolFromPointer(task.Refresh),
 	}
 
 	if err := state.orm.Create(&ormTask).Error; err != nil {
@@ -250,4 +263,14 @@ func (state *PostgresState) doProcessPostgresObsoleteTasks() error {
 // GetDB exposes the connection pool so other components can share it.
 func (state *PostgresState) GetDB() *gorm.DB {
 	return state.orm
+}
+
+// nullBoolFromPointer maps an optional override onto its nullable column: an
+// omitted field stays NULL, which is distinct from an explicit false.
+func nullBoolFromPointer(value *bool) sql.NullBool {
+	if value == nil {
+		return sql.NullBool{}
+	}
+
+	return sql.NullBool{Bool: *value, Valid: true}
 }

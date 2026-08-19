@@ -39,6 +39,11 @@ var errAppDegraded = errors.New("application has degraded")
 // without overwriting the "cancelled" status the newer deployment already wrote.
 var errTaskSuperseded = errors.New("task superseded by a newer deployment")
 
+// errLeaseLost is an internal sentinel returned when another replica claimed the
+// task while this one was monitoring it. Like errTaskSuperseded it stops the
+// rollout without writing a status: the new owner records the outcome.
+var errLeaseLost = errors.New("task taken over by another replica")
+
 // ImageNotPartOfAppError reports that a task expects an image the application's desired
 // state never declares, so waiting for it to appear is pointless (issue #519).
 // Image is a repository name without tag or digest, as are DesiredImages.
@@ -166,7 +171,7 @@ func (monitor *DeploymentMonitor) StoreInitialAppStatus(task *models.Task, appli
 // time the deployment waited. It covers this loop alone: the initial fetch, the status write and
 // the git write-back all precede it, and counting them would report a rollout that failed on the
 // first poll as one that waited out a slow write-back.
-func (monitor *DeploymentMonitor) WaitRollout(task models.Task) (*models.Application, time.Duration, error) {
+func (monitor *DeploymentMonitor) WaitRollout(task models.Task, leaseLost func() bool) (*models.Application, time.Duration, error) {
 	// application holds the most recent successfully-fetched state. It is deliberately assigned only
 	// inside the success branch so that a fetch aborted by the deadline (which returns a nil application)
 	// cannot clobber the last-known-good status we want to report on timeout.
@@ -196,6 +201,12 @@ func (monitor *DeploymentMonitor) WaitRollout(task models.Task) (*models.Applica
 		// is accepted (issue #353) to avoid a status-conditional write.
 		if monitor.taskSuperseded(task.Id) {
 			return retry.Unrecoverable(errTaskSuperseded)
+		}
+
+		// Checked alongside supersession so a takeover stops the polling within one
+		// iteration instead of at the deadline, leaving only the new owner watching.
+		if leaseLost() {
+			return retry.Unrecoverable(errLeaseLost)
 		}
 
 		app, fetchErr := monitor.FetchApplication(ctx, task.App, refresh)
@@ -249,20 +260,13 @@ func rolloutStateAlreadyObserved(err error) bool {
 func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) ([]retry.Option, time.Duration) {
 	retryOptions := append([]retry.Option{}, monitor.retryOptions...)
 
-	delay := monitor.retryDelay
-	if delay <= 0 {
-		delay = ArgoSyncRetryDelay
-	}
+	delay := monitor.resolvedDelay()
 
 	retryOptions = append(retryOptions, retry.Delay(delay))
 
 	delaySeconds := helpers.CeilDivDuration(delay, time.Second)
 
-	defaultAttempts := monitor.defaultAttempts
-	if defaultAttempts == 0 {
-		fallbackWindow := time.Duration(legacyRetryIntervals) * ArgoSyncRetryDelay
-		defaultAttempts = helpers.SafeIntToUint(helpers.CeilDivDuration(fallbackWindow, delay))
-	}
+	defaultAttempts := monitor.resolvedDefaultAttempts(delay)
 
 	if task.Timeout <= 0 {
 		// A zero timeout is the norm: the field is omitted whenever a client leaves
@@ -484,4 +488,27 @@ func isArgoUnavailable(err error) bool {
 	// ArgoCD responded with a server error: the app state is unknown.
 	var apiErr *ArgoAPIError
 	return errors.As(err, &apiErr) && apiErr.StatusCode >= 500
+}
+
+// resolvedDelay is the interval between rollout polls, falling back to the
+// package default when the instance was configured without one.
+func (monitor *DeploymentMonitor) resolvedDelay() time.Duration {
+	if monitor.retryDelay <= 0 {
+		return ArgoSyncRetryDelay
+	}
+
+	return monitor.retryDelay
+}
+
+// resolvedDefaultAttempts is how many polls a task without its own timeout is
+// given, falling back to whatever reproduces the historical retry window at the
+// supplied delay.
+func (monitor *DeploymentMonitor) resolvedDefaultAttempts(delay time.Duration) uint {
+	if monitor.defaultAttempts != 0 {
+		return monitor.defaultAttempts
+	}
+
+	fallbackWindow := time.Duration(legacyRetryIntervals) * ArgoSyncRetryDelay
+
+	return helpers.SafeIntToUint(helpers.CeilDivDuration(fallbackWindow, delay))
 }

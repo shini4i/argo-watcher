@@ -71,6 +71,7 @@ nav:
     - Overview: 'operations/index.md'
     - Observability: 'operations/observability.md'
     - Database: 'operations/database.md'
+    - High Availability: 'operations/high-availability.md'
     - Troubleshooting: 'operations/troubleshooting.md'
   - Contributing:
     - Overview: 'contributing/index.md'
