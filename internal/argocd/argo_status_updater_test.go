@@ -1309,13 +1309,13 @@ func TestArgoStatusUpdaterWaitForApplicationDeploymentErrors(t *testing.T) {
 
 	t.Run("failsWhenFetchFails", func(t *testing.T) {
 		api.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(nil, errors.New("network")).Times(1)
-		_, err := updater.waitForApplicationDeployment(task)
+		_, _, err := updater.waitForApplicationDeployment(task)
 		assert.Error(t, err)
 	})
 
 	t.Run("failsWhenApplicationNil", func(t *testing.T) {
 		api.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(nil, nil).Times(1)
-		_, err := updater.waitForApplicationDeployment(task)
+		_, _, err := updater.waitForApplicationDeployment(task)
 		assert.Error(t, err)
 	})
 
@@ -1325,9 +1325,72 @@ func TestArgoStatusUpdaterWaitForApplicationDeploymentErrors(t *testing.T) {
 		app.Spec.Source.RepoURL = ""
 		api.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(app, nil).Times(1)
 
-		_, err := updater.waitForApplicationDeployment(task)
+		_, _, err := updater.waitForApplicationDeployment(task)
 		assert.Error(t, err)
 	})
+}
+
+// TestArgoStatusUpdaterFailureDurationExcludesSetup pins what "after waiting ..." means: the time
+// the rollout was polled, not the time the deployment took. The initial fetch, the status write and
+// the git write-back all precede the polling loop, so counting them would tell a user a rollout
+// that failed on its first poll had waited out a slow write-back instead.
+func TestArgoStatusUpdaterFailureDurationExcludesSetup(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	api := newArgoApiMock(ctrl)
+	metrics := mocks.NewMockMetricsInterface(ctrl)
+	state := mocks.NewMockTaskRepository(ctrl)
+
+	argo := &Argo{}
+	argo.Init(state, api, metrics)
+	state.EXPECT().GetTask(gomock.Any()).Return(&models.Task{Status: models.StatusInProgressMessage}, nil).AnyTimes()
+
+	cfg := newUpdaterTestConfig(lock.NewInMemoryLocker())
+	cfg.WebhookConfig = nil
+	updater := initTestUpdater(t, cfg, argo)
+
+	task := models.Task{Id: "task-id", App: "demo", Images: []models.Image{{Image: "example.com/app", Tag: "v2"}}}
+
+	application := &models.Application{}
+	application.Status.Summary.Images = []string{"test-registry/example.com/app:v2"}
+	application.Status.Sync.Status = "OutOfSync"
+	application.Status.OperationState.Phase = "Succeeded"
+	application.Status.OperationState.Message = "successfully synced (all tasks run)"
+
+	// The pre-loop fetch is the one slow step; every poll after it returns at once, so a duration
+	// that counts the setup crosses a second while the polling itself does not.
+	setupDelay := 1200 * time.Millisecond
+	firstFetch := api.EXPECT().
+		GetApplication(gomock.Any(), task.App, gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ string, _ bool) (*models.Application, error) {
+			time.Sleep(setupDelay)
+			return application, nil
+		})
+	api.EXPECT().
+		GetApplication(gomock.Any(), task.App, gomock.Any()).
+		Return(application, nil).
+		AnyTimes().
+		After(firstFetch)
+
+	var capturedReason string
+	metrics.EXPECT().AddInProgressTask()
+	metrics.EXPECT().RemoveInProgressTask()
+	metrics.EXPECT().AddFailedDeployment(task.App)
+	state.EXPECT().
+		SetTaskStatus(task.Id, models.StatusFailedMessage, gomock.Any()).
+		DoAndReturn(func(_ string, _ string, reason string) error {
+			capturedReason = reason
+			return nil
+		})
+
+	updater.WaitForRollout(task)
+
+	assert.Equal(t,
+		"Deployment failed: ArgoCD reports sync status OutOfSync.\n\n"+
+			"Last sync operation: Succeeded, message: \"successfully synced (all tasks run)\"",
+		capturedReason,
+		"the reported wait must exclude the %s spent before the polling loop", setupDelay)
 }
 
 func TestDeploymentMonitorWaitRollout(t *testing.T) {
@@ -1350,7 +1413,7 @@ func TestDeploymentMonitorWaitRollout(t *testing.T) {
 		app.Metadata.Annotations = map[string]string{"argo-watcher/fire-and-forget": "true"}
 		api.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(app, nil).Times(1)
 
-		received, err := monitor.WaitRollout(task)
+		received, _, err := monitor.WaitRollout(task)
 		require.NoError(t, err)
 		assert.Equal(t, app, received)
 	})
@@ -1359,7 +1422,7 @@ func TestDeploymentMonitorWaitRollout(t *testing.T) {
 		errNotFound := fmt.Errorf("applications.argoproj.io %q not found", task.App)
 		api.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(nil, errNotFound).Times(1)
 
-		_, err := monitor.WaitRollout(task)
+		_, _, err := monitor.WaitRollout(task)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), errNotFound.Error())
 	})
@@ -1399,7 +1462,7 @@ func TestDeploymentMonitorWaitRolloutRespectsDeadline(t *testing.T) {
 		}).MinTimes(1).MaxTimes(3)
 
 	start := time.Now()
-	received, err := monitor.WaitRollout(task)
+	received, _, err := monitor.WaitRollout(task)
 	elapsed := time.Since(start)
 
 	require.NoError(t, err, "deadline expiry while polling must be swallowed so the caller reports the real status")
@@ -1443,7 +1506,7 @@ func TestDeploymentMonitorWaitRolloutReportsLastGoodStatusOnDeadline(t *testing.
 			return nil, ctx.Err()
 		}).MinTimes(2).MaxTimes(3)
 
-	received, err := monitor.WaitRollout(task)
+	received, _, err := monitor.WaitRollout(task)
 	require.NoError(t, err)
 	assert.Equal(t, goodApp, received, "should report the last successfully-fetched application, not nil")
 }
@@ -1470,7 +1533,7 @@ func TestDeploymentMonitorWaitRolloutSurfacesErrorWhenNoFetchSucceeds(t *testing
 	api.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).
 		Return(nil, unavailableErr).MinTimes(1)
 
-	received, err := monitor.WaitRollout(task)
+	received, _, err := monitor.WaitRollout(task)
 	require.Error(t, err)
 	assert.Nil(t, received)
 	assert.ErrorIs(t, err, unavailableErr,
@@ -1499,7 +1562,7 @@ func TestDeploymentMonitorWaitRolloutSurfacesArgoAPIError(t *testing.T) {
 	api.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).
 		Return(nil, apiErr).MinTimes(1)
 
-	received, err := monitor.WaitRollout(task)
+	received, _, err := monitor.WaitRollout(task)
 	require.Error(t, err)
 	assert.Nil(t, received)
 

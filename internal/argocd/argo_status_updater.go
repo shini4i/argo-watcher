@@ -112,13 +112,14 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 
 	sendNotification(task, updater.notifier)
 
-	// start bounds the deployment-duration metric and the "after waiting ..." clause of a failure
-	// message: a monotonic in-process clock over the rollout work only. It is taken after the start
-	// notification so a slow synchronous notifier does not inflate the measured duration, and
-	// deliberately not derived from task.Created (whose stored unit differs across state backends).
+	// start bounds the deployment-duration metric: a monotonic in-process clock over the whole
+	// deployment, write-back included. It is taken after the start notification so a slow
+	// synchronous notifier does not inflate the measured duration, and deliberately not derived
+	// from task.Created (whose stored unit differs across state backends). The failure message
+	// reports waited instead, which covers the rollout polling alone.
 	start := time.Now()
 
-	application, err := updater.waitForApplicationDeployment(task)
+	application, waited, err := updater.waitForApplicationDeployment(task)
 
 	var imageErr *ImageNotPartOfAppError
 
@@ -134,7 +135,7 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 	case err != nil:
 		updater.monitor.HandleArgoAPIFailure(&task, err)
 	default:
-		updater.monitor.ProcessDeploymentResult(&task, application, time.Since(start))
+		updater.monitor.ProcessDeploymentResult(&task, application, waited)
 	}
 
 	// Only the deployed state is timed: a failure/abort/supersession is not a completed
@@ -147,20 +148,20 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 	sendNotification(task, updater.notifier)
 }
 
-func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task) (*models.Application, error) {
+func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task) (*models.Application, time.Duration, error) {
 	if updater.monitor.taskSuperseded(task.Id) {
-		return nil, errTaskSuperseded
+		return nil, 0, errTaskSuperseded
 	}
 
 	// The initial fetch happens before the timed polling loop, so it is bounded only by
 	// the HTTP client's per-request timeout rather than the rollout deadline.
 	app, err := updater.monitor.FetchApplication(context.Background(), task.App, updater.monitor.resolveRefresh(task))
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	if err := updater.monitor.StoreInitialAppStatus(&task, app); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	// The supersede predicate is re-checked inside the write-back retry loop so a
@@ -171,9 +172,9 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 		return updater.monitor.taskSuperseded(task.Id)
 	}); err != nil {
 		if errors.Is(err, ErrDeploymentSuperseded) {
-			return nil, errTaskSuperseded
+			return nil, 0, errTaskSuperseded
 		}
-		return nil, err
+		return nil, 0, err
 	}
 
 	return updater.monitor.WaitRollout(task)

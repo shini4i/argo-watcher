@@ -162,12 +162,17 @@ func (monitor *DeploymentMonitor) StoreInitialAppStatus(task *models.Task, appli
 // stops immediately so no further ArgoCD API calls are made. Because the check
 // goes through the shared state, this works across replicas in an HA setup — the
 // cancelling deployment may be handled by a different replica than this poller.
-func (monitor *DeploymentMonitor) WaitRollout(task models.Task) (*models.Application, error) {
+// The returned duration is how long the polling loop ran, which a failure report states as the
+// time the deployment waited. It covers this loop alone: the initial fetch, the status write and
+// the git write-back all precede it, and counting them would report a rollout that failed on the
+// first poll as one that waited out a slow write-back.
+func (monitor *DeploymentMonitor) WaitRollout(task models.Task) (*models.Application, time.Duration, error) {
 	// application holds the most recent successfully-fetched state. It is deliberately assigned only
 	// inside the success branch so that a fetch aborted by the deadline (which returns a nil application)
 	// cannot clobber the last-known-good status we want to report on timeout.
 	var application *models.Application
 
+	start := time.Now()
 	refresh := monitor.resolveRefresh(task)
 	retryOptions, deadline := monitor.configureRetryOptions(task)
 
@@ -222,7 +227,7 @@ func (monitor *DeploymentMonitor) WaitRollout(task models.Task) (*models.Applica
 		err = nil
 	}
 
-	return application, err
+	return application, time.Since(start), err
 }
 
 // rolloutStateAlreadyObserved reports whether err means the poll loop ended with the application's
