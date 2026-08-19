@@ -3,6 +3,7 @@ package models
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/shini4i/argo-watcher/internal/helpers"
 )
@@ -46,7 +47,10 @@ type ApplicationResource struct {
 	// Status is the resource's current sync state (example: OutOfSync). ArgoCD omits it for
 	// resources it does not compare, so an empty value means "not assessed", not "in sync".
 	Status string `json:"status"`
-	Health struct {
+	// RequiresPruning is set for a resource that exists only in the cluster: it reaches Synced
+	// by being deleted, which a sync without prune enabled never does.
+	RequiresPruning bool `json:"requiresPruning"`
+	Health          struct {
 		Message string `json:"message"`
 		Status  string `json:"status"`
 	} `json:"health"`
@@ -97,6 +101,10 @@ type ApplicationStatus struct {
 	}
 	Sync struct {
 		Status string `json:"status"`
+		// Revision is the revision the running comparison was performed against. Multi-source
+		// applications leave it empty and report one entry per source in Revisions instead.
+		Revision  string   `json:"revision"`
+		Revisions []string `json:"revisions"`
 	}
 }
 
@@ -105,6 +113,10 @@ type ApplicationStatusOperationState struct {
 	Message    string `json:"message"`
 	SyncResult struct {
 		Resources []ApplicationOperationResource `json:"resources"`
+		// Revision is the revision this sync applied, which is not necessarily the one the
+		// application is compared against now (see ApplicationStatus.Sync.Revision).
+		Revision  string   `json:"revision"`
+		Revisions []string `json:"revisions"`
 	} `json:"syncResult"`
 }
 
@@ -114,8 +126,24 @@ type ApplicationMetadata struct {
 }
 
 type ApplicationSpec struct {
-	Source  ApplicationSource   `json:"source"`
-	Sources []ApplicationSource `json:"sources"`
+	Source     ApplicationSource      `json:"source"`
+	Sources    []ApplicationSource    `json:"sources"`
+	SyncPolicy *ApplicationSyncPolicy `json:"syncPolicy"`
+}
+
+// ApplicationSyncPolicy mirrors spec.syncPolicy. A missing Automated block means ArgoCD applies
+// the desired state only when a sync is triggered, so drift persists until someone acts.
+type ApplicationSyncPolicy struct {
+	Automated *ApplicationSyncPolicyAutomated `json:"automated"`
+}
+
+type ApplicationSyncPolicyAutomated struct {
+	Prune    bool `json:"prune"`
+	SelfHeal bool `json:"selfHeal"`
+	// Enabled is ArgoCD's explicit opt-out: an automated block with enabled=false is inactive.
+	// A nil pointer means enabled, since the field is absent from every policy written before
+	// upstream introduced it.
+	Enabled *bool `json:"enabled"`
 }
 
 type ApplicationSource struct {
@@ -155,18 +183,40 @@ func (app *Application) GetRolloutStatus(rolloutImages []string, registryProxyUr
 	return ArgoRolloutAppSuccess
 }
 
+// RolloutFailureHeadline renders the first line of a deployment-failure report: what argo-watcher
+// observed, and for a drifted application how long it waited before giving up (zero omits the
+// duration). A "not synced" failure names ArgoCD's own sync status rather than the internal rollout
+// status, because "not synced" alongside a succeeded sync operation reads as a contradiction.
+func (app *Application) RolloutFailureHeadline(status string, waited time.Duration) string {
+	if status != ArgoRolloutAppNotSynced {
+		return fmt.Sprintf("Application deployment failed. Rollout status is %s", status)
+	}
+
+	syncStatus := app.Status.Sync.Status
+	if syncStatus == "" {
+		syncStatus = "unknown"
+	}
+
+	headline := fmt.Sprintf("Deployment failed: ArgoCD reports sync status %s", syncStatus)
+	// Anything under a second rounds to "0s", which reads as a bug rather than as a fast failure.
+	if rounded := waited.Round(time.Second); rounded >= time.Second {
+		headline += fmt.Sprintf(" after waiting %s", rounded)
+	}
+	return headline + "."
+}
+
 // GetRolloutMessage generates a rollout failure message.
 //
 // tree is ArgoCD's live resource tree (optional, may be nil). When present it is the
 // preferred source for the "Unhealthy resources" section because it alone carries the
 // pod-level failure cause (ImagePullBackOff / CrashLoopBackOff); when nil the message
 // falls back to the app's top-level Status.Resources, preserving the pre-tree behaviour.
-// The actionable diagnostics (terminal sync operation, failed hooks, unhealthy resources, and —
+// The actionable diagnostics (terminal sync operation, failed resources, unhealthy resources, and —
 // while the application is still Progressing — the resources that never became ready) are appended
 // to both the "not available" and "not healthy"/"degraded" failures so on-call users don't have to
 // context-switch into the ArgoCD UI regardless of how the rollout failed. The "not synced" failure
-// gets its own set instead: it fails on current drift, which the health-oriented sections cannot
-// describe (see buildSyncFailureDiagnostics).
+// is reported on its own terms instead: it fails on current drift, which the health-oriented
+// sections cannot describe (see buildSyncFailureReport).
 func (app *Application) GetRolloutMessage(status string, rolloutImages []string, tree *ApplicationTree) string {
 	switch status {
 	case ArgoRolloutAppNotAvailable:
@@ -181,16 +231,7 @@ func (app *Application) GetRolloutMessage(status string, rolloutImages []string,
 		// Base message has no resource listing, so fall back to Status.Resources when no tree.
 		return appendDiagnostics(base, app.buildFailureDiagnostics(tree, true))
 	case ArgoRolloutAppNotSynced:
-		base := fmt.Sprintf(
-			"App status \"%s\"\n"+
-				"App message \"%s\"",
-			app.Status.OperationState.Phase,
-			app.Status.OperationState.Message,
-		)
-		return appendDiagnostics(
-			appendResourceListing(base, app.ListSyncResultResources()),
-			app.buildSyncFailureDiagnostics(tree),
-		)
+		return app.buildSyncFailureReport(tree)
 	case ArgoRolloutAppNotHealthy, ArgoRolloutAppDegraded:
 		// Appends the same diagnostics as the "not available" path — a stalled rollout
 		// caused by a failing pod surfaces here just as often, and its cause lives in the tree.
@@ -235,19 +276,49 @@ func appendDiagnostics(base, diagnostics string) string {
 	return base + "\n\n" + diagnostics
 }
 
-// formatSyncResultResource renders a single sync-result resource line. Shared between full and filtered listings
-// so the user-facing failure-report format stays consistent if it ever changes.
-func formatSyncResultResource(r ApplicationOperationResource) string {
-	return fmt.Sprintf("%s(%s) %s %s with message %s", r.Kind, r.Name, r.HookType, r.HookPhase, r.Message)
+// syncResultOutcome picks the field that describes what happened to a sync-result resource.
+//
+// A sync status other than "Synced" is the most specific answer there is (SyncFailed, PruneSkipped).
+// Failing that, a terminal phase is preferred, because gitops-engine reports a resource whose live
+// object went Degraded mid-sync as phase "Failed" while leaving its sync status at "Synced" — and
+// "Synced" inside a list of failures reads as a contradiction. The sync status comes next, because
+// that same engine reports a *successful* apply as phase "Running", which reads as a resource stuck
+// mid-rollout when nothing is wrong. Any field can be absent: a hook that failed its dry run
+// carries a sync status but no phase at all.
+func syncResultOutcome(r ApplicationOperationResource) string {
+	switch {
+	case r.Status != "" && r.Status != "Synced":
+		return r.Status
+	case isTerminalFailurePhase(r.HookPhase):
+		return r.HookPhase
+	case r.Status != "":
+		return r.Status
+	default:
+		return r.HookPhase
+	}
 }
 
-// ListSyncResultResources returns one formatted line per sync-result resource.
-func (app *Application) ListSyncResultResources() []string {
-	list := make([]string, len(app.Status.OperationState.SyncResult.Resources))
-	for index := range app.Status.OperationState.SyncResult.Resources {
-		list[index] = formatSyncResultResource(app.Status.OperationState.SyncResult.Resources[index])
+// formatSyncResultResource renders a single sync-result resource line: the hook type when the
+// resource is one, then the field that describes its outcome. Absent fields are skipped rather
+// than rendered as blanks.
+func formatSyncResultResource(r ApplicationOperationResource) string {
+	var outcome []string
+
+	if r.HookType != "" {
+		outcome = append(outcome, r.HookType)
 	}
-	return list
+	if described := syncResultOutcome(r); described != "" {
+		outcome = append(outcome, described)
+	}
+
+	line := fmt.Sprintf("%s(%s)", r.Kind, r.Name)
+	if len(outcome) > 0 {
+		line += " " + strings.Join(outcome, " ")
+	}
+	if r.Message != "" {
+		line += " with message " + r.Message
+	}
+	return line
 }
 
 // formatHealthResource renders a single health-bearing resource line. Shared between full and filtered listings
@@ -277,6 +348,8 @@ func (app *Application) ListUnhealthyResources() []string {
 // listOutOfSyncResources returns one formatted line per top-level resource whose sync status is
 // not "Synced". Resources ArgoCD does not compare carry no status at all and are skipped: an empty
 // value means "not assessed" rather than "drifted", and reporting those would bury the real culprit.
+// A resource that only reaches Synced by being deleted is annotated, because a sync without prune
+// enabled will never do that and waiting cannot resolve it.
 func (app *Application) listOutOfSyncResources() []string {
 	var list []string
 
@@ -285,7 +358,11 @@ func (app *Application) listOutOfSyncResources() []string {
 		if resource.Status == "" || resource.Status == "Synced" {
 			continue
 		}
-		list = append(list, fmt.Sprintf("%s(%s) %s", resource.Kind, resource.Name, resource.Status))
+		line := fmt.Sprintf("%s(%s) %s", resource.Kind, resource.Name, resource.Status)
+		if resource.RequiresPruning {
+			line += " (requires pruning)"
+		}
+		list = append(list, line)
 	}
 	return list
 }
@@ -307,16 +384,20 @@ func (app *Application) listErrorConditions() []string {
 	return list
 }
 
-// buildSyncFailureDiagnostics builds the optional diagnostics suffix appended to the "not synced"
-// rollout failure. The base message reports the last sync *operation*, which routinely succeeded
-// while the application drifted straight back out of sync; the drift itself lives in the current
-// resource statuses, and the reason a comparison failed outright lives only in the conditions.
-// Each section is included only when it has content, so a failure with neither keeps its legacy output.
-func (app *Application) buildSyncFailureDiagnostics(tree *ApplicationTree) string {
+// buildSyncFailureReport renders the whole "not synced" failure report. The failure is decided by
+// the application's *current* sync status, while the last sync *operation* it ran routinely
+// succeeded — reporting the operation first made the two read as a contradiction, so the report
+// leads with why the application is still out of sync and closes with the operation as context.
+// Every section but the last is included only when it has content.
+func (app *Application) buildSyncFailureReport(tree *ApplicationTree) string {
 	var sections []string
 
-	// Errors come first: the resource listing is unbounded, so the one line naming the
-	// cause must not trail dozens of drift lines.
+	if explanation := app.buildDriftExplanation(); explanation != "" {
+		sections = append(sections, explanation)
+	}
+
+	// Errors come before the listings: the resource lists are unbounded, so the one line naming
+	// the cause must not trail dozens of drift lines.
 	if conditions := app.listErrorConditions(); len(conditions) > 0 {
 		sections = append(sections, "Sync errors:\n\t"+strings.Join(conditions, "\n\t"))
 	}
@@ -335,7 +416,150 @@ func (app *Application) buildSyncFailureDiagnostics(tree *ApplicationTree) strin
 		sections = append(sections, "Out-of-sync resources:\n\t"+strings.Join(resources, "\n\t"))
 	}
 
-	return strings.Join(sections, "\n\n")
+	if failed := app.listFailedSyncResultResources(); len(failed) > 0 {
+		sections = append(sections, "Failed resources:\n\t"+strings.Join(failed, "\n\t"))
+	}
+
+	return strings.Join(append(sections, app.lastSyncOperationLine()), "\n\n")
+}
+
+// buildDriftExplanation explains why an application whose last sync succeeded is still out of sync,
+// which is the question the report exists to answer. It compares the revision that sync applied
+// against the revision the running comparison uses: a different one means the desired state moved,
+// the same one means applying it did not converge the live state. It returns an empty string when
+// ArgoCD reported no revisions, or when the last sync did not succeed — matching revisions then mean
+// nothing was applied, not that applying it failed to stick.
+//
+// The wording deliberately claims no more than the two fields establish. Which revision is newer in
+// git history is not among it: a rollback, a revert or a retargeted branch all leave the comparison
+// pointing at an older revision.
+func (app *Application) buildDriftExplanation() string {
+	if app.Status.OperationState.Phase != "Succeeded" {
+		return ""
+	}
+
+	applied := newRevisions(app.Status.OperationState.SyncResult.Revision, app.Status.OperationState.SyncResult.Revisions)
+	compared := newRevisions(app.Status.Sync.Revision, app.Status.Sync.Revisions)
+	if applied.key == "" || compared.key == "" {
+		return ""
+	}
+
+	var explanation string
+	if applied.key == compared.key {
+		explanation = fmt.Sprintf(
+			"The last sync succeeded for %s and the application is still out of sync against exactly "+
+				"what that sync applied, so applying it did not converge the live state. Usual causes: "+
+				"a mutating admission webhook, a controller that owns a field the manifests also set "+
+				"(replicas versus an HPA), a resource that has to be pruned, or a sync that covered "+
+				"only some resources. Extra waiting is unlikely to help.",
+			applied.phrase,
+		)
+	} else {
+		explanation = fmt.Sprintf(
+			"The last sync applied %s, but ArgoCD now compares the application against %s, so the "+
+				"desired state has changed since that sync.",
+			applied.phrase, compared.phrase,
+		)
+	}
+
+	return explanation + "\n" + app.autoSyncNote()
+}
+
+// autoSyncNote states whether ArgoCD will act on the drift by itself, which decides whether the
+// operator has to. It accompanies the drift explanation rather than standing alone: on its own it
+// would add a line to every report that has nothing to explain.
+func (app *Application) autoSyncNote() string {
+	if !app.AutoSyncEnabled() {
+		return "Auto-sync is disabled: ArgoCD applies the desired state only when a sync is triggered."
+	}
+
+	automated := app.Spec.SyncPolicy.Automated
+	return fmt.Sprintf("Auto-sync is enabled (prune %s, self-heal %s).",
+		onOff(automated.Prune), onOff(automated.SelfHeal))
+}
+
+// lastSyncOperationLine reports the outcome of the sync ArgoCD last ran. Unconditional, so a
+// report whose every other section emptied out still says something.
+func (app *Application) lastSyncOperationLine() string {
+	operation := app.Status.OperationState
+	if operation.Phase == "" && operation.Message == "" {
+		return "No sync operation is recorded for this application."
+	}
+
+	phase := operation.Phase
+	if phase == "" {
+		phase = "unknown"
+	}
+
+	line := "Last sync operation: " + phase
+	if operation.Message != "" {
+		line += fmt.Sprintf(", message: %q", operation.Message)
+	}
+	return line
+}
+
+// AutoSyncEnabled reports whether ArgoCD applies this application's desired state on its own.
+func (app *Application) AutoSyncEnabled() bool {
+	if app.Spec.SyncPolicy == nil || app.Spec.SyncPolicy.Automated == nil {
+		return false
+	}
+	return app.Spec.SyncPolicy.Automated.Enabled == nil || *app.Spec.SyncPolicy.Automated.Enabled
+}
+
+func onOff(enabled bool) string {
+	if enabled {
+		return "on"
+	}
+	return "off"
+}
+
+// revisions is one of ArgoCD's revision reports: key is the untruncated value two reports are
+// compared by, phrase is how the failure message names them. Keeping the two apart matters — two
+// distinct commits can share an abbreviated prefix, and comparing the abbreviations would hand the
+// user the wrong verdict. An empty key means ArgoCD reported no revision at all.
+type revisions struct {
+	key    string
+	phrase string
+}
+
+// newRevisions reads a revision report from ArgoCD's pair of fields: a single-source application
+// fills revision, a multi-source one fills list with one entry per source. The list wins whenever
+// it holds more than one entry, so an application that reports both cannot have its verdict decided
+// by one source's revision while another source is the one that moved.
+func newRevisions(revision string, list []string) revisions {
+	if revision != "" && len(list) <= 1 {
+		return revisions{key: revision, phrase: "revision " + shortRevision(revision)}
+	}
+	if len(list) == 0 {
+		return revisions{}
+	}
+
+	short := make([]string, len(list))
+	for index := range list {
+		short[index] = shortRevision(list[index])
+	}
+
+	label := "revision "
+	if len(list) > 1 {
+		label = "revisions "
+	}
+	return revisions{key: strings.Join(list, ","), phrase: label + strings.Join(short, ", ")}
+}
+
+// shortRevision abbreviates a full git SHA to the seven characters ArgoCD's own UI shows. Anything
+// else — a tag, a branch, a chart version — is returned untouched.
+func shortRevision(revision string) string {
+	const shaLength = 40
+
+	if len(revision) != shaLength {
+		return revision
+	}
+	for _, char := range revision {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", char) {
+			return revision
+		}
+	}
+	return revision[:7]
 }
 
 // isTerminalFailurePhase reports whether the given ArgoCD phase value indicates a terminal failure. The same
@@ -358,12 +582,14 @@ func isProblemHealthStatus(status string) bool {
 	}
 }
 
-// listFailedSyncResultResources returns formatted lines for sync-result resources whose hook phase indicates failure.
+// listFailedSyncResultResources returns formatted lines for the sync-result resources that did not
+// go through: a hook that ended in a terminal failure phase, or an ordinary resource ArgoCD could
+// not apply. The rest of the sync result describes work that succeeded and is left out.
 func (app *Application) listFailedSyncResultResources() []string {
 	var list []string
 	for index := range app.Status.OperationState.SyncResult.Resources {
 		resource := app.Status.OperationState.SyncResult.Resources[index]
-		if !isTerminalFailurePhase(resource.HookPhase) {
+		if !isTerminalFailurePhase(resource.HookPhase) && resource.Status != "SyncFailed" {
 			continue
 		}
 		list = append(list, formatSyncResultResource(resource))
@@ -454,8 +680,8 @@ func (app *Application) buildFailureDiagnostics(tree *ApplicationTree, allowStat
 		sections = append(sections, opSection)
 	}
 
-	if hooks := app.listFailedSyncResultResources(); len(hooks) > 0 {
-		sections = append(sections, "Failed hooks:\n\t"+strings.Join(hooks, "\n\t"))
+	if failed := app.listFailedSyncResultResources(); len(failed) > 0 {
+		sections = append(sections, "Failed resources:\n\t"+strings.Join(failed, "\n\t"))
 	}
 
 	if resources := app.problemResourceLines(tree, allowStatusFallback); len(resources) > 0 {

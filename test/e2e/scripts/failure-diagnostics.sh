@@ -126,7 +126,7 @@ scenario_unvalidated_not_available() {
 # the old tag, the expected image is "not available", and the failure diagnostics carry the hook.
 scenario_failed_presync_hook() {
   echo "task={\"app\":\"app3\",\"author\":\"e2e\",\"project\":\"lab\",\"timeout\":90,\"images\":[{\"image\":\"${IMAGE}\",\"tag\":\"v0.0.0-hookfail\"}]}"
-  echo "expect=Failed hooks:"
+  echo "expect=Failed resources:"
   echo "expect=PreSync Failed"
   echo "setup=setup_failed_presync_hook"
   echo "teardown=teardown_failed_presync_hook"

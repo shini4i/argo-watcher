@@ -280,8 +280,10 @@ func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) ([]ret
 	return append(retryOptions, retry.Attempts(attempts)), helpers.MulDurationSaturating(attempts, delay)
 }
 
-// ProcessDeploymentResult determines if the deployment was successful and updates the appropriate status and metrics.
-func (monitor *DeploymentMonitor) ProcessDeploymentResult(task *models.Task, application *models.Application) {
+// ProcessDeploymentResult determines if the deployment was successful and updates the appropriate
+// status and metrics. waited is how long the rollout was polled, reported in the failure message so
+// the user can tell a rollout that ran out its window from one that failed immediately.
+func (monitor *DeploymentMonitor) ProcessDeploymentResult(task *models.Task, application *models.Application, waited time.Duration) {
 	status := application.GetRolloutStatus(task.ListImages(), monitor.registryProxyUrl, monitor.acceptSuspended)
 	if application.IsFireAndForgetModeActive() {
 		status = models.ArgoRolloutAppSuccess
@@ -290,7 +292,7 @@ func (monitor *DeploymentMonitor) ProcessDeploymentResult(task *models.Task, app
 	if status == models.ArgoRolloutAppSuccess {
 		monitor.handleDeploymentSuccess(task)
 	} else {
-		monitor.handleDeploymentFailure(task, status, application)
+		monitor.handleDeploymentFailure(task, status, application, waited)
 	}
 }
 
@@ -347,13 +349,13 @@ func (monitor *DeploymentMonitor) handleDeploymentSuccess(task *models.Task) {
 	task.Status = models.StatusDeployedMessage
 }
 
-func (monitor *DeploymentMonitor) handleDeploymentFailure(task *models.Task, status string, application *models.Application) {
+func (monitor *DeploymentMonitor) handleDeploymentFailure(task *models.Task, status string, application *models.Application, waited time.Duration) {
 	slog.Warn("App deployment failed.", "id", task.Id)
 	monitor.argo.metrics.AddFailedDeployment(task.App)
 	tree := monitor.fetchResourceTree(task)
 	reason := fmt.Sprintf(
-		"Application deployment failed. Rollout status is %s\n\n%s",
-		status,
+		"%s\n\n%s",
+		application.RolloutFailureHeadline(status, waited),
 		application.GetRolloutMessage(status, task.ListImages(), tree),
 	)
 	if err := monitor.argo.State.SetTaskStatus(task.Id, models.StatusFailedMessage, reason); err != nil {

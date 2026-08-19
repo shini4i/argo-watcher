@@ -449,14 +449,25 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		metricsMock.EXPECT().AddInProgressTask()
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
-		// The sync reported no resources, so no resource listing is appended: the reason ends at
-		// the message line rather than carrying an empty "Resources:" header.
-		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage,
-			"Application deployment failed. Rollout status is not synced\n\n"+
-				"App status \"NotWorking\"\n"+
-				"App message \"Not working test app\"")
+		// The headline names ArgoCD's own sync status, and with no revisions, drifted resources or
+		// error conditions in the payload the report collapses to the last sync operation. The
+		// headline is matched by prefix on purpose: this path measures a real clock, so asserting
+		// the whole string would make the test fail on a loaded runner for a timing reason that has
+		// nothing to do with what it covers. The duration itself is pinned at the monitor seam, by
+		// TestDeploymentMonitorProcessDeploymentResultReportsTimeWaited.
+		var capturedReason string
+		stateMock.EXPECT().
+			SetTaskStatus(task.Id, models.StatusFailedMessage, gomock.Any()).
+			DoAndReturn(func(_ string, _ string, reason string) error {
+				capturedReason = reason
+				return nil
+			})
 
 		updater.WaitForRollout(task)
+
+		assert.True(t, strings.HasPrefix(capturedReason, "Deployment failed: ArgoCD reports sync status Syncing"),
+			"unexpected headline: %s", capturedReason)
+		assert.Contains(t, capturedReason, "\n\nLast sync operation: NotWorking, message: \"Not working test app\"")
 	})
 
 	t.Run("Status Updater - Application not healthy", func(t *testing.T) {
@@ -559,7 +570,7 @@ func TestDeploymentMonitorHandleDeploymentFailureHandlesStateError(t *testing.T)
 		SetTaskStatus(task.Id, models.StatusFailedMessage, gomock.Any()).
 		Return(errors.New("update failed"))
 
-	monitor.handleDeploymentFailure(&task, models.ArgoRolloutAppNotHealthy, application)
+	monitor.handleDeploymentFailure(&task, models.ArgoRolloutAppNotHealthy, application, 0)
 	assert.Equal(t, models.StatusFailedMessage, task.Status)
 }
 
@@ -603,10 +614,57 @@ func TestDeploymentMonitorHandleDeploymentFailureEnrichesReasonFromResourceTree(
 			return nil
 		})
 
-	monitor.handleDeploymentFailure(&task, models.ArgoRolloutAppNotAvailable, application)
+	monitor.handleDeploymentFailure(&task, models.ArgoRolloutAppNotAvailable, application, 0)
 
 	assert.Contains(t, capturedReason, "Unhealthy resources:")
 	assert.Contains(t, capturedReason, `Pod(app-xyz) Degraded with message Back-off pulling image "example.com/app:v2": ErrImagePull`)
+}
+
+// TestDeploymentMonitorProcessDeploymentResultReportsTimeWaited pins the duration threading: the
+// wall-clock the rollout was polled for reaches the stored reason, which is what tells a user
+// whether the deployment ran out its window or failed on the spot. Only this seam is asserted —
+// ArgoStatusUpdater.WaitForRollout measures the duration off a real clock, and forcing that past a
+// second would buy a slow test rather than a stronger one.
+func TestDeploymentMonitorProcessDeploymentResultReportsTimeWaited(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	metrics := mocks.NewMockMetricsInterface(ctrl)
+	state := mocks.NewMockTaskRepository(ctrl)
+	api := newArgoApiMock(ctrl)
+
+	monitor := NewDeploymentMonitor(Argo{
+		metrics: metrics,
+		State:   state,
+		api:     api,
+	}, "", []retry.Option{retry.DelayType(zeroDelay), retry.LastErrorOnly(true)}, false, time.Millisecond)
+
+	task := models.Task{
+		Id:     "task-id",
+		App:    "demo",
+		Images: []models.Image{{Image: "example.com/app", Tag: "v2"}},
+	}
+	application := &models.Application{}
+	application.Status.Summary.Images = []string{"example.com/app:v2"}
+	application.Status.Sync.Status = "OutOfSync"
+	application.Status.OperationState.Phase = "Succeeded"
+	application.Status.OperationState.Message = "successfully synced (all tasks run)"
+
+	var capturedReason string
+	metrics.EXPECT().AddFailedDeployment(task.App)
+	state.EXPECT().
+		SetTaskStatus(task.Id, models.StatusFailedMessage, gomock.Any()).
+		DoAndReturn(func(_ string, _ string, reason string) error {
+			capturedReason = reason
+			return nil
+		})
+
+	monitor.ProcessDeploymentResult(&task, application, 4*time.Minute)
+
+	assert.Equal(t,
+		"Deployment failed: ArgoCD reports sync status OutOfSync after waiting 4m0s.\n\n"+
+			"Last sync operation: Succeeded, message: \"successfully synced (all tasks run)\"",
+		capturedReason)
 }
 
 // TestDeploymentMonitorHandleDeploymentFailureResourceTreeErrorIsNonFatal pins the best-effort
@@ -645,7 +703,7 @@ func TestDeploymentMonitorHandleDeploymentFailureResourceTreeErrorIsNonFatal(t *
 			return nil
 		})
 
-	monitor.handleDeploymentFailure(&task, models.ArgoRolloutAppNotAvailable, application)
+	monitor.handleDeploymentFailure(&task, models.ArgoRolloutAppNotAvailable, application, 0)
 
 	assert.Equal(t, models.StatusFailedMessage, task.Status)
 	assert.Contains(t, capturedReason, "Rollout status is not available")
@@ -1755,7 +1813,7 @@ func TestArgoStatusUpdater_processDeploymentResult(t *testing.T) {
 		metricsMock.EXPECT().ResetFailedDeployment(task.App)
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
 
-		updater.monitor.ProcessDeploymentResult(&task, app)
+		updater.monitor.ProcessDeploymentResult(&task, app, 0)
 		assert.Equal(t, models.StatusDeployedMessage, task.Status)
 	})
 
@@ -1769,7 +1827,7 @@ func TestArgoStatusUpdater_processDeploymentResult(t *testing.T) {
 		metricsMock.EXPECT().ResetFailedDeployment(task.App)
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
 
-		updater.monitor.ProcessDeploymentResult(&task, app)
+		updater.monitor.ProcessDeploymentResult(&task, app, 0)
 		assert.Equal(t, models.StatusDeployedMessage, task.Status)
 	})
 
@@ -1788,7 +1846,7 @@ func TestArgoStatusUpdater_processDeploymentResult(t *testing.T) {
 		metricsMock.EXPECT().ResetFailedDeployment(task.App)
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
 
-		updater.monitor.ProcessDeploymentResult(&task, app)
+		updater.monitor.ProcessDeploymentResult(&task, app, 0)
 		assert.Equal(t, models.StatusDeployedMessage, task.Status)
 	})
 
@@ -1801,7 +1859,7 @@ func TestArgoStatusUpdater_processDeploymentResult(t *testing.T) {
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		stateMock.EXPECT().SetTaskStatus(gomock.Any(), models.StatusFailedMessage, gomock.Any())
 
-		updater.monitor.ProcessDeploymentResult(&task, app)
+		updater.monitor.ProcessDeploymentResult(&task, app, 0)
 		assert.Equal(t, models.StatusFailedMessage, task.Status)
 	})
 }

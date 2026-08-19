@@ -112,10 +112,10 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 
 	sendNotification(task, updater.notifier)
 
-	// start bounds the deployment-duration metric: a monotonic in-process clock over the
-	// rollout work only. It is taken after the start notification so a slow synchronous
-	// notifier does not inflate the measured duration, and deliberately not derived from
-	// task.Created (whose stored unit differs across state backends).
+	// start bounds the deployment-duration metric and the "after waiting ..." clause of a failure
+	// message: a monotonic in-process clock over the rollout work only. It is taken after the start
+	// notification so a slow synchronous notifier does not inflate the measured duration, and
+	// deliberately not derived from task.Created (whose stored unit differs across state backends).
 	start := time.Now()
 
 	application, err := updater.waitForApplicationDeployment(task)
@@ -134,7 +134,7 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 	case err != nil:
 		updater.monitor.HandleArgoAPIFailure(&task, err)
 	default:
-		updater.monitor.ProcessDeploymentResult(&task, application)
+		updater.monitor.ProcessDeploymentResult(&task, application, time.Since(start))
 	}
 
 	// Only the deployed state is timed: a failure/abort/supersession is not a completed
