@@ -17,6 +17,10 @@ There are two tables. `tasks` stores every deployment task and its status; index
 | `is_rollback` | `boolean NOT NULL DEFAULT false` | `true` when this task's image set was previously deployed for the app. |
 | `rollback_target_id` | `text NOT NULL DEFAULT ''` | ID of the earlier task this deployment rolls back to; empty when not a rollback. |
 | `validated` | `boolean NOT NULL DEFAULT false` | `true` when the request that created the task presented a valid credential. Gates the git write-back and what the task may supersede; never exposed through the API. |
+| `timeout` | `int NOT NULL DEFAULT 0` | Per-task rollout deadline in seconds; `0` when the client did not override `DEPLOYMENT_TIMEOUT`. |
+| `refresh` | `boolean` | Per-task override of `ARGO_REFRESH_APP`; `NULL` when the client omitted it, which is distinct from an explicit `false`. |
+| `owner_id` | `text` | The replica currently monitoring the rollout; `NULL` when unclaimed. See [High Availability](high-availability.md#task-ownership). |
+| `lease_expires_at` | `timestamptz` | When that claim lapses. A lapsed claim on an in-progress task is taken over by another replica; indexed for that sweep via the partial index `idx_tasks_claimable`. |
 | `app` | `varchar(255) NOT NULL` | Argo CD application name. |
 | `author` | `varchar(255) NOT NULL` | Deployment author identifier. |
 | `project` | `varchar(255) NOT NULL` | Business project identifier. |

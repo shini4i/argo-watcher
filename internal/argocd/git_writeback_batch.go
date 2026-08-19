@@ -158,10 +158,10 @@ func runBatchAttempt(parentCtx context.Context, repo *updater.GitRepo, opTimeout
 // request is left unresolved so the next attempt retries it — mirroring the single-app
 // path, where a commit failure is also retriable rather than fatal.
 func applyRequest(repo *updater.GitRepo, req *batchWriteRequest, outcomes, commitErrs map[*batchWriteRequest]error) bool {
-	// Re-check supersede every attempt so a task that keeps retrying under
-	// contention aborts the moment a newer deployment for the same app wins.
+	// Re-check the stop predicate every attempt so a task that keeps retrying under
+	// contention aborts the moment this replica stops being the one to write it back.
 	if req.isSuperseded != nil && req.isSuperseded() {
-		slog.Info("Git update aborted: task superseded by a newer deployment", "id", req.task.Id)
+		slog.Info("Git update aborted: the task was superseded, taken over, or this replica is shutting down", "id", req.task.Id)
 		outcomes[req] = ErrDeploymentSuperseded
 		return false
 	}

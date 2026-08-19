@@ -164,6 +164,11 @@ func (s *Server) Run() {
 	// or hide the "ArgoCD unreachable" banner (issue #498).
 	s.env.StartArgoWatcher()
 
+	// Take over deployments whose replica stopped monitoring them, so losing a pod
+	// mid-rollout costs a few seconds of unattended time rather than the whole
+	// deployment (issue #152).
+	s.env.StartTaskReaper()
+
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("failed to start server", "error", err)
@@ -255,4 +260,11 @@ func (s *Server) shutdown(srv httpShutdowner) {
 	if s.updater != nil {
 		s.updater.Close(shutdownCtx)
 	}
+
+	// Phase 4: hand the rollouts this replica was watching to the others. The
+	// monitoring goroutines are about to die with the process, and without this
+	// their tasks would sit unattended until their leases lapse. Last, so a
+	// surviving replica does not resume a write-back the drain above is still
+	// flushing. No-op with in-memory state, where nothing else can pick them up.
+	s.env.releaseTaskLeases()
 }

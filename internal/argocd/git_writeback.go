@@ -145,7 +145,7 @@ func runGitUpdateWithRetry(parentCtx context.Context, repo *updater.GitRepo, app
 	var lastErr error
 	for attempt := uint(1); attempt <= maxAttempts; attempt++ {
 		if isSuperseded != nil && isSuperseded() {
-			slog.Info("Git update aborted: task superseded by a newer deployment", "attempt", attempt, "max_attempts", maxAttempts, "id", task.Id)
+			slog.Info("Git update aborted: the task was superseded, taken over, or this replica is shutting down", "attempt", attempt, "max_attempts", maxAttempts, "id", task.Id)
 			return ErrDeploymentSuperseded
 		}
 

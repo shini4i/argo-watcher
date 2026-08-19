@@ -14,6 +14,7 @@ import (
 	"github.com/shini4i/argo-watcher/internal/lock"
 	"github.com/shini4i/argo-watcher/internal/models"
 	"github.com/shini4i/argo-watcher/internal/notifications"
+	"github.com/shini4i/argo-watcher/internal/state"
 )
 
 // ArgoStatusUpdater handles the monitoring and updating of ArgoCD application deployments
@@ -21,6 +22,11 @@ type ArgoStatusUpdater struct {
 	monitor    *DeploymentMonitor
 	gitUpdater *GitUpdater
 	notifier   *notifications.Notifier
+	// leaseRenewInterval and leaseTTL parameterize the claim a monitored rollout
+	// holds. They are fields rather than constants so tests can drive a takeover
+	// without waiting out a real lease.
+	leaseRenewInterval time.Duration
+	leaseTTL           time.Duration
 }
 
 // ArgoStatusUpdaterConfig groups the dependencies required to bootstrap an ArgoStatusUpdater.
@@ -50,6 +56,9 @@ func (updater *ArgoStatusUpdater) Init(argo Argo, cfg ArgoStatusUpdaterConfig) e
 	if cfg.Locker == nil {
 		return fmt.Errorf("locker cannot be nil")
 	}
+
+	updater.leaseRenewInterval = state.TaskLeaseRenewInterval
+	updater.leaseTTL = state.TaskLeaseTTL
 
 	updater.monitor = NewDeploymentMonitor(argo, cfg.RegistryProxyURL, retryOptions, cfg.AcceptSuspended, cfg.RetryDelay)
 	updater.monitor.defaultAttempts = cfg.RetryAttempts
@@ -105,12 +114,37 @@ func (updater *ArgoStatusUpdater) Close(ctx context.Context) {
 
 // WaitForRollout monitors the application until it reaches a final state (deployed
 // or failed), or stops early if a newer deployment for the same app supersedes it
-// (issue #353).
-func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
+// (issue #353), or if another replica takes the task over.
+//
+// resumed marks a task picked up from another replica: its start notification was
+// already sent by the replica that accepted it, so sending a second one would
+// announce the same deployment twice.
+func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task, resumed bool) {
+	updater.waitForRollout(task, resumed, neverDraining)
+}
+
+// neverDraining is the abandon predicate for a rollout monitored by the replica
+// that accepted the deployment. Such a task has nowhere to be handed back to:
+// nothing else holds its claim, so it is watched until it finishes or until the
+// process ends with it.
+func neverDraining() bool { return false }
+
+// waitForRollout is WaitForRollout with the condition under which this replica
+// gives the rollout up: draining reports that shutdown has begun, which ends the
+// monitoring as a takeover would — without a status, so the replica that resumes
+// the task records the outcome instead.
+func (updater *ArgoStatusUpdater) waitForRollout(task models.Task, resumed bool, draining func() bool) {
 	updater.monitor.BeginTracking()
 	defer updater.monitor.EndTracking()
 
-	sendNotification(task, updater.notifier)
+	// Renewing the claim for as long as this replica polls the rollout is what keeps
+	// a sweep on another replica from taking over a deployment that is being watched.
+	lease := newLeaseGuard(updater.monitor.argo.State, task.Id, updater.leaseRenewInterval, updater.leaseTTL)
+	defer lease.Stop()
+
+	if !resumed {
+		sendNotification(task, updater.notifier)
+	}
 
 	// start bounds the deployment-duration metric: a monotonic in-process clock over the whole
 	// deployment, write-back included. It is taken after the start notification so a slow
@@ -119,11 +153,49 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 	// reports waited instead, which covers the rollout polling alone.
 	start := time.Now()
 
-	application, waited, err := updater.waitForApplicationDeployment(task)
+	// Both conditions end the rollout the same way, so the poll loop and the
+	// write-back are given one predicate: stop at the next boundary, without a
+	// status. Composing them here rather than inside the lease guard keeps the guard
+	// about the claim alone.
+	abandoned := func() bool { return lease.Lost() || draining() }
+
+	application, waited, err := updater.waitForApplicationDeployment(task, abandoned)
+
+	// Re-checked here because only the poll loop and the write-back consult the
+	// predicate themselves. Every other way out — a failed fetch, a write-back error,
+	// or an ordinary success — would otherwise write a status and notify on a task
+	// this replica lost during the last poll interval, or no longer finishes.
+	switch {
+	case lease.Lost():
+		// Whatever the rollout ended as, the replica that took the claim is monitoring
+		// it too and reaches the same outcome — a supersession included. Reporting it
+		// here as well would announce one deployment twice.
+		err = errLeaseLost
+	case errors.Is(err, errTaskSuperseded):
+		// Left as it is even while draining: the cancellation is already persisted by
+		// the deployment that caused it, and a cancelled task is never re-claimed by a
+		// sweep — so this replica is the last one able to announce it.
+	case draining():
+		err = errReplicaDraining
+	}
 
 	var imageErr *ImageNotPartOfAppError
 
 	switch {
+	case errors.Is(err, errReplicaDraining):
+		// This replica finishes nothing from here on: its claims are released in the
+		// last shutdown phase and another replica resumes the deployment. A status
+		// written now would be decided by a monitor that is about to disappear — and
+		// once the write-back batcher is closed, it would be a failure for a rollout
+		// that is otherwise healthy.
+		slog.Info("Stopped monitoring a deployment while shutting down; another replica will resume it.", "id", task.Id)
+		return
+	case errors.Is(err, errLeaseLost):
+		// Another replica owns this task now and is monitoring the same rollout.
+		// Writing a status here would clobber the outcome it is about to record, and
+		// notifying would announce a result this replica no longer decides.
+		slog.Info("Stopped monitoring a deployment taken over by another replica.", "id", task.Id)
+		return
 	case errors.As(err, &imageErr):
 		updater.monitor.HandleImageNotPartOfApp(&task, imageErr)
 	case errors.Is(err, errTaskSuperseded):
@@ -148,7 +220,20 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task) {
 	sendNotification(task, updater.notifier)
 }
 
-func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task) (*models.Application, time.Duration, error) {
+// abortedWriteBackCause names why a write-back gave up. Both of its stop conditions
+// surface as ErrDeploymentSuperseded, so the shared state decides which one is
+// reported: a task cancelled there is reported as superseded even when this replica
+// is also giving the rollout up, because a cancelled task is never re-claimed by a
+// sweep and no successor could announce it.
+func (updater *ArgoStatusUpdater) abortedWriteBackCause(taskId string, abandoned bool) error {
+	if abandoned && !updater.monitor.taskSuperseded(taskId) {
+		return errLeaseLost
+	}
+
+	return errTaskSuperseded
+}
+
+func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task, abandoned func() bool) (*models.Application, time.Duration, error) {
 	if updater.monitor.taskSuperseded(task.Id) {
 		return nil, 0, errTaskSuperseded
 	}
@@ -164,20 +249,21 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task)
 		return nil, 0, err
 	}
 
-	// The supersede predicate is re-checked inside the write-back retry loop so a
-	// task that keeps retrying under
-	// contention aborts (rather than overwriting a newer deployment) the moment a
-	// newer one supersedes it.
+	// The stop predicate is re-checked inside the write-back retry loop so a task
+	// that keeps retrying under contention aborts the moment a newer deployment
+	// supersedes it — rather than overwriting that deployment — or the moment this
+	// replica gives the rollout up, which would otherwise have two replicas pushing
+	// the same write-back, or push after the batcher was drained.
 	if err := updater.gitUpdater.UpdateIfNeeded(app, task, func() bool {
-		return updater.monitor.taskSuperseded(task.Id)
+		return updater.monitor.taskSuperseded(task.Id) || abandoned()
 	}); err != nil {
 		if errors.Is(err, ErrDeploymentSuperseded) {
-			return nil, 0, errTaskSuperseded
+			return nil, 0, updater.abortedWriteBackCause(task.Id, abandoned())
 		}
 		return nil, 0, err
 	}
 
-	return updater.monitor.WaitRollout(task)
+	return updater.monitor.WaitRollout(task, abandoned)
 }
 
 func sendNotification(task models.Task, notifier *notifications.Notifier) {

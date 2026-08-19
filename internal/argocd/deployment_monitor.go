@@ -39,6 +39,17 @@ var errAppDegraded = errors.New("application has degraded")
 // without overwriting the "cancelled" status the newer deployment already wrote.
 var errTaskSuperseded = errors.New("task superseded by a newer deployment")
 
+// errLeaseLost is an internal sentinel returned when another replica claimed the
+// task while this one was monitoring it. Like errTaskSuperseded it stops the
+// rollout without writing a status: the new owner records the outcome.
+var errLeaseLost = errors.New("task taken over by another replica")
+
+// errReplicaDraining is an internal sentinel returned when this replica began
+// shutting down while it was monitoring a resumed rollout. It stops the rollout
+// without writing a status, like errLeaseLost: the claim is released at the end of
+// shutdown and the replica that resumes the task records the outcome.
+var errReplicaDraining = errors.New("replica is shutting down")
+
 // ImageNotPartOfAppError reports that a task expects an image the application's desired
 // state never declares, so waiting for it to appear is pointless (issue #519).
 // Image is a repository name without tag or digest, as are DesiredImages.
@@ -166,7 +177,7 @@ func (monitor *DeploymentMonitor) StoreInitialAppStatus(task *models.Task, appli
 // time the deployment waited. It covers this loop alone: the initial fetch, the status write and
 // the git write-back all precede it, and counting them would report a rollout that failed on the
 // first poll as one that waited out a slow write-back.
-func (monitor *DeploymentMonitor) WaitRollout(task models.Task) (*models.Application, time.Duration, error) {
+func (monitor *DeploymentMonitor) WaitRollout(task models.Task, abandoned func() bool) (*models.Application, time.Duration, error) {
 	// application holds the most recent successfully-fetched state. It is deliberately assigned only
 	// inside the success branch so that a fetch aborted by the deadline (which returns a nil application)
 	// cannot clobber the last-known-good status we want to report on timeout.
@@ -196,6 +207,13 @@ func (monitor *DeploymentMonitor) WaitRollout(task models.Task) (*models.Applica
 		// is accepted (issue #353) to avoid a status-conditional write.
 		if monitor.taskSuperseded(task.Id) {
 			return retry.Unrecoverable(errTaskSuperseded)
+		}
+
+		// Checked alongside supersession so a rollout this replica gave up — taken over,
+		// or left behind by a shutdown — stops polling within one iteration instead of at
+		// the deadline, leaving only its next owner watching.
+		if abandoned() {
+			return retry.Unrecoverable(errLeaseLost)
 		}
 
 		app, fetchErr := monitor.FetchApplication(ctx, task.App, refresh)
@@ -249,20 +267,13 @@ func rolloutStateAlreadyObserved(err error) bool {
 func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) ([]retry.Option, time.Duration) {
 	retryOptions := append([]retry.Option{}, monitor.retryOptions...)
 
-	delay := monitor.retryDelay
-	if delay <= 0 {
-		delay = ArgoSyncRetryDelay
-	}
+	delay := monitor.resolvedDelay()
 
 	retryOptions = append(retryOptions, retry.Delay(delay))
 
 	delaySeconds := helpers.CeilDivDuration(delay, time.Second)
 
-	defaultAttempts := monitor.defaultAttempts
-	if defaultAttempts == 0 {
-		fallbackWindow := time.Duration(legacyRetryIntervals) * ArgoSyncRetryDelay
-		defaultAttempts = helpers.SafeIntToUint(helpers.CeilDivDuration(fallbackWindow, delay))
-	}
+	defaultAttempts := monitor.resolvedDefaultAttempts(delay)
 
 	if task.Timeout <= 0 {
 		// A zero timeout is the norm: the field is omitted whenever a client leaves
@@ -278,11 +289,35 @@ func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) ([]ret
 		return append(retryOptions, retry.Attempts(defaultAttempts)), helpers.MulDurationSaturating(defaultAttempts, delay)
 	}
 
-	attempts := helpers.SafeIntToUint(int64(task.Timeout)/delaySeconds + 1)
+	attempts := monitor.rolloutAttempts(task, delay)
 
 	slog.Debug("Overriding task timeout", "timeout_seconds", task.Timeout, "retry_delay", delay, "delay_step_seconds", delaySeconds, "attempts", attempts, "id", task.Id)
 
 	return append(retryOptions, retry.Attempts(attempts)), helpers.MulDurationSaturating(attempts, delay)
+}
+
+// rolloutAttempts is how many polls a task is given: its timeout in whole delay steps
+// plus the poll that lands on the deadline itself, or this instance's default when the
+// task carries no timeout of its own.
+func (monitor *DeploymentMonitor) rolloutAttempts(task models.Task, delay time.Duration) uint {
+	if task.Timeout <= 0 {
+		return monitor.resolvedDefaultAttempts(delay)
+	}
+
+	return helpers.SafeIntToUint(int64(task.Timeout)/helpers.CeilDivDuration(delay, time.Second) + 1)
+}
+
+// rolloutWindow is the wall-clock span the poll loop is given for task, which is the
+// attempts it is configured with times the delay between them — a whole number of
+// polls, so it is the task's timeout rounded up rather than the timeout itself.
+//
+// remainingWindow measures a handover against this, so a resumed rollout is judged by
+// the same budget the replica that accepted it was polling under; measuring against
+// the raw timeout would abort a handover that lands in the final poll interval.
+func (monitor *DeploymentMonitor) rolloutWindow(task models.Task) time.Duration {
+	delay := monitor.resolvedDelay()
+
+	return helpers.MulDurationSaturating(monitor.rolloutAttempts(task, delay), delay)
 }
 
 // ProcessDeploymentResult determines if the deployment was successful and updates the appropriate
@@ -484,4 +519,27 @@ func isArgoUnavailable(err error) bool {
 	// ArgoCD responded with a server error: the app state is unknown.
 	var apiErr *ArgoAPIError
 	return errors.As(err, &apiErr) && apiErr.StatusCode >= 500
+}
+
+// resolvedDelay is the interval between rollout polls, falling back to the
+// package default when the instance was configured without one.
+func (monitor *DeploymentMonitor) resolvedDelay() time.Duration {
+	if monitor.retryDelay <= 0 {
+		return ArgoSyncRetryDelay
+	}
+
+	return monitor.retryDelay
+}
+
+// resolvedDefaultAttempts is how many polls a task without its own timeout is
+// given, falling back to whatever reproduces the historical retry window at the
+// supplied delay.
+func (monitor *DeploymentMonitor) resolvedDefaultAttempts(delay time.Duration) uint {
+	if monitor.defaultAttempts != 0 {
+		return monitor.defaultAttempts
+	}
+
+	fallbackWindow := time.Duration(legacyRetryIntervals) * ArgoSyncRetryDelay
+
+	return helpers.SafeIntToUint(helpers.CeilDivDuration(fallbackWindow, delay))
 }

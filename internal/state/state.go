@@ -62,6 +62,23 @@ type TaskRepository interface {
 	CancelInProgressTasks(app string, images []models.Image, reason string, newTaskValidated bool) (int64, error)
 	Check() bool
 	ProcessObsoleteTasks(retryTimes uint)
+
+	// ClaimTask records this instance as the one monitoring the task, for as long
+	// as it keeps renewing the claim.
+	ClaimTask(id string) error
+	// RenewLease extends this instance's claim and reports whether it still holds
+	// it. A false return means another replica took the task over, and the caller
+	// must stop without writing a status.
+	RenewLease(id string) (bool, error)
+	// ReleaseOwnedLeases expires every claim this instance holds, so the tasks it
+	// was monitoring are taken over immediately instead of after the lease lapses,
+	// and reports how many were given up.
+	ReleaseOwnedLeases() (int64, error)
+	// ClaimExpiredTasks takes over up to limit in-progress tasks whose lease has
+	// lapsed, and returns them ready to be monitored again. The returned tasks
+	// carry the authority and overrides the rollout acts on, which the API-facing
+	// tasks deliberately do not.
+	ClaimExpiredTasks(limit int) ([]models.Task, error)
 }
 
 // NewState returns a task repository for the configured StateType, already connected.
