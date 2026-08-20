@@ -72,7 +72,7 @@ func newArgoAPI(ctrl *gomock.Controller) *mocks.MockArgoApiInterface {
 
 func newMetrics(ctrl *gomock.Controller) *mocks.MockMetricsInterface {
 	metrics := mocks.NewMockMetricsInterface(ctrl)
-	metrics.EXPECT().AddProcessedDeployment(gomock.Any()).AnyTimes()
+	metrics.EXPECT().AddAcceptedDeployment().AnyTimes()
 	metrics.EXPECT().AddFailedDeployment(gomock.Any()).AnyTimes()
 	metrics.EXPECT().ResetFailedDeployment(gomock.Any()).AnyTimes()
 	metrics.EXPECT().SetArgoUnavailable(gomock.Any()).AnyTimes()
@@ -2503,7 +2503,7 @@ func TestAddTaskResolvesTheDeploymentWindow(t *testing.T) {
 			stateMock.EXPECT().CancelInProgressTasks(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 				Return(int64(0), nil).AnyTimes()
 			stateMock.EXPECT().ClaimTask(gomock.Any()).Return(nil).AnyTimes()
-			metricsMock.EXPECT().AddProcessedDeployment(gomock.Any()).AnyTimes()
+			metricsMock.EXPECT().AddAcceptedDeployment().AnyTimes()
 
 			var stored models.Task
 			stateMock.EXPECT().AddTask(gomock.Any()).DoAndReturn(func(task models.Task) (*models.Task, error) {

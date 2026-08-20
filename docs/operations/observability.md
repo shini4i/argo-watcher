@@ -11,25 +11,27 @@ scrape_configs:
 
 ## Metrics
 
-Twelve metrics, all defined in [`internal/prometheus/metrics.go`](https://github.com/shini4i/argo-watcher/blob/main/internal/prometheus/metrics.go), plus the standard Go runtime ones (`go_*`, `process_*`).
+Fourteen metrics, all defined in [`internal/prometheus/metrics.go`](https://github.com/shini4i/argo-watcher/blob/main/internal/prometheus/metrics.go), plus the standard Go runtime ones (`go_*`, `process_*`).
 
 | Metric | Type | Labels | Description |
 |---|---|---|---|
-| `failed_deployment` | gauge | `app` | Failed deployments since that application's last success; reset to 0 on success. Includes deployments aborted because Argo CD was unreachable. |
-| `processed_deployments` | counter | `app` | Deployments processed since startup. |
+| `failed_deployment` | gauge | `app` | Failed deployments of a confirmed application since its last success; reset to 0 on success. Includes deployments aborted because Argo CD became unreachable mid-rollout. |
+| `processed_deployments` | counter | `app` | Deployments taken into monitoring, counted once Argo CD confirmed the application exists. |
+| `accepted_deployments` | counter | | Deployments accepted, counted at submission — before Argo CD is asked anything. |
+| `unconfirmed_deployment_failures` | counter | | Deployments that failed before Argo CD confirmed the application: a missing or misspelled name, Argo CD unreachable, or a resumed task whose window had already elapsed. |
 | `in_progress_tasks` | gauge | | Tasks between submission and a terminal state. |
 | `argocd_unavailable` | gauge | | `1` while the Argo CD API is unreachable. |
 | `state_unavailable` | gauge | | `1` while the state backend (database) is unreachable. |
 | `deployment_duration_seconds` | histogram | `app` | End-to-end time of a **successful** deployment, from the start of monitoring to `deployed`. Failures are excluded: their duration is just the timeout. |
-| `argocd_refresh_duration_seconds` | histogram | `app` | Argo CD application refresh requests. Recorded only when the status check asks for a refresh. |
+| `argocd_refresh_duration_seconds` | histogram | `app` | Argo CD application refresh requests. Recorded only when the status check asks for a refresh, and — for a deployment's first request — only when it succeeded. |
 | `gitops_writeback_duration_seconds` | histogram | `app` | Time the write-back held the per-repo lock: clone, commit, push, retries and backoff. |
 | `gitops_lock_wait_duration_seconds` | histogram | `app` | Time spent waiting for that lock. High values mean write-backs are queued behind each other. |
 | `gitops_batch_size` | histogram | | Applications coalesced into one batch flush. Only with `GIT_BATCH_WRITEBACK`; clustered at `1` means no contention to collapse. |
 | `gitops_writeback_skipped_unvalidated` | counter | `app` | Deployments of a `argo-watcher/managed` application whose task carried no valid credential, so the tag was never committed. Any non-zero value is a misconfiguration. |
 | `unauthenticated_reads` | counter | `path`, `app` | Reads served without a credential on the endpoints left open while OIDC is enabled (currently `GET /api/v1/tasks/{id}`). |
 
-!!! note "Why some series say `app="unknown"`"
-    `POST /api/v1/tasks` accepts a task without a credential, and the application name is free text — so a name arriving that way is labelled `unknown` rather than becoming its own series, which would let anyone reaching the endpoint create unbounded series. This affects `processed_deployments`, `unauthenticated_reads`, and `failed_deployment` when the failure precedes Argo CD confirming the application exists. Deployments submitted with a credential are labelled with their real application throughout.
+!!! note "Why some deployments are counted without an `app` label"
+    `POST /api/v1/tasks` accepts a task without a credential, and the application name is free text — so nothing may become a label value until Argo CD has answered for that application. A deployment is therefore counted twice on its way through: once in `accepted_deployments` at submission, and once in `processed_deployments{app}` when Argo CD confirms the app. The gap between the two is mostly deployments naming an application Argo CD never confirmed — read it as an upper bound, since a deployment superseded before its first check, or one whose replica died before it, widens the gap as well. `unconfirmed_deployment_failures` counts the failures on that side of the confirmation, `unauthenticated_reads` still labels a read that did not resolve to a task as `app="unknown"`.
 
     The same openness means anyone who can reach the endpoint and knows a managed application's name can raise `gitops_writeback_skipped_unvalidated`. Treat a rise as "investigate", not automatically "our pipeline regressed".
 
@@ -80,6 +82,20 @@ groups:
           summary: "{{ $labels.app }} has failed {{ $value }} times in a row"
           description: Check the most recent task in the Web UI for the failure reason.
 
+      - alert: ArgoWatcherUnconfirmedDeployments
+        expr: increase(unconfirmed_deployment_failures[1h]) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Deployments are failing before Argo CD confirms the application
+          description: |
+            The app name resolves to no Argo CD application (a typo, or a renamed
+            app a pipeline still deploys), Argo CD was unreachable when the
+            deployment started, or a deployment was picked up from a dead replica
+            after its window had elapsed. The counter names no app by design — the
+            failed tasks in the Web UI do.
+
       - alert: ArgoWatcherTaskBacklog
         expr: sum(in_progress_tasks) > 50
         for: 15m
@@ -129,7 +145,7 @@ groups:
 
 ## Example dashboard
 
-A ready-made Grafana dashboard lives at [`monitoring/grafana/dashboards/argo-watcher.json`](https://github.com/shini4i/argo-watcher/blob/main/monitoring/grafana/dashboards/argo-watcher.json). Its **Overview** row covers availability, in-progress tasks, deployment counts and failing apps; the **Per-Application Breakdown** row is driven by an `Application` template variable and shows that app's deployment counts, failures, end-to-end duration, and the refresh / write-back / lock-wait percentiles. `gitops_batch_size` and `state_unavailable` have no panel yet.
+A ready-made Grafana dashboard lives at [`monitoring/grafana/dashboards/argo-watcher.json`](https://github.com/shini4i/argo-watcher/blob/main/monitoring/grafana/dashboards/argo-watcher.json). Its **Overview** row covers availability, in-progress tasks, deployment counts and failing apps; the **Per-Application Breakdown** row is driven by an `Application` template variable and shows that app's deployment counts, failures, end-to-end duration, and the refresh / write-back / lock-wait percentiles. `gitops_batch_size`, `state_unavailable`, `accepted_deployments` and `unconfirmed_deployment_failures` have no panel yet.
 
 Import it through **Dashboards → New → Import**, or run it next to the dev server:
 
@@ -149,6 +165,11 @@ The **Git Write-back Duration** and **Git Lock Wait Duration** panels only fill 
 sum(in_progress_tasks)                          # live workload
 topk(5, max by (app) (failed_deployment))       # which apps need attention
 sum(rate(processed_deployments[1h])) by (app)    # deployment frequency per app
+
+# Upper bound on submissions that never reached an Argo CD application — typos and
+# renamed apps, plus deployments superseded before the first check or left behind by
+# a replica that died.
+sum(increase(accepted_deployments[1h])) - sum(increase(processed_deployments[1h]))
 ```
 
 ## Tracking the read-auth migration

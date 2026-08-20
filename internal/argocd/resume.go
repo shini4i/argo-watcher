@@ -70,9 +70,12 @@ func (monitor *DeploymentMonitor) remainingWindow(task models.Task, now time.Tim
 }
 
 // abortStaleTask records the terminal status for a task that outlived its
-// rollout window while unattended.
+// rollout window while unattended. The outcome is counted without an app label:
+// this replica never asked ArgoCD about the application, and whether the replica
+// that accepted the deployment got that far cannot be known here, so the name is
+// only as trustworthy as the submission that supplied it (issue #552).
 func (monitor *DeploymentMonitor) abortStaleTask(task *models.Task) {
-	monitor.argo.metrics.AddFailedDeployment(task.MetricApp())
+	monitor.argo.metrics.AddUnconfirmedFailure()
 
 	if err := monitor.argo.State.SetTaskStatus(task.Id, models.StatusAborted, StaleResumedTaskReason); err != nil {
 		slog.Error("Failed to change task status", "error", err, "id", task.Id)

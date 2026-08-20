@@ -142,7 +142,7 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Total deployments processed since startup (processed_deployments counter, summed over all apps).",
+      "description": "Deployments Argo CD confirmed and argo-watcher then monitored, since startup (processed_deployments counter, summed over all apps). Submissions that never reached a confirmed application are not here — see accepted_deployments.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },

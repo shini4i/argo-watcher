@@ -15,7 +15,7 @@ func TestMetrics_AddProcessedDeployment(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	m := NewMetrics(reg)
 	expectedMetric := `
-		# HELP processed_deployments The amount of deployment processed since startup.
+		# HELP processed_deployments Deployments taken into monitoring, counted once ArgoCD confirmed the application exists.
 		# TYPE processed_deployments counter
 		processed_deployments{app="test-app"} 1
 	`
@@ -188,4 +188,58 @@ func TestMetrics_InProgressTasks(t *testing.T) {
 
 	m.RemoveInProgressTask()
 	assert.Equal(t, float64(0), testutil.ToFloat64(m.InProgressTasks))
+}
+
+func TestMetrics_AddAcceptedDeployment(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := NewMetrics(reg)
+	expectedMetric := `
+		# HELP accepted_deployments Deployments accepted for processing, counted before ArgoCD is asked about the application.
+		# TYPE accepted_deployments counter
+		accepted_deployments 1
+	`
+
+	m.AddAcceptedDeployment()
+
+	// Collected through the registry so this also fails if the collector was never
+	// handed to MustRegister, in which case it would never be scraped.
+	err := testutil.CollectAndCompare(reg, strings.NewReader(expectedMetric), "accepted_deployments")
+	assert.NoError(t, err)
+}
+
+func TestMetrics_AddUnconfirmedFailure(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := NewMetrics(reg)
+	expectedMetric := `
+		# HELP unconfirmed_deployment_failures Deployments that failed before ArgoCD confirmed the application exists.
+		# TYPE unconfirmed_deployment_failures counter
+		unconfirmed_deployment_failures 1
+	`
+
+	m.AddUnconfirmedFailure()
+
+	err := testutil.CollectAndCompare(reg, strings.NewReader(expectedMetric), "unconfirmed_deployment_failures")
+	assert.NoError(t, err)
+}
+
+// TestMetrics_LabellessCountersStartAtZero pins that both labelless counters are
+// exported before anything increments them. The e2e soak gates on the absence of
+// unconfirmed_deployment_failures to catch a rename or a dropped registration
+// (test/e2e/scripts/collect.sh), which only works while a fresh process scrapes it
+// as an explicit 0.
+func TestMetrics_LabellessCountersStartAtZero(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	NewMetrics(reg)
+	expectedMetric := `
+		# HELP accepted_deployments Deployments accepted for processing, counted before ArgoCD is asked about the application.
+		# TYPE accepted_deployments counter
+		accepted_deployments 0
+		# HELP unconfirmed_deployment_failures Deployments that failed before ArgoCD confirmed the application exists.
+		# TYPE unconfirmed_deployment_failures counter
+		unconfirmed_deployment_failures 0
+	`
+
+	err := testutil.CollectAndCompare(reg, strings.NewReader(expectedMetric),
+		"accepted_deployments", "unconfirmed_deployment_failures")
+	assert.NoError(t, err)
 }
