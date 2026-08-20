@@ -54,11 +54,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The purge runs with the existing hourly obsolete-task sweep and needs no migration, so
   replicas on either version coexist during a rolling upgrade. Rows go in batches of
   1 000, which keeps the first pass over years of history off the table's locks. A task
-  still in progress when the delete runs is never removed — one may be actively monitored
-  by a replica — though the same pass first marks in-progress tasks older than an hour as
-  aborted, which makes a long-abandoned rollout eligible within that pass. The setting
-  applies to `STATE_TYPE=postgres` only; with the in-memory backend it is inert and the
-  server says so at startup.
+  still in progress is never removed, nor is one under an unexpired lease whatever its
+  status: the same pass marks in-progress tasks older than an hour as aborted, and without
+  that second guard a rollout a replica claimed and resumed after an outage would be
+  deleted while it was still being finished. Such a task is collected by a later sweep,
+  once its lease lapses. The setting applies to `STATE_TYPE=postgres` only; with the
+  in-memory backend it is inert and the server says so at startup.
 
 ### Changed
 

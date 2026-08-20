@@ -578,27 +578,35 @@ func TestPostgresState_TaskRetentionWindowBoundary(t *testing.T) {
 	assert.True(t, env.taskExists(t, inside.Id), "a task one minute inside the window is kept")
 }
 
-// The sweep aborts in-progress tasks older than an hour before deleting expired
-// ones, so a rollout abandoned for longer than the retention window is aborted
-// and removed by the same pass. Only a task still in progress when the delete
-// runs is protected.
-func TestPostgresState_TaskRetentionRemovesTaskAbortedByTheSamePass(t *testing.T) {
+// A task the sweep aborts for staleness is past the window and collected by the
+// same pass — unless a replica still holds it. This pins the lease guard: the
+// two paths differ only in whether the claim is live.
+func TestPostgresState_TaskRetentionSparesTaskUnderActiveLease(t *testing.T) {
 	env := newPostgresTestEnv(t, withRetention(30))
 
-	abandoned := env.addAgedTask(t, "Abandoned", models.StatusInProgressMessage, 400*day)
-	require.NoError(t, env.state.ClaimTask(abandoned.Id))
+	// The HA case: a replica returning after an outage claims a rollout abandoned
+	// long ago and resumes monitoring it. Its creation timestamp is past the
+	// window and the sweep's earlier step marks it aborted for staleness, so
+	// without the lease guard this pass would delete the row the replica is still
+	// working on — leaving it unable to record the outcome.
+	resumed := env.addAgedTask(t, "Resumed", models.StatusInProgressMessage, 400*day)
+	require.NoError(t, env.state.ClaimTask(resumed.Id))
 
 	env.state.ProcessObsoleteTasks(1)
 
-	assert.False(t, env.taskExists(t, abandoned.Id),
-		"a task aborted for staleness by this pass is past the window and removed by it")
+	require.True(t, env.taskExists(t, resumed.Id),
+		"a task under an unexpired lease must survive, however old it is")
 
-	// The replica that was monitoring it must learn it no longer holds the task
-	// rather than fail: RenewLease reports ownership, and a row that is gone is a
-	// task this instance no longer owns.
-	held, err := env.state.RenewLease(abandoned.Id)
+	held, err := env.state.RenewLease(resumed.Id)
 	require.NoError(t, err)
-	assert.False(t, held)
+	assert.True(t, held, "the replica monitoring it must still hold its claim")
+
+	// Once the claim lapses the row is nobody's, and the next sweep collects it.
+	env.expireLease(t, resumed.Id)
+	require.NoError(t, env.state.deleteExpiredTasks())
+
+	assert.False(t, env.taskExists(t, resumed.Id),
+		"a lapsed lease no longer protects a task past the window")
 }
 
 // Every replica runs the sweep, so sweeps contend for the same rows — something
@@ -668,4 +676,18 @@ func TestPostgresState_TaskRetentionSweepErrorNamesTheStep(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "deleting tasks past the 30 day retention window")
 	assert.NotNil(t, errors.Unwrap(err), "the driver cause must stay wrapped with %w")
+}
+
+// The other half of the lease guard: an abandoned rollout nobody claimed is
+// aborted for staleness and collected by that same pass, which is what the
+// retention step running last buys. Only a live claim defers it.
+func TestPostgresState_TaskRetentionCollectsUnleasedTaskAbortedByTheSamePass(t *testing.T) {
+	env := newPostgresTestEnv(t, withRetention(30))
+
+	unclaimed := env.addAgedTask(t, "Unclaimed", models.StatusInProgressMessage, 400*day)
+
+	env.state.ProcessObsoleteTasks(1)
+
+	assert.False(t, env.taskExists(t, unclaimed.Id),
+		"with no replica holding it, a stale task is aborted and removed by the one sweep")
 }
