@@ -351,7 +351,7 @@
           }
         ]
       },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 13 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 13 },
       "id": 7,
       "options": {
         "cellHeight": "sm",
@@ -380,56 +380,6 @@
       ],
       "title": "Failing Applications",
       "type": "table"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "description": "How the deployments submitted in the selected time range ended up. Both slices are increases of counters over the same window, so the ratio is meaningful: \"succeeded\" is deployment_duration_seconds_count, which only observes a deployment reaching the deployed state, and \"did not succeed\" is the rest of processed_deployments. That remainder is not only failures — it also holds aborted, cancelled and superseded tasks, plus any deployment still in flight when the window ended, so expect a small non-zero slice on a healthy instance. There is no counter of failed deployments to chart instead; failed_deployment is a gauge that resets on success.",
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": { "hideFrom": { "legend": false, "tooltip": false, "viz": false } },
-          "mappings": [],
-          "unit": "short"
-        },
-        "overrides": [
-          {
-            "matcher": { "id": "byName", "options": "succeeded" },
-            "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }]
-          },
-          {
-            "matcher": { "id": "byName", "options": "did not succeed" },
-            "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }]
-          }
-        ]
-      },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 13 },
-      "id": 103,
-      "options": {
-        "displayLabels": ["name", "value", "percent"],
-        "legend": { "showLegend": false },
-        "pieType": "donut",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-        "tooltip": { "hideZeros": false, "mode": "single", "sort": "none" }
-      },
-      "pluginVersion": "12.3.8",
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "round(sum(increase(deployment_duration_seconds_count[$__range])))",
-          "instant": true,
-          "legendFormat": "succeeded",
-          "refId": "A"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "clamp_min(round(sum(increase(processed_deployments[$__range]))) - round(sum(increase(deployment_duration_seconds_count[$__range]))), 0)",
-          "instant": true,
-          "legendFormat": "did not succeed",
-          "refId": "B"
-        }
-      ],
-      "title": "Deployment Outcomes (selected range)",
-      "type": "piechart"
     },
     {
       "collapsed": false,
@@ -763,7 +713,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 13 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 13 },
       "id": 102,
       "options": {
         "displayLabels": ["name", "value", "percent"],

@@ -133,7 +133,7 @@ groups:
 
 ## Example dashboard
 
-A ready-made Grafana dashboard lives at [`monitoring/grafana/dashboards/argo-watcher.json`](https://github.com/shini4i/argo-watcher/blob/main/monitoring/grafana/dashboards/argo-watcher.json). Its **Overview** row covers availability, in-progress tasks, deployment counts and failing apps, plus two donuts splitting the selected range by outcome and by whether the submitting client was credentialled; the **Per-Application Breakdown** row is driven by an `Application` template variable and shows that app's deployment counts, failures, end-to-end duration, and the refresh / write-back / lock-wait percentiles. `gitops_batch_size` and `state_unavailable` have no panel yet.
+A ready-made Grafana dashboard lives at [`monitoring/grafana/dashboards/argo-watcher.json`](https://github.com/shini4i/argo-watcher/blob/main/monitoring/grafana/dashboards/argo-watcher.json). Its **Overview** row covers availability, in-progress tasks, deployment counts and failing apps, plus a donut splitting processed deployments by whether the submitting client was credentialled; the **Per-Application Breakdown** row is driven by an `Application` template variable and shows that app's deployment counts, failures, end-to-end duration, and the refresh / write-back / lock-wait percentiles. `gitops_batch_size` and `state_unavailable` have no panel yet.
 
 Import it through **Dashboards → New → Import** — a **Data source** picker at the top of the dashboard selects which Prometheus to query, so no datasource UID has to match. Or run it next to the dev server:
 
