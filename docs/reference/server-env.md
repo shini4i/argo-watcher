@@ -58,8 +58,12 @@ Enabling OIDC also makes the Web UI's read endpoints require a credential — se
 | `LOCKDOWN_SCHEDULE` | Recurring deploy freeze, e.g. `Fri 20:00 - Mon 08:00` | | No |
 | `WEBHOOK_ENABLED` | Enable webhook notifications | `false` | No |
 | `MATTERMOST_ENABLED` | Enable Mattermost notifications | `false` | No |
+| `TASK_RETENTION_ENABLED` | Delete finished tasks older than the retention window | `false` | No |
+| `TASK_RETENTION_DAYS` | Retention window in days (1–36500) | `365` | No |
 
 The remaining `WEBHOOK_*` and `MATTERMOST_*` variables are documented in [Notifications](../guides/notifications.md); the schedule format in [Deployment Lock](../guides/deployment-lock.md).
+
+Retention deletes deployment history permanently and only applies to `STATE_TYPE=postgres` — see [Retention](../operations/database.md#retention).
 
 ## Database
 

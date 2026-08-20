@@ -43,6 +43,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the client was pointed at. A client from this release on also logs one warning naming
   both hosts when that happens, rather than dropping the credential silently.
 
+- Deployment history in PostgreSQL can now be pruned automatically. Setting
+  `TASK_RETENTION_ENABLED=true` deletes finished tasks created longer ago than
+  `TASK_RETENTION_DAYS` (365 by default, accepted between 1 and 36500); a window outside
+  that range fails startup naming the setting rather than erroring once an hour inside
+  the sweep. Until now every task was kept forever and trimming the table meant doing it
+  by hand, so the feature is off by default and deletion is irreversible — take a dump
+  before the first sweep if the history is an audit record.
+
+  The purge runs with the existing hourly obsolete-task sweep and needs no migration, so
+  replicas on either version coexist during a rolling upgrade. Rows go in batches of
+  1 000, which keeps the first pass over years of history off the table's locks. A task
+  still in progress when the delete runs is never removed — one may be actively monitored
+  by a replica — though the same pass first marks in-progress tasks older than an hour as
+  aborted, which makes a long-abandoned rollout eligible within that pass. The setting
+  applies to `STATE_TYPE=postgres` only; with the in-memory backend it is inert and the
+  server says so at startup.
+
 ### Changed
 
 - The HTTP server now routes with `chi` instead of `gin`. Endpoints, status codes,

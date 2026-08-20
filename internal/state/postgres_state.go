@@ -21,11 +21,20 @@ import (
 
 const whereStatusEquals = "status = ?"
 
+// retentionDeleteBatchSize is how many expired tasks one DELETE removes. It
+// keeps each statement short enough not to hold locks or grow a transaction for
+// long, while still draining a large backlog in few enough round trips.
+const retentionDeleteBatchSize = 1000
+
 type PostgresState struct {
 	orm *gorm.DB
 	// ownerId identifies this process as the holder of task leases. It is unique
 	// per process, so a restarted pod never inherits its predecessor's claims.
 	ownerId string
+	// retentionEnabled and retentionDays configure the removal of finished tasks
+	// older than the window, performed by the obsolete-task sweep.
+	retentionEnabled bool
+	retentionDays    int
 }
 
 var _ TaskRepository = (*PostgresState)(nil)
@@ -48,6 +57,12 @@ func (state *PostgresState) Connect(serverConfig *config.ServerConfig) error {
 	}
 	state.ownerId = ownerId
 	slog.Debug("Task lease owner id assigned", "owner_id", ownerId)
+
+	state.retentionEnabled = serverConfig.TaskRetentionEnabled
+	state.retentionDays = serverConfig.TaskRetentionDays
+	if state.retentionEnabled {
+		slog.Info("Task retention is enabled", "retention_days", state.retentionDays)
+	}
 
 	return nil
 }
@@ -255,6 +270,60 @@ func (state *PostgresState) doProcessPostgresObsoleteTasks() error {
 		StatusReason: sql.NullString{String: StaleTaskAbortReason, Valid: true},
 	}).Error; err != nil {
 		return err
+	}
+
+	// Runs last so a task this same pass aborted for staleness is already eligible,
+	// which only matters for a retention window short enough to overlap it.
+	if err := state.deleteExpiredTasks(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// deleteExpiredTasks removes finished tasks created longer ago than the
+// retention window, and does nothing when retention is disabled.
+//
+// Rows are deleted in batches instead of one statement: the first sweep after
+// enabling retention can face a table holding every deployment ever made, and a
+// single DELETE over it would hold row locks and bloat one transaction for as
+// long as it ran. SKIP LOCKED lets replicas sweeping concurrently step over each
+// other's batches rather than queue behind them.
+//
+// In-progress tasks are never deleted, whatever their age: one may be claimed
+// and actively monitored by a replica, which would then write a status for a row
+// that no longer exists.
+func (state *PostgresState) deleteExpiredTasks() error {
+	if !state.retentionEnabled {
+		return nil
+	}
+
+	slog.Debug("Removing tasks older than the retention window...", "retention_days", state.retentionDays)
+
+	var deleted int64
+	for {
+		result := state.orm.Exec(`
+			DELETE FROM tasks
+			WHERE id IN (
+				SELECT id FROM tasks
+				WHERE created < now() - make_interval(days => ?)
+					AND status <> ?
+				ORDER BY created
+				LIMIT ?
+				FOR UPDATE SKIP LOCKED
+			)`, state.retentionDays, models.StatusInProgressMessage, retentionDeleteBatchSize)
+		if result.Error != nil {
+			return result.Error
+		}
+
+		deleted += result.RowsAffected
+		if result.RowsAffected < retentionDeleteBatchSize {
+			break
+		}
+	}
+
+	if deleted > 0 {
+		slog.Info("Removed tasks older than the retention window", "count", deleted, "retention_days", state.retentionDays)
 	}
 
 	return nil

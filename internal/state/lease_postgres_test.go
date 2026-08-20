@@ -18,7 +18,15 @@ func (env *postgresTestEnv) secondReplica(t *testing.T) *PostgresState {
 	ownerId, err := newOwnerId()
 	require.NoError(t, err)
 
-	return &PostgresState{orm: env.state.orm, ownerId: ownerId}
+	// Retention is copied from the environment: replicas of one deployment run the
+	// same configuration, and a second replica left with it off would let a
+	// concurrency test pass without ever sweeping.
+	return &PostgresState{
+		orm:              env.state.orm,
+		ownerId:          ownerId,
+		retentionEnabled: env.state.retentionEnabled,
+		retentionDays:    env.state.retentionDays,
+	}
 }
 
 // expireLease backdates a task's lease so a sweep treats it as abandoned,
