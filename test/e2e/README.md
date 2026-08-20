@@ -114,7 +114,7 @@ again instead of re-establishing a forward.
 | `fixtures/nodeports/` | fixed NodePort Services for the four components phases talk to from the host (one per file, matching `fixtures/postgres/`) |
 | `phases.bats` | the per-release phase suite: one test per phase, with the ordering constraints |
 | `ports.bats` | offline assertions on the kind-config ↔ nodeports port coupling |
-| `scripts/lib.sh` | shared phase helpers: endpoint URLs, `retry`/`wait_*`, `req`, `run_client`, `metric_sum`, `helm_apply_aw`, `ok`/`bad`/`phase_end` |
+| `scripts/lib.sh` | shared phase helpers: endpoint URLs, `retry`/`wait_*`, `req`, `run_client`, `metric_sum`/`metric_label_sum`, `helm_apply_aw`, `ok`/`bad`/`phase_end` |
 | `scripts/lib.bats` | unit tests for lib.sh's pure text-processing helpers (no cluster needed) |
 | `scripts/soak.sh` | the git-conflict soak: competitor + concurrent deploys, then the `collect.sh` gates |
 | `scripts/verify.sh` | post-`up` gate: readyz 200 and `argocd_unavailable` 0 |

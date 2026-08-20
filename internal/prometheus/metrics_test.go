@@ -9,21 +9,42 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/shini4i/argo-watcher/internal/models"
 )
 
-func TestMetrics_AddProcessedDeployment(t *testing.T) {
+// The result strings are spelled out rather than taken from models.Status*: they are a
+// contract read outside Go — the documented PromQL, the Grafana dashboard's byName
+// overrides, and the e2e metric gates — so a renamed constant must fail here.
+func TestMetrics_AddDeploymentOutcome(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	m := NewMetrics(reg)
 	expectedMetric := `
-		# HELP processed_deployments The amount of deployment processed since startup.
-		# TYPE processed_deployments counter
-		processed_deployments{app="test-app"} 1
+		# HELP deployments_total Deployments that reached a terminal state for an application ArgoCD confirmed, by outcome.
+		# TYPE deployments_total counter
+		deployments_total{app="test-app",result="aborted"} 1
+		deployments_total{app="test-app",result="app not found"} 1
+		deployments_total{app="test-app",result="cancelled"} 1
+		deployments_total{app="test-app",result="deployed"} 2
+		deployments_total{app="test-app",result="failed"} 1
 	`
 
-	m.AddProcessedDeployment("test-app")
+	for _, result := range []string{"deployed", "deployed", "failed", "aborted", "app not found", "cancelled"} {
+		m.AddDeploymentOutcome("test-app", result)
+	}
 
-	err := testutil.CollectAndCompare(m.ProcessedDeployments, strings.NewReader(expectedMetric))
+	err := testutil.CollectAndCompare(reg, strings.NewReader(expectedMetric), "deployments_total")
 	assert.NoError(t, err)
+}
+
+// The label values above are only a contract if they are what the rollout actually
+// records, which is what these constants are.
+func TestTerminalStatusConstantsMatchResultLabels(t *testing.T) {
+	assert.Equal(t, "deployed", models.StatusDeployedMessage)
+	assert.Equal(t, "failed", models.StatusFailedMessage)
+	assert.Equal(t, "aborted", models.StatusAborted)
+	assert.Equal(t, "app not found", models.StatusAppNotFoundMessage)
+	assert.Equal(t, "cancelled", models.StatusCancelledMessage)
 }
 
 func TestMetrics_AddFailedDeployment(t *testing.T) {
@@ -188,4 +209,58 @@ func TestMetrics_InProgressTasks(t *testing.T) {
 
 	m.RemoveInProgressTask()
 	assert.Equal(t, float64(0), testutil.ToFloat64(m.InProgressTasks))
+}
+
+func TestMetrics_AddAcceptedDeployment(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := NewMetrics(reg)
+	expectedMetric := `
+		# HELP accepted_deployments Deployments accepted for processing, counted before ArgoCD is asked about the application.
+		# TYPE accepted_deployments counter
+		accepted_deployments 1
+	`
+
+	m.AddAcceptedDeployment()
+
+	// Collected through the registry so this also fails if the collector was never
+	// handed to MustRegister, in which case it would never be scraped.
+	err := testutil.CollectAndCompare(reg, strings.NewReader(expectedMetric), "accepted_deployments")
+	assert.NoError(t, err)
+}
+
+func TestMetrics_AddUnconfirmedFailure(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := NewMetrics(reg)
+	expectedMetric := `
+		# HELP unconfirmed_deployment_failures Deployments that failed before ArgoCD confirmed the application exists.
+		# TYPE unconfirmed_deployment_failures counter
+		unconfirmed_deployment_failures 1
+	`
+
+	m.AddUnconfirmedFailure()
+
+	err := testutil.CollectAndCompare(reg, strings.NewReader(expectedMetric), "unconfirmed_deployment_failures")
+	assert.NoError(t, err)
+}
+
+// TestMetrics_LabellessCountersStartAtZero pins that both labelless counters are
+// exported before anything increments them. The e2e soak gates on the absence of
+// unconfirmed_deployment_failures to catch a rename or a dropped registration
+// (test/e2e/scripts/collect.sh), which only works while a fresh process scrapes it
+// as an explicit 0.
+func TestMetrics_LabellessCountersStartAtZero(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	NewMetrics(reg)
+	expectedMetric := `
+		# HELP accepted_deployments Deployments accepted for processing, counted before ArgoCD is asked about the application.
+		# TYPE accepted_deployments counter
+		accepted_deployments 0
+		# HELP unconfirmed_deployment_failures Deployments that failed before ArgoCD confirmed the application exists.
+		# TYPE unconfirmed_deployment_failures counter
+		unconfirmed_deployment_failures 0
+	`
+
+	err := testutil.CollectAndCompare(reg, strings.NewReader(expectedMetric),
+		"accepted_deployments", "unconfirmed_deployment_failures")
+	assert.NoError(t, err)
 }

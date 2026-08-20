@@ -7,7 +7,9 @@ import (
 // MetricsInterface defines the interface for the metrics service. This is required
 // for dependency injection and mocking in tests.
 type MetricsInterface interface {
-	AddProcessedDeployment(app string)
+	AddAcceptedDeployment()
+	AddDeploymentOutcome(app, result string)
+	AddUnconfirmedFailure()
 	AddFailedDeployment(app string)
 	ResetFailedDeployment(app string)
 	SetArgoUnavailable(unavailable bool)
@@ -25,7 +27,9 @@ type MetricsInterface interface {
 
 type Metrics struct {
 	FailedDeployment     *prometheus.GaugeVec
-	ProcessedDeployments *prometheus.CounterVec
+	DeploymentsTotal     *prometheus.CounterVec
+	AcceptedDeployments  prometheus.Counter
+	UnconfirmedFailures  prometheus.Counter
 	ArgocdUnavailable    prometheus.Gauge
 	StateUnavailable     prometheus.Gauge
 	InProgressTasks      prometheus.Gauge
@@ -41,14 +45,35 @@ type Metrics struct {
 // NewMetrics registers the collectors with the provided Registerer.
 func NewMetrics(reg prometheus.Registerer) *Metrics {
 	m := &Metrics{
+		// FailedDeployment records failures of an application ArgoCD confirmed; a deployment
+		// that failed before that is counted by UnconfirmedFailures instead, so the gauge is
+		// only ever raised under a name a later success can reset.
 		FailedDeployment: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "failed_deployment",
 			Help: "Per application failed deployment count before first success.",
 		}, []string{"app"}),
-		ProcessedDeployments: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "processed_deployments",
-			Help: "The amount of deployment processed since startup.",
-		}, []string{"app"}),
+		// Counted once per deployment, only for an application ArgoCD confirmed — which is
+		// what makes the app name safe as a label (issue #552). See UnconfirmedFailures.
+		DeploymentsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "deployments_total",
+			Help: "Deployments that reached a terminal state for an application ArgoCD confirmed, by outcome.",
+		}, []string{"app", "result"}),
+		// AcceptedDeployments counts every deployment accepted, recorded when the task is
+		// created and therefore before ArgoCD is asked anything. It carries no app label
+		// because at that point the name is only what the submission claimed, and labelling
+		// it would let anyone reaching the endpoint mint a permanent series.
+		AcceptedDeployments: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "accepted_deployments",
+			Help: "Deployments accepted for processing, counted before ArgoCD is asked about the application.",
+		}),
+		// UnconfirmedFailures counts deployments that ended before ArgoCD confirmed the
+		// application — a missing or misspelled name, or ArgoCD unreachable — and resumed
+		// tasks whose window had already elapsed. Labelless for the same reason as
+		// AcceptedDeployments; the per-app counterpart is FailedDeployment.
+		UnconfirmedFailures: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "unconfirmed_deployment_failures",
+			Help: "Deployments that failed before ArgoCD confirmed the application exists.",
+		}),
 		ArgocdUnavailable: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "argocd_unavailable",
 			Help: "Whether the ArgoCD API is unreachable (1) or reachable (0) for argo-watcher. Independent of the state backend (see state_unavailable).",
@@ -128,13 +153,27 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		}, []string{"app"}),
 	}
 
-	reg.MustRegister(m.FailedDeployment, m.ProcessedDeployments, m.ArgocdUnavailable, m.StateUnavailable, m.InProgressTasks, m.RefreshDuration, m.GitWritebackDuration, m.GitLockWaitDuration, m.DeploymentDuration, m.GitBatchSize, m.UnauthenticatedReads, m.SkippedWritebacks)
+	reg.MustRegister(m.FailedDeployment, m.DeploymentsTotal, m.AcceptedDeployments, m.UnconfirmedFailures, m.ArgocdUnavailable, m.StateUnavailable, m.InProgressTasks, m.RefreshDuration, m.GitWritebackDuration, m.GitLockWaitDuration, m.DeploymentDuration, m.GitBatchSize, m.UnauthenticatedReads, m.SkippedWritebacks)
 
 	return m
 }
 
-func (m *Metrics) AddProcessedDeployment(app string) {
-	m.ProcessedDeployments.WithLabelValues(app).Inc()
+// AddDeploymentOutcome increments DeploymentsTotal for app under the terminal status
+// result. Call once per deployment, and only for a confirmed application; see that field.
+func (m *Metrics) AddDeploymentOutcome(app, result string) {
+	m.DeploymentsTotal.WithLabelValues(app, result).Inc()
+}
+
+// AddAcceptedDeployment increments AcceptedDeployments; see that field for why it carries
+// no app label.
+func (m *Metrics) AddAcceptedDeployment() {
+	m.AcceptedDeployments.Inc()
+}
+
+// AddUnconfirmedFailure increments UnconfirmedFailures; see that field for which failures
+// belong here rather than in FailedDeployment.
+func (m *Metrics) AddUnconfirmedFailure() {
+	m.UnconfirmedFailures.Inc()
 }
 
 func (m *Metrics) AddFailedDeployment(app string) {

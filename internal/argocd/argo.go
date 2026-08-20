@@ -225,7 +225,7 @@ func (argo *Argo) AddTask(task models.Task) (*models.Task, error) {
 		slog.Info("Task image expecting tag", "index", index, "tag", value.Tag, "app", task.App, "id", newTask.Id)
 	}
 
-	argo.metrics.AddProcessedDeployment(task.MetricApp())
+	argo.metrics.AddAcceptedDeployment()
 	return newTask, nil
 }
 

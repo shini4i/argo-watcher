@@ -146,7 +146,7 @@ func TestResumeRollout_AbortsAnElapsedWindow(t *testing.T) {
 		Images:    []models.Image{{Image: "app", Tag: "v1"}},
 	}
 
-	metricsMock.EXPECT().AddFailedDeployment(task.App)
+	metricsMock.EXPECT().AddUnconfirmedFailure()
 	stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusAborted, StaleResumedTaskReason)
 	// No GetApplication expectation: polling a deployment past its deadline would
 	// only end in the same abort.
@@ -206,6 +206,7 @@ func TestResumeRollout_KeepsTheOriginalDeadline(t *testing.T) {
 	metricsMock.EXPECT().AddInProgressTask()
 	metricsMock.EXPECT().RemoveInProgressTask()
 	metricsMock.EXPECT().ResetFailedDeployment(task.App)
+	metricsMock.EXPECT().AddDeploymentOutcome(task.App, models.StatusDeployedMessage)
 	metricsMock.EXPECT().ObserveDeploymentDuration(task.App, gomock.Any())
 	stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
 

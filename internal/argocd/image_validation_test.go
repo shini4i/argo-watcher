@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	"github.com/shini4i/argo-watcher/internal/lock"
 	"github.com/shini4i/argo-watcher/internal/mocks"
 	"github.com/shini4i/argo-watcher/internal/models"
 )
@@ -287,6 +288,53 @@ func TestWaitRolloutSkipsValidationWithoutRefresh(t *testing.T) {
 	// No GetManagedResources expectation: any call is a failure.
 	_, _, err := monitor.WaitRollout(task, neverLost)
 	require.NoError(t, err)
+}
+
+// TestWaitForRolloutCountsImageNotPartOfAppAsFailed drives issue #519's fail-fast through
+// the whole rollout: it is the one terminal branch whose outcome nothing else exercises
+// end to end, and the counter reads the status the branch leaves behind.
+func TestWaitForRolloutCountsImageNotPartOfAppAsFailed(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	task := models.Task{
+		Id:      "task-id",
+		App:     "demo",
+		Timeout: 600,
+		Images:  []models.Image{{Image: "ghcr.io/shini4i/typo", Tag: "v1"}},
+	}
+
+	api := mocks.NewMockArgoApiInterface(ctrl)
+	api.EXPECT().GetResourceTree(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+	api.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(settledApp(), nil).MinTimes(1)
+	api.EXPECT().GetManagedResources(gomock.Any(), task.App).Return(
+		managedResources(deploymentWith("ghcr.io/shini4i/app:v1")), nil).Times(1)
+
+	metrics := refreshMetrics(ctrl)
+	state := notSupersededState(ctrl)
+	argo := &Argo{}
+	argo.Init(state, api, metrics)
+
+	cfg := newUpdaterTestConfig(lock.NewInMemoryLocker())
+	cfg.WebhookConfig = nil
+	cfg.RefreshApp = true
+	updater := initTestUpdater(t, cfg, argo)
+
+	var capturedReason string
+	metrics.EXPECT().AddInProgressTask()
+	metrics.EXPECT().RemoveInProgressTask()
+	metrics.EXPECT().AddFailedDeployment(task.App)
+	metrics.EXPECT().AddDeploymentOutcome(task.App, models.StatusFailedMessage).Times(1)
+	state.EXPECT().
+		SetTaskStatus(task.Id, models.StatusFailedMessage, gomock.Any()).
+		DoAndReturn(func(_ string, _ string, reason string) error {
+			capturedReason = reason
+			return nil
+		})
+
+	updater.WaitForRollout(task, false)
+
+	assert.Contains(t, capturedReason, "is not part of application")
 }
 
 func TestHandleImageNotPartOfApp(t *testing.T) {

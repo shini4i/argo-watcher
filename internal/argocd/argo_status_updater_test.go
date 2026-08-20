@@ -157,6 +157,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(&application, nil).MinTimes(2).MaxTimes(3)
 		metricsMock.EXPECT().AddInProgressTask()
+		metricsMock.EXPECT().AddDeploymentOutcome(task.App, models.StatusDeployedMessage)
 		metricsMock.EXPECT().ResetFailedDeployment(task.App)
 		metricsMock.EXPECT().ObserveDeploymentDuration(task.App, gomock.Any())
 		metricsMock.EXPECT().RemoveInProgressTask()
@@ -203,6 +204,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(&unhealthyApp, nil).MinTimes(1).MaxTimes(2)
 		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(&healthyApp, nil).Times(1)
 		metricsMock.EXPECT().AddInProgressTask()
+		metricsMock.EXPECT().AddDeploymentOutcome(task.App, models.StatusDeployedMessage)
 		metricsMock.EXPECT().ResetFailedDeployment(task.App)
 		metricsMock.EXPECT().ObserveDeploymentDuration(task.App, gomock.Any())
 		metricsMock.EXPECT().RemoveInProgressTask()
@@ -241,6 +243,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(&application, nil).MinTimes(2).MaxTimes(3)
 		metricsMock.EXPECT().AddInProgressTask()
+		metricsMock.EXPECT().AddDeploymentOutcome(task.App, models.StatusDeployedMessage)
 		metricsMock.EXPECT().ResetFailedDeployment(task.App)
 		metricsMock.EXPECT().ObserveDeploymentDuration(task.App, gomock.Any())
 		metricsMock.EXPECT().RemoveInProgressTask()
@@ -281,6 +284,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(&application, nil).Times(3)
 		metricsMock.EXPECT().AddInProgressTask()
+		metricsMock.EXPECT().AddDeploymentOutcome(task.App, models.StatusFailedMessage)
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage,
@@ -315,7 +319,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(nil, fmt.Errorf("applications.argoproj.io \"test-app\" not found"))
 		metricsMock.EXPECT().AddInProgressTask()
-		metricsMock.EXPECT().AddFailedDeployment(task.App)
+		metricsMock.EXPECT().AddUnconfirmedFailure()
 		metricsMock.EXPECT().RemoveInProgressTask()
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusAppNotFoundMessage, "ArgoCD API Error: applications.argoproj.io \"test-app\" not found")
 
@@ -342,7 +346,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		unavailableErr := &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connect: connection refused")}
 		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(nil, unavailableErr)
 		metricsMock.EXPECT().AddInProgressTask()
-		metricsMock.EXPECT().AddFailedDeployment(task.App)
+		metricsMock.EXPECT().AddUnconfirmedFailure()
 		metricsMock.EXPECT().RemoveInProgressTask()
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusAborted, "ArgoCD API Error: dial tcp: connect: connection refused")
 
@@ -368,7 +372,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(nil, fmt.Errorf("unexpected failure"))
 		metricsMock.EXPECT().AddInProgressTask()
-		metricsMock.EXPECT().AddFailedDeployment(task.App)
+		metricsMock.EXPECT().AddUnconfirmedFailure()
 		metricsMock.EXPECT().RemoveInProgressTask()
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage, "ArgoCD API Error: unexpected failure")
 
@@ -403,6 +407,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(&application, nil).Times(3)
 		metricsMock.EXPECT().AddInProgressTask()
+		metricsMock.EXPECT().AddDeploymentOutcome(task.App, models.StatusFailedMessage)
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage,
@@ -447,6 +452,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(&application, nil).Times(3)
 		metricsMock.EXPECT().AddInProgressTask()
+		metricsMock.EXPECT().AddDeploymentOutcome(task.App, models.StatusFailedMessage)
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
 		// The headline names ArgoCD's own sync status, and with no revisions, drifted resources or
@@ -500,6 +506,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 
 		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(&application, nil).Times(3)
 		metricsMock.EXPECT().AddInProgressTask()
+		metricsMock.EXPECT().AddDeploymentOutcome(task.App, models.StatusFailedMessage)
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		metricsMock.EXPECT().RemoveInProgressTask()
 		// This fixture app declares no resources, so no resource listing is appended: the reason
@@ -768,6 +775,7 @@ func TestArgoStatusUpdaterDegradedReportsRolloutDiagnostics(t *testing.T) {
 
 	var capturedReason string
 	metrics.EXPECT().AddInProgressTask()
+	metrics.EXPECT().AddDeploymentOutcome(task.App, models.StatusFailedMessage)
 	metrics.EXPECT().AddFailedDeployment(task.App)
 	metrics.EXPECT().RemoveInProgressTask()
 	state.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage, gomock.Any()).
@@ -831,6 +839,7 @@ func TestArgoStatusUpdaterSupersededAfterSuccessfulPollWritesNoStatus(t *testing
 	)
 
 	metricsMock.EXPECT().AddInProgressTask()
+	metricsMock.EXPECT().AddDeploymentOutcome(task.App, models.StatusCancelledMessage)
 	metricsMock.EXPECT().RemoveInProgressTask()
 	// No SetTaskStatus and no failed-deployment metric are expected, so gomock fails the test
 	// if the superseded task is mistaken for a reportable rollout state.
@@ -881,6 +890,7 @@ func TestArgoStatusUpdaterAbortsWhenArgoBecomesUnreachableMidPoll(t *testing.T) 
 
 	var capturedReason string
 	metricsMock.EXPECT().AddInProgressTask()
+	metricsMock.EXPECT().AddDeploymentOutcome(task.App, models.StatusAborted)
 	metricsMock.EXPECT().AddFailedDeployment(task.App)
 	metricsMock.EXPECT().RemoveInProgressTask()
 	stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusAborted, gomock.Any()).
@@ -913,7 +923,7 @@ func TestDeploymentMonitorHandleArgoAPIFailureHandlesStateError(t *testing.T) {
 		SetTaskStatus(task.Id, models.StatusFailedMessage, gomock.Any()).
 		Return(errors.New("persist failed"))
 
-	monitor.HandleArgoAPIFailure(&task, fmt.Errorf("boom"))
+	monitor.HandleArgoAPIFailure(&task, fmt.Errorf("boom"), true)
 }
 
 // TestDeploymentMonitorHandleArgoAPIFailureAbortCountsAsFailure verifies that an
@@ -936,7 +946,7 @@ func TestDeploymentMonitorHandleArgoAPIFailureAbortCountsAsFailure(t *testing.T)
 	metrics.EXPECT().AddFailedDeployment(task.App)
 	state.EXPECT().SetTaskStatus(task.Id, models.StatusAborted, gomock.Any())
 
-	monitor.HandleArgoAPIFailure(&task, context.DeadlineExceeded)
+	monitor.HandleArgoAPIFailure(&task, context.DeadlineExceeded, true)
 	assert.Equal(t, models.StatusAborted, task.Status)
 }
 
@@ -1309,14 +1319,16 @@ func TestArgoStatusUpdaterWaitForApplicationDeploymentErrors(t *testing.T) {
 
 	t.Run("failsWhenFetchFails", func(t *testing.T) {
 		api.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(nil, errors.New("network")).Times(1)
-		_, _, err := updater.waitForApplicationDeployment(task, neverLost)
+		_, _, confirmed, err := updater.waitForApplicationDeployment(task, neverLost)
 		assert.Error(t, err)
+		assert.False(t, confirmed)
 	})
 
 	t.Run("failsWhenApplicationNil", func(t *testing.T) {
 		api.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(nil, nil).Times(1)
-		_, _, err := updater.waitForApplicationDeployment(task, neverLost)
+		_, _, confirmed, err := updater.waitForApplicationDeployment(task, neverLost)
 		assert.Error(t, err)
+		assert.True(t, confirmed)
 	})
 
 	t.Run("failsWhenGitUpdateFails", func(t *testing.T) {
@@ -1325,8 +1337,9 @@ func TestArgoStatusUpdaterWaitForApplicationDeploymentErrors(t *testing.T) {
 		app.Spec.Source.RepoURL = ""
 		api.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(app, nil).Times(1)
 
-		_, _, err := updater.waitForApplicationDeployment(task, neverLost)
+		_, _, confirmed, err := updater.waitForApplicationDeployment(task, neverLost)
 		assert.Error(t, err)
+		assert.True(t, confirmed)
 	})
 }
 
@@ -1375,6 +1388,7 @@ func TestArgoStatusUpdaterFailureDurationExcludesSetup(t *testing.T) {
 
 	var capturedReason string
 	metrics.EXPECT().AddInProgressTask()
+	metrics.EXPECT().AddDeploymentOutcome(task.App, models.StatusFailedMessage)
 	metrics.EXPECT().RemoveInProgressTask()
 	metrics.EXPECT().AddFailedDeployment(task.App)
 	state.EXPECT().
@@ -1655,6 +1669,7 @@ func TestArgoStatusUpdaterStopsMidPollWhenSuperseded(t *testing.T) {
 	)
 
 	metricsMock.EXPECT().AddInProgressTask()
+	metricsMock.EXPECT().AddDeploymentOutcome(task.App, models.StatusCancelledMessage)
 	metricsMock.EXPECT().RemoveInProgressTask()
 	// No SetTaskStatus and no failed-deployment metric: a superseded rollout is not
 	// a failure and its status must not be overwritten.
@@ -1704,6 +1719,7 @@ func TestArgoStatusUpdaterAppDisappearsMidRollout(t *testing.T) {
 	)
 
 	metricsMock.EXPECT().AddInProgressTask()
+	metricsMock.EXPECT().AddDeploymentOutcome(task.App, models.StatusAppNotFoundMessage)
 	metricsMock.EXPECT().RemoveInProgressTask()
 	metricsMock.EXPECT().AddFailedDeployment(task.App)
 	stateMock.EXPECT().SetTaskStatus(
@@ -1749,6 +1765,7 @@ func TestArgoStatusUpdaterProceedsWhenStatusReadFails(t *testing.T) {
 	stateMock.EXPECT().GetTask(task.Id).Return(nil, errors.New("db unavailable")).AnyTimes()
 	apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(&application, nil).MinTimes(1)
 	metricsMock.EXPECT().AddInProgressTask()
+	metricsMock.EXPECT().AddDeploymentOutcome(task.App, models.StatusDeployedMessage)
 	metricsMock.EXPECT().ResetFailedDeployment(task.App)
 	metricsMock.EXPECT().ObserveDeploymentDuration(task.App, gomock.Any())
 	metricsMock.EXPECT().RemoveInProgressTask()
@@ -1950,24 +1967,24 @@ func TestArgoStatusUpdater_handleArgoAPIFailure(t *testing.T) {
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage, gomock.Any())
 
-		updater.monitor.HandleArgoAPIFailure(&task, err)
+		updater.monitor.HandleArgoAPIFailure(&task, err, true)
 
 		// The resolved terminal status must be reflected back onto the task so the
 		// result notification does not report a stale "in progress" for a failure.
 		assert.Equal(t, models.StatusFailedMessage, task.Status)
 	})
 
-	t.Run("handleArgoAPIFailure - an unvalidated task does not name the app", func(t *testing.T) {
+	t.Run("handleArgoAPIFailure - an unconfirmed application does not name the app", func(t *testing.T) {
 		// This path runs before ArgoCD confirms the app exists, and is the one an
 		// app name that never existed reaches. Labelling it would let an
 		// uncredentialed caller mint a permanent series per submission.
 		task := models.Task{Id: "test-id", App: "attacker-controlled-name"}
 		err := fmt.Errorf("applications.argoproj.io \"attacker-controlled-name\" not found")
 
-		metricsMock.EXPECT().AddFailedDeployment(models.UnknownApp)
+		metricsMock.EXPECT().AddUnconfirmedFailure()
 		stateMock.EXPECT().SetTaskStatus(task.Id, gomock.Any(), gomock.Any())
 
-		updater.monitor.HandleArgoAPIFailure(&task, err)
+		updater.monitor.HandleArgoAPIFailure(&task, err, false)
 	})
 }
 
@@ -2387,8 +2404,9 @@ func TestArgoStatusUpdaterLostLeaseWritesNoStatus(t *testing.T) {
 					return &application, nil
 				}).AnyTimes()
 
-			// Only the in-flight gauge may move. No SetTaskStatus and no failure metric are
-			// declared, so gomock fails the test if this replica reports on a task it lost.
+			// Only the in-flight gauge may move. No SetTaskStatus and no deployment metric
+			// are declared, so gomock fails the test if this replica reports on a task it
+			// lost — the outcome belongs to the replica that took the claim.
 			metricsMock.EXPECT().AddInProgressTask()
 			metricsMock.EXPECT().RemoveInProgressTask()
 
@@ -2482,7 +2500,7 @@ func TestWaitForApplicationDeploymentStopPredicates(t *testing.T) {
 				Timeout: 15,
 				Images:  []models.Image{{Image: "demo", Tag: "v1"}},
 			}
-			_, _, err := updater.waitForApplicationDeployment(task, func() bool { return tt.leaseLost })
+			_, _, _, err := updater.waitForApplicationDeployment(task, func() bool { return tt.leaseLost })
 
 			assert.ErrorIs(t, err, tt.wantErr)
 		})
@@ -2587,4 +2605,129 @@ func TestAbortedWriteBackCause(t *testing.T) {
 			assert.ErrorIs(t, updater.abortedWriteBackCause("task-id", tt.abandoned), tt.want)
 		})
 	}
+}
+
+// TestWaitForRollout_PerAppSeriesWaitForArgoConfirmation pins where the app name is
+// allowed to become a Prometheus label (issue #552): only once ArgoCD has answered for
+// the application. Until then the deployment is counted by the labelless counters, since
+// task submission takes an arbitrary app name without a credential.
+func TestWaitForRollout_PerAppSeriesWaitForArgoConfirmation(t *testing.T) {
+	newUpdater := func(t *testing.T) (*ArgoStatusUpdater, *mocks.MockArgoApiInterface, *mocks.MockMetricsInterface) {
+		t.Helper()
+		ctrl := gomock.NewController(t)
+		apiMock := newArgoApiMock(ctrl)
+		metricsMock := mocks.NewMockMetricsInterface(ctrl)
+		stateMock := notSupersededState(ctrl)
+
+		argo := &Argo{}
+		argo.Init(stateMock, apiMock, metricsMock)
+
+		metricsMock.EXPECT().AddInProgressTask()
+		metricsMock.EXPECT().RemoveInProgressTask()
+		stateMock.EXPECT().SetTaskStatus(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+
+		return initTestUpdater(t, newUpdaterTestConfig(lock.NewInMemoryLocker()), argo), apiMock, metricsMock
+	}
+
+	// An unvalidated task carries a caller-chosen name, yet after this point it is the
+	// name ArgoCD answered for, so the real app is labelled rather than "unknown".
+	task := models.Task{
+		Id:     "test-id",
+		App:    "test-app",
+		Images: []models.Image{{Image: "app", Tag: "v1"}},
+	}
+
+	deployedApp := func() *models.Application {
+		application := &models.Application{}
+		application.Status.Summary.Images = []string{"app:v1"}
+		application.Status.Sync.Status = "Synced"
+		application.Status.Health.Status = "Healthy"
+		return application
+	}
+
+	t.Run("confirmed application is counted under its own name", func(t *testing.T) {
+		updater, apiMock, metricsMock := newUpdater(t)
+
+		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(deployedApp(), nil).AnyTimes()
+		metricsMock.EXPECT().AddDeploymentOutcome(task.App, models.StatusDeployedMessage)
+		metricsMock.EXPECT().ResetFailedDeployment(task.App)
+		metricsMock.EXPECT().ObserveDeploymentDuration(task.App, gomock.Any())
+
+		updater.WaitForRollout(task, false)
+	})
+
+	t.Run("an application ArgoCD never confirmed is counted without a label", func(t *testing.T) {
+		updater, apiMock, metricsMock := newUpdater(t)
+
+		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).
+			Return(nil, fmt.Errorf("applications.argoproj.io %q not found", task.App))
+		// Neither AddDeploymentOutcome nor AddFailedDeployment is expected: the
+		// controller fails the test if the unconfirmed name reaches either.
+		metricsMock.EXPECT().AddUnconfirmedFailure()
+
+		updater.WaitForRollout(task, false)
+	})
+
+	t.Run("a failure after confirmation names the app", func(t *testing.T) {
+		updater, apiMock, metricsMock := newUpdater(t)
+
+		gomock.InOrder(
+			apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(deployedApp(), nil),
+			apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).
+				Return(nil, fmt.Errorf("applications.argoproj.io %q not found", task.App)),
+		)
+		metricsMock.EXPECT().AddDeploymentOutcome(task.App, models.StatusAppNotFoundMessage)
+		metricsMock.EXPECT().AddFailedDeployment(task.App)
+
+		updater.WaitForRollout(task, false)
+	})
+
+	t.Run("a resumed deployment is counted by the replica that finishes it", func(t *testing.T) {
+		updater, apiMock, metricsMock := newUpdater(t)
+
+		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(deployedApp(), nil).AnyTimes()
+		metricsMock.EXPECT().AddDeploymentOutcome(task.App, models.StatusDeployedMessage)
+		metricsMock.EXPECT().ResetFailedDeployment(task.App)
+		metricsMock.EXPECT().ObserveDeploymentDuration(task.App, gomock.Any())
+
+		updater.WaitForRollout(task, true)
+	})
+}
+
+// TestDeploymentMonitorConfirmApplicationRefreshDuration pins that a task's first fetch
+// records the refresh duration only once ArgoCD answered for the application: a failed
+// confirmation would otherwise mint an argocd_refresh_duration_seconds series under a name
+// nothing has vouched for (issue #552).
+func TestDeploymentMonitorConfirmApplicationRefreshDuration(t *testing.T) {
+	t.Run("recorded once the application is confirmed", func(t *testing.T) {
+		monitor, api, metrics := newFetchTestMonitor(t)
+		wantApp := &models.Application{}
+		api.EXPECT().GetApplication(gomock.Any(), "demo", true).Return(wantApp, nil)
+		metrics.EXPECT().ObserveRefreshDuration("demo", gomock.Any())
+
+		app, err := monitor.ConfirmApplication(context.Background(), "demo", true)
+		require.NoError(t, err)
+		assert.Same(t, wantApp, app)
+	})
+
+	t.Run("not recorded when the application is not confirmed", func(t *testing.T) {
+		monitor, api, _ := newFetchTestMonitor(t)
+		// No ObserveRefreshDuration expectation: the mock controller fails the test if it is called.
+		api.EXPECT().GetApplication(gomock.Any(), "demo", true).Return(nil, errors.New("not found"))
+
+		app, err := monitor.ConfirmApplication(context.Background(), "demo", true)
+		require.Error(t, err)
+		assert.Nil(t, app)
+	})
+
+	t.Run("not recorded when no refresh was asked for", func(t *testing.T) {
+		monitor, api, _ := newFetchTestMonitor(t)
+		wantApp := &models.Application{}
+		// No ObserveRefreshDuration expectation: the histogram covers refreshes only.
+		api.EXPECT().GetApplication(gomock.Any(), "demo", false).Return(wantApp, nil)
+
+		app, err := monitor.ConfirmApplication(context.Background(), "demo", false)
+		require.NoError(t, err)
+		assert.Same(t, wantApp, app)
+	})
 }

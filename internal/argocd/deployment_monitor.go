@@ -132,6 +132,9 @@ func (monitor *DeploymentMonitor) resolveRefresh(task models.Task) bool {
 // When a refresh is requested, the call is timed and its duration recorded (argocd_refresh_duration_seconds)
 // so slow or stuck refreshes are diagnosable. A stuck refresh is avoided operationally, not here: set the
 // per-task Refresh override (or ARGO_REFRESH_APP) to false for apps that never settle (issue #334).
+//
+// The duration is recorded under the app name, so this is for an application ArgoCD has
+// already confirmed. A task's first fetch goes through ConfirmApplication instead.
 func (monitor *DeploymentMonitor) FetchApplication(ctx context.Context, appName string, refresh bool) (*models.Application, error) {
 	if !refresh {
 		return monitor.argo.api.GetApplication(ctx, appName, false)
@@ -141,6 +144,32 @@ func (monitor *DeploymentMonitor) FetchApplication(ctx context.Context, appName 
 	app, err := monitor.argo.api.GetApplication(ctx, appName, true)
 	monitor.argo.metrics.ObserveRefreshDuration(appName, time.Since(start).Seconds())
 	return app, err
+}
+
+// ConfirmApplication performs a task's first fetch — the call that decides whether ArgoCD
+// has the application at all. A requested refresh is timed as in FetchApplication, but the
+// duration is recorded only once the call succeeded: an app name ArgoCD never answered for
+// is only what the submission claimed, and submission takes any name without a credential,
+// so recording it would mint a series per bad request (issue #552).
+func (monitor *DeploymentMonitor) ConfirmApplication(ctx context.Context, appName string, refresh bool) (*models.Application, error) {
+	start := time.Now()
+
+	app, err := monitor.argo.api.GetApplication(ctx, appName, refresh)
+	if err != nil {
+		return nil, err
+	}
+
+	if refresh {
+		monitor.argo.metrics.ObserveRefreshDuration(appName, time.Since(start).Seconds())
+	}
+
+	return app, nil
+}
+
+// CountDeploymentOutcome records the terminal state a deployment reached, once per
+// deployment and only for an application ArgoCD confirmed.
+func (monitor *DeploymentMonitor) CountDeploymentOutcome(app, result string) {
+	monitor.argo.metrics.AddDeploymentOutcome(app, result)
 }
 
 // StoreInitialAppStatus caches the initial rollout status for comparison during monitoring.
@@ -353,10 +382,17 @@ func (monitor *DeploymentMonitor) taskSuperseded(id string) bool {
 // task is taken by pointer so the resolved terminal status is reflected back to
 // the caller, keeping the outgoing failure notification in sync with the stored
 // status (mirroring handleDeploymentSuccess/handleDeploymentFailure).
-func (monitor *DeploymentMonitor) HandleArgoAPIFailure(task *models.Task, err error) {
-	// Reached before ArgoCD confirms the app exists — most often because it does not —
-	// so the name is only as trustworthy as the submission that supplied it.
-	monitor.argo.metrics.AddFailedDeployment(task.MetricApp())
+//
+// confirmed reports whether ArgoCD had answered for the application before the failure.
+// Only then may the app name label a metric: without a confirmation the name is only as
+// trustworthy as the submission that supplied it, so the failure is counted under no app
+// at all (issue #552).
+func (monitor *DeploymentMonitor) HandleArgoAPIFailure(task *models.Task, err error, confirmed bool) {
+	if confirmed {
+		monitor.argo.metrics.AddFailedDeployment(task.App)
+	} else {
+		monitor.argo.metrics.AddUnconfirmedFailure()
+	}
 	finalStatus := determineFailureStatus(*task, err)
 	reason := fmt.Sprintf(ArgoAPIErrorTemplate, err.Error())
 	slog.Warn("Deployment not completed", "status", finalStatus, "reason", reason, "id", task.Id)

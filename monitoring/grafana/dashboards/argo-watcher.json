@@ -39,7 +39,7 @@
       {
         "current": {},
         "datasource": { "type": "prometheus", "uid": "${datasource}" },
-        "definition": "label_values({__name__=~\"deployment_duration_seconds_count|failed_deployment\", job=\"argo-watcher\"}, app)",
+        "definition": "label_values(deployments_total{job=\"argo-watcher\"}, app)",
         "includeAll": true,
         "allValue": ".*",
         "label": "Application",
@@ -48,7 +48,7 @@
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values({__name__=~\"deployment_duration_seconds_count|failed_deployment\", job=\"argo-watcher\"}, app)",
+          "query": "label_values(deployments_total{job=\"argo-watcher\"}, app)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 2,
@@ -94,7 +94,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "gridPos": { "h": 4, "w": 5, "x": 0, "y": 1 },
       "id": 1,
       "options": {
         "colorMode": "background",
@@ -133,7 +133,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "gridPos": { "h": 4, "w": 5, "x": 5, "y": 1 },
       "id": 2,
       "options": {
         "colorMode": "value",
@@ -156,7 +156,49 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "description": "Total deployments processed since startup (processed_deployments counter, summed over all apps).",
+      "description": "Share of deployments in the selected range that reached the deployed state (increase of deployments_total by result). Superseded deployments are excluded from both sides: a deployment cancelled because a newer one replaced it is a normal outcome, not a fault, and counting it would drag the rate down whenever a pipeline deploys twice in quick succession. Reads \"No data\" when nothing reached an outcome in the range.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "max": 1,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 0.95 }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 5, "x": 10, "y": 1 },
+      "id": 16,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "pluginVersion": "12.3.8",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "sum(increase(deployments_total{result=\"deployed\"}[$__range])) / sum(increase(deployments_total{result!=\"cancelled\"}[$__range]))",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Deployment Success Rate",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Deployments that reached an outcome, since startup (deployments_total, summed over every app and result). Submissions that never reached a confirmed application are not here — see accepted_deployments.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -169,7 +211,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "gridPos": { "h": 4, "w": 5, "x": 15, "y": 1 },
       "id": 3,
       "options": {
         "colorMode": "value",
@@ -183,16 +225,16 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "sum(processed_deployments)",
+          "expr": "sum(deployments_total)",
           "refId": "A"
         }
       ],
-      "title": "Total Processed Deployments",
+      "title": "Total Deployments",
       "type": "stat"
     },
     {
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "description": "Number of applications currently reporting one or more failed deployments before their first success (failed_deployment gauge > 0).",
+      "description": "Number of applications currently reporting one or more failed deployments before their first success (failed_deployment above zero), counted per application rather than per scraped replica.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -208,7 +250,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
       "id": 4,
       "options": {
         "colorMode": "background",
@@ -222,7 +264,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "count(sum by (app) (failed_deployment) > 0) or vector(0)",
+          "expr": "count(max by (app) (failed_deployment) > 0) or vector(0)",
           "instant": true,
           "refId": "A"
         }
@@ -232,7 +274,7 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "description": "Deployments that reached the deployed state per application within the selected time range (increase of deployment_duration_seconds_count). Sort or filter by column. An application idle in the window reads 0 — widen the range to include its activity. argo-watcher is event-driven, so this is a small integer count, not a per-second rate. Deployments that failed are not counted here; see Failing Applications.",
+      "description": "Deployments per application within the selected time range (increase of deployments_total, every outcome). Sort or filter by column. An application idle in the window reads 0 — widen the range to include its activity. argo-watcher is event-driven, so this is a small integer count, not a per-second rate.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "continuous-GrYlRd" },
@@ -266,7 +308,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "round(sum by (app) (increase(deployment_duration_seconds_count[$__range])))",
+          "expr": "round(sum by (app) (increase(deployments_total[$__range])))",
           "format": "table",
           "instant": true,
           "refId": "A"
@@ -281,7 +323,7 @@
           }
         }
       ],
-      "title": "Successful Deployments by Application (selected range)",
+      "title": "Deployments by Application (selected range)",
       "type": "table"
     },
     {
@@ -330,7 +372,7 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "description": "Applications currently reporting failed deployments before first success. A row for app=\"unknown\" is not one application: it aggregates failures raised before Argo CD confirmed the application exists, whose task was submitted without a credential. That bucket also never resets — a success clears the counter under the real application name, not under unknown — so treat its value as a running total, not a current count.",
+      "description": "Applications currently reporting failed deployments before first success. The gauge is per replica and each deployment is monitored by one of them, so this aggregates with max by (app) — the same aggregation the suggested alert rules use — rather than summing replicas that never handled the application.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -363,7 +405,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "sum by (app) (failed_deployment) > 0",
+          "expr": "max by (app) (failed_deployment) > 0",
           "format": "table",
           "instant": true,
           "refId": "A"
@@ -382,6 +424,71 @@
       "type": "table"
     },
     {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "How deployments ended within the selected time range (increase of deployments_total by result). \"cancelled\" is a deployment superseded by a newer one for the same application, not a fault. Failures before Argo CD confirmed the application are not here — see unconfirmed_deployment_failures.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "bars",
+            "fillOpacity": 60,
+            "gradientMode": "none",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "normal" }
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "deployed" },
+            "properties": [ { "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } } ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "failed" },
+            "properties": [ { "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } } ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "aborted" },
+            "properties": [ { "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } } ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "app not found" },
+            "properties": [ { "id": "color", "value": { "fixedColor": "purple", "mode": "fixed" } } ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "cancelled" },
+            "properties": [ { "id": "color", "value": { "fixedColor": "text", "mode": "fixed" } } ]
+          }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 13 },
+      "id": 15,
+      "options": {
+        "legend": { "calcs": ["sum"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "pluginVersion": "12.3.8",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "sum by (result) (increase(deployments_total[$__rate_interval]))",
+          "legendFormat": "{{result}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Deployment Outcomes",
+      "type": "timeseries"
+    },
+    {
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 21 },
       "id": 101,
@@ -391,7 +498,7 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "description": "Successful deployments over time for the selected application(s). Each bar is the number in that interval.",
+      "description": "Deployments over time for the selected application(s) (increase of deployments_total per interval). Each bar is the number of deployments in that interval.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -425,12 +532,12 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "sum by (app) (increase(deployment_duration_seconds_count{app=~\"$app\"}[$__rate_interval]))",
+          "expr": "sum by (app) (increase(deployments_total{app=~\"$app\"}[$__rate_interval]))",
           "legendFormat": "{{app}}",
           "refId": "A"
         }
       ],
-      "title": "Successful Deployment Activity — $app",
+      "title": "Deployment Activity — $app",
       "type": "timeseries"
     },
     {
@@ -700,45 +807,6 @@
       ],
       "title": "Deployment Duration — $app",
       "type": "timeseries"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "description": "Share of processed deployments whose task was submitted with a valid credential. A task submitted without one is still accepted, but its application name is not trusted as a metric label, so it is counted under app=\"unknown\" — which is why an unvalidated deployment cannot be attributed to an application anywhere in this dashboard. A large unvalidated share means the clients posting those tasks send no ARGO_WATCHER_DEPLOY_TOKEN (or BEARER_TOKEN); a wrong token is rejected outright and never reaches this metric.",
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": { "hideFrom": { "legend": false, "tooltip": false, "viz": false } },
-          "mappings": [],
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 13 },
-      "id": 102,
-      "options": {
-        "displayLabels": ["name", "value", "percent"],
-        "legend": { "showLegend": false },
-        "pieType": "donut",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-        "tooltip": { "hideZeros": false, "mode": "single", "sort": "none" }
-      },
-      "pluginVersion": "12.3.8",
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "sum(processed_deployments{app!=\"unknown\"})",
-          "legendFormat": "validated",
-          "refId": "A"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "sum(processed_deployments{app=\"unknown\"}) or vector(0)",
-          "legendFormat": "unvalidated",
-          "refId": "B"
-        }
-      ],
-      "title": "Validated vs Unvalidated Submissions",
-      "type": "piechart"
     }
   ]
 }
