@@ -39,7 +39,7 @@
       {
         "current": {},
         "datasource": { "type": "prometheus", "uid": "${datasource}" },
-        "definition": "label_values(processed_deployments{job=\"argo-watcher\"}, app)",
+        "definition": "label_values({__name__=~\"deployment_duration_seconds_count|failed_deployment\", job=\"argo-watcher\"}, app)",
         "includeAll": true,
         "allValue": ".*",
         "label": "Application",
@@ -48,7 +48,7 @@
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values(processed_deployments{job=\"argo-watcher\"}, app)",
+          "query": "label_values({__name__=~\"deployment_duration_seconds_count|failed_deployment\", job=\"argo-watcher\"}, app)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 2,
@@ -232,7 +232,7 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "description": "Deployments processed per application within the selected time range (increase of processed_deployments). Sort or filter by column. An application idle in the window reads 0 — widen the range to include its activity. argo-watcher is event-driven, so this is a small integer count, not a per-second rate.",
+      "description": "Deployments that reached the deployed state per application within the selected time range (increase of deployment_duration_seconds_count). Sort or filter by column. An application idle in the window reads 0 — widen the range to include its activity. argo-watcher is event-driven, so this is a small integer count, not a per-second rate. Deployments that failed are not counted here; see Failing Applications.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "continuous-GrYlRd" },
@@ -266,7 +266,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "round(sum by (app) (increase(processed_deployments[$__range])))",
+          "expr": "round(sum by (app) (increase(deployment_duration_seconds_count[$__range])))",
           "format": "table",
           "instant": true,
           "refId": "A"
@@ -281,7 +281,7 @@
           }
         }
       ],
-      "title": "Deployments by Application (selected range)",
+      "title": "Successful Deployments by Application (selected range)",
       "type": "table"
     },
     {
@@ -330,7 +330,7 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "description": "Applications currently reporting failed deployments before first success.",
+      "description": "Applications currently reporting failed deployments before first success. A row for app=\"unknown\" is not one application: it aggregates failures raised before Argo CD confirmed the application exists, whose task was submitted without a credential. That bucket also never resets — a success clears the counter under the real application name, not under unknown — so treat its value as a running total, not a current count.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -351,7 +351,7 @@
           }
         ]
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 13 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 13 },
       "id": 7,
       "options": {
         "cellHeight": "sm",
@@ -383,7 +383,7 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "description": "Deployments per application over time (increase of processed_deployments per interval). Each bar is the number of deployments in that interval.",
+      "description": "Deployments that reached the deployed state per application over time. Each bar is the number of successful deployments in that interval. This counts deployment_duration_seconds_count rather than processed_deployments, because that is the per-app series that carries the real application name whether or not the task was submitted with a credential.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -407,7 +407,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 13 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 13 },
       "id": 8,
       "options": {
         "legend": { "calcs": ["max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -417,12 +417,12 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "sum by (app) (increase(processed_deployments[$__rate_interval]))",
+          "expr": "sum by (app) (increase(deployment_duration_seconds_count[$__rate_interval]))",
           "legendFormat": "{{app}}",
           "refId": "A"
         }
       ],
-      "title": "Deployment Activity (by app)",
+      "title": "Successful Deployment Activity (by app)",
       "type": "timeseries"
     },
     {
@@ -435,7 +435,7 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "description": "Deployments over time for the selected application(s) (increase of processed_deployments per interval). Each bar is the number of deployments in that interval.",
+      "description": "Successful deployments over time for the selected application(s). Each bar is the number in that interval.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -469,12 +469,12 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "sum by (app) (increase(processed_deployments{app=~\"$app\"}[$__rate_interval]))",
+          "expr": "sum by (app) (increase(deployment_duration_seconds_count{app=~\"$app\"}[$__rate_interval]))",
           "legendFormat": "{{app}}",
           "refId": "A"
         }
       ],
-      "title": "Deployment Activity — $app",
+      "title": "Successful Deployment Activity — $app",
       "type": "timeseries"
     },
     {
@@ -744,6 +744,45 @@
       ],
       "title": "Deployment Duration — $app",
       "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Share of processed deployments whose task was submitted with a valid credential. A task submitted without one is still accepted, but its application name is not trusted as a metric label, so it is counted under app=\"unknown\" — which is why an unvalidated deployment cannot be attributed to an application anywhere in this dashboard. A large unvalidated share means the clients posting those tasks send no ARGO_WATCHER_DEPLOY_TOKEN (or BEARER_TOKEN); a wrong token is rejected outright and never reaches this metric.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "hideFrom": { "legend": false, "tooltip": false, "viz": false } },
+          "mappings": [],
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 13 },
+      "id": 102,
+      "options": {
+        "displayLabels": ["percent"],
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "values": ["value"] },
+        "pieType": "donut",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "tooltip": { "hideZeros": false, "mode": "single", "sort": "none" }
+      },
+      "pluginVersion": "12.3.8",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "sum(processed_deployments{app!=\"unknown\"})",
+          "legendFormat": "validated",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "sum(processed_deployments{app=\"unknown\"}) or vector(0)",
+          "legendFormat": "unvalidated",
+          "refId": "B"
+        }
+      ],
+      "title": "Validated vs Unvalidated Submissions",
+      "type": "piechart"
     }
   ]
 }

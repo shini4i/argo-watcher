@@ -31,6 +31,10 @@ Twelve metrics, all defined in [`internal/prometheus/metrics.go`](https://github
 !!! note "Why some series say `app="unknown"`"
     `POST /api/v1/tasks` accepts a task without a credential, and the application name is free text — so a name arriving that way is labelled `unknown` rather than becoming its own series, which would let anyone reaching the endpoint create unbounded series. This affects `processed_deployments`, `unauthenticated_reads`, and `failed_deployment` when the failure precedes Argo CD confirming the application exists. Deployments submitted with a credential are labelled with their real application throughout.
 
+    A task labelled `unknown` is still attributable, because the collapse applies only at submission. Once Argo CD confirms the application exists the real name is safe to use, so `deployment_duration_seconds`, `argocd_refresh_duration_seconds` and the `gitops_*` histograms carry it whether or not the task was validated. The dashboard therefore counts per-application deployments from `deployment_duration_seconds_count`, not `processed_deployments` — the trade-off is that only deployments reaching the deployed state are counted.
+
+    An instance where most series say `unknown` is not misconfigured metrics: it means the clients posting those tasks send no credential at all. A *wrong* token is rejected with 401 and never becomes a task, so `unknown` always means "none sent". Set `ARGO_WATCHER_DEPLOY_TOKEN` (or `BEARER_TOKEN`) on the clients to get real names on `processed_deployments` too.
+
     The same openness means anyone who can reach the endpoint and knows a managed application's name can raise `gitops_writeback_skipped_unvalidated`. Treat a rise as "investigate", not automatically "our pipeline regressed".
 
 !!! note "Aggregate the gauges across replicas"
