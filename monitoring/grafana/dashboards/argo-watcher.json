@@ -222,7 +222,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "count(failed_deployment > 0) or vector(0)",
+          "expr": "count(sum by (app) (failed_deployment) > 0) or vector(0)",
           "instant": true,
           "refId": "A"
         }
@@ -273,10 +273,10 @@
         }
       ],
       "transformations": [
+        { "id": "filterFieldsByName", "options": { "include": { "names": ["app", "Value"] } } },
         {
           "id": "organize",
           "options": {
-            "excludeByName": { "Time": true, "job": true, "instance": true, "__name__": true },
             "renameByName": { "app": "Application", "Value": "Deployments" }
           }
         }
@@ -363,17 +363,17 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "failed_deployment > 0",
+          "expr": "sum by (app) (failed_deployment) > 0",
           "format": "table",
           "instant": true,
           "refId": "A"
         }
       ],
       "transformations": [
+        { "id": "filterFieldsByName", "options": { "include": { "names": ["app", "Value"] } } },
         {
           "id": "organize",
           "options": {
-            "excludeByName": { "Time": true, "job": true, "instance": true, "__name__": true },
             "renameByName": { "app": "Application", "Value": "Failures" }
           }
         }
@@ -383,47 +383,53 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "description": "Deployments that reached the deployed state per application over time. Each bar is the number of successful deployments in that interval. This counts deployment_duration_seconds_count rather than processed_deployments, because that is the per-app series that carries the real application name whether or not the task was submitted with a credential.",
+      "description": "How the deployments submitted in the selected time range ended up. Both slices are increases of counters over the same window, so the ratio is meaningful: \"succeeded\" is deployment_duration_seconds_count, which only observes a deployment reaching the deployed state, and \"did not succeed\" is the rest of processed_deployments. That remainder is not only failures — it also holds aborted, cancelled and superseded tasks, plus any deployment still in flight when the window ended, so expect a small non-zero slice on a healthy instance. There is no counter of failed deployments to chart instead; failed_deployment is a gauge that resets on success.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "bars",
-            "fillOpacity": 60,
-            "gradientMode": "none",
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": { "group": "A", "mode": "normal" }
-          },
+          "custom": { "hideFrom": { "legend": false, "tooltip": false, "viz": false } },
+          "mappings": [],
           "unit": "short"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "succeeded" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "did not succeed" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }]
+          }
+        ]
       },
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 13 },
-      "id": 8,
+      "id": 103,
       "options": {
-        "legend": { "calcs": ["max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "displayLabels": ["name", "value", "percent"],
+        "legend": { "showLegend": false },
+        "pieType": "donut",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "tooltip": { "hideZeros": false, "mode": "single", "sort": "none" }
       },
       "pluginVersion": "12.3.8",
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "sum by (app) (increase(deployment_duration_seconds_count[$__rate_interval]))",
-          "legendFormat": "{{app}}",
+          "expr": "round(sum(increase(deployment_duration_seconds_count[$__range])))",
+          "instant": true,
+          "legendFormat": "succeeded",
           "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "clamp_min(round(sum(increase(processed_deployments[$__range]))) - round(sum(increase(deployment_duration_seconds_count[$__range]))), 0)",
+          "instant": true,
+          "legendFormat": "did not succeed",
+          "refId": "B"
         }
       ],
-      "title": "Successful Deployment Activity (by app)",
-      "type": "timeseries"
+      "title": "Deployment Outcomes (selected range)",
+      "type": "piechart"
     },
     {
       "collapsed": false,
@@ -760,8 +766,8 @@
       "gridPos": { "h": 8, "w": 8, "x": 16, "y": 13 },
       "id": 102,
       "options": {
-        "displayLabels": ["percent"],
-        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "values": ["value"] },
+        "displayLabels": ["name", "value", "percent"],
+        "legend": { "showLegend": false },
         "pieType": "donut",
         "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
         "tooltip": { "hideZeros": false, "mode": "single", "sort": "none" }
