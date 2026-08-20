@@ -93,7 +93,14 @@ The `tasks` table grows linearly with the number of deployments. Each row is sma
 | 1 000 | ~365 K | ~200 MB |
 | 10 000 | ~3.7 M | ~2 GB |
 
-If the table grows past a few million rows and the Web UI feels slow, consider archiving rows older than your retention window into a separate table. There is no built-in retention job today.
+## Retention
+
+By default every task is kept forever. Setting `TASK_RETENTION_ENABLED=true` turns on a sweep that deletes finished tasks created longer ago than `TASK_RETENTION_DAYS` (365 by default, between 1 and 36500). It runs with the hourly obsolete-task sweep, in batches of 1 000 rows, so enabling it on a table holding years of history does not lock the table for the duration.
+
+Two kinds of task are never deleted, however old. One still in progress, since a replica may be monitoring it. And one under an unexpired lease, whatever its status — the same pass first marks in-progress tasks older than an hour as `aborted`, so without that guard a rollout a replica claimed and resumed after an outage would be deleted while it was still being finished. Such a task is collected by a later sweep, once its lease lapses. The setting only applies to `STATE_TYPE=postgres`; with the in-memory backend it is inert and the server logs a warning at startup.
+
+!!! warning
+    Deleted history is gone: the rows back the Web UI's task list and any audit trail you keep. Take a dump before the first sweep, and if the deployment history is an audit record, set the window to match your retention policy rather than leaving the default.
 
 ## Where to look next
 

@@ -16,6 +16,12 @@ import (
 	"github.com/shini4i/argo-watcher/internal/helpers"
 )
 
+// maxTaskRetentionDays is the longest accepted retention window, a century. It
+// exists to reject a mistyped value at startup: a window long enough to push the
+// cutoff outside the timestamp range Postgres can represent fails inside the
+// sweep instead, once an hour, without naming the setting at fault.
+const maxTaskRetentionDays = 36500
+
 // OIDCConfig holds the settings for the generic OIDC authentication provider.
 // IssuerURL is the provider's issuer (e.g. "https://kc/realms/foo" for Keycloak
 // or "https://authentik/application/o/argo-watcher/" for Authentik); the backend
@@ -103,6 +109,12 @@ type ServerConfig struct {
 	DevEnvironment     bool             `env:"DEV_ENVIRONMENT" envDefault:"false" json:"devEnvironment"` // Whether a set of dev specific setting should be turned on, do not touch unless you know what you are doing
 	ArgoApiRetries     uint             `env:"ARGO_API_RETRIES" envDefault:"3" json:"argo_api_retries"`  // Total attempts (including initial); passed to retry.Attempts()
 	RepoCachePath      string           `env:"REPO_CACHE_PATH" envDefault:"/data" json:"-"`
+	// TaskRetentionEnabled turns on the periodic removal of finished tasks older
+	// than TaskRetentionDays, and TaskRetentionDays is that window in days. Both
+	// only apply to the postgres state; in-memory tasks live no longer than the
+	// process. Deleting deployment history is irreversible, so it is opt-in.
+	TaskRetentionEnabled bool `env:"TASK_RETENTION_ENABLED" envDefault:"false" json:"-"`
+	TaskRetentionDays    int  `env:"TASK_RETENTION_DAYS" envDefault:"365" json:"-"`
 }
 
 // MarshalJSON emits the OIDC block under both the canonical "oidc" key and a
@@ -244,6 +256,12 @@ func NewServerConfig() (*ServerConfig, error) {
 		return nil, err
 	}
 
+	// Retention prunes rows from the tasks table, which the in-memory state does
+	// not have. Warning beats failing: the setting is inert, not contradictory.
+	if config.TaskRetentionEnabled && config.StateType != "postgres" {
+		slog.Warn("TASK_RETENTION_ENABLED has no effect with STATE_TYPE=in-memory; task history is only persisted by the postgres state.")
+	}
+
 	// Enforce the connect timeout even when DB_DSN is supplied explicitly (which
 	// bypasses the default template), so an unreachable Postgres always fails fast
 	// instead of blocking on the OS TCP timeout.
@@ -268,6 +286,23 @@ func ensureConnectTimeout(dsn string, timeout int) string {
 		return fmt.Sprintf("%s%sconnect_timeout=%d", dsn, separator, timeout)
 	}
 	return fmt.Sprintf("%s connect_timeout=%d", dsn, timeout)
+}
+
+// taskRetentionProblems reports what makes the retention window unusable, or
+// nothing when retention is off — with the toggle disabled the window is inert.
+//
+// A non-positive window puts the cutoff at or after now, so the first sweep
+// would delete the entire deployment history. Beyond a century the cutoff falls
+// outside the range Postgres can represent and every sweep fails, which would
+// surface as an hourly error rather than as a bad setting.
+func taskRetentionProblems(config *ServerConfig) []string {
+	if !config.TaskRetentionEnabled {
+		return nil
+	}
+	if config.TaskRetentionDays < 1 || config.TaskRetentionDays > maxTaskRetentionDays {
+		return []string{fmt.Sprintf("  - TaskRetentionDays: must be between 1 and %d days, got %d", maxTaskRetentionDays, config.TaskRetentionDays)}
+	}
+	return nil
 }
 
 // validateServerConfig checks the semantic rules that env parsing cannot
@@ -304,6 +339,7 @@ func validateServerConfig(config *ServerConfig) error {
 	if config.OIDC.RequireTaskReadAuth && !config.OIDC.Enabled {
 		problems = append(problems, "  - OIDC.RequireTaskReadAuth: OIDC_REQUIRE_TASK_READ_AUTH requires OIDC_ENABLED=true; with OIDC disabled no read endpoint is protected")
 	}
+	problems = append(problems, taskRetentionProblems(config)...)
 
 	if len(problems) == 0 {
 		return nil

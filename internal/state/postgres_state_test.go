@@ -1,7 +1,9 @@
 package state
 
 import (
+	"errors"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,8 +20,10 @@ type postgresTestEnv struct {
 	state *PostgresState
 }
 
-// Skips the test automatically when no Postgres configuration is present.
-func newPostgresTestEnv(t *testing.T) *postgresTestEnv {
+// Skips the test automatically when no Postgres configuration is present. Each
+// option adjusts the server config the state connects with, so settings the
+// state reads at connection time are exercised the way the server sets them.
+func newPostgresTestEnv(t *testing.T, opts ...func(*config.ServerConfig)) *postgresTestEnv {
 	t.Helper()
 
 	if os.Getenv("DB_DSN") == "" && os.Getenv("DB_HOST") == "" {
@@ -32,6 +36,9 @@ func newPostgresTestEnv(t *testing.T) *postgresTestEnv {
 	testConfig := &config.ServerConfig{
 		StateType: "postgres",
 		Db:        databaseConfig,
+	}
+	for _, opt := range opts {
+		opt(testConfig)
 	}
 
 	env := &postgresTestEnv{state: &PostgresState{}}
@@ -457,4 +464,230 @@ func TestPostgresState_ResumptionFieldsPersist(t *testing.T) {
 		assert.False(t, stored.OwnerId.Valid)
 		assert.False(t, stored.LeaseExpiresAt.Valid)
 	})
+}
+
+// withRetention configures the task retention window for a test environment.
+func withRetention(days int) func(*config.ServerConfig) {
+	return func(cfg *config.ServerConfig) {
+		cfg.TaskRetentionEnabled = true
+		cfg.TaskRetentionDays = days
+	}
+}
+
+// addAgedTask stores a task and backdates it to the given age with the given
+// status. Both columns are set by the database on insert, so a test that needs
+// history has to rewrite them.
+func (env *postgresTestEnv) addAgedTask(t *testing.T, app, status string, age time.Duration) *models.Task {
+	t.Helper()
+	task := env.addTask(t, sampleTask(app))
+	require.NoError(t, env.state.orm.Exec(
+		"UPDATE tasks SET status = ?, created = now() - make_interval(secs => ?) WHERE id = ?",
+		status, age.Seconds(), task.Id).Error)
+	return task
+}
+
+func (env *postgresTestEnv) taskExists(t *testing.T, id string) bool {
+	t.Helper()
+	var count int64
+	require.NoError(t, env.state.orm.Model(&state_models.TaskModel{}).Where("id = ?", id).Count(&count).Error)
+	return count > 0
+}
+
+func (env *postgresTestEnv) taskCount(t *testing.T) int64 {
+	t.Helper()
+	var count int64
+	require.NoError(t, env.state.orm.Model(&state_models.TaskModel{}).Count(&count).Error)
+	return count
+}
+
+const day = 24 * time.Hour
+
+// Deleting deployment history is irreversible, so nothing may be removed unless
+// the operator turned retention on.
+func TestPostgresState_TaskRetentionDisabled(t *testing.T) {
+	env := newPostgresTestEnv(t)
+
+	ancient := env.addAgedTask(t, "Ancient", models.StatusDeployedMessage, 3650*day)
+
+	require.NoError(t, env.state.deleteExpiredTasks())
+
+	assert.True(t, env.taskExists(t, ancient.Id),
+		"retention is off, so no task may be deleted regardless of age")
+}
+
+func TestPostgresState_TaskRetention(t *testing.T) {
+	env := newPostgresTestEnv(t, withRetention(30))
+
+	expired := env.addAgedTask(t, "Expired", models.StatusDeployedMessage, 31*day)
+	expiredFailed := env.addAgedTask(t, "ExpiredFailed", models.StatusFailedMessage, 400*day)
+	recent := env.addAgedTask(t, "Recent", models.StatusDeployedMessage, 29*day)
+	// An in-progress task may be claimed and actively monitored by a replica,
+	// which would then write a status for a row that no longer exists.
+	stuck := env.addAgedTask(t, "Stuck", models.StatusInProgressMessage, 400*day)
+
+	require.NoError(t, env.state.deleteExpiredTasks())
+
+	assert.False(t, env.taskExists(t, expired.Id))
+	assert.False(t, env.taskExists(t, expiredFailed.Id))
+	assert.True(t, env.taskExists(t, recent.Id), "a task inside the window must be kept")
+	assert.True(t, env.taskExists(t, stuck.Id), "an in-progress task must never be deleted")
+}
+
+// The first sweep after enabling retention can face a table holding every
+// deployment ever made, which is deleted in batches rather than one statement.
+func TestPostgresState_TaskRetentionDrainsBacklogLargerThanOneBatch(t *testing.T) {
+	env := newPostgresTestEnv(t, withRetention(30))
+
+	backlog := retentionDeleteBatchSize + 500
+	require.NoError(t, env.state.orm.Exec(`
+		INSERT INTO tasks (created, updated, images, status, app, author, project)
+		SELECT now() - make_interval(days => 400), now(), '[]'::jsonb, ?, 'Backlog', 'author', 'project'
+		FROM generate_series(1, ?)`, models.StatusDeployedMessage, backlog).Error)
+	require.Equal(t, int64(backlog), env.taskCount(t))
+
+	require.NoError(t, env.state.deleteExpiredTasks())
+
+	assert.Zero(t, env.taskCount(t), "every expired task must be removed, not just the first batch")
+}
+
+// Retention is driven by the hourly obsolete-task sweep, not by a loop of its own.
+func TestPostgresState_TaskRetentionRunsWithinObsoleteSweep(t *testing.T) {
+	env := newPostgresTestEnv(t, withRetention(30))
+
+	expired := env.addAgedTask(t, "Expired", models.StatusDeployedMessage, 400*day)
+	recent := env.addAgedTask(t, "Recent", models.StatusDeployedMessage, time.Hour)
+
+	env.state.ProcessObsoleteTasks(1)
+
+	assert.False(t, env.taskExists(t, expired.Id))
+	assert.True(t, env.taskExists(t, recent.Id))
+}
+
+// The window is the one piece of arithmetic that decides what is destroyed, so
+// it is pinned at the tightest legal setting rather than a day either side of a
+// month, where an off-by-one would land within microseconds of the boundary.
+func TestPostgresState_TaskRetentionWindowBoundary(t *testing.T) {
+	env := newPostgresTestEnv(t, withRetention(1))
+
+	past := env.addAgedTask(t, "JustPast", models.StatusDeployedMessage, 24*time.Hour+time.Minute)
+	inside := env.addAgedTask(t, "JustInside", models.StatusDeployedMessage, 24*time.Hour-time.Minute)
+
+	require.NoError(t, env.state.deleteExpiredTasks())
+
+	assert.False(t, env.taskExists(t, past.Id), "a task one minute past the window is removed")
+	assert.True(t, env.taskExists(t, inside.Id), "a task one minute inside the window is kept")
+}
+
+// A task the sweep aborts for staleness is past the window and collected by the
+// same pass — unless a replica still holds it. This pins the lease guard: the
+// two paths differ only in whether the claim is live.
+func TestPostgresState_TaskRetentionSparesTaskUnderActiveLease(t *testing.T) {
+	env := newPostgresTestEnv(t, withRetention(30))
+
+	// The HA case: a replica returning after an outage claims a rollout abandoned
+	// long ago and resumes monitoring it. Its creation timestamp is past the
+	// window and the sweep's earlier step marks it aborted for staleness, so
+	// without the lease guard this pass would delete the row the replica is still
+	// working on — leaving it unable to record the outcome.
+	resumed := env.addAgedTask(t, "Resumed", models.StatusInProgressMessage, 400*day)
+	require.NoError(t, env.state.ClaimTask(resumed.Id))
+
+	env.state.ProcessObsoleteTasks(1)
+
+	require.True(t, env.taskExists(t, resumed.Id),
+		"a task under an unexpired lease must survive, however old it is")
+
+	held, err := env.state.RenewLease(resumed.Id)
+	require.NoError(t, err)
+	assert.True(t, held, "the replica monitoring it must still hold its claim")
+
+	// Once the claim lapses the row is nobody's, and the next sweep collects it.
+	env.expireLease(t, resumed.Id)
+	require.NoError(t, env.state.deleteExpiredTasks())
+
+	assert.False(t, env.taskExists(t, resumed.Id),
+		"a lapsed lease no longer protects a task past the window")
+}
+
+// Every replica runs the sweep, so sweeps contend for the same rows — something
+// sequential tests never show. What is pinned here is the outcome: no sweep
+// fails, deadlocks, or double-counts, and between them they leave nothing
+// behind. Whether SKIP LOCKED made them step over each other or merely queue is
+// deliberately not asserted; both drain the backlog, and only the first is
+// observable under load a test cannot reproduce.
+func TestPostgresState_TaskRetentionConcurrentSweeps(t *testing.T) {
+	env := newPostgresTestEnv(t, withRetention(30))
+
+	const expired = 2500
+	require.NoError(t, env.state.orm.Exec(`
+		INSERT INTO tasks (created, updated, images, status, app, author, project)
+		SELECT now() - make_interval(days => 400), now(), '[]'::jsonb, ?, 'Raced', 'author', 'project'
+		FROM generate_series(1, ?)`, models.StatusDeployedMessage, expired).Error)
+	require.Equal(t, int64(expired), env.taskCount(t))
+
+	const sweepers = 4
+	var (
+		start = make(chan struct{})
+		wg    sync.WaitGroup
+		mu    sync.Mutex
+		errs  []error
+	)
+
+	for range sweepers {
+		replica := env.secondReplica(t)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			err := replica.deleteExpiredTasks()
+
+			mu.Lock()
+			defer mu.Unlock()
+			errs = append(errs, err)
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+
+	for _, err := range errs {
+		require.NoError(t, err, "a sweep must not fail because another was running")
+	}
+	// A row one sweeper skipped was locked by another that deletes it before
+	// returning, so nothing survives all four.
+	assert.Zero(t, env.taskCount(t), "concurrent sweeps must between them remove every expired task")
+}
+
+// The sweep funnels three steps into one "Couldn't process obsolete tasks" log
+// line, so the prefix is how an operator tells a failed retention pass from the
+// app-not-found delete or the stale-abort update. Only the prefix is asserted:
+// the driver's own wording is internal to database/sql and has no stable
+// sentinel to match on.
+func TestPostgresState_TaskRetentionSweepErrorNamesTheStep(t *testing.T) {
+	env := newPostgresTestEnv(t, withRetention(30))
+	env.addAgedTask(t, "Expired", models.StatusDeployedMessage, 31*day)
+
+	sqlDB, err := env.state.orm.DB()
+	require.NoError(t, err)
+	require.NoError(t, sqlDB.Close())
+
+	err = env.state.deleteExpiredTasks()
+
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "deleting tasks past the 30 day retention window")
+	assert.NotNil(t, errors.Unwrap(err), "the driver cause must stay wrapped with %w")
+}
+
+// The other half of the lease guard: an abandoned rollout nobody claimed is
+// aborted for staleness and collected by that same pass, which is what the
+// retention step running last buys. Only a live claim defers it.
+func TestPostgresState_TaskRetentionCollectsUnleasedTaskAbortedByTheSamePass(t *testing.T) {
+	env := newPostgresTestEnv(t, withRetention(30))
+
+	unclaimed := env.addAgedTask(t, "Unclaimed", models.StatusInProgressMessage, 400*day)
+
+	env.state.ProcessObsoleteTasks(1)
+
+	assert.False(t, env.taskExists(t, unclaimed.Id),
+		"with no replica holding it, a stale task is aborted and removed by the one sweep")
 }

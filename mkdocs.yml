@@ -172,7 +172,7 @@ plugins:
         Operations:
           - operations/index.md: Index of operational guides.
           - operations/observability.md: Prometheus metrics, suggested alerts, and an example Grafana dashboard.
-          - operations/database.md: Schema, migrations, backups, and sizing.
+          - operations/database.md: Schema, migrations, backups, sizing, and retention.
           - operations/troubleshooting.md: Diagnosing common problems.
         Contributing:
           - contributing/index.md: How to contribute.

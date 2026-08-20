@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -533,4 +534,117 @@ func TestServerConfig_DefaultValidationInterval(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, 300000, cfg.OIDC.TokenValidationInterval)
+}
+
+func TestNewServerConfig_TaskRetention(t *testing.T) {
+	baseEnv := func(t *testing.T) {
+		t.Helper()
+		t.Setenv("ARGO_URL", "https://example.com")
+		t.Setenv("ARGO_TOKEN", "secret-token")
+		t.Setenv("STATE_TYPE", "postgres")
+	}
+
+	t.Run("defaults to off with a one year window", func(t *testing.T) {
+		baseEnv(t)
+
+		cfg, err := NewServerConfig()
+
+		require.NoError(t, err)
+		assert.False(t, cfg.TaskRetentionEnabled)
+		assert.Equal(t, 365, cfg.TaskRetentionDays)
+	})
+
+	t.Run("custom window accepted", func(t *testing.T) {
+		baseEnv(t)
+		t.Setenv("TASK_RETENTION_ENABLED", "true")
+		t.Setenv("TASK_RETENTION_DAYS", "30")
+
+		cfg, err := NewServerConfig()
+
+		require.NoError(t, err)
+		assert.True(t, cfg.TaskRetentionEnabled)
+		assert.Equal(t, 30, cfg.TaskRetentionDays)
+	})
+
+	// A zero or negative window would put the cutoff at or after now, deleting the
+	// entire deployment history on the next sweep.
+	t.Run("non-positive window rejected when enabled", func(t *testing.T) {
+		for _, days := range []string{"0", "-1"} {
+			t.Run(days, func(t *testing.T) {
+				baseEnv(t)
+				t.Setenv("TASK_RETENTION_ENABLED", "true")
+				t.Setenv("TASK_RETENTION_DAYS", days)
+
+				_, err := NewServerConfig()
+
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "TaskRetentionDays")
+				assert.Contains(t, err.Error(), "must be between 1 and 36500 days")
+			})
+		}
+	})
+
+	// A window long enough to push the cutoff outside the range Postgres can
+	// represent fails inside the hourly sweep, where it names no setting.
+	t.Run("window beyond a century rejected when enabled", func(t *testing.T) {
+		baseEnv(t)
+		t.Setenv("TASK_RETENTION_ENABLED", "true")
+		t.Setenv("TASK_RETENTION_DAYS", "36501")
+
+		_, err := NewServerConfig()
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "TaskRetentionDays")
+		assert.Contains(t, err.Error(), "got 36501")
+	})
+
+	t.Run("a century is accepted", func(t *testing.T) {
+		baseEnv(t)
+		t.Setenv("TASK_RETENTION_ENABLED", "true")
+		t.Setenv("TASK_RETENTION_DAYS", "36500")
+
+		cfg, err := NewServerConfig()
+
+		require.NoError(t, err)
+		assert.Equal(t, 36500, cfg.TaskRetentionDays)
+	})
+
+	// With the toggle off nothing is ever deleted, so the window is inert and must
+	// not keep a server from starting.
+	t.Run("non-positive window ignored when disabled", func(t *testing.T) {
+		baseEnv(t)
+		t.Setenv("TASK_RETENTION_DAYS", "0")
+
+		cfg, err := NewServerConfig()
+
+		require.NoError(t, err)
+		assert.False(t, cfg.TaskRetentionEnabled)
+	})
+
+	// In-memory tasks die with the process, so retention has nothing to do there.
+	// It is inert rather than contradictory, so it warns instead of failing startup.
+	t.Run("accepted with in-memory state", func(t *testing.T) {
+		baseEnv(t)
+		t.Setenv("STATE_TYPE", "in-memory")
+		t.Setenv("TASK_RETENTION_ENABLED", "true")
+
+		cfg, err := NewServerConfig()
+
+		require.NoError(t, err)
+		assert.True(t, cfg.TaskRetentionEnabled)
+	})
+}
+
+// The retention settings are server-side only: /api/v1/config is unauthenticated
+// and no consumer reads them. Dropping the json:"-" tags would expose them under
+// a Go-derived key such as TaskRetentionDays, so the check is by key substring
+// and by value rather than by the snake_case name they would never carry.
+func TestServerConfig_TaskRetentionNotExposed(t *testing.T) {
+	cfg := &ServerConfig{TaskRetentionEnabled: true, TaskRetentionDays: 4242}
+
+	jsonBytes, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	assert.NotContains(t, strings.ToLower(string(jsonBytes)), "retention")
+	assert.NotContains(t, string(jsonBytes), "4242", "the window must not leak under a renamed key either")
 }
