@@ -144,6 +144,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The example Grafana dashboard now imports into any Grafana. It picks its Prometheus
+  through a **Data source** selector at the top instead of referencing a datasource by a
+  hardcoded `prometheus` uid, which only ever resolved on the bundled dev stack — anywhere
+  else every panel came up empty until each query was repointed by hand. The provisioned
+  dev datasource no longer pins that uid either. A new **Deployment Success Rate** stat
+  reports the share of deployments that reached `deployed` over the selected range,
+  counting a deployment superseded by a newer one as neither success nor failure. Both
+  failure panels aggregate `failed_deployment` with `max by (app)`, matching the suggested
+  alert rules — a fleet running several replicas listed one row per replica, or summed
+  them into a count no single application had.
 - A sign-in that cannot be completed — a provider error, a callback that cannot be
   exchanged, a redirect that never starts, or a server reporting OIDC as enabled without an
   issuer or client id — now stops on the Web UI's loading screen and states why, instead of

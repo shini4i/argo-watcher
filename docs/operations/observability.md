@@ -145,9 +145,9 @@ groups:
 
 ## Example dashboard
 
-A ready-made Grafana dashboard lives at [`monitoring/grafana/dashboards/argo-watcher.json`](https://github.com/shini4i/argo-watcher/blob/main/monitoring/grafana/dashboards/argo-watcher.json). Its **Overview** row covers availability, in-progress tasks, deployment counts and failing apps; the **Per-Application Breakdown** row is driven by an `Application` template variable and shows that app's deployment counts, failures, end-to-end duration, and the refresh / write-back / lock-wait percentiles. `gitops_batch_size`, `state_unavailable`, `accepted_deployments` and `unconfirmed_deployment_failures` have no panel yet.
+A ready-made Grafana dashboard lives at [`monitoring/grafana/dashboards/argo-watcher.json`](https://github.com/shini4i/argo-watcher/blob/main/monitoring/grafana/dashboards/argo-watcher.json). Its **Overview** row covers availability, in-progress tasks, the success rate and deployment counts for the selected range, failing apps and how deployments ended; the **Per-Application Breakdown** row is driven by an `Application` template variable and shows that app's deployment counts, failures, end-to-end duration, and the refresh / write-back / lock-wait percentiles. `gitops_batch_size`, `state_unavailable`, `accepted_deployments` and `unconfirmed_deployment_failures` have no panel yet.
 
-Import it through **Dashboards → New → Import**, or run it next to the dev server:
+Import it through **Dashboards → New → Import** — a **Data source** picker at the top of the dashboard selects which Prometheus to query, so no datasource UID has to match. Or run it next to the dev server:
 
 ```bash
 docker compose --profile monitoring up
