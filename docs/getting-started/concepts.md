@@ -23,8 +23,8 @@ Argo Watcher watches the Argo CD application for the images the pipeline just bu
 | `in progress` | Waiting for the requested images to be running, synced, and healthy. |
 | `deployed` | The application is synced and healthy with the requested images. |
 | `failed` | Argo CD reported a health or sync failure, `DEPLOYMENT_TIMEOUT` elapsed, or the application finished rolling out without ever declaring the requested image (see [Image is not part of application](../operations/troubleshooting.md#image-is-not-part-of-application)). |
-| `app not found` | Argo CD has no application with that name, or the token cannot see it. |
-| `aborted` | The outcome could not be confirmed: Argo CD was unreachable during the check, or the task sat in progress past the staleness window. Counts as a failure (`failed_deployment`); `argocd_unavailable` tells you whether Argo CD was the reason. |
+| `app not found` | Argo CD has no application with that name, or the token cannot see it. Counted under `unconfirmed_deployment_failures`, or under `failed_deployment` in the rarer case where an application that was already confirmed disappeared mid-rollout. |
+| `aborted` | The outcome could not be confirmed: Argo CD was unreachable during the check, or the task sat in progress past the staleness window. Counts as a failure — under `failed_deployment` when Argo CD had already confirmed the application, under `unconfirmed_deployment_failures` when it never did; `argocd_unavailable` tells you whether Argo CD was the reason. |
 | `cancelled` | Superseded by a newer deployment of one of the same images before reaching a final state; polling stops. Not counted as a failure. |
 
 Two rules keep supersession from cancelling unrelated work: only in-progress tasks that share an image with the new deployment are cancelled, and a deployment can only cancel one that presented no more authority than itself — a task submitted without a credential never cancels one submitted with a valid deploy token or JWT.

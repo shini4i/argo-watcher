@@ -100,6 +100,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   section is now headed `Failed resources:` rather than `Failed hooks:` (a failed apply is
   not a hook), and each line names the outcome that describes it instead of always the hook
   phase, so a resource whose live object went unhealthy mid-sync no longer reads `Synced`.
+- Deployment metrics are now labelled with an application only once Argo CD has confirmed
+  that application exists. `processed_deployments{app}` is recorded when the deployment's
+  first status check succeeds rather than when the task is accepted, and a deployment that
+  fails before that — a misspelled or renamed application, Argo CD unreachable, or a task
+  picked up from a lost replica after its window elapsed — is counted by the new
+  `unconfirmed_deployment_failures` counter instead of `failed_deployment{app}`. Total
+  submissions are counted by the new `accepted_deployments`. Both new counters carry no
+  labels: task submission accepts any application name without a credential, so nothing
+  from a submission may become a label value.
+
+  This is a breaking change for alerts and dashboards. On an instance whose clients deploy
+  without a credential, deployment metrics no longer collapse into `app="unknown"` — they
+  name the real application — and the `app="unknown"` series for `failed_deployment`, which
+  could never be reset because the reset used the real name, is gone. Anything counting
+  submissions off `processed_deployments` should move to `accepted_deployments`, and
+  anything alerting on failures should add `unconfirmed_deployment_failures` to keep seeing
+  the failures that never reached Argo CD. `unauthenticated_reads` is unchanged and still
+  uses `app="unknown"` for a read that did not resolve to a task.
 
 ### Fixed
 

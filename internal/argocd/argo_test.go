@@ -286,14 +286,11 @@ func TestArgoAddTask(t *testing.T) {
 			metrics := mocks.NewMockMetricsInterface(ctrl)
 			state := newTaskRepositoryMock(ctrl)
 
-			// mock calls. Only a validated task names the app: submission is open and
-			// the name is free text, so an uncredentialed caller must not be able to
-			// choose a label value.
-			expectedApp := models.UnknownApp
-			if validated {
-				expectedApp = "test-app"
-			}
-			metrics.EXPECT().AddProcessedDeployment(expectedApp)
+			// Acceptance is counted without naming the app: submission is open and the
+			// name is free text, so nothing here may become a label value (issue #552).
+			// The app is named only once ArgoCD confirms it, which happens in the
+			// monitoring path.
+			metrics.EXPECT().AddAcceptedDeployment()
 
 			task := models.Task{
 				App: "test-app",
@@ -339,7 +336,7 @@ func TestArgoAddTask(t *testing.T) {
 		metrics := mocks.NewMockMetricsInterface(ctrl)
 		state := newTaskRepositoryMock(ctrl)
 
-		metrics.EXPECT().AddProcessedDeployment("test-app")
+		metrics.EXPECT().AddAcceptedDeployment()
 
 		task := models.Task{App: "test-app", Images: []models.Image{{Tag: taskImageTag}}, Validated: true}
 		newTask := models.Task{Id: uuid.NewString(), App: "test-app", Images: []models.Image{{Tag: taskImageTag}}}
@@ -361,7 +358,7 @@ func TestArgoAddTask(t *testing.T) {
 		metrics := mocks.NewMockMetricsInterface(ctrl)
 		state := newTaskRepositoryMock(ctrl)
 
-		metrics.EXPECT().AddProcessedDeployment(models.UnknownApp)
+		metrics.EXPECT().AddAcceptedDeployment()
 
 		// History ordered created DESC: current is v2, an earlier task (target) ran v1.
 		deployed := []models.Task{
@@ -392,7 +389,7 @@ func TestArgoAddTask(t *testing.T) {
 		metrics := mocks.NewMockMetricsInterface(ctrl)
 		state := newTaskRepositoryMock(ctrl)
 
-		metrics.EXPECT().AddProcessedDeployment(models.UnknownApp)
+		metrics.EXPECT().AddAcceptedDeployment()
 
 		deployed := []models.Task{
 			{Id: "current", App: "test-app", Images: []models.Image{{Image: "app", Tag: "v2"}}, Status: models.StatusDeployedMessage},
@@ -654,7 +651,7 @@ func TestArgoAddTaskClaimsTheTask(t *testing.T) {
 			Return(int64(0), nil).AnyTimes()
 		stateMock.EXPECT().AddTask(gomock.Any()).Return(&models.Task{Id: "new-id", App: task.App}, nil)
 		stateMock.EXPECT().ClaimTask("new-id").Return(nil).Times(1)
-		metricsMock.EXPECT().AddProcessedDeployment(gomock.Any())
+		metricsMock.EXPECT().AddAcceptedDeployment()
 
 		created, err := argo.AddTask(task)
 		require.NoError(t, err)
@@ -677,7 +674,7 @@ func TestArgoAddTaskClaimsTheTask(t *testing.T) {
 			Return(int64(0), nil).AnyTimes()
 		stateMock.EXPECT().AddTask(gomock.Any()).Return(&models.Task{Id: "new-id", App: task.App}, nil)
 		stateMock.EXPECT().ClaimTask("new-id").Return(errors.New("database unreachable"))
-		metricsMock.EXPECT().AddProcessedDeployment(gomock.Any())
+		metricsMock.EXPECT().AddAcceptedDeployment()
 
 		created, err := argo.AddTask(task)
 		require.NoError(t, err, "the claim is best-effort; a sweep picks the task up instead")
