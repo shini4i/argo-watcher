@@ -313,7 +313,10 @@ func (state *PostgresState) deleteExpiredTasks() error {
 				FOR UPDATE SKIP LOCKED
 			)`, state.retentionDays, models.StatusInProgressMessage, retentionDeleteBatchSize)
 		if result.Error != nil {
-			return result.Error
+			// Named because the sweep runs three steps and reports their failures
+			// through one log line, where a bare driver error says nothing about which
+			// step produced it.
+			return fmt.Errorf("deleting tasks past the %d day retention window: %w", state.retentionDays, result.Error)
 		}
 
 		deleted += result.RowsAffected

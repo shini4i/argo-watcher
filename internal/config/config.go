@@ -288,6 +288,23 @@ func ensureConnectTimeout(dsn string, timeout int) string {
 	return fmt.Sprintf("%s connect_timeout=%d", dsn, timeout)
 }
 
+// taskRetentionProblems reports what makes the retention window unusable, or
+// nothing when retention is off — with the toggle disabled the window is inert.
+//
+// A non-positive window puts the cutoff at or after now, so the first sweep
+// would delete the entire deployment history. Beyond a century the cutoff falls
+// outside the range Postgres can represent and every sweep fails, which would
+// surface as an hourly error rather than as a bad setting.
+func taskRetentionProblems(config *ServerConfig) []string {
+	if !config.TaskRetentionEnabled {
+		return nil
+	}
+	if config.TaskRetentionDays < 1 || config.TaskRetentionDays > maxTaskRetentionDays {
+		return []string{fmt.Sprintf("  - TaskRetentionDays: must be between 1 and %d days, got %d", maxTaskRetentionDays, config.TaskRetentionDays)}
+	}
+	return nil
+}
+
 // validateServerConfig checks the semantic rules that env parsing cannot
 // express (allowed enum values, numeric ranges). It reports every violation in
 // one grouped message — mirroring helpers.PrettifyEnvError — so an operator can
@@ -322,14 +339,7 @@ func validateServerConfig(config *ServerConfig) error {
 	if config.OIDC.RequireTaskReadAuth && !config.OIDC.Enabled {
 		problems = append(problems, "  - OIDC.RequireTaskReadAuth: OIDC_REQUIRE_TASK_READ_AUTH requires OIDC_ENABLED=true; with OIDC disabled no read endpoint is protected")
 	}
-	// A non-positive window puts the cutoff at or after now, so the first sweep
-	// would delete the entire deployment history. Beyond a century the cutoff
-	// falls outside the range Postgres can represent and every sweep fails, which
-	// would surface as an hourly error rather than as a bad setting. Only checked
-	// when retention is on: with the toggle off the value is inert.
-	if config.TaskRetentionEnabled && (config.TaskRetentionDays < 1 || config.TaskRetentionDays > maxTaskRetentionDays) {
-		problems = append(problems, fmt.Sprintf("  - TaskRetentionDays: must be between 1 and %d days, got %d", maxTaskRetentionDays, config.TaskRetentionDays))
-	}
+	problems = append(problems, taskRetentionProblems(config)...)
 
 	if len(problems) == 0 {
 		return nil

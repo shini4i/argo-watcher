@@ -1,6 +1,7 @@
 package state
 
 import (
+	"errors"
 	"os"
 	"sync"
 	"testing"
@@ -647,4 +648,24 @@ func TestPostgresState_TaskRetentionConcurrentSweeps(t *testing.T) {
 	// A row one sweeper skipped was locked by another that deletes it before
 	// returning, so nothing survives all four.
 	assert.Zero(t, env.taskCount(t), "concurrent sweeps must between them remove every expired task")
+}
+
+// The sweep funnels three steps into one "Couldn't process obsolete tasks" log
+// line, so the prefix is how an operator tells a failed retention pass from the
+// app-not-found delete or the stale-abort update. Only the prefix is asserted:
+// the driver's own wording is internal to database/sql and has no stable
+// sentinel to match on.
+func TestPostgresState_TaskRetentionSweepErrorNamesTheStep(t *testing.T) {
+	env := newPostgresTestEnv(t, withRetention(30))
+	env.addAgedTask(t, "Expired", models.StatusDeployedMessage, 31*day)
+
+	sqlDB, err := env.state.orm.DB()
+	require.NoError(t, err)
+	require.NoError(t, sqlDB.Close())
+
+	err = env.state.deleteExpiredTasks()
+
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "deleting tasks past the 30 day retention window")
+	assert.NotNil(t, errors.Unwrap(err), "the driver cause must stay wrapped with %w")
 }
