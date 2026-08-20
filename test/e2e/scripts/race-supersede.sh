@@ -79,6 +79,10 @@ SECONDS_TOTAL="$COMPETITOR_SECONDS" INTERVAL="$COMPETITOR_INTERVAL" \
   "${here}/competitor.sh" & comp_pid=$!
 sleep 5
 
+# Read as a delta around the race: the counter is cumulative and shared with every
+# other phase running against this release.
+cancelled_before=$(metric_label_sum deployments_total result cancelled)
+
 # 3) Race: fire OLD then NEW; NEW must supersede the still-retrying OLD.
 echo "race: ${APP} <- OLD ${OLD_TAG} then NEW ${NEW_TAG} (competitor forces write-back retries)"
 deploy "$OLD_TAG" "$old_out" & old_pid=$!
@@ -108,6 +112,9 @@ grep -qiE "supersed|cancel" "$old_out" \
   || bad "OLD client output did not report the deploy was superseded/cancelled"
 [[ "$committed" == "$NEW_TAG" ]] \
   || bad "committed tag ${committed:-<none>} is not the newer ${NEW_TAG} (superseded task may have clobbered the winner)"
+cancelled_after=$(metric_label_sum deployments_total result cancelled)
+[[ "$cancelled_after" -gt "$cancelled_before" ]] \
+  || bad "deployments_total{result=cancelled} did not rise (${cancelled_before} -> ${cancelled_after})"
 
 if [[ "$E2E_FAILS" -eq 0 ]]; then
   echo "race OK: newer tag ${NEW_TAG} won; older ${OLD_TAG} was superseded and did not clobber it"

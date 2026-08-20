@@ -131,8 +131,13 @@ metrics_fixture() {
 # HELP failed_deployment Failed deployments
 failed_deployment{app="app1"} 2
 failed_deployment{app="app2"} 3
-processed_deployments 7
-processed_deployments_created 1.7e+09
+accepted_deployments 7
+accepted_deployments_created 1.7e+09
+deployments_total{app="app1",result="deployed"} 4
+deployments_total{app="app2",result="deployed"} 6
+deployments_total{app="app1",result="failed"} 1
+deployments_total{app="app1",result="app not found"} 2
+deployments_total_created{app="app1",result="deployed"} 1.7e+09
 argocd_unavailable 0
 gitops_writeback_duration_seconds_bucket{le="0.5"} 11
 gitops_writeback_duration_seconds_sum 4.2
@@ -147,7 +152,7 @@ PROM
 }
 
 @test "metric_sum reads an unlabelled series" {
-  run metric_sum processed_deployments "$(metrics_fixture)"
+  run metric_sum accepted_deployments "$(metrics_fixture)"
   assert_output "7"
 }
 
@@ -162,10 +167,33 @@ PROM
 }
 
 @test "metric_sum does not capture the _created sibling" {
-  # A bare prefix match would fold processed_deployments_created (a unix timestamp)
-  # into processed_deployments.
-  run metric_sum processed_deployments "$(metrics_fixture)"
+  # A bare prefix match would fold accepted_deployments_created (a unix timestamp)
+  # into accepted_deployments.
+  run metric_sum accepted_deployments "$(metrics_fixture)"
   assert_output "7"
+}
+
+@test "metric_label_sum sums only the matching label value" {
+  run metric_label_sum deployments_total result deployed "$(metrics_fixture)"
+  assert_output "10"
+}
+
+@test "metric_label_sum yields 0 when no series carries the value" {
+  run metric_label_sum deployments_total result aborted "$(metrics_fixture)"
+  assert_output "0"
+}
+
+@test "metric_label_sum does not capture the _created sibling" {
+  # deployments_total_created carries the same labels, so an unanchored match would
+  # fold a unix timestamp into the count and the collect.sh gate would pass vacuously.
+  run metric_label_sum deployments_total result deployed "$(metrics_fixture)"
+  assert_output "10"
+}
+
+@test "metric_label_sum matches a value containing spaces" {
+  # "app not found" is a real result value, and the sum reads the last column.
+  run metric_label_sum deployments_total result "app not found" "$(metrics_fixture)"
+  assert_output "2"
 }
 
 @test "metric_sum histogram _count excludes _bucket and _sum" {
@@ -194,7 +222,7 @@ PROM
 @test "metric_raw does not match a longer metric name by prefix" {
   # The trailing space in the pattern is what keeps in_progress_tasks from also
   # matching an in_progress_tasks_total, and argocd_unavailable from a _created.
-  run metric_raw processed_deployments "$(metrics_fixture)"
+  run metric_raw accepted_deployments "$(metrics_fixture)"
   assert_output "7"
 }
 

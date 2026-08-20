@@ -166,9 +166,10 @@ func (monitor *DeploymentMonitor) ConfirmApplication(ctx context.Context, appNam
 	return app, nil
 }
 
-// CountProcessedDeployment records a deployment whose application ArgoCD confirmed.
-func (monitor *DeploymentMonitor) CountProcessedDeployment(app string) {
-	monitor.argo.metrics.AddProcessedDeployment(app)
+// CountDeploymentOutcome records the terminal state a deployment reached, once per
+// deployment and only for an application ArgoCD confirmed.
+func (monitor *DeploymentMonitor) CountDeploymentOutcome(app, result string) {
+	monitor.argo.metrics.AddDeploymentOutcome(app, result)
 }
 
 // StoreInitialAppStatus caches the initial rollout status for comparison during monitoring.

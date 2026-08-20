@@ -206,6 +206,7 @@ func TestResumeRollout_KeepsTheOriginalDeadline(t *testing.T) {
 	metricsMock.EXPECT().AddInProgressTask()
 	metricsMock.EXPECT().RemoveInProgressTask()
 	metricsMock.EXPECT().ResetFailedDeployment(task.App)
+	metricsMock.EXPECT().AddDeploymentOutcome(task.App, models.StatusDeployedMessage)
 	metricsMock.EXPECT().ObserveDeploymentDuration(task.App, gomock.Any())
 	stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
 

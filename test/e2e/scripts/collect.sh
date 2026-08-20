@@ -3,7 +3,8 @@
 #   - any DATA RACE in an argo-watcher pod log
 #   - failed_deployment or unconfirmed_deployment_failures != 0
 #   - argocd_unavailable != 0
-#   - processed_deployments == 0 (no work was actually processed)
+#   - deployments_total records no outcome at all, or fewer "deployed" than the soak
+#     actually deployed
 #   - accepted_deployments == 0 (no deployment was even submitted)
 #   - in_progress_tasks does not drain back to 0 (leaked/stuck task tracking)
 #   - any of the duration histograms recorded 0 observations, i.e. the
@@ -36,10 +37,15 @@ done
 echo "=== metrics ==="
 metrics="$(curl -s -m 10 "${AW_URL}/metrics")"
 fd=$(metric_sum failed_deployment "$metrics")
-pd=$(metric_sum processed_deployments "$metrics")
+dt=$(metric_sum deployments_total "$metrics")
+# "At least this soak's successes", not an exact tally or a zero-failures gate: the
+# counter is cumulative over a process that earlier phases shared, and unlike the
+# failed_deployment gauge above it never resets when a later deploy recovers.
+ok_dep=$(metric_label_sum deployments_total result deployed "$metrics")
+want_dep=$(jq -r '.deployed' "$SUMMARY")
 # The soak deploys real applications, so every submission must reach Argo CD
-# confirmation: accepted_deployments counts them on submission, processed_deployments
-# once Argo CD answered for the app, and a failure before that lands in
+# confirmation: accepted_deployments counts them on submission, deployments_total
+# once the deployment ends, and a failure before confirmation lands in
 # unconfirmed_deployment_failures — which a green soak never records.
 ad=$(metric_sum accepted_deployments "$metrics")
 # metric_raw, not metric_sum: this counter is unlabelled and always exported, so an
@@ -78,7 +84,7 @@ drained() {
 }
 retry 15 1 drained
 
-echo "  failed_deployment=${fd} processed_deployments=${pd} argocd_unavailable=${au:-?} in_progress_tasks=${ip:-?}"
+echo "  failed_deployment=${fd} deployments_total=${dt} (deployed=${ok_dep}, soak deployed ${want_dep}) argocd_unavailable=${au:-?} in_progress_tasks=${ip:-?}"
 echo "  accepted_deployments=${ad} unconfirmed_deployment_failures=${uf}"
 echo "  refresh_count=${rc} writeback_count=${wc} lock_wait_count=${lc} deployment_count=${dc}"
 [[ "${fd:-0}" == "0" ]]  || bad "failed_deployment=${fd}"
@@ -87,7 +93,15 @@ echo "  refresh_count=${rc} writeback_count=${wc} lock_wait_count=${lc} deployme
 # the renamed/unregistered case these gates exist to catch.
 [[ "${uf:-absent}" == "0" ]] || bad "unconfirmed_deployment_failures=${uf:-<absent>}"
 [[ "${au:-absent}" == "0" ]] || bad "argocd_unavailable=${au:-<absent>}"
-[[ "${pd:-0}" -gt 0 ]]   || bad "processed_deployments=${pd} (expected > 0)"
+[[ "${dt:-0}" -gt 0 ]] || bad "deployments_total=${dt} (expected > 0)"
+# Checked as text first: jq prints "null" for a missing key, and arithmetic evaluation
+# resolves that to 0, which would satisfy the gate for any counter value.
+if [[ "${want_dep}" =~ ^[0-9]+$ ]]; then
+  [[ "${ok_dep:-0}" -ge "${want_dep}" ]] \
+    || bad "deployments_total{result=deployed}=${ok_dep} < the soak's ${want_dep} deployed task(s)"
+else
+  bad "driver summary has no numeric .deployed (got '${want_dep}')"
+fi
 [[ "${ad:-0}" -gt 0 ]]   || bad "accepted_deployments=${ad} (expected > 0)"
 [[ "${ip:-1}" == "0" ]]  || bad "in_progress_tasks=${ip:-<absent>} did not drain to 0"
 [[ "${rc:-0}" -gt 0 ]]   || bad "argocd_refresh_duration_seconds_count=${rc} (expected > 0)"
