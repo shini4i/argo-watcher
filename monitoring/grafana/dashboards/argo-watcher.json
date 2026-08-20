@@ -372,7 +372,7 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "description": "Applications currently reporting failed deployments before first success. The gauge is per replica and each deployment is monitored by one of them, so this aggregates with max by (app) — the same aggregation the suggested alert rules use — rather than summing replicas that never handled the application.",
+      "description": "Applications currently reporting failed deployments before first success. The gauge is per replica and each deployment is monitored by one of them, so this aggregates with max by (app) — the same aggregation the suggested alert rules use — rather than summing replicas that never handled the application. With several replicas a recovered application can keep its row: each replica clears only its own gauge, and only when it handles a later success for that application, so a row can outlive the failure until that pod restarts.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
