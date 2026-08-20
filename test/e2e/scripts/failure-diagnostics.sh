@@ -268,6 +268,11 @@ SCENARIOS=(
   scenario_image_not_part_of_app
 )
 
+# Every scenario below drives a real deployment to the "failed" status, so the counter
+# must rise by one per scenario. A delta, because it is cumulative across the phases
+# sharing this release.
+failed_before=$(metric_label_sum deployments_total result failed)
+
 # --- runner -----------------------------------------------------------------
 for scenario in "${SCENARIOS[@]}"; do
   echo "=== ${scenario#scenario_} ==="
@@ -307,5 +312,13 @@ for scenario in "${SCENARIOS[@]}"; do
 
   [[ -n "$teardown" ]] && { echo "  teardown: $teardown"; "$teardown"; }
 done
+
+failed_after=$(metric_label_sum deployments_total result failed)
+want_failed=$(( failed_before + ${#SCENARIOS[@]} ))
+if [[ "$failed_after" -ge "$want_failed" ]]; then
+  ok "deployments_total{result=failed} rose to ${failed_after} (>= ${want_failed})"
+else
+  bad "deployments_total{result=failed}=${failed_after}, expected >= ${want_failed} after ${#SCENARIOS[@]} failing deployments"
+fi
 
 phase_end FAILURE-DIAGNOSTICS

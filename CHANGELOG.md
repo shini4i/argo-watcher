@@ -60,6 +60,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deleted while it was still being finished. Such a task is collected by a later sweep,
   once its lease lapses. The setting applies to `STATE_TYPE=postgres` only; with the
   in-memory backend it is inert and the server says so at startup.
+- Deployment outcomes are now measurable. The new `deployments_total` counter is
+  incremented once per deployment when it ends, labelled with the application and the
+  terminal status it reached — `deployed`, `failed`, `aborted`, `app not found` or
+  `cancelled` — so `sum by (result) (increase(deployments_total[1h]))` gives a real
+  breakdown and a success rate over any window. Until now nothing answered that question:
+  the only counter of finished deployments counted successes, while `failed_deployment` is
+  a gauge reset to zero on the next success, so any ratio built from the pair drifted
+  toward 100% success the longer the process ran.
+
+  Only deployments whose application Argo CD confirmed are counted, on the same rule as
+  the other per-app metrics; the rest stay on `unconfirmed_deployment_failures`. The label
+  set is bounded by the task statuses, so there is no cardinality risk. The bundled Grafana
+  dashboard gains a **Deployment Outcomes** panel, and `docs/operations/observability.md`
+  carries the success-rate query.
 
 ### Changed
 
@@ -101,14 +115,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   not a hook), and each line names the outcome that describes it instead of always the hook
   phase, so a resource whose live object went unhealthy mid-sync no longer reads `Synced`.
 - Deployment metrics are now labelled with an application only once Argo CD has confirmed
-  that application exists. `processed_deployments{app}` is recorded when the deployment's
-  first status check succeeds rather than when the task is accepted, and a deployment that
-  fails before that — a misspelled or renamed application, Argo CD unreachable, or a task
-  picked up from a lost replica after its window elapsed — is counted by the new
-  `unconfirmed_deployment_failures` counter instead of `failed_deployment{app}`. Total
-  submissions are counted by the new `accepted_deployments`. Both new counters carry no
-  labels: task submission accepts any application name without a credential, so nothing
-  from a submission may become a label value.
+  that application exists. A deployment is labelled from the moment its first status check
+  succeeds rather than when the task is accepted, and one that fails before that — a
+  misspelled or renamed application, Argo CD unreachable, or a task picked up from a lost
+  replica after its window elapsed — is counted by the new `unconfirmed_deployment_failures`
+  counter instead of `failed_deployment{app}`. Total submissions are counted by the new
+  `accepted_deployments`. Both new counters carry no labels: task submission accepts any
+  application name without a credential, so nothing from a submission may become a label
+  value.
 
   This is a breaking change for alerts and dashboards. On an instance whose clients deploy
   without a credential, deployment metrics no longer collapse into `app="unknown"` — they
@@ -118,6 +132,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   anything alerting on failures should add `unconfirmed_deployment_failures` to keep seeing
   the failures that never reached Argo CD. `unauthenticated_reads` is unchanged and still
   uses `app="unknown"` for a read that did not resolve to a task.
+
+### Removed
+
+- The `processed_deployments` counter is gone, replaced by `deployments_total`. It counted
+  the same deployments, so `sum without (result) (deployments_total)` is the direct
+  substitute — with one difference worth knowing before swapping it into a dashboard: the
+  new counter is incremented when a deployment ends rather than when Argo CD confirms the
+  application, so a deployment in flight is not counted until it finishes. Use
+  `in_progress_tasks` for the live view. The bundled dashboard is already updated.
 
 ### Fixed
 

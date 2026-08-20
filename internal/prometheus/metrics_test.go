@@ -9,21 +9,42 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/shini4i/argo-watcher/internal/models"
 )
 
-func TestMetrics_AddProcessedDeployment(t *testing.T) {
+// The result strings are spelled out rather than taken from models.Status*: they are a
+// contract read outside Go — the documented PromQL, the Grafana dashboard's byName
+// overrides, and the e2e metric gates — so a renamed constant must fail here.
+func TestMetrics_AddDeploymentOutcome(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	m := NewMetrics(reg)
 	expectedMetric := `
-		# HELP processed_deployments Deployments taken into monitoring, counted once ArgoCD confirmed the application exists.
-		# TYPE processed_deployments counter
-		processed_deployments{app="test-app"} 1
+		# HELP deployments_total Deployments that reached a terminal state for an application ArgoCD confirmed, by outcome.
+		# TYPE deployments_total counter
+		deployments_total{app="test-app",result="aborted"} 1
+		deployments_total{app="test-app",result="app not found"} 1
+		deployments_total{app="test-app",result="cancelled"} 1
+		deployments_total{app="test-app",result="deployed"} 2
+		deployments_total{app="test-app",result="failed"} 1
 	`
 
-	m.AddProcessedDeployment("test-app")
+	for _, result := range []string{"deployed", "deployed", "failed", "aborted", "app not found", "cancelled"} {
+		m.AddDeploymentOutcome("test-app", result)
+	}
 
-	err := testutil.CollectAndCompare(m.ProcessedDeployments, strings.NewReader(expectedMetric))
+	err := testutil.CollectAndCompare(reg, strings.NewReader(expectedMetric), "deployments_total")
 	assert.NoError(t, err)
+}
+
+// The label values above are only a contract if they are what the rollout actually
+// records, which is what these constants are.
+func TestTerminalStatusConstantsMatchResultLabels(t *testing.T) {
+	assert.Equal(t, "deployed", models.StatusDeployedMessage)
+	assert.Equal(t, "failed", models.StatusFailedMessage)
+	assert.Equal(t, "aborted", models.StatusAborted)
+	assert.Equal(t, "app not found", models.StatusAppNotFoundMessage)
+	assert.Equal(t, "cancelled", models.StatusCancelledMessage)
 }
 
 func TestMetrics_AddFailedDeployment(t *testing.T) {

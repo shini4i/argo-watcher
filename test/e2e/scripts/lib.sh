@@ -203,13 +203,22 @@ post_task() {
 
 # metric_sum <metric> [metrics-text]: sum the value column across every series of
 # <metric>, scraping /metrics if no text is given. The `[ {]` guard anchors on the
-# exact metric name, so `processed_deployments` never captures
-# `processed_deployments_created` and a histogram's `_count` never pulls in its
+# exact metric name, so `accepted_deployments` never captures
+# `accepted_deployments_created` and a histogram's `_count` never pulls in its
 # `_bucket` / `_sum` siblings.
 metric_sum() {
   local metric="$1" text="${2-}"
   [[ -n "$text" ]] || text="$(curl -s -m 10 "${AW_URL}/metrics")"
   awk -v k="^${metric}[ {]" '$0 ~ k {s+=$NF} END{print s+0}' <<<"$text"
+  return
+}
+
+# metric_label_sum <metric> <label> <value> [metrics-text]: metric_sum restricted to
+# the series carrying <label>="<value>".
+metric_label_sum() {
+  local metric="$1" label="$2" value="$3" text="${4-}"
+  [[ -n "$text" ]] || text="$(curl -s -m 10 "${AW_URL}/metrics")"
+  awk -v k="^${metric}[{].*${label}=\"${value}\"" '$0 ~ k {s+=$NF} END{print s+0}' <<<"$text"
   return
 }
 

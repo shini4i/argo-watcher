@@ -27,6 +27,8 @@ Argo Watcher watches the Argo CD application for the images the pipeline just bu
 | `aborted` | The outcome could not be confirmed: Argo CD was unreachable during the check, or the task sat in progress past the staleness window. Counts as a failure — under `failed_deployment` when Argo CD had already confirmed the application, under `unconfirmed_deployment_failures` when it never did; `argocd_unavailable` tells you whether Argo CD was the reason. |
 | `cancelled` | Superseded by a newer deployment of one of the same images before reaching a final state; polling stops. Not counted as a failure. |
 
+Every terminal status also increments `deployments_total{app,result}` once the deployment ends, provided Argo CD confirmed the application — see [Observability](../operations/observability.md#metrics).
+
 Two rules keep supersession from cancelling unrelated work: only in-progress tasks that share an image with the new deployment are cancelled, and a deployment can only cancel one that presented no more authority than itself — a task submitted without a credential never cancels one submitted with a valid deploy token or JWT.
 
 ## Deployment locking

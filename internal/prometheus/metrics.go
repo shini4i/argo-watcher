@@ -8,7 +8,7 @@ import (
 // for dependency injection and mocking in tests.
 type MetricsInterface interface {
 	AddAcceptedDeployment()
-	AddProcessedDeployment(app string)
+	AddDeploymentOutcome(app, result string)
 	AddUnconfirmedFailure()
 	AddFailedDeployment(app string)
 	ResetFailedDeployment(app string)
@@ -27,7 +27,7 @@ type MetricsInterface interface {
 
 type Metrics struct {
 	FailedDeployment     *prometheus.GaugeVec
-	ProcessedDeployments *prometheus.CounterVec
+	DeploymentsTotal     *prometheus.CounterVec
 	AcceptedDeployments  prometheus.Counter
 	UnconfirmedFailures  prometheus.Counter
 	ArgocdUnavailable    prometheus.Gauge
@@ -52,17 +52,12 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 			Name: "failed_deployment",
 			Help: "Per application failed deployment count before first success.",
 		}, []string{"app"}),
-		// ProcessedDeployments is only incremented once ArgoCD has answered for the
-		// application, which is what makes the app name safe as a label: task submission
-		// takes an arbitrary name without a credential (issue #552). Counted by the replica
-		// that accepted the deployment, so a handover does not count it twice. Its gap to
-		// AcceptedDeployments is dominated by deployments naming an application ArgoCD
-		// never confirmed, but a deployment superseded before its first fetch — or one
-		// whose accepting replica died before reaching it — widens the gap too.
-		ProcessedDeployments: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "processed_deployments",
-			Help: "Deployments taken into monitoring, counted once ArgoCD confirmed the application exists.",
-		}, []string{"app"}),
+		// Counted once per deployment, only for an application ArgoCD confirmed — which is
+		// what makes the app name safe as a label (issue #552). See UnconfirmedFailures.
+		DeploymentsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "deployments_total",
+			Help: "Deployments that reached a terminal state for an application ArgoCD confirmed, by outcome.",
+		}, []string{"app", "result"}),
 		// AcceptedDeployments counts every deployment accepted, recorded when the task is
 		// created and therefore before ArgoCD is asked anything. It carries no app label
 		// because at that point the name is only what the submission claimed, and labelling
@@ -158,15 +153,15 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		}, []string{"app"}),
 	}
 
-	reg.MustRegister(m.FailedDeployment, m.ProcessedDeployments, m.AcceptedDeployments, m.UnconfirmedFailures, m.ArgocdUnavailable, m.StateUnavailable, m.InProgressTasks, m.RefreshDuration, m.GitWritebackDuration, m.GitLockWaitDuration, m.DeploymentDuration, m.GitBatchSize, m.UnauthenticatedReads, m.SkippedWritebacks)
+	reg.MustRegister(m.FailedDeployment, m.DeploymentsTotal, m.AcceptedDeployments, m.UnconfirmedFailures, m.ArgocdUnavailable, m.StateUnavailable, m.InProgressTasks, m.RefreshDuration, m.GitWritebackDuration, m.GitLockWaitDuration, m.DeploymentDuration, m.GitBatchSize, m.UnauthenticatedReads, m.SkippedWritebacks)
 
 	return m
 }
 
-// AddProcessedDeployment increments ProcessedDeployments for app. Callers must have had
-// the application confirmed by ArgoCD first; see that field.
-func (m *Metrics) AddProcessedDeployment(app string) {
-	m.ProcessedDeployments.WithLabelValues(app).Inc()
+// AddDeploymentOutcome increments DeploymentsTotal for app under the terminal status
+// result. Call once per deployment, and only for a confirmed application; see that field.
+func (m *Metrics) AddDeploymentOutcome(app, result string) {
+	m.DeploymentsTotal.WithLabelValues(app, result).Inc()
 }
 
 // AddAcceptedDeployment increments AcceptedDeployments; see that field for why it carries

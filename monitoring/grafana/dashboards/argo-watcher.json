@@ -25,7 +25,7 @@
       {
         "current": {},
         "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "definition": "label_values(processed_deployments{job=\"argo-watcher\"}, app)",
+        "definition": "label_values(deployments_total{job=\"argo-watcher\"}, app)",
         "includeAll": true,
         "allValue": ".*",
         "label": "Application",
@@ -34,7 +34,7 @@
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values(processed_deployments{job=\"argo-watcher\"}, app)",
+          "query": "label_values(deployments_total{job=\"argo-watcher\"}, app)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 2,
@@ -142,7 +142,7 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Deployments Argo CD confirmed and argo-watcher then monitored, since startup (processed_deployments counter, summed over all apps). Submissions that never reached a confirmed application are not here — see accepted_deployments.",
+      "description": "Deployments that reached an outcome, since startup (deployments_total, summed over every app and result). Submissions that never reached a confirmed application are not here — see accepted_deployments.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -169,11 +169,11 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(processed_deployments)",
+          "expr": "sum(deployments_total)",
           "refId": "A"
         }
       ],
-      "title": "Total Processed Deployments",
+      "title": "Total Deployments",
       "type": "stat"
     },
     {
@@ -218,7 +218,7 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Deployments processed per application within the selected time range (increase of processed_deployments). Sort or filter by column. An application idle in the window reads 0 — widen the range to include its activity. argo-watcher is event-driven, so this is a small integer count, not a per-second rate.",
+      "description": "Deployments per application within the selected time range (increase of deployments_total, every outcome). Sort or filter by column. An application idle in the window reads 0 — widen the range to include its activity. argo-watcher is event-driven, so this is a small integer count, not a per-second rate.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "continuous-GrYlRd" },
@@ -252,7 +252,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "round(sum by (app) (increase(processed_deployments[$__range])))",
+          "expr": "round(sum by (app) (increase(deployments_total[$__range])))",
           "format": "table",
           "instant": true,
           "refId": "A"
@@ -369,7 +369,7 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Deployments per application over time (increase of processed_deployments per interval). Each bar is the number of deployments in that interval.",
+      "description": "Deployments per application over time (increase of deployments_total per interval). Each bar is the number of deployments in that interval.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -403,7 +403,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (app) (increase(processed_deployments[$__rate_interval]))",
+          "expr": "sum by (app) (increase(deployments_total[$__rate_interval]))",
           "legendFormat": "{{app}}",
           "refId": "A"
         }
@@ -412,8 +412,73 @@
       "type": "timeseries"
     },
     {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "How deployments ended within the selected time range (increase of deployments_total by result). \"cancelled\" is a deployment superseded by a newer one for the same application, not a fault. Failures before Argo CD confirmed the application are not here — see unconfirmed_deployment_failures.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "bars",
+            "fillOpacity": 60,
+            "gradientMode": "none",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "normal" }
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "deployed" },
+            "properties": [ { "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } } ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "failed" },
+            "properties": [ { "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } } ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "aborted" },
+            "properties": [ { "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } } ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "app not found" },
+            "properties": [ { "id": "color", "value": { "fixedColor": "purple", "mode": "fixed" } } ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "cancelled" },
+            "properties": [ { "id": "color", "value": { "fixedColor": "text", "mode": "fixed" } } ]
+          }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 21 },
+      "id": 15,
+      "options": {
+        "legend": { "calcs": ["sum"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "pluginVersion": "12.3.8",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (result) (increase(deployments_total[$__rate_interval]))",
+          "legendFormat": "{{result}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Deployment Outcomes",
+      "type": "timeseries"
+    },
+    {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 21 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 29 },
       "id": 101,
       "panels": [],
       "title": "Per-Application Breakdown — $app",
@@ -421,7 +486,7 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Deployments over time for the selected application(s) (increase of processed_deployments per interval). Each bar is the number of deployments in that interval.",
+      "description": "Deployments over time for the selected application(s) (increase of deployments_total per interval). Each bar is the number of deployments in that interval.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -445,7 +510,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 30 },
       "id": 9,
       "options": {
         "legend": { "calcs": ["max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -455,7 +520,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (app) (increase(processed_deployments{app=~\"$app\"}[$__rate_interval]))",
+          "expr": "sum by (app) (increase(deployments_total{app=~\"$app\"}[$__rate_interval]))",
           "legendFormat": "{{app}}",
           "refId": "A"
         }
@@ -489,7 +554,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 22 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 30 },
       "id": 10,
       "options": {
         "legend": { "calcs": ["max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -533,7 +598,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 30 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 38 },
       "id": 11,
       "options": {
         "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },
@@ -589,7 +654,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 30 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 38 },
       "id": 12,
       "options": {
         "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },
@@ -645,7 +710,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 30 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 38 },
       "id": 13,
       "options": {
         "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },
@@ -701,7 +766,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 38 },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 46 },
       "id": 14,
       "options": {
         "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },

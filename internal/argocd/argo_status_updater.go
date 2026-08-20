@@ -159,7 +159,7 @@ func (updater *ArgoStatusUpdater) waitForRollout(task models.Task, resumed bool,
 	// about the claim alone.
 	abandoned := func() bool { return lease.Lost() || draining() }
 
-	application, waited, confirmed, err := updater.waitForApplicationDeployment(task, resumed, abandoned)
+	application, waited, confirmed, err := updater.waitForApplicationDeployment(task, abandoned)
 
 	// Re-checked here because only the poll loop and the write-back consult the
 	// predicate themselves. Every other way out — a failed fetch, a write-back error,
@@ -210,6 +210,12 @@ func (updater *ArgoStatusUpdater) waitForRollout(task models.Task, resumed bool,
 		updater.monitor.ProcessDeploymentResult(&task, application, waited)
 	}
 
+	// Counted once: the branches that return early leave the outcome to the replica that
+	// resumes the task. Only for an application ArgoCD confirmed (issue #552).
+	if confirmed {
+		updater.monitor.CountDeploymentOutcome(task.App, task.Status)
+	}
+
 	// Only the deployed state is timed: a failure/abort/supersession is not a completed
 	// deployment and its wall-clock is dominated by the timeout, so it would distort
 	// the histogram.
@@ -236,7 +242,7 @@ func (updater *ArgoStatusUpdater) abortedWriteBackCause(taskId string, abandoned
 // waitForApplicationDeployment fetches the application, writes the image tag back when it is
 // managed, and polls the rollout. The returned bool reports whether ArgoCD confirmed the
 // application: every metric carrying the app name waits for that (issue #552).
-func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task, resumed bool, abandoned func() bool) (*models.Application, time.Duration, bool, error) {
+func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task, abandoned func() bool) (*models.Application, time.Duration, bool, error) {
 	if updater.monitor.taskSuperseded(task.Id) {
 		return nil, 0, false, errTaskSuperseded
 	}
@@ -246,14 +252,6 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task,
 	app, err := updater.monitor.ConfirmApplication(context.Background(), task.App, updater.monitor.resolveRefresh(task))
 	if err != nil {
 		return nil, 0, false, err
-	}
-
-	// ArgoCD answered for the application, so the name is no longer merely what the
-	// submission claimed and may label the deployment. Only the replica that accepted the
-	// deployment counts it: a handover monitors the same deployment over again, and
-	// counting it per replica would inflate the deployment count of a rolled replica's apps.
-	if !resumed {
-		updater.monitor.CountProcessedDeployment(task.App)
 	}
 
 	if err := updater.monitor.StoreInitialAppStatus(&task, app); err != nil {
