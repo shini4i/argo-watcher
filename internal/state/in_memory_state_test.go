@@ -484,3 +484,46 @@ func TestInMemoryState_ConcurrentAccess(t *testing.T) {
 	assert.Equal(t, int64(taskCount), total)
 	assert.Len(t, tasks, taskCount)
 }
+
+// TestInMemoryState_ProcessObsoleteTasksSparesALongerTimeout pins that the sweep
+// gives up only on a task that could not still be running: a rollout whose own
+// window is longer than the staleness threshold is being monitored right now, and
+// the monitor stops polling as soon as it reads "aborted" (issue #562).
+func TestInMemoryState_ProcessObsoleteTasksSparesALongerTimeout(t *testing.T) {
+	state := InMemoryState{}
+
+	longTask := createTestTask("LongRollout")
+	longTask.Timeout = TaskStaleThresholdSeconds * 2
+	stored, err := state.AddTask(longTask)
+	require.NoError(t, err)
+
+	state.mu.Lock()
+	for idx := range state.tasks {
+		if state.tasks[idx].Id == stored.Id {
+			state.tasks[idx].Updated = float64(time.Now().Unix()) - TaskStaleThresholdSeconds - 1
+		}
+	}
+	state.mu.Unlock()
+
+	state.ProcessObsoleteTasks(1)
+
+	got, err := state.GetTask(stored.Id)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusInProgressMessage, got.Status)
+
+	// Past its own window the safety net still fires, or a monitor that vanished
+	// would leave the task in progress forever.
+	state.mu.Lock()
+	for idx := range state.tasks {
+		if state.tasks[idx].Id == stored.Id {
+			state.tasks[idx].Updated = float64(time.Now().Unix()) - float64(longTask.Timeout) - TaskStaleThresholdSeconds - 1
+		}
+	}
+	state.mu.Unlock()
+
+	state.ProcessObsoleteTasks(1)
+
+	got, err = state.GetTask(stored.Id)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusAborted, got.Status)
+}

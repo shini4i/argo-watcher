@@ -21,6 +21,7 @@
 #   - GET  /api/v1/tasks/<unknown-uuid> -> 404 "task not found" (the 404-vs-500
 #                                          distinction, commit fa0b3fd)
 #   - GET  /api/v1/deploy-lock          -> 200 (read-only, always registered)
+#   - POST /api/v1/tasks (>1 MiB)       -> 413; 51 images -> 406 (issue #562)
 #   - POST /api/v1/deploy-lock          -> with OIDC disabled the state-changing
 #                                          handler is NOT registered, so the request
 #                                          falls through to the SPA static handler
@@ -107,6 +108,30 @@ if [[ "$CODE" == "404" ]] && jq -e '.error == "task not found"' <<<"$BODY" >/dev
   ok "unknown task -> 404 task not found"
 else
   bad "unknown task: code=${CODE} body=${BODY} (want 404)"
+fi
+
+echo "=== submission limits ==="
+# Task submission is unauthenticated by design, so its payload is bounded (issue
+# #562). Both requests are rejected before anything is stored, which keeps this
+# phase side-effect free.
+# Streamed from a file, not passed as an argument: a payload this size exceeds the
+# kernel's per-argument limit, and curl would never run.
+oversized="$(mktemp)"
+trap 'rm -f "$oversized"' EXIT
+{ printf '{"app":"'; head -c 1100000 /dev/zero | tr '\0' 'a'; printf '"}'; } >"$oversized"
+req POST "${AW_API}/tasks" -H 'Content-Type: application/json' --data-binary @"$oversized"
+if [[ "$CODE" == "413" ]]; then
+  ok "oversized body -> 413"
+else
+  bad "oversized body: code=${CODE} body=${BODY} (want 413)"
+fi
+
+images=$(for i in $(seq 1 51); do printf '{"image":"img-%s","tag":"v1"},' "$i"; done)
+post_task "{\"app\":\"limits\",\"author\":\"e2e\",\"project\":\"lab\",\"images\":[${images%,}]}"
+if [[ "$CODE" == "406" ]]; then
+  ok "51 images -> 406"
+else
+  bad "51 images: code=${CODE} body=${BODY} (want 406)"
 fi
 
 echo "=== deploy-lock endpoints ==="

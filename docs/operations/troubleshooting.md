@@ -163,7 +163,7 @@ A task that still ends up `aborted` means its rollout window elapsed while no re
 
 The other possibility is that no replica was left to take it over: with a single replica, nothing claims the task until that pod is back.
 
-**Cause with `STATE_TYPE=in-memory`:** the task lives only in the process that accepted it, so it cannot be handed over at all. The row is later reaped by the obsolete-task sweep, which marks `in progress` rows older than an hour as `aborted` — bookkeeping only, so the recorded status can disagree with what really happened. This is expected, and is **not** fixed by tuning the shutdown budget: a graceful shutdown protects the git commit, not the task status. Treat the GitOps repository and Argo CD as the record of what happened, or move to Postgres.
+**Cause with `STATE_TYPE=in-memory`:** the task lives only in the process that accepted it, so it cannot be handed over at all. The row is later reaped by the obsolete-task sweep, which marks a row `aborted` once it has gone quiet for the task's own rollout window plus an hour (its `TASK_TIMEOUT`, or the server's `DEPLOYMENT_TIMEOUT`) — bookkeeping only, so the recorded status can disagree with what really happened. This is expected, and is **not** fixed by tuning the shutdown budget: a graceful shutdown protects the git commit, not the task status. Treat the GitOps repository and Argo CD as the record of what happened, or move to Postgres.
 
 **How to verify**
 

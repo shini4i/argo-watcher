@@ -77,6 +77,10 @@ func (env *Env) CreateRouter() *chi.Mux {
 	//     registered only under OIDC so they are never an open deploy-freeze switch.
 	requireAuth := env.requireAuthenticatedRead()
 	router.Route("/api/v1", func(r chi.Router) {
+		// No API payload is anywhere near this size, and task submission — the only
+		// route that stores a body — takes no credential.
+		r.Use(middleware.RequestSize(maxRequestBodyBytes))
+
 		r.Post("/tasks", env.addTask)
 		r.Get("/config", env.getConfig)
 
@@ -200,7 +204,9 @@ func redirectTrailingSlash(router *chi.Mux, next http.HandlerFunc) http.HandlerF
 }
 
 // StartRouter creates and returns an HTTP server configured with the given router.
-// The caller is responsible for starting the server and handling graceful shutdown.
+// The caller starts it and handles graceful shutdown. The read and write timeouts
+// do not reach an established WebSocket: hijacking the connection clears the
+// deadlines net/http put on it.
 func (env *Env) StartRouter(router http.Handler) *http.Server {
 	routerBind := fmt.Sprintf("%s:%s", env.config.Host, env.config.Port)
 	slog.Debug("listening", "address", routerBind)
@@ -208,6 +214,12 @@ func (env *Env) StartRouter(router http.Handler) *http.Server {
 		Addr:              routerBind,
 		Handler:           router,
 		ReadHeaderTimeout: 10 * time.Second, // Prevent Slowloris attacks
+		ReadTimeout:       30 * time.Second,
+		// Generous because it is an absolute deadline on the whole response, and the
+		// largest one is the uncompressed Web UI bundle (~1.1 MiB): at 30s a client
+		// slower than 38 KB/s would receive a truncated bundle and a blank page.
+		WriteTimeout: 120 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
 }
 

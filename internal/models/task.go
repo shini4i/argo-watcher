@@ -6,8 +6,8 @@ import (
 )
 
 type Image struct {
-	Image string `json:"image" example:"ghcr.io/shini4i/argo-watcher"`
-	Tag   string `json:"tag" example:"dev"`
+	Image string `json:"image" binding:"max=255" example:"ghcr.io/shini4i/argo-watcher"`
+	Tag   string `json:"tag" binding:"max=255" example:"dev"`
 }
 
 type SavedAppStatus struct {
@@ -15,14 +15,24 @@ type SavedAppStatus struct {
 	ImagesHash []byte `json:"app_hash"`
 }
 
+// MaxTaskImages is the number of images one task may carry, enforced by the `max`
+// binding tag on Task.Images. Submission takes no credential and every image is
+// matched against the application on every poll, so the list is bounded (issue #562).
+const MaxTaskImages = 50
+
+// MaxTaskFieldLength bounds every free-text field of a submission, enforced by the
+// `max` binding tags below. An oversized name is stored once and re-served to every
+// reader of the task list; the fields it caps are Kubernetes and Argo CD names.
+const MaxTaskFieldLength = 255
+
 type Task struct {
 	Id           string  `json:"id,omitempty"`
 	Created      float64 `json:"created,omitempty"`
 	Updated      float64 `json:"updated,omitempty"`
-	App          string  `json:"app" binding:"required" example:"argo-watcher"`
-	Author       string  `json:"author" binding:"required" example:"John Doe"`
-	Project      string  `json:"project" binding:"required" example:"Demo"`
-	Images       []Image `json:"images" binding:"required"`
+	App          string  `json:"app" binding:"required,max=255" example:"argo-watcher"`
+	Author       string  `json:"author" binding:"required,max=255" example:"John Doe"`
+	Project      string  `json:"project" binding:"required,max=255" example:"Demo"`
+	Images       []Image `json:"images" binding:"required,max=50,dive"`
 	Status       string  `json:"status,omitempty"`
 	StatusReason string  `json:"status_reason,omitempty"`
 	// Validated records whether the request that created this task presented a valid

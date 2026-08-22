@@ -171,10 +171,10 @@ func (updater *ArgoStatusUpdater) waitForRollout(task models.Task, resumed bool,
 		// it too and reaches the same outcome — a supersession included. Reporting it
 		// here as well would announce one deployment twice.
 		err = errLeaseLost
-	case errors.Is(err, errTaskSuperseded):
-		// Left as it is even while draining: the cancellation is already persisted by
-		// the deployment that caused it, and a cancelled task is never re-claimed by a
-		// sweep — so this replica is the last one able to announce it.
+	case errors.Is(err, errTaskSuperseded), errors.Is(err, errTaskAborted):
+		// Left as it is even while draining: the terminal status is already persisted by
+		// whatever wrote it, and neither a cancelled nor an aborted task is re-claimed by
+		// a sweep — so this replica is the last one able to announce it.
 	case draining():
 		err = errReplicaDraining
 	}
@@ -204,6 +204,12 @@ func (updater *ArgoStatusUpdater) waitForRollout(task models.Task, resumed bool,
 		// status so we do not overwrite it; reflect it locally for the notification.
 		slog.Info("Deployment superseded by a newer deployment for the same app; stopping.", "id", task.Id)
 		task.Status = models.StatusCancelledMessage
+	case errors.Is(err, errTaskAborted):
+		// The staleness sweep gave up on this task an hour after it was created and wrote
+		// "aborted" with its own reason. Stop without a status of our own, and report the
+		// outcome the sweep decided.
+		slog.Info("Deployment already given up on by the staleness sweep; stopping.", "id", task.Id)
+		task.Status = models.StatusAborted
 	case err != nil:
 		updater.monitor.HandleArgoAPIFailure(&task, err, confirmed)
 	default:
@@ -243,8 +249,8 @@ func (updater *ArgoStatusUpdater) abortedWriteBackCause(taskId string, abandoned
 // managed, and polls the rollout. The returned bool reports whether ArgoCD confirmed the
 // application: every metric carrying the app name waits for that (issue #552).
 func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task, abandoned func() bool) (*models.Application, time.Duration, bool, error) {
-	if updater.monitor.taskSuperseded(task.Id) {
-		return nil, 0, false, errTaskSuperseded
+	if ended := updater.monitor.taskEndedElsewhere(task.Id); ended != nil {
+		return nil, 0, false, ended
 	}
 
 	// The initial fetch happens before the timed polling loop, so it is bounded only by
@@ -258,11 +264,10 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task,
 		return nil, 0, true, err
 	}
 
-	// The stop predicate is re-checked inside the write-back retry loop so a task
-	// that keeps retrying under contention aborts the moment a newer deployment
-	// supersedes it — rather than overwriting that deployment — or the moment this
-	// replica gives the rollout up, which would otherwise have two replicas pushing
-	// the same write-back, or push after the batcher was drained.
+	// Re-checked inside the write-back retry loop so a task retrying under contention
+	// stops the moment a newer deployment supersedes it, or this replica gives the
+	// rollout up — which would otherwise push twice, or push past the batcher's drain.
+	// Supersession is the only status watched: a leased task is never stale-aborted.
 	if err := updater.gitUpdater.UpdateIfNeeded(app, task, func() bool {
 		return updater.monitor.taskSuperseded(task.Id) || abandoned()
 	}); err != nil {

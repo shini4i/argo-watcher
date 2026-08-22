@@ -403,6 +403,38 @@ func TestPostgresState_ProcessObsoleteTasks(t *testing.T) {
 	assert.Equal(t, StaleTaskAbortReason, task.StatusReason)
 }
 
+// TestPostgresState_ProcessObsoleteTasksSparesLeasedTasks pins that the staleness
+// sweep gives up only on tasks nobody is monitoring. A replica that resumes an
+// abandoned deployment holds a live lease on a row that is already older than the
+// window, and the monitor stops polling as soon as it reads "aborted" (issue #562).
+func TestPostgresState_ProcessObsoleteTasksSparesLeasedTasks(t *testing.T) {
+	env := newPostgresTestEnv(t)
+
+	leased := env.addTask(t, sampleTask("LeasedApp"))
+	lapsed := env.addTask(t, sampleTask("LapsedApp"))
+
+	db, err := env.state.orm.DB()
+	require.NoError(t, err)
+
+	expired := time.Now().UTC().Add(-2 * time.Hour)
+	_, err = db.Exec("UPDATE tasks SET created = $1", expired)
+	require.NoError(t, err)
+
+	require.NoError(t, env.state.ClaimTask(leased.Id))
+	_, err = db.Exec("UPDATE tasks SET lease_expires_at = now() - interval '1 minute' WHERE id = $1", lapsed.Id)
+	require.NoError(t, err)
+
+	env.state.ProcessObsoleteTasks(1)
+
+	monitored, err := env.state.GetTask(leased.Id)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusInProgressMessage, monitored.Status)
+
+	abandoned, err := env.state.GetTask(lapsed.Id)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusAborted, abandoned.Status)
+}
+
 func TestPostgresState_Check(t *testing.T) {
 	env := newPostgresTestEnv(t)
 	assert.True(t, env.state.Check())

@@ -11,7 +11,7 @@ On startup all missing or invalid variables are reported together in one error, 
 | `ARGO_URL` | Argo CD server URL | | Yes |
 | `ARGO_TOKEN` | Argo CD API token | | Yes |
 | `STATE_TYPE` | Storage backend: `in-memory` (single replica) or `postgres` | | Yes |
-| `DEPLOYMENT_TIMEOUT` | Seconds to wait for a deployment to finish | `900` | No |
+| `DEPLOYMENT_TIMEOUT` | Seconds to wait for a deployment to finish; capped at `86400` | `900` | No |
 | `ARGO_API_TIMEOUT` | Timeout for Argo CD API calls, in seconds | `60` | No |
 | `ARGO_API_RETRIES` | Total attempts per Argo CD API call (1–10) | `3` | No |
 | `ARGO_REFRESH_APP` | Refresh the application during status checks | `true` | No |

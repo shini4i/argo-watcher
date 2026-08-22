@@ -7,6 +7,8 @@ The server exposes a REST API on its own port (default `8080`), with every endpo
 - Request and response bodies are JSON.
 - A submitted task returns `202 Accepted` with its id.
 - Validation failures return `406 Not Acceptable` with an `error` field naming the problem.
+- Request bodies are capped at 1 MiB; a larger one returns `413 Request Entity Too Large`.
+- `GET /api/v1/tasks` returns at most 1000 tasks per request, which is also its default page size.
 - Authentication failures return `401 Unauthorized`, and `503 Service Unavailable` when the credential could not be checked because the OIDC provider was unreachable.
 - Server-side problems return `500 Internal Server Error`.
 
@@ -33,6 +35,8 @@ With OIDC **enabled**, the endpoints the Web UI consumes require one, group memb
 - **With a valid credential** the task is authorized: the git write-back runs, and the task can supersede an in-flight deployment of the same images.
 - **Without one** the task is still accepted (`202`) and monitored normally — the expected setup when image tags are committed elsewhere (Argo CD Image Updater, your pipeline). The write-back is skipped, and it cannot cancel a deployment that did present a credential.
 - **With an invalid or expired one** the request is rejected `401`.
+
+Because the endpoint is open, its payload is bounded: at most 50 images per task, no name longer than 255 characters, and a `timeout` above 86400 seconds is clamped to it. That cap is what limits how long one request keeps the watcher polling Argo CD — a task still being monitored is not given up on by the staleness sweep.
 
 An unauthorized task on an application that relies on the built-in updater fails in a way that does not name the credential: usually `Image "<name>" is not part of application "<app>"`, or a timeout when image validation is off. [Image tag is never committed](../operations/troubleshooting.md#image-tag-is-never-committed-write-back-skipped) explains how to confirm it.
 

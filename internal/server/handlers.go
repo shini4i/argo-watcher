@@ -22,12 +22,35 @@ var version = "local"
 // applied at the HTTP boundary so the data layer stays simple.
 const maxTaskListLimit = 1000
 
+// maxTaskTimeout caps the rollout window a submission may ask for, in seconds.
+// Submission takes no credential, and the timeout decides how long the watcher
+// polls ArgoCD for that one request (issue #562). Nothing else bounds it: the
+// staleness sweep spares a task a replica is still monitoring.
+const maxTaskTimeout = 24 * 60 * 60
+
+// maxRequestBodyBytes caps the request body the API accepts. The submission
+// endpoint stores what it is given and serves it back to every reader of the task
+// list, so an oversized body is paid for many times over.
+const maxRequestBodyBytes = 1 << 20
+
 const (
 	unauthorizedMessage = "You are not authorized to perform this action"
 	// oidcHeader carries the OIDC bearer token for privileged
 	// (deploy-lock/rollback) requests.
 	oidcHeader = "Oidc-Authorization"
 )
+
+// payloadRejectionStatus maps a rejected request body to its status code: a body
+// stopped by the size cap is 413, anything else the decoder or the validator
+// refused is the 406 clients already handle.
+func payloadRejectionStatus(err error) int {
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) {
+		return http.StatusRequestEntityTooLarge
+	}
+
+	return http.StatusNotAcceptable
+}
 
 // getVersion godoc
 // @Summary Get the version of the server
@@ -51,6 +74,7 @@ func (env *Env) getVersion(w http.ResponseWriter, _ *http.Request) {
 // @Success 202 {object} models.TaskStatus
 // @Failure 401 {object} models.TaskStatus
 // @Failure 406 {object} models.TaskStatus
+// @Failure 413 {object} models.TaskStatus "the request body is larger than the server accepts"
 // @Router /api/v1/tasks [post]
 func (env *Env) addTask(w http.ResponseWriter, r *http.Request) {
 	var task models.Task
@@ -58,7 +82,7 @@ func (env *Env) addTask(w http.ResponseWriter, r *http.Request) {
 	err := bindJSON(r, &task)
 	if err != nil {
 		slog.Error("failed to parse task payload", "error", err)
-		writeJSON(w, http.StatusNotAcceptable, models.TaskStatus{
+		writeJSON(w, payloadRejectionStatus(err), models.TaskStatus{
 			Status: "invalid payload",
 			Error:  err.Error(),
 		})
@@ -97,6 +121,10 @@ func (env *Env) addTask(w http.ResponseWriter, r *http.Request) {
 	// instead of the one it was accepted under.
 	if task.Timeout <= 0 {
 		task.Timeout = int(env.config.DeploymentTimeout)
+	}
+	if task.Timeout > maxTaskTimeout {
+		slog.Warn("clamping the requested task timeout", "requested_seconds", task.Timeout, "timeout_seconds", maxTaskTimeout)
+		task.Timeout = maxTaskTimeout
 	}
 
 	newTask, err := env.argo.AddTask(task)

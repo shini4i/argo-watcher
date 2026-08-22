@@ -264,11 +264,18 @@ func (state *PostgresState) doProcessPostgresObsoleteTasks() error {
 		return err
 	}
 
-	slog.Debug("Marking in progress tasks older than 1 hour as aborted...")
-	if err := state.orm.Where(whereStatusEquals, models.StatusInProgressMessage).Where("created < now() - interval '1 hour'").Updates(&state_models.TaskModel{
-		Status:       models.StatusAborted,
-		StatusReason: sql.NullString{String: StaleTaskAbortReason, Valid: true},
-	}).Error; err != nil {
+	// A live lease means a replica is monitoring this rollout right now — a resumed
+	// deployment is older than the window by definition — and the monitor stops
+	// polling as soon as it reads "aborted" (issue #562). Only tasks nobody is
+	// watching are given up on.
+	slog.Debug("Marking unclaimed in progress tasks older than 1 hour as aborted...")
+	if err := state.orm.Where(whereStatusEquals, models.StatusInProgressMessage).
+		Where("created < now() - interval '1 hour'").
+		Where("lease_expires_at IS NULL OR lease_expires_at <= now()").
+		Updates(&state_models.TaskModel{
+			Status:       models.StatusAborted,
+			StatusReason: sql.NullString{String: StaleTaskAbortReason, Valid: true},
+		}).Error; err != nil {
 		return err
 	}
 
@@ -290,14 +297,10 @@ func (state *PostgresState) doProcessPostgresObsoleteTasks() error {
 // long as it ran. SKIP LOCKED lets replicas sweeping concurrently step over each
 // other's batches rather than queue behind them.
 //
-// Two kinds of row are spared whatever their age. In-progress tasks, because one
-// may be claimed and actively monitored by a replica, which would then write a
-// status for a row that no longer exists. And any task still under an unexpired
-// lease, whatever its status: the sweep marks in-progress tasks older than an
-// hour as aborted before this step runs, so a rollout a replica claimed and
-// resumed after an outage — its creation timestamp old, its lease live — would
-// otherwise be aborted and deleted out from under the replica finishing it. Once
-// the lease lapses the row is collected by a later sweep.
+// Two kinds of row are spared whatever their age: in-progress tasks, which a
+// replica may be monitoring and would then write a status for a row that no longer
+// exists, and any task under an unexpired lease, because a rollout resumed after an
+// outage is old but live. A later sweep collects the row once its lease lapses.
 func (state *PostgresState) deleteExpiredTasks() error {
 	if !state.retentionEnabled {
 		return nil
