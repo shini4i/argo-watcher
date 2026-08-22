@@ -295,13 +295,10 @@ func TestNewEnv(t *testing.T) {
 	expectedOIDC, oidcErr := auth.NewOIDCAuthService(serverConfig)
 	assert.NoError(t, oidcErr)
 
-	// The OIDC strategy is registered under both the canonical and the legacy
-	// Keycloak header for backward compatibility.
 	expectedStrategies := map[string]auth.AuthStrategy{
 		"ARGO_WATCHER_DEPLOY_TOKEN": auth.NewDeployTokenAuthService(serverConfig.DeployToken),
 		"Authorization":             auth.NewJWTAuthService(serverConfig.JWTSecret),
 		oidcHeader:                  expectedOIDC,
-		legacyKeycloakHeader:        expectedOIDC,
 	}
 
 	assert.Equal(t, expectedStrategies, env.strategies)
@@ -1627,7 +1624,7 @@ func TestValidateTokenWithStrategies(t *testing.T) {
 		req, _ := http.NewRequest(http.MethodPost, "/test", nil)
 		req.Header.Set("Authorization", "Bearer test-token")
 
-		valid, err := env.validateToken(req, "Keycloak-Authorization")
+		valid, err := env.validateToken(req, "X-Unregistered-Auth")
 		assert.False(t, valid)
 		assert.NoError(t, err)
 	})
@@ -1997,14 +1994,13 @@ func TestDeployLockStoreFailure(t *testing.T) {
 	}
 }
 
-// TestSetDeployLockAcceptsLegacyKeycloakHeader verifies backward compatibility:
-// a client still sending the deprecated Keycloak-Authorization header (instead of
-// the canonical Oidc-Authorization) is authenticated exactly as before.
-func TestSetDeployLockAcceptsLegacyKeycloakHeader(t *testing.T) {
-
+// The Keycloak-Authorization header was removed in 1.0.0. A client still sending
+// it must be rejected, and the privileged write it carried must not take effect.
+func TestSetDeployLockRejectsLegacyKeycloakHeader(t *testing.T) {
 	lockdown, _ := NewLockdown("", lock.NewInMemoryDeployLockStore())
-	strategies := make(map[string]auth.AuthStrategy)
-	strategies[legacyKeycloakHeader] = newAuthStrategy(t, true, nil)
+	strategies := map[string]auth.AuthStrategy{
+		oidcHeader: newAuthStrategy(t, true, nil),
+	}
 
 	env := &Env{
 		lockdown:      lockdown,
@@ -2019,69 +2015,12 @@ func TestSetDeployLockAcceptsLegacyKeycloakHeader(t *testing.T) {
 	router.Post("/api/v1/deploy-lock", env.SetDeployLock)
 
 	req, _ := http.NewRequest(http.MethodPost, "/api/v1/deploy-lock", nil)
-	req.Header.Set(legacyKeycloakHeader, "Bearer valid-token")
+	req.Header.Set("Keycloak-Authorization", "Bearer valid-token")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.True(t, lockdown.IsLocked())
-}
-
-// TestRequireOIDCAuthHeaderPrecedence pins the two-header loop semantics in
-// requireOIDCAuth: the legacy header is a full alias (invalid tokens on it still
-// surface a 401 with the reason), and a rejected canonical header returns
-// immediately without falling through to the legacy header.
-func TestRequireOIDCAuthHeaderPrecedence(t *testing.T) {
-
-	t.Run("invalid token on the legacy header surfaces the reason as 401", func(t *testing.T) {
-		lockdown, _ := NewLockdown("", lock.NewInMemoryDeployLockStore())
-		strategies := map[string]auth.AuthStrategy{
-			legacyKeycloakHeader: newAuthStrategy(t, false, fmt.Errorf("token expired")),
-		}
-		env := &Env{
-			lockdown:      lockdown,
-			strategies:    strategies,
-			authenticator: auth.NewAuthenticator(strategies),
-			config:        &config.ServerConfig{OIDC: config.OIDCConfig{Enabled: true}},
-		}
-		router := chi.NewRouter()
-		router.Post("/api/v1/deploy-lock", env.SetDeployLock)
-
-		req, _ := http.NewRequest(http.MethodPost, "/api/v1/deploy-lock", nil)
-		req.Header.Set(legacyKeycloakHeader, "Bearer invalid-token")
-		w := httptest.NewRecorder()
-		router.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusUnauthorized, w.Code)
-		assert.Contains(t, w.Body.String(), "token expired")
-	})
-
-	t.Run("a rejected canonical header does not fall through to the legacy header", func(t *testing.T) {
-		lockdown, _ := NewLockdown("", lock.NewInMemoryDeployLockStore())
-		legacy := mocks.NewMockAuthStrategy(gomock.NewController(t))
-		legacy.EXPECT().Validate(gomock.Any()).Times(0)
-		strategies := map[string]auth.AuthStrategy{
-			oidcHeader:           newAuthStrategy(t, false, fmt.Errorf("canonical rejected")),
-			legacyKeycloakHeader: legacy,
-		}
-		env := &Env{
-			lockdown:      lockdown,
-			strategies:    strategies,
-			authenticator: auth.NewAuthenticator(strategies),
-			config:        &config.ServerConfig{OIDC: config.OIDCConfig{Enabled: true}},
-		}
-		router := chi.NewRouter()
-		router.Post("/api/v1/deploy-lock", env.SetDeployLock)
-
-		req, _ := http.NewRequest(http.MethodPost, "/api/v1/deploy-lock", nil)
-		req.Header.Set(oidcHeader, "Bearer bad")
-		req.Header.Set(legacyKeycloakHeader, "Bearer also-bad")
-		w := httptest.NewRecorder()
-		router.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusUnauthorized, w.Code)
-		assert.Contains(t, w.Body.String(), "canonical rejected")
-	})
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	assert.False(t, lockdown.IsLocked())
 }
 
 func TestReleaseDeployLockWithKeycloak(t *testing.T) {
@@ -2393,7 +2332,7 @@ func TestCORSPolicy(t *testing.T) {
 		// dropping a header from corsOptions would break browser deploys silently.
 		router := newRouter(t, true)
 
-		for _, header := range []string{oidcHeader, legacyKeycloakHeader, "ARGO_WATCHER_DEPLOY_TOKEN", "Authorization", "Content-Type", "Accept"} {
+		for _, header := range []string{oidcHeader, "ARGO_WATCHER_DEPLOY_TOKEN", "Authorization", "Content-Type", "Accept"} {
 			t.Run(header, func(t *testing.T) {
 				w := do(router, http.MethodOptions, "/api/v1/tasks", map[string]string{
 					"Origin":                         allowedOrigin,
@@ -2407,6 +2346,23 @@ func TestCORSPolicy(t *testing.T) {
 				assert.Contains(t, strings.ToLower(w.Header().Get("Access-Control-Allow-Headers")), strings.ToLower(header))
 			})
 		}
+	})
+
+	t.Run("the removed Keycloak header is refused by a preflight", func(t *testing.T) {
+		// The counterpart of the subtest above: rs/cors signals refusal by omitting
+		// Access-Control-Allow-Origin, so this pins that the alias stays out of
+		// corsOptions once the strategy behind it is gone.
+		router := newRouter(t, true)
+
+		w := do(router, http.MethodOptions, "/api/v1/tasks", map[string]string{
+			"Origin":                         allowedOrigin,
+			"Access-Control-Request-Method":  http.MethodPost,
+			"Access-Control-Request-Headers": "keycloak-authorization",
+		})
+
+		assert.Empty(t, w.Header().Get("Access-Control-Allow-Origin"),
+			"an allow-origin here means the removed alias is allowlisted again")
+		assert.NotContains(t, strings.ToLower(w.Header().Get("Access-Control-Allow-Headers")), "keycloak-authorization")
 	})
 
 	t.Run("production preflight never pairs the wildcard with credentials", func(t *testing.T) {

@@ -388,9 +388,9 @@ func TestAuthenticatorValidateStrategy(t *testing.T) {
 
 		request, err := http.NewRequest(http.MethodGet, "http://example.com", http.NoBody)
 		assert.NoError(t, err)
-		request.Header.Set("Keycloak-Authorization", "token")
+		request.Header.Set("X-Unregistered-Auth", "token")
 
-		valid, validateErr := authenticator.ValidateStrategy(request, "Keycloak-Authorization")
+		valid, validateErr := authenticator.ValidateStrategy(request, "X-Unregistered-Auth")
 		assert.False(t, valid)
 		assert.NoError(t, validateErr)
 	})

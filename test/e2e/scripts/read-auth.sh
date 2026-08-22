@@ -10,6 +10,7 @@
 #
 #   - no credential        -> 401 (answered before any provider call)
 #   - an OIDC token        -> 503 (the provider could not be consulted)
+#   - the removed alias    -> 401, never 503 (it reaches no strategy at all)
 #   - a deploy token / JWT -> 200 (validated locally)
 #
 # The last section also flips OIDC_REQUIRE_TASK_READ_AUTH, which closes the task
@@ -115,6 +116,16 @@ if [[ "$CODE" == "503" ]]; then
   ok "GET /tasks with an OIDC token -> 503 (provider unreachable)"
 else
   bad "GET /tasks with an OIDC token: code=${CODE} body=${BODY} (want 503)"
+fi
+
+# The Keycloak-Authorization alias was removed in 1.0.0. 401-not-503 is what proves it:
+# a 503 would mean the header still reaches the OIDC strategy, since only a strategy
+# consulting the unreachable provider can produce one.
+req GET "${AW_API}/tasks?from_timestamp=0" -H "Keycloak-Authorization: Bearer e2e-oidc-token"
+if [[ "$CODE" == "401" ]]; then
+  ok "GET /tasks with the removed Keycloak header -> 401 (reaches no strategy)"
+else
+  bad "GET /tasks with the removed Keycloak header: code=${CODE} body=${BODY} (want 401; 503 means the alias is still registered)"
 fi
 
 # Mixed outcomes across strategies: the provider-unavailable signal must win over the

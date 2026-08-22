@@ -40,7 +40,7 @@ Click the **Argo Watcher** logo to open the configuration drawer, then use the s
 
 ### From the API
 
-Both calls need a token from a user in one of the `OIDC_PRIVILEGED_GROUPS`, in the `Oidc-Authorization` header (the legacy `Keycloak-Authorization` name still works):
+Both calls need a token from a user in one of the `OIDC_PRIVILEGED_GROUPS`, in the `Oidc-Authorization` header:
 
 ```bash
 # Hold the lock

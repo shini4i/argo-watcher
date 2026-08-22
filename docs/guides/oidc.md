@@ -145,17 +145,17 @@ A read whose credential could not be checked returns **503 Service Unavailable**
 
 ## Migrating from `KEYCLOAK_*`
 
-Earlier releases were Keycloak-specific. The old variables are **deprecated but still honored** — existing deployments keep working — and are mapped automatically when their `OIDC_*` counterparts are unset, with a one-time deprecation warning in the log.
+Earlier releases were Keycloak-specific. Those variables were **removed in 1.0.0**, and the server refuses to start while any of them is set, naming each one and its replacement. Rename them:
 
-| Deprecated | Replacement |
+| Removed | Replacement |
 |---|---|
 | `KEYCLOAK_ENABLED` | `OIDC_ENABLED` |
-| `KEYCLOAK_URL` + `KEYCLOAK_REALM` | `OIDC_ISSUER_URL` (synthesized as `<KEYCLOAK_URL>/realms/<KEYCLOAK_REALM>`) |
+| `KEYCLOAK_URL` + `KEYCLOAK_REALM` | `OIDC_ISSUER_URL`, set to `<KEYCLOAK_URL>/realms/<KEYCLOAK_REALM>` |
 | `KEYCLOAK_CLIENT_ID` | `OIDC_CLIENT_ID` |
 | `KEYCLOAK_TOKEN_VALIDATION_INTERVAL` | `OIDC_TOKEN_VALIDATION_INTERVAL` |
 | `KEYCLOAK_PRIVILEGED_GROUPS` | `OIDC_PRIVILEGED_GROUPS` |
 
-`OIDC_*` wins when both are set. `GET /api/v1/config` still mirrors the auth block under a legacy `keycloak` key alongside the new `oidc` one, and both the `Oidc-Authorization` and `Keycloak-Authorization` headers are accepted.
+Two other Keycloak-era surfaces went with them. `GET /api/v1/config` no longer mirrors the auth block under a legacy `keycloak` key, and the `Keycloak-Authorization` header is no longer accepted — send `Oidc-Authorization` instead.
 
 ## Privileged groups
 

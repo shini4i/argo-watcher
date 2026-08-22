@@ -210,11 +210,7 @@ func NewEnv(serverConfig *config.ServerConfig, argo *argocd.Argo, metrics *prome
 		if oidcErr != nil {
 			return nil, fmt.Errorf("failed to initialize OIDC auth: %w", oidcErr)
 		}
-		// Register the same strategy under both the canonical header and the
-		// deprecated Keycloak header, so existing clients that still send
-		// Keycloak-Authorization keep working.
 		env.strategies[oidcHeader] = oidcService
-		env.strategies[legacyKeycloakHeader] = oidcService
 	}
 
 	if env.config.JWTSecret != "" {

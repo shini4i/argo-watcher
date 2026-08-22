@@ -84,11 +84,10 @@ func keycloakToken(t *testing.T, username, password string) string {
 	return out.AccessToken
 }
 
-// newKeycloakEnv builds an Env wired with the real OIDC auth strategy pointed at
-// the live Keycloak. The issuer is synthesized as "<url>/realms/<realm>" — exactly
-// what the KEYCLOAK_* backward-compat shim produces — so this test also proves
-// that OIDC discovery against a real Keycloak resolves the same userinfo endpoint
-// the pre-refactor code targeted directly.
+// newKeycloakEnv builds an Env wired with the real OIDC auth strategy pointed at the
+// live Keycloak, with the issuer set to "<url>/realms/<realm>" — the issuer a Keycloak
+// realm advertises — so this test also proves OIDC discovery against a real Keycloak
+// resolves the userinfo endpoint.
 func newKeycloakEnv(t *testing.T) *Env {
 	t.Helper()
 	// TokenValidationInterval is left at zero on purpose: every request then
@@ -110,10 +109,8 @@ func newKeycloakEnv(t *testing.T) *Env {
 	lockdown, err := NewLockdown("", lock.NewInMemoryDeployLockStore())
 	require.NoError(t, err)
 
-	// Register under both headers, mirroring production wiring (NewEnv).
 	strategies := map[string]auth.AuthStrategy{
-		oidcHeader:           oidcService,
-		legacyKeycloakHeader: oidcService,
+		oidcHeader: oidcService,
 	}
 
 	return &Env{
@@ -140,14 +137,13 @@ func deployLockServer(t *testing.T, env *Env) *httptest.Server {
 }
 
 // callDeployLock issues a deploy-lock request, optionally carrying a token in the
-// deprecated Keycloak-Authorization header — proving the legacy header still
-// authenticates end to end — and returns the HTTP status code.
+// Oidc-Authorization header, and returns the HTTP status code.
 func callDeployLock(t *testing.T, srv *httptest.Server, method, token string) int {
 	t.Helper()
 	req, err := http.NewRequest(method, srv.URL+"/api/v1/deploy-lock", nil)
 	require.NoError(t, err)
 	if token != "" {
-		req.Header.Set(legacyKeycloakHeader, "Bearer "+token)
+		req.Header.Set(oidcHeader, "Bearer "+token)
 	}
 
 	resp, err := http.DefaultClient.Do(req)

@@ -4,8 +4,9 @@
 # nothing (safe to run before the soak). Covers the endpoints the UI, client, and
 # operators depend on that no other phase exercises:
 #   - GET  /api/v1/version              -> 200, non-empty JSON string
-#   - GET  /api/v1/config               -> 200; Keycloak reported disabled; the
-#                                          deploy-token secret is redacted (json:"-");
+#   - GET  /api/v1/config               -> 200; OIDC reported disabled, no legacy
+#                                          keycloak mirror; the deploy-token secret is
+#                                          redacted (json:"-");
 #                                          notification targets absent but their
 #                                          `enabled` flags kept — the endpoint is
 #                                          unauthenticated by necessity (the UI
@@ -20,7 +21,7 @@
 #   - GET  /api/v1/tasks/<unknown-uuid> -> 404 "task not found" (the 404-vs-500
 #                                          distinction, commit fa0b3fd)
 #   - GET  /api/v1/deploy-lock          -> 200 (read-only, always registered)
-#   - POST /api/v1/deploy-lock          -> with Keycloak disabled the state-changing
+#   - POST /api/v1/deploy-lock          -> with OIDC disabled the state-changing
 #                                          handler is NOT registered, so the request
 #                                          falls through to the SPA static handler
 #                                          (200 HTML), not a 404. Asserted
@@ -65,10 +66,10 @@ if [[ "$CODE" != "200" ]]; then
   bad "config: code=${CODE}"
 elif ! jq -e '.oidc.enabled == false' <<<"$BODY" >/dev/null 2>&1; then
   bad "config: oidc.enabled != false (lab runs without OIDC auth)"
-elif ! jq -e '.keycloak.enabled == false' <<<"$BODY" >/dev/null 2>&1; then
-  # The legacy keycloak mirror must keep matching the oidc block so pre-rename
-  # consumers still work; a divergence here is a backward-compat regression.
-  bad "config: legacy keycloak mirror missing or != oidc block"
+elif jq -e 'has("keycloak")' <<<"$BODY" >/dev/null 2>&1; then
+  # The legacy keycloak mirror was removed in 1.0.0; its return would re-expose a
+  # back-compat surface consumers must no longer be able to depend on.
+  bad "config: legacy keycloak mirror is back"
 elif grep -qF "$DEPLOY_TOKEN" <<<"$BODY"; then
   # A leaked secret here is the whole reason ServerConfig marks it json:"-".
   bad "config: deploy token leaked in /config response"
@@ -83,7 +84,7 @@ elif ! jq -e '.argo_cd_url != null' <<<"$BODY" >/dev/null 2>&1; then
   # The CLI client builds the app URL from this field; trimming must not take it.
   bad "config: argo_cd_url missing — the client needs it to build app URLs"
 else
-  ok "config: oidc disabled (+ legacy keycloak mirror), secrets and deployment detail withheld (${CODE})"
+  ok "config: oidc disabled (no legacy keycloak mirror), secrets and deployment detail withheld (${CODE})"
 fi
 
 echo "=== task-list filters ==="
@@ -115,7 +116,7 @@ if [[ "$CODE" == "200" ]] && jq -e '. == false' <<<"$BODY" >/dev/null 2>&1; then
 else
   bad "GET deploy-lock: code=${CODE} body=${BODY} (want 200 false)"
 fi
-# Security property: with Keycloak disabled the state-changing POST/DELETE handlers
+# Security property: with OIDC disabled the state-changing POST/DELETE handlers
 # are NOT registered (router.go), so an unauthenticated caller cannot freeze
 # deploys. The unmatched route falls through to the SPA static handler (200 HTML),
 # NOT a 404 — so assert the guarantee behaviourally: after an unauthenticated POST
@@ -123,9 +124,9 @@ fi
 req POST "${AW_API}/deploy-lock"
 req GET "${AW_API}/deploy-lock"
 if jq -e '. == false' <<<"$BODY" >/dev/null 2>&1; then
-  ok "POST deploy-lock did not set the lock (still unlocked without Keycloak)"
+  ok "POST deploy-lock did not set the lock (still unlocked without OIDC)"
 else
-  bad "POST deploy-lock set the lock without Keycloak (body=${BODY})"
+  bad "POST deploy-lock set the lock without OIDC (body=${BODY})"
 fi
 
 phase_end API-SURFACE

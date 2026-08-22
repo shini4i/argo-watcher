@@ -103,7 +103,6 @@ func TestAuthorizeWebSocket(t *testing.T) {
 
 	strategies := map[string]auth.AuthStrategy{
 		oidcHeader:                  oidcLikeStrategy{authenticated: true},
-		legacyKeycloakHeader:        oidcLikeStrategy{authenticated: true},
 		"ARGO_WATCHER_DEPLOY_TOKEN": auth.NewDeployTokenAuthService("deploy-token"),
 	}
 
@@ -114,11 +113,11 @@ func TestAuthorizeWebSocket(t *testing.T) {
 		want        bool
 		wantStatus  int
 	}{
-		"canonical OIDC header":  {header: oidcHeader, value: "Bearer token", want: true},
-		"legacy Keycloak header": {header: legacyKeycloakHeader, value: "Bearer token", want: true},
-		"deploy token":           {header: "ARGO_WATCHER_DEPLOY_TOKEN", value: "deploy-token", want: true},
-		"subprotocol token":      {subprotocol: wsTokenSubprotocolPrefix + "token", want: true},
-		"no credential":          {want: false, wantStatus: http.StatusUnauthorized},
+		"canonical OIDC header":   {header: oidcHeader, value: "Bearer token", want: true},
+		"removed Keycloak header": {header: "Keycloak-Authorization", value: "Bearer token", want: false, wantStatus: http.StatusUnauthorized},
+		"deploy token":            {header: "ARGO_WATCHER_DEPLOY_TOKEN", value: "deploy-token", want: true},
+		"subprotocol token":       {subprotocol: wsTokenSubprotocolPrefix + "token", want: true},
+		"no credential":           {want: false, wantStatus: http.StatusUnauthorized},
 		"wrong deploy token": {
 			header:     "ARGO_WATCHER_DEPLOY_TOKEN",
 			value:      "nope",

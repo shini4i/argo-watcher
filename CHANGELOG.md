@@ -150,9 +150,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   new counter is incremented when a deployment ends rather than when Argo CD confirms the
   application, so a deployment in flight is not counted until it finishes. Use
   `in_progress_tasks` for the live view. The bundled dashboard is already updated.
+- **Breaking:** the `KEYCLOAK_*` environment variables, deprecated since 0.13.0, are gone.
+  Rename them before upgrading: `KEYCLOAK_ENABLED` → `OIDC_ENABLED`, `KEYCLOAK_CLIENT_ID`
+  → `OIDC_CLIENT_ID`, `KEYCLOAK_TOKEN_VALIDATION_INTERVAL` →
+  `OIDC_TOKEN_VALIDATION_INTERVAL`, `KEYCLOAK_PRIVILEGED_GROUPS` →
+  `OIDC_PRIVILEGED_GROUPS`, and `KEYCLOAK_URL` + `KEYCLOAK_REALM` → a single
+  `OIDC_ISSUER_URL` spelled `<KEYCLOAK_URL>/realms/<KEYCLOAK_REALM>`.
+
+  The server refuses to start while any of the old names is set, listing each one with its
+  replacement. A missed rename is therefore a failed startup, not a server that comes up
+  with authentication switched off and every read open.
+- **Breaking:** `GET /api/v1/config` no longer mirrors the auth block under a legacy
+  `keycloak` key alongside `oidc`, and the `Keycloak-Authorization` header is no longer
+  accepted — send `Oidc-Authorization` instead. Both date from the Keycloak-only releases.
 
 ### Fixed
 
+- `OIDC_PRIVILEGED_GROUPS` now tolerates spaces around its entries. A value written
+  `"admins, operators"` kept the leading space on every entry after the first, and group
+  names are matched exactly against the provider's claim, so those groups silently got no
+  privileged access at all: no rollback button, no deploy-lock switch, no crown — with
+  nothing in the log to say why. Blank entries from a trailing or doubled comma are
+  dropped too.
 - The example Grafana dashboard now imports into any Grafana. It picks its Prometheus
   through a **Data source** selector at the top instead of referencing a datasource by a
   hardcoded `prometheus` uid, which only ever resolved on the bundled dev stack — anywhere

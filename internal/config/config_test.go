@@ -247,116 +247,114 @@ func TestNewServerConfig_ArgoApiRetriesTooHighRejected(t *testing.T) {
 	assert.Error(t, err)
 }
 
-// The deprecated KEYCLOAK_* variables map onto the generic OIDC config, with the issuer
-// synthesized from KEYCLOAK_URL + KEYCLOAK_REALM, so existing Keycloak deployments keep
-// working after the rename without any config change.
-func TestNewServerConfig_OIDCKeycloakFallback(t *testing.T) {
-	t.Setenv("ARGO_URL", "https://example.com")
-	t.Setenv("ARGO_TOKEN", "secret-token")
-	t.Setenv("STATE_TYPE", "in-memory")
-	t.Setenv("KEYCLOAK_ENABLED", "true")
-	t.Setenv("KEYCLOAK_URL", "https://kc.example.com/")
-	t.Setenv("KEYCLOAK_REALM", "argo-watcher")
-	t.Setenv("KEYCLOAK_CLIENT_ID", "argo-watcher")
-	t.Setenv("KEYCLOAK_TOKEN_VALIDATION_INTERVAL", "5000")
-	t.Setenv("KEYCLOAK_PRIVILEGED_GROUPS", "admins, operators")
+// The KEYCLOAK_* variables were removed in 1.0.0, and a leftover one must fail
+// startup naming its OIDC_* replacement. Ignoring them instead would boot an
+// upgraded server with KEYCLOAK_ENABLED=true and authentication off — every read
+// open, and the operator told nothing.
+func TestNewServerConfig_KeycloakVariablesRejected(t *testing.T) {
+	cases := map[string]struct {
+		env      map[string]string
+		mentions []string
+		excludes []string
+	}{
+		"enable flag": {
+			env:      map[string]string{"KEYCLOAK_ENABLED": "true"},
+			mentions: []string{"KEYCLOAK_ENABLED", "OIDC_ENABLED"},
+		},
+		"issuer pair": {
+			env:      map[string]string{"KEYCLOAK_URL": "https://kc.example.com", "KEYCLOAK_REALM": "argo-watcher"},
+			mentions: []string{"KEYCLOAK_URL", "KEYCLOAK_REALM", "OIDC_ISSUER_URL"},
+		},
+		"client and groups": {
+			env: map[string]string{
+				"KEYCLOAK_CLIENT_ID":                 "argo-watcher",
+				"KEYCLOAK_TOKEN_VALIDATION_INTERVAL": "5000",
+				"KEYCLOAK_PRIVILEGED_GROUPS":         "admins,operators",
+			},
+			mentions: []string{
+				"KEYCLOAK_CLIENT_ID", "OIDC_CLIENT_ID",
+				"KEYCLOAK_TOKEN_VALIDATION_INTERVAL", "OIDC_TOKEN_VALIDATION_INTERVAL",
+				"KEYCLOAK_PRIVILEGED_GROUPS", "OIDC_PRIVILEGED_GROUPS",
+			},
+		},
+		// A leftover legacy variable is rejected even when the OIDC_* settings are
+		// complete: dead config that once controlled authentication must be removed,
+		// not silently shadowed.
+		"alongside a complete OIDC config": {
+			env: map[string]string{
+				"OIDC_ENABLED":       "true",
+				"OIDC_ISSUER_URL":    "https://authentik.example.com/application/o/aw/",
+				"OIDC_CLIENT_ID":     "aw-oidc",
+				"KEYCLOAK_CLIENT_ID": "legacy-client",
+			},
+			mentions: []string{"KEYCLOAK_CLIENT_ID", "OIDC_CLIENT_ID"},
+		},
+		// A chart that still renders the variable with no value must fail too: the
+		// leftover has to be deleted, not blanked.
+		"set but empty": {
+			env:      map[string]string{"KEYCLOAK_ENABLED": ""},
+			mentions: []string{"KEYCLOAK_ENABLED", "OIDC_ENABLED"},
+		},
+		// This case would ALSO fail validation, for a missing issuer. The rename must
+		// win: told only "OIDC.IssuerURL must be set", an operator has no idea the
+		// KEYCLOAK_URL they did set is the reason it is empty.
+		"rename beats the downstream validation error": {
+			env: map[string]string{
+				"OIDC_ENABLED":   "true",
+				"KEYCLOAK_URL":   "https://kc.example.com",
+				"KEYCLOAK_REALM": "argo-watcher",
+			},
+			mentions: []string{"KEYCLOAK_URL", "KEYCLOAK_REALM", "OIDC_ISSUER_URL"},
+			excludes: []string{"OIDC.IssuerURL"},
+		},
+	}
 
-	cfg, err := NewServerConfig()
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("ARGO_URL", "https://example.com")
+			t.Setenv("ARGO_TOKEN", "secret-token")
+			t.Setenv("STATE_TYPE", "in-memory")
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
 
-	require.NoError(t, err)
-	assert.True(t, cfg.OIDC.Enabled)
-	assert.Equal(t, "https://kc.example.com/realms/argo-watcher", cfg.OIDC.IssuerURL)
-	assert.Equal(t, "argo-watcher", cfg.OIDC.ClientId)
-	assert.Equal(t, 5000, cfg.OIDC.TokenValidationInterval)
-	assert.Equal(t, []string{"admins", "operators"}, cfg.OIDC.PrivilegedGroups)
+			_, err := NewServerConfig()
+
+			require.Error(t, err)
+			for _, want := range tc.mentions {
+				assert.Contains(t, err.Error(), want)
+			}
+			for _, unwanted := range tc.excludes {
+				assert.NotContains(t, err.Error(), unwanted)
+			}
+		})
+	}
 }
 
-// The per-field fallback a real upgrade hits: an operator sets the new OIDC_ISSUER_URL
-// but still relies on the deprecated KEYCLOAK_CLIENT_ID / KEYCLOAK_PRIVILEGED_GROUPS.
-// Each field must resolve independently.
-func TestNewServerConfig_OIDCMixedFallback(t *testing.T) {
+// PrivilegedGroups is the OIDC field that fails silently when parsing is wrong: an entry
+// carrying a stray space never matches the claim, so the crown, rollback and deploy-lock
+// switch simply never appear. Operators rename a spaced KEYCLOAK_PRIVILEGED_GROUPS list
+// verbatim, so entries are trimmed and blanks dropped.
+func TestNewServerConfig_OIDCFieldsParse(t *testing.T) {
 	t.Setenv("ARGO_URL", "https://example.com")
 	t.Setenv("ARGO_TOKEN", "secret-token")
 	t.Setenv("STATE_TYPE", "in-memory")
 	t.Setenv("OIDC_ENABLED", "true")
 	t.Setenv("OIDC_ISSUER_URL", "https://authentik.example.com/application/o/aw/")
-	t.Setenv("KEYCLOAK_CLIENT_ID", "legacy-client")
-	t.Setenv("KEYCLOAK_PRIVILEGED_GROUPS", "admins,operators")
+	t.Setenv("OIDC_CLIENT_ID", "argo-watcher")
+	t.Setenv("OIDC_TOKEN_VALIDATION_INTERVAL", "5000")
+	// "Release Managers" carries an internal space, as AD and Entra group names do:
+	// only the edges are trimmed, never the name itself.
+	t.Setenv("OIDC_PRIVILEGED_GROUPS", "admins, operators ,,   Release Managers  ")
 
 	cfg, err := NewServerConfig()
 
 	require.NoError(t, err)
+	assert.True(t, cfg.OIDC.Enabled)
 	assert.Equal(t, "https://authentik.example.com/application/o/aw/", cfg.OIDC.IssuerURL)
-	assert.Equal(t, "legacy-client", cfg.OIDC.ClientId)
-	assert.Equal(t, []string{"admins", "operators"}, cfg.OIDC.PrivilegedGroups)
-}
-
-// A half-configured legacy Keycloak (URL without realm) must not synthesize a
-// malformed issuer.
-func TestNewServerConfig_KeycloakPartialIssuer(t *testing.T) {
-	t.Setenv("ARGO_URL", "https://example.com")
-	t.Setenv("ARGO_TOKEN", "secret-token")
-	t.Setenv("STATE_TYPE", "in-memory")
-	t.Setenv("KEYCLOAK_ENABLED", "true")
-	t.Setenv("KEYCLOAK_URL", "https://kc.example.com")
-	// KEYCLOAK_REALM intentionally unset.
-	t.Setenv("KEYCLOAK_CLIENT_ID", "argo-watcher")
-
-	_, err := NewServerConfig()
-
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "OIDC.IssuerURL")
-}
-
-// A malformed deprecated value must fail startup rather than silently disable auth: a typo like
-// KEYCLOAK_ENABLED=yes must never quietly drop the protected OIDC routes from an
-// otherwise healthy deployment (fail closed, not open).
-func TestNewServerConfig_KeycloakMalformedValuesRejected(t *testing.T) {
-	t.Run("malformed KEYCLOAK_ENABLED", func(t *testing.T) {
-		t.Setenv("ARGO_URL", "https://example.com")
-		t.Setenv("ARGO_TOKEN", "secret-token")
-		t.Setenv("STATE_TYPE", "in-memory")
-		t.Setenv("KEYCLOAK_ENABLED", "yes")
-
-		_, err := NewServerConfig()
-
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "KEYCLOAK_ENABLED")
-	})
-
-	t.Run("malformed KEYCLOAK_TOKEN_VALIDATION_INTERVAL", func(t *testing.T) {
-		t.Setenv("ARGO_URL", "https://example.com")
-		t.Setenv("ARGO_TOKEN", "secret-token")
-		t.Setenv("STATE_TYPE", "in-memory")
-		t.Setenv("KEYCLOAK_ENABLED", "true")
-		t.Setenv("KEYCLOAK_URL", "https://kc.example.com")
-		t.Setenv("KEYCLOAK_REALM", "demo")
-		t.Setenv("KEYCLOAK_CLIENT_ID", "argo-watcher")
-		t.Setenv("KEYCLOAK_TOKEN_VALIDATION_INTERVAL", "soon")
-
-		_, err := NewServerConfig()
-
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "KEYCLOAK_TOKEN_VALIDATION_INTERVAL")
-	})
-}
-
-func TestNewServerConfig_OIDCPrecedence(t *testing.T) {
-	t.Setenv("ARGO_URL", "https://example.com")
-	t.Setenv("ARGO_TOKEN", "secret-token")
-	t.Setenv("STATE_TYPE", "in-memory")
-	t.Setenv("OIDC_ENABLED", "true")
-	t.Setenv("OIDC_ISSUER_URL", "https://authentik.example.com/application/o/argo-watcher/")
-	t.Setenv("OIDC_CLIENT_ID", "aw-oidc")
-	t.Setenv("KEYCLOAK_URL", "https://kc.example.com")
-	t.Setenv("KEYCLOAK_REALM", "legacy")
-	t.Setenv("KEYCLOAK_CLIENT_ID", "legacy-client")
-
-	cfg, err := NewServerConfig()
-
-	require.NoError(t, err)
-	assert.Equal(t, "https://authentik.example.com/application/o/argo-watcher/", cfg.OIDC.IssuerURL)
-	assert.Equal(t, "aw-oidc", cfg.OIDC.ClientId)
+	assert.Equal(t, "argo-watcher", cfg.OIDC.ClientId)
+	assert.Equal(t, 5000, cfg.OIDC.TokenValidationInterval)
+	assert.Equal(t, []string{"admins", "operators", "Release Managers"}, cfg.OIDC.PrivilegedGroups)
 }
 
 func TestNewServerConfig_OIDCValidation(t *testing.T) {
@@ -415,28 +413,11 @@ func TestNewServerConfig_RequireTaskReadAuth(t *testing.T) {
 		assert.Contains(t, err.Error(), "OIDC.RequireTaskReadAuth")
 		assert.Contains(t, err.Error(), "OIDC_ENABLED")
 	})
-
-	t.Run("accepted when OIDC is enabled through the legacy KEYCLOAK_* variables", func(t *testing.T) {
-		// The guard reads OIDC.Enabled, which a legacy deployment only sets via
-		// applyKeycloakCompat. Checking it before that mapping would refuse to start
-		// every Keycloak-configured server, naming a variable its operator never set.
-		baseEnv(t)
-		t.Setenv("KEYCLOAK_ENABLED", "true")
-		t.Setenv("KEYCLOAK_URL", "https://kc.example.com")
-		t.Setenv("KEYCLOAK_REALM", "argo-watcher")
-		t.Setenv("KEYCLOAK_CLIENT_ID", "argo-watcher")
-		t.Setenv("OIDC_REQUIRE_TASK_READ_AUTH", "true")
-
-		cfg, err := NewServerConfig()
-
-		require.NoError(t, err)
-		assert.True(t, cfg.OIDC.RequireTaskReadAuth)
-	})
 }
 
-// /api/v1/config exposes the OIDC block under both the canonical "oidc" key and the
-// legacy "keycloak" mirror, preserving backward compatibility for old consumers.
-func TestServerConfig_JSONDualKey(t *testing.T) {
+// /api/v1/config exposes the OIDC block under the single canonical "oidc" key. The
+// legacy "keycloak" mirror was removed in 1.0.0, so its absence is asserted here.
+func TestServerConfig_JSONOIDCKey(t *testing.T) {
 	cfg := &ServerConfig{
 		OIDC: OIDCConfig{
 			Enabled:   true,
@@ -452,10 +433,8 @@ func TestServerConfig_JSONDualKey(t *testing.T) {
 	require.NoError(t, json.Unmarshal(jsonBytes, &decoded))
 
 	oidcRaw, hasOIDC := decoded["oidc"]
-	kcRaw, hasKeycloak := decoded["keycloak"]
 	require.True(t, hasOIDC, "expected an oidc block")
-	require.True(t, hasKeycloak, "expected a legacy keycloak mirror block")
-	assert.JSONEq(t, string(oidcRaw), string(kcRaw), "keycloak mirror must match the oidc block")
+	assert.NotContains(t, decoded, "keycloak", "the legacy keycloak mirror must be gone")
 	assert.Contains(t, string(oidcRaw), `"issuer_url":"https://kc.example.com/realms/argo-watcher"`)
 
 	// /api/v1/config is readable without a credential, and read policy is the
