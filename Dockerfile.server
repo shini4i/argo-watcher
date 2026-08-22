@@ -2,8 +2,7 @@ FROM gcr.io/distroless/static:nonroot
 
 WORKDIR /app
 
-# TARGETPLATFORM is set by buildx; goreleaser dockers_v2 lays binaries out per
-# platform (e.g. linux/amd64/argo-watcher) in the build context.
+# Set by buildx; goreleaser lays the binaries out per platform in the context.
 ARG TARGETPLATFORM
 
 COPY --chown=nonroot:nonroot $TARGETPLATFORM/argo-watcher /usr/local/bin/argo-watcher

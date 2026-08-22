@@ -1,1 +1,42 @@
+# Keeps the build context small for test/e2e/Dockerfile.server.race, the only
+# Dockerfile built from the repo root (it does a `COPY . .`). goreleaser builds
+# Dockerfile.server and Dockerfile.client in a context it assembles itself, so
+# this file does not apply there. Docker ignores .gitignore, which is why the
+# generated and developer-local paths are repeated here.
+#
+# Patterns are anchored at the context root; use `**/` to match at any depth.
+
+# Devshell Go caches. The flake points GOPATH and GOMODCACHE inside the repo,
+# so these hold multiple GB and would otherwise be uploaded on every build.
+.go
+.gomod
+
+# direnv, Taskfile and mkdocs caches
+.direnv
+.task
+.cache
+
+# Local dev database volume (owned by the Postgres container's uid)
 db/data
+
+# Node dependencies (web/dist is built on the host before the image build)
+**/node_modules
+
+# Developer-local secrets
+**/.env
+
+# Build, test and scratch output
+site
+dist
+sandbox
+argo-watcher
+**/coverage.*
+**/coverage/
+test/e2e/reports
+web/playwright-report
+web/test-results
+
+# Repository metadata not read by any build
+.git
+.github
+.idea
