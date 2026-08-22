@@ -21,7 +21,7 @@ func TestNewServer_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	cfg := &config.ServerConfig{
-		ArgoUrl:   *argoURL,
+		ArgoUrl:   config.URL{URL: *argoURL},
 		ArgoToken: "test-token",
 		StateType: "in-memory",
 	}
@@ -43,7 +43,7 @@ func TestNewServer_StateInitFailure(t *testing.T) {
 	require.NoError(t, err)
 
 	cfg := &config.ServerConfig{
-		ArgoUrl:   *argoURL,
+		ArgoUrl:   config.URL{URL: *argoURL},
 		ArgoToken: "test-token",
 		StateType: "invalid-state-type",
 	}
@@ -62,7 +62,7 @@ func TestNewServer_PostgresConnectionFailure(t *testing.T) {
 	t.Setenv("DB_DSN", "")
 
 	cfg := &config.ServerConfig{
-		ArgoUrl:   *argoURL,
+		ArgoUrl:   config.URL{URL: *argoURL},
 		ArgoToken: "test-token",
 		StateType: "postgres",
 	}

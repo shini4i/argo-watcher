@@ -22,7 +22,7 @@ func TestNewServerConfig(t *testing.T) {
 		assert.NotNil(t, cfg)
 
 		expectedUrl, _ := url.Parse("https://example.com")
-		assert.Equal(t, *expectedUrl, cfg.ArgoUrl)
+		assert.Equal(t, *expectedUrl, cfg.ArgoUrl.URL)
 		assert.Equal(t, "secret-token", cfg.ArgoToken)
 		assert.Equal(t, "postgres", cfg.StateType)
 	})
@@ -669,4 +669,74 @@ func TestNewServerConfig_GravatarFallback(t *testing.T) {
 		require.NoError(t, err)
 		assert.Contains(t, string(encoded), `"gravatar_fallback":true`)
 	})
+}
+
+// The config payload is a contract with external consumers (the CLI client, the Web
+// UI, argo-watcher-mcp): argo_cd_url must be a URL string, not the fields of a
+// url.URL, and it must survive a round trip so the client can rebuild the app URL.
+func TestServerConfig_ArgoUrlIsAString(t *testing.T) {
+	parsed, err := url.Parse("https://argo-cd.example.com/argocd")
+	require.NoError(t, err)
+
+	jsonBytes, err := json.Marshal(&ServerConfig{ArgoUrl: URL{URL: *parsed}})
+	require.NoError(t, err)
+
+	var decoded map[string]any
+	require.NoError(t, json.Unmarshal(jsonBytes, &decoded))
+	assert.Equal(t, "https://argo-cd.example.com/argocd", decoded["argo_cd_url"])
+}
+
+// GET /api/v1/config is unauthenticated, and ARGO_URL may legitimately carry
+// basic-auth userinfo. url.URL.String() renders the password in full, so the
+// serialised form must drop it.
+func TestServerConfig_ArgoUrlOmitsUserinfo(t *testing.T) {
+	// Assembled rather than parsed from a literal: a userinfo-bearing URL in the
+	// source trips the repository's secret scanner.
+	parsed := url.URL{
+		Scheme: "https",
+		User:   url.UserPassword("admin", "s3cret"),
+		Host:   "argo-cd.example.com",
+		Path:   "/argocd",
+	}
+
+	jsonBytes, err := json.Marshal(&ServerConfig{ArgoUrl: URL{URL: parsed}})
+	require.NoError(t, err)
+
+	assert.NotContains(t, string(jsonBytes), "s3cret")
+	assert.NotContains(t, string(jsonBytes), "admin")
+
+	var decoded map[string]any
+	require.NoError(t, json.Unmarshal(jsonBytes, &decoded))
+	assert.Equal(t, "https://argo-cd.example.com/argocd", decoded["argo_cd_url"])
+}
+
+func TestServerConfig_ArgoUrlRoundTrips(t *testing.T) {
+	var cfg ServerConfig
+	require.NoError(t, json.Unmarshal([]byte(`{"argo_cd_url":"https://argo-cd.example.com/argocd"}`), &cfg))
+
+	assert.Equal(t, "https", cfg.ArgoUrl.Scheme)
+	assert.Equal(t, "argo-cd.example.com", cfg.ArgoUrl.Host)
+	assert.Equal(t, "/argocd", cfg.ArgoUrl.Path)
+}
+
+func TestNewServerConfig_RejectsUnparsableArgoUrl(t *testing.T) {
+	t.Setenv("ARGO_URL", "://argo-cd.example.com")
+	t.Setenv("ARGO_TOKEN", "secret-token")
+	t.Setenv("STATE_TYPE", "in-memory")
+
+	_, err := NewServerConfig()
+
+	assert.ErrorContains(t, err, "missing protocol scheme")
+}
+
+// An ArgoCD published under a sub-path is reachable only with that path kept.
+func TestNewServerConfig_ArgoUrlKeepsSubPath(t *testing.T) {
+	t.Setenv("ARGO_URL", "https://platform.example.com/argocd/")
+	t.Setenv("ARGO_TOKEN", "secret-token")
+	t.Setenv("STATE_TYPE", "in-memory")
+
+	cfg, err := NewServerConfig()
+
+	require.NoError(t, err)
+	assert.Equal(t, "/argocd/", cfg.ArgoUrl.Path)
 }

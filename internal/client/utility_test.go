@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"sync/atomic"
 	"testing"
@@ -443,10 +442,10 @@ func TestGenerateAppUrl(t *testing.T) {
 			assert.Equal(t, req.URL.String(), "/api/v1/config")
 
 			configResponse := struct {
-				ArgoCDURL      url.URL `json:"argo_cd_url"`
-				ArgoCDURLAlias string  `json:"argo_cd_url_alias"`
+				ArgoCDURL      string `json:"argo_cd_url"`
+				ArgoCDURLAlias string `json:"argo_cd_url_alias"`
 			}{
-				ArgoCDURL:      url.URL{Scheme: "http", Host: "localhost:8080"},
+				ArgoCDURL:      "http://localhost:8080",
 				ArgoCDURLAlias: "https://argo-cd.example.com",
 			}
 
@@ -478,9 +477,9 @@ func TestGenerateAppUrl(t *testing.T) {
 			assert.Equal(t, req.URL.String(), "/api/v1/config")
 
 			configResponse := struct {
-				ArgoCDURL url.URL `json:"argo_cd_url"`
+				ArgoCDURL string `json:"argo_cd_url"`
 			}{
-				ArgoCDURL: url.URL{Scheme: "http", Host: "localhost:8080"},
+				ArgoCDURL: "http://localhost:8080",
 			}
 
 			jsonData, _ := json.Marshal(configResponse)
@@ -504,6 +503,64 @@ func TestGenerateAppUrl(t *testing.T) {
 		expectedOutput := "http://localhost:8080/applications/test-app"
 
 		assert.Equal(t, expectedOutput, appUrl)
+	})
+
+	// The alias wins over argo_cd_url, and a trailing slash on it must not produce
+	// a doubled one in the link.
+	t.Run("SuccessScenarioAliasWithTrailingSlash", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+			assert.Equal(t, req.URL.String(), "/api/v1/config")
+
+			configResponse := struct {
+				ArgoCDURL      string `json:"argo_cd_url"`
+				ArgoCDURLAlias string `json:"argo_cd_url_alias"`
+			}{
+				ArgoCDURL:      "http://argo-cd.internal:8080",
+				ArgoCDURLAlias: "https://argo-cd.example.com/",
+			}
+
+			jsonData, _ := json.Marshal(configResponse)
+			_, err := rw.Write(jsonData)
+			if err != nil {
+				t.Error(err)
+			}
+		}))
+		defer server.Close()
+
+		watcher := NewWatcher(server.URL, false, 30*time.Second)
+
+		appUrl, err := generateAppUrl(watcher, models.Task{App: "test-app"})
+
+		assert.Nil(t, err)
+		assert.Equal(t, "https://argo-cd.example.com/applications/test-app", appUrl)
+	})
+
+	// An ArgoCD published under a sub-path is reachable only with that path kept,
+	// and the Web UI has always kept it.
+	t.Run("SuccessScenarioUrlWithPath", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+			assert.Equal(t, req.URL.String(), "/api/v1/config")
+
+			configResponse := struct {
+				ArgoCDURL string `json:"argo_cd_url"`
+			}{
+				ArgoCDURL: "https://platform.example.com/argocd/",
+			}
+
+			jsonData, _ := json.Marshal(configResponse)
+			_, err := rw.Write(jsonData)
+			if err != nil {
+				t.Error(err)
+			}
+		}))
+		defer server.Close()
+
+		watcher := NewWatcher(server.URL, false, 30*time.Second)
+
+		appUrl, err := generateAppUrl(watcher, models.Task{App: "test-app"})
+
+		assert.Nil(t, err)
+		assert.Equal(t, "https://platform.example.com/argocd/applications/test-app", appUrl)
 	})
 
 	t.Run("ErrorScenario", func(t *testing.T) {

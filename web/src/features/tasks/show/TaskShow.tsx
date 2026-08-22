@@ -74,11 +74,7 @@ interface RollbackState {
 
 interface ConfigResponse {
   argo_cd_url_alias?: string;
-  argo_cd_url?: {
-    Scheme?: string;
-    Host?: string;
-    Path?: string;
-  };
+  argo_cd_url?: string;
 }
 
 const computeRollbackState = (
@@ -118,17 +114,12 @@ const buildArgoCdUrl = (config: ConfigResponse | null, app?: string | null): str
     return null;
   }
 
-  if (typeof config.argo_cd_url_alias === 'string' && config.argo_cd_url_alias.length > 0) {
-    return `${config.argo_cd_url_alias.replace(/\/$/, '')}/applications/${app}`;
+  const base = config.argo_cd_url_alias || config.argo_cd_url;
+  if (typeof base !== 'string' || base.length === 0) {
+    return null;
   }
 
-  const { Scheme, Host, Path } = config.argo_cd_url ?? {};
-  if (Scheme && Host) {
-    const normalizedPath = Path ?? '';
-    return `${Scheme}://${Host}${normalizedPath}/applications/${app}`;
-  }
-
-  return null;
+  return `${base.replace(/\/$/, '')}/applications/${app}`;
 };
 
 const computeDurationSeconds = (

@@ -20,6 +20,34 @@ import (
 // sweep instead, once an hour, without naming the setting at fault.
 const maxTaskRetentionDays = 36500
 
+// URL is a url.URL that crosses every boundary as a URL string: the JSON of
+// GET /api/v1/config and the structured logs, which would otherwise carry the
+// eleven exported fields of a url.URL for every consumer to reassemble. It parses
+// from a string too, so both env parsing and JSON decoding accept the same form.
+type URL struct {
+	url.URL
+}
+
+// MarshalText renders the URL as a string, minus any userinfo. encoding/json uses
+// it, so the value serialises as "https://argo-cd.example.com" rather than as an
+// object. Userinfo is dropped because GET /api/v1/config is unauthenticated and
+// url.URL.String() renders basic-auth credentials, password included.
+func (u URL) MarshalText() ([]byte, error) {
+	u.User = nil
+	return []byte(u.String()), nil
+}
+
+// UnmarshalText parses a URL string, rejecting one url.Parse cannot read. It backs
+// both env parsing and JSON decoding of the config payload.
+func (u *URL) UnmarshalText(text []byte) error {
+	parsed, err := url.Parse(string(text))
+	if err != nil {
+		return err
+	}
+	u.URL = *parsed
+	return nil
+}
+
 // OIDCConfig holds the settings for the generic OIDC authentication provider.
 // IssuerURL is the provider's issuer (e.g. "https://kc/realms/foo" for Keycloak
 // or "https://authentik/application/o/argo-watcher/" for Authentik); the backend
@@ -86,7 +114,7 @@ type MattermostConfig struct {
 // (github.com/shini4i/argo-watcher-mcp allowlists it field by field), so removing a
 // key is a breaking change for them.
 type ServerConfig struct {
-	ArgoUrl            url.URL          `env:"ARGO_URL,required,notEmpty" json:"argo_cd_url"`
+	ArgoUrl            URL              `env:"ARGO_URL,required,notEmpty" json:"argo_cd_url" swaggertype:"primitive,string"`
 	ArgoUrlAlias       string           `env:"ARGO_URL_ALIAS" json:"argo_cd_url_alias,omitempty"` // Used to generate App Url. Can be omitted if ArgoUrl is reachable from outside.
 	ArgoToken          string           `env:"ARGO_TOKEN,required,notEmpty" json:"-"`
 	ArgoApiTimeout     int64            `env:"ARGO_API_TIMEOUT" envDefault:"60" json:"argo_api_timeout"`

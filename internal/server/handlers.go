@@ -318,7 +318,7 @@ func (env *Env) requireOIDCAuth(w http.ResponseWriter, r *http.Request) bool {
 	}
 	if errors.Is(err, auth.ErrProviderUnavailable) {
 		slog.Error("rejecting request: authentication provider unavailable",
-			"method", r.Method, "url", r.URL, "error", err)
+			"method", r.Method, "url", r.URL.Path, "error", err)
 		writeJSON(w, http.StatusServiceUnavailable, models.TaskStatus{
 			Status: "authentication provider unavailable",
 			Error:  err.Error(),
@@ -327,7 +327,7 @@ func (env *Env) requireOIDCAuth(w http.ResponseWriter, r *http.Request) bool {
 	}
 	if err != nil {
 		slog.Warn("rejected request with invalid token",
-			"method", r.Method, "url", r.URL, "error", err)
+			"method", r.Method, "url", r.URL.Path, "error", err)
 		writeJSON(w, http.StatusUnauthorized, models.TaskStatus{
 			Status: unauthorizedMessage,
 			Error:  err.Error(),
@@ -335,7 +335,7 @@ func (env *Env) requireOIDCAuth(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 
-	slog.Warn("rejected unauthenticated request", "method", r.Method, "url", r.URL)
+	slog.Warn("rejected unauthenticated request", "method", r.Method, "url", r.URL.Path)
 	writeJSON(w, http.StatusUnauthorized, models.TaskStatus{
 		Status: unauthorizedMessage,
 		Error:  "authentication required (set " + oidcHeader + " header)",
@@ -368,7 +368,7 @@ func (env *Env) requireAuthenticatedRead() func(http.Handler) http.Handler {
 
 			if errors.Is(err, auth.ErrProviderUnavailable) {
 				slog.Error("rejecting read: authentication provider unavailable",
-					"method", r.Method, "url", r.URL, "error", err)
+					"method", r.Method, "url", r.URL.Path, "error", err)
 				writeJSON(w, http.StatusServiceUnavailable, models.TaskStatus{
 					Status: "authentication provider unavailable",
 					Error:  err.Error(),
@@ -378,7 +378,7 @@ func (env *Env) requireAuthenticatedRead() func(http.Handler) http.Handler {
 
 			if err != nil {
 				slog.Warn("rejecting read with invalid credential",
-					"method", r.Method, "url", r.URL, "error", err)
+					"method", r.Method, "url", r.URL.Path, "error", err)
 				writeJSON(w, http.StatusUnauthorized, models.TaskStatus{
 					Status: unauthorizedMessage,
 					Error:  err.Error(),
@@ -386,7 +386,7 @@ func (env *Env) requireAuthenticatedRead() func(http.Handler) http.Handler {
 				return
 			}
 
-			slog.Warn("rejecting unauthenticated read", "method", r.Method, "url", r.URL)
+			slog.Warn("rejecting unauthenticated read", "method", r.Method, "url", r.URL.Path)
 			writeJSON(w, http.StatusUnauthorized, models.TaskStatus{
 				Status: unauthorizedMessage,
 				Error:  "authentication required (set " + oidcHeader + " header)",
