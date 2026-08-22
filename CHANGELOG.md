@@ -187,6 +187,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`crypto/tls`), `GO-2026-6089` and `GO-2026-5026` (`net/http`), `GO-2026-6088`
   (`encoding/xml`) and `GO-2026-5972` (`encoding/asn1`). The `go` directive stays at
   `1.26.5`, so the minimum language version required to build is unchanged.
+- Release images no longer ship the frontend source maps. The production build emitted an
+  `index-*.js.map` with the full source of the web UI inlined, and the server served it to
+  anyone who asked, so the application's own sources were readable from a deployed
+  instance. The bundle itself is unchanged; only the map is gone, and `web/dist` drops from
+  8.2 MB to 3.2 MB.
 
 ## [0.15.0] - 2026-08-11
 

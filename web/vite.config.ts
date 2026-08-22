@@ -52,7 +52,8 @@ export default defineConfig(({ command }) => {
     },
     build: {
       outDir: 'dist',
-      sourcemap: true,
+      // dist/ is served publicly by the Go server, so maps would expose the app's sources.
+      sourcemap: false,
     },
   };
 });

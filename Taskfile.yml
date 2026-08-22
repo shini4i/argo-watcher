@@ -161,6 +161,7 @@ tasks:
     sources:
       - src/**/*.ts
       - src/**/*.tsx
+      - vite.config.ts
     # Without this, an unchanged src plus a deleted or partial dist/ is reported
     # up to date and the build is skipped — leaving the consumers of web/dist
     # (the images, the Playwright suite) pointed at nothing.
