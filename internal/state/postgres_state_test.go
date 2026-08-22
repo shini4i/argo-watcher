@@ -610,17 +610,16 @@ func TestPostgresState_TaskRetentionWindowBoundary(t *testing.T) {
 	assert.True(t, env.taskExists(t, inside.Id), "a task one minute inside the window is kept")
 }
 
-// A task the sweep aborts for staleness is past the window and collected by the
-// same pass — unless a replica still holds it. This pins the lease guard: the
-// two paths differ only in whether the claim is live.
+// A claim is what tells the sweep a task is somebody's work: while it is live the
+// task is neither given up on nor collected, however old the row is. This pins both
+// halves of the guard — the two paths differ only in whether the claim is live.
 func TestPostgresState_TaskRetentionSparesTaskUnderActiveLease(t *testing.T) {
 	env := newPostgresTestEnv(t, withRetention(30))
 
 	// The HA case: a replica returning after an outage claims a rollout abandoned
-	// long ago and resumes monitoring it. Its creation timestamp is past the
-	// window and the sweep's earlier step marks it aborted for staleness, so
-	// without the lease guard this pass would delete the row the replica is still
-	// working on — leaving it unable to record the outcome.
+	// long ago and resumes monitoring it. The row is past both the staleness and
+	// the retention window, so a sweep blind to the claim would abort the
+	// deployment and then delete the row the replica is about to write to.
 	resumed := env.addAgedTask(t, "Resumed", models.StatusInProgressMessage, 400*day)
 	require.NoError(t, env.state.ClaimTask(resumed.Id))
 
@@ -629,13 +628,19 @@ func TestPostgresState_TaskRetentionSparesTaskUnderActiveLease(t *testing.T) {
 	require.True(t, env.taskExists(t, resumed.Id),
 		"a task under an unexpired lease must survive, however old it is")
 
+	stored, err := env.state.GetTask(resumed.Id)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusInProgressMessage, stored.Status,
+		"the rollout is still being monitored, so the sweep must not give up on it")
+
 	held, err := env.state.RenewLease(resumed.Id)
 	require.NoError(t, err)
 	assert.True(t, held, "the replica monitoring it must still hold its claim")
 
-	// Once the claim lapses the row is nobody's, and the next sweep collects it.
+	// Once the claim lapses the row is nobody's: the same pass gives up on it and
+	// then collects it.
 	env.expireLease(t, resumed.Id)
-	require.NoError(t, env.state.deleteExpiredTasks())
+	env.state.ProcessObsoleteTasks(1)
 
 	assert.False(t, env.taskExists(t, resumed.Id),
 		"a lapsed lease no longer protects a task past the window")
