@@ -18,7 +18,7 @@ The Go API must be running (`task bootstrap` from the repo root, or `go run ./cm
 | Command | Description |
 |---|---|
 | `npm run dev` | Dev server with proxy and HMR |
-| `npm run build` | Production build with sourcemaps into `dist/` |
+| `npm run build` | Production build into `dist/` |
 | `npm run preview` | Serve `dist/` with production routing |
 | `npm run lint` | oxlint (see `.oxlintrc.json`) |
 | `npm run test` | Vitest once, with text + LCOV coverage |

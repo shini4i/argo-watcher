@@ -172,6 +172,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cluster — and offers a retry rather than heading back to the provider that just failed.
   Deployments without OIDC are untouched, as is a configuration request that merely fails
   while the server restarts.
+- The `/swagger/` page renders the API specification again. Its stylesheet and both Swagger
+  UI bundles were copied one directory deeper than the page loads them from, so since
+  v0.11.0 every release image answered those three requests with the Web UI shell and the
+  page stayed blank.
 
 ### Security
 
@@ -187,6 +191,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`crypto/tls`), `GO-2026-6089` and `GO-2026-5026` (`net/http`), `GO-2026-6088`
   (`encoding/xml`) and `GO-2026-5972` (`encoding/asn1`). The `go` directive stays at
   `1.26.5`, so the minimum language version required to build is unchanged.
+- Release images no longer ship the frontend source maps. The production build emitted an
+  `index-*.js.map` with the full source of the web UI inlined, and the server served it to
+  anyone who asked, so the application's own sources were readable from a deployed
+  instance. The bundle itself is unchanged; only the map is gone, and `web/dist` drops from
+  8.2 MB to 3.2 MB.
 
 ## [0.15.0] - 2026-08-11
 

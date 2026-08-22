@@ -22,16 +22,12 @@ export default defineConfig(({ command }) => {
       viteStaticCopy({
         targets: [
           {
-            src: 'node_modules/swagger-ui-dist/swagger-ui-bundle.js',
+            src: 'node_modules/swagger-ui-dist/{swagger-ui.css,swagger-ui-bundle.js,swagger-ui-standalone-preset.js}',
             dest: 'swagger',
-          },
-          {
-            src: 'node_modules/swagger-ui-dist/swagger-ui-standalone-preset.js',
-            dest: 'swagger',
-          },
-          {
-            src: 'node_modules/swagger-ui-dist/swagger-ui.css',
-            dest: 'swagger',
+            // The plugin preserves the source directory structure, so without this the
+            // files land in dist/swagger/node_modules/swagger-ui-dist/ and the swagger
+            // page, which loads them by bare name, gets the SPA fallback instead.
+            rename: { stripBase: true },
           },
         ],
       }),
@@ -52,7 +48,8 @@ export default defineConfig(({ command }) => {
     },
     build: {
       outDir: 'dist',
-      sourcemap: true,
+      // dist/ is served publicly by the Go server, so maps would expose the app's sources.
+      sourcemap: false,
     },
   };
 });

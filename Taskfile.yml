@@ -157,10 +157,22 @@ tasks:
     cmds:
       - echo "===> Building React-admin UI"
       - npm run build
+      # dist/ is copied into the release image and served publicly, so a source map here
+      # would expose the UI's own sources. Fail the build instead of shipping it. Only
+      # dist/assets is scanned for the comment: swagger-ui.css ships one for a map that
+      # is not copied.
+      - |
+        found=$(find dist -name '*.map'; grep -rl sourceMappingURL dist/assets || true)
+        if [ -n "$found" ]; then
+          echo "===> ERROR: source maps in web/dist (check build.sourcemap in vite.config.ts):"
+          echo "$found"
+          exit 1
+        fi
       - echo "===> Done"
     sources:
       - src/**/*.ts
       - src/**/*.tsx
+      - vite.config.ts
     # Without this, an unchanged src plus a deleted or partial dist/ is reported
     # up to date and the build is skipped — leaving the consumers of web/dist
     # (the images, the Playwright suite) pointed at nothing.
