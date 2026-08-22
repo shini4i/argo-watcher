@@ -172,6 +172,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cluster — and offers a retry rather than heading back to the provider that just failed.
   Deployments without OIDC are untouched, as is a configuration request that merely fails
   while the server restarts.
+- The `/swagger/` page renders the API specification again. Its stylesheet and both Swagger
+  UI bundles were copied one directory deeper than the page loads them from, so since
+  v0.11.0 every release image answered those three requests with the Web UI shell and the
+  page stayed blank.
 
 ### Security
 
