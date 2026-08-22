@@ -56,6 +56,10 @@ test.describe('privileged control gating', () => {
     await expect(page.getByRole('button', { name: ROLLBACK_BUTTON })).toBeVisible();
 
     await openConfigDrawer(page);
+    // The realm builds the display name from firstName+lastName; the crown reflects
+    // the same userinfo groups the lock toggle gates on.
+    await expect(page.getByText('Priv User')).toBeVisible();
+    await expect(page.getByRole('img', { name: 'Privileged access' })).toBeVisible();
     await expect(page.getByLabel(LOCK_SWITCH)).toBeEnabled();
 
     const token = await mintToken(request, PRIVILEGED_USER);
@@ -75,6 +79,9 @@ test.describe('privileged control gating', () => {
     await expect(page.getByRole('button', { name: ROLLBACK_BUTTON })).toHaveCount(0);
 
     await openConfigDrawer(page);
+    // The badge still names the user — only the crown is withheld.
+    await expect(page.getByText('Regular User')).toBeVisible();
+    await expect(page.getByRole('img', { name: 'Privileged access' })).toHaveCount(0);
     await expect(page.getByLabel(LOCK_SWITCH)).toBeDisabled();
     await expect(page.getByText('Deploy lock requires privileged access.')).toBeVisible();
 

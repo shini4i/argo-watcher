@@ -15,6 +15,7 @@ interface OidcConfig {
   issuer_url?: string;
   client_id?: string;
   privileged_groups?: string[];
+  gravatar_fallback?: boolean;
 }
 
 interface ServerConfig {
@@ -355,6 +356,32 @@ export const bootstrapAuth = async ({
   return ensureAuthenticated(manager);
 };
 
+/**
+ * SHA-256 Gravatar URL, or undefined without an email or WebCrypto (which is
+ * absent outside a secure context). `d=404` so an address with no Gravatar fails
+ * the image load and the badge falls back to the initial.
+ */
+const gravatarUrl = async (email?: string): Promise<string | undefined> => {
+  const normalized = email?.trim().toLowerCase();
+  const subtle = globalThis.crypto?.subtle;
+  if (!normalized || !subtle) {
+    return undefined;
+  }
+
+  // An optional avatar must never cost the identity it decorates.
+  const digest = await subtle
+    .digest('SHA-256', new TextEncoder().encode(normalized))
+    .catch(() => undefined);
+  if (!digest) {
+    return undefined;
+  }
+
+  const hash = Array.from(new Uint8Array(digest))
+    .map(byte => byte.toString(16).padStart(2, '0'))
+    .join('');
+  return `https://www.gravatar.com/avatar/${hash}?s=80&d=404`;
+};
+
 export const authProvider: AuthProvider = {
   async login(params) {
     const manager = await ensureUserManager();
@@ -431,19 +458,24 @@ export const authProvider: AuthProvider = {
     return { groups, privilegedGroups } satisfies Permissions;
   },
 
-  async getIdentity(): Promise<{ id: Identifier; fullName?: string; email?: string }> {
+  async getIdentity(): Promise<{ id: Identifier; fullName?: string; email?: string; avatar?: string }> {
     const manager = await ensureUserManager();
     if (!manager) {
-      return { id: 'anonymous', fullName: 'Anonymous', email: undefined };
+      return { id: 'anonymous', fullName: 'Anonymous', email: undefined, avatar: undefined };
     }
 
     const user = await manager.getUser();
     const profile = user?.profile ?? {};
     const id = (profile.sub as Identifier) ?? 'unknown';
-    const fullName = (profile.name as string) ?? (profile.preferred_username as string) ?? undefined;
-    const email = (profile.email as string) ?? undefined;
+    // || not ??: a provider that concatenates absent given/family names sends an
+    // empty string, which must fall through to the next claim.
+    const fullName = (profile.name as string) || (profile.preferred_username as string) || undefined;
+    const email = (profile.email as string) || undefined;
+    const avatar =
+      (profile.picture as string) ||
+      (serverConfig?.oidc?.gravatar_fallback ? await gravatarUrl(email) : undefined);
 
-    return { id, fullName, email };
+    return { id, fullName, email, avatar };
   },
 };
 

@@ -20,6 +20,7 @@ import { useDeployLock } from '../../features/deployLock/DeployLockProvider';
 import { useOidcEnabled } from '../../shared/hooks/useOidcEnabled';
 import { hasPrivilegedAccess } from '../../shared/utils/permissions';
 import { useTimezone } from '../../shared/providers/TimezoneProvider';
+import { UserBadge } from './UserBadge';
 
 interface ConfigDrawerProps {
   open: boolean;
@@ -101,6 +102,8 @@ export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
               v{version}
             </Typography>
           </Stack>
+
+          {oidcEnabled === true && <UserBadge privileged={privileged} />}
 
           <Stack spacing={1.5} component="section" aria-labelledby="drawer-appearance">
             <Typography variant="subtitle2" sx={{

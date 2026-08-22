@@ -15,6 +15,7 @@ const httpClientMock = vi.fn();
 const notifyMock = vi.fn();
 const permissionsMock = vi.fn();
 const oidcEnabledMock = vi.fn();
+const identityMock = vi.fn();
 
 vi.mock('../../data/httpClient', () => ({
   httpClient: (...args: unknown[]) => httpClientMock(...args),
@@ -38,6 +39,8 @@ vi.mock('react-admin', async () => {
     ...actual,
     useNotify: () => notifyMock,
     usePermissions: () => permissionsMock(),
+    useGetIdentity: () => identityMock(),
+    useLogout: () => vi.fn(),
   };
 });
 
@@ -48,6 +51,11 @@ describe('AppTopBar', () => {
     permissionsMock.mockReset();
     oidcEnabledMock.mockReset();
     oidcEnabledMock.mockReturnValue(true);
+    identityMock.mockReset();
+    identityMock.mockReturnValue({
+      identity: { id: 'user-id', fullName: 'Shini4i' },
+      isPending: false,
+    });
     permissionsMock.mockReturnValue({
       permissions: { groups: ['devops'], privilegedGroups: ['devops'] },
       isLoading: false,

@@ -200,6 +200,79 @@ describe('authProvider', () => {
     expect(identity.id).toBe('user-id');
   });
 
+  it('exposes the profile picture as the identity avatar', async () => {
+    mockConfig(enabledConfig());
+    userManagerMock.getUser.mockResolvedValue(
+      signedInUser({ picture: 'https://idp.example.com/avatar.png' }),
+    );
+    const provider = await loadAuthProvider();
+
+    const identity = await provider.getIdentity!();
+    expect(identity.fullName).toBe('User Example');
+    expect(identity.avatar).toBe('https://idp.example.com/avatar.png');
+  });
+
+  it('leaves the identity avatar undefined without a picture claim', async () => {
+    mockConfig(enabledConfig());
+    userManagerMock.getUser.mockResolvedValue(signedInUser());
+    const provider = await loadAuthProvider();
+
+    const identity = await provider.getIdentity!();
+    expect(identity.avatar).toBeUndefined();
+  });
+
+  it('derives a Gravatar avatar when the provider serves no picture and the fallback is on', async () => {
+    mockConfig(enabledConfig({ gravatar_fallback: true }));
+    userManagerMock.getUser.mockResolvedValue(signedInUser());
+    const provider = await loadAuthProvider();
+
+    const identity = await provider.getIdentity!();
+    // sha256('user@example.com'), per the current Gravatar spec.
+    expect(identity.avatar).toBe(
+      'https://www.gravatar.com/avatar/b4c9a289323b21a01c3e940f150eb9b8c542587f1abfd8f0e1cc1ffc5e475514?s=80&d=404',
+    );
+  });
+
+  it('prefers the provider picture over Gravatar', async () => {
+    mockConfig(enabledConfig({ gravatar_fallback: true }));
+    userManagerMock.getUser.mockResolvedValue(
+      signedInUser({ picture: 'https://idp.example.com/avatar.png' }),
+    );
+    const provider = await loadAuthProvider();
+
+    const identity = await provider.getIdentity!();
+    expect(identity.avatar).toBe('https://idp.example.com/avatar.png');
+  });
+
+  it('keeps the identity when the digest fails', async () => {
+    mockConfig(enabledConfig({ gravatar_fallback: true }));
+    userManagerMock.getUser.mockResolvedValue(signedInUser());
+    vi.spyOn(globalThis.crypto.subtle, 'digest').mockRejectedValue(new Error('no digest'));
+    const provider = await loadAuthProvider();
+
+    const identity = await provider.getIdentity!();
+    expect(identity.email).toBe('user@example.com');
+    expect(identity.avatar).toBeUndefined();
+  });
+
+  it('serves no Gravatar for a user without an email', async () => {
+    mockConfig(enabledConfig({ gravatar_fallback: true }));
+    userManagerMock.getUser.mockResolvedValue(signedInUser({ email: undefined }));
+    const provider = await loadAuthProvider();
+
+    const identity = await provider.getIdentity!();
+    expect(identity.avatar).toBeUndefined();
+  });
+
+  it('falls back to preferred_username when the name claim is blank', async () => {
+    mockConfig(enabledConfig());
+    userManagerMock.getUser.mockResolvedValue(signedInUser({ name: '' }));
+    const provider = await loadAuthProvider();
+
+    const identity = await provider.getIdentity!();
+    expect(identity.fullName).toBe('user');
+  });
+
   it('reads groups from userinfo (the source the backend enforces on), not the ID token', async () => {
     mockConfig(enabledConfig(), ['admins']);
     userManagerMock.getUser.mockResolvedValue(signedInUser({ groups: [] }));

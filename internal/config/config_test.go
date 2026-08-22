@@ -648,3 +648,46 @@ func TestServerConfig_TaskRetentionNotExposed(t *testing.T) {
 	assert.NotContains(t, strings.ToLower(string(jsonBytes)), "retention")
 	assert.NotContains(t, string(jsonBytes), "4242", "the window must not leak under a renamed key either")
 }
+
+// The Gravatar fallback sends a hash of the signed-in user's email to a third party,
+// so it must stay off unless an operator turns it on, and it must reach the UI through
+// /api/v1/config for the browser to act on it.
+func TestNewServerConfig_GravatarFallback(t *testing.T) {
+	baseEnv := func(t *testing.T) {
+		t.Helper()
+		t.Setenv("ARGO_URL", "https://example.com")
+		t.Setenv("ARGO_TOKEN", "secret-token")
+		t.Setenv("STATE_TYPE", "in-memory")
+	}
+
+	t.Run("defaults to off", func(t *testing.T) {
+		baseEnv(t)
+
+		cfg, err := NewServerConfig()
+
+		require.NoError(t, err)
+		assert.False(t, cfg.OIDC.GravatarFallback)
+	})
+
+	t.Run("enabled by the operator", func(t *testing.T) {
+		baseEnv(t)
+		t.Setenv("OIDC_ENABLED", "true")
+		t.Setenv("OIDC_ISSUER_URL", "https://idp.example.com/application/o/aw/")
+		t.Setenv("OIDC_CLIENT_ID", "argo-watcher")
+		t.Setenv("OIDC_GRAVATAR_FALLBACK", "true")
+
+		cfg, err := NewServerConfig()
+
+		require.NoError(t, err)
+		assert.True(t, cfg.OIDC.GravatarFallback)
+	})
+
+	t.Run("is published to the UI", func(t *testing.T) {
+		cfg := &ServerConfig{OIDC: OIDCConfig{Enabled: true, GravatarFallback: true}}
+
+		encoded, err := json.Marshal(cfg)
+
+		require.NoError(t, err)
+		assert.Contains(t, string(encoded), `"gravatar_fallback":true`)
+	})
+}

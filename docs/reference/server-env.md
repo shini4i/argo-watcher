@@ -46,6 +46,7 @@ The chart mounts its persistent volume at `REPO_CACHE_PATH`; change one and you 
 | `OIDC_PRIVILEGED_GROUPS` | Groups allowed to roll back a task and manage the deploy lock | | No |
 | `OIDC_TOKEN_VALIDATION_INTERVAL` | How long (ms) a provider decision may be reused | `300000` | No |
 | `OIDC_REQUIRE_TASK_READ_AUTH` | Require a credential on `GET /api/v1/tasks/{id}` too | `false` | No |
+| `OIDC_GRAVATAR_FALLBACK` | Let the account card fall back to Gravatar when the provider sends no `picture` claim | `false` | No |
 
 Enabling OIDC also makes the Web UI's read endpoints require a credential — see [Protected endpoints](../guides/oidc.md#protected-endpoints). The legacy `KEYCLOAK_*` variables are still honored but deprecated ([migration table](../guides/oidc.md#migrating-from-keycloak_)).
 
