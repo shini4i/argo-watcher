@@ -24,11 +24,9 @@ const maxTaskListLimit = 1000
 
 const (
 	unauthorizedMessage = "You are not authorized to perform this action"
-	// oidcHeader is the canonical header carrying the OIDC bearer token for
-	// privileged (deploy-lock/rollback) requests. legacyKeycloakHeader is the
-	// deprecated alias still accepted for backward compatibility.
-	oidcHeader           = "Oidc-Authorization"
-	legacyKeycloakHeader = "Keycloak-Authorization"
+	// oidcHeader carries the OIDC bearer token for privileged
+	// (deploy-lock/rollback) requests.
+	oidcHeader = "Oidc-Authorization"
 )
 
 // getVersion godoc
@@ -273,10 +271,9 @@ func (env *Env) getConfig(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, env.config)
 }
 
-// requireOIDCAuth validates the OIDC token when OIDC auth is enabled. It returns
-// true if validation passes (or OIDC is disabled). The canonical Oidc-Authorization
-// header is tried first, then the deprecated Keycloak-Authorization alias. On
-// failure the response distinguishes:
+// requireOIDCAuth validates the OIDC token from the Oidc-Authorization header when
+// OIDC auth is enabled. It returns true if validation passes (or OIDC is disabled).
+// On failure the response distinguishes:
 //   - 401 with "authentication required" when no auth header was sent.
 //   - 401 with the strategy's reason when the token was rejected.
 //   - 503 when the provider could not be consulted at all, so that a provider
@@ -287,32 +284,29 @@ func (env *Env) requireOIDCAuth(w http.ResponseWriter, r *http.Request) bool {
 		return true
 	}
 
-	for _, header := range []string{oidcHeader, legacyKeycloakHeader} {
-		valid, err := env.validateToken(r, header)
-		if valid {
-			return true
-		}
-		if errors.Is(err, auth.ErrProviderUnavailable) {
-			slog.Error("rejecting request: authentication provider unavailable",
-				"method", r.Method, "url", r.URL, "error", err)
-			writeJSON(w, http.StatusServiceUnavailable, models.TaskStatus{
-				Status: "authentication provider unavailable",
-				Error:  err.Error(),
-			})
-			return false
-		}
-		if err != nil {
-			slog.Warn("rejected request with invalid token",
-				"method", r.Method, "url", r.URL, "error", err)
-			writeJSON(w, http.StatusUnauthorized, models.TaskStatus{
-				Status: unauthorizedMessage,
-				Error:  err.Error(),
-			})
-			return false
-		}
+	valid, err := env.validateToken(r, oidcHeader)
+	if valid {
+		return true
+	}
+	if errors.Is(err, auth.ErrProviderUnavailable) {
+		slog.Error("rejecting request: authentication provider unavailable",
+			"method", r.Method, "url", r.URL, "error", err)
+		writeJSON(w, http.StatusServiceUnavailable, models.TaskStatus{
+			Status: "authentication provider unavailable",
+			Error:  err.Error(),
+		})
+		return false
+	}
+	if err != nil {
+		slog.Warn("rejected request with invalid token",
+			"method", r.Method, "url", r.URL, "error", err)
+		writeJSON(w, http.StatusUnauthorized, models.TaskStatus{
+			Status: unauthorizedMessage,
+			Error:  err.Error(),
+		})
+		return false
 	}
 
-	// No auth header sent on either the canonical or the legacy name.
 	slog.Warn("rejected unauthenticated request", "method", r.Method, "url", r.URL)
 	writeJSON(w, http.StatusUnauthorized, models.TaskStatus{
 		Status: unauthorizedMessage,

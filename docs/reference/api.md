@@ -18,7 +18,7 @@ A credential does two things: it authorizes the [GitOps updater](../guides/gitop
 |---|---|
 | Deploy token | `ARGO_WATCHER_DEPLOY_TOKEN: <token>` |
 | JWT | `Authorization: <token>` (raw; `Bearer <token>` also accepted) |
-| OIDC session | `Oidc-Authorization: <access token>` (legacy `Keycloak-Authorization` also accepted) |
+| OIDC session | `Oidc-Authorization: <access token>` |
 
 ### Reads
 

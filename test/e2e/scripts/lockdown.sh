@@ -21,7 +21,7 @@
 # happened un-observed, so that sub-check is skipped with a logged note rather
 # than flaking.
 #
-# A manual (Keycloak) lock/unlock is NOT a separate trigger: the API handlers do
+# A manual (OIDC-authenticated) lock/unlock is NOT a separate trigger: the API handlers do
 # not push, so it reaches clients through this same lockdown watcher and the same
 # one-poll-interval delay. state-postgres.sh asserts that path over the WS for a
 # lock written by another writer; TestDeployLockNotifiedOnlyByWatcher pins that the

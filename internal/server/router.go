@@ -284,7 +284,7 @@ func isSameOrigin(origin, host string) bool {
 func (env *Env) corsOptions() cors.Options {
 	options := cors.Options{
 		AllowedMethods:       []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions},
-		AllowedHeaders:       []string{"Origin", "Content-Type", "Accept", "Authorization", oidcHeader, legacyKeycloakHeader, "ARGO_WATCHER_DEPLOY_TOKEN"},
+		AllowedHeaders:       []string{"Origin", "Content-Type", "Accept", "Authorization", oidcHeader, "ARGO_WATCHER_DEPLOY_TOKEN"},
 		ExposedHeaders:       []string{"Content-Length"},
 		MaxAge:               int((12 * time.Hour).Seconds()),
 		OptionsSuccessStatus: http.StatusNoContent,

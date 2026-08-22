@@ -160,14 +160,13 @@ func TestReadAuthProtectedEndpoints(t *testing.T) {
 		}
 	})
 
-	t.Run("accepts the legacy Keycloak header", func(t *testing.T) {
+	t.Run("rejects the removed Keycloak header", func(t *testing.T) {
 		env, _ := readAuthEnv(t, true, map[string]auth.AuthStrategy{
-			oidcHeader:           oidcLikeStrategy{authenticated: true},
-			legacyKeycloakHeader: oidcLikeStrategy{authenticated: true},
+			oidcHeader: oidcLikeStrategy{authenticated: true},
 		})
 
-		assert.Equal(t, http.StatusOK,
-			getWith(t, env, "/api/v1/tasks?from_timestamp=0", legacyKeycloakHeader, "Bearer token").Code)
+		assert.Equal(t, http.StatusUnauthorized,
+			getWith(t, env, "/api/v1/tasks?from_timestamp=0", "Keycloak-Authorization", "Bearer token").Code)
 	})
 
 	t.Run("accepts a deploy token so a pipeline can read", func(t *testing.T) {

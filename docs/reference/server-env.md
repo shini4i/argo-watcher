@@ -48,7 +48,7 @@ The chart mounts its persistent volume at `REPO_CACHE_PATH`; change one and you 
 | `OIDC_REQUIRE_TASK_READ_AUTH` | Require a credential on `GET /api/v1/tasks/{id}` too | `false` | No |
 | `OIDC_GRAVATAR_FALLBACK` | Let the account card fall back to Gravatar when the provider sends no `picture` claim | `false` | No |
 
-Enabling OIDC also makes the Web UI's read endpoints require a credential — see [Protected endpoints](../guides/oidc.md#protected-endpoints). The legacy `KEYCLOAK_*` variables are still honored but deprecated ([migration table](../guides/oidc.md#migrating-from-keycloak_)).
+Enabling OIDC also makes the Web UI's read endpoints require a credential — see [Protected endpoints](../guides/oidc.md#protected-endpoints). The `KEYCLOAK_*` variables were removed in 1.0.0 and now fail startup ([migration table](../guides/oidc.md#migrating-from-keycloak_)).
 
 `OIDC_REQUIRE_TASK_READ_AUTH` fails every deployment driven by a client that sends no credential on reads, which includes **every client older than v0.15.0**. It also requires `OIDC_ENABLED=true`; the server refuses to start otherwise. Check `unauthenticated_reads` first — see [Closing the task lookup](../guides/oidc.md#closing-the-task-lookup).
 

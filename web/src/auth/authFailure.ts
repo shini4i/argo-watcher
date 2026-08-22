@@ -203,5 +203,5 @@ export const describeIncompleteConfig = (missing: readonly string[]): AuthFailur
   kind: 'config_incomplete',
   title: 'Argo Watcher is misconfigured for OIDC',
   detail: `OIDC is enabled but the server did not report: ${missing.join(', ')}.`,
-  hint: 'Set OIDC_ISSUER_URL and OIDC_CLIENT_ID on the Argo Watcher server (or the legacy KEYCLOAK_URL, KEYCLOAK_REALM and KEYCLOAK_CLIENT_ID).',
+  hint: 'Set OIDC_ISSUER_URL and OIDC_CLIENT_ID on the Argo Watcher server.',
 });
