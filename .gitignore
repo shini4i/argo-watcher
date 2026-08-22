@@ -2,7 +2,7 @@
 .idea
 .run
 
-# database for development (local sqlite volumes created by dev docker-compose)
+# Postgres data directory created by the dev docker-compose stack
 db/data
 
 # static directory artifacts (compiled frontend assets and vendored modules)

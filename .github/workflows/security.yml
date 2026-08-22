@@ -19,11 +19,11 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
 
@@ -32,7 +32,7 @@ jobs:
         with:
           # An exact version skips the unauthenticated go-task tags API
           # lookup, which shares the runner IP 60 req/h anonymous quota.
-          version: 3.52.0
+          version: 3.53.1
 
       - name: Install environment dependencies
         run: task install-deps
@@ -47,7 +47,7 @@ jobs:
       - name: Run Gosec Security Scanner
         id: gosec
         continue-on-error: true
-        uses: securego/gosec@9e6a9843d7a4a6e3e9a8539b02612c8a4aa3f889 # v2.27.1
+        uses: securego/gosec@9e75c0576c9878035d4221392108d458abe10fc3 # v2.28.0
         env:
           # The gosec image bundles an older Go with GOTOOLCHAIN=local, so it
           # refuses a go.mod whose toolchain directive names a newer patch. Allow
@@ -63,7 +63,7 @@ jobs:
         id: govulncheck
         continue-on-error: true
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+          go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
           "$(go env GOPATH)/bin/govulncheck" ./...
 
       - name: Fail if any Go scanner failed
@@ -79,7 +79,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -102,14 +102,14 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Full history so the scan can diff the pushed/PR commit range.
           fetch-depth: 0
           persist-credentials: false
 
       - name: Scan for secrets
-        uses: trufflesecurity/trufflehog@27b0417c16317ca9a472a9a8092acce143b49c55 # v3.95.9
+        uses: trufflesecurity/trufflehog@bcfcf73aaf4759d4dadc2783177c245a02792318 # v3.97.0
         with:
           # .trufflehog-exclude skips files holding intentional non-secrets
           # (local dev credentials, SSH key fixtures). Keep it in sync with the

@@ -1,7 +1,6 @@
 FROM alpine:3.24
 
-# TARGETPLATFORM is set by buildx; goreleaser dockers_v2 lays binaries out per
-# platform (e.g. linux/amd64/client) in the build context.
+# Set by buildx; goreleaser lays the binaries out per platform in the context.
 ARG TARGETPLATFORM
 
 COPY $TARGETPLATFORM/client /client
