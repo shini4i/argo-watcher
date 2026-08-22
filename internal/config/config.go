@@ -37,10 +37,8 @@ const maxTaskRetentionDays = 36500
 // fails every deployment driven by such a client; the unauthenticated_reads metric
 // reports how many are left.
 //
-// GravatarFallback lets the UI fall back to gravatar.com for users whose provider
-// serves no picture claim. It is opt-in because it discloses the signed-in user's
-// email address to a third party: the address is hashed, but a hash of a known
-// address is trivially reversible.
+// GravatarFallback is opt-in because it discloses the user's email address to
+// gravatar.com — hashed, but reversible for any address worth guessing.
 type OIDCConfig struct {
 	Enabled                 bool     `env:"OIDC_ENABLED" json:"enabled"`
 	IssuerURL               string   `env:"OIDC_ISSUER_URL" json:"issuer_url,omitempty"`

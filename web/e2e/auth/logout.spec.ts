@@ -2,10 +2,8 @@ import { expect, test } from '@playwright/test';
 import { expectAppLoaded, KEYCLOAK_ORIGIN, signIn } from '../helpers';
 
 /**
- * Signing out has to end the session at the provider, not just in the browser: the
- * app holds its token in memory only, so a local-only sign-out would be undone by
- * the next silent SSO login. Only a real provider proves the end-session redirect
- * happens and that the app comes back unauthenticated.
+ * The token lives in memory only, so a local-only sign-out would be undone by the
+ * next silent SSO login — only a real provider proves the session actually ended.
  */
 test('the account card signs the user out at the provider', async ({ page }) => {
   await page.goto('/');

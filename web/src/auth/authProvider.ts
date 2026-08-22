@@ -357,15 +357,9 @@ export const bootstrapAuth = async ({
 };
 
 /**
- * Gravatar URL for an email address, hashed with SHA-256 as the current Gravatar
- * spec requires. `d=404` makes an address without a Gravatar fail the image load,
- * which is what lets the badge fall back to the initial instead of showing a
- * generic silhouette.
- *
- * WebCrypto is unavailable outside a secure context, so an installation served over
- * plain HTTP gets no Gravatar rather than a broken one.
- *
- * @returns the avatar URL, or undefined without an email or a usable WebCrypto.
+ * SHA-256 Gravatar URL, or undefined without an email or WebCrypto (which is
+ * absent outside a secure context). `d=404` so an address with no Gravatar fails
+ * the image load and the badge falls back to the initial.
  */
 const gravatarUrl = async (email?: string): Promise<string | undefined> => {
   const normalized = email?.trim().toLowerCase();

@@ -29,12 +29,8 @@ const CrownIcon = (props: SvgIconProps) => (
 );
 
 /**
- * Account card for the signed-in user: the OIDC profile picture (initial when the
- * provider serves none), the display name with a crown for privileged users, the
- * email, and a menu holding the sign-out action.
- *
- * Renders nothing until an identity resolves, so a session still being established
- * never shows an empty card.
+ * Account card for the signed-in user — picture or initial, name, crown when
+ * privileged, email — with sign-out in its menu. Empty until an identity resolves.
  */
 export const UserBadge = ({ privileged }: UserBadgeProps) => {
   const { identity, isPending } = useGetIdentity();
@@ -44,10 +40,9 @@ export const UserBadge = ({ privileged }: UserBadgeProps) => {
   if (isPending || !identity?.id) {
     return null;
   }
-  // A provider is free to keep every naming claim out of the ID token; the card still
-  // has to render, because its menu is the only way to sign out.
+  // A provider may keep every naming claim out of the ID token; the card must still
+  // render, because its menu is the only way to sign out.
   const name = identity.fullName || identity.email || 'Signed in';
-  // Only a second line when it adds something the name does not already say.
   const secondary = identity?.email && identity.email !== name ? identity.email : undefined;
 
   return (
