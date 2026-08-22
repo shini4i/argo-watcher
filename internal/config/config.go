@@ -36,6 +36,11 @@ const maxTaskRetentionDays = 36500
 // clients that poll it without a credential. It is opt-in because turning it on
 // fails every deployment driven by such a client; the unauthenticated_reads metric
 // reports how many are left.
+//
+// GravatarFallback lets the UI fall back to gravatar.com for users whose provider
+// serves no picture claim. It is opt-in because it discloses the signed-in user's
+// email address to a third party: the address is hashed, but a hash of a known
+// address is trivially reversible.
 type OIDCConfig struct {
 	Enabled                 bool     `env:"OIDC_ENABLED" json:"enabled"`
 	IssuerURL               string   `env:"OIDC_ISSUER_URL" json:"issuer_url,omitempty"`
@@ -43,6 +48,7 @@ type OIDCConfig struct {
 	TokenValidationInterval int      `env:"OIDC_TOKEN_VALIDATION_INTERVAL" envDefault:"300000" json:"token_validation_interval"`
 	PrivilegedGroups        []string `env:"OIDC_PRIVILEGED_GROUPS" json:"privileged_groups,omitempty"`
 	RequireTaskReadAuth     bool     `env:"OIDC_REQUIRE_TASK_READ_AUTH" json:"-"`
+	GravatarFallback        bool     `env:"OIDC_GRAVATAR_FALLBACK" json:"gravatar_fallback"`
 }
 
 type DatabaseConfig struct {

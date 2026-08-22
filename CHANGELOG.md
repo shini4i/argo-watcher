@@ -74,6 +74,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   set is bounded by the task statuses, so there is no cardinality risk. The bundled Grafana
   dashboard gains a **Deployment Outcomes** panel, and `docs/operations/observability.md`
   carries the success-rate query.
+- The workspace side panel now shows an account card for the signed-in user: their avatar,
+  display name and email, a crown when they belong to one of `OIDC_PRIVILEGED_GROUPS`, and
+  a menu holding **Log out** — the first way to end a session from the UI. The avatar comes
+  from the provider's `picture` claim; users whose provider serves none get their initial.
+  The card only appears when OIDC is enabled.
+- `OIDC_GRAVATAR_FALLBACK` (default `false`) lets the account card fall back to Gravatar
+  when the provider serves no `picture` claim. It is opt-in because it sends a hash of the
+  signed-in user's email address to gravatar.com — hashed, but a hash of a known address
+  is trivially reversible. An address with no Gravatar still falls back to the initial.
 
 ### Changed
 

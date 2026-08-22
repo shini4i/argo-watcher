@@ -10,6 +10,7 @@ With OIDC disabled (the default) nothing is protected: there is no backend to va
 2. The backend validates the token by calling the provider's **userinfo** endpoint, which it discovers from `<issuer>/.well-known/openid-configuration`. Discovery happens lazily on the first validation, so a provider that is briefly down at boot does not stop Argo Watcher from starting.
 3. Reads the Web UI performs require a credential — being signed in is enough, no group needed.
 4. Users in a **privileged group** additionally get the **Rollback to this version** button on a task, and control of the [deployment lock](deployment-lock.md).
+5. Signed-in users get an account card in the side panel (opened from the logo) showing their avatar, name and email, with **Log out** in its menu.
 
 The browser performs discovery and the code exchange itself, so the issuer must be reachable **from the browser as well as from the server**. When a sign-in cannot complete, the Web UI stops on its loading screen and names the reason instead of bouncing back to the provider — see [Web UI stops on "Sign-in failed"](../operations/troubleshooting.md#web-ui-stops-on-sign-in-failed).
 
@@ -23,8 +24,11 @@ The browser performs discovery and the code exchange itself, so the issuer must 
 | `OIDC_PRIVILEGED_GROUPS` | Comma-separated groups allowed to roll back and to manage the lock | | No |
 | `OIDC_TOKEN_VALIDATION_INTERVAL` | How long (ms) a provider decision may be reused | `300000` | No |
 | `OIDC_REQUIRE_TASK_READ_AUTH` | Also require a credential on `GET /api/v1/tasks/{id}` | `false` | No |
+| `OIDC_GRAVATAR_FALLBACK` | Fall back to Gravatar when the provider sends no `picture` claim | `false` | No |
 
 The server refuses to start with `OIDC_ENABLED=true` and no issuer or client id. Leaving `OIDC_PRIVILEGED_GROUPS` empty is valid — it simply means nobody is privileged.
+
+`OIDC_GRAVATAR_FALLBACK` is off by default because it discloses the signed-in user's email address to gravatar.com. The address is hashed, but a hash of a known address is trivially reversible, so treat it as the address itself. With the setting off, a user whose provider serves no `picture` claim gets an initial instead.
 
 `OIDC_ISSUER_URL` is whatever the provider advertises as its `issuer`:
 
@@ -155,4 +159,4 @@ Earlier releases were Keycloak-specific. The old variables are **deprecated but 
 
 ## Privileged groups
 
-Members of `OIDC_PRIVILEGED_GROUPS` get two things: the **Rollback to this version** button on a task page, which is hidden from everyone else, and the [deployment lock](deployment-lock.md) switch, which others see disabled. Restricting rollback per application is not implemented yet.
+Members of `OIDC_PRIVILEGED_GROUPS` get three things: the **Rollback to this version** button on a task page, which is hidden from everyone else, the [deployment lock](deployment-lock.md) switch, which others see disabled, and a crown on their account card in the side panel. Restricting rollback per application is not implemented yet.

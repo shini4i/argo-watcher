@@ -13,6 +13,7 @@ vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
 const notifyMock = vi.fn();
 const oidcEnabledMock = vi.fn();
 const permissionsMock = vi.fn();
+const identityMock = vi.fn();
 
 vi.mock('../../features/deployLock/deployLockService', () => ({
   deployLockService: {
@@ -32,6 +33,8 @@ vi.mock('react-admin', async () => {
     ...actual,
     usePermissions: () => permissionsMock(),
     useNotify: () => notifyMock,
+    useGetIdentity: () => identityMock(),
+    useLogout: () => vi.fn(),
   };
 });
 
@@ -61,6 +64,11 @@ describe('ConfigDrawer', () => {
     vi.mocked(deployLockService.subscribe).mockReset();
     oidcEnabledMock.mockReset();
     permissionsMock.mockReset();
+    identityMock.mockReset();
+    identityMock.mockReturnValue({
+      identity: { id: 'user-id', fullName: 'Shini4i' },
+      isPending: false,
+    });
     oidcEnabledMock.mockReturnValue(true);
     permissionsMock.mockReturnValue({
       permissions: { groups: ['devops'], privilegedGroups: ['devops'] },
@@ -147,6 +155,40 @@ describe('ConfigDrawer', () => {
 
     expect(deployLockService.releaseLock).toHaveBeenCalled();
     expect(notifyMock).toHaveBeenCalledWith('Deploy lock released.', { type: 'info' });
+  });
+
+  it('shows the signed-in user badge with a crown for privileged users', () => {
+    renderDrawer();
+
+    expect(screen.getByText('Shini4i')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: /privileged access/i })).toBeInTheDocument();
+  });
+
+  it('drops the crown for a user outside the privileged groups', () => {
+    permissionsMock.mockReturnValue({
+      permissions: { groups: ['dev'], privilegedGroups: ['devops'] },
+      isLoading: false,
+    });
+    renderDrawer();
+
+    expect(screen.getByText('Shini4i')).toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: /privileged access/i })).toBeNull();
+  });
+
+  it('hides the user badge when OIDC is disabled', () => {
+    oidcEnabledMock.mockReturnValue(false);
+    renderDrawer();
+
+    expect(screen.queryByText('Shini4i')).toBeNull();
+    expect(screen.queryByRole('img', { name: /privileged access/i })).toBeNull();
+  });
+
+  it('hides the user badge while the OIDC status is unknown', () => {
+    oidcEnabledMock.mockReturnValue(null);
+    renderDrawer();
+
+    expect(screen.queryByText('Shini4i')).toBeNull();
+    expect(screen.queryByRole('img', { name: /privileged access/i })).toBeNull();
   });
 
   it('does not render the backend configuration section', () => {
