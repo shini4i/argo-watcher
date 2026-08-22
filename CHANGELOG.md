@@ -195,6 +195,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   UI bundles were copied one directory deeper than the page loads them from, so since
   v0.11.0 every release image answered those three requests with the Web UI shell and the
   page stayed blank.
+- A deployment the hourly sweep had given up on kept polling Argo CD until the pod
+  restarted. The poll loop stopped on a task cancelled by a newer deployment but never on
+  one the sweep marked `aborted`, and there is no endpoint to cancel a task. It now stops
+  on both, leaving the status the sweep wrote in place. The sweep in turn no longer gives
+  up on a rollout that is still being watched: with Postgres it skips tasks under a live
+  lease, and with the in-memory backend a task is stale only once its own rollout window
+  plus an hour has passed, rather than an hour flat.
 
 ### Security
 
@@ -215,6 +222,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   anyone who asked, so the application's own sources were readable from a deployed
   instance. The bundle itself is unchanged; only the map is gone, and `web/dist` drops from
   8.2 MB to 3.2 MB.
+- Task submission is bounded. `POST /api/v1/tasks` takes no credential by design, and
+  nothing capped what one request could ask for: a `timeout` of two billion seconds was
+  accepted and scheduled decades of polling, and an oversized body was stored once and then
+  re-served in full to every reader of the task list. A request body over 1 MiB is now
+  refused with `413`, a task carries at most 50 images, no application, author, project,
+  image name or tag exceeds 255 characters, and a `timeout` above 86400 seconds — including
+  one inherited from `DEPLOYMENT_TIMEOUT` — is clamped to it. The server also sets read,
+  write and idle timeouts, so a slow body or a slow reader can no longer hold a connection
+  open indefinitely; established WebSocket connections are unaffected.
 
 ## [0.15.0] - 2026-08-11
 

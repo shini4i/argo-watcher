@@ -193,13 +193,25 @@ func (state *InMemoryState) ProcessObsoleteTasks(retryTimes uint) {
 	}
 }
 
+// staleAfterSeconds returns how long an in-progress task may go without an update
+// before the sweep gives up on it. The threshold clears the task's own rollout
+// window, because a monitor still inside it would be stopped by the abort it reads
+// (issue #562); the fetch and git write-back that precede polling are the headroom.
+func staleAfterSeconds(task models.Task) float64 {
+	if task.Timeout > 0 {
+		return float64(task.Timeout) + TaskStaleThresholdSeconds
+	}
+
+	return TaskStaleThresholdSeconds
+}
+
 func processInMemoryObsoleteTasks(tasks []models.Task) []models.Task {
 	var updatedTasks []models.Task
 	for _, task := range tasks {
 		if task.Status == models.StatusAppNotFoundMessage {
 			continue
 		}
-		if task.Status == models.StatusInProgressMessage && task.Updated+TaskStaleThresholdSeconds < float64(time.Now().Unix()) {
+		if task.Status == models.StatusInProgressMessage && task.Updated+staleAfterSeconds(task) < float64(time.Now().Unix()) {
 			task.Status = models.StatusAborted
 			task.StatusReason = StaleTaskAbortReason
 		}

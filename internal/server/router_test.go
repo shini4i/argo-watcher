@@ -1270,6 +1270,9 @@ func TestStartRouter(t *testing.T) {
 	assert.Equal(t, "127.0.0.1:0", srv.Addr)
 	assert.Equal(t, router, srv.Handler)
 	assert.Equal(t, 10*time.Second, srv.ReadHeaderTimeout)
+	assert.Equal(t, 30*time.Second, srv.ReadTimeout)
+	assert.Equal(t, 120*time.Second, srv.WriteTimeout)
+	assert.Equal(t, 120*time.Second, srv.IdleTimeout)
 }
 
 func TestNotifyWebSocketClients(t *testing.T) {

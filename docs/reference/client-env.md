@@ -21,7 +21,7 @@ The client is a small CLI shipped as [`ghcr.io/shini4i/argo-watcher-client`](htt
 | `ARGO_WATCHER_DEPLOY_TOKEN` | Shared deploy token, the alternative to a JWT | |
 | `TIMEOUT` | Per-request HTTP timeout | `60s` |
 | `RETRY_INTERVAL` | Wait between status polls | `15s` |
-| `TASK_TIMEOUT` | Seconds the server should wait for this deployment; unset keeps the server's `DEPLOYMENT_TIMEOUT` | |
+| `TASK_TIMEOUT` | Seconds the server should wait for this deployment; unset keeps the server's `DEPLOYMENT_TIMEOUT`, and anything above 86400 is clamped to it | |
 | `TASK_REFRESH` | `true`/`false` override of the server's `ARGO_REFRESH_APP` for this deployment | |
 | `EXPECTED_DEPLOY_TIME` | After this long, the client's log line changes to "taking longer than expected". Nothing else changes. | `15m` |
 | `DEBUG` | Log the equivalent cURL commands, with credentials redacted | `false` |

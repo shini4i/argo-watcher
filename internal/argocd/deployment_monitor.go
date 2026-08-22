@@ -39,6 +39,11 @@ var errAppDegraded = errors.New("application has degraded")
 // without overwriting the "cancelled" status the newer deployment already wrote.
 var errTaskSuperseded = errors.New("task superseded by a newer deployment")
 
+// errTaskAborted is an internal sentinel returned when the staleness sweep gave up on
+// the task while this replica was still polling for it. Like errTaskSuperseded it stops
+// the rollout without writing a status: the sweep already wrote one, with its reason.
+var errTaskAborted = errors.New("task aborted by the staleness sweep")
+
 // errLeaseLost is an internal sentinel returned when another replica claimed the
 // task while this one was monitoring it. Like errTaskSuperseded it stops the
 // rollout without writing a status: the new owner records the outcome.
@@ -197,11 +202,10 @@ func (monitor *DeploymentMonitor) StoreInitialAppStatus(task *models.Task, appli
 // individual API call). This prevents the deployment from running far past its configured
 // timeout when ArgoCD responds slowly — the failure mode reported in issue #304.
 //
-// Before each poll it re-reads the task status from the shared state: if a newer
-// deployment for the same app has marked this task "cancelled" (issue #353), it
-// stops immediately so no further ArgoCD API calls are made. Because the check
-// goes through the shared state, this works across replicas in an HA setup — the
-// cancelling deployment may be handled by a different replica than this poller.
+// Before each poll it re-reads the task status from the shared state: a task marked
+// "cancelled" by a newer deployment (issue #353) or "aborted" by the staleness sweep
+// (issue #562) stops the loop at once. Reading it from the shared state is what makes
+// this work in HA, where either status may have been written by another replica.
 // The returned duration is how long the polling loop ran, which a failure report states as the
 // time the deployment waited. It covers this loop alone: the initial fetch, the status write and
 // the git write-back all precede it, and counting them would report a rollout that failed on the
@@ -229,13 +233,12 @@ func (monitor *DeploymentMonitor) WaitRollout(task models.Task, abandoned func()
 	imagesValidated := false
 
 	err := retry.Do(func() error {
-		// Stop before hitting ArgoCD if a newer deployment superseded this task.
-		// The check is per-iteration: a cancellation that lands mid-iteration is
-		// caught on the next poll, and if this iteration reaches a final state
-		// first, its terminal status wins over "cancelled". That last-writer race
-		// is accepted (issue #353) to avoid a status-conditional write.
-		if monitor.taskSuperseded(task.Id) {
-			return retry.Unrecoverable(errTaskSuperseded)
+		// Stop before hitting ArgoCD if the task already ended in the shared state. A
+		// status that lands mid-iteration is caught on the next poll, and if this
+		// iteration reaches a final state first, its terminal status wins — a
+		// last-writer race accepted (issue #353) to avoid a status-conditional write.
+		if ended := monitor.taskEndedElsewhere(task.Id); ended != nil {
+			return retry.Unrecoverable(ended)
 		}
 
 		// Checked alongside supersession so a rollout this replica gave up — taken over,
@@ -280,8 +283,9 @@ func (monitor *DeploymentMonitor) WaitRollout(task models.Task, abandoned func()
 // rolloutStateAlreadyObserved reports whether err means the poll loop ended with the application's
 // real rollout state already fetched, so the caller must report that state (with its diagnostics)
 // rather than the error itself: the force-retry and degraded sentinels, plus the deadline and
-// cancellation errors that end a loop still waiting for a final state. errTaskSuperseded is
-// deliberately absent — a superseded task must have no status written at all (issue #353).
+// cancellation errors that end a loop still waiting for a final state. errTaskSuperseded and
+// errTaskAborted are deliberately absent — a task something else already ended must have no
+// status written at all (issue #353).
 func rolloutStateAlreadyObserved(err error) bool {
 	return errors.Is(err, errForceRetry) ||
 		errors.Is(err, errAppDegraded) ||
@@ -365,17 +369,37 @@ func (monitor *DeploymentMonitor) ProcessDeploymentResult(task *models.Task, app
 	}
 }
 
-// taskSuperseded reports whether the task has been marked cancelled in the shared
-// state, i.e. a newer deployment for the same app has superseded it. A read error
-// is treated as "not superseded" so a transient state hiccup does not abort an
-// otherwise healthy rollout; the check runs again on the next poll.
-func (monitor *DeploymentMonitor) taskSuperseded(id string) bool {
+// storedTaskStatus returns the task's status as the shared state holds it, or an empty
+// string when it cannot be read. A read error reads as "keep going" so a transient state
+// hiccup does not end an otherwise healthy rollout; the check runs again on the next poll.
+func (monitor *DeploymentMonitor) storedTaskStatus(id string) string {
 	current, err := monitor.argo.State.GetTask(id)
 	if err != nil {
-		slog.Warn("Could not read task status to check for supersession", "error", err, "id", id)
-		return false
+		slog.Warn("Could not read the stored task status", "error", err, "id", id)
+		return ""
 	}
-	return current.Status == models.StatusCancelledMessage
+	return current.Status
+}
+
+// taskSuperseded reports whether a newer deployment for the same app has marked the
+// task cancelled in the shared state.
+func (monitor *DeploymentMonitor) taskSuperseded(id string) bool {
+	return monitor.storedTaskStatus(id) == models.StatusCancelledMessage
+}
+
+// taskEndedElsewhere returns the sentinel for a task something else already brought to a
+// terminal state — superseded by a newer deployment, or aborted by the staleness sweep —
+// and nil while the task is still this rollout's to finish. Both mean stop polling: the
+// status is written and nobody is waiting for this loop any more.
+func (monitor *DeploymentMonitor) taskEndedElsewhere(id string) error {
+	switch monitor.storedTaskStatus(id) {
+	case models.StatusCancelledMessage:
+		return errTaskSuperseded
+	case models.StatusAborted:
+		return errTaskAborted
+	default:
+		return nil
+	}
 }
 
 // HandleArgoAPIFailure processes API errors and updates task status accordingly.

@@ -456,3 +456,42 @@ func TestRemainingWindow_HandoverOvershootStaysBounded(t *testing.T) {
 	assert.LessOrEqual(t, worst, bound,
 		"a resumed rollout must not poll more than one interval past the un-handed-over budget")
 }
+
+// TestResumeRollout_AnnouncesAnAbortedTaskEvenWhileDraining mirrors the superseded case
+// for the staleness sweep's verdict: no successor re-claims an aborted task, so a
+// draining replica that stayed silent would lose the result notification for good.
+func TestResumeRollout_AnnouncesAnAbortedTaskEvenWhileDraining(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	apiMock := newArgoApiMock(ctrl)
+	metricsMock := mocks.NewMockMetricsInterface(ctrl)
+	stateMock := newTaskRepositoryMock(ctrl)
+
+	argo := &Argo{}
+	argo.Init(stateMock, apiMock, metricsMock)
+	stateMock.EXPECT().GetTask(gomock.Any()).
+		Return(&models.Task{Status: models.StatusAborted}, nil).AnyTimes()
+
+	updater := initTestUpdater(t, newUpdaterTestConfig(lock.NewInMemoryLocker()), argo)
+	capture := &capturingStrategy{}
+	updater.notifier = notifications.NewNotifier(capture)
+
+	task := models.Task{
+		Id:        "aborted-id",
+		App:       "test-app",
+		Timeout:   600,
+		Created:   float64(time.Now().Unix()),
+		Validated: true,
+		Images:    []models.Image{{Image: "app", Tag: "v1"}},
+	}
+
+	metricsMock.EXPECT().AddInProgressTask()
+	metricsMock.EXPECT().RemoveInProgressTask()
+	// No SetTaskStatus: the sweep already recorded "aborted" with its own reason.
+
+	updater.ResumeRollout(task, func() bool { return true })
+
+	require.Len(t, capture.sent, 1, "the abort must still be announced")
+	assert.Equal(t, models.StatusAborted, capture.sent[0].Status)
+}

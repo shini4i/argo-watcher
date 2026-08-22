@@ -2731,3 +2731,91 @@ func TestDeploymentMonitorConfirmApplicationRefreshDuration(t *testing.T) {
 		assert.Same(t, wantApp, app)
 	})
 }
+
+// TestArgoStatusUpdaterStopsWhenTheStaleSweepAborted pins the second way a task can end
+// underneath its own poller: the hourly sweep marks an in-progress task aborted an hour
+// after it was created, and nothing else stops the loop that keeps calling ArgoCD for it
+// (issue #562).
+func TestArgoStatusUpdaterStopsWhenTheStaleSweepAborted(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	apiMock := newArgoApiMock(ctrl)
+	metricsMock := mocks.NewMockMetricsInterface(ctrl)
+	stateMock := newTaskRepositoryMock(ctrl)
+
+	argo := &Argo{}
+	argo.Init(stateMock, apiMock, metricsMock)
+
+	updater := initTestUpdater(t, newUpdaterTestConfig(lock.NewInMemoryLocker()), argo)
+	capture := &capturingStrategy{}
+	updater.notifier = notifications.NewNotifier(capture)
+
+	task := models.Task{
+		Id:      "stale-id",
+		App:     "test-app",
+		Timeout: 15,
+		Images:  []models.Image{{Image: "ghcr.io/shini4i/argo-watcher", Tag: "dev"}},
+	}
+
+	application := models.Application{}
+	application.Status.Summary.Images = []string{"ghcr.io/shini4i/argo-watcher:dev"}
+	application.Status.Sync.Status = "Synced"
+	application.Status.Health.Status = "Progressing"
+	// The initial fetch plus one poll: the next iteration must stop before calling ArgoCD again.
+	apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(&application, nil).Times(2)
+
+	gomock.InOrder(
+		stateMock.EXPECT().GetTask(task.Id).Return(&models.Task{Id: task.Id, Status: models.StatusInProgressMessage}, nil),
+		stateMock.EXPECT().GetTask(task.Id).Return(&models.Task{Id: task.Id, Status: models.StatusInProgressMessage}, nil),
+		stateMock.EXPECT().GetTask(task.Id).Return(&models.Task{Id: task.Id, Status: models.StatusAborted}, nil).AnyTimes(),
+	)
+
+	metricsMock.EXPECT().AddInProgressTask()
+	metricsMock.EXPECT().AddDeploymentOutcome(task.App, models.StatusAborted)
+	metricsMock.EXPECT().RemoveInProgressTask()
+	// No SetTaskStatus: the sweep already wrote the terminal status, with its own reason.
+
+	updater.WaitForRollout(task, false)
+
+	// Exactly the start and the result: announcing one deployment twice is the
+	// failure the no-status-written branches exist to avoid.
+	require.Len(t, capture.sent, 2)
+	assert.Empty(t, capture.sent[0].Status, "the first is the start notification")
+	assert.Equal(t, models.StatusAborted, capture.sent[1].Status)
+}
+
+// TestArgoStatusUpdaterStopsBeforeStartingAnAbortedTask covers the same status found on the
+// pre-flight check rather than mid-poll, which is what a replica resuming a claimed task sees.
+func TestArgoStatusUpdaterStopsBeforeStartingAnAbortedTask(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	apiMock := newArgoApiMock(ctrl)
+	metricsMock := mocks.NewMockMetricsInterface(ctrl)
+	stateMock := newTaskRepositoryMock(ctrl)
+
+	argo := &Argo{}
+	argo.Init(stateMock, apiMock, metricsMock)
+
+	updater := initTestUpdater(t, newUpdaterTestConfig(lock.NewInMemoryLocker()), argo)
+	capture := &capturingStrategy{}
+	updater.notifier = notifications.NewNotifier(capture)
+
+	task := models.Task{
+		Id:     "stale-id",
+		App:    "test-app",
+		Images: []models.Image{{Image: "ghcr.io/shini4i/argo-watcher", Tag: "dev"}},
+	}
+
+	stateMock.EXPECT().GetTask(task.Id).Return(&models.Task{Id: task.Id, Status: models.StatusAborted}, nil).AnyTimes()
+	// ArgoCD is never called: gomock fails the test if the poller starts anyway.
+	metricsMock.EXPECT().AddInProgressTask()
+	metricsMock.EXPECT().RemoveInProgressTask()
+
+	updater.WaitForRollout(task, false)
+
+	require.Len(t, capture.sent, 2)
+	assert.Empty(t, capture.sent[0].Status, "the first is the start notification")
+	assert.Equal(t, models.StatusAborted, capture.sent[1].Status)
+}
