@@ -244,6 +244,17 @@ describe('authProvider', () => {
     expect(identity.avatar).toBe('https://idp.example.com/avatar.png');
   });
 
+  it('keeps the identity when the digest fails', async () => {
+    mockConfig(enabledConfig({ gravatar_fallback: true }));
+    userManagerMock.getUser.mockResolvedValue(signedInUser());
+    vi.spyOn(globalThis.crypto.subtle, 'digest').mockRejectedValue(new Error('no digest'));
+    const provider = await loadAuthProvider();
+
+    const identity = await provider.getIdentity!();
+    expect(identity.email).toBe('user@example.com');
+    expect(identity.avatar).toBeUndefined();
+  });
+
   it('serves no Gravatar for a user without an email', async () => {
     mockConfig(enabledConfig({ gravatar_fallback: true }));
     userManagerMock.getUser.mockResolvedValue(signedInUser({ email: undefined }));
