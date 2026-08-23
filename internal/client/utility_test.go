@@ -563,6 +563,34 @@ func TestGenerateAppUrl(t *testing.T) {
 		assert.Equal(t, "https://platform.example.com/argocd/applications/test-app", appUrl)
 	})
 
+	// The application route belongs in the path. Appending it as text put it inside
+	// the query value instead, and a fragment swallowed it the same way.
+	t.Run("SuccessScenarioUrlWithQueryAndFragment", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+			assert.Equal(t, req.URL.String(), "/api/v1/config")
+
+			configResponse := struct {
+				ArgoCDURL string `json:"argo_cd_url"`
+			}{
+				ArgoCDURL: "https://platform.example.com/argocd?view=tree#overview",
+			}
+
+			jsonData, _ := json.Marshal(configResponse)
+			_, err := rw.Write(jsonData)
+			if err != nil {
+				t.Error(err)
+			}
+		}))
+		defer server.Close()
+
+		watcher := NewWatcher(server.URL, false, 30*time.Second)
+
+		appUrl, err := generateAppUrl(watcher, models.Task{App: "test-app"})
+
+		assert.Nil(t, err)
+		assert.Equal(t, "https://platform.example.com/argocd/applications/test-app?view=tree#overview", appUrl)
+	})
+
 	t.Run("ErrorScenario", func(t *testing.T) {
 		// Create a new Watcher instance with an invalid URL. A dial failure is
 		// transient, so use the zero-backoff test watcher to skip retry sleeps.
