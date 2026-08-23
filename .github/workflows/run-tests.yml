@@ -9,6 +9,9 @@ on:
       - 'go.sum'
       - 'web/**'
       - '.golangci.yml'
+      # Every job here runs `task install-deps`, `task mocks`, `task ci-migrate`
+      # or `task test`, so a Taskfile-only change can break this workflow.
+      - 'Taskfile.yml'
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
@@ -17,6 +20,9 @@ on:
       - 'go.sum'
       - 'web/**'
       - '.golangci.yml'
+      # Every job here runs `task install-deps`, `task mocks`, `task ci-migrate`
+      # or `task test`, so a Taskfile-only change can break this workflow.
+      - 'Taskfile.yml'
 
 jobs:
   lint:
