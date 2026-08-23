@@ -13,7 +13,7 @@ npm install
 npm run dev        # http://localhost:5173, proxying /api and /ws to VITE_API_PROXY_TARGET
 ```
 
-The Go API must be running (`task bootstrap` from the repo root, or `go run ./cmd/argo-watcher`) unless you repoint the proxy.
+The Go API must be running (`task bootstrap` from the repo root, or `go run ./cmd/argo-watcher`) unless you repoint the proxy. Start it with `DEV_ENVIRONMENT=true`: the dev server is a different origin from the API, and the server allows no cross-origin request without it.
 
 | Command | Description |
 |---|---|
@@ -34,7 +34,7 @@ Everything runtime comes from the backend's `/api/v1/config` — issuer URL, cli
 | Variable | Default | Purpose |
 |---|---|---|
 | `VITE_API_PROXY_TARGET` | `http://localhost:8080` | Dev-only proxy target for `/api` and `/ws` |
-| `VITE_API_BASE_URL` | `''` (same origin) | Prefix for every REST call — set it when serving the SPA from another origin |
+| `VITE_API_BASE_URL` | `''` (same origin) | Prefix for every REST call — of use only against a server that admits the calling origin, which outside `DEV_ENVIRONMENT=true` means the same origin |
 | `VITE_WS_BASE_URL` | `''` (from `window.location`) | WebSocket origin, when tunnelling through another host |
 
 ## Layout
@@ -81,7 +81,7 @@ The Keycloak client in `test/keycloak/argo-watcher-e2e-realm.json` has the autho
 
 ## Troubleshooting
 
-- **Dev server cannot reach the API** — check `VITE_API_PROXY_TARGET`, or set `VITE_API_BASE_URL` to call another origin directly.
+- **Dev server cannot reach the API** — check `VITE_API_PROXY_TARGET`. Pointing `VITE_API_BASE_URL` at another origin needs that server to admit this one, which only `DEV_ENVIRONMENT=true` does.
 - **Endless OIDC redirects** — the provider must list this app's origin (including any base path) as a valid redirect URI. If the loop only appears *after* a successful login, the callback query was stripped before `oidc-client-ts` read it; see the `bootstrapAuth()` note above.
 - **WebSocket errors** — confirm `/ws` is exposed and upgraded end to end; set `VITE_WS_BASE_URL` when a TLS terminator gets in the way.
 - **Timezones look wrong** — the preference lives under `argo-watcher:timezone` and is toggled from the user menu.

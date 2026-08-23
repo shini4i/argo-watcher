@@ -35,6 +35,12 @@ Two directives are filled in from the deployment. `connect-src` names `ws://` an
 
 A proxy that adds a `Content-Security-Policy` of its own does not replace this one. The browser enforces both, so anything either policy forbids is blocked.
 
+## Cross-origin requests
+
+A request whose `Origin` header names anything other than the host it was addressed to is refused with `403 Forbidden` before any handler runs. This is deliberately not left to CORS: a `text/plain` `POST /api/v1/tasks` is a CORS *simple* request, so the browser sends it and the deployment would already have started by the time the browser decided whether the calling script may read the response.
+
+Callers that are not browsers — the CLI client, argo-watcher-mcp, `curl` — send no `Origin` and are untouched by this. The Web UI is served by the same binary on the same origin, so it is untouched too. A browser application served from a different origin cannot use the API, and there is no allowlist to add it to: `DEV_ENVIRONMENT=true` admits the local frontend dev server and nothing else.
+
 ## Authentication
 
 A credential does two things: it authorizes the [GitOps updater](../guides/gitops-updater.md)'s write-back, and — when [OIDC](../guides/oidc.md) is enabled — it is what lets you read the API at all. Any one of:

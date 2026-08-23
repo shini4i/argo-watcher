@@ -24,6 +24,8 @@
 #   - POST /api/v1/tasks (>1 MiB)       -> 413; 51 images -> 406 (issue #562)
 #   - the four browser-facing security headers (issue #565) on the SPA document,
 #                                          an API payload and the swagger page
+#   - a cross-origin POST /tasks and GET   -> 403, while the server's own origin is
+#                                          served normally (issue #563)
 #   - POST /api/v1/deploy-lock          -> with OIDC disabled the state-changing
 #                                          handler is NOT registered, so the request
 #                                          falls through to the SPA static handler
@@ -216,4 +218,38 @@ for path in "/" "/api/v1/config" "/swagger/"; do
   done
 done
 
+echo "=== cross-origin gate ==="
+# The lab leaves DEV_ENVIRONMENT unset, which is the shape that matters: a
+# text/plain POST needs no preflight, so nothing but this gate stands between an
+# attacker's page and a real deployment (issue #563). A refused request creates
+# nothing, so the phase stays side-effect free.
+req POST "${AW_API}/tasks" -H 'Origin: http://evil.test' -H 'Content-Type: text/plain' \
+  -d "$(task_json cross-origin v0.1.0)"
+if [[ "$CODE" == "403" ]]; then
+  ok "cross-origin deploy -> 403"
+else
+  bad "cross-origin deploy: code=${CODE} body=${BODY} (want 403)"
+fi
+# The status alone is not the guarantee: the defect was that a deployment started.
+# `bindJSON` ignores the content type, so the payload above is perfectly valid and a
+# regression submits a real task for an application that does not exist.
+req GET "${AW_API}/tasks?from_timestamp=0&app=cross-origin"
+if jq -e '(.tasks // []) == []' <<<"$BODY" >/dev/null 2>&1; then
+  ok "the refused deploy created no task"
+else
+  bad "the refused cross-origin deploy created a task"
+fi
+req GET "${AW_API}/config" -H 'Origin: http://evil.test'
+if [[ "$CODE" == "403" ]]; then
+  ok "cross-origin read -> 403"
+else
+  bad "cross-origin read: code=${CODE} body=${BODY} (want 403)"
+fi
+# The Web UI's own requests carry this origin, so the gate must let them through.
+req GET "${AW_API}/config" -H "Origin: ${AW_URL}"
+if [[ "$CODE" == "200" ]]; then
+  ok "same-origin read -> 200"
+else
+  bad "same-origin read: code=${CODE} body=${BODY} (want 200)"
+fi
 phase_end API-SURFACE

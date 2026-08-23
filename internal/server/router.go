@@ -284,9 +284,10 @@ func (env *Env) corsMiddleware() func(http.Handler) http.Handler {
 }
 
 // isSameOrigin reports whether origin names the host the request was sent to, which
-// a browser may still label with an Origin header (the Fetch API does).
+// a browser may still label with an Origin header (the Fetch API does). Compared
+// case-insensitively, matching the WebSocket handshake's own check.
 func isSameOrigin(origin, host string) bool {
-	return origin == "http://"+host || origin == "https://"+host
+	return strings.EqualFold(origin, "http://"+host) || strings.EqualFold(origin, "https://"+host)
 }
 
 // corsOptions returns the CORS policy.
@@ -314,7 +315,12 @@ func (env *Env) corsOptions() cors.Options {
 		}
 		options.AllowCredentials = true
 	} else {
-		options.AllowedOrigins = []string{"*"}
+		// No origin is allowed outside dev: the Web UI is served by this same binary
+		// and so takes the same-origin branch, and non-browser callers send no Origin.
+		// rs/cors reads an empty AllowedOrigins as "allow every origin", so the func is
+		// what makes the library agree with the gate rather than depend on it.
+		options.AllowedOrigins = nil
+		options.AllowOriginFunc = func(string) bool { return false }
 	}
 
 	return options

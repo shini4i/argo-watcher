@@ -19,6 +19,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/go-chi/chi/v5"
+	"github.com/rs/cors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -2408,57 +2409,148 @@ func TestCORSPolicy(t *testing.T) {
 		assert.NotContains(t, strings.ToLower(w.Header().Get("Access-Control-Allow-Headers")), "keycloak-authorization")
 	})
 
-	t.Run("production preflight never pairs the wildcard with credentials", func(t *testing.T) {
-		// A browser rejects Access-Control-Allow-Origin: * alongside credentials.
+	t.Run("production refuses a deploy from another origin", func(t *testing.T) {
+		// A text/plain POST is a CORS simple request: the browser sends it and the
+		// deployment starts whether or not the attacker's script is ever allowed to
+		// read the response. This gate is the only thing that stops it.
 		router := newRouter(t, false)
 
-		w := do(router, http.MethodOptions, "/api/v1/tasks", map[string]string{
-			"Origin":                        "http://anywhere.test",
-			"Access-Control-Request-Method": http.MethodPost,
+		w := do(router, http.MethodPost, "/api/v1/tasks", map[string]string{
+			"Origin":       "http://evil.test",
+			"Content-Type": "text/plain",
 		})
 
-		assert.Equal(t, http.StatusNoContent, w.Code)
-		assert.Equal(t, "*", w.Header().Get("Access-Control-Allow-Origin"))
-		assert.Empty(t, w.Header().Get("Access-Control-Allow-Credentials"))
+		assert.Equal(t, http.StatusForbidden, w.Code)
+		assert.Empty(t, w.Header().Get("Access-Control-Allow-Origin"))
 	})
 
-	t.Run("production accepts any origin", func(t *testing.T) {
+	t.Run("production refuses a read from another origin", func(t *testing.T) {
 		router := newRouter(t, false)
 
 		w := do(router, http.MethodGet, "/api/v1/config", map[string]string{"Origin": "http://anywhere.test"})
 
-		assert.Equal(t, http.StatusOK, w.Code)
-		assert.Equal(t, "*", w.Header().Get("Access-Control-Allow-Origin"))
+		assert.Equal(t, http.StatusForbidden, w.Code)
+		assert.Empty(t, w.Header().Get("Access-Control-Allow-Origin"))
 	})
 
-	t.Run("same-origin requests are served without CORS headers", func(t *testing.T) {
-		// Dev mode is where this matters: the server's own origin is not in the
-		// allowlist, so without the same-origin bypass the gate would 403 the Web UI.
-		for _, scheme := range []string{"http://", "https://"} {
-			t.Run(scheme, func(t *testing.T) {
-				router := newRouter(t, true)
+	t.Run("production refuses a preflight from another origin", func(t *testing.T) {
+		// A permissive preflight is why demanding application/json would not have
+		// helped: the browser would have been told the request was allowed.
+		router := newRouter(t, false)
+
+		w := do(router, http.MethodOptions, "/api/v1/tasks", map[string]string{
+			"Origin":                        "http://evil.test",
+			"Access-Control-Request-Method": http.MethodPost,
+		})
+
+		assert.Equal(t, http.StatusForbidden, w.Code)
+		assert.Empty(t, w.Header().Get("Access-Control-Allow-Origin"))
+	})
+
+	t.Run("a caller that sends no Origin is untouched", func(t *testing.T) {
+		// The CLI client and argo-watcher-mcp are not browsers and send no Origin. The
+		// gate is a browser control, not authentication, so it must not reach them.
+		router := newRouter(t, false)
+
+		w := do(router, http.MethodGet, "/api/v1/config", nil)
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Contains(t, w.Body.String(), "state_type", "the handler must have run")
+
+		// The empty body is what addTask rejects, which is only reachable once the gate
+		// has let the request past.
+		w = do(router, http.MethodPost, "/api/v1/tasks", map[string]string{"Content-Type": "application/json"})
+		assert.Equal(t, http.StatusNotAcceptable, w.Code)
+		assert.Contains(t, w.Body.String(), "invalid payload", "the handler must have run")
+	})
+
+	t.Run("production refuses a host that only extends the server's own", func(t *testing.T) {
+		// A substring or prefix comparison in isSameOrigin would admit these, and every
+		// other cross-origin subtest uses a host that shares nothing with the server's.
+		for _, pattern := range []string{"http://%s.evil.test", "http://evil-%s", "http://%s.", "http://x%s"} {
+			t.Run(pattern, func(t *testing.T) {
+				router := newRouter(t, false)
 
 				req := httptest.NewRequest(http.MethodGet, "/api/v1/config", http.NoBody)
-				req.Header.Set("Origin", scheme+req.Host)
+				req.Header.Set("Origin", fmt.Sprintf(pattern, req.Host))
 				w := httptest.NewRecorder()
 				router.ServeHTTP(w, req)
 
-				assert.Equal(t, http.StatusOK, w.Code)
-				assert.Contains(t, w.Body.String(), "state_type", "the handler must have run")
+				assert.Equal(t, http.StatusForbidden, w.Code)
 				assert.Empty(t, w.Header().Get("Access-Control-Allow-Origin"))
 			})
 		}
 	})
 
+	t.Run("a host differing only in case is still same-origin", func(t *testing.T) {
+		// The WebSocket handshake compares the two case-insensitively, and a request
+		// that /ws accepts must not be refused on every other route.
+		router := newRouter(t, false)
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/config", http.NoBody)
+		req.Header.Set("Origin", "http://"+strings.ToUpper(req.Host))
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Contains(t, w.Body.String(), "state_type", "the handler must have run")
+	})
+
+	t.Run("the CORS library refuses a production origin on its own", func(t *testing.T) {
+		// The gate answers every cross-origin request before this handler is reached, so
+		// assert the policy directly: rs/cors reads an empty AllowedOrigins as "allow
+		// every origin", and a future path exemption must not turn that back on.
+		env, _ := readAuthEnv(t, false, nil)
+		env.config.DevEnvironment = false
+
+		handler := cors.New(env.corsOptions()).Handler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/config", http.NoBody)
+		req.Header.Set("Origin", "http://evil.test")
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+
+		assert.Empty(t, w.Header().Get("Access-Control-Allow-Origin"))
+	})
+
+	t.Run("same-origin requests are served without CORS headers", func(t *testing.T) {
+		// This branch is what keeps the Web UI working: the SPA is served by the same
+		// binary, so its requests carry the server's own origin, and neither mode
+		// carries that origin in its allowlist.
+		for _, dev := range []bool{true, false} {
+			for _, scheme := range []string{"http://", "https://"} {
+				t.Run(fmt.Sprintf("dev=%v %s", dev, scheme), func(t *testing.T) {
+					router := newRouter(t, dev)
+
+					req := httptest.NewRequest(http.MethodGet, "/api/v1/config", http.NoBody)
+					req.Header.Set("Origin", scheme+req.Host)
+					w := httptest.NewRecorder()
+					router.ServeHTTP(w, req)
+
+					assert.Equal(t, http.StatusOK, w.Code)
+					assert.Contains(t, w.Body.String(), "state_type", "the handler must have run")
+					assert.Empty(t, w.Header().Get("Access-Control-Allow-Origin"))
+				})
+			}
+		}
+	})
+
 	t.Run("the websocket handshake is never touched by CORS", func(t *testing.T) {
 		// The upgrade response goes to a hijacked connection, so a CORS header written
-		// here would be both useless and, before the migration, actively harmful.
-		router := newRouter(t, true)
+		// here would be both useless and, before the migration, actively harmful. The
+		// handshake runs its own origin check, and losing this exemption would refuse
+		// every browser socket in production.
+		for _, dev := range []bool{true, false} {
+			t.Run(fmt.Sprintf("dev=%v", dev), func(t *testing.T) {
+				router := newRouter(t, dev)
 
-		w := do(router, http.MethodGet, "/ws", map[string]string{"Origin": "http://evil.test"})
+				w := do(router, http.MethodGet, "/ws", map[string]string{"Origin": "http://evil.test"})
 
-		assert.Equal(t, http.StatusBadRequest, w.Code, "a non-upgrade /ws request is still answered, not refused")
-		assert.Empty(t, w.Header().Get("Access-Control-Allow-Origin"))
+				assert.Equal(t, http.StatusBadRequest, w.Code, "a non-upgrade /ws request is still answered, not refused")
+				assert.Empty(t, w.Header().Get("Access-Control-Allow-Origin"))
+			})
+		}
 	})
 }
 
