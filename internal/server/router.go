@@ -240,11 +240,7 @@ func (env *Env) corsMiddleware() func(http.Handler) http.Handler {
 	handler := cors.New(options).Handler
 
 	allowed := make(map[string]bool, len(options.AllowedOrigins))
-	allowAny := false
 	for _, origin := range options.AllowedOrigins {
-		if origin == "*" {
-			allowAny = true
-		}
 		allowed[origin] = true
 	}
 
@@ -261,7 +257,7 @@ func (env *Env) corsMiddleware() func(http.Handler) http.Handler {
 				return
 			}
 
-			if !allowAny && !allowed[origin] {
+			if !allowed[origin] {
 				slog.Debug("rejecting cross-origin request", "origin", origin, "url", r.URL.Path)
 				w.WriteHeader(http.StatusForbidden)
 				return
@@ -292,9 +288,9 @@ func isSameOrigin(origin, host string) bool {
 
 // corsOptions returns the CORS policy.
 //
-// Every entry in AllowedOrigins must stay an exact origin or "*": corsMiddleware
-// matches them literally, so a pattern would be annotated by the CORS library yet
-// refused by the gate in front of it.
+// Every entry in AllowedOrigins must stay an exact origin: corsMiddleware matches
+// them literally, so a pattern — `"*"` included — would be annotated by the CORS
+// library yet refused by the gate in front of it.
 func (env *Env) corsOptions() cors.Options {
 	options := cors.Options{
 		AllowedMethods:       []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions},
