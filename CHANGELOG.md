@@ -260,6 +260,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The Swagger page's init script moved into a file of its own so that page needs no
   inline-script exemption either. A proxy that adds a policy of its own does not replace this
   one — the browser enforces both.
+- Cross-origin requests are refused again. `POST /api/v1/tasks` accepted them from any origin,
+  so a page on an unrelated site — opened by anyone whose browser can reach the instance, over a
+  VPN, an internal ingress or a `port-forward` — could start a real deployment with a `text/plain`
+  body. That is a CORS *simple* request: the browser sends it and the server acts on it before
+  deciding whether the calling script may read the reply, which the attacker never wanted. Neither
+  tightening `Access-Control-Allow-Origin` nor a reverse proxy addresses this, because the request
+  arrives through the ingress from a legitimate browser on an allowed network. Any request whose
+  `Origin` names a host other than the one it was sent to is now refused with `403` before it
+  reaches a handler. Nothing legitimate changes: the Web UI is served by the same binary on the
+  same origin, and the CLI client, the MCP server and `curl` send no `Origin` at all. There is no
+  new setting — `DEV_ENVIRONMENT=true` still admits the local frontend dev server, which the
+  contributing guide now spells out.
 
 ## [0.15.0] - 2026-08-11
 

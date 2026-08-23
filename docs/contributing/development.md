@@ -45,7 +45,7 @@ go run ./cmd/mock
 Then the server, in-memory:
 
 ```bash
-LOG_LEVEL=debug ARGO_URL=http://localhost:8081 ARGO_TOKEN=example \
+LOG_LEVEL=debug DEV_ENVIRONMENT=true ARGO_URL=http://localhost:8081 ARGO_TOKEN=example \
   STATE_TYPE=in-memory go run ./cmd/argo-watcher
 ```
 
@@ -54,7 +54,7 @@ Or against Postgres:
 ```bash
 docker compose up -d postgres migrations
 
-LOG_LEVEL=debug ARGO_URL=http://localhost:8081 ARGO_TOKEN=example \
+LOG_LEVEL=debug DEV_ENVIRONMENT=true ARGO_URL=http://localhost:8081 ARGO_TOKEN=example \
   STATE_TYPE=postgres DB_HOST=localhost DB_PORT=5432 \
   DB_USER=watcher DB_PASSWORD=watcher DB_NAME=watcher \
   go run ./cmd/argo-watcher
@@ -67,6 +67,9 @@ cd web
 npm install
 npm run dev
 ```
+
+`DEV_ENVIRONMENT=true` above is what makes this work: the dev server is a different
+origin from the API, and the server allows no cross-origin request without it.
 
 ## Tasks
 
