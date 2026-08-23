@@ -256,7 +256,7 @@ func TestKeycloakReadAuthn(t *testing.T) {
 // TestKeycloakForeignClientToken proves the audience binding against a real provider:
 // a token the same realm minted for another of its clients is valid at userinfo, and
 // must still be refused here. It also pins the claim the check relies on — Keycloak
-// names the client in azp, and leaves the client id out of aud entirely.
+// names the client in azp and keeps the client id out of aud.
 func TestKeycloakForeignClientToken(t *testing.T) {
 	waitForKeycloak(t)
 	env := newKeycloakEnv(t)
@@ -272,7 +272,12 @@ func TestKeycloakForeignClientToken(t *testing.T) {
 
 	assert.Equal(t, foreignClientID, tokenClaims(t, foreign)["azp"])
 	assert.Equal(t, keycloakClientID, tokenClaims(t, own)["azp"])
-	assert.NotContains(t, tokenClaims(t, own)["aud"], keycloakClientID)
+
+	// Read through GetAudience: an absent aud is an untyped nil in the map, which
+	// NotContains cannot measure.
+	ownAudience, err := tokenClaims(t, own).GetAudience()
+	require.NoError(t, err)
+	assert.NotContains(t, ownAudience, keycloakClientID, "keycloak names the client in azp, so aud alone would refuse this token")
 
 	t.Run("a foreign token may not read", func(t *testing.T) {
 		assert.Equal(t, http.StatusUnauthorized, callProtectedRead(t, readSrv, foreign))
