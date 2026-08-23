@@ -241,6 +241,14 @@ curl -sI $ARGO_WATCHER_URL/ | grep -i content-security-policy
 2. Correct whatever the error code points at: permitted scopes (`openid profile email`), exact redirect URI, web origin, group or user assignment. See [Redirect URI and web origin](../guides/oidc.md#redirect-uri-and-web-origin).
 3. Press **Try again**. Nothing is cached across the retry.
 
+## Signed-in users are sent back to the provider periodically
+
+**Symptom:** with [OIDC](../guides/oidc.md) enabled, a session that should renew itself quietly instead bounces through the provider's login page, and the browser console reports a `frame-src` policy violation.
+
+**Likely cause:** the renewal falls back to an iframe when the provider issues no refresh token, and that iframe navigates to the authorization endpoint. [`frame-src`](../reference/api.md#security-headers) allows the `OIDC_ISSUER_URL` origin only, so a provider that serves the endpoint from a different host — Amazon Cognito uses the managed-login domain — cannot renew this way.
+
+**Fix:** nothing to configure. Sign-in still works and the user keeps their session; only the silent part of the renewal is lost. Configure the provider to issue refresh tokens if the redirect is disruptive.
+
 ## Web UI does not update without a refresh
 
 **Symptom:** task status and deploy-lock changes appear only after a manual page reload.

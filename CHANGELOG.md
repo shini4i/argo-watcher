@@ -254,12 +254,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one click away: nothing stopped another site from framing the UI, and any script that
   reached the page would have run with that token. The policy is strict where the UI allows
   it — `script-src 'self'`, `object-src 'none'`, `base-uri 'self'`, `form-action 'self'` — and
-  deliberately looser in six places the application cannot design away, each listed with its
+  deliberately looser in five places the application cannot design away, each listed with its
   reason in the API reference: inline styles, Google's font hosts, `https:` images, `https:`
-  API calls, and — for a silent token renewal with no refresh token to use — framing this
-  origin plus the provider's own login page. The Swagger page's init script moved into a file
-  of its own so that page needs no inline-script exemption either. A proxy that adds a policy
-  of its own does not replace this one — the browser enforces both.
+  API calls, and framing this origin, which a silent token renewal with no refresh token needs.
+  The Swagger page's init script moved into a file of its own so that page needs no
+  inline-script exemption either. A proxy that adds a policy of its own does not replace this
+  one — the browser enforces both.
 
 ## [0.15.0] - 2026-08-11
 

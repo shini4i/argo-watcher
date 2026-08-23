@@ -147,7 +147,7 @@ func TestContentSecurityPolicyDirectives(t *testing.T) {
 		// 'self' rather than 'none': a silent token renewal without a refresh token
 		// frames this application's own origin.
 		"frame-ancestors": "'self'",
-		"frame-src":       "'self' https:",
+		"frame-src":       "'self'",
 		// emotion (MUI) and swagger-ui both inject stylesheets and style attributes,
 		// and the Web UI loads its font from Google Fonts.
 		"style-src": "'self' 'unsafe-inline' https://fonts.googleapis.com",
@@ -211,32 +211,32 @@ func TestContentSecurityPolicyFrameSrc(t *testing.T) {
 		{
 			name:  "without OIDC only this origin may be framed",
 			oidc:  config.OIDCConfig{},
-			frame: "'self' https:",
+			frame: "'self'",
 		},
 		{
 			// A deployment that turned OIDC off without clearing the issuer must not
 			// widen the policy to a third-party origin with authentication disabled.
 			name:  "an issuer left behind with OIDC off is ignored",
 			oidc:  config.OIDCConfig{IssuerURL: "https://sso.example.com/realms/watcher"},
-			frame: "'self' https:",
+			frame: "'self'",
 		},
 		{
 			// A silent renewal without a refresh token navigates an iframe to the
-			// provider's DISCOVERED authorization endpoint, which https: already covers;
-			// naming the issuer is what carries a non-https one (see the http case above).
+			// provider's authorization endpoint. Only the issuer origin is allowed, so a
+			// provider that serves it elsewhere renews interactively instead.
 			name:  "with OIDC the issuer origin is allowed",
 			oidc:  config.OIDCConfig{Enabled: true, IssuerURL: " https://sso.example.com/realms/watcher "},
-			frame: "'self' https: https://sso.example.com",
+			frame: "'self' https://sso.example.com",
 		},
 		{
 			name:  "an unusable issuer is left out",
 			oidc:  config.OIDCConfig{Enabled: true, IssuerURL: "not a url"},
-			frame: "'self' https:",
+			frame: "'self'",
 		},
 		{
 			name:  "an issuer host that cannot be spelled in a policy is left out",
 			oidc:  config.OIDCConfig{Enabled: true, IssuerURL: "https://sso.example.com;script-src 'unsafe-inline'"},
-			frame: "'self' https:",
+			frame: "'self'",
 		},
 	}
 
@@ -254,7 +254,7 @@ func TestContentSecurityPolicyFrameSrc(t *testing.T) {
 			assert.Equal(t, "'self'", directives["script-src"])
 			// The issuer feeds connect-src too, so frame-src alone would not prove a
 			// rejected issuer stayed out of the policy.
-			if tt.frame == "'self' https:" {
+			if tt.frame == "'self'" {
 				assert.NotContains(t, policy, "sso.example.com")
 			}
 		})
