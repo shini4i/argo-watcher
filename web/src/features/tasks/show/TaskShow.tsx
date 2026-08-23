@@ -119,7 +119,15 @@ const buildArgoCdUrl = (config: ConfigResponse | null, app?: string | null): str
     return null;
   }
 
-  return `${base.replace(/\/$/, '')}/applications/${app}`;
+  try {
+    // Assigning the pathname keeps the route out of a query or fragment the
+    // configured URL may carry.
+    const url = new URL(base, window.location.href);
+    url.pathname = `${url.pathname.replace(/\/+$/, '')}/applications/${app}`;
+    return url.toString();
+  } catch {
+    return null;
+  }
 };
 
 const computeDurationSeconds = (

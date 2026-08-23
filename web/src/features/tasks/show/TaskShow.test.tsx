@@ -435,6 +435,24 @@ describe('TaskShow', () => {
     expect(link).toHaveAttribute('href', 'https://argocd.example/applications/demo-app');
   });
 
+  it('keeps the application route in the path of a URL carrying a query', async () => {
+    configResponse = { argo_cd_url: 'https://argocd.local/platform?view=tree#overview' };
+    mockUseGetOne.mockReturnValue({
+      data: buildTask(),
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+
+    await renderWithRouter('/task/task-1');
+
+    const link = await screen.findByRole('link', { name: /Open in Argo CD UI/i });
+    expect(link).toHaveAttribute(
+      'href',
+      'https://argocd.local/platform/applications/demo-app?view=tree#overview',
+    );
+  });
+
   it('prefers the alias over the server URL', async () => {
     // The alias exists for an ARGO_URL the browser cannot reach.
     configResponse = {
