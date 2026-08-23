@@ -12,6 +12,29 @@ The server exposes a REST API on its own port (default `8080`), with every endpo
 - Authentication failures return `401 Unauthorized`, and `503 Service Unavailable` when the credential could not be checked because the OIDC provider was unreachable.
 - Server-side problems return `500 Internal Server Error`.
 
+## Security headers
+
+Every response, on every route, carries four browser-facing headers:
+
+| Header | Value |
+|---|---|
+| `Content-Security-Policy` | see below |
+| `X-Content-Type-Options` | `nosniff` |
+| `X-Frame-Options` | `SAMEORIGIN` |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+
+The policy is strict where the Web UI allows it — `default-src 'self'`, `script-src 'self'`, `object-src 'none'`, `base-uri 'self'`, `form-action 'self'` — and looser in five places that the application cannot design away:
+
+- `style-src` allows `'unsafe-inline'`. The UI's styling engine and the Swagger page both inject stylesheets and style attributes, and a nonce cannot cover the attributes. It also allows `https://fonts.googleapis.com`, the stylesheet the UI loads its font from.
+- `font-src` allows `https://fonts.gstatic.com`, the host that stylesheet serves the font files from.
+- `img-src` allows any `https:` origin. An avatar comes from the OIDC `picture` claim or from Gravatar, so its host is not known in advance.
+- `connect-src` allows any `https:` origin. A provider may serve its token and userinfo endpoints from hosts other than its issuer, and a policy that breaks sign-in is the worse trade.
+- `frame-ancestors` is `'self'` rather than `'none'`, matching `X-Frame-Options: SAMEORIGIN`. A silent token renewal with no refresh token loads this application in an iframe of its own origin.
+
+Two directives are filled in from the deployment. `connect-src` names `ws://` and `wss://` on the host the request was addressed to, because `'self'` does not resolve to a WebSocket scheme in every browser. Both `connect-src` and `frame-src` name the origin of `OIDC_ISSUER_URL`, which an issuer on plain `http` depends on — nothing else in the policy matches it. `frame-src` names that origin and nothing more, so a provider serving its authorization endpoint from another host (Amazon Cognito uses the managed-login domain) cannot renew a session silently; the renewal becomes an ordinary interactive sign-in.
+
+A proxy that adds a `Content-Security-Policy` of its own does not replace this one. The browser enforces both, so anything either policy forbids is blocked.
+
 ## Authentication
 
 A credential does two things: it authorizes the [GitOps updater](../guides/gitops-updater.md)'s write-back, and — when [OIDC](../guides/oidc.md) is enabled — it is what lets you read the API at all. Any one of:

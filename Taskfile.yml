@@ -181,6 +181,8 @@ tasks:
       - src/**/*.ts
       - src/**/*.tsx
       - vite.config.ts
+      # public/ is copied into dist verbatim, and the swagger page lives there.
+      - public/**
     # Without this, an unchanged src plus a deleted or partial dist/ is reported
     # up to date and the build is skipped — leaving the consumers of web/dist
     # (the images, the Playwright suite) pointed at nothing.

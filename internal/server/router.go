@@ -28,6 +28,7 @@ func (env *Env) CreateRouter() *chi.Mux {
 
 	router := chi.NewRouter()
 	router.Use(middleware.Recoverer)
+	router.Use(env.securityHeaders())
 	router.Use(env.corsMiddleware())
 
 	// The upgrade response is written straight to the connection the handler
