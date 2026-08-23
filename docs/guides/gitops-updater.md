@@ -8,7 +8,7 @@ Already on Argo CD Image Updater? See [Migrating from Argo CD Image Updater](#mi
 
 A working [installation](install.md), plus:
 
-1. **A credential the client can present.** Either a **JWT** (recommended, see [JWT configuration](#jwt-configuration)) stored under the `JWT_SECRET` key of the Argo Watcher secret, or an arbitrary string under `ARGO_WATCHER_DEPLOY_TOKEN` — the deploy token is planned for deprecation in v1.0.0. Without a valid credential the write-back is skipped, and the deployment fails blaming the image instead ([why](../operations/troubleshooting.md#image-tag-is-never-committed-write-back-skipped)).
+1. **A credential the client can present.** Either a **JWT** (recommended, see [JWT configuration](#jwt-configuration)) stored under the `JWT_SECRET` key of the Argo Watcher secret, or an arbitrary string under `ARGO_WATCHER_DEPLOY_TOKEN`. Without a valid credential the write-back is skipped, and the deployment fails blaming the image instead ([why](../operations/troubleshooting.md#image-tag-is-never-committed-write-back-skipped)).
 2. **An SSH key with write access** to the GitOps repository, stored in a Kubernetes secret (the chart reads the `sshPrivateKey` key by default).
 3. **Chart values pointing at that key:**
 
@@ -150,7 +150,7 @@ Pass the credential to the client:
 # JWT (recommended). The raw token, with no "Bearer " prefix, so CI can mask it.
 export BEARER_TOKEN="your_jwt_token"
 
-# Or the deploy token (planned for deprecation)
+# Or the deploy token
 export ARGO_WATCHER_DEPLOY_TOKEN=your_deploy_token
 ```
 

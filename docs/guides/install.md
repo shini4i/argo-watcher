@@ -71,6 +71,9 @@ ingress:
 
 The chart maps its own values onto the server's environment variables and exposes `extraEnvs` for anything it does not cover. Every variable is listed in [Server Environment Variables](../reference/server-env.md); OIDC has [its own values block](oidc.md#helm-chart-values).
 
+!!! warning "That ingress publishes an unauthenticated API"
+    Argo Watcher ships with no authentication. Reachable at that host, anyone can submit a deployment task, read every application name in the history, and scrape `/metrics`. Read [Network Exposure](../operations/network-exposure.md) before exposing it beyond the cluster.
+
 !!! note
     The chart sets `livenessProbe` to `/livez` and `readinessProbe` to `/readyz`, which is the correct pairing — see [Health and probe endpoints](../reference/api.md#health-and-probe-endpoints) before overriding either.
 

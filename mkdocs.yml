@@ -72,6 +72,7 @@ nav:
     - Observability: 'operations/observability.md'
     - Database: 'operations/database.md'
     - High Availability: 'operations/high-availability.md'
+    - Network Exposure: 'operations/network-exposure.md'
     - Troubleshooting: 'operations/troubleshooting.md'
   - Contributing:
     - Overview: 'contributing/index.md'
