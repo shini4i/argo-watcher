@@ -377,10 +377,10 @@ func TestGetWatcherConfig(t *testing.T) {
 		assert.Equal(t, req.URL.String(), "/api/v1/config")
 
 		configResponse := struct {
-			ArgoCDURL      url.URL `json:"argo_cd_url"`
-			ArgoCDURLAlias string  `json:"argo_cd_url_alias"`
+			ArgoCDURL      string `json:"argo_cd_url"`
+			ArgoCDURLAlias string `json:"argo_cd_url_alias"`
 		}{
-			ArgoCDURL:      url.URL{Scheme: "http", Host: "localhost:8080"},
+			ArgoCDURL:      "http://localhost:8080",
 			ArgoCDURLAlias: "https://argo-cd.example.com",
 		}
 
@@ -403,7 +403,7 @@ func TestGetWatcherConfig(t *testing.T) {
 	assert.NoError(t, err)
 
 	expectedUrl, _ := url.Parse("http://localhost:8080")
-	assert.Equal(t, expectedUrl, &serverConfig.ArgoUrl)
+	assert.Equal(t, *expectedUrl, serverConfig.ArgoUrl.URL)
 	assert.Equal(t, "https://argo-cd.example.com", serverConfig.ArgoUrlAlias)
 }
 

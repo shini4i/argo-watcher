@@ -46,7 +46,7 @@ func NewArgoApi() *ArgoApi {
 
 func (api *ArgoApi) Init(serverConfig *config.ServerConfig) error {
 	slog.Debug("Initializing argo-watcher client...")
-	api.baseUrl = serverConfig.ArgoUrl
+	api.baseUrl = serverConfig.ArgoUrl.URL
 
 	jar, err := api.cookieJarFn(nil)
 	if err != nil {

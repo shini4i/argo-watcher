@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -163,16 +164,22 @@ func printClientConfiguration(watcher *Watcher, task models.Task) {
 	}
 }
 
+// generateAppUrl builds the ArgoCD UI link for the task's application from the
+// server's config, preferring ARGO_URL_ALIAS when the server publishes one.
+// It fails when that config cannot be fetched or carries an unparsable URL.
 func generateAppUrl(watcher *Watcher, task models.Task) (string, error) {
 	cfg, err := watcher.getWatcherConfig()
 	if err != nil {
 		return "", err
 	}
 
-	if cfg.ArgoUrlAlias != "" {
-		return fmt.Sprintf("%s/applications/%s", cfg.ArgoUrlAlias, task.App), nil
+	base := cfg.ArgoUrlAlias
+	if base == "" {
+		base = cfg.ArgoUrl.String()
 	}
-	return fmt.Sprintf("%s://%s/applications/%s", cfg.ArgoUrl.Scheme, cfg.ArgoUrl.Host, task.App), nil
+	// JoinPath puts the route in the path, where a query or fragment on the base
+	// would otherwise swallow it, and folds a trailing slash on the way.
+	return url.JoinPath(base, "applications", task.App)
 }
 
 // setupWatcher takes application configuration and initializes a new Watcher instance

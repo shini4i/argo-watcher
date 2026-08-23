@@ -1522,6 +1522,35 @@ func TestGetConfigEndpoint(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "devEnvironment")
 }
 
+// The endpoint is what the CLI client, the Web UI and argo-watcher-mcp read, and it
+// is unauthenticated: argo_cd_url must arrive as a URL string, and any basic-auth
+// userinfo in ARGO_URL must not arrive at all.
+func TestGetConfigEndpoint_ArgoUrl(t *testing.T) {
+	// Assembled rather than parsed from a literal: a userinfo-bearing URL in the
+	// source trips the repository's secret scanner.
+	argoURL := url.URL{
+		Scheme: "https",
+		User:   url.UserPassword("admin", "s3cret"),
+		Host:   "argo-cd.example.com",
+		Path:   "/argocd",
+	}
+
+	env := &Env{config: &config.ServerConfig{
+		StateType: "in-memory",
+		ArgoUrl:   config.URL{URL: argoURL},
+	}}
+
+	router := chi.NewRouter()
+	router.Get("/api/v1/config", env.getConfig)
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/config", http.NoBody))
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"argo_cd_url":"https://argo-cd.example.com/argocd"`)
+	assert.NotContains(t, w.Body.String(), "s3cret")
+}
+
 func TestGetTaskStatusEndpoint(t *testing.T) {
 
 	t.Run("returns task when found", func(t *testing.T) {
@@ -2285,6 +2314,17 @@ func TestCORSPolicy(t *testing.T) {
 
 		assert.Equal(t, http.StatusForbidden, w.Code)
 		assert.Empty(t, w.Header().Get("Access-Control-Allow-Origin"))
+	})
+
+	// A url.URL handed to slog renders as an object of its eleven exported fields,
+	// which no log query can match on. The path is what identifies the request.
+	t.Run("the rejection log names the request path", func(t *testing.T) {
+		router := newRouter(t, true)
+		logs := captureDebugLogs(t)
+
+		do(router, http.MethodGet, "/api/v1/config", map[string]string{"Origin": "http://evil.test"})
+
+		assert.Contains(t, logs.String(), `"url":"/api/v1/config"`)
 	})
 
 	t.Run("the origin gate runs before the trailing-slash redirect", func(t *testing.T) {

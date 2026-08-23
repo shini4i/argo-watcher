@@ -160,6 +160,19 @@ func TestReadAuthProtectedEndpoints(t *testing.T) {
 		}
 	})
 
+	// This is the log line an operator greps during a 401. A url.URL handed to slog
+	// renders as an object of its eleven exported fields, which no query can match.
+	t.Run("names the request path in the rejection log", func(t *testing.T) {
+		env, _ := readAuthEnv(t, true, map[string]auth.AuthStrategy{
+			oidcHeader: oidcLikeStrategy{authenticated: true},
+		})
+		logs := captureDebugLogs(t)
+
+		getWith(t, env, "/api/v1/tasks?from_timestamp=0", "", "")
+
+		assert.Contains(t, logs.String(), `"url":"/api/v1/tasks"`)
+	})
+
 	t.Run("rejects the removed Keycloak header", func(t *testing.T) {
 		env, _ := readAuthEnv(t, true, map[string]auth.AuthStrategy{
 			oidcHeader: oidcLikeStrategy{authenticated: true},

@@ -61,7 +61,7 @@ func TestArgoApiInit(t *testing.T) {
 	require.NoError(t, err)
 
 	cfg := &config.ServerConfig{
-		ArgoUrl:        *argoURL,
+		ArgoUrl:        config.URL{URL: *argoURL},
 		ArgoToken:      "super-secret",
 		ArgoApiTimeout: 42,
 		SkipTlsVerify:  true,
@@ -72,7 +72,7 @@ func TestArgoApiInit(t *testing.T) {
 	api := NewArgoApi()
 	require.NoError(t, api.Init(cfg))
 
-	assert.Equal(t, cfg.ArgoUrl, api.baseUrl)
+	assert.Equal(t, cfg.ArgoUrl.URL, api.baseUrl)
 	require.NotNil(t, api.client)
 	assert.Equal(t, time.Duration(cfg.ArgoApiTimeout)*time.Second, api.client.Timeout)
 	require.NotNil(t, api.client.Jar)

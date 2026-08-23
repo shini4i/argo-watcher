@@ -81,9 +81,12 @@ elif ! jq -e '(.webhook | has("url") | not) and (.mattermost | has("url") | not)
 elif ! jq -e '.webhook.enabled == true' <<<"$BODY" >/dev/null 2>&1; then
   # The enabled flag must survive: downstream consumers (argo-watcher-mcp) read it.
   bad "config: webhook.enabled missing (lab runs with webhooks on)"
-elif ! jq -e '.argo_cd_url != null' <<<"$BODY" >/dev/null 2>&1; then
-  # The CLI client builds the app URL from this field; trimming must not take it.
-  bad "config: argo_cd_url missing — the client needs it to build app URLs"
+elif ! jq -e '.argo_cd_url | type == "string" and startswith("http") and (contains("@") | not)' <<<"$BODY" >/dev/null 2>&1; then
+  # The CLI client and the Web UI build the app URL from this field, and both expect
+  # a URL string — serving a url.URL object back would break them. The "@" check is
+  # the other half: this endpoint is unauthenticated, so basic-auth userinfo in
+  # ARGO_URL must be stripped rather than published.
+  bad "config: argo_cd_url is not a userinfo-free URL string (got $(jq -c '.argo_cd_url' <<<"$BODY"))"
 else
   ok "config: oidc disabled (no legacy keycloak mirror), secrets and deployment detail withheld (${CODE})"
 fi

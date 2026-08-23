@@ -261,7 +261,7 @@ func (env *Env) corsMiddleware() func(http.Handler) http.Handler {
 			}
 
 			if !allowAny && !allowed[origin] {
-				slog.Debug("rejecting cross-origin request", "origin", origin, "url", r.URL)
+				slog.Debug("rejecting cross-origin request", "origin", origin, "url", r.URL.Path)
 				w.WriteHeader(http.StatusForbidden)
 				return
 			}

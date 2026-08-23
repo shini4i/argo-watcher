@@ -141,6 +141,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   anything alerting on failures should add `unconfirmed_deployment_failures` to keep seeing
   the failures that never reached Argo CD. `unauthenticated_reads` is unchanged and still
   uses `app="unknown"` for a read that did not resolve to a task.
+- **Breaking:** `GET /api/v1/config` serves `argo_cd_url` as a URL string —
+  `"https://argo-cd.example.com"` — instead of the eleven fields of a Go `url.URL` object.
+  Anything reading that field must now take the string as it is rather than rebuilding it
+  from `Scheme`, `Host` and `Path`; `argo_cd_url_alias` was already a plain string and is
+  unchanged. The Web UI and the CLI client ship updated in lockstep, so a matched pair
+  needs nothing. Basic-auth userinfo in `ARGO_URL` is stripped from the field, which the
+  object form dropped implicitly — this endpoint takes no credential. Mixing versions
+  costs only the Argo CD link the CLI prints for an already-failed deployment: an old
+  client cannot decode a new server's field, and prints a decode error in its place.
+- Authentication and cross-origin rejection logs name the request path in their `url`
+  field, where they used to render a Go `url.URL` as an object of eleven mostly-empty
+  fields. The query string is no longer part of that field.
 
 ### Removed
 
@@ -166,6 +178,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The Argo CD link the client prints for a failed deployment keeps a sub-path in
+  `ARGO_URL`. With `ARGO_URL=https://platform.example.com/argocd` it pointed at
+  `https://platform.example.com/applications/<app>`, dropping the `/argocd` prefix and
+  landing nowhere; the Web UI always kept it. A trailing slash on `ARGO_URL_ALIAS` no
+  longer doubles either.
 - `OIDC_PRIVILEGED_GROUPS` now tolerates spaces around its entries. A value written
   `"admins, operators"` kept the leading space on every entry after the first, and group
   names are matched exactly against the provider's claim, so those groups silently got no
