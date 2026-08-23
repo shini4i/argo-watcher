@@ -83,6 +83,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   when the provider serves no `picture` claim. It is opt-in because it sends a hash of the
   signed-in user's email address to gravatar.com — hashed, but a hash of a known address
   is trivially reversible. An address with no Gravatar still falls back to the initial.
+- A new **Network Exposure** page in the documentation states the boundary the server
+  assumes: what answers without a credential — including the task history, the whole
+  configuration and every application name on `/metrics` — what enabling OIDC does and
+  does not close, and what an operator is expected to put in front. Following the
+  installation guide's `ingress` block publishes an unauthenticated deploy trigger, and
+  nothing said so; that block now carries the warning and the link.
 
 ### Changed
 
@@ -219,6 +225,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   up on a rollout that is still being watched: with Postgres it skips tasks under a live
   lease, and with the in-memory backend a task is stale only once its own rollout window
   plus an hour has passed, rather than an hour flat.
+- The GitOps updater guide no longer says `ARGO_WATCHER_DEPLOY_TOKEN` is planned for
+  deprecation in 1.0.0. It is not going anywhere, and nothing outside that sentence ever
+  backed the promise — unlike `KEYCLOAK_*` and `GIT_TIMEOUT`, both of which logged a real
+  deprecation warning. Keep using the token if a JWT does not suit your pipeline.
 
 ### Security
 
@@ -229,7 +239,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   clear. Such a deployment now fails immediately naming both endpoints, rather than being
   retried as a network blip. Only stepping down from TLS is refused: a client pointed at an
   `http://` URL keeps working, and so does any redirect that stays on `https`.
-- Bumped the Go toolchain to `1.26.6`, resolving six standard library vulnerabilities
+- Bumped the Go toolchain to `1.26.7`, resolving six standard library vulnerabilities
   reachable from this code base in `go1.26.5`: `GO-2026-6218` (`net/url`), `GO-2026-6090`
   (`crypto/tls`), `GO-2026-6089` and `GO-2026-5026` (`net/http`), `GO-2026-6088`
   (`encoding/xml`) and `GO-2026-5972` (`encoding/asn1`). The `go` directive stays at

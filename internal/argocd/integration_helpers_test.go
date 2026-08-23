@@ -133,7 +133,7 @@ func giteaAPIPost(t *testing.T, user, pass, path string, body map[string]any) {
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Less(t, resp.StatusCode, 300, "gitea %s returned %d", path, resp.StatusCode)
 }
 

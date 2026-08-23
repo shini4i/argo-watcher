@@ -5,14 +5,63 @@ on:
       - main
     paths:
       - '**/*.go'
+      - 'go.mod'
+      - 'go.sum'
       - 'web/**'
+      - '.golangci.yml'
+      # Every job here runs `task install-deps`, `task mocks`, `task ci-migrate`
+      # or `task test`, so a Taskfile-only change can break this workflow.
+      - 'Taskfile.yml'
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
       - '**/*.go'
+      - 'go.mod'
+      - 'go.sum'
       - 'web/**'
+      - '.golangci.yml'
+      # Every job here runs `task install-deps`, `task mocks`, `task ci-migrate`
+      # or `task test`, so a Taskfile-only change can break this workflow.
+      - 'Taskfile.yml'
 
 jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Install Task
+        uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+        with:
+          # An exact version skips the unauthenticated go-task tags API
+          # lookup, which shares the runner IP 60 req/h anonymous quota.
+          version: 3.53.1
+
+      - name: Install environment dependencies
+        run: task install-deps
+
+      - name: Generate mocks
+        # golangci-lint type-checks _test.go files, which import the gitignored
+        # internal/mocks package; it must exist before the linters run.
+        run: task mocks
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          # Matches the version the flake's nixpkgs pin gives the dev shell, so
+          # `task lint-go` and this job report the same findings.
+          version: v2.13.1
+
   # gosec and govulncheck moved to the dedicated security.yml workflow.
   test:
     name: Test

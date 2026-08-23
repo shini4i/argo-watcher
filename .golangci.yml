@@ -1,0 +1,28 @@
+version: "2"
+
+run:
+  # The full package graph including _test.go files; the 1m default is tight
+  # for a cold CI cache.
+  timeout: 5m
+  # The integration-tagged suites run in CI, so they are linted too. No file
+  # carries a negated constraint, so this only adds packages.
+  build-tags:
+    - integration
+
+linters:
+  exclusions:
+    warn-unused: true
+    rules:
+      # The client prints these errors verbatim for a human reading a CI log
+      # (handleDeploymentError does log.Println(err)), so they are sentences
+      # rather than the lowercase fragments ST1005 expects.
+      - path: internal/client/client\.go
+        linters:
+          - staticcheck
+        text: "^ST1005:"
+
+issues:
+  # The defaults cap a report at 50 issues per linter and 3 per identical
+  # message, which lets a gate pass while hiding findings. Report every one.
+  max-issues-per-linter: 0
+  max-same-issues: 0

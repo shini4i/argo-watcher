@@ -31,7 +31,7 @@ func newOIDCTestServer(t *testing.T, userinfoStatus int, userinfoBody string, di
 			return
 		}
 		rw.WriteHeader(http.StatusOK)
-		_, err := rw.Write([]byte(fmt.Sprintf(`{"userinfo_endpoint": %q}`, server.URL+"/userinfo")))
+		_, err := fmt.Fprintf(rw, `{"userinfo_endpoint": %q}`, server.URL+"/userinfo")
 		if err != nil {
 			t.Error(err)
 		}
@@ -224,14 +224,14 @@ func newCountingOIDCServer(t *testing.T, groups string) (*httptest.Server, *int3
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/.well-known/openid-configuration", func(rw http.ResponseWriter, _ *http.Request) {
-		_, err := rw.Write([]byte(fmt.Sprintf(`{"userinfo_endpoint": %q}`, server.URL+"/userinfo")))
+		_, err := fmt.Fprintf(rw, `{"userinfo_endpoint": %q}`, server.URL+"/userinfo")
 		if err != nil {
 			t.Error(err)
 		}
 	})
 	mux.HandleFunc("/userinfo", func(rw http.ResponseWriter, _ *http.Request) {
 		atomic.AddInt32(&hits, 1)
-		_, err := rw.Write([]byte(fmt.Sprintf(`{"preferred_username": "someone", "groups": %s}`, groups)))
+		_, err := fmt.Fprintf(rw, `{"preferred_username": "someone", "groups": %s}`, groups)
 		if err != nil {
 			t.Error(err)
 		}
@@ -381,7 +381,7 @@ func TestOIDCAuthService_ValidationCaching(t *testing.T) {
 		var server *httptest.Server
 		mux := http.NewServeMux()
 		mux.HandleFunc("/.well-known/openid-configuration", func(rw http.ResponseWriter, _ *http.Request) {
-			_, _ = rw.Write([]byte(fmt.Sprintf(`{"userinfo_endpoint": %q}`, server.URL+"/userinfo")))
+			_, _ = fmt.Fprintf(rw, `{"userinfo_endpoint": %q}`, server.URL+"/userinfo")
 		})
 		mux.HandleFunc("/userinfo", func(rw http.ResponseWriter, _ *http.Request) {
 			if atomic.AddInt32(&hits, 1) == 1 {
@@ -414,7 +414,7 @@ func TestOIDCAuthService_ValidationCaching(t *testing.T) {
 		var server *httptest.Server
 		mux := http.NewServeMux()
 		mux.HandleFunc("/.well-known/openid-configuration", func(rw http.ResponseWriter, _ *http.Request) {
-			_, _ = rw.Write([]byte(fmt.Sprintf(`{"userinfo_endpoint": %q}`, server.URL+"/userinfo")))
+			_, _ = fmt.Fprintf(rw, `{"userinfo_endpoint": %q}`, server.URL+"/userinfo")
 		})
 		mux.HandleFunc("/userinfo", func(rw http.ResponseWriter, _ *http.Request) {
 			atomic.AddInt32(&hits, 1)
@@ -490,7 +490,7 @@ func TestOIDCAuthService_ValidationCaching(t *testing.T) {
 		var server *httptest.Server
 		mux := http.NewServeMux()
 		mux.HandleFunc("/.well-known/openid-configuration", func(rw http.ResponseWriter, _ *http.Request) {
-			_, _ = rw.Write([]byte(fmt.Sprintf(`{"userinfo_endpoint": %q}`, server.URL+"/userinfo")))
+			_, _ = fmt.Fprintf(rw, `{"userinfo_endpoint": %q}`, server.URL+"/userinfo")
 		})
 		mux.HandleFunc("/userinfo", func(rw http.ResponseWriter, _ *http.Request) {
 			if atomic.AddInt32(&hits, 1) == 1 {

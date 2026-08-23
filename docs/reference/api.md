@@ -53,7 +53,7 @@ A credential does two things: it authorizes the [GitOps updater](../guides/gitop
 
 ### Reads
 
-With OIDC **disabled** — the default — every endpoint is readable without a credential.
+With OIDC **disabled** — the default — every endpoint is readable without a credential. [Network Exposure](../operations/network-exposure.md) lists what that means in practice, and what to put in front of the instance.
 
 With OIDC **enabled**, the endpoints the Web UI consumes require one, group membership is not needed, and two stay open on purpose: `GET /api/v1/tasks/{id}` (guarded by the unguessable task id, and closable with `OIDC_REQUIRE_TASK_READ_AUTH`) and `GET /api/v1/config`, which the Web UI reads before it can hold a token. [Protected endpoints](../guides/oidc.md#protected-endpoints) has the full table.
 

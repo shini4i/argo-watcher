@@ -87,7 +87,7 @@ func tryServeStaticFile(w http.ResponseWriter, r *http.Request, fs safeFileSyste
 	if err != nil {
 		return false
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }() // #nosec G104 - read-only handle, close error is not actionable
 
 	stat, err := f.Stat()
 	if err != nil || stat.IsDir() {

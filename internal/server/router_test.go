@@ -804,7 +804,7 @@ func TestWebSocketConnectionIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WebSocket connection failed: %v", err)
 	}
-	defer conn.Close(websocket.StatusNormalClosure, "test complete")
+	defer func() { _ = conn.Close(websocket.StatusNormalClosure, "test complete") }()
 
 	t.Log("WebSocket connection established successfully")
 
@@ -900,7 +900,7 @@ func TestDeployLockNotifiedOnlyByWatcher(t *testing.T) {
 			conn, _, err := websocket.Dial(dialCtx, "ws"+strings.TrimPrefix(server.URL, "http")+"/ws",
 				&websocket.DialOptions{HTTPHeader: http.Header{oidcHeader: []string{"Bearer token"}}})
 			require.NoError(t, err)
-			defer conn.Close(websocket.StatusNormalClosure, "test complete")
+			defer func() { _ = conn.Close(websocket.StatusNormalClosure, "test complete") }()
 
 			// Run the watcher far faster than production so the test does not wait 5s.
 			stop := make(chan struct{})
@@ -1024,14 +1024,14 @@ func TestSafeFileSystem(t *testing.T) {
 		f, err := fs.Open("/file.txt")
 		require.NoError(t, err)
 		require.NotNil(t, f)
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 	})
 
 	t.Run("nested valid path opens file", func(t *testing.T) {
 		f, err := fs.Open("/subdir/nested.txt")
 		require.NoError(t, err)
 		require.NotNil(t, f)
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 	})
 
 	t.Run("path traversal attack returns error", func(t *testing.T) {
@@ -1053,14 +1053,14 @@ func TestSafeFileSystem(t *testing.T) {
 		f, err := fs.Open("/./subdir/../file.txt")
 		require.NoError(t, err)
 		require.NotNil(t, f)
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 	})
 
 	t.Run("open root directory", func(t *testing.T) {
 		f, err := fs.Open("/")
 		require.NoError(t, err)
 		require.NotNil(t, f)
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		stat, err := f.Stat()
 		require.NoError(t, err)
 		assert.True(t, stat.IsDir())

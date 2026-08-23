@@ -271,7 +271,7 @@ func TestUpdateGitImageTag(t *testing.T) {
 	t.Run("Returns error when NewGitRepo fails (no SSH_KEY_PATH)", func(t *testing.T) {
 		t.Setenv("SSH_KEY_PATH", "")
 		// caarlos0/env treats empty-string the same as unset for required fields.
-		os.Unsetenv("SSH_KEY_PATH")
+		_ = os.Unsetenv("SSH_KEY_PATH")
 
 		err := UpdateGitImageTag(
 			context.Background(),
