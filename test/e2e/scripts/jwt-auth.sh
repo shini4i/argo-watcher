@@ -1,29 +1,34 @@
 #!/usr/bin/env bash
-# Prove the JWT (BEARER_TOKEN) auth path end to end, distinct from the deploy-token
-# path every other phase uses. argo-watcher runs with JWT_SECRET set, which
-# registers the HMAC JWT strategy on the Authorization header. We mint a token with
-# that same secret and deploy through the real client using BEARER_TOKEN and NO
-# deploy token.
-#
-# The assertion is a real tag transition, not just "deployed": we deploy a tag
-# DIFFERENT from the app's current one, so reaching "deployed" (client exit 0)
-# requires the git write-back to have pushed the new tag — which only happens when
-# the task is Validated, i.e. when the JWT was accepted. A rejected JWT leaves the
-# task unvalidated, no write-back, and the client times out non-zero.
-#
-# Usage: jwt-auth.sh [app]
+# Prove the JWT (BEARER_TOKEN) auth path, the one every other phase does not use: a
+# token minted with the lab's JWT_SECRET deploys through the real client with no
+# deploy token, then the optional iss/aud binding is set on the live release for this
+# phase's duration and reverted. Usage: jwt-auth.sh [app]
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=./lib.sh
 . "${here}/lib.sh"
 
+: "${AW_CHART_REPO:?AW_CHART_REPO is required}" "${AW_CHART_VERSION:?AW_CHART_VERSION is required}"
+VALUES="${E2E_DIR}/values/argo-watcher.yaml"
+
 APP="${1:-app2}"
 # MUST match JWT_SECRET in values/argo-watcher.yaml.
 JWT_SECRET="${JWT_SECRET:-e2e-jwt-secret}"
+ISSUER="https://ci.e2e.invalid"
+AUDIENCE="argo-watcher-e2e"
 
 bin_dir="$(mktemp -d)"
-trap 'rm -rf "$bin_dir"' EXIT
+
+revert() {
+  echo "reverting JWT_ISSUER / JWT_AUDIENCE"
+  helm_apply_aw || true
+  wait_service || true
+  rm -rf "$bin_dir"
+  return
+}
+trap revert EXIT
+
 build_client "$bin_dir" || die "client build failed"
 
 require_app_synced "$APP"
@@ -32,19 +37,71 @@ require_app_synced "$APP"
 # write-back regardless of what earlier phases left the app on.
 TAG="$(other_tag "$APP")"
 
-# Mint a short-lived HS256 JWT signed with JWT_SECRET via the in-repo Go minter
-# (signs with the same library the server validates with; no openssl dependency).
-jwt="$(cd "$E2E_ROOT" && JWT_SECRET="$JWT_SECRET" go run ./test/e2e/tools/mintjwt)"
+# Minted by the in-repo Go tool, which signs with the very library the server
+# validates with (no openssl dependency).
+mint() { (cd "$E2E_ROOT" && env JWT_SECRET="$JWT_SECRET" "$@" go run ./test/e2e/tools/mintjwt); }
+plain_jwt="$(mint)"
+bound_jwt="$(mint JWT_ISS="$ISSUER" JWT_AUD="$AUDIENCE")"
 
 wait_service || die "argo-watcher never answered on ${AW_URL}"
 
+# --- 1. A claimless token authenticates while nothing is configured -----------
 echo "deploying ${APP} -> ${IMAGE}:${TAG} via BEARER_TOKEN (JWT), no deploy token"
 
-# BEARER_TOKEN only, ARGO_WATCHER_DEPLOY_TOKEN unset: the deploy is authenticated
-# solely by the JWT, so a successful write-back proves the JWT strategy validated it.
-if run_client "$APP" "$TAG" BEARER_TOKEN="$jwt"; then
-  echo "JWT-AUTH: PASS (JWT-authenticated write-back reached 'deployed' on ${TAG})"
-  exit 0
+# BEARER_TOKEN only, no deploy token: reaching "deployed" on a tag the app is not on
+# takes a write-back, which only a Validated task gets — so the JWT was accepted. A
+# rejected one leaves the task unvalidated and the client times out non-zero.
+if run_client "$APP" "$TAG" BEARER_TOKEN="$plain_jwt"; then
+  ok "JWT-authenticated write-back reached 'deployed' on ${TAG}"
+else
+  bad "client exited non-zero — JWT likely rejected, so no write-back happened"
 fi
-echo "JWT-AUTH: FAIL (client exited non-zero — JWT likely rejected, so no write-back happened)"
-exit 1
+
+# --- 2. Configure the claim binding -------------------------------------------
+idx=$(extra_envs_index "$VALUES")
+helm_apply_aw --set-string "extraEnvs[${idx}].name=JWT_ISSUER" \
+              --set-string "extraEnvs[${idx}].value=${ISSUER}" \
+              --set-string "extraEnvs[$((idx + 1))].name=JWT_AUDIENCE" \
+              --set-string "extraEnvs[$((idx + 1))].value=${AUDIENCE}"
+wait_service || die "argo-watcher never came back after setting the claim binding"
+
+# The same token section 1 deployed with. Strict means strict: a missing claim is a
+# rejection, which is why the rollout order is mint-first, configure-second.
+# Every POST below reuses TAG, which section 1 already rolled out, so an accepted task
+# finishes on its first poll and no watch is left running across the helm upgrades.
+post_task "$(task_json "$APP" "$TAG")" -H "Authorization: ${plain_jwt}"
+if [[ "$CODE" == "401" ]]; then
+  ok "a token without iss/aud -> 401 once the binding is configured"
+else
+  bad "token without iss/aud: code=${CODE} body=${BODY} (want 401)"
+fi
+
+post_task "$(task_json "$APP" "$TAG")" -H "Authorization: ${bound_jwt}"
+if [[ "$CODE" == "202" ]]; then
+  ok "a token carrying the configured iss/aud is accepted"
+else
+  bad "token with iss/aud: code=${CODE} body=${BODY} (want 202)"
+fi
+
+# The point of the setting: one HMAC secret shared across a CI estate no longer
+# authorizes another system's tokens here.
+foreign_jwt="$(mint JWT_ISS="https://elsewhere.invalid" JWT_AUD="$AUDIENCE")"
+post_task "$(task_json "$APP" "$TAG")" -H "Authorization: ${foreign_jwt}"
+if [[ "$CODE" == "401" ]]; then
+  ok "a token from another issuer -> 401"
+else
+  bad "token from another issuer: code=${CODE} body=${BODY} (want 401)"
+fi
+
+# --- 3. Revert and prove the binding is the only thing that changed -----------
+revert
+trap - EXIT
+
+post_task "$(task_json "$APP" "$TAG")" -H "Authorization: ${plain_jwt}"
+if [[ "$CODE" == "202" ]]; then
+  ok "the claimless token is accepted again once the binding is unset"
+else
+  bad "after revert, token without iss/aud: code=${CODE} body=${BODY} (want 202)"
+fi
+
+phase_end JWT-AUTH

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
+
 	"github.com/shini4i/argo-watcher/internal/config"
 )
 
@@ -212,10 +214,26 @@ func NewDeployTokenAuthService(token string) *DeployTokenAuthService {
 	}
 }
 
-// NewJWTAuthService initializes a JWT authentication service.
-func NewJWTAuthService(secret string) *JWTAuthService {
+// NewJWTAuthService initializes a JWT authentication service. An empty issuer or
+// audience leaves that claim unchecked, so a fleet minting tokens without it keeps
+// working; a configured value is enforced strictly — a token missing the claim is
+// rejected, not accepted. Roll the claim out to every pipeline before configuring it.
+func NewJWTAuthService(secret, issuer, audience string) *JWTAuthService {
+	// exp is required and a future iat rejected whatever the configuration: both were
+	// enforced before the claim binding existed.
+	options := []jwt.ParserOption{jwt.WithExpirationRequired(), jwt.WithIssuedAt()}
+
+	if issuer != "" {
+		options = append(options, jwt.WithIssuer(issuer))
+	}
+
+	if audience != "" {
+		options = append(options, jwt.WithAudience(audience))
+	}
+
 	return &JWTAuthService{
 		secretKey: []byte(secret),
+		options:   options,
 	}
 }
 

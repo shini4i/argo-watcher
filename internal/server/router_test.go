@@ -19,6 +19,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/go-chi/chi/v5"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/rs/cors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -268,6 +269,16 @@ func TestWebSocketConnectionsConcurrentAccess(t *testing.T) {
 	connectionsMutex.Unlock()
 }
 
+// signJWT mints an HS256 token valid for an hour, so a claim assertion is never
+// decided by expiry.
+func signJWT(t *testing.T, secret string, claims jwt.MapClaims) string {
+	t.Helper()
+	claims["exp"] = float64(time.Now().Add(time.Hour).Unix())
+	signed, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(secret))
+	require.NoError(t, err)
+	return signed
+}
+
 func TestNewEnv(t *testing.T) {
 	serverConfig := &config.ServerConfig{
 		Host:        "localhost",
@@ -278,7 +289,9 @@ func TestNewEnv(t *testing.T) {
 			IssuerURL: "http://localhost:8080/realms/test",
 			ClientId:  "test",
 		},
-		JWTSecret: "jwtSecret",
+		JWTSecret:   "jwtSecret",
+		JWTIssuer:   "https://ci.example.com",
+		JWTAudience: "argo-watcher",
 	}
 
 	argo := &argocd.Argo{}
@@ -293,16 +306,47 @@ func TestNewEnv(t *testing.T) {
 	assert.Equal(t, env.metrics, metrics)
 	assert.Equal(t, env.updater, updater)
 
-	expectedOIDC, oidcErr := auth.NewOIDCAuthService(serverConfig)
-	assert.NoError(t, oidcErr)
+	// The strategies are compared by type and behaviour: the JWT one holds parser
+	// options, and two function values are never equal.
+	require.Len(t, env.strategies, 3)
+	require.IsType(t, &auth.DeployTokenAuthService{}, env.strategies["ARGO_WATCHER_DEPLOY_TOKEN"])
+	require.IsType(t, &auth.JWTAuthService{}, env.strategies["Authorization"])
+	require.IsType(t, &auth.OIDCAuthService{}, env.strategies[oidcHeader])
 
-	expectedStrategies := map[string]auth.AuthStrategy{
-		"ARGO_WATCHER_DEPLOY_TOKEN": auth.NewDeployTokenAuthService(serverConfig.DeployToken),
-		"Authorization":             auth.NewJWTAuthService(serverConfig.JWTSecret),
-		oidcHeader:                  expectedOIDC,
-	}
+	accepted, err := env.strategies["ARGO_WATCHER_DEPLOY_TOKEN"].Validate(serverConfig.DeployToken)
+	assert.NoError(t, err)
+	assert.True(t, accepted)
 
-	assert.Equal(t, expectedStrategies, env.strategies)
+	oidcService := env.strategies[oidcHeader].(*auth.OIDCAuthService)
+	assert.Equal(t, serverConfig.OIDC.IssuerURL, oidcService.IssuerURL)
+	assert.Equal(t, serverConfig.OIDC.ClientId, oidcService.ClientId)
+
+	// The JWT claim binding lives in unexported parser options, so only a token can
+	// show whether NewEnv passed the configured issuer and audience through.
+	jwtStrategy := env.strategies["Authorization"]
+	accepted, err = jwtStrategy.Validate(signJWT(t, serverConfig.JWTSecret, jwt.MapClaims{
+		"iss": serverConfig.JWTIssuer,
+		"aud": serverConfig.JWTAudience,
+	}))
+	assert.NoError(t, err)
+	assert.True(t, accepted)
+
+	accepted, err = jwtStrategy.Validate(signJWT(t, serverConfig.JWTSecret, jwt.MapClaims{
+		"iss": "https://elsewhere.example.com",
+		"aud": serverConfig.JWTAudience,
+	}))
+	assert.Error(t, err)
+	assert.False(t, accepted)
+
+	// Each half is pinned on its own: a token wrong in only one claim proves that
+	// claim's option reached the strategy.
+	accepted, err = jwtStrategy.Validate(signJWT(t, serverConfig.JWTSecret, jwt.MapClaims{
+		"iss": serverConfig.JWTIssuer,
+		"aud": "someone-else",
+	}))
+	assert.Error(t, err)
+	assert.False(t, accepted)
+
 	assert.NotNil(t, env.authenticator)
 }
 

@@ -1,7 +1,9 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
+	"log/slog"
 	"net/url"
 	"strings"
 	"testing"
@@ -41,6 +43,8 @@ func TestNewServerConfig(t *testing.T) {
 		t.Setenv("ARGO_TOKEN", "  secret-token\n")
 		t.Setenv("ARGO_WATCHER_DEPLOY_TOKEN", "  deploy-token\n")
 		t.Setenv("JWT_SECRET", "  jwt-secret\n")
+		t.Setenv("JWT_ISSUER", "  https://ci.example.com\n")
+		t.Setenv("JWT_AUDIENCE", "  argo-watcher\n")
 		t.Setenv("STATE_TYPE", "postgres")
 
 		cfg, err := NewServerConfig()
@@ -49,6 +53,70 @@ func TestNewServerConfig(t *testing.T) {
 		assert.Equal(t, "secret-token", cfg.ArgoToken)
 		assert.Equal(t, "deploy-token", cfg.DeployToken)
 		assert.Equal(t, "jwt-secret", cfg.JWTSecret)
+		assert.Equal(t, "https://ci.example.com", cfg.JWTIssuer)
+		assert.Equal(t, "argo-watcher", cfg.JWTAudience)
+	})
+
+	t.Run("OIDC issuer and client id are trimmed", func(t *testing.T) {
+		t.Setenv("ARGO_URL", "https://example.com")
+		t.Setenv("ARGO_TOKEN", "secret-token")
+		t.Setenv("STATE_TYPE", "postgres")
+		t.Setenv("OIDC_ENABLED", "true")
+		t.Setenv("OIDC_ISSUER_URL", "  https://idp.example.com/realms/x\n")
+		t.Setenv("OIDC_CLIENT_ID", "  argo-watcher\n")
+
+		cfg, err := NewServerConfig()
+
+		assert.NoError(t, err)
+		assert.Equal(t, "https://idp.example.com/realms/x", cfg.OIDC.IssuerURL)
+		// Matched against the claim naming the token's client, so a stray newline
+		// would refuse every token the provider issued for this very client.
+		assert.Equal(t, "argo-watcher", cfg.OIDC.ClientId)
+	})
+
+	t.Run("a claim binding without JWT_SECRET warns that it is inert", func(t *testing.T) {
+		// Without a secret no JWT strategy is registered, so the binding guards
+		// nothing — the warning is the only sign the setting does not apply.
+		for _, binding := range []string{"JWT_ISSUER", "JWT_AUDIENCE"} {
+			t.Run(binding, func(t *testing.T) {
+				t.Setenv("ARGO_URL", "https://example.com")
+				t.Setenv("ARGO_TOKEN", "secret-token")
+				t.Setenv("STATE_TYPE", "postgres")
+				t.Setenv(binding, "value")
+				logs := captureWarnings(t)
+
+				_, err := NewServerConfig()
+
+				assert.NoError(t, err)
+				assert.Contains(t, logs.String(), "no effect without JWT_SECRET")
+			})
+		}
+	})
+
+	t.Run("a claim binding with JWT_SECRET does not warn", func(t *testing.T) {
+		t.Setenv("ARGO_URL", "https://example.com")
+		t.Setenv("ARGO_TOKEN", "secret-token")
+		t.Setenv("STATE_TYPE", "postgres")
+		t.Setenv("JWT_SECRET", "jwt-secret")
+		t.Setenv("JWT_ISSUER", "https://ci.example.com")
+		logs := captureWarnings(t)
+
+		_, err := NewServerConfig()
+
+		assert.NoError(t, err)
+		assert.NotContains(t, logs.String(), "no effect without JWT_SECRET")
+	})
+
+	t.Run("JWT claim bindings are unset by default", func(t *testing.T) {
+		t.Setenv("ARGO_URL", "https://example.com")
+		t.Setenv("ARGO_TOKEN", "secret-token")
+		t.Setenv("STATE_TYPE", "postgres")
+
+		cfg, err := NewServerConfig()
+
+		assert.NoError(t, err)
+		assert.Empty(t, cfg.JWTIssuer)
+		assert.Empty(t, cfg.JWTAudience)
 	})
 }
 
@@ -739,4 +807,15 @@ func TestNewServerConfig_ArgoUrlKeepsSubPath(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, "/argocd/", cfg.ArgoUrl.Path)
+}
+
+// captureWarnings redirects the default logger into a buffer for the duration of a
+// test, so an assertion can observe a warning NewServerConfig only logs.
+func captureWarnings(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	logs := &bytes.Buffer{}
+	previous := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	slog.SetDefault(slog.New(slog.NewJSONHandler(logs, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	return logs
 }

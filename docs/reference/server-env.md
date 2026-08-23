@@ -40,6 +40,8 @@ The chart mounts its persistent volume at `REPO_CACHE_PATH`; change one and you 
 |---|---|---|---|
 | `ARGO_WATCHER_DEPLOY_TOKEN` | Shared token clients present to authorize a write-back | | No |
 | `JWT_SECRET` | HMAC secret for validating client JWTs | | No |
+| `JWT_ISSUER` | `iss` a client JWT must carry; unset leaves it unchecked | | No |
+| `JWT_AUDIENCE` | `aud` a client JWT must carry; unset leaves it unchecked | | No |
 | `OIDC_ENABLED` | Enable OIDC authentication | `false` | No |
 | `OIDC_ISSUER_URL` | Provider issuer URL, used for discovery | | When OIDC is on |
 | `OIDC_CLIENT_ID` | Client id registered with the provider | | When OIDC is on |
@@ -47,6 +49,8 @@ The chart mounts its persistent volume at `REPO_CACHE_PATH`; change one and you 
 | `OIDC_TOKEN_VALIDATION_INTERVAL` | How long (ms) a provider decision may be reused | `300000` | No |
 | `OIDC_REQUIRE_TASK_READ_AUTH` | Require a credential on `GET /api/v1/tasks/{id}` too | `false` | No |
 | `OIDC_GRAVATAR_FALLBACK` | Let the account card fall back to Gravatar when the provider sends no `picture` claim | `false` | No |
+
+`JWT_ISSUER` and `JWT_AUDIENCE` are enforced strictly once set: a token that omits the claim is rejected, so every pipeline must mint it *before* the variable is configured — see [JWT configuration](../guides/gitops-updater.md#jwt-configuration).
 
 Enabling OIDC also makes the Web UI's read endpoints require a credential — see [Protected endpoints](../guides/oidc.md#protected-endpoints). The `KEYCLOAK_*` variables were removed in 1.0.0 and now fail startup ([migration table](../guides/oidc.md#migrating-from-keycloak_)).
 

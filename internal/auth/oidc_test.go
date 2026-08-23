@@ -1,14 +1,18 @@
 package auth
 
 import (
+	"bytes"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -541,4 +545,185 @@ func TestValidateUserinfoURL(t *testing.T) {
 	assert.Error(t, validateUserinfoURL("ftp://example.com/userinfo"))
 	assert.Error(t, validateUserinfoURL("https:///userinfo"))
 	assert.NoError(t, validateUserinfoURL("https://example.com/userinfo"))
+}
+
+// signedToken mints a JWT whose signature this package never verifies: the binding
+// check reads the claims of a token the provider has already vouched for.
+func signedToken(t *testing.T, claims jwt.MapClaims) string {
+	t.Helper()
+	tokenStr, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte("irrelevant"))
+	require.NoError(t, err)
+	return tokenStr
+}
+
+// TestOIDCAuthService_TokenBinding covers the audience binding: a token the provider
+// accepts must also have been issued to this application, so one realm shared by the
+// whole organisation cannot authenticate its every client here.
+func TestOIDCAuthService_TokenBinding(t *testing.T) {
+	newService := func(t *testing.T, server *httptest.Server) *OIDCAuthService {
+		t.Helper()
+		service := &OIDCAuthService{}
+		require.NoError(t, service.Init(server.URL, "argo-watcher", []string{"group1"}, 0))
+		service.client = server.Client()
+		return service
+	}
+
+	accepted := []struct {
+		name   string
+		claims jwt.MapClaims
+	}{
+		{"azp names this client", jwt.MapClaims{"azp": "argo-watcher", "aud": []string{"account"}}},
+		{"aud is this client", jwt.MapClaims{"aud": "argo-watcher"}},
+		{"aud lists this client", jwt.MapClaims{"aud": []string{"other", "argo-watcher"}}},
+		{"token carries neither claim", jwt.MapClaims{"sub": "user"}},
+		{"aud is malformed and no client is named", jwt.MapClaims{"aud": 42}},
+		// An array holding a non-string is unreadable as a whole, so the client id
+		// beside it does not count as a match — the token names nobody.
+		{"aud array is unreadable and no client is named", jwt.MapClaims{"aud": []any{"argo-watcher", 42}}},
+		// RFC 9068 gives aud to the resource server and names the client in client_id;
+		// Okta spells that claim cid. Neither emits azp, so both would 401 wholesale
+		// if only azp and aud were read.
+		{"client_id names this client (RFC 9068)", jwt.MapClaims{"client_id": "argo-watcher", "aud": []string{"https://api.example.com"}}},
+		{"cid names this client (Okta)", jwt.MapClaims{"cid": "argo-watcher", "aud": []string{"https://api.example.com"}}},
+		{"appid names this client (Entra v1.0)", jwt.MapClaims{"appid": "argo-watcher", "aud": "https://graph.microsoft.com"}},
+		// Issued by another client but deliberately audienced to this one, as an
+		// audience mapper or a token exchange produces.
+		{"azp names another client but aud names this one", jwt.MapClaims{"azp": "other-app", "aud": []string{"argo-watcher"}}},
+	}
+
+	for _, tc := range accepted {
+		t.Run("accepts a token whose "+tc.name, func(t *testing.T) {
+			server := newOIDCTestServer(t, http.StatusOK, `{"groups": ["group1"]}`, nil, false)
+			defer server.Close()
+
+			ok, err := newService(t, server).Validate(signedToken(t, tc.claims))
+
+			assert.NoError(t, err)
+			assert.True(t, ok)
+		})
+	}
+
+	t.Run("accepts an opaque token the provider vouches for", func(t *testing.T) {
+		// Binding an opaque token would need introspection, which a public client
+		// cannot perform; the provider's judgement stays the only gate.
+		server := newOIDCTestServer(t, http.StatusOK, `{"groups": ["group1"]}`, nil, false)
+		defer server.Close()
+
+		ok, err := newService(t, server).Validate("not-a-jwt")
+
+		assert.NoError(t, err)
+		assert.True(t, ok)
+	})
+
+	rejected := []struct {
+		name   string
+		claims jwt.MapClaims
+	}{
+		{"azp names another client", jwt.MapClaims{"azp": "other-app", "aud": []string{"account"}}},
+		{"aud names another client", jwt.MapClaims{"aud": "other-app"}},
+		{"aud lists only other clients", jwt.MapClaims{"aud": []string{"other-app", "account"}}},
+		{"client_id names another client", jwt.MapClaims{"client_id": "other-app", "aud": []string{"https://api.example.com"}}},
+		{"cid names another client", jwt.MapClaims{"cid": "other-app", "aud": []string{"https://api.example.com"}}},
+		{"appid names another client", jwt.MapClaims{"appid": "other-app", "aud": "https://graph.microsoft.com"}},
+		// An unreadable aud must not rescue a token another client owns.
+		{"azp names another client and aud is malformed", jwt.MapClaims{"azp": "other-app", "aud": 42}},
+		{"azp names another client and the aud array is unreadable", jwt.MapClaims{"azp": "other-app", "aud": []any{"argo-watcher", 42}}},
+	}
+
+	for _, tc := range rejected {
+		t.Run("rejects a token whose "+tc.name, func(t *testing.T) {
+			server := newOIDCTestServer(t, http.StatusOK, `{"groups": ["group1"]}`, nil, false)
+			defer server.Close()
+			service := newService(t, server)
+			token := signedToken(t, tc.claims)
+
+			ok, err := service.Validate(token)
+			require.Error(t, err)
+			assert.False(t, ok)
+			assert.Contains(t, err.Error(), "not issued to")
+			// A foreign token is the client's problem (401), not the provider's (503).
+			assert.NotErrorIs(t, err, ErrProviderUnavailable)
+
+			// The read path must reject it too, not only the privileged one.
+			assert.Error(t, service.Authenticate(token))
+		})
+	}
+}
+
+// TestOIDCAuthService_TokenBindingCache exercises the binding on the path a real
+// deployment takes, where OIDC_TOKEN_VALIDATION_INTERVAL is non-zero: a rejection is
+// cached, must survive reuse without another provider call, and must not poison a
+// token that is properly bound.
+func TestOIDCAuthService_TokenBindingCache(t *testing.T) {
+	server, hits := newCountingOIDCServer(t, `["group1"]`)
+	service := &OIDCAuthService{}
+	require.NoError(t, service.Init(server.URL, "argo-watcher", []string{"group1"}, time.Minute))
+	service.client = server.Client()
+
+	foreign := signedToken(t, jwt.MapClaims{"azp": "other-app", "aud": []string{"account"}})
+
+	ok, err := service.Validate(foreign)
+	require.Error(t, err)
+	assert.False(t, ok)
+	assert.Contains(t, err.Error(), "not issued to")
+	after := atomic.LoadInt32(hits)
+
+	ok, err = service.Validate(foreign)
+	assert.Error(t, err)
+	assert.False(t, ok)
+	assert.Equal(t, after, atomic.LoadInt32(hits), "a cached rejection must not re-ask the provider")
+
+	ok, err = service.Validate(signedToken(t, jwt.MapClaims{"azp": "argo-watcher"}))
+	assert.NoError(t, err)
+	assert.True(t, ok, "the cached rejection is keyed per token and must not deny a bound one")
+}
+
+// TestOIDCAuthService_UnboundTokenWarning pins the one operator-visible signal that
+// tokens are not being bound: it names the reason and is logged once, not per request.
+func TestOIDCAuthService_UnboundTokenWarning(t *testing.T) {
+	newService := func(t *testing.T, server *httptest.Server) *OIDCAuthService {
+		t.Helper()
+		service := &OIDCAuthService{}
+		require.NoError(t, service.Init(server.URL, "argo-watcher", []string{"group1"}, 0))
+		service.client = server.Client()
+		return service
+	}
+
+	captureWarnings := func(t *testing.T) *bytes.Buffer {
+		t.Helper()
+		logs := &bytes.Buffer{}
+		previous := slog.Default()
+		t.Cleanup(func() { slog.SetDefault(previous) })
+		slog.SetDefault(slog.New(slog.NewJSONHandler(logs, &slog.HandlerOptions{Level: slog.LevelWarn})))
+		return logs
+	}
+
+	t.Run("an opaque token warns once, however many requests arrive", func(t *testing.T) {
+		server := newOIDCTestServer(t, http.StatusOK, `{"groups": ["group1"]}`, nil, false)
+		defer server.Close()
+		service := newService(t, server)
+		logs := captureWarnings(t)
+
+		for range 3 {
+			ok, err := service.Validate("not-a-jwt")
+			require.NoError(t, err)
+			require.True(t, ok)
+		}
+
+		assert.Equal(t, 1, strings.Count(logs.String(), "accepting tokens without checking"))
+		assert.Contains(t, logs.String(), "the access token is not a JWT")
+	})
+
+	t.Run("a JWT naming nobody warns with its own reason", func(t *testing.T) {
+		server := newOIDCTestServer(t, http.StatusOK, `{"groups": ["group1"]}`, nil, false)
+		defer server.Close()
+		service := newService(t, server)
+		logs := captureWarnings(t)
+
+		ok, err := service.Validate(signedToken(t, jwt.MapClaims{"sub": "user"}))
+		require.NoError(t, err)
+		require.True(t, ok)
+
+		assert.Contains(t, logs.String(), "names no client and carries no aud claim")
+	})
 }

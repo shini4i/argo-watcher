@@ -282,6 +282,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   same origin, and the CLI client, the MCP server and `curl` send no `Origin` at all. There is no
   new setting — `DEV_ENVIRONMENT=true` still admits the local frontend dev server, which the
   contributing guide now spells out.
+- An OIDC access token must now have been issued to Argo Watcher's own client. Validation was
+  "the provider's userinfo endpoint returned 200", which one realm serving a whole organisation
+  answers for every client it hosts — so a token another application obtained from the same
+  provider authenticated here. Each accepted token is now also checked against
+  `OIDC_CLIENT_ID`, which was already mandatory: it passes when `azp`, `client_id`, `cid` or
+  `appid` names that client id — providers disagree on which claim carries it — or when `aud`
+  contains it, and is refused with `401` otherwise. Nothing to configure,
+  and browser sessions are unaffected — the Web UI signs in with that very client id. A token
+  that names no client at all, including an opaque one that is not a JWT, is still accepted:
+  binding it would need introspection, which a public client cannot perform. That case logs a
+  warning the first time it is seen.
+- Client JWTs can now be bound to this deployment with the new `JWT_ISSUER` and `JWT_AUDIENCE`
+  settings. The JWT strategy checked the signature and that `exp` was present, so where one
+  `JWT_SECRET` is reused across a CI estate, that other system's tokens were valid deploy
+  credentials here. Both settings are unset by default and unchecked while unset, so an
+  existing fleet keeps working untouched. Once set they are strict — a token that omits the
+  claim is rejected, not passed — so update every pipeline to mint the claim before
+  configuring the variable, or tokens already in flight are refused.
+- The deploy token is compared in constant time. The previous comparison returned as soon as
+  two bytes differed, so how long a rejection took leaked how much of the token was right.
+  Remote exploitation was impractical through network jitter; the comparison is now immune to
+  it regardless.
 
 ## [0.15.0] - 2026-08-11
 

@@ -34,6 +34,16 @@
           }
         }
       ]
+    },
+    {
+      "clientId": "other-app",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "serviceAccountsEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": [ "http://localhost:8102/" ],
+      "webOrigins": [ "http://localhost:8102" ]
     }
   ],
   "users": [

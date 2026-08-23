@@ -93,6 +93,7 @@ The server warning and the counter are what identify the credential as the cause
 
 - The pipeline sets neither `ARGO_WATCHER_DEPLOY_TOKEN` nor `BEARER_TOKEN`.
 - The value does not match the server's `ARGO_WATCHER_DEPLOY_TOKEN` or `JWT_SECRET`.
+- The server sets `JWT_ISSUER` or `JWT_AUDIENCE` and the token carries no such claim, or a different value. Both are strict once set — see [Binding a token to this server](../guides/gitops-updater.md#binding-a-token-to-this-server).
 - **Something redirects the client to a different host**, and a credential does not survive that hop. The two behave differently:
     - `Authorization` (`BEARER_TOKEN`) is stripped by Go's HTTP client on every client version, but only when the *hostname* changes. A port-only change (`host:8080` → `host:9090`) keeps it, and so does a move to a subdomain (`example.com` → `sub.example.com`). A sibling host does not: `watcher.example.com` → `watcher.int.example.com` drops it.
     - `ARGO_WATCHER_DEPLOY_TOKEN` is a custom header, which Go always forwards, so from v0.15.0 the client deletes it itself on any change of host **or** port. Earlier clients forwarded it, so this can appear on a client upgrade with nothing else changing.

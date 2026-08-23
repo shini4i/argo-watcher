@@ -5,6 +5,8 @@
 // library the server validates with (golang-jwt/jwt/v5), so the token is
 // guaranteed compatible. The token carries the iat and exp claims the server
 // requires and is valid for one hour — long enough for a single deploy phase.
+// JWT_ISS and JWT_AUD add the iss and aud claims a server configured with
+// JWT_ISSUER / JWT_AUDIENCE requires.
 package main
 
 import (
@@ -23,10 +25,21 @@ func main() {
 	}
 
 	now := time.Now()
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+	claims := jwt.MapClaims{
 		"iat": now.Unix(),
 		"exp": now.Add(time.Hour).Unix(),
-	})
+	}
+
+	// Set only when asked for, so the same tool mints both the claimless token an
+	// unconfigured server accepts and the bound one JWT_ISSUER/JWT_AUDIENCE demand.
+	if issuer := os.Getenv("JWT_ISS"); issuer != "" {
+		claims["iss"] = issuer
+	}
+	if audience := os.Getenv("JWT_AUD"); audience != "" {
+		claims["aud"] = audience
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 
 	signed, err := token.SignedString([]byte(secret))
 	if err != nil {

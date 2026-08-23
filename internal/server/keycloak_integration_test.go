@@ -15,6 +15,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/go-chi/chi/v5"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -30,6 +31,9 @@ const (
 	keycloakBaseURL  = "http://localhost:8090"
 	keycloakRealm    = "argo-watcher-e2e"
 	keycloakClientID = "argo-watcher"
+	// A second client of the same realm, standing in for any other application an
+	// organisation registers there.
+	foreignClientID = "other-app"
 )
 
 // waitForKeycloak polls the realm's OIDC discovery document until Keycloak has
@@ -56,10 +60,17 @@ func waitForKeycloak(t *testing.T) {
 // grant (password) flow against the test realm's public client.
 func keycloakToken(t *testing.T, username, password string) string {
 	t.Helper()
+	return keycloakTokenForClient(t, keycloakClientID, username, password)
+}
+
+// keycloakTokenForClient obtains an access token minted for a named client of the
+// realm, so a test can present one issued to something other than argo-watcher.
+func keycloakTokenForClient(t *testing.T, clientID, username, password string) string {
+	t.Helper()
 	tokenURL := keycloakBaseURL + "/realms/" + keycloakRealm + "/protocol/openid-connect/token"
 	form := url.Values{
 		"grant_type": {"password"},
-		"client_id":  {keycloakClientID},
+		"client_id":  {clientID},
 		"username":   {username},
 		"password":   {password},
 		// Keycloak 26's userinfo endpoint rejects tokens without the openid
@@ -240,6 +251,71 @@ func TestKeycloakReadAuthn(t *testing.T) {
 	t.Run("no token is rejected", func(t *testing.T) {
 		assert.Equal(t, http.StatusUnauthorized, callProtectedRead(t, srv, ""))
 	})
+}
+
+// TestKeycloakForeignClientToken proves the audience binding against a real provider:
+// a token the same realm minted for another of its clients is valid at userinfo, and
+// must still be refused here. It also pins the claim the check relies on — Keycloak
+// names the client in azp and keeps the client id out of aud.
+func TestKeycloakForeignClientToken(t *testing.T) {
+	waitForKeycloak(t)
+	env := newKeycloakEnv(t)
+	readSrv := protectedReadServer(t, env)
+	lockSrv := deployLockServer(t, env)
+
+	foreign := keycloakTokenForClient(t, foreignClientID, "priv-user", "priv-pass")
+	own := keycloakToken(t, "priv-user", "priv-pass")
+
+	// Without this the test could pass for the wrong reason: were the foreign token
+	// invalid at the provider, userinfo would produce the same 401s the binding must.
+	requireUserinfoAccepts(t, foreign)
+
+	assert.Equal(t, foreignClientID, tokenClaims(t, foreign)["azp"])
+	assert.Equal(t, keycloakClientID, tokenClaims(t, own)["azp"])
+
+	// Read through GetAudience: an absent aud is an untyped nil in the map, which
+	// NotContains cannot measure.
+	ownAudience, err := tokenClaims(t, own).GetAudience()
+	require.NoError(t, err)
+	assert.NotContains(t, ownAudience, keycloakClientID, "keycloak names the client in azp, so aud alone would refuse this token")
+
+	t.Run("a foreign token may not read", func(t *testing.T) {
+		assert.Equal(t, http.StatusUnauthorized, callProtectedRead(t, readSrv, foreign))
+	})
+
+	t.Run("a foreign token may not take the deploy lock", func(t *testing.T) {
+		assert.Equal(t, http.StatusUnauthorized, callDeployLock(t, lockSrv, http.MethodPost, foreign))
+	})
+
+	t.Run("the same user's own token still works", func(t *testing.T) {
+		assert.Equal(t, http.StatusOK, callProtectedRead(t, readSrv, own))
+		assert.Equal(t, http.StatusOK, callDeployLock(t, lockSrv, http.MethodPost, own))
+		assert.Equal(t, http.StatusOK, callDeployLock(t, lockSrv, http.MethodDelete, own))
+	})
+}
+
+// requireUserinfoAccepts asserts Keycloak itself accepts the token, establishing the
+// premise the binding assertions rest on.
+func requireUserinfoAccepts(t *testing.T, token string) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, keycloakBaseURL+"/realms/"+keycloakRealm+"/protocol/openid-connect/userinfo", nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	require.Equal(t, http.StatusOK, resp.StatusCode, "keycloak must accept the foreign token, or the 401s below prove nothing")
+}
+
+// tokenClaims decodes an access token's payload without verifying it, so a test can
+// assert what the provider actually put in it.
+func tokenClaims(t *testing.T, token string) jwt.MapClaims {
+	t.Helper()
+	claims := jwt.MapClaims{}
+	_, _, err := jwt.NewParser().ParseUnverified(token, &claims)
+	require.NoError(t, err)
+	return claims
 }
 
 // TestKeycloakWebSocketHandshake proves the browser's transport against a real
