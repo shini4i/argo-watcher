@@ -22,6 +22,8 @@
 #                                          distinction, commit fa0b3fd)
 #   - GET  /api/v1/deploy-lock          -> 200 (read-only, always registered)
 #   - POST /api/v1/tasks (>1 MiB)       -> 413; 51 images -> 406 (issue #562)
+#   - the four browser-facing security headers (issue #565) on the SPA document,
+#                                          an API payload and the swagger page
 #   - POST /api/v1/deploy-lock          -> with OIDC disabled the state-changing
 #                                          handler is NOT registered, so the request
 #                                          falls through to the SPA static handler
@@ -156,5 +158,59 @@ if jq -e '. == false' <<<"$BODY" >/dev/null 2>&1; then
 else
   bad "POST deploy-lock set the lock without OIDC (body=${BODY})"
 fi
+
+echo "=== security response headers ==="
+# The Web UI keeps an OIDC access token in JavaScript memory and puts the deploy
+# lock and rollback one click away, so the four browser-facing headers must reach
+# every route — the SPA document included (issue #565).
+aw_host="${AW_URL#*://}"
+# Reads from the $headers the loop below refreshes per path. An absent header is
+# empty, not an error: under `set -e` a failing grep would abort the phase instead
+# of letting the assertion report it.
+header_value() { grep -i "^$1:" <<<"$headers" | cut -d' ' -f2- || true; }
+
+for path in "/" "/api/v1/config" "/swagger/"; do
+  out=$(curl -s -m "${REQ_TIMEOUT:-10}" -o /dev/null -D - -w $'\n%{http_code}' "${AW_URL}${path}" | tr -d '\r')
+  code="${out##*$'\n'}"
+  headers="${out%$'\n'*}"
+
+  # The headers are set before the handler runs, so they are present on a failed
+  # response too — without this the block would report OK for a broken route.
+  if [[ "$code" != 2* && "$code" != 3* ]]; then
+    bad "${path}: HTTP ${code}"
+    continue
+  fi
+
+  csp=$(header_value content-security-policy)
+  if [[ -z "$csp" ]]; then
+    bad "${path}: no Content-Security-Policy"
+  elif [[ "$csp" != *"frame-ancestors 'self'"* || "$csp" != *"object-src 'none'"* ]]; then
+    # The anti-clickjacking and anti-plugin half of the policy.
+    bad "${path}: unexpected framing policy: ${csp}"
+  elif [[ "$csp" != *"default-src 'self'"* || "$csp" != *"script-src 'self';"* ]]; then
+    # A bare "script-src 'self';" is the assertion: an appended 'unsafe-inline' or
+    # a nonce-less relaxation would break the match.
+    bad "${path}: unexpected script policy: ${csp}"
+  elif [[ "$csp" == *"unsafe-eval"* ]]; then
+    bad "${path}: policy allows unsafe-eval: ${csp}"
+  elif [[ "$csp" != *"ws://${aw_host}"* ]]; then
+    # connect-src 'self' does not resolve to a websocket scheme in every browser,
+    # so the /ws host is named explicitly.
+    bad "${path}: policy omits ws://${aw_host}: ${csp}"
+  else
+    ok "${path}: Content-Security-Policy"
+  fi
+
+  for pair in "x-content-type-options=nosniff" \
+    "x-frame-options=SAMEORIGIN" \
+    "referrer-policy=strict-origin-when-cross-origin"; do
+    got=$(header_value "${pair%%=*}")
+    if [[ "$got" == "${pair#*=}" ]]; then
+      ok "${path}: ${pair%%=*}: ${got}"
+    else
+      bad "${path}: ${pair%%=*}=${got:-<absent>} (want ${pair#*=})"
+    fi
+  done
+done
 
 phase_end API-SURFACE

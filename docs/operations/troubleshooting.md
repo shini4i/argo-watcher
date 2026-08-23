@@ -205,6 +205,20 @@ curl -s $ARGO_WATCHER_URL/livez
 2. Confirm the TLS secret exists and matches the host.
 3. Confirm `STATIC_FILES_PATH` points at the built UI assets (`/app/static` in the published image). A server with no assets there answers `404` for every UI path while the API keeps working.
 
+## Web UI or Swagger page loads blank
+
+**Symptom:** the page returns `200` with an HTML body, but nothing renders. The API answers normally.
+
+**Likely cause:** a [Content-Security-Policy](../reference/api.md#security-headers) is blocking an asset. The server sends its own policy, and a proxy that adds a second one does not replace it — the browser enforces both, so a directive either policy omits blocks the load.
+
+**How to verify:** open the browser console. A blocked asset is reported as a policy violation naming the directive that refused it. Compare the header the browser received with the one the server sent:
+
+```bash
+curl -sI $ARGO_WATCHER_URL/ | grep -i content-security-policy
+```
+
+**Fix:** stop the proxy adding a policy of its own, or widen it to cover the same sources. Do not strip the server's policy at the proxy — it is the only one the published image guarantees.
+
 ## Web UI stops on "Sign-in failed"
 
 **Symptom:** with [OIDC](../guides/oidc.md) enabled, the loading screen shows a red error box under the logo and never reaches the task list. It does not return to the provider on its own.
@@ -234,6 +248,8 @@ curl -s $ARGO_WATCHER_URL/livez
 **Likely cause:** a proxy in front of the server strips the `Upgrade` and `Connection` headers, so the WebSocket handshake on `/ws` never happens and the server answers `400`.
 
 With [OIDC](../guides/oidc.md#the-websocket-handshake) enabled there is a second candidate: a proxy that forwards the upgrade but strips `Sec-WebSocket-Protocol` removes the credential the browser sends there, and the handshake is refused `401`.
+
+A third candidate is a proxy that rewrites `Host` to its upstream instead of preserving the client's: the [`Content-Security-Policy`](../reference/api.md#security-headers) then names the wrong `wss://` origin and the browser refuses the connection before it is made. The console reports it as a policy violation, and the server logs nothing at all.
 
 **How to verify:** with `LOG_LEVEL=debug`, look for `non-upgrade request to /ws` — it logs the `upgrade` and `connection` values that actually arrived. A `rejecting unauthenticated websocket` warning while REST reads work in the same browser points at a stripped subprotocol rather than a dead session.
 
