@@ -229,7 +229,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   clear. Such a deployment now fails immediately naming both endpoints, rather than being
   retried as a network blip. Only stepping down from TLS is refused: a client pointed at an
   `http://` URL keeps working, and so does any redirect that stays on `https`.
-- Bumped the Go toolchain to `1.26.6`, resolving six standard library vulnerabilities
+- Bumped the Go toolchain to `1.26.7`, resolving six standard library vulnerabilities
   reachable from this code base in `go1.26.5`: `GO-2026-6218` (`net/url`), `GO-2026-6090`
   (`crypto/tls`), `GO-2026-6089` and `GO-2026-5026` (`net/http`), `GO-2026-6088`
   (`encoding/xml`) and `GO-2026-5972` (`encoding/asn1`). The `go` directive stays at

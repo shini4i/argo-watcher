@@ -193,7 +193,7 @@ func deployAndWait(ctx context.Context, client *http.Client, cfg config, app, ta
 	}
 	var created models.TaskStatus
 	_ = json.NewDecoder(resp.Body).Decode(&created)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if created.Id == "" {
 		return "no-id"
 	}
@@ -217,7 +217,7 @@ func getStatus(ctx context.Context, client *http.Client, baseURL, id string) str
 	if err != nil {
 		return ""
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var ts models.TaskStatus
 	if err := json.NewDecoder(resp.Body).Decode(&ts); err != nil {
 		return ""
@@ -239,6 +239,6 @@ func runWSClient(ctx context.Context, wsURL string) {
 				break
 			}
 		}
-		conn.Close(websocket.StatusNormalClosure, "")
+		_ = conn.Close(websocket.StatusNormalClosure, "")
 	}
 }

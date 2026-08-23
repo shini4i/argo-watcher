@@ -74,7 +74,7 @@ func mockReturnAppStatus(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		// Reproduces the message Argo CD returns, which the updater matches on. The
 		// name is echoed into a text/plain body served only by this local test double.
-		fmt.Fprintf(w, "applications.argoproj.io \"%s\" not found", app) // #nosec G705 -- not HTML, and this server never runs outside a dev or e2e host
+		_, _ = fmt.Fprintf(w, "applications.argoproj.io \"%s\" not found", app) // #nosec G705 -- not HTML, and this server never runs outside a dev or e2e host
 		return
 	}
 

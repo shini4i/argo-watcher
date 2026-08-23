@@ -55,6 +55,15 @@ tasks:
     generates:
       - ../../web/public/swagger/swagger.json
 
+  lint-go:
+    desc: Lint the Go tree with golangci-lint
+    deps: [mocks]
+    cmds:
+      - echo "===> Linting Go code"
+      # Config, including the timeout, lives in .golangci.yml so this and the CI
+      # job run the same checks.
+      - golangci-lint run ./...
+
   test:
     desc: Run tests
     deps: [mocks, docs]

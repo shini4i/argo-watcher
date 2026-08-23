@@ -175,7 +175,7 @@ func (argo *Argo) AddTask(task models.Task) (*models.Task, error) {
 		return nil, errors.New(models.StatusArgoCDUnavailableMessage)
 	}
 
-	if task.Images == nil || len(task.Images) == 0 {
+	if len(task.Images) == 0 {
 		return nil, fmt.Errorf("trying to create task without images")
 	}
 

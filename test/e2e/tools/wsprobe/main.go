@@ -115,7 +115,7 @@ func main() {
 			// DURATION elapsed with the connection still healthy: not a close.
 			if ctx.Err() != nil {
 				fmt.Println("DEADLINE")
-				conn.Close(websocket.StatusNormalClosure, "")
+				_ = conn.Close(websocket.StatusNormalClosure, "")
 				return
 			}
 			// The server closed the connection: surface the close code + reason
