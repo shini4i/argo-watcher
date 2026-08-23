@@ -123,7 +123,8 @@ const buildArgoCdUrl = (config: ConfigResponse | null, app?: string | null): str
     // Assigning the pathname keeps the route out of a query or fragment the
     // configured URL may carry.
     const url = new URL(base, window.location.href);
-    url.pathname = `${url.pathname.replace(/\/+$/, '')}/applications/${app}`;
+    const segments = url.pathname.split('/').filter(Boolean);
+    url.pathname = `/${[...segments, 'applications', app].join('/')}`;
     return url.toString();
   } catch {
     return null;
