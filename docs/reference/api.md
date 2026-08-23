@@ -23,13 +23,14 @@ Every response, on every route, carries four browser-facing headers:
 | `X-Frame-Options` | `SAMEORIGIN` |
 | `Referrer-Policy` | `strict-origin-when-cross-origin` |
 
-The policy is strict where the Web UI allows it — `default-src 'self'`, `script-src 'self'`, `object-src 'none'`, `base-uri 'self'`, `form-action 'self'` — and looser in five places that the application cannot design away:
+The policy is strict where the Web UI allows it — `default-src 'self'`, `script-src 'self'`, `object-src 'none'`, `base-uri 'self'`, `form-action 'self'` — and looser in six places that the application cannot design away:
 
 - `style-src` allows `'unsafe-inline'`. The UI's styling engine and the Swagger page both inject stylesheets and style attributes, and a nonce cannot cover the attributes. It also allows `https://fonts.googleapis.com`, the stylesheet the UI loads its font from.
 - `font-src` allows `https://fonts.gstatic.com`, the host that stylesheet serves the font files from.
 - `img-src` allows any `https:` origin. An avatar comes from the OIDC `picture` claim or from Gravatar, so its host is not known in advance.
 - `connect-src` allows any `https:` origin. A provider may serve its token and userinfo endpoints from hosts other than its issuer, and a policy that breaks sign-in is the worse trade.
 - `frame-ancestors` is `'self'` rather than `'none'`, matching `X-Frame-Options: SAMEORIGIN`. A silent token renewal with no refresh token loads this application in an iframe of its own origin.
+- `frame-src` allows any `https:` origin. That renewal iframe first navigates to the authorization endpoint the provider advertises in its discovery document, which need not be on the issuer's host (Amazon Cognito serves it from the managed-login domain).
 
 Two directives are filled in from the deployment: `connect-src` names `ws://` and `wss://` on the host the request was addressed to, because `'self'` does not resolve to a WebSocket scheme in every browser, and both `connect-src` and `frame-src` name the origin of `OIDC_ISSUER_URL` — an issuer on plain `http` matches nothing else in the policy.
 

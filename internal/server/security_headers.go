@@ -44,7 +44,10 @@ func (env *Env) securityHeaders() func(http.Handler) http.Handler {
 	// An issuer on plain http matches neither 'self' nor https:, and the browser
 	// fetches discovery, the token exchange and userinfo from it.
 	head := cspHead + issuer
-	tail := "; frame-src 'self'" + issuer + cspTail
+	// frame-src takes any https origin because the silent-renewal iframe navigates to
+	// the DISCOVERED authorization endpoint, which a provider may host off the issuer
+	// origin (Amazon Cognito serves it from the managed-login domain).
+	tail := "; frame-src 'self' https:" + issuer + cspTail
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

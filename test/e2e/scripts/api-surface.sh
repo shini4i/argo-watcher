@@ -167,7 +167,10 @@ aw_host="${AW_URL#*://}"
 # Reads from the $headers the loop below refreshes per path. An absent header is
 # empty, not an error: under `set -e` a failing grep would abort the phase instead
 # of letting the assertion report it.
-header_value() { grep -i "^$1:" <<<"$headers" | cut -d' ' -f2- || true; }
+header_value() {
+  local name="$1"
+  grep -i "^${name}:" <<<"$headers" | cut -d' ' -f2- || true
+}
 
 for path in "/" "/api/v1/config" "/swagger/"; do
   out=$(curl -s -m "${REQ_TIMEOUT:-10}" -o /dev/null -D - -w $'\n%{http_code}' "${AW_URL}${path}" | tr -d '\r')
