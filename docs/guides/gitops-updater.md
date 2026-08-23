@@ -128,9 +128,23 @@ openssl rand -base64 32
 | `exp` | Yes | **Required.** A token without it is rejected. |
 | `iat` | Yes | A future `iat` is rejected. `date +%s` gives you the current value. |
 | `nbf` | Yes | Optional; enforced by the JWT library. |
+| `iss` | Only if `JWT_ISSUER` is set | Must equal it exactly. |
+| `aud` | Only if `JWT_AUDIENCE` is set | A list matches when it contains the configured value. |
 | `sub` | No | Informational — service or team name. |
 | `cluster` | No | Informational. |
 | `allowed_apps` | No | **Not enforced yet.** Per-application restriction is planned; today any valid token authorizes any application. |
+
+### Binding a token to this server
+
+`JWT_SECRET` alone says nothing about *who* minted a token. Where the same secret is reused across a CI estate, another system's tokens are valid deploy credentials here. Set `JWT_ISSUER`, `JWT_AUDIENCE`, or both on the server to require that a token names this deployment.
+
+Both are unchecked while unset, so an existing fleet is unaffected. Once set they are strict — a token that omits the claim is rejected, not passed — which fixes the rollout order:
+
+1. Update every pipeline to mint tokens carrying the claim.
+2. Wait until no token minted without it is still in use (they last until their `exp`).
+3. Set the variable on the server.
+
+Doing it the other way round rejects every token in flight at once.
 
 ### Minting a token
 
@@ -141,6 +155,8 @@ jwt encode \
   --secret="YOUR_JWT_SECRET" \
   '{"sub":"argo-watcher-client","cluster":"prod","allowed_apps":["app1"],"iat":1773352800,"exp":1804888800}'
 ```
+
+Add `"iss"` and `"aud"` to the payload when the server is configured to require them.
 
 ## Pipeline configuration
 

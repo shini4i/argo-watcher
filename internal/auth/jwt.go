@@ -3,14 +3,15 @@ package auth
 import (
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// JWTAuthService manages JSON Web Token authentication.
+// JWTAuthService validates the HMAC-signed tokens a CI pipeline presents. Beyond the
+// signature it enforces the claim policy assembled in NewJWTAuthService.
 type JWTAuthService struct {
 	secretKey []byte
+	options   []jwt.ParserOption
 }
 
 // Validate verifies a JSON Web Token, checking signature and claims.
@@ -24,7 +25,7 @@ func (j *JWTAuthService) Validate(tokenStr string) (bool, error) {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
 		return j.secretKey, nil
-	})
+	}, j.options...)
 
 	if err != nil {
 		return false, err
@@ -32,21 +33,6 @@ func (j *JWTAuthService) Validate(tokenStr string) (bool, error) {
 
 	if !token.Valid {
 		return false, errors.New("invalid token")
-	}
-
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
-		return false, errors.New("invalid claims type")
-	}
-
-	if _, exists := claims["exp"]; !exists {
-		return false, errors.New("missing exp claim")
-	}
-
-	if iatVal, ok := claims["iat"].(float64); ok {
-		if time.Now().Unix() < int64(iatVal) {
-			return false, errors.New("token used before issued")
-		}
 	}
 
 	return true, nil

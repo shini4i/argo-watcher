@@ -214,7 +214,7 @@ func NewEnv(serverConfig *config.ServerConfig, argo *argocd.Argo, metrics *prome
 	}
 
 	if env.config.JWTSecret != "" {
-		env.strategies["Authorization"] = auth.NewJWTAuthService(env.config.JWTSecret)
+		env.strategies["Authorization"] = auth.NewJWTAuthService(env.config.JWTSecret, env.config.JWTIssuer, env.config.JWTAudience)
 	}
 
 	env.authenticator = auth.NewAuthenticator(env.strategies)

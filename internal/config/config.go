@@ -130,6 +130,8 @@ type ServerConfig struct {
 	Port               string           `env:"PORT" envDefault:"8080" json:"-"`
 	DeployToken        string           `env:"ARGO_WATCHER_DEPLOY_TOKEN" json:"-"`
 	JWTSecret          string           `env:"JWT_SECRET" json:"-"`
+	JWTIssuer          string           `env:"JWT_ISSUER" json:"-"`
+	JWTAudience        string           `env:"JWT_AUDIENCE" json:"-"`
 	Db                 DatabaseConfig   `json:"-"`
 	OIDC               OIDCConfig       `json:"oidc,omitempty"`
 	LockdownSchedule   string           `env:"LOCKDOWN_SCHEDULE" json:"lockdown_schedule,omitempty"`
@@ -203,10 +205,15 @@ func NewServerConfig() (*ServerConfig, error) {
 	config.ArgoToken = strings.TrimSpace(config.ArgoToken)
 	config.DeployToken = strings.TrimSpace(config.DeployToken)
 	config.JWTSecret = strings.TrimSpace(config.JWTSecret)
+	config.JWTIssuer = strings.TrimSpace(config.JWTIssuer)
+	config.JWTAudience = strings.TrimSpace(config.JWTAudience)
 	config.Mattermost.Token = strings.TrimSpace(config.Mattermost.Token)
 	// Group membership is matched exactly against the provider's claim, so a spaced
-	// list entry would silently deny every privileged action to that group.
+	// list entry would silently deny every privileged action to that group. The client
+	// id is matched the same way, against the claim naming the token's client.
 	config.OIDC.PrivilegedGroups = trimEntries(config.OIDC.PrivilegedGroups)
+	config.OIDC.IssuerURL = strings.TrimSpace(config.OIDC.IssuerURL)
+	config.OIDC.ClientId = strings.TrimSpace(config.OIDC.ClientId)
 
 	if err := rejectRemovedKeycloakVars(); err != nil {
 		return nil, err
@@ -214,6 +221,12 @@ func NewServerConfig() (*ServerConfig, error) {
 
 	if err := validateServerConfig(&config); err != nil {
 		return nil, err
+	}
+
+	// Without a secret no JWT strategy is registered, so the claim bindings guard
+	// nothing. Inert rather than contradictory, hence a warning.
+	if config.JWTSecret == "" && (config.JWTIssuer != "" || config.JWTAudience != "") {
+		slog.Warn("JWT_ISSUER and JWT_AUDIENCE have no effect without JWT_SECRET; JWT authentication is disabled.")
 	}
 
 	// Retention prunes rows from the tasks table, which the in-memory state does

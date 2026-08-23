@@ -8,9 +8,10 @@ With OIDC disabled (the default) nothing is protected: there is no backend to va
 
 1. The browser is redirected to the provider before the Web UI loads any data (Authorization Code + PKCE, a top-level redirect — not a hidden iframe).
 2. The backend validates the token by calling the provider's **userinfo** endpoint, which it discovers from `<issuer>/.well-known/openid-configuration`. Discovery happens lazily on the first validation, so a provider that is briefly down at boot does not stop Argo Watcher from starting.
-3. Reads the Web UI performs require a credential — being signed in is enough, no group needed.
-4. Users in a **privileged group** additionally get the **Rollback to this version** button on a task, and control of the [deployment lock](deployment-lock.md).
-5. Signed-in users get an account card in the side panel (opened from the logo) showing their avatar, name and email, with **Log out** in its menu.
+3. An accepted token that names a client other than `OIDC_CLIENT_ID` is refused — see [Audience binding](#audience-binding).
+4. Reads the Web UI performs require a credential — being signed in is enough, no group needed.
+5. Users in a **privileged group** additionally get the **Rollback to this version** button on a task, and control of the [deployment lock](deployment-lock.md).
+6. Signed-in users get an account card in the side panel (opened from the logo) showing their avatar, name and email, with **Log out** in its menu.
 
 The browser performs discovery and the code exchange itself, so the issuer must be reachable **from the browser as well as from the server**. When a sign-in cannot complete, the Web UI stops on its loading screen and names the reason instead of bouncing back to the provider — see [Web UI stops on "Sign-in failed"](../operations/troubleshooting.md#web-ui-stops-on-sign-in-failed).
 
@@ -59,6 +60,29 @@ Every authorization decision means asking the provider's userinfo endpoint about
 The interval is the upper bound on how stale a **read** authorization can be, and each decision is additionally capped by the token's own expiry, so it never outlives the credential. `0` validates every request.
 
 Privileged actions are exempt and always re-verify against the provider, so removing a user from `OIDC_PRIVILEGED_GROUPS` takes effect immediately. Clicking a lock toggle is rare enough that the extra round trip costs nothing.
+
+## Audience binding
+
+One realm commonly serves an entire organisation, so "the provider accepted this token" does not mean the token was issued to Argo Watcher. Every accepted token is therefore also checked against `OIDC_CLIENT_ID`. A token minted for another client of the same issuer is refused with 401.
+
+Providers disagree on which claim names the client, so all of them are read. The token passes when **any** of `azp`, `client_id`, `cid` or `appid` is `OIDC_CLIENT_ID`, or when `aud` contains it:
+
+| Claim | Who uses it |
+|---|---|
+| `azp` | Keycloak, Auth0, Entra ID (v2.0 tokens) |
+| `client_id` | required of a JWT access token by [RFC 9068](https://www.rfc-editor.org/rfc/rfc9068#section-2.2) |
+| `cid` | Okta |
+| `appid` | Entra ID (v1.0 tokens) |
+| `aud` | providers that audience a token to the client rather than to a resource server |
+
+Nothing to configure — `OIDC_CLIENT_ID` is already required — and the Web UI is unaffected, since it signs in with that very client id. What it stops is a caller presenting a token some other application obtained from your provider.
+
+Two cases pass unbound, and log a warning the first time one is seen:
+
+- The access token is **opaque** rather than a JWT (Okta, for instance, can issue either). Binding it would need token introspection, which a public client cannot perform.
+- The token names no client in any of those claims and carries no `aud` either.
+
+A provider that names its client in some other claim *and* audiences the token to a resource server would be refused on every sign-in, with `token was not issued to <client id>`. None of the providers above behaves that way; please open an issue if yours does.
 
 ## Provider setup
 

@@ -15,6 +15,17 @@ func TestValidateDeployToken(t *testing.T) {
 		assert.True(t, isValid)
 	})
 
+	t.Run("wrong token of the same length", func(t *testing.T) {
+		// The only input that exercises the comparison itself: a length mismatch is
+		// refused before a single byte is compared.
+		service := NewDeployTokenAuthService("valid_token")
+		isValid, err := service.Validate("valid_tokeX")
+
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid")
+		assert.False(t, isValid)
+	})
+
 	t.Run("invalid token", func(t *testing.T) {
 		service := NewDeployTokenAuthService("valid_token")
 		_, err := service.Validate("invalid_token")

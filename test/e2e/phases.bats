@@ -81,7 +81,7 @@ phase() {
   phase client-knobs.sh
 }
 
-@test "jwt-auth: the BEARER_TOKEN path drives an authenticated write-back" {
+@test "jwt-auth: the BEARER_TOKEN path drives a write-back, and iss/aud bind it" {
   phase jwt-auth.sh
 }
 

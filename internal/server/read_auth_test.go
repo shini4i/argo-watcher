@@ -222,7 +222,7 @@ func TestReadAuthProtectedEndpoints(t *testing.T) {
 		// here would sign users out of valid sessions on roughly half of requests.
 		env, _ := readAuthEnv(t, true, map[string]auth.AuthStrategy{
 			oidcHeader:      oidcLikeStrategy{unavailable: true},
-			"Authorization": auth.NewJWTAuthService("secret"),
+			"Authorization": auth.NewJWTAuthService("secret", "", ""),
 		})
 		router := env.CreateRouter()
 

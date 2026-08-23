@@ -62,7 +62,7 @@ task api-surface          # assert the read-only HTTP surface (version/config/ta
 task read-auth            # assert OIDC read protection: 401 without a credential, 503 when the provider is unreachable, exemptions still open
 task smoke                # one authenticated deploy through the full write-back loop, via the real client binary
 task client-knobs         # assert client env knobs: TASK_REFRESH override deploys, DEBUG cURL log redacts the token
-task jwt-auth             # assert the JWT (BEARER_TOKEN) auth path drives an authenticated write-back to deployed
+task jwt-auth             # assert the JWT (BEARER_TOKEN) auth path drives an authenticated write-back, and that JWT_ISSUER/JWT_AUDIENCE bind the token
 task fire-and-forget      # assert fire-and-forget mode: a managed CronJob app's write-back reaches deployed without the image rolling out
 task commit-format        # assert COMMIT_MESSAGE_FORMAT renders into the git write-back commit message
 task multi-image          # assert a multi-image deploy bumps and writes back both images in one commit
@@ -132,8 +132,8 @@ again instead of re-establishing a forward.
 | `scripts/api-surface.sh` | assert the read-only HTTP surface to contract: the `/livez` + `/readyz` probes, version/config (secrets redacted), task-list filters + invalid-status 400, unknown-task 404, deploy-lock POST/DELETE 404 when OIDC auth is off |
 | `scripts/read-auth.sh` | assert OIDC read protection: toggles `OIDC_ENABLED` on the release with the issuer pointed at a closed port and reverts, asserting 401 without a credential, 503 (never 401) when the provider cannot be consulted — including with a rejected JWT alongside, 15× because strategy order is randomized — 200 for a deploy token / JWT, the `/tasks/:id`, `/config`, `/livez`, `/readyz`, `/metrics` and `POST /tasks` exemptions, and the `unauthenticated_reads` counter semantics. Also asserts the /ws handshake: 401 with no credential, accepted with a deploy token, and 503 for a subprotocol-borne token whose provider is unreachable. Needs no identity provider; group-based authorization is covered by the Keycloak integration suite instead |
 | `scripts/client-knobs.sh` | assert client env knobs via the real client: `TASK_REFRESH=false` still deploys, `DEBUG=true` cURL log redacts the deploy token |
-| `scripts/jwt-auth.sh` | assert the JWT (`BEARER_TOKEN`) auth path: mint an HS256 token, deploy with no deploy token, prove the authenticated write-back reaches deployed |
-| `tools/mintjwt/` | tiny Go HS256 JWT minter (signs with the server's own jwt library; avoids an openssl dependency) |
+| `scripts/jwt-auth.sh` | assert the JWT (`BEARER_TOKEN`) auth path: mint an HS256 token, deploy with no deploy token, prove the authenticated write-back reaches deployed. Then sets `JWT_ISSUER` + `JWT_AUDIENCE` on the release and reverts, asserting a claimless token turns 401, a matching one 202, one from another issuer 401, and that unsetting them restores the claimless token |
+| `tools/mintjwt/` | tiny Go HS256 JWT minter (signs with the server's own jwt library; avoids an openssl dependency). `JWT_ISS` / `JWT_AUD` add those claims |
 | `scripts/fire-and-forget.sh` | assert `argo-watcher/fire-and-forget` on a managed CronJob app: the write-back updates the CronJob's image and the deploy reports "deployed" even though the image never rolls out (no pod until the schedule fires) |
 | `fixtures/fire-and-forget-app.yaml` + `fixtures/fire-and-forget-chart/` | dedicated `ffapp` Argo Application (managed) and its CronJob chart (image tag a write-back target, effectively-never schedule), outside the app1..N soak range |
 | `scripts/commit-format.sh` | assert `COMMIT_MESSAGE_FORMAT` renders into the real write-back commit message (reads the commit back from the gitops repo) |

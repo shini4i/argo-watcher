@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
 // userInfoResponse holds the subset of OIDC userinfo claims argo-watcher needs.
@@ -46,6 +48,7 @@ type OIDCAuthService struct {
 	PrivilegedGroups []string
 	client           *http.Client
 	cache            *validationCache
+	warnUnbound      sync.Once
 
 	mu          sync.Mutex
 	userinfoURL string
@@ -276,7 +279,72 @@ func (o *OIDCAuthService) fetchUserInfo(token string) (*userInfoResponse, error)
 		return nil, ErrProviderUnavailable
 	}
 
+	if err := o.verifyAudience(token); err != nil {
+		return nil, err
+	}
+
 	return &info, nil
+}
+
+// verifyAudience rejects a token the issuer minted for another of its clients. Reading
+// the claims unverified is sound only here: the provider has just accepted this exact
+// string. A token saying nothing about who it is for is accepted, since binding it
+// would need introspection that a public client cannot perform.
+func (o *OIDCAuthService) verifyAudience(token string) error {
+	claims := jwt.MapClaims{}
+	if _, _, err := jwt.NewParser().ParseUnverified(token, &claims); err != nil {
+		o.warnUnboundToken("the access token is not a JWT")
+		return nil
+	}
+
+	namesAny, namesUs := clientName(claims, o.ClientId)
+	audience, err := claims.GetAudience()
+	if err != nil {
+		audience = nil
+	}
+
+	if namesUs || slices.Contains(audience, o.ClientId) {
+		return nil
+	}
+
+	// Nothing in the token says who it is for.
+	if !namesAny && len(audience) == 0 {
+		o.warnUnboundToken("the access token names no client and carries no aud claim")
+		return nil
+	}
+
+	return fmt.Errorf("token was not issued to %s", o.ClientId)
+}
+
+// clientClaims are the claims a provider uses to name the client a token was issued
+// to: azp (Keycloak, Auth0, Entra v2.0), client_id (required of a JWT access token by
+// RFC 9068), cid (Okta) and appid (Entra v1.0). aud is judged separately — RFC 9068
+// gives it to the resource server, while other providers put the client id there.
+var clientClaims = []string{"azp", "client_id", "cid", "appid"}
+
+// clientName reports whether the token names a client at all, and whether any of the
+// claims that do names clientID.
+func clientName(claims jwt.MapClaims, clientID string) (namesAny, namesUs bool) {
+	for _, claim := range clientClaims {
+		value, ok := claims[claim].(string)
+		if !ok || value == "" {
+			continue
+		}
+		namesAny = true
+		if value == clientID {
+			namesUs = true
+		}
+	}
+
+	return namesAny, namesUs
+}
+
+// warnUnboundToken reports once that tokens cannot be bound to this application, so an
+// operator sees the gap without a log line per request.
+func (o *OIDCAuthService) warnUnboundToken(reason string) {
+	o.warnUnbound.Do(func() {
+		slog.Warn("oidc: accepting tokens without checking they were issued to this application", "reason", reason, "client_id", o.ClientId)
+	})
 }
 
 // allowedToRollback checks if the user is a member of any of the privileged groups.

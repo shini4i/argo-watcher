@@ -67,7 +67,7 @@ func TestNewOIDCAuthService(t *testing.T) {
 
 func TestNewJWTAuthService(t *testing.T) {
 	secret := "testSecret"
-	jwtAuthService := NewJWTAuthService(secret)
+	jwtAuthService := NewJWTAuthService(secret, "", "")
 	assert.Equal(t, jwtAuthService.secretKey, []byte(secret))
 }
 
@@ -223,7 +223,7 @@ func TestAuthenticatorAuthenticateRequest(t *testing.T) {
 		// Oidc-Authorization; with JWT_SECRET set the former is parsed as an HMAC
 		// JWT and fails. One working credential must still authenticate.
 		authenticator := NewAuthenticator(map[string]AuthStrategy{
-			"Authorization":      NewJWTAuthService("secret"),
+			"Authorization":      NewJWTAuthService("secret", "", ""),
 			"Oidc-Authorization": splitStrategy{authenticated: true},
 		})
 		request := newRequest(t, "Authorization", "Bearer not-an-hmac-jwt")
@@ -243,7 +243,7 @@ func TestAuthenticatorAuthenticateRequest(t *testing.T) {
 		// coin-flipping precedence — and a 401 here signs the user out of a session
 		// that may be entirely valid.
 		authenticator := NewAuthenticator(map[string]AuthStrategy{
-			"Authorization":      NewJWTAuthService("secret"),
+			"Authorization":      NewJWTAuthService("secret", "", ""),
 			"Oidc-Authorization": unavailableStrategy{},
 		})
 
@@ -260,7 +260,7 @@ func TestAuthenticatorAuthenticateRequest(t *testing.T) {
 
 	t.Run("reports a rejection when every credential was actually evaluated", func(t *testing.T) {
 		authenticator := NewAuthenticator(map[string]AuthStrategy{
-			"Authorization":      NewJWTAuthService("secret"),
+			"Authorization":      NewJWTAuthService("secret", "", ""),
 			"Oidc-Authorization": splitStrategy{authenticated: false},
 		})
 		request := newRequest(t, "Authorization", "Bearer not-an-hmac-jwt")
@@ -535,7 +535,7 @@ func TestAuthenticatorValidateJWTWithAndWithoutBearerPrefix(t *testing.T) {
 	for name, headerValue := range cases {
 		t.Run(name, func(t *testing.T) {
 			authenticator := NewAuthenticator(map[string]AuthStrategy{
-				"Authorization": NewJWTAuthService(secret),
+				"Authorization": NewJWTAuthService(secret, "", ""),
 			})
 
 			request, reqErr := http.NewRequest(http.MethodGet, "http://example.com", http.NoBody)
