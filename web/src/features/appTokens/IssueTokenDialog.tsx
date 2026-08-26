@@ -38,12 +38,25 @@ export const scopeError = (apps: string[]): string | null => {
     return `At most ${MAX_APPS} applications; scope the token to all applications instead.`;
   }
 
-  const tooLong = apps.find(app => app.length > MAX_APP_NAME_LENGTH);
-  if (tooLong) {
+  if (apps.some(app => app.length > MAX_APP_NAME_LENGTH)) {
     return `An application name must be at most ${MAX_APP_NAME_LENGTH} characters.`;
   }
 
   return null;
+};
+
+/** Describes the scope under the Applications field: the wildcard, why the list is
+ * refused, or how many names it holds. */
+const describeAppsField = (allApps: boolean, apps: string[], invalidScope: string | null): string => {
+  if (allApps) {
+    return 'This token will authorize every application, present and future.';
+  }
+
+  if (invalidScope) {
+    return invalidScope;
+  }
+
+  return `${apps.length} ${apps.length === 1 ? 'application' : 'applications'}`;
 };
 
 /**
@@ -61,9 +74,7 @@ export const IssueTokenDialog = ({ open, onClose, onIssue }: IssueTokenDialogPro
 
   const apps = useMemo(() => parseApps(appsInput), [appsInput]);
   const invalidScope = allApps ? null : scopeError(apps);
-  const appsHelperText =
-    allApps ? 'This token will authorize every application, present and future.'
-      : invalidScope ?? `${apps.length} ${apps.length === 1 ? 'application' : 'applications'}`;
+  const appsHelperText = describeAppsField(allApps, apps, invalidScope);
   const expiryDays = Number(expiresInDays);
   const expiryValid =
     expiresInDays === '' ||
