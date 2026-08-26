@@ -26,6 +26,7 @@ The Go API must be running (`task bootstrap` from the repo root, or `go run ./cm
 | `npm run test:e2e` | Playwright — expects `dist/` built and Keycloak up; `task test-web-e2e` does both |
 | `npm run test:e2e:install` | Install the Chromium build Playwright drives |
 | `npm run typecheck:e2e` | Type-check the node-side project (`playwright.config.ts`, `vite.config.ts`, `e2e/`). Playwright does not type-check specs, so this is its own CI gate; `src/` is not covered. |
+| `npm run scan:js` | retire.js scan for known-vulnerable JavaScript libraries, including ones a bundled dependency vendors in without declaring (`swagger-ui-dist` inlines DOMPurify this way). `task scan-web` runs the same check. Needs network for the advisory repository. |
 
 ## Configuration
 
