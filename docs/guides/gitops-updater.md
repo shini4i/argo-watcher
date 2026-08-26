@@ -8,7 +8,7 @@ Already on Argo CD Image Updater? See [Migrating from Argo CD Image Updater](#mi
 
 A working [installation](install.md), plus:
 
-1. **A credential the client can present.** Either a **JWT** (recommended, see [JWT configuration](#jwt-configuration)) stored under the `JWT_SECRET` key of the Argo Watcher secret, or an arbitrary string under `ARGO_WATCHER_DEPLOY_TOKEN`. Without a valid credential the write-back is skipped, and the deployment fails blaming the image instead ([why](../operations/troubleshooting.md#image-tag-is-never-committed-write-back-skipped)).
+1. **A credential the client can present.** An **application deploy token** (recommended, see [Application deploy tokens](#application-deploy-tokens)), a **JWT** (see [JWT configuration](#jwt-configuration)) stored under the `JWT_SECRET` key of the Argo Watcher secret, or an arbitrary string under `ARGO_WATCHER_DEPLOY_TOKEN`. Without a valid credential the write-back is skipped, and the deployment fails blaming the image instead ([why](../operations/troubleshooting.md#image-tag-is-never-committed-write-back-skipped)).
 2. **An SSH key with write access** to the GitOps repository, stored in a Kubernetes secret (the chart reads the `sshPrivateKey` key by default).
 3. **Chart values pointing at that key:**
 
@@ -96,6 +96,56 @@ extraEnvs:
 
 The available fields are the same ones the [notification templates](notifications.md#template-variables) use.
 
+## Application deploy tokens
+
+An application deploy token is an opaque credential scoped to the applications it may deploy, issued and revoked from the Web UI. It is the recommended credential: unlike the shared deploy token it can be withdrawn individually, and unlike a JWT its scope is decided by the server rather than asserted by whoever mints it.
+
+### Requirements
+
+| Requirement | Why |
+|---|---|
+| `OIDC_ENABLED=true` | Issuing and revoking a token needs a privileged session, and honouring tokens an operator cannot enumerate or withdraw is the wrong default. Turning OIDC off stops the tokens working. |
+| `STATE_TYPE=postgres` | A token outlives the process holding it and must be honoured by every replica. There is no in-memory equivalent. |
+| Membership of `OIDC_PRIVILEGED_GROUPS` | Issuing, listing and revoking all require it. The list names who holds a credential for which applications, so reading it is as restricted as writing it. |
+
+Where either of the first two is missing, a presented token is rejected `401` naming the setting at fault, rather than being ignored — a pipeline holding one is told why instead of watching its write-back get skipped.
+
+### Issuing one
+
+Open **Workspace Controls → Deploy Tokens → Manage**, then **Issue token**. A token is scoped to either:
+
+- **a list of applications** — the usual choice, one token per pipeline; or
+- **all applications** — the wildcard, covering every application present and future. This is the revocable, attributable equivalent of `ARGO_WATCHER_DEPLOY_TOKEN`.
+
+An optional expiry and a description round it out. The description is what the list shows, so name the pipeline that holds the token.
+
+!!! warning
+    The token is displayed **once**, in the dialog that creates it. Only its SHA-256 is stored, so a lost token cannot be recovered — revoke it and issue a new one.
+
+### Using one
+
+The token rides the same variable as a JWT, so nothing else in a pipeline changes:
+
+```bash
+export BEARER_TOKEN="awt_..."
+```
+
+The server routes on the `awt_` prefix every token carries, and hands anything else to the JWT parser. `Authorization` is deliberately the header it travels in: Go's HTTP client strips that header when a redirect crosses to another host, which it does not do for a custom one.
+
+### Revoking one
+
+**Revoke** in the same table. It takes effect on the token's next use — there is no cache to wait out. The row stays, so the record of who issued the token and when it was withdrawn survives.
+
+### Choosing between the three credentials
+
+| | Application deploy token | JWT | Shared deploy token |
+|---|---|---|---|
+| Scope | set by the server at issue time | asserted by the minter via `allowed_apps` | every application |
+| Revocable individually | yes, immediately | no, not before `exp` | no |
+| Attributed to an issuer | yes | no | no |
+| Needs OIDC + Postgres | yes | no | no |
+| Survives a leak of the signing secret | n/a — there is none | no, rotate `JWT_SECRET` | no, rotate the token |
+
 ## JWT configuration
 
 JWT is the recommended credential: unlike the shared deploy token, each pipeline can hold its own, with an expiry.
@@ -132,7 +182,13 @@ openssl rand -base64 32
 | `aud` | Only if `JWT_AUDIENCE` is set | A list matches when it contains the configured value. |
 | `sub` | No | Informational — service or team name. |
 | `cluster` | No | Informational. |
-| `allowed_apps` | No | **Not enforced yet.** Per-application restriction is planned; today any valid token authorizes any application. |
+| `allowed_apps` | When present | A list of application names the token may deploy. **A token omitting the claim still authorizes every application**, so an existing fleet is unaffected; one that carries it is confined to what it names. See the caveat below. |
+
+
+!!! warning "`allowed_apps` is a self-restriction, not a boundary"
+    The claim is written by whoever mints the token, so anyone holding `JWT_SECRET` can name any application. It limits the blast radius of a **minted token** leaking out of one pipeline; it is no defence against the secret itself leaking, for which only rotation helps. Where you need a scope the holder cannot assert, use an [application deploy token](#application-deploy-tokens) — its scope is a server-side column.
+
+    Setting the claim on a token that previously relied on it being ignored will now confine that token. Check your pipelines before rolling it out.
 
 ### Binding a token to this server
 
@@ -163,8 +219,9 @@ Add `"iss"` and `"aud"` to the payload when the server is configured to require 
 Pass the credential to the client:
 
 ```bash
-# JWT (recommended). The raw token, with no "Bearer " prefix, so CI can mask it.
-export BEARER_TOKEN="your_jwt_token"
+# An application deploy token (recommended) or a JWT. The raw token, with no
+# "Bearer " prefix, so CI can mask it.
+export BEARER_TOKEN="awt_your_application_deploy_token"
 
 # Or the deploy token
 export ARGO_WATCHER_DEPLOY_TOKEN=your_deploy_token

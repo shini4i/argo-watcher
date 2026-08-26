@@ -33,6 +33,10 @@ vi.mock('../../shared/hooks/useOidcEnabled', () => ({
   useOidcEnabled: () => oidcEnabledMock(),
 }));
 
+vi.mock('../../shared/hooks/useAppTokensAvailable', () => ({
+  useAppTokensAvailable: () => false,
+}));
+
 vi.mock('react-admin', async () => {
   const actual = await vi.importActual<typeof import('react-admin')>('react-admin');
   return {

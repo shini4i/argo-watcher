@@ -512,3 +512,37 @@ func TestReadAuthTaskLookupEnforced(t *testing.T) {
 		assert.Zero(t, unauthenticatedReads(metrics, routePath, models.UnknownApp))
 	})
 }
+
+// TestUnauthenticatedReadCountsAnUnevaluatedHeader pins the counter against the
+// Authorization header now being registered unconditionally. A value nothing
+// evaluates is a genuinely uncredentialed read: counting it as credentialed would
+// let the number fall to zero while un-migrated callers are still polling, and that
+// number reaching zero is what licenses closing the endpoint.
+func TestUnauthenticatedReadCountsAnUnevaluatedHeader(t *testing.T) {
+	// The metric label, which dashboards select on.
+	const routePath = "/api/v1/tasks/:id"
+	const unknownTask = "/api/v1/tasks/00000000-0000-0000-0000-000000000000"
+
+	// No JWT secret, so the router's fallback is nil and nothing reads a
+	// non-prefixed Authorization value.
+	strategies := map[string]auth.AuthStrategy{
+		oidcHeader:      oidcLikeStrategy{authenticated: true},
+		"Authorization": auth.NewPrefixRouter(auth.DisabledAppTokenStrategy(), nil),
+	}
+
+	t.Run("counts a bearer token no strategy evaluates", func(t *testing.T) {
+		env, metrics := readAuthEnv(t, true, strategies)
+
+		getWith(t, env, unknownTask, "Authorization", "Bearer eyJhbGciOiJIUzI1NiJ9.e30.sig")
+
+		assert.Equal(t, float64(1), unauthenticatedReads(metrics, routePath, models.UnknownApp))
+	})
+
+	t.Run("does not count a token the router does evaluate", func(t *testing.T) {
+		env, metrics := readAuthEnv(t, true, strategies)
+
+		getWith(t, env, unknownTask, "Authorization", "Bearer awt_someIssuedToken")
+
+		assert.Zero(t, unauthenticatedReads(metrics, routePath, models.UnknownApp))
+	})
+}

@@ -7,6 +7,7 @@ import { RecentTasksList } from './features/tasks/RecentTasksList';
 import { HistoryTasksList } from './features/tasks/HistoryTasksList';
 import { AppNotification } from './layout/components/AppNotification';
 import { TaskShow } from './features/tasks/show/TaskShow';
+import { AppTokensPage } from './features/appTokens/AppTokensPage';
 import { useThemeMode } from './theme';
 
 /**
@@ -32,6 +33,7 @@ export const App = () => {
       <CustomRoutes>
         <Route path="/history" element={<HistoryTasksList />} />
         <Route path="/task/:id" element={<TaskShow />} />
+        <Route path="/app-tokens" element={<AppTokensPage />} />
       </CustomRoutes>
     </Admin>
   );

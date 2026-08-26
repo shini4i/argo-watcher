@@ -12,6 +12,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/shini4i/argo-watcher/internal/apptoken"
 	"github.com/shini4i/argo-watcher/internal/argocd"
 	"github.com/shini4i/argo-watcher/internal/config"
 	"github.com/shini4i/argo-watcher/internal/lock"
@@ -78,6 +79,9 @@ func NewServer(serverConfig *config.ServerConfig, reg prometheus.Registerer) (*S
 	// correct for a single replica only.
 	var locker lock.Locker
 	var deployLockStore lock.DeployLockStore
+	// Nil unless the state is Postgres, which turns application deploy tokens off:
+	// they must survive a restart and be visible to every replica.
+	var appTokenStore apptoken.Store
 	if serverConfig.StateType == "postgres" {
 		pgState, ok := s.(*state.PostgresState)
 		if !ok {
@@ -89,6 +93,7 @@ func NewServer(serverConfig *config.ServerConfig, reg prometheus.Registerer) (*S
 		}
 		locker = lock.NewPostgresLocker(db)
 		deployLockStore = lock.NewPostgresDeployLockStore(db)
+		appTokenStore = apptoken.NewPostgresStore(db)
 		slog.Info("Using Postgres advisory locks for distributed locking and a shared deploy lock.")
 	} else {
 		locker = lock.NewInMemoryLocker()
@@ -121,7 +126,7 @@ func NewServer(serverConfig *config.ServerConfig, reg prometheus.Registerer) (*S
 		return nil, fmt.Errorf("failed to initialize the argo updater: %w", err)
 	}
 
-	env, err := NewEnv(serverConfig, argo, metrics, statusUpdater, deployLockStore)
+	env, err := NewEnv(serverConfig, argo, metrics, statusUpdater, deployLockStore, appTokenStore)
 	if err != nil {
 		return nil, err
 	}

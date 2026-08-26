@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Application deploy tokens: opaque, revocable credentials scoped to the applications
+  they may deploy, issued and revoked from **Workspace Controls → Deploy Tokens** by a
+  member of `OIDC_PRIVILEGED_GROUPS`. A token covers either a list of applications or,
+  with the wildcard, every application present and future — the revocable, attributable
+  equivalent of the shared `ARGO_WATCHER_DEPLOY_TOKEN`. Each token may carry an expiry
+  and a description, and revoking one takes effect on its next use rather than after a
+  cache interval.
+
+  A token travels in `BEARER_TOKEN` like a JWT; the server tells the two apart by the
+  `awt_` prefix every token carries, so nothing else in a pipeline changes. Only the
+  SHA-256 of a token is stored, so it is displayed exactly once, in the dialog that
+  creates it, and a lost token has to be revoked and replaced.
+
+  The feature requires `OIDC_ENABLED=true` and `STATE_TYPE=postgres`: issuing and
+  revoking need a privileged session, and a token has to outlive the process holding it
+  and be honoured by every replica. There is no in-memory equivalent, and no new
+  environment variable. Where either prerequisite is missing a presented token is
+  rejected `401` naming the setting at fault, rather than being ignored — so a pipeline
+  holding one is told why instead of watching its write-back get skipped. A new database
+  migration adds the `app_tokens` table.
+
+### Changed
+
+- The `allowed_apps` JWT claim is now enforced, closing a gap the documentation has
+  described as planned. A token carrying the claim may only deploy the applications it
+  names; **a token omitting it still authorizes every application**, so a fleet that
+  never set the claim is unaffected. Worth knowing before upgrading: a pipeline that set
+  `allowed_apps` while it was documented as unenforced, and relies on that token
+  deploying something the claim does not list, will now be rejected `401`. The claim
+  remains a self-restriction rather than a boundary — it is written by whoever holds
+  `JWT_SECRET` — so an application deploy token is the stronger option where the scope
+  must not be self-asserted.
+
+- `POST /api/v1/tasks` now answers `503` instead of `401` when a credential could not be
+  judged at all, such as an unreachable OIDC provider or state backend. A blip no longer
+  tells a pipeline its credential is bad, and the client can retry.
+
 ## [1.0.0] - 2026-08-23
 
 ### Added

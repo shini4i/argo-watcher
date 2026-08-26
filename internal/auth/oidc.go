@@ -187,6 +187,19 @@ func (o *OIDCAuthService) Authenticate(token string) error {
 	return err
 }
 
+// Identify returns the username the provider associates with the token, so an
+// action can be attributed to the operator who took it. It answers from the
+// validation cache, which a preceding Validate has just populated, so attributing
+// a privileged action costs no extra userinfo round trip.
+func (o *OIDCAuthService) Identify(token string) (string, error) {
+	info, err := o.resolveIdentity(token, true)
+	if err != nil {
+		return "", err
+	}
+
+	return info.Username, nil
+}
+
 // Validate implements AuthStrategy for privileged operations: it calls the OIDC
 // provider's userinfo endpoint with the bearer token and treats HTTP 200 as proof
 // the token is valid, effectively delegating validation to the provider. The user

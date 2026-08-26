@@ -47,9 +47,12 @@ A credential does two things: it authorizes the [GitOps updater](../guides/gitop
 
 | Credential | How to send it |
 |---|---|
+| Application deploy token | `Authorization: <token>` (raw; `Bearer <token>` also accepted) |
 | Deploy token | `ARGO_WATCHER_DEPLOY_TOKEN: <token>` |
 | JWT | `Authorization: <token>` (raw; `Bearer <token>` also accepted) |
 | OIDC session | `Oidc-Authorization: <access token>` |
+
+An application deploy token and a JWT share the `Authorization` header. The server tells them apart by the `awt_` prefix an application deploy token always carries, so a client needs no configuration to send either.
 
 ### Reads
 
@@ -64,6 +67,7 @@ With OIDC **enabled**, the endpoints the Web UI consumes require one, group memb
 - **With a valid credential** the task is authorized: the git write-back runs, and the task can supersede an in-flight deployment of the same images.
 - **Without one** the task is still accepted (`202`) and monitored normally — the expected setup when image tags are committed elsewhere (Argo CD Image Updater, your pipeline). The write-back is skipped, and it cannot cancel a deployment that did present a credential.
 - **With an invalid or expired one** the request is rejected `401`.
+- **With a credential scoped to other applications** the request is rejected `401`. An application deploy token, and a JWT carrying `allowed_apps`, authorize only the applications they name.
 
 Because the endpoint is open, its payload is bounded: at most 50 images per task, no name longer than 255 characters, and a `timeout` above 86400 seconds is clamped to it. That cap is what limits how long one request keeps the watcher polling Argo CD — a task still being monitored is not given up on by the staleness sweep.
 
@@ -74,6 +78,14 @@ An unauthorized task on an application that relies on the built-in updater fails
 `POST` and `DELETE /api/v1/deploy-lock` are **registered only when OIDC is enabled**, and require a session in one of the `OIDC_PRIVILEGED_GROUPS`. With OIDC disabled they are not routes at all: the request falls through to the Web UI's catch-all and answers `200 OK` with an HTML body. Check the `Content-Type`, not the status code, to tell "not exposed" from a successful call.
 
 `GET /api/v1/deploy-lock` needs no privileged group, but with OIDC enabled it needs a credential like every other read.
+
+### Managing application deploy tokens
+
+`GET`, `POST /api/v1/app-tokens` and `DELETE /api/v1/app-tokens/{id}` are **registered only when OIDC is enabled and `STATE_TYPE=postgres`**, and each requires a session in one of the `OIDC_PRIVILEGED_GROUPS` — listing tokens included, since the list names who holds a credential for which applications. As with the deploy lock, an unregistered route falls through to the Web UI's catch-all: check the `Content-Type`.
+
+`POST` takes a scope of either `apps` (a list of application names) or `all_apps: true` (a wildcard), never both, plus an optional `description` and `expires_in_days`. It answers `201` with the token's `secret` — the only time that value exists anywhere. `406` means the scope or the payload was refused.
+
+`DELETE` revokes a token, effective on its next use. The row is kept, so who issued it and when it was withdrawn stay on record.
 
 ## Health and probe endpoints
 

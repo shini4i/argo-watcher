@@ -1,5 +1,12 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
+
+const navigateMock = vi.fn();
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
+  return { ...actual, useNavigate: () => navigateMock };
+});
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HttpResponse } from '../../data/httpClient';
 import { ThemeModeProvider, useThemeMode } from '../../theme/ThemeModeProvider';
@@ -12,6 +19,7 @@ vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
 
 const notifyMock = vi.fn();
 const oidcEnabledMock = vi.fn();
+const appTokensAvailableMock = vi.fn();
 const permissionsMock = vi.fn();
 const identityMock = vi.fn();
 
@@ -25,6 +33,10 @@ vi.mock('../../features/deployLock/deployLockService', () => ({
 
 vi.mock('../../shared/hooks/useOidcEnabled', () => ({
   useOidcEnabled: () => oidcEnabledMock(),
+}));
+
+vi.mock('../../shared/hooks/useAppTokensAvailable', () => ({
+  useAppTokensAvailable: () => appTokensAvailableMock(),
 }));
 
 vi.mock('react-admin', async () => {
@@ -45,6 +57,7 @@ const ThemeModeConsumer = () => {
 
 const renderDrawer = () =>
   render(
+    <MemoryRouter>
     <ThemeModeProvider>
       <TimezoneProvider>
         <DeployLockProvider>
@@ -52,7 +65,8 @@ const renderDrawer = () =>
           <ConfigDrawer open onClose={() => undefined} version="1.0.0" />
         </DeployLockProvider>
       </TimezoneProvider>
-    </ThemeModeProvider>,
+    </ThemeModeProvider>
+    </MemoryRouter>,
   );
 
 describe('ConfigDrawer', () => {
@@ -70,6 +84,7 @@ describe('ConfigDrawer', () => {
       isPending: false,
     });
     oidcEnabledMock.mockReturnValue(true);
+    appTokensAvailableMock.mockReturnValue(true);
     permissionsMock.mockReturnValue({
       permissions: { groups: ['devops'], privilegedGroups: ['devops'] },
       isLoading: false,
@@ -195,5 +210,89 @@ describe('ConfigDrawer', () => {
     renderDrawer();
     expect(screen.queryByText(/Backend Configuration/i)).toBeNull();
     expect(screen.queryByRole('button', { name: /copy configuration/i })).toBeNull();
+  });
+});
+
+describe('ConfigDrawer deploy tokens section', () => {
+  beforeEach(() => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    vi.clearAllMocks();
+    (deployLockService.subscribe as ReturnType<typeof vi.fn>).mockReturnValue(() => undefined);
+    identityMock.mockReturnValue({ identity: { id: 'user-id' }, isPending: false });
+    oidcEnabledMock.mockReturnValue(true);
+    notifyMock.mockReset();
+  });
+
+  const privileged = { permissions: { groups: ['devops'], privilegedGroups: ['devops'] }, isLoading: false };
+
+  it('offers the section to a privileged user on a server that has the feature', async () => {
+    appTokensAvailableMock.mockReturnValue(true);
+    permissionsMock.mockReturnValue(privileged);
+
+    renderDrawer();
+
+    expect(await screen.findByText('Deploy Tokens')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Manage' })).toBeInTheDocument();
+  });
+
+  it.each([
+    ['the feature is unavailable', false, privileged],
+    ['availability is still unknown', null, privileged],
+    [
+      'the user is not privileged',
+      true,
+      { permissions: { groups: ['devs'], privilegedGroups: ['devops'] }, isLoading: false },
+    ],
+  ])('hides the section when %s', async (_name, available, permissions) => {
+    // The endpoints fall through to the HTML catch-all when the server lacks them,
+    // which answers 200 — so an ungated entry point would lead to a page claiming
+    // no tokens exist rather than failing.
+    appTokensAvailableMock.mockReturnValue(available);
+    permissionsMock.mockReturnValue(permissions);
+
+    renderDrawer();
+
+    expect(await screen.findByText('Workspace Controls')).toBeInTheDocument();
+    expect(screen.queryByText('Deploy Tokens')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Manage' })).not.toBeInTheDocument();
+  });
+});
+
+// The '/app-tokens' path is written in both ConfigDrawer and App.tsx's route table.
+// App.test.tsx pins the route list and this pins the button, so a typo in either
+// can no longer leave both suites green with a dead entry point.
+describe('ConfigDrawer Manage navigation', () => {
+  beforeEach(() => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    vi.clearAllMocks();
+    (deployLockService.subscribe as ReturnType<typeof vi.fn>).mockReturnValue(() => undefined);
+    identityMock.mockReturnValue({ identity: { id: 'user-id' }, isPending: false });
+    oidcEnabledMock.mockReturnValue(true);
+    appTokensAvailableMock.mockReturnValue(true);
+    permissionsMock.mockReturnValue({
+      permissions: { groups: ['devops'], privilegedGroups: ['devops'] },
+      isLoading: false,
+    });
+  });
+
+  it('navigates to the token page and closes the drawer', async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    render(
+      <MemoryRouter>
+        <ThemeModeProvider>
+          <TimezoneProvider>
+            <DeployLockProvider>
+              <ConfigDrawer open onClose={onClose} version="1.0.0" />
+            </DeployLockProvider>
+          </TimezoneProvider>
+        </ThemeModeProvider>
+      </MemoryRouter>,
+    );
+
+    await user.click(await screen.findByRole('button', { name: 'Manage' }));
+
+    expect(navigateMock).toHaveBeenCalledWith('/app-tokens');
+    expect(onClose).toHaveBeenCalled();
   });
 });

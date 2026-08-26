@@ -17,6 +17,12 @@ type AuthStrategy interface {
 	Validate(token string) (bool, error)
 }
 
+// ErrNoCredential reports that no configured strategy evaluates a token of the
+// presented shape, so the request carries nothing to judge. walk skips it instead
+// of recording a rejection, which keeps a header no strategy reads behaving as it
+// always has: ignored, not refused.
+var ErrNoCredential = errors.New("no configured strategy handles this credential")
+
 // Authenticator coordinates multiple AuthStrategy implementations against an HTTP request.
 type Authenticator struct {
 	strategies map[string]AuthStrategy
@@ -37,9 +43,9 @@ func NewAuthenticator(strategies map[string]AuthStrategy) *Authenticator {
 	}
 }
 
-// parseAuthToken extracts and normalizes a token from the given request header.
+// ParseAuthToken extracts and normalizes a token from the given request header.
 // It strips the "Bearer " prefix if present and returns an empty string for missing or empty tokens.
-func parseAuthToken(request *http.Request, header string) string {
+func ParseAuthToken(request *http.Request, header string) string {
 	token := request.Header.Get(header)
 	if token == "" {
 		return ""
@@ -76,6 +82,16 @@ func (a *Authenticator) Validate(request *http.Request) (bool, error) {
 // credential sent" from "credential rejected".
 func (a *Authenticator) AuthenticateRequest(request *http.Request) (bool, error) {
 	return a.walk(request, authenticate)
+}
+
+// ValidateForApp reports whether the request carries a credential authorizing a
+// deployment of the named application, with the same three return states as
+// Validate. Only application deploy tokens and JWTs carrying allowed_apps narrow
+// their answer by application; every other credential authorizes every one.
+func (a *Authenticator) ValidateForApp(request *http.Request, app string) (bool, error) {
+	return a.walk(request, func(strategy AuthStrategy, token string) (bool, error) {
+		return validateForApp(strategy, token, app)
+	})
 }
 
 // AuthenticateToken authenticates a bare token against the strategy registered under
@@ -117,6 +133,20 @@ func authenticate(strategy AuthStrategy, token string) (bool, error) {
 	return true, nil
 }
 
+// validateForApp asks a strategy the application-scoped question. One whose tokens
+// are confined to named applications exposes ValidateForApp; one whose tokens
+// authorize the whole estate does not, and answers the unscoped question instead.
+func validateForApp(strategy AuthStrategy, token, app string) (bool, error) {
+	scoped, ok := strategy.(interface {
+		ValidateForApp(token, app string) (bool, error)
+	})
+	if !ok {
+		return strategy.Validate(token)
+	}
+
+	return scoped.ValidateForApp(token, app)
+}
+
 // walk applies check to every strategy whose header carries a token, returning on
 // the first acceptance. When no strategy accepts, it returns a nil error if no
 // strategy was invoked at all — the "authentication not provided" state described
@@ -135,7 +165,7 @@ func (a *Authenticator) walk(request *http.Request, check func(AuthStrategy, str
 	var rejectedErr, unavailableErr error
 
 	for header, strategy := range a.strategies {
-		token := parseAuthToken(request, header)
+		token := ParseAuthToken(request, header)
 		if token == "" {
 			continue
 		}
@@ -143,6 +173,9 @@ func (a *Authenticator) walk(request *http.Request, check func(AuthStrategy, str
 		valid, err := check(strategy, token)
 		if valid {
 			return true, nil
+		}
+		if errors.Is(err, ErrNoCredential) {
+			continue
 		}
 		if errors.Is(err, ErrProviderUnavailable) {
 			unavailableErr = err
@@ -160,6 +193,34 @@ func (a *Authenticator) walk(request *http.Request, check func(AuthStrategy, str
 	return false, rejectedErr
 }
 
+// IdentifyRequest names the user behind the credential in the given header, for
+// attributing a privileged action. It returns an empty name when no strategy is
+// registered there, the strategy cannot name a user, or no token was sent.
+func (a *Authenticator) IdentifyRequest(request *http.Request, header string) (string, error) {
+	if a == nil || request == nil {
+		return "", nil
+	}
+
+	strategy, ok := a.strategies[header]
+	if !ok {
+		return "", nil
+	}
+
+	identifier, ok := strategy.(interface {
+		Identify(token string) (string, error)
+	})
+	if !ok {
+		return "", nil
+	}
+
+	token := ParseAuthToken(request, header)
+	if token == "" {
+		return "", nil
+	}
+
+	return identifier.Identify(token)
+}
+
 // ValidateStrategy restricts validation to the strategy registered under allowedHeader.
 func (a *Authenticator) ValidateStrategy(request *http.Request, allowedHeader string) (bool, error) {
 	if a == nil || request == nil {
@@ -171,7 +232,7 @@ func (a *Authenticator) ValidateStrategy(request *http.Request, allowedHeader st
 		return false, nil
 	}
 
-	token := parseAuthToken(request, allowedHeader)
+	token := ParseAuthToken(request, allowedHeader)
 	if token == "" {
 		return false, nil
 	}

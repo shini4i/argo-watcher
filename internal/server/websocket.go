@@ -60,7 +60,7 @@ func (env *Env) authorizeWebSocket(w http.ResponseWriter, r *http.Request) bool 
 	if errors.Is(err, auth.ErrProviderUnavailable) {
 		slog.Error("rejecting websocket: authentication provider unavailable", "error", err)
 		writeJSON(w, http.StatusServiceUnavailable, models.TaskStatus{
-			Status: "authentication provider unavailable",
+			Status: providerUnavailableMessage,
 			Error:  err.Error(),
 		})
 		return false

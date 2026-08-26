@@ -727,3 +727,101 @@ func TestOIDCAuthService_UnboundTokenWarning(t *testing.T) {
 		assert.Contains(t, logs.String(), "names no client and carries no aud claim")
 	})
 }
+
+// TestOIDCAuthService_Identify covers the sole source of the created_by attribution
+// stored on every issued application deploy token.
+func TestOIDCAuthService_Identify(t *testing.T) {
+	t.Run("returns the username the provider reports", func(t *testing.T) {
+		server, _ := newCountingOIDCServer(t, `["privileged"]`)
+		service := &OIDCAuthService{}
+		require.NoError(t, service.Init(server.URL, "test", []string{"privileged"}, time.Minute))
+		service.client = server.Client()
+
+		username, err := service.Identify("token")
+
+		require.NoError(t, err)
+		assert.Equal(t, "someone", username)
+	})
+
+	t.Run("answers a privileged action from the cache Validate just filled", func(t *testing.T) {
+		// Identify passes allowCached=true precisely so attributing an action costs no
+		// extra round trip. Flipping that adds one userinfo call per issue and revoke.
+		server, hits := newCountingOIDCServer(t, `["privileged"]`)
+		service := &OIDCAuthService{}
+		require.NoError(t, service.Init(server.URL, "test", []string{"privileged"}, time.Minute))
+		service.client = server.Client()
+
+		valid, err := service.Validate("token")
+		require.NoError(t, err)
+		require.True(t, valid)
+		before := atomic.LoadInt32(hits)
+
+		_, err = service.Identify("token")
+		require.NoError(t, err)
+
+		assert.Equal(t, before, atomic.LoadInt32(hits), "the cached identity must be reused")
+	})
+
+	t.Run("reports a rejected token without naming a user", func(t *testing.T) {
+		server := newOIDCTestServer(t, http.StatusUnauthorized, "", nil, false)
+		service := &OIDCAuthService{}
+		require.NoError(t, service.Init(server.URL, "test", []string{"privileged"}, 0))
+		service.client = server.Client()
+
+		username, err := service.Identify("token")
+
+		require.Error(t, err)
+		assert.Empty(t, username)
+	})
+
+	t.Run("surfaces an unreachable provider as such", func(t *testing.T) {
+		service := &OIDCAuthService{}
+		require.NoError(t, service.Init("http://127.0.0.1:1", "test", nil, 0))
+
+		username, err := service.Identify("token")
+
+		require.ErrorIs(t, err, ErrProviderUnavailable)
+		assert.Empty(t, username)
+	})
+}
+
+// TestAuthenticatorIdentifyRequest covers the branch that keeps attribution from
+// panicking when nothing can name a user.
+func TestAuthenticatorIdentifyRequest(t *testing.T) {
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/app-tokens", nil)
+	request.Header.Set("Oidc-Authorization", "Bearer token")
+
+	t.Run("no strategy registered under the header", func(t *testing.T) {
+		authenticator := NewAuthenticator(map[string]AuthStrategy{})
+
+		username, err := authenticator.IdentifyRequest(request, "Oidc-Authorization")
+
+		assert.NoError(t, err)
+		assert.Empty(t, username)
+	})
+
+	t.Run("a strategy that cannot name a user", func(t *testing.T) {
+		// The deploy token has no identity behind it, so the caller falls back to
+		// recording the action against an unnamed operator rather than failing it.
+		authenticator := NewAuthenticator(map[string]AuthStrategy{
+			"Oidc-Authorization": NewDeployTokenAuthService("shared"),
+		})
+
+		username, err := authenticator.IdentifyRequest(request, "Oidc-Authorization")
+
+		assert.NoError(t, err)
+		assert.Empty(t, username)
+	})
+
+	t.Run("no token sent", func(t *testing.T) {
+		bare := httptest.NewRequest(http.MethodPost, "/api/v1/app-tokens", nil)
+		authenticator := NewAuthenticator(map[string]AuthStrategy{
+			"Oidc-Authorization": &OIDCAuthService{},
+		})
+
+		username, err := authenticator.IdentifyRequest(bare, "Oidc-Authorization")
+
+		assert.NoError(t, err)
+		assert.Empty(t, username)
+	})
+}
