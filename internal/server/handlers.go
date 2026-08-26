@@ -35,6 +35,12 @@ const maxRequestBodyBytes = 1 << 20
 
 const (
 	unauthorizedMessage = "You are not authorized to perform this action"
+	// providerUnavailableMessage is the 503 status for a credential that could not be
+	// judged at all, as distinct from one that was rejected.
+	providerUnavailableMessage = "authentication provider unavailable"
+	// internalErrorMessage is the client-facing text for a failure whose real cause
+	// stays in the server log.
+	internalErrorMessage = "internal server error"
 	// oidcHeader carries the OIDC bearer token for privileged
 	// (deploy-lock/rollback) requests.
 	oidcHeader = "Oidc-Authorization"
@@ -109,7 +115,7 @@ func (env *Env) addTask(w http.ResponseWriter, r *http.Request) {
 		// image, so refuse and let the client retry.
 		slog.Error("rejecting task: authentication provider unavailable", "app", task.App, "error", err)
 		writeJSON(w, http.StatusServiceUnavailable, models.TaskStatus{
-			Status: "authentication provider unavailable",
+			Status: providerUnavailableMessage,
 			Error:  err.Error(),
 		})
 		return
@@ -241,7 +247,7 @@ func (env *Env) getTaskStatus(w http.ResponseWriter, r *http.Request) {
 		slog.Error("failed to retrieve task", "id", id, "error", err)
 		writeJSON(w, http.StatusInternalServerError, models.TaskStatus{
 			Id:    id,
-			Error: "internal server error",
+			Error: internalErrorMessage,
 		})
 	} else {
 		setTaskApp(r, task.MetricApp())
@@ -334,7 +340,7 @@ func (env *Env) requireOIDCAuth(w http.ResponseWriter, r *http.Request) bool {
 		slog.Error("rejecting request: authentication provider unavailable",
 			"method", r.Method, "url", r.URL.Path, "error", err)
 		writeJSON(w, http.StatusServiceUnavailable, models.TaskStatus{
-			Status: "authentication provider unavailable",
+			Status: providerUnavailableMessage,
 			Error:  err.Error(),
 		})
 		return false
@@ -384,7 +390,7 @@ func (env *Env) requireAuthenticatedRead() func(http.Handler) http.Handler {
 				slog.Error("rejecting read: authentication provider unavailable",
 					"method", r.Method, "url", r.URL.Path, "error", err)
 				writeJSON(w, http.StatusServiceUnavailable, models.TaskStatus{
-					Status: "authentication provider unavailable",
+					Status: providerUnavailableMessage,
 					Error:  err.Error(),
 				})
 				return

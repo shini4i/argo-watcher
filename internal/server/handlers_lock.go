@@ -30,7 +30,7 @@ func (env *Env) SetDeployLock(w http.ResponseWriter, r *http.Request) {
 		slog.Error("failed to set deploy lock", "error", err)
 		writeJSON(w, http.StatusInternalServerError, models.TaskStatus{
 			Status: "failed to set deploy lock",
-			Error:  "internal server error",
+			Error:  internalErrorMessage,
 		})
 		return
 	}
@@ -57,7 +57,7 @@ func (env *Env) ReleaseDeployLock(w http.ResponseWriter, r *http.Request) {
 		slog.Error("failed to release deploy lock", "error", err)
 		writeJSON(w, http.StatusInternalServerError, models.TaskStatus{
 			Status: "failed to release deploy lock",
-			Error:  "internal server error",
+			Error:  internalErrorMessage,
 		})
 		return
 	}

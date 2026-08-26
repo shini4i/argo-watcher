@@ -176,3 +176,11 @@ func TestHashIsStable(t *testing.T) {
 	assert.NotEqual(t, Hash("awt_example"), Hash("awt_examplf"))
 	assert.Len(t, Hash("awt_example"), 32)
 }
+
+func TestScopeString(t *testing.T) {
+	// This text reaches the operator in the rejection an out-of-scope token gets.
+	assert.Equal(t, "all applications", Scope{AllApps: true}.String())
+	assert.Equal(t, "app1, app2", Scope{Apps: []string{"app1", "app2"}}.String())
+	assert.Equal(t, "app1", Scope{Apps: []string{"app1"}}.String())
+	assert.Empty(t, Scope{}.String())
+}

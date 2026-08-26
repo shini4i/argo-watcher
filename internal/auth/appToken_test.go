@@ -337,3 +337,76 @@ func TestNoCredentialIsNotARejection(t *testing.T) {
 	assert.False(t, valid)
 	assert.NoError(t, err)
 }
+
+// TestDisabledAppTokenStrategyRefusesEveryQuestion covers the stand-in used while
+// the feature is off, including the read path: a pipeline polling a task status with
+// a prefixed token must be told why rather than being treated as uncredentialed.
+func TestDisabledAppTokenStrategyRefusesEveryQuestion(t *testing.T) {
+	strategy := DisabledAppTokenStrategy()
+
+	t.Run("Validate", func(t *testing.T) {
+		valid, err := strategy.Validate("awt_someIssuedToken")
+
+		assert.False(t, valid)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "OIDC_ENABLED")
+	})
+
+	t.Run("ValidateForApp", func(t *testing.T) {
+		scoped, ok := strategy.(interface {
+			ValidateForApp(token, app string) (bool, error)
+		})
+		require.True(t, ok)
+
+		valid, err := scoped.ValidateForApp("awt_someIssuedToken", "app1")
+
+		assert.False(t, valid)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "STATE_TYPE=postgres")
+	})
+
+	t.Run("Authenticate", func(t *testing.T) {
+		authenticator, ok := strategy.(interface{ Authenticate(token string) error })
+		require.True(t, ok)
+
+		err := authenticator.Authenticate("awt_someIssuedToken")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "OIDC_ENABLED")
+	})
+
+	t.Run("a read through the authenticator is refused, not ignored", func(t *testing.T) {
+		router := NewPrefixRouter(strategy, nil)
+		authenticator := NewAuthenticator(map[string]AuthStrategy{"Authorization": router})
+
+		request := httptest.NewRequest(http.MethodGet, "/api/v1/tasks", nil)
+		request.Header.Set("Authorization", "Bearer awt_someIssuedToken")
+
+		valid, err := authenticator.AuthenticateRequest(request)
+
+		assert.False(t, valid)
+		require.Error(t, err, "an unevaluable feature must not read as no credential")
+	})
+}
+
+// TestPrefixRouterHandles pins the predicate hasCredential relies on to tell a
+// credential apart from a header nothing reads.
+func TestPrefixRouterHandles(t *testing.T) {
+	store := newStubStore()
+	appTokens := NewAppTokenAuthService(store)
+
+	t.Run("with a fallback everything is handled", func(t *testing.T) {
+		router := NewPrefixRouter(appTokens, NewJWTAuthService("secret", "", ""))
+
+		assert.True(t, router.Handles("awt_prefixed"))
+		assert.True(t, router.Handles("eyJhbGciOiJIUzI1NiJ9.e30.sig"))
+	})
+
+	t.Run("without a fallback only prefixed tokens are handled", func(t *testing.T) {
+		router := NewPrefixRouter(appTokens, nil)
+
+		assert.True(t, router.Handles("awt_prefixed"))
+		assert.False(t, router.Handles("eyJhbGciOiJIUzI1NiJ9.e30.sig"),
+			"nothing evaluates this, so it is not a credential")
+	})
+}

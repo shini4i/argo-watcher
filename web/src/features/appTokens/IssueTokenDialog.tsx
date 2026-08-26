@@ -26,6 +26,26 @@ export const parseApps = (value: string): string[] =>
     .map(app => app.trim())
     .filter(app => app.length > 0);
 
+/** Mirrors the server's caps on an explicit scope, so it refuses before the request. */
+const MAX_APPS = 200;
+const MAX_APP_NAME_LENGTH = 255;
+const MAX_EXPIRY_DAYS = 3650;
+const MAX_DESCRIPTION_LENGTH = 255;
+
+/** Names why a parsed scope would be refused, or null when it is acceptable. */
+export const scopeError = (apps: string[]): string | null => {
+  if (apps.length > MAX_APPS) {
+    return `At most ${MAX_APPS} applications; scope the token to all applications instead.`;
+  }
+
+  const tooLong = apps.find(app => app.length > MAX_APP_NAME_LENGTH);
+  if (tooLong) {
+    return `An application name must be at most ${MAX_APP_NAME_LENGTH} characters.`;
+  }
+
+  return null;
+};
+
 /**
  * Collects the scope of a new token. All applications is a deliberate second
  * choice rather than the default, since it is the credential that authorizes the
@@ -40,9 +60,16 @@ export const IssueTokenDialog = ({ open, onClose, onIssue }: IssueTokenDialogPro
   const [error, setError] = useState<string | null>(null);
 
   const apps = useMemo(() => parseApps(appsInput), [appsInput]);
+  const invalidScope = allApps ? null : scopeError(apps);
+  const appsHelperText =
+    allApps ? 'This token will authorize every application, present and future.'
+      : invalidScope ?? `${apps.length} ${apps.length === 1 ? 'application' : 'applications'}`;
   const expiryDays = Number(expiresInDays);
-  const expiryValid = expiresInDays === '' || (Number.isInteger(expiryDays) && expiryDays >= 0 && expiryDays <= 3650);
-  const canSubmit = (allApps || apps.length > 0) && expiryValid && !submitting;
+  const expiryValid =
+    expiresInDays === '' ||
+    (Number.isInteger(expiryDays) && expiryDays >= 0 && expiryDays <= MAX_EXPIRY_DAYS);
+  const canSubmit =
+    (allApps || apps.length > 0) && invalidScope === null && expiryValid && !submitting;
 
   const reset = useCallback(() => {
     setAppsInput('');
@@ -109,11 +136,8 @@ export const IssueTokenDialog = ({ open, onClose, onIssue }: IssueTokenDialogPro
             disabled={allApps}
             multiline
             minRows={3}
-            helperText={
-              allApps
-                ? 'This token will authorize every application, present and future.'
-                : `${apps.length} application${apps.length === 1 ? '' : 's'}`
-            }
+            error={invalidScope !== null}
+            helperText={appsHelperText}
             fullWidth
           />
 
@@ -122,7 +146,7 @@ export const IssueTokenDialog = ({ open, onClose, onIssue }: IssueTokenDialogPro
             placeholder="which pipeline holds this token"
             value={description}
             onChange={event => setDescription(event.target.value)}
-            slotProps={{ htmlInput: { maxLength: 255 } }}
+            slotProps={{ htmlInput: { maxLength: MAX_DESCRIPTION_LENGTH } }}
             fullWidth
           />
 
@@ -132,7 +156,11 @@ export const IssueTokenDialog = ({ open, onClose, onIssue }: IssueTokenDialogPro
             value={expiresInDays}
             onChange={event => setExpiresInDays(event.target.value)}
             error={!expiryValid}
-            helperText={expiryValid ? 'Empty means the token never expires.' : 'Enter a whole number of days, up to 3650.'}
+            helperText={
+              expiryValid
+                ? 'Empty means the token never expires.'
+                : `Enter a whole number of days, up to ${MAX_EXPIRY_DAYS}.`
+            }
             fullWidth
           />
         </Stack>

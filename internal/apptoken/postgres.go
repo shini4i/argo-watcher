@@ -11,6 +11,9 @@ import (
 	"gorm.io/gorm"
 )
 
+// whereID is the predicate every by-id statement in this store shares.
+const whereID = "id = ?"
+
 // tokenRow is the app_tokens table. It stays unexported: the scope is two columns
 // on the wire and one Scope everywhere else, and nothing outside this file should
 // have to know which.
@@ -134,7 +137,7 @@ func (s *PostgresStore) List() ([]Token, error) {
 // no-op from an unknown id needs the follow-up existence check.
 func (s *PostgresStore) Revoke(id uuid.UUID) error {
 	result := s.db.Model(&tokenRow{}).
-		Where("id = ?", id).
+		Where(whereID, id).
 		Where("revoked_at IS NULL").
 		Update("revoked_at", time.Now())
 
@@ -146,7 +149,7 @@ func (s *PostgresStore) Revoke(id uuid.UUID) error {
 	}
 
 	var count int64
-	if err := s.db.Model(&tokenRow{}).Where("id = ?", id).Count(&count).Error; err != nil {
+	if err := s.db.Model(&tokenRow{}).Where(whereID, id).Count(&count).Error; err != nil {
 		return fmt.Errorf("failed to confirm the application deploy token exists: %w", err)
 	}
 	if count == 0 {
@@ -159,7 +162,7 @@ func (s *PostgresStore) Revoke(id uuid.UUID) error {
 // MarkUsed records that the token authorized a deployment. A failure here must not
 // fail the deployment, so callers log it and carry on; it is bookkeeping.
 func (s *PostgresStore) MarkUsed(id uuid.UUID) error {
-	if err := s.db.Model(&tokenRow{}).Where("id = ?", id).Update("last_used_at", time.Now()).Error; err != nil {
+	if err := s.db.Model(&tokenRow{}).Where(whereID, id).Update("last_used_at", time.Now()).Error; err != nil {
 		return fmt.Errorf("failed to record use of the application deploy token: %w", err)
 	}
 

@@ -35,7 +35,7 @@ func (env *Env) listAppTokens(w http.ResponseWriter, r *http.Request) {
 		slog.Error("failed to list application deploy tokens", "error", err)
 		writeJSON(w, http.StatusInternalServerError, models.TaskStatus{
 			Status: "failed to list application deploy tokens",
-			Error:  "internal server error",
+			Error:  internalErrorMessage,
 		})
 		return
 	}
@@ -95,7 +95,7 @@ func (env *Env) issueAppToken(w http.ResponseWriter, r *http.Request) {
 		slog.Error("failed to issue an application deploy token", "error", err)
 		writeJSON(w, http.StatusInternalServerError, models.TaskStatus{
 			Status: "failed to issue an application deploy token",
-			Error:  "internal server error",
+			Error:  internalErrorMessage,
 		})
 		return
 	}
@@ -146,7 +146,7 @@ func (env *Env) revokeAppToken(w http.ResponseWriter, r *http.Request) {
 		slog.Error("failed to revoke an application deploy token", "token_id", id, "error", err)
 		writeJSON(w, http.StatusInternalServerError, models.TaskStatus{
 			Status: "failed to revoke the application deploy token",
-			Error:  "internal server error",
+			Error:  internalErrorMessage,
 		})
 		return
 	}

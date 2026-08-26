@@ -1,7 +1,7 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { IssueTokenDialog, parseApps } from './IssueTokenDialog';
+import { IssueTokenDialog, parseApps, scopeError } from './IssueTokenDialog';
 
 vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
 
@@ -130,5 +130,66 @@ describe('IssueTokenDialog', () => {
 
     expect(onClose).toHaveBeenCalled();
     expect(screen.getByLabelText(/^Applications/)).toHaveValue('');
+  });
+});
+
+// The server caps an explicit scope at 200 names of 255 characters and answers 406.
+// The dialog must refuse first rather than round-tripping a request it knows is bad.
+describe('scope caps', () => {
+  const onIssue = vi.fn();
+  const onClose = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    onIssue.mockResolvedValue(undefined);
+  });
+
+  const names = (count: number) => Array.from({ length: count }, (_, i) => `app-${i}`).join(',');
+
+  it.each([
+    ['more names than the cap', names(201), /At most 200 applications/],
+    ['a name longer than the cap', 'a'.repeat(256), /at most 255 characters/],
+  ])('refuses %s without submitting', async (_name, input, message) => {
+    render(<IssueTokenDialog open onClose={onClose} onIssue={onIssue} />);
+
+    fireEvent.change(screen.getByLabelText(/^Applications/), { target: { value: input } });
+
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Issue' })).toBeDisabled();
+    expect(onIssue).not.toHaveBeenCalled();
+  });
+
+  it('accepts the boundary values', async () => {
+    render(<IssueTokenDialog open onClose={onClose} onIssue={onIssue} />);
+
+    fireEvent.change(screen.getByLabelText(/^Applications/), { target: { value: names(200) } });
+
+    expect(screen.getByText('200 applications')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Issue' })).toBeEnabled();
+  });
+
+  it('a wildcard is unaffected by a stale over-cap list', async () => {
+    const user = userEvent.setup();
+    render(<IssueTokenDialog open onClose={onClose} onIssue={onIssue} />);
+
+    fireEvent.change(screen.getByLabelText(/^Applications/), { target: { value: names(201) } });
+    await user.click(screen.getByLabelText('All applications'));
+
+    expect(screen.getByRole('button', { name: 'Issue' })).toBeEnabled();
+  });
+});
+
+describe('scopeError', () => {
+  it('accepts an acceptable scope', () => {
+    expect(scopeError(['app1', 'app2'])).toBeNull();
+    expect(scopeError([])).toBeNull();
+    expect(scopeError(Array.from({ length: 200 }, (_, i) => `app-${i}`))).toBeNull();
+    expect(scopeError(['a'.repeat(255)])).toBeNull();
+  });
+
+  it('names why a scope is refused', () => {
+    expect(scopeError(Array.from({ length: 201 }, (_, i) => `app-${i}`))).toMatch(/At most 200/);
+    expect(scopeError(['ok', 'a'.repeat(256)])).toMatch(/at most 255 characters/);
   });
 });
