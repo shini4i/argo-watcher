@@ -122,13 +122,14 @@ Enabling OIDC closes the endpoints only the Web UI consumes, so no pipeline is a
 | `GET /api/v1/reachability` | Credential required |
 | `GET /api/v1/deploy-lock` | Credential required |
 | `POST`/`DELETE /api/v1/deploy-lock` | Credential required **and** privileged group |
+| `/api/v1/app-tokens`, `/api/v1/app-tokens/{id}` | Credential required **and** privileged group; registered only with `STATE_TYPE=postgres` |
 | `/ws` | Credential required — as a subprotocol from a browser ([why](#the-websocket-handshake)) |
 | `POST /api/v1/tasks` | Unchanged — optional credential, which governs the git write-back |
 | `GET /api/v1/tasks/{id}` | **Open** unless `OIDC_REQUIRE_TASK_READ_AUTH=true` ([below](#closing-the-task-lookup)) |
 | `GET /api/v1/config` | **Open** — the Web UI reads the issuer and client id from it before it can hold a token |
 | `/livez`, `/readyz`, `/metrics` | **Open** — probes and Prometheus cannot perform an OIDC flow |
 
-Any configured credential is accepted on a read: an OIDC session, the `ARGO_WATCHER_DEPLOY_TOKEN`, or a [JWT](gitops-updater.md#jwt-configuration). Read access is deliberately **not** limited to `OIDC_PRIVILEGED_GROUPS` — that gate covers the deploy lock only.
+Any configured credential is accepted on a read: an OIDC session, the `ARGO_WATCHER_DEPLOY_TOKEN`, a [JWT](gitops-updater.md#jwt-configuration), or an [application deploy token](gitops-updater.md#application-deploy-tokens) of any scope. Read access is deliberately **not** limited to `OIDC_PRIVILEGED_GROUPS` — that gate covers the deploy lock and the token endpoints.
 
 !!! warning "`GET /api/v1/tasks/{id}` is open by default"
     The client polls this endpoint for the whole length of every deployment, so requiring a credential rejects any client too old to send one. The task id is a random v4 UUID handed only to the submitter, and the enumerable `GET /api/v1/tasks` list is protected — but anyone holding a task id (from a CI log or a webhook payload) can read that task's app, author, project, images and status. The `unauthenticated_reads` metric counts such reads; see [Tracking the read-auth migration](../operations/observability.md#tracking-the-read-auth-migration).

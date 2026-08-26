@@ -17,7 +17,7 @@ The client is a small CLI shipped as [`ghcr.io/shini4i/argo-watcher-client`](htt
 
 | Variable | Description | Default |
 |---|---|---|
-| `BEARER_TOKEN` | JWT authorizing the deployment. Takes precedence over `ARGO_WATCHER_DEPLOY_TOKEN`. | |
+| `BEARER_TOKEN` | An application deploy token or a JWT authorizing the deployment. Takes precedence over `ARGO_WATCHER_DEPLOY_TOKEN`. | |
 | `ARGO_WATCHER_DEPLOY_TOKEN` | Shared deploy token, the alternative to a JWT | |
 | `TIMEOUT` | Per-request HTTP timeout | `60s` |
 | `RETRY_INTERVAL` | Wait between status polls | `15s` |

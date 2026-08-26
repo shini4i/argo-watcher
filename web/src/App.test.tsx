@@ -113,7 +113,7 @@ describe('App', () => {
     expect(resourceCalls[0].name).toBe('tasks');
     expect(resourceCalls[0].list).toBe(RecentTasksListStub);
 
-    expect(routeCalls.map(props => props.path)).toEqual(['/history', '/task/:id']);
+    expect(routeCalls.map(props => props.path)).toEqual(['/history', '/task/:id', '/app-tokens']);
 
     const historyRoute = routeCalls.find(props => props.path === '/history');
     expect((historyRoute?.element as ReactElement)?.type).toBe(HistoryTasksListStub);

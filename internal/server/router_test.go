@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	"github.com/shini4i/argo-watcher/internal/apptoken"
 	"github.com/shini4i/argo-watcher/internal/argocd"
 	"github.com/shini4i/argo-watcher/internal/auth"
 	"github.com/shini4i/argo-watcher/internal/config"
@@ -298,7 +299,7 @@ func TestNewEnv(t *testing.T) {
 	metrics := &prometheus.Metrics{}
 	updater := &argocd.ArgoStatusUpdater{}
 
-	env, err := NewEnv(serverConfig, argo, metrics, updater, lock.NewInMemoryDeployLockStore())
+	env, err := NewEnv(serverConfig, argo, metrics, updater, lock.NewInMemoryDeployLockStore(), nil)
 
 	assert.NoError(t, err)
 	assert.Equal(t, env.config, serverConfig)
@@ -310,10 +311,19 @@ func TestNewEnv(t *testing.T) {
 	// options, and two function values are never equal.
 	require.Len(t, env.strategies, 3)
 	require.IsType(t, &auth.DeployTokenAuthService{}, env.strategies["ARGO_WATCHER_DEPLOY_TOKEN"])
-	require.IsType(t, &auth.JWTAuthService{}, env.strategies["Authorization"])
+	// Authorization carries either a CI JWT or an application deploy token, so a
+	// router owns it and dispatches on the token's shape.
+	require.IsType(t, &auth.PrefixRouter{}, env.strategies["Authorization"])
 	require.IsType(t, &auth.OIDCAuthService{}, env.strategies[oidcHeader])
 
-	accepted, err := env.strategies["ARGO_WATCHER_DEPLOY_TOKEN"].Validate(serverConfig.DeployToken)
+	// No store was passed, so the feature is off and its endpoints stay unregistered.
+	assert.Nil(t, env.appTokens)
+	accepted, err := env.strategies["Authorization"].Validate("awt_someIssuedToken")
+	assert.False(t, accepted)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "STATE_TYPE=postgres")
+
+	accepted, err = env.strategies["ARGO_WATCHER_DEPLOY_TOKEN"].Validate(serverConfig.DeployToken)
 	assert.NoError(t, err)
 	assert.True(t, accepted)
 
@@ -361,7 +371,7 @@ func TestNewEnvInvalidOIDCURL(t *testing.T) {
 		},
 	}
 
-	env, err := NewEnv(serverConfig, &argocd.Argo{}, &prometheus.Metrics{}, &argocd.ArgoStatusUpdater{}, lock.NewInMemoryDeployLockStore())
+	env, err := NewEnv(serverConfig, &argocd.Argo{}, &prometheus.Metrics{}, &argocd.ArgoStatusUpdater{}, lock.NewInMemoryDeployLockStore(), nil)
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to initialize OIDC auth")
@@ -2667,4 +2677,67 @@ func TestAddTaskResolvesTheDeploymentWindow(t *testing.T) {
 			assert.Equal(t, tt.want, stored.Timeout)
 		})
 	}
+}
+
+// TestNewEnvAppTokenGate covers both arms of the two-part enablement rule. Without
+// the OIDC arm, deleting its case leaves the suite green while making tokens usable
+// with OIDC off — at which point no /app-tokens route is registered, so rows keep
+// authorizing write-backs with no way left to list or revoke them.
+func TestNewEnvAppTokenGate(t *testing.T) {
+	baseConfig := func(oidcEnabled bool) *config.ServerConfig {
+		return &config.ServerConfig{
+			Host: "localhost",
+			Port: "8080",
+			OIDC: config.OIDCConfig{
+				Enabled:   oidcEnabled,
+				IssuerURL: "http://localhost:8080/realms/test",
+				ClientId:  "test",
+			},
+			StaticFilePath: t.TempDir(),
+		}
+	}
+
+	newEnvWithStore := func(t *testing.T, oidcEnabled bool) (*Env, apptoken.Store) {
+		t.Helper()
+		store := newFakeTokenStore()
+		env, err := NewEnv(baseConfig(oidcEnabled), &argocd.Argo{}, &prometheus.Metrics{},
+			&argocd.ArgoStatusUpdater{}, lock.NewInMemoryDeployLockStore(), store)
+		require.NoError(t, err)
+		return env, store
+	}
+
+	t.Run("a store without OIDC leaves the feature off", func(t *testing.T) {
+		env, _ := newEnvWithStore(t, false)
+
+		assert.Nil(t, env.appTokens, "no store means no endpoints get registered")
+
+		valid, err := env.strategies["Authorization"].Validate("awt_someIssuedToken")
+		assert.False(t, valid)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "OIDC_ENABLED",
+			"a token must be refused by name, so a pipeline is told why")
+	})
+
+	t.Run("a store with OIDC enables the feature and its endpoints", func(t *testing.T) {
+		env, store := newEnvWithStore(t, true)
+
+		require.NotNil(t, env.appTokens)
+		assert.Same(t, store, env.appTokens, "the endpoints must serve the store that was passed in")
+
+		// The strategy now evaluates prefixed tokens instead of refusing them.
+		valid, err := env.strategies["Authorization"].Validate("awt_someIssuedToken")
+		assert.False(t, valid)
+		require.Error(t, err)
+		assert.NotContains(t, err.Error(), "OIDC_ENABLED")
+
+		// And the routes exist: an unregistered path answers the SPA fallback in HTML.
+		req, err := http.NewRequest(http.MethodGet, "/api/v1/app-tokens", http.NoBody)
+		require.NoError(t, err)
+		recorder := httptest.NewRecorder()
+		env.CreateRouter().ServeHTTP(recorder, req)
+
+		assert.Equal(t, http.StatusUnauthorized, recorder.Code,
+			"the route exists and enforces privilege rather than falling through to the UI")
+		assert.Contains(t, recorder.Header().Get("Content-Type"), "application/json")
+	})
 }

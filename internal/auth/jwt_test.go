@@ -199,3 +199,96 @@ func TestJWTAuthService_ClaimBinding(t *testing.T) {
 		assert.False(t, isValid)
 	})
 }
+
+func TestJWTAuthServiceValidateForApp(t *testing.T) {
+	const secretKey = "test_secret_key"
+	service := NewJWTAuthService(secretKey, "", "")
+
+	mint := func(t *testing.T, claims jwt.MapClaims) string {
+		t.Helper()
+		claims["exp"] = float64(time.Now().Add(time.Hour).Unix())
+		tokenStr, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(secretKey))
+		require.NoError(t, err)
+		return tokenStr
+	}
+
+	t.Run("a token without the claim authorizes every application", func(t *testing.T) {
+		tokenStr := mint(t, jwt.MapClaims{"sub": "ci"})
+
+		isValid, err := service.ValidateForApp(tokenStr, "any-app")
+
+		assert.NoError(t, err)
+		assert.True(t, isValid)
+	})
+
+	t.Run("a token is confined to the applications it names", func(t *testing.T) {
+		tokenStr := mint(t, jwt.MapClaims{"allowed_apps": []string{"app1", "app2"}})
+
+		isValid, err := service.ValidateForApp(tokenStr, "app2")
+		assert.NoError(t, err)
+		assert.True(t, isValid)
+
+		isValid, err = service.ValidateForApp(tokenStr, "app3")
+		assert.False(t, isValid)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "does not cover application app3")
+	})
+
+	t.Run("an empty claim authorizes nothing", func(t *testing.T) {
+		tokenStr := mint(t, jwt.MapClaims{"allowed_apps": []string{}})
+
+		isValid, err := service.ValidateForApp(tokenStr, "app1")
+
+		assert.False(t, isValid)
+		require.Error(t, err)
+	})
+
+	t.Run("the unscoped Validate ignores the claim", func(t *testing.T) {
+		tokenStr := mint(t, jwt.MapClaims{"allowed_apps": []string{"app1"}})
+
+		// Endpoints with no application to check against — the deploy lock, a read —
+		// keep judging the token on its signature and claim policy alone.
+		isValid, err := service.Validate(tokenStr)
+
+		assert.NoError(t, err)
+		assert.True(t, isValid)
+	})
+
+	t.Run("a malformed claim is a rejection, not an absent claim", func(t *testing.T) {
+		tests := []struct {
+			name  string
+			claim any
+		}{
+			{name: "a bare string", claim: "app1"},
+			{name: "a list of numbers", claim: []int{1, 2}},
+			{name: "an object", claim: map[string]string{"app": "app1"}},
+		}
+
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				tokenStr := mint(t, jwt.MapClaims{"allowed_apps": test.claim})
+
+				isValid, err := service.ValidateForApp(tokenStr, "app1")
+
+				assert.False(t, isValid, "treating it as absent would widen the token to the whole estate")
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "allowed_apps")
+			})
+		}
+	})
+
+	t.Run("an invalid signature is rejected before the claim is read", func(t *testing.T) {
+		claims := jwt.MapClaims{
+			"exp":          float64(time.Now().Add(time.Hour).Unix()),
+			"allowed_apps": []string{"app1"},
+		}
+		tokenStr, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte("wrong_secret"))
+		require.NoError(t, err)
+
+		isValid, err := service.ValidateForApp(tokenStr, "app1")
+
+		assert.False(t, isValid)
+		require.Error(t, err)
+		assert.NotContains(t, err.Error(), "allowed_apps")
+	})
+}

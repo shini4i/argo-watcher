@@ -2,6 +2,7 @@ import LightModeIcon from '@mui/icons-material/LightMode';
 import NightlightIcon from '@mui/icons-material/Nightlight';
 import LockIcon from '@mui/icons-material/Lock';
 import LockOpenIcon from '@mui/icons-material/LockOpen';
+import KeyIcon from '@mui/icons-material/Key';
 import {
   Box,
   Button,
@@ -14,10 +15,12 @@ import {
   Typography,
 } from '@mui/material';
 import { useCallback, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useNotify, usePermissions } from 'react-admin';
 import { useThemeMode } from '../../theme';
 import { useDeployLock } from '../../features/deployLock/DeployLockProvider';
 import { useOidcEnabled } from '../../shared/hooks/useOidcEnabled';
+import { useAppTokensAvailable } from '../../shared/hooks/useAppTokensAvailable';
 import { hasPrivilegedAccess } from '../../shared/utils/permissions';
 import { useTimezone } from '../../shared/providers/TimezoneProvider';
 import { UserBadge } from './UserBadge';
@@ -34,8 +37,10 @@ export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
   const { timezone, setTimezone } = useTimezone();
   const browserZone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'local', []);
   const notify = useNotify();
+  const navigate = useNavigate();
   const { locked: deployLock, setLock, releaseLock } = useDeployLock();
   const oidcEnabled = useOidcEnabled();
+  const appTokensAvailable = useAppTokensAvailable();
   const { permissions } = usePermissions();
 
   const groups: readonly string[] = (permissions as { groups?: string[] })?.groups ?? [];
@@ -48,6 +53,10 @@ export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
   // oidcEnabled is unknown (null = config still loading or the request failed).
   const showLockToggle = oidcEnabled === true;
   const canToggleLock = oidcEnabled === true && privileged;
+  // The token endpoints need Postgres as well as OIDC, and answer privileged
+  // callers only. Where they are absent the request falls through to the HTML
+  // catch-all, so an ungated entry point would show an empty list rather than fail.
+  const canManageTokens = appTokensAvailable === true && privileged;
   let lockHelperText: string | null = null;
   if (oidcEnabled === null) {
     lockHelperText = 'Checking permissions…';
@@ -78,6 +87,11 @@ export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
       setLockUpdating(false);
     }
   }, [canToggleLock, deployLock, notify, releaseLock, setLock]);
+
+  const handleManageTokens = useCallback(() => {
+    onClose();
+    navigate('/app-tokens');
+  }, [navigate, onClose]);
 
   return (
     <Drawer
@@ -190,6 +204,36 @@ export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
               </Typography>
             )}
           </Stack>
+
+          {canManageTokens && (
+            <>
+              <Divider />
+
+              <Stack spacing={1.5} component="section" aria-labelledby="drawer-tokens">
+                <Typography variant="subtitle2" sx={{
+                  color: 'text.secondary'
+                }}>
+                  <span id="drawer-tokens">Deploy Tokens</span>
+                </Typography>
+                <Stack
+                  direction="row"
+                  sx={{
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
+                  }}>
+                  <Stack direction="row" spacing={1} sx={{
+                    alignItems: 'center'
+                  }}>
+                    <KeyIcon fontSize="small" />
+                    <Typography variant="body2">Issue and revoke</Typography>
+                  </Stack>
+                  <Button variant="outlined" size="small" onClick={handleManageTokens}>
+                    Manage
+                  </Button>
+                </Stack>
+              </Stack>
+            </>
+          )}
         </Stack>
 
         <Box

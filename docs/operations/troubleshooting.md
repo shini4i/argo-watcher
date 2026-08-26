@@ -93,6 +93,9 @@ The server warning and the counter are what identify the credential as the cause
 
 - The pipeline sets neither `ARGO_WATCHER_DEPLOY_TOKEN` nor `BEARER_TOKEN`.
 - The value does not match the server's `ARGO_WATCHER_DEPLOY_TOKEN` or `JWT_SECRET`.
+- The credential is scoped to other applications. An [application deploy token](../guides/gitops-updater.md#application-deploy-tokens), and a JWT carrying `allowed_apps`, is rejected `401` for an application it does not name — so this shows up as a failed submission, not a skipped write-back.
+- The application deploy token was revoked or has expired. Both are reported `401` naming which.
+- Application deploy tokens are not available on this server: they need `OIDC_ENABLED=true` and `STATE_TYPE=postgres`, and a token presented without both is rejected `401` naming the missing setting.
 - The server sets `JWT_ISSUER` or `JWT_AUDIENCE` and the token carries no such claim, or a different value. Both are strict once set — see [Binding a token to this server](../guides/gitops-updater.md#binding-a-token-to-this-server).
 - **Something redirects the client to a different host**, and a credential does not survive that hop. The two behave differently:
     - `Authorization` (`BEARER_TOKEN`) is stripped by Go's HTTP client on every client version, but only when the *hostname* changes. A port-only change (`host:8080` → `host:9090`) keeps it, and so does a move to a subdomain (`example.com` → `sub.example.com`). A sibling host does not: `watcher.example.com` → `watcher.int.example.com` drops it.

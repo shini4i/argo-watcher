@@ -102,6 +102,16 @@ func (env *Env) CreateRouter() *chi.Mux {
 		if env.config.OIDC.Enabled {
 			r.Post(deployLockEndpoint, env.SetDeployLock)
 			r.Delete(deployLockEndpoint, env.ReleaseDeployLock)
+
+			// Registered only where the tokens can actually live (see
+			// Env.appTokenStrategy). Every one enforces privileged membership itself,
+			// so listing tokens is as restricted as issuing them: the list names who
+			// holds a credential for which applications.
+			if env.appTokens != nil {
+				r.Get(appTokensEndpoint, env.listAppTokens)
+				r.Post(appTokensEndpoint, env.issueAppToken)
+				r.Delete(appTokensEndpoint+"/{id}", env.revokeAppToken)
+			}
 		}
 	})
 

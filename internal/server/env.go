@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/shini4i/argo-watcher/internal/apptoken"
 	"github.com/shini4i/argo-watcher/internal/argocd"
 	"github.com/shini4i/argo-watcher/internal/auth"
 	"github.com/shini4i/argo-watcher/internal/config"
@@ -24,6 +25,9 @@ type Env struct {
 	lockdown      *Lockdown
 	strategies    map[string]auth.AuthStrategy
 	authenticator *auth.Authenticator
+	// appTokens is nil unless application deploy tokens are available, which is
+	// what the issue and revoke endpoints are registered on.
+	appTokens apptoken.Store
 	// shutdownCh is closed to signal graceful shutdown to all WebSocket goroutines.
 	shutdownCh chan struct{}
 	// draining is set once graceful shutdown begins, so the readiness probe can
@@ -184,8 +188,10 @@ func (env *Env) Shutdown(ctx context.Context) {
 }
 
 // NewEnv wires up an Env from the server config: lockdown schedules backed by the
-// given deploy lock store, and the enabled auth strategies.
-func NewEnv(serverConfig *config.ServerConfig, argo *argocd.Argo, metrics *prometheus.Metrics, updater *argocd.ArgoStatusUpdater, deployLockStore lock.DeployLockStore) (*Env, error) {
+// given deploy lock store, and the enabled auth strategies. appTokenStore is nil
+// when application deploy tokens are unavailable, which the caller decides from
+// the state backend; they additionally require OIDC.
+func NewEnv(serverConfig *config.ServerConfig, argo *argocd.Argo, metrics *prometheus.Metrics, updater *argocd.ArgoStatusUpdater, deployLockStore lock.DeployLockStore, appTokenStore apptoken.Store) (*Env, error) {
 	var env *Env
 	var err error
 
@@ -213,11 +219,37 @@ func NewEnv(serverConfig *config.ServerConfig, argo *argocd.Argo, metrics *prome
 		env.strategies[oidcHeader] = oidcService
 	}
 
+	// Application deploy tokens and CI JWTs share the Authorization header, so one
+	// router owns it and dispatches on the token's own shape.
+	var jwtStrategy auth.AuthStrategy
 	if env.config.JWTSecret != "" {
-		env.strategies["Authorization"] = auth.NewJWTAuthService(env.config.JWTSecret, env.config.JWTIssuer, env.config.JWTAudience)
+		jwtStrategy = auth.NewJWTAuthService(env.config.JWTSecret, env.config.JWTIssuer, env.config.JWTAudience)
 	}
+
+	// A non-nil store is what CreateRouter registers the token endpoints on, so the
+	// assignment stays here rather than inside the resolver.
+	appTokenStrategy, appTokens := env.resolveAppTokens(appTokenStore)
+	env.appTokens = appTokens
+	env.strategies["Authorization"] = auth.NewPrefixRouter(appTokenStrategy, jwtStrategy)
 
 	env.authenticator = auth.NewAuthenticator(env.strategies)
 
 	return env, nil
+}
+
+// resolveAppTokens returns the strategy for application deploy tokens and the store
+// to serve them from, which is nil unless both preconditions hold. When either is
+// missing the tokens are refused by name rather than ignored, so a pipeline holding
+// one is told why instead of having its write-back silently skipped.
+func (env *Env) resolveAppTokens(store apptoken.Store) (auth.AuthStrategy, apptoken.Store) {
+	switch {
+	case store == nil:
+		slog.Warn("Application deploy tokens are unavailable: they require STATE_TYPE=postgres.")
+	case !env.config.OIDC.Enabled:
+		slog.Warn("Application deploy tokens are unavailable: they require OIDC_ENABLED, the only way to issue and revoke them.")
+	default:
+		return auth.NewAppTokenAuthService(store), store
+	}
+
+	return auth.DisabledAppTokenStrategy(), nil
 }

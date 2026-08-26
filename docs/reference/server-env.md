@@ -45,10 +45,12 @@ The chart mounts its persistent volume at `REPO_CACHE_PATH`; change one and you 
 | `OIDC_ENABLED` | Enable OIDC authentication | `false` | No |
 | `OIDC_ISSUER_URL` | Provider issuer URL, used for discovery | | When OIDC is on |
 | `OIDC_CLIENT_ID` | Client id registered with the provider | | When OIDC is on |
-| `OIDC_PRIVILEGED_GROUPS` | Groups allowed to roll back a task and manage the deploy lock | | No |
+| `OIDC_PRIVILEGED_GROUPS` | Groups allowed to roll back a task, manage the deploy lock, and issue or revoke application deploy tokens | | No |
 | `OIDC_TOKEN_VALIDATION_INTERVAL` | How long (ms) a provider decision may be reused | `300000` | No |
 | `OIDC_REQUIRE_TASK_READ_AUTH` | Require a credential on `GET /api/v1/tasks/{id}` too | `false` | No |
 | `OIDC_GRAVATAR_FALLBACK` | Let the account card fall back to Gravatar when the provider sends no `picture` claim | `false` | No |
+
+[Application deploy tokens](../guides/gitops-updater.md#application-deploy-tokens) have no variable of their own: they are enabled by `OIDC_ENABLED=true` together with `STATE_TYPE=postgres`, and refused by name when either is missing.
 
 `JWT_ISSUER` and `JWT_AUDIENCE` are enforced strictly once set: a token that omits the claim is rejected, so every pipeline must mint it *before* the variable is configured — see [JWT configuration](../guides/gitops-updater.md#jwt-configuration).
 

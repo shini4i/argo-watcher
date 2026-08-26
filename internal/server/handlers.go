@@ -75,6 +75,7 @@ func (env *Env) getVersion(w http.ResponseWriter, _ *http.Request) {
 // @Failure 401 {object} models.TaskStatus
 // @Failure 406 {object} models.TaskStatus
 // @Failure 413 {object} models.TaskStatus "the request body is larger than the server accepts"
+// @Failure 503 {object} models.TaskStatus "the credential could not be checked; retry"
 // @Router /api/v1/tasks [post]
 func (env *Env) addTask(w http.ResponseWriter, r *http.Request) {
 	var task models.Task
@@ -99,7 +100,20 @@ func (env *Env) addTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tokenValid, err := env.validateToken(r, "")
+	// Scoped to the requested application: an application deploy token, and a JWT
+	// carrying allowed_apps, authorize only the applications they name.
+	tokenValid, err := env.authenticator.ValidateForApp(r, task.App)
+	if errors.Is(err, auth.ErrProviderUnavailable) {
+		// The credential could not be judged at all. Accepting the task as
+		// uncredentialed would skip the write-back and fail the rollout blaming the
+		// image, so refuse and let the client retry.
+		slog.Error("rejecting task: authentication provider unavailable", "app", task.App, "error", err)
+		writeJSON(w, http.StatusServiceUnavailable, models.TaskStatus{
+			Status: "authentication provider unavailable",
+			Error:  err.Error(),
+		})
+		return
+	}
 	if err != nil {
 		// A non-nil error means the strategy was invoked and rejected the
 		// token: a client mistake, not a server failure. Return 401 with
@@ -427,13 +441,22 @@ func (env *Env) countUnauthenticatedRead() func(http.Handler) http.Handler {
 	}
 }
 
-// hasCredential reports whether the request carries a non-empty value in any header a
-// configured auth strategy reads, saying nothing about whether it is valid.
+// hasCredential reports whether the request carries a value some configured strategy
+// would actually evaluate, saying nothing about whether it is valid. Presence alone
+// would count a header nobody reads, letting unauthenticated_reads fall to zero while
+// the callers that closing the endpoint would break are still polling.
 func (env *Env) hasCredential(request *http.Request) bool {
-	for header := range env.strategies {
-		if request.Header.Get(header) != "" {
-			return true
+	for header, strategy := range env.strategies {
+		token := auth.ParseAuthToken(request, header)
+		if token == "" {
+			continue
 		}
+
+		if handler, ok := strategy.(interface{ Handles(token string) bool }); ok && !handler.Handles(token) {
+			continue
+		}
+
+		return true
 	}
 
 	return false
