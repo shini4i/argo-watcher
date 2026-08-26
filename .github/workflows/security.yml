@@ -116,6 +116,20 @@ jobs:
         working-directory: web
         run: npm ci --ignore-scripts
 
+      - name: Assert the scanner still detects a vulnerable library
+        # A scanner whose fingerprints stopped matching reports exactly like a clean
+        # tree, so prove it fails on a known-bad version before the run below is
+        # trusted. Same reasoning as the fuzz-seed assertion in dast.yml.
+        working-directory: web
+        run: |
+          canary=$(mktemp -d)
+          printf 'DOMPurify.version="3.4.11";\n' > "$canary/canary.js"
+          if npx retire --path "$canary" --severity low >/dev/null 2>&1; then
+            echo "::error::retire.js did not flag a known-vulnerable library; the gate is not working"
+            exit 1
+          fi
+          echo "retire.js flagged the canary; fingerprints are live"
+
       - name: Scan for vulnerable JavaScript libraries
         # trivy and npm audit read package-lock.json, so they see only declared
         # dependencies. retire.js fingerprints versions in the JavaScript itself,
