@@ -114,7 +114,7 @@ jobs:
 
       - name: Install web dependencies
         working-directory: web
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Scan for vulnerable JavaScript libraries
         # trivy and npm audit read package-lock.json, so they see only declared
