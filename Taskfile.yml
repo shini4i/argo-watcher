@@ -144,6 +144,19 @@ tasks:
       - npm run test
       - echo "===> Done"
 
+  scan-web:
+    desc: Scan the web workspace's JavaScript for known-vulnerable libraries (retire.js)
+    deps: [install-web-dependencies]
+    dir: web
+    cmds:
+      # Fingerprints library versions inside JavaScript file contents, so it sees
+      # dependencies a bundle vendors in without declaring them — which npm audit
+      # and trivy, both of which read package-lock.json, cannot. Needs network:
+      # retire.js fetches its advisory repository (cached under /tmp).
+      - echo "===> Scanning web JavaScript for vulnerable libraries"
+      - npm run scan:js
+      - echo "===> Done"
+
   test-web-e2e:
     desc: Run the Playwright browser suite (requires docker; brings up keycloak). Must not be run concurrently with test-integration.
     deps: [install-web-dependencies, build-ui]

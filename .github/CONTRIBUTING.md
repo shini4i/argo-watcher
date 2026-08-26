@@ -129,7 +129,7 @@ The lab is not part of the standard PR checks because it is expensive. Maintaine
 
 ## What CI Checks
 
-These must be green before a merge: backend tests, frontend tests, integration tests, the Keycloak auth end-to-end job, the Go scanners (gosec and govulncheck), Trivy, TruffleHog, CodeQL, and SonarCloud.
+These must be green before a merge: backend tests, frontend tests, integration tests, the Keycloak auth end-to-end job, the Go scanners (gosec and govulncheck), Trivy, retire.js, TruffleHog, CodeQL, and SonarCloud.
 
 The nuclei DAST scan runs weekly on `main` rather than per pull request, so it does not gate your PR.
 

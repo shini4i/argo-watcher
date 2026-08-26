@@ -13,7 +13,8 @@
     "test:ui": "vitest --ui",
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install --with-deps chromium",
-    "typecheck:e2e": "tsc -p tsconfig.node.json --noEmit"
+    "typecheck:e2e": "tsc -p tsconfig.node.json --noEmit",
+    "scan:js": "retire --path . --ext js,mjs --severity low --ignore dist,coverage,playwright-report,test-results"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
@@ -40,7 +41,8 @@
     "jsdom": "^29.1.1",
     "oxlint": "^1.73.0",
     "postcss": "^8.5.23",
-    "swagger-ui-dist": "^5.32.8",
+    "retire": "^5.7.0",
+    "swagger-ui-dist": "^5.32.14",
     "typescript": "^7.0.2",
     "vite": "^8.1.4",
     "vite-plugin-static-copy": "^4.1.1",

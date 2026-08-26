@@ -39,9 +39,9 @@
           (bats.withLibraries (p: [ p.bats-support p.bats-assert ]))
         ];
 
-        # Security scanners, mirroring the CI security workflow so they can be
-        # run locally. gosec is already part of goToolchain. nuclei is
-        # intentionally absent — DAST runs only in CI against a live server.
+        # Security scanners from the CI security workflow, minus gosec (in
+        # goToolchain), nuclei (CI-only DAST) and retire.js (absent from nixpkgs,
+        # so pinned as a web/ dev dependency and run by `task scan-web`).
         securityTools = with pkgs; [
           govulncheck
           trivy
