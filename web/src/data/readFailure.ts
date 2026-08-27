@@ -70,6 +70,14 @@ export const describeReadFailure = (error: unknown): ReadFailure => {
     };
   }
 
+  if (status === 404) {
+    return {
+      title: 'This task is no longer available',
+      detail: clamp(message),
+      hint: 'It may have been removed since the page loaded.',
+    };
+  }
+
   // A 2xx whose body reports an error. The server answered, so no status code is
   // appended: the response was a success and saying "(HTTP 200)" would only confuse.
   if (status >= 200 && status < 300) {

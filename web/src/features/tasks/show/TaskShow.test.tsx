@@ -353,6 +353,28 @@ describe('TaskShow', () => {
     expect(screen.queryByText(/could not be located/i)).not.toBeInTheDocument();
   });
 
+  // react-query keeps the loaded task, so nothing on screen changes — without the toast
+  // the reader would go on trusting a task that has since disappeared.
+  it('toasts when a loaded task starts returning 404 on refresh', async () => {
+    mockUseGetOne.mockReturnValue({
+      data: buildTask(),
+      isLoading: false,
+      isError: true,
+      error: Object.assign(new Error('task not found'), {
+        status: 404,
+        body: { id: 'task-1', error: 'task not found' },
+      }),
+      refetch: vi.fn(),
+    });
+
+    await renderWithRouter('/task/task-1');
+
+    expect(screen.getByText('demo-app')).toBeInTheDocument();
+    expect(mockUseNotify).toHaveBeenCalledWith('This task is no longer available', {
+      type: 'error',
+    });
+  });
+
   it('still reports a genuinely missing task as not found, without an error toast', async () => {
     mockUseGetOne.mockReturnValue({
       data: undefined,

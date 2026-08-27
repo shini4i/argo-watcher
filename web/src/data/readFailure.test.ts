@@ -77,6 +77,15 @@ describe('describeReadFailure', () => {
     expect(failure.detail).not.toContain('HTTP');
   });
 
+  // Only reached for a task that vanished under a loaded page; a first-load 404 is the
+  // not-found card, which TaskShow renders instead of calling this.
+  it('reports a 404 as a task that is gone, not a rejected request', () => {
+    const failure = describeReadFailure(new HttpError('task not found', 404));
+
+    expect(failure.title).toBe('This task is no longer available');
+    expect(failure.detail).toBe('task not found');
+  });
+
   it('carries the status code for a rejected request', () => {
     const failure = describeReadFailure(new HttpError('unsupported status filter', 400));
 

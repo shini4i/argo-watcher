@@ -196,12 +196,14 @@ export const TaskShow = () => {
     refetch,
   } = useGetOne<TaskStatus>('tasks', { id: id ?? '' }, { retry: false, enabled: Boolean(id) });
 
-  // 404 is the one failure that really means "no such task", so it keeps the
-  // not-found card below; every other read failure is named for what it was.
+  // A 404 with nothing loaded is the not-found card below, which names the id itself, so
+  // it needs no toast. Every other failure — a 404 over a loaded task included — is named.
+  const isMissingTask = isError && !data && normalizeError(error).status === 404;
+
   // Memoised because it drives a notify effect that must not fire per render.
   const readFailure = useMemo(
-    () => (isError && error && normalizeError(error).status !== 404 ? describeReadFailure(error) : null),
-    [isError, error],
+    () => (isError && error && !isMissingTask ? describeReadFailure(error) : null),
+    [isError, error, isMissingTask],
   );
 
   useEffect(() => {

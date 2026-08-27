@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { AdminContext, HttpError, testDataProvider, useListContext, useRefresh } from 'react-admin';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
@@ -50,9 +50,7 @@ describe('TaskListLayout against react-admin', () => {
   it('names the identity-provider outage when the server refuses every read with 503', async () => {
     renderList(() => Promise.reject(providerUnavailable()));
 
-    await waitFor(() =>
-      expect(screen.getByText('Argo Watcher cannot verify your session')).toBeInTheDocument(),
-    );
+    await screen.findByText('Argo Watcher cannot verify your session');
     expect(screen.getByText(/could not reach the identity provider/)).toBeInTheDocument();
     expect(screen.getByText(/OIDC issuer is reachable/)).toBeInTheDocument();
     expect(screen.queryByTestId('datagrid')).not.toBeInTheDocument();
@@ -62,9 +60,7 @@ describe('TaskListLayout against react-admin', () => {
   it('reports an aborted request as an unreachable server', async () => {
     renderList(() => Promise.reject(new HttpError('Request timed out', 0)));
 
-    await waitFor(() =>
-      expect(screen.getByText('Could not reach the Argo Watcher server')).toBeInTheDocument(),
-    );
+    await screen.findByText('Could not reach the Argo Watcher server');
     expect(screen.queryByTestId('datagrid')).not.toBeInTheDocument();
     expect(screen.queryByTestId('empty-state')).not.toBeInTheDocument();
   });
@@ -80,13 +76,13 @@ describe('TaskListLayout against react-admin', () => {
         : Promise.reject(providerUnavailable());
     });
 
-    await waitFor(() => expect(screen.getByTestId('datagrid')).toBeInTheDocument());
+    await screen.findByTestId('datagrid');
 
     screen.getByRole('button', { name: 'refresh now' }).click();
 
     // Wait for the failure to be observed, not merely started, so the assertions
     // below cannot pass while the query is still in flight.
-    await waitFor(() => expect(screen.getByTestId('list-error')).toBeInTheDocument());
+    await screen.findByTestId('list-error');
 
     expect(screen.getByTestId('datagrid')).toBeInTheDocument();
     expect(screen.queryByText('Argo Watcher cannot verify your session')).not.toBeInTheDocument();
