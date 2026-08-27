@@ -260,7 +260,7 @@ describe('dataProvider', () => {
     });
   });
 
-  it('throws HttpError when task detail contains error', async () => {
+  it('throws with the real response status when task detail contains error', async () => {
     mockFetch().mockResolvedValue(
       jsonResponse({
         id: 'missing',
@@ -268,7 +268,12 @@ describe('dataProvider', () => {
       }),
     );
 
-    await expect(dataProvider.getOne('tasks', { id: 'missing' })).rejects.toThrow(HttpError);
+    // Not a synthesized 404: the response succeeded and its body reports the error,
+    // so the UI must not present it as a task that does not exist.
+    await expect(dataProvider.getOne('tasks', { id: 'missing' })).rejects.toMatchObject({
+      status: 200,
+      message: 'task not found',
+    });
   });
 
   it('creates a task and returns accepted status', async () => {

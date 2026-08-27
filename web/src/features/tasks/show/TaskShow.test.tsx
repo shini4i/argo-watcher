@@ -333,6 +333,26 @@ describe('TaskShow', () => {
     });
   });
 
+  // dataProvider.getOne throws with the response's own status, so a body reporting an
+  // error on a 2xx reaches here as 200 and must show the server's text, not "not found".
+  it('shows the server text when a successful response reports an error', async () => {
+    mockUseGetOne.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: Object.assign(new Error('task not found'), {
+        status: 200,
+        body: { id: 'task-1', error: 'task not found' },
+      }),
+      refetch: vi.fn(),
+    });
+
+    await renderWithRouter('/task/task-1');
+
+    expect(screen.getByText('The Argo Watcher server reported an error')).toBeInTheDocument();
+    expect(screen.queryByText(/could not be located/i)).not.toBeInTheDocument();
+  });
+
   it('still reports a genuinely missing task as not found, without an error toast', async () => {
     mockUseGetOne.mockReturnValue({
       data: undefined,

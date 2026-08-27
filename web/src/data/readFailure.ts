@@ -70,6 +70,16 @@ export const describeReadFailure = (error: unknown): ReadFailure => {
     };
   }
 
+  // A 2xx whose body reports an error. The server answered, so no status code is
+  // appended: the response was a success and saying "(HTTP 200)" would only confuse.
+  if (status >= 200 && status < 300) {
+    return {
+      title: 'The Argo Watcher server reported an error',
+      detail: clamp(message),
+      hint: 'Retry, and check the Argo Watcher server logs if it keeps failing.',
+    };
+  }
+
   return {
     title: status >= 500 ? 'The Argo Watcher server returned an error' : 'The request was rejected',
     detail: `${clamp(message)} (HTTP ${status})`,

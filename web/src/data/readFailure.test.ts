@@ -65,6 +65,18 @@ describe('describeReadFailure', () => {
     expect(failure.detail).toBe('internal server error (HTTP 500)');
   });
 
+  // dataProvider.getOne throws with the real response status, so a body that reports an
+  // error on a 2xx must not be dressed up as a missing task or an unreachable server.
+  it('reports a success whose body carries an error as a server-reported error', () => {
+    const failure = describeReadFailure(
+      new HttpError('task not found', 200, { id: 'task-1', error: 'task not found' }),
+    );
+
+    expect(failure.title).toBe('The Argo Watcher server reported an error');
+    expect(failure.detail).toBe('task not found');
+    expect(failure.detail).not.toContain('HTTP');
+  });
+
   it('carries the status code for a rejected request', () => {
     const failure = describeReadFailure(new HttpError('unsupported status filter', 400));
 
