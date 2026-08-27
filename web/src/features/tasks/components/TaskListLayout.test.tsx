@@ -192,7 +192,7 @@ describe('TaskListLayout', () => {
     );
 
     expect(screen.getByText('Date filter')).toBeInTheDocument();
-    expect(screen.getByText('Couldn’t load tasks')).toBeInTheDocument();
+    expect(screen.getByText('Could not reach the Argo Watcher server')).toBeInTheDocument();
     expect(screen.queryByTestId('datagrid')).not.toBeInTheDocument();
     expect(screen.queryByTestId('empty-state')).not.toBeInTheDocument();
 
@@ -200,6 +200,60 @@ describe('TaskListLayout', () => {
     // from their own query, and a list-only refetch would leave them stuck.
     screen.getByRole('button', { name: 'Retry' }).click();
     expect(refreshMock).toHaveBeenCalledTimes(1);
+  });
+
+  // react-admin leaves `total` undefined on an errored query, so a gate on
+  // `total === 0` fell through to the datagrid and read as an empty task list.
+  it('shows the error state when a failed query reports no total at all', () => {
+    readPersistentPerPageMock.mockReturnValue(25);
+    listContextRef.current = {
+      data: undefined as unknown as unknown[],
+      total: undefined,
+      isPending: false,
+      filterValues: {},
+      error: Object.assign(new Error('authentication provider unavailable'), {
+        status: 503,
+        body: { status: 'authentication provider unavailable', error: 'token validation failed' },
+      }),
+    };
+
+    render(
+      <TaskListLayout perPageStorageKey="history.perPage" emptyComponent={<div data-testid="empty-state" />}>
+        <div data-testid="datagrid">Rows</div>
+      </TaskListLayout>,
+    );
+
+    expect(screen.getByText('Argo Watcher cannot verify your session')).toBeInTheDocument();
+    expect(screen.getByText(/could not reach the identity provider/)).toBeInTheDocument();
+    // The remedy is the half that stops a pointless re-login, so pin it too.
+    expect(screen.getByText(/OIDC issuer is reachable/)).toBeInTheDocument();
+    expect(screen.queryByTestId('datagrid')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('empty-state')).not.toBeInTheDocument();
+  });
+
+  // History persists its filters, so a returning user hits an outage with filters set.
+  // The outage must win over the datagrid's "adjust your filters" empty state.
+  it('shows the error state even when filters are active', () => {
+    readPersistentPerPageMock.mockReturnValue(25);
+    listContextRef.current = {
+      data: undefined as unknown as unknown[],
+      total: undefined,
+      isPending: false,
+      filterValues: { app: 'demo', start: 1, end: 2 },
+      error: Object.assign(new Error('authentication provider unavailable'), {
+        status: 503,
+        body: { status: 'authentication provider unavailable', error: 'token validation failed' },
+      }),
+    };
+
+    render(
+      <TaskListLayout perPageStorageKey="history.perPage" emptyComponent={<div data-testid="empty-state" />}>
+        <div data-testid="datagrid">Rows</div>
+      </TaskListLayout>,
+    );
+
+    expect(screen.getByText('Argo Watcher cannot verify your session')).toBeInTheDocument();
+    expect(screen.queryByTestId('datagrid')).not.toBeInTheDocument();
   });
 
   it('keeps the populated grid (not the error panel) when a refetch fails with rows already loaded', () => {
@@ -225,7 +279,7 @@ describe('TaskListLayout', () => {
     );
 
     expect(screen.getByTestId('datagrid')).toBeInTheDocument();
-    expect(screen.queryByText('Couldn’t load tasks')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Could not reach/)).not.toBeInTheDocument();
     expect(screen.queryByTestId('empty-state')).not.toBeInTheDocument();
   });
 
@@ -249,7 +303,7 @@ describe('TaskListLayout', () => {
     );
 
     expect(screen.getByTestId('datagrid')).toBeInTheDocument();
-    expect(screen.queryByText('Couldn’t load tasks')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Could not reach/)).not.toBeInTheDocument();
     expect(screen.queryByTestId('empty-state')).not.toBeInTheDocument();
   });
 

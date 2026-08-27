@@ -1,6 +1,7 @@
 import { Children, isValidElement, type ReactNode } from 'react';
 import { Box, Stack } from '@mui/material';
 import { List, Pagination, useListContext, useRefresh, type ListProps } from 'react-admin';
+import { describeReadFailure } from '../../../data/readFailure';
 import { PerPagePersistence, readPersistentPerPage } from '../../../shared/hooks/usePersistentPerPage';
 import { EmptyState, EmptyStateCta } from './EmptyState';
 import { SearchFilteredView } from './SearchFilteredView';
@@ -18,23 +19,8 @@ interface TaskListLayoutProps {
 }
 
 /**
- * The empty gate lives here — inside <List> — rather than on <List empty>,
- * because react-admin renders the `empty` element *instead of* the entire list,
- * which drops the filter toolbar with it. Users would then land on an empty
- * history page with no way to widen the date range. When filters are active we
- * defer to the datagrid's own filtered empty state (with its "Clear filters"
- * CTA), matching react-admin's original `shouldRenderEmptyPage` condition
- * (`!error && !isPending && total === 0 && !filterValues`).
- *
- * A fetch error (a 5xx, a network drop, or the request timing out — see
- * REQUEST_TIMEOUT_MS in httpClient) is rendered as an explicit error state with
- * a retry, NOT as the empty placeholder or the datagrid's "no tasks" message: a
- * load failure must never masquerade as genuine emptiness.
- *
- * The error panel is gated on `total === 0` so it only replaces the body when
- * there is nothing to show. react-admin keeps the previously loaded rows across
- * a refetch, so a transient auto-refresh failure keeps the populated grid (the
- * error is surfaced via react-admin's notification) instead of blanking it.
+ * Gates inside <List>: <List empty> renders instead of the list, dropping the filter
+ * toolbar. The error panel keys on absent rows — an errored query sets no `total`.
  */
 const ListBody = ({
   emptyComponent,
@@ -43,19 +29,21 @@ const ListBody = ({
   emptyComponent: ReactNode | false;
   children: ReactNode;
 }) => {
-  const { isPending, total, filterValues, error } = useListContext();
+  const { isPending, total, data, filterValues, error } = useListContext();
   const hasFilters = Object.keys(filterValues ?? {}).length > 0;
   // Retry has to reload every active query, not just the list: the toolbar's
   // status counts come from their own query, and a list-only refetch would
   // repopulate the grid while the pills stayed stuck on the failed fetch.
   const refresh = useRefresh();
 
-  if (error && !isPending && total === 0) {
+  if (error && !isPending && !data?.length) {
+    const failure = describeReadFailure(error);
     return (
       <EmptyState
         icon="error"
-        title="Couldn’t load tasks"
-        description="The request failed or timed out. Check that the server is reachable, then try again."
+        title={failure.title}
+        description={failure.detail}
+        hint={failure.hint}
         cta={<EmptyStateCta label="Retry" onClick={refresh} />}
       />
     );

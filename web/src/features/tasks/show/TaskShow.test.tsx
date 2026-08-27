@@ -283,7 +283,73 @@ describe('TaskShow', () => {
     });
 
     await renderWithRouter('/task/task-1');
-    expect(mockUseNotify).toHaveBeenCalledWith('Failed to load task details.', { type: 'error' });
+    expect(mockUseNotify).toHaveBeenCalledWith('Could not reach the Argo Watcher server', {
+      type: 'error',
+    });
+  });
+
+  // A 503 means the server refused to read, not that the task is gone. Claiming
+  // "not found" for a deep link sends the reader hunting for a deleted task.
+  it('names the read failure instead of claiming the task is missing', async () => {
+    mockUseGetOne.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: Object.assign(new Error('authentication provider unavailable'), {
+        status: 503,
+        body: { status: 'authentication provider unavailable', error: 'token validation failed' },
+      }),
+      refetch: vi.fn(),
+    });
+
+    await renderWithRouter('/task/task-1');
+
+    expect(screen.getByText('Argo Watcher cannot verify your session')).toBeInTheDocument();
+    expect(screen.getByText(/could not reach the identity provider/i)).toBeInTheDocument();
+    expect(screen.getByText(/OIDC issuer is reachable/)).toBeInTheDocument();
+    expect(screen.queryByText(/Task not found/i)).not.toBeInTheDocument();
+  });
+
+  // The page polls every 10s while a task is in progress. Discarding a loaded task
+  // over one failed poll is the blanking the task list deliberately avoids.
+  it('keeps a loaded task on screen when a poll fails, and only toasts the cause', async () => {
+    mockUseGetOne.mockReturnValue({
+      data: buildTask(),
+      isLoading: false,
+      isError: true,
+      error: Object.assign(new Error('authentication provider unavailable'), {
+        status: 503,
+        body: { status: 'authentication provider unavailable', error: 'token validation failed' },
+      }),
+      refetch: vi.fn(),
+    });
+
+    await renderWithRouter('/task/task-1');
+
+    expect(screen.getByText('demo-app')).toBeInTheDocument();
+    expect(screen.queryByText('Argo Watcher cannot verify your session')).not.toBeInTheDocument();
+    expect(mockUseNotify).toHaveBeenCalledWith('Argo Watcher cannot verify your session', {
+      type: 'error',
+    });
+  });
+
+  it('still reports a genuinely missing task as not found, without an error toast', async () => {
+    mockUseGetOne.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: Object.assign(new Error('task not found'), {
+        status: 404,
+        body: { id: 'task-1', error: 'task not found' },
+      }),
+      refetch: vi.fn(),
+    });
+
+    await renderWithRouter('/task/task-1');
+
+    expect(screen.getByText(/Task not found/i)).toBeInTheDocument();
+    // The card already says it; a toast repeating it would be noise.
+    expect(mockUseNotify).not.toHaveBeenCalledWith(expect.anything(), { type: 'error' });
   });
 
   it('warns when configuration request fails', async () => {

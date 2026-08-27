@@ -10,6 +10,8 @@ interface EmptyStateProps {
   readonly icon?: EmptyStateIcon;
   readonly title: string;
   readonly description?: string;
+  /** Suggested remedy, set apart from `description` so neither runs into the other. */
+  readonly hint?: string;
   readonly cta?: ReactNode;
 }
 
@@ -23,7 +25,7 @@ const ICONS: Record<EmptyStateIcon, ReactNode> = {
  * Static empty-state placeholder shown when the task list returns zero rows.
  * No spinner — initial-load skeletons are owned by react-admin's <Datagrid>.
  */
-export const EmptyState = ({ icon = 'inbox', title, description, cta }: EmptyStateProps) => (
+export const EmptyState = ({ icon = 'inbox', title, description, hint, cta }: EmptyStateProps) => (
   <Box
     sx={{
       minHeight: 320,
@@ -47,6 +49,13 @@ export const EmptyState = ({ icon = 'inbox', title, description, cta }: EmptySta
           color: 'text.secondary'
         }}>
           {description}
+        </Typography>
+      )}
+      {hint && (
+        <Typography variant="body2" sx={{
+          color: 'text.secondary'
+        }}>
+          {hint}
         </Typography>
       )}
       {cta}

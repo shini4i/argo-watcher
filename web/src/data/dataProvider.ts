@@ -118,8 +118,10 @@ const getList = async (params: GetListParams): Promise<GetListResult<Task>> => {
 
 const getOne = async (params: GetOneParams): Promise<GetOneResult<TaskStatus>> => {
   const { data } = await httpClient<TaskStatus>(`/api/v1/${RESOURCE_TASKS}/${params.id}`);
+  // httpClient throws on a real 404, so an empty body here is a 2xx that carried no
+  // JSON — an intermediary answering, not a missing task. Status 0 says transport.
   if (!data) {
-    throw new HttpError('Task not found', 404);
+    throw new HttpError('The server returned no task data', 0);
   }
   if (data.error) {
     throw new HttpError(data.error, 404, data);

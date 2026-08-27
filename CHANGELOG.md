@@ -46,6 +46,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   judged at all, such as an unreachable OIDC provider or state backend. A blip no longer
   tells a pipeline its credential is bad, and the client can retry.
 
+### Fixed
+
+- The Web UI now names why a read failed instead of implying there is nothing to show. A
+  failed task-list load rendered as an endless loading skeleton or "No recent tasks so
+  far…", and a task page reported "Task not found" for any read error at all. Both now
+  show the actual cause — an unreachable identity provider, a rejected session, an
+  unreachable server — together with the remedy. A page that already loaded keeps its
+  content when a background refresh fails, rather than blanking.
+
 ## [1.0.0] - 2026-08-23
 
 ### Added
