@@ -81,7 +81,7 @@ phase() {
   phase client-knobs.sh
 }
 
-@test "jwt-auth: the BEARER_TOKEN path drives a write-back, and iss/aud bind it" {
+@test "jwt-auth: the BEARER_TOKEN path drives a write-back; iss/aud and allowed_apps bind it" {
   phase jwt-auth.sh
 }
 
@@ -147,6 +147,14 @@ phase() {
   # failure-diagnostics so it deploys against pristine apps. Everything after runs on
   # Postgres — both remaining phases are backend-agnostic, so that is a free bonus.
   phase state-postgres.sh
+}
+
+@test "app-tokens: issue via the OIDC API, per-app scope, revoke, expiry" {
+  # Must follow state-postgres: the tokens require STATE_TYPE=postgres, and this
+  # phase reverts to the Postgres release it inherits rather than the in-memory one.
+  # It enables OIDC against the lab's real Keycloak for its own duration, deploys
+  # app4 and reverts, so it must also precede failure-diagnostics.
+  phase app-tokens.sh
 }
 
 @test "failure-diagnostics: failure reasons carry the real cause" {

@@ -29,8 +29,8 @@ jobs:
     # Label path: run only when the `e2e` label is the one just added.
     if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'e2e'
     runs-on: ubuntu-latest
-    # A measured full run is ~38m (13m boot + 25m phases) on a local machine; hosted
-    # runners are slower, so 45 left almost no headroom.
+    # A measured full run is ~41m (8m boot + 33m phases) on a local machine; hosted
+    # runners are slower, so 45 would leave almost no headroom.
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

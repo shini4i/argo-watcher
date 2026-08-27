@@ -38,3 +38,8 @@ nodes:
         hostPort: 30443
         listenAddress: "127.0.0.1"
         protocol: TCP
+      # Keycloak (the app-tokens phase mints OIDC access tokens over it)
+      - containerPort: 30500
+        hostPort: 30500
+        listenAddress: "127.0.0.1"
+        protocol: TCP

@@ -158,6 +158,23 @@ else
   bad "GET /tasks with a valid JWT: code=${CODE} body=${BODY} (want 200)"
 fi
 
+# Application deploy tokens need a store that outlives the process, so OIDC alone
+# does not turn them on: the endpoints must stay unregistered and a token be refused
+# by name. Covered here because this is the lab's only OIDC-on, in-memory server.
+req GET "${AW_API}/app-tokens"
+if [[ "$CODE" == "200" ]] && ! jq -e 'type == "array"' <<<"$BODY" >/dev/null 2>&1; then
+  ok "GET /app-tokens is not a route on in-memory state (falls through to the SPA)"
+else
+  bad "GET /app-tokens on in-memory state: code=${CODE} (want the SPA fallthrough, not an array)"
+fi
+
+post_task "$(task_json app1 v0.0.1)" -H "Authorization: awt_no-store-for-this"
+if [[ "$CODE" == "401" ]] && jq -e '.error | test("STATE_TYPE=postgres")' <<<"$BODY" >/dev/null 2>&1; then
+  ok "an app token is refused by name on in-memory state"
+else
+  bad "app token on in-memory state: code=${CODE} body=${BODY} (want 401 naming the requirement)"
+fi
+
 # --- 5. The deliberate exemptions stay reachable -------------------------------
 # Breaking any of these breaks either every pipeline (the task lookup), the Web UI's
 # ability to log in at all (/config), or the probes and the scrape.

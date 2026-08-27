@@ -1,17 +1,13 @@
-// Command mintjwt prints a short-lived HS256 JSON Web Token signed with the
-// value of the JWT_SECRET environment variable. It exists so the e2e lab can
-// exercise argo-watcher's BEARER_TOKEN auth path without depending on an external
-// tool (openssl is not guaranteed on the lab host); it signs with the very
-// library the server validates with (golang-jwt/jwt/v5), so the token is
-// guaranteed compatible. The token carries the iat and exp claims the server
-// requires and is valid for one hour — long enough for a single deploy phase.
-// JWT_ISS and JWT_AUD add the iss and aud claims a server configured with
-// JWT_ISSUER / JWT_AUDIENCE requires.
+// Command mintjwt prints a one-hour HS256 token signed with JWT_SECRET, using the
+// very library the server validates with, so the lab needs no openssl. JWT_ISS,
+// JWT_AUD and JWT_ALLOWED_APPS (comma-separated) add the iss, aud and allowed_apps
+// claims; iat and exp are always set, because the server requires them.
 package main
 
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -37,6 +33,11 @@ func main() {
 	}
 	if audience := os.Getenv("JWT_AUD"); audience != "" {
 		claims["aud"] = audience
+	}
+	// A list, not a string: the claim is read back as one, and a token omitting it
+	// keeps authorizing every application.
+	if apps := os.Getenv("JWT_ALLOWED_APPS"); apps != "" {
+		claims["allowed_apps"] = strings.Split(apps, ",")
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

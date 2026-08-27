@@ -104,4 +104,37 @@ else
   bad "after revert, token without iss/aud: code=${CODE} body=${BODY} (want 202)"
 fi
 
+# --- 4. allowed_apps confines a token to the applications it names -------------
+# The other half of the claim policy, and the JWT counterpart of an application
+# deploy token's scope. The accepted names are fictional on purpose: the task IS
+# validated, so a real fixture app would take its bogus tag through a write-back.
+SCOPED_A="jwt-scope-alpha"
+SCOPED_B="jwt-scope-beta"
+scoped_jwt="$(mint JWT_ALLOWED_APPS="${SCOPED_A},${SCOPED_B}")"
+
+for app in "$SCOPED_A" "$SCOPED_B"; do
+  post_task "$(task_json "$app" v0.0.1)" -H "Authorization: ${scoped_jwt}"
+  if [[ "$CODE" == "202" ]]; then
+    ok "allowed_apps authorizes ${app}"
+  else
+    bad "allowed_apps token for ${app}: code=${CODE} body=${BODY} (want 202)"
+  fi
+done
+
+post_task "$(task_json "$APP" "$TAG")" -H "Authorization: ${scoped_jwt}"
+if [[ "$CODE" == "401" ]] && jq -e '.error | test("allowed_apps")' <<<"$BODY" >/dev/null 2>&1; then
+  ok "allowed_apps refuses ${APP}, naming the claim that confined the token"
+else
+  bad "allowed_apps token for ${APP}: code=${CODE} body=${BODY} (want 401 naming the claim)"
+fi
+
+# Section 1 already deployed with a claimless token; this states the compatibility
+# rule outright, since a fleet that never set the claim depends on it.
+post_task "$(task_json "$APP" "$TAG")" -H "Authorization: ${plain_jwt}"
+if [[ "$CODE" == "202" ]]; then
+  ok "a token omitting allowed_apps still authorizes any application"
+else
+  bad "claimless token after the scoped one: code=${CODE} (want 202)"
+fi
+
 phase_end JWT-AUTH

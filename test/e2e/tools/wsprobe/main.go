@@ -52,6 +52,7 @@ func env(k, def string) string {
 type credentials struct {
 	oidc        string
 	deploy      string
+	bearer      string
 	subprotocol string
 }
 
@@ -66,6 +67,11 @@ func dialOptions(creds credentials) *websocket.DialOptions {
 	}
 	if creds.deploy != "" {
 		opts.HTTPHeader.Set("ARGO_WATCHER_DEPLOY_TOKEN", creds.deploy)
+	}
+	// The header a CI JWT and an application deploy token share; the server routes
+	// between them on the token's own shape.
+	if creds.bearer != "" {
+		opts.HTTPHeader.Set("Authorization", creds.bearer)
 	}
 	if creds.subprotocol != "" {
 		opts.Subprotocols = []string{"argo-watcher.v1", "argo-watcher.token." + creds.subprotocol}
@@ -88,6 +94,7 @@ func main() {
 	creds := credentials{
 		oidc:        env("WSPROBE_OIDC_TOKEN", ""),
 		deploy:      env("WSPROBE_DEPLOY_TOKEN", ""),
+		bearer:      env("WSPROBE_BEARER_TOKEN", ""),
 		subprotocol: env("WSPROBE_SUBPROTOCOL_TOKEN", ""),
 	}
 

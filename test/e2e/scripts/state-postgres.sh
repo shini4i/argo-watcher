@@ -53,11 +53,6 @@ probe_pid=""
 # Set to 1 while the deploy-lock assertion holds the shared lock (see below).
 lock_set=0
 
-psql_db() {
-  local sql="$1"
-  kubectl -n "$NS_AW" exec argo-watcher-db-0 -- psql -qtAX -U argo_watcher -d argo_watcher -c "$sql"
-}
-
 cleanup() {
   # The deploy lock lives in the shared database, so a lock left set by an
   # aborted run would 406 every deploy in the phases that follow. Always drop it.

@@ -1,0 +1,62 @@
+# In-cluster Keycloak for the app-tokens phase, on the generic shini4i `app` chart.
+# It serves the realm the docker-compose `integration` profile imports
+# (test/keycloak/argo-watcher-e2e-realm.json, mounted as a ConfigMap by the Taskfile).
+fullnameOverride: keycloak
+
+image:
+  repository: quay.io/keycloak/keycloak
+  # Pinned to the version docker-compose runs, so both suites exercise one provider.
+  tag: "26.7.0"
+
+service:
+  type: ClusterIP
+  ports:
+    - port: 80
+      containerPort: 8080
+      name: http
+
+volumes:
+  - name: realm
+    configMap:
+      name: keycloak-realm
+
+app:
+  # Development mode: HTTP with no certificate and no build step. The realm is
+  # re-imported on every boot, which is what makes the pod disposable.
+  args:
+    - start-dev
+    - --import-realm
+  env:
+    - name: KC_BOOTSTRAP_ADMIN_USERNAME
+      value: admin
+    - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+      value: admin
+    # The phase mints tokens from the HOST over the NodePort while argo-watcher calls
+    # discovery and userinfo from INSIDE the cluster. Without a fixed hostname Keycloak
+    # derives the issuer per request, so a token minted on one path is rejected on the
+    # other. MUST match the OIDC_ISSUER_URL prefix in scripts/app-tokens.sh.
+    - name: KC_HOSTNAME
+      value: http://keycloak.keycloak
+    # Keep answering under any other name (the phase calls it localhost:30500) while
+    # still minting the fixed issuer above.
+    - name: KC_HOSTNAME_STRICT
+      value: "false"
+  additionalVolumeMounts:
+    - name: realm
+      mountPath: /opt/keycloak/data/import
+      readOnly: true
+  # The realm's own discovery document, which answers only once the import has
+  # finished — exactly what the phase waits for. Keycloak needs ~15s to get there.
+  readinessProbe:
+    httpGet:
+      path: /realms/argo-watcher-e2e/.well-known/openid-configuration
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 3
+    failureThreshold: 40
+  livenessProbe:
+    httpGet:
+      path: /realms/argo-watcher-e2e/.well-known/openid-configuration
+      port: http
+    initialDelaySeconds: 60
+    periodSeconds: 15
