@@ -246,7 +246,21 @@ describe('dataProvider', () => {
     expect(result.data.status).toBe('in progress');
   });
 
-  it('throws HttpError when task detail contains error', async () => {
+  // Reachable only on a 2xx with no parseable JSON — a proxy sign-in page, say.
+  // httpClient throws on a real 404, so this must not be labelled "task not found".
+  it('reports a body-less success as a transport failure, not a missing task', async () => {
+    mockFetch().mockResolvedValue(new Response('<html>login</html>', {
+      status: 200,
+      headers: { 'Content-Type': 'text/html' },
+    }));
+
+    await expect(dataProvider.getOne('tasks', { id: '123' })).rejects.toMatchObject({
+      status: 0,
+      message: 'The server returned no task data',
+    });
+  });
+
+  it('throws with the real response status when task detail contains error', async () => {
     mockFetch().mockResolvedValue(
       jsonResponse({
         id: 'missing',
@@ -254,7 +268,12 @@ describe('dataProvider', () => {
       }),
     );
 
-    await expect(dataProvider.getOne('tasks', { id: 'missing' })).rejects.toThrow(HttpError);
+    // Not a synthesized 404: the response succeeded and its body reports the error,
+    // so the UI must not present it as a task that does not exist.
+    await expect(dataProvider.getOne('tasks', { id: 'missing' })).rejects.toMatchObject({
+      status: 200,
+      message: 'task not found',
+    });
   });
 
   it('creates a task and returns accepted status', async () => {

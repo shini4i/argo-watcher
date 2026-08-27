@@ -23,7 +23,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useGetIdentity, useGetOne, useNotify, usePermissions } from 'react-admin';
 import { Link as RouterLink, useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -33,8 +33,9 @@ import { describeTaskStatus } from '../utils/statusPresentation';
 import { RollbackIndicator } from '../components/RollbackIndicator';
 import { useDeployLockState } from '../../deployLock/useDeployLockState';
 import { useOidcEnabled } from '../../../shared/hooks/useOidcEnabled';
-import { getBrowserWindow, hasPrivilegedAccess } from '../../../shared/utils';
+import { getBrowserWindow, hasPrivilegedAccess, normalizeError } from '../../../shared/utils';
 import { httpClient } from '../../../data/httpClient';
+import { describeReadFailure } from '../../../data/readFailure';
 import { getAccessToken } from '../../../auth/tokenStore';
 import { useTimezone } from '../../../shared/providers/TimezoneProvider';
 
@@ -195,11 +196,21 @@ export const TaskShow = () => {
     refetch,
   } = useGetOne<TaskStatus>('tasks', { id: id ?? '' }, { retry: false, enabled: Boolean(id) });
 
+  // A 404 with nothing loaded is the not-found card below, which names the id itself, so
+  // it needs no toast. Every other failure — a 404 over a loaded task included — is named.
+  const isMissingTask = isError && !data && normalizeError(error).status === 404;
+
+  // Memoised because it drives a notify effect that must not fire per render.
+  const readFailure = useMemo(
+    () => (isError && error && !isMissingTask ? describeReadFailure(error) : null),
+    [isError, error, isMissingTask],
+  );
+
   useEffect(() => {
-    if (isError && error) {
-      notify('Failed to load task details.', { type: 'error' });
+    if (readFailure) {
+      notify(readFailure.title, { type: 'error' });
     }
-  }, [error, isError, notify]);
+  }, [readFailure, notify]);
 
   useEffect(() => {
     let cancelled = false;
@@ -363,6 +374,24 @@ export const TaskShow = () => {
         <CircularProgress />
         <Typography variant="body1">Loading task details…</Typography>
       </Stack>
+    );
+  }
+
+  // Only when there is nothing to show. A poll failure over a loaded task keeps the
+  // detail view and reports itself through the toast, as the task list does.
+  if (readFailure && !data) {
+    return (
+      <Card>
+        <CardContent>
+          <Typography variant="h6">{readFailure.title}</Typography>
+          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+            {readFailure.detail}
+          </Typography>
+          <Typography variant="body2" sx={{ color: 'text.secondary', mt: 1 }}>
+            {readFailure.hint}
+          </Typography>
+        </CardContent>
+      </Card>
     );
   }
 

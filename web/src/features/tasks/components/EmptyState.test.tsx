@@ -9,6 +9,20 @@ describe('EmptyState', () => {
     expect(screen.getByText('Kick something off')).toBeInTheDocument();
   });
 
+  it('sets the hint apart from the description instead of running the two together', () => {
+    const { container } = render(
+      <EmptyState title="Broken" description="The server refused the read." hint="Retry shortly." />,
+    );
+
+    const paragraphs = [...container.querySelectorAll('p')].map(node => node.textContent);
+    expect(paragraphs).toEqual(['The server refused the read.', 'Retry shortly.']);
+  });
+
+  it('omits the hint paragraph when no hint is provided', () => {
+    const { container } = render(<EmptyState title="Broken" description="Only this." />);
+    expect(container.querySelectorAll('p')).toHaveLength(1);
+  });
+
   it('omits description when not provided', () => {
     const { container } = render(<EmptyState title="Empty" />);
     expect(screen.getByText('Empty')).toBeInTheDocument();

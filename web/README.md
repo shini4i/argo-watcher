@@ -45,7 +45,7 @@ Everything runtime comes from the backend's `/api/v1/config` — issuer URL, cli
 | `src/main.tsx` | Mounts `AppSplash` immediately, awaits `bootstrapAuth()` to consume any OIDC callback, then mounts React-admin with the shared providers. |
 | `src/App.tsx` | The React-admin shell: the `tasks` resource plus custom routes for history and task detail. |
 | `src/auth/` | `authProvider.ts` (OIDC via `oidc-client-ts`, configured from `/api/v1/config`), `authFailure.ts` (the `AuthFailure` the splash screen renders), `tokenStore.ts` (token in memory only). |
-| `src/data/` | `httpClient.ts`, the React-admin `dataProvider`, and `wsStatusService.ts` — the shared REST-bootstrap + `/ws` protocol. |
+| `src/data/` | `httpClient.ts`, the React-admin `dataProvider`, `readFailure.ts` (turns a failed read's status and body into the message the UI shows), and `wsStatusService.ts` — the shared REST-bootstrap + `/ws` protocol. |
 | `src/features/` | Feature modules: `tasks/`, `deployLock/`, `argocdStatus/`. Each owns its components, hooks and services. |
 | `src/layout/` | Layout primitives (top bar, nav, notifications) and `AppSplash.tsx`, the pre-mount loading screen. |
 | `src/shared/` | Cross-cutting hooks, providers (theme mode, timezone) and utilities. |

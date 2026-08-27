@@ -168,6 +168,8 @@ The server negotiates `argo-watcher.v1` and never echoes the token entry. Client
 
 A read whose credential could not be checked returns **503 Service Unavailable**, never 401. The Web UI treats a 401 as a dead session and signs the user out, so a brief provider outage must not look like an authentication failure. Cached decisions keep working throughout.
 
+The symptom to recognise: both the task list and a task's own page show **"Argo Watcher cannot verify your session"**, with a hint to check that the issuer is reachable from the Argo Watcher server. Neither reports an empty task list nor a missing task, and a page that already loaded keeps its content. The server log names the failing discovery request.
+
 ## Migrating from `KEYCLOAK_*`
 
 Earlier releases were Keycloak-specific. Those variables were **removed in 1.0.0**, and the server refuses to start while any of them is set, naming each one and its replacement. Rename them:
