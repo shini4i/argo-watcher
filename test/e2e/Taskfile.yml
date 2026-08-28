@@ -64,10 +64,11 @@ tasks:
       - task: gitea
       # NodePorts come before `seed`, which is the first step to reach a service
       # (Gitea) from the host. A Service may exist before it has any endpoints, so
-      # publishing all four up front is safe and keeps them in one place.
+      # publishing them all up front is safe and keeps them in one place.
       - task: nodeports
       - task: seed
       - task: webhook-tester
+      - task: keycloak
       - task: argo-watcher
       - task: apply-apps
       - task: verify
@@ -126,7 +127,7 @@ tasks:
       - ./scripts/load-race-image.sh {{.RACE_IMAGE}} {{.CLUSTER}}
 
   nodeports:
-    desc: "Publish argo-watcher / gitea / argocd / webhook-tester on the fixed NodePorts kind maps to localhost"
+    desc: "Publish argo-watcher / gitea / argocd / webhook-tester / keycloak on the fixed NodePorts kind maps to localhost"
     cmds:
       # The namespaces are created up front so the Services can be applied in one
       # shot, before the releases that will eventually back them exist. Each is
@@ -135,6 +136,7 @@ tasks:
       - kubectl create namespace gitea --dry-run=client -o yaml | kubectl apply -f -
       - kubectl create namespace argo-watcher --dry-run=client -o yaml | kubectl apply -f -
       - kubectl create namespace webhook-tester --dry-run=client -o yaml | kubectl apply -f -
+      - kubectl create namespace keycloak --dry-run=client -o yaml | kubectl apply -f -
       - kubectl apply -f fixtures/nodeports/
 
   argocd:
@@ -172,6 +174,19 @@ tasks:
         -f values/webhook-tester.yaml
       - kubectl -n webhook-tester rollout status deploy/webhook-tester --timeout=120s
 
+  keycloak:
+    desc: "Install the in-cluster OIDC provider (generic app chart) used by the app-tokens phase"
+    cmds:
+      # The realm is the one the docker-compose `integration` profile imports, so
+      # both suites run against the same provider definition.
+      - kubectl create namespace keycloak --dry-run=client -o yaml | kubectl apply -f -
+      - kubectl -n keycloak create configmap keycloak-realm
+        --from-file=../keycloak/argo-watcher-e2e-realm.json
+        --dry-run=client -o yaml | kubectl apply -f -
+      - helm upgrade --install keycloak app --repo {{.AW_CHART_REPO}}
+        --version {{.APP_CHART_VERSION}} -n keycloak -f values/keycloak.yaml
+      - kubectl -n keycloak rollout status deploy/keycloak --timeout=300s
+
   seed:
     desc: "Seed Gitea (fixture repo + deploy key) and wire argo-watcher SSH"
     cmds:
@@ -204,7 +219,7 @@ tasks:
       - DEPLOY_TOKEN={{.DEPLOY_TOKEN}} ./scripts/client-knobs.sh
 
   jwt-auth:
-    desc: "Assert the JWT (BEARER_TOKEN) auth path: JWT-authenticated write-back reaches deployed"
+    desc: "Assert the JWT (BEARER_TOKEN) auth path: authenticated write-back, iss/aud binding, allowed_apps scope"
     cmds:
       - JWT_SECRET={{.JWT_SECRET}} ./scripts/jwt-auth.sh
 
@@ -297,6 +312,13 @@ tasks:
     cmds:
       - AW_CHART_REPO={{.AW_CHART_REPO}} AW_CHART_VERSION={{.AW_CHART_VERSION}}
         DEPLOY_TOKEN={{.DEPLOY_TOKEN}} ./scripts/state-postgres.sh
+
+  app-tokens:
+    desc: "Assert application deploy tokens end to end: issue via Keycloak-authenticated API, per-app scope, revoke, expiry"
+    deps: [apply-apps]
+    cmds:
+      - AW_CHART_REPO={{.AW_CHART_REPO}} AW_CHART_VERSION={{.AW_CHART_VERSION}}
+        DEPLOY_TOKEN={{.DEPLOY_TOKEN}} JWT_SECRET={{.JWT_SECRET}} ./scripts/app-tokens.sh
 
   race:
     desc: "Same-app supersession race: a newer deploy must win over an older retrying one"

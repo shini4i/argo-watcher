@@ -33,6 +33,9 @@ AW_API="${AW_URL}/api/v1"
 AW_WS_URL="${AW_WS_URL:-ws://localhost:30080/ws}"
 WHT_URL="${WHT_URL:-http://localhost:30081}"
 GITEA_URL="${GITEA_URL:-http://localhost:30300}"
+# Keycloak as the HOST reaches it. The issuer argo-watcher is configured with is the
+# in-cluster URL instead (KC_HOSTNAME in values/keycloak.yaml) — see app-tokens.sh.
+KEYCLOAK_URL="${KEYCLOAK_URL:-http://localhost:30500}"
 # Self-signed cert; callers pass -k.
 ARGOCD_URL="${ARGOCD_URL:-https://localhost:30443}"
 
@@ -331,10 +334,9 @@ other_tag() {
 
 # --- helm --------------------------------------------------------------------
 # extra_envs_index <values-file>: the index of the next free extraEnvs entry, so a
-# phase can append one with `--set extraEnvs[N]...`. Counted from the values FILE,
-# not the live release, so it does not depend on release state. The awk scopes the
-# count to the extraEnvs block (between "extraEnvs:" and the next top-level key),
-# so a same-indented "- name:" added to another section cannot silently shift it.
+# phase can append one with `--set extraEnvs[N]...`. Counted from ONE file, so no
+# file layered by AW_EXTRA_VALUES may define extraEnvs: helm replaces lists across
+# -f files rather than merging them, which would leave this index pointing wrong.
 extra_envs_index() {
   local file="$1"
   awk '
@@ -356,14 +358,31 @@ extra_envs_index() {
 # alone: without it helm carries a prior `--set extraEnvs[N]` forward, so the
 # revert (values file only) would NOT drop the injected variable.
 #
+# AW_EXTRA_VALUES layers further values files on top, so a phase whose release the
+# base file alone does not describe (app-tokens, on Postgres) can still revert here.
 # Requires AW_CHART_REPO and AW_CHART_VERSION (passed from the Taskfile, which pins
 # the chart version).
 helm_apply_aw() {
+  local overlays=() file
+  for file in "${AW_EXTRA_VALUES[@]:-}"; do
+    [[ -n "$file" ]] && overlays+=(-f "$file")
+  done
+
   helm upgrade --install argo-watcher argo-watcher \
     --repo "${AW_CHART_REPO:?AW_CHART_REPO is required}" \
     --version "${AW_CHART_VERSION:?AW_CHART_VERSION is required}" \
-    -n "$NS_AW" -f "${E2E_DIR}/values/argo-watcher.yaml" --reset-values \
+    -n "$NS_AW" -f "${E2E_DIR}/values/argo-watcher.yaml" "${overlays[@]}" --reset-values \
     --set image.tag=race "$@" >/dev/null
   kubectl -n "$NS_AW" rollout status statefulset/argo-watcher --timeout=180s >/dev/null
+  return
+}
+
+# psql_db <sql>: run one statement against the lab's in-cluster Postgres, printing
+# bare values (no headers or padding). Only meaningful once fixtures/postgres/ is
+# applied — the state-postgres and app-tokens phases both do that.
+psql_db() {
+  local sql="$1"
+  kubectl -n "$NS_AW" exec argo-watcher-db-0 -- \
+    psql -qtAX -U argo_watcher -d argo_watcher -c "$sql"
   return
 }

@@ -102,7 +102,7 @@ go test -v -run TestArgoStatusUpdaterCheck ./...
 
 **Browser tests** (`task test-web-e2e`) cover what jsdom cannot: the top-level OIDC redirect and the path it returns to, session recovery across a reload, the server's SPA fallback for deep-linked task URLs, the live WebSocket behind the deploy-lock banner, and the privileged write flows for a privileged versus a regular user. The task builds `web/dist`, brings Keycloak up, and lets Playwright start two servers (`8100` without OIDC, `8101` with) plus the mock Argo CD. Specs live in `web/e2e/`.
 
-**The end-to-end lab** in [`test/e2e/`](https://github.com/shini4i/argo-watcher/tree/main/test/e2e) runs real Argo CD, Gitea and a race-detector build on a kind cluster, once per release. Its README covers the phases and how to add one.
+**The end-to-end lab** in [`test/e2e/`](https://github.com/shini4i/argo-watcher/tree/main/test/e2e) runs real Argo CD, Gitea, Keycloak and a race-detector build on a kind cluster, once per release. Its README covers the phases and how to add one.
 
 ## Swagger spec
 

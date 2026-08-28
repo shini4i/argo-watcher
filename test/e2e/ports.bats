@@ -51,7 +51,7 @@ service_nodeports() {
 @test "lib.sh endpoint URLs use the published nodePorts" {
   # shellcheck source=./scripts/lib.sh
   . "${BATS_TEST_DIRNAME}/scripts/lib.sh"
-  for url in "$AW_URL" "$AW_WS_URL" "$WHT_URL" "$GITEA_URL" "$ARGOCD_URL" "$GITOPS_REPO_URL"; do
+  for url in "$AW_URL" "$AW_WS_URL" "$WHT_URL" "$GITEA_URL" "$ARGOCD_URL" "$GITOPS_REPO_URL" "$KEYCLOAK_URL"; do
     port="${url##*:}"; port="${port%%/*}"
     run grep -rqE "nodePort: ${port}\$" "$NODEPORTS_DIR"
     assert_success
