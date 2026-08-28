@@ -381,7 +381,8 @@ helm_apply_aw() {
 # bare values (no headers or padding). Only meaningful once fixtures/postgres/ is
 # applied — the state-postgres and app-tokens phases both do that.
 psql_db() {
+  local sql="$1"
   kubectl -n "$NS_AW" exec argo-watcher-db-0 -- \
-    psql -qtAX -U argo_watcher -d argo_watcher -c "$1"
+    psql -qtAX -U argo_watcher -d argo_watcher -c "$sql"
   return
 }

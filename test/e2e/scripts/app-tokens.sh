@@ -42,6 +42,8 @@ SCOPE_A="scope-alpha"
 SCOPE_B="scope-beta"
 
 UNKNOWN_ID="00000000-0000-0000-0000-000000000000"
+# The rejection reason every 401 assertion below reads out of the response body.
+ERROR_FILTER='.error // empty'
 
 bin_dir="$(mktemp -d)"
 work="$(mktemp -d)"
@@ -61,9 +63,10 @@ trap revert EXIT
 # access grant. The openid scope is required — Keycloak 26 answers userinfo 403
 # without it, and argo-watcher validates by calling userinfo.
 kc_token() {
+  local client="$1" user="$2" password="$3"
   curl -s -m 10 -X POST "$KC_TOKEN_URL" \
-    -d grant_type=password -d "client_id=$1" -d "username=$2" -d "password=$3" \
-    -d scope=openid | jq -r '.access_token // empty'
+    -d grant_type=password -d "client_id=${client}" -d "username=${user}" \
+    -d "password=${password}" -d scope=openid | jq -r '.access_token // empty'
   return
 }
 
@@ -78,7 +81,8 @@ as_priv() {
 
 # issue <json>: POST a token request as the privileged operator.
 issue() {
-  as_priv POST /app-tokens -H 'Content-Type: application/json' -d "$1"
+  local json="$1"
+  as_priv POST /app-tokens -H 'Content-Type: application/json' -d "$json"
   return
 }
 
@@ -98,8 +102,9 @@ issue_secret() {
 # token_field <id> <jq-filter>: read one field of a token from the API listing, so
 # the assertions go through the endpoint operators actually use.
 token_field() {
+  local id="$1" filter="$2"
   as_priv GET /app-tokens
-  jq -r --arg id "$1" ".[] | select(.id == \$id) | $2" <<<"$BODY"
+  jq -r --arg id "$id" ".[] | select(.id == \$id) | ${filter}" <<<"$BODY"
   return
 }
 
@@ -107,8 +112,8 @@ token_field() {
 # instant. A bare `!= 0` would also pass on NO output, which is what a listing that
 # is not an array prints — the failure this is most likely to face.
 token_moved() {
-  local value
-  value="$(token_field "$1" "$2 // 0")"
+  local id="$1" field="$2" value
+  value="$(token_field "$id" "${field} // 0")"
   [[ "$value" =~ ^[0-9]+$ ]] && (( value > 0 ))
   return
 }
@@ -316,7 +321,7 @@ fi
 mint_operators
 
 post_task "$(task_json "$DENIED_APP" v0.0.1)" -H "Authorization: ${SCOPED_SECRET}"
-reason="$(jq -r '.error // empty' <<<"$BODY")"
+reason="$(jq -r "$ERROR_FILTER" <<<"$BODY")"
 if [[ "$CODE" == "401" ]] && [[ "$reason" == *"$DENIED_APP"* ]] && [[ "$reason" == *"$APP"* ]]; then
   ok "the same token is refused for ${DENIED_APP}, and the reason names both the app and the scope"
 else
@@ -437,7 +442,7 @@ fi
 # The point of the store being a database read on every request: revocation takes
 # effect on the next one, with nothing to restart or expire first.
 post_task "$(task_json "$APP" v0.0.1)" -H "Authorization: ${SCOPED_SECRET}"
-reason="$(jq -r '.error // empty' <<<"$BODY")"
+reason="$(jq -r "$ERROR_FILTER" <<<"$BODY")"
 if [[ "$CODE" == "401" ]] && [[ "$reason" == *revoked* ]]; then
   ok "the revoked token is refused on its very next use, and told it was revoked"
 else
@@ -495,7 +500,7 @@ fi
 # boundary Usable() applies is the row's, and this is the row.
 psql_db "UPDATE app_tokens SET expires_at = now() - interval '1 hour' WHERE id = '${EXPIRING_ID}'" >/dev/null
 post_task "$(task_json "$SCOPE_A" v0.0.1)" -H "Authorization: ${EXPIRING_SECRET}"
-reason="$(jq -r '.error // empty' <<<"$BODY")"
+reason="$(jq -r "$ERROR_FILTER" <<<"$BODY")"
 if [[ "$CODE" == "401" ]] && [[ "$reason" == *expired* ]]; then
   ok "a token past its expiry is refused, and told it expired"
 else
@@ -550,7 +555,7 @@ else
   bad "token after a restart: code=${CODE} body=${BODY} (want 202)"
 fi
 post_task "$(task_json "$APP" v0.0.1)" -H "Authorization: ${SCOPED_SECRET}"
-reason="$(jq -r '.error // empty' <<<"$BODY")"
+reason="$(jq -r "$ERROR_FILTER" <<<"$BODY")"
 if [[ "$CODE" == "401" ]] && [[ "$reason" == *revoked* ]]; then
   ok "the revocation survived the restart too"
 else
