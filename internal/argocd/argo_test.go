@@ -19,6 +19,24 @@ import (
 const loggedInUsername = "unit-test"
 const taskImageTag = "test:v0.0.1"
 
+// anyLimit tells deployedHistoryFilter to accept whatever page size the caller used.
+const anyLimit = -1
+
+// deployedHistoryFilter matches the filter detectRollback issues for app: its
+// deployed history from the first page, capped at limit. Search must stay empty
+// — a caller's search term would narrow the history and pick a wrong target.
+func deployedHistoryFilter(app string, limit int) gomock.Matcher {
+	return gomock.Cond(func(filter models.TaskFilter) bool {
+		if filter.App != app || filter.Status != models.StatusDeployedMessage {
+			return false
+		}
+		if filter.Offset != 0 || filter.Search != "" {
+			return false
+		}
+		return limit == anyLimit || filter.Limit == limit
+	})
+}
+
 func TestArgoCheck(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -259,7 +277,7 @@ func TestArgoAddTask(t *testing.T) {
 		state := newTaskRepositoryMock(ctrl)
 
 		stateError := fmt.Errorf("database error")
-		state.EXPECT().GetTasks(gomock.Any(), gomock.Any(), "test-app", models.StatusDeployedMessage, gomock.Any(), gomock.Any()).Return([]models.Task{}, int64(0))
+		state.EXPECT().GetTasks(deployedHistoryFilter("test-app", anyLimit)).Return([]models.Task{}, int64(0))
 		state.EXPECT().CancelInProgressTasks("test-app", gomock.Any(), gomock.Any(), gomock.Any()).Return(int64(0), nil)
 		state.EXPECT().AddTask(gomock.Any()).Return(nil, stateError)
 
@@ -310,7 +328,7 @@ func TestArgoAddTask(t *testing.T) {
 			// mock calls to add task. In-progress deployments for the app MUST be
 			// cancelled before the new task is persisted; otherwise the new task would
 			// match the cancel filter and cancel itself. gomock.InOrder locks that.
-			state.EXPECT().GetTasks(gomock.Any(), gomock.Any(), "test-app", models.StatusDeployedMessage, gomock.Any(), gomock.Any()).Return([]models.Task{}, int64(0))
+			state.EXPECT().GetTasks(deployedHistoryFilter("test-app", anyLimit)).Return([]models.Task{}, int64(0))
 			gomock.InOrder(
 				// The task's images MUST be forwarded to the cancel call so superseding
 				// is scoped to matching images, not the whole app. Its own Validated flag
@@ -341,7 +359,7 @@ func TestArgoAddTask(t *testing.T) {
 		task := models.Task{App: "test-app", Images: []models.Image{{Tag: taskImageTag}}, Validated: true}
 		newTask := models.Task{Id: uuid.NewString(), App: "test-app", Images: []models.Image{{Tag: taskImageTag}}}
 
-		state.EXPECT().GetTasks(gomock.Any(), gomock.Any(), "test-app", models.StatusDeployedMessage, gomock.Any(), gomock.Any()).Return([]models.Task{}, int64(0))
+		state.EXPECT().GetTasks(deployedHistoryFilter("test-app", anyLimit)).Return([]models.Task{}, int64(0))
 		state.EXPECT().CancelInProgressTasks("test-app", gomock.Any(), supersededTaskReason, gomock.Any()).Return(int64(0), fmt.Errorf("cancel failed"))
 		state.EXPECT().AddTask(gomock.Any()).Return(&newTask, nil)
 
@@ -365,7 +383,7 @@ func TestArgoAddTask(t *testing.T) {
 			{Id: "current", App: "test-app", Images: []models.Image{{Image: "app", Tag: "v2"}}, Status: models.StatusDeployedMessage},
 			{Id: "earlier", App: "test-app", Images: []models.Image{{Image: "app", Tag: "v1"}}, Status: models.StatusDeployedMessage},
 		}
-		state.EXPECT().GetTasks(gomock.Any(), gomock.Any(), "test-app", models.StatusDeployedMessage, gomock.Any(), gomock.Any()).Return(deployed, int64(len(deployed)))
+		state.EXPECT().GetTasks(deployedHistoryFilter("test-app", anyLimit)).Return(deployed, int64(len(deployed)))
 
 		var captured models.Task
 		state.EXPECT().CancelInProgressTasks("test-app", gomock.Any(), gomock.Any(), gomock.Any()).Return(int64(0), nil)
@@ -394,7 +412,7 @@ func TestArgoAddTask(t *testing.T) {
 		deployed := []models.Task{
 			{Id: "current", App: "test-app", Images: []models.Image{{Image: "app", Tag: "v2"}}, Status: models.StatusDeployedMessage},
 		}
-		state.EXPECT().GetTasks(gomock.Any(), gomock.Any(), "test-app", models.StatusDeployedMessage, gomock.Any(), gomock.Any()).Return(deployed, int64(len(deployed)))
+		state.EXPECT().GetTasks(deployedHistoryFilter("test-app", anyLimit)).Return(deployed, int64(len(deployed)))
 
 		var captured models.Task
 		state.EXPECT().CancelInProgressTasks("test-app", gomock.Any(), gomock.Any(), gomock.Any()).Return(int64(0), nil)
@@ -510,7 +528,7 @@ func TestArgoDetectRollback(t *testing.T) {
 
 			state := newTaskRepositoryMock(ctrl)
 			state.EXPECT().
-				GetTasks(gomock.Any(), gomock.Any(), "test-app", models.StatusDeployedMessage, rollbackHistoryWindow, 0).
+				GetTasks(deployedHistoryFilter("test-app", rollbackHistoryWindow)).
 				Return(deployed, int64(len(deployed)))
 
 			argo := &Argo{State: state}
@@ -539,12 +557,12 @@ func TestArgoGetTasks(t *testing.T) {
 		expectedTasks := []models.Task{
 			{Id: "task-1", App: "demo", Images: []models.Image{{Image: "example.com/app", Tag: "v1.0.0"}}},
 		}
-		state.EXPECT().GetTasks(start, end, "demo", "", 0, 0).Return(expectedTasks, int64(len(expectedTasks)))
+		state.EXPECT().GetTasks(models.TaskFilter{StartTime: start, EndTime: end, App: "demo"}).Return(expectedTasks, int64(len(expectedTasks)))
 
 		argo := &Argo{}
 		argo.Init(state, api, metrics)
 
-		response := argo.GetTasks(start, end, "demo", "", 0, 0)
+		response := argo.GetTasks(models.TaskFilter{StartTime: start, EndTime: end, App: "demo"})
 
 		assert.Equal(t, expectedTasks, response.Tasks)
 		assert.Equal(t, int64(len(expectedTasks)), response.Total)
@@ -565,12 +583,12 @@ func TestArgoGetTasks(t *testing.T) {
 		expectedTasks := []models.Task{
 			{Id: "task-1", App: "demo"},
 		}
-		state.EXPECT().GetTasks(0.0, 100.0, "demo", "", 0, 0).Return(expectedTasks, int64(len(expectedTasks)))
+		state.EXPECT().GetTasks(models.TaskFilter{StartTime: 0, EndTime: 100, App: "demo"}).Return(expectedTasks, int64(len(expectedTasks)))
 
 		argo := &Argo{}
 		argo.Init(state, api, metrics)
 
-		response := argo.GetTasks(0, 100, "demo", "", 0, 0)
+		response := argo.GetTasks(models.TaskFilter{StartTime: 0, EndTime: 100, App: "demo"})
 
 		assert.Equal(t, expectedTasks, response.Tasks)
 		assert.Equal(t, int64(len(expectedTasks)), response.Total)
@@ -645,7 +663,7 @@ func TestArgoAddTaskClaimsTheTask(t *testing.T) {
 		task := models.Task{App: "test-app", Author: "author", Project: "project", Validated: true,
 			Images: []models.Image{{Image: "app", Tag: "v1"}}}
 
-		stateMock.EXPECT().GetTasks(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		stateMock.EXPECT().GetTasks(gomock.Any()).
 			Return([]models.Task{}, int64(0)).AnyTimes()
 		stateMock.EXPECT().CancelInProgressTasks(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 			Return(int64(0), nil).AnyTimes()
@@ -668,7 +686,7 @@ func TestArgoAddTaskClaimsTheTask(t *testing.T) {
 		task := models.Task{App: "test-app", Author: "author", Project: "project", Validated: true,
 			Images: []models.Image{{Image: "app", Tag: "v1"}}}
 
-		stateMock.EXPECT().GetTasks(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		stateMock.EXPECT().GetTasks(gomock.Any()).
 			Return([]models.Task{}, int64(0)).AnyTimes()
 		stateMock.EXPECT().CancelInProgressTasks(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 			Return(int64(0), nil).AnyTimes()

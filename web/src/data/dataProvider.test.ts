@@ -180,6 +180,43 @@ describe('dataProvider', () => {
     expect(params.get('to_timestamp')).toBe(String(Math.floor(Date.parse('2025-01-02T03:04:05Z') / 1000)));
   });
 
+  it('forwards a trimmed search filter to the backend', async () => {
+    const fetch = mockFetch().mockResolvedValue(jsonResponse({ tasks: [] }));
+    await dataProvider.getList('tasks', {
+      ...createListParams(),
+      filter: { search: '  v1.2.3  ' },
+    });
+
+    const params = getQueryParams(fetch.mock.calls[0][0] as string);
+    expect(params.get('search')).toBe('v1.2.3');
+  });
+
+  // A rejected search must surface as an error, not as an empty task list — the
+  // latter reads as "nothing matches" and hides the reason.
+  it('rejects an oversized search instead of resolving to no tasks', async () => {
+    mockFetch().mockResolvedValue(
+      jsonResponse({ error: 'search term too long' }, { status: 400 }),
+    );
+
+    await expect(
+      dataProvider.getList('tasks', {
+        ...createListParams(),
+        filter: { search: 'x'.repeat(256) },
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+  });
+
+  it('omits the search param when the filter is blank', async () => {
+    const fetch = mockFetch().mockResolvedValue(jsonResponse({ tasks: [] }));
+    await dataProvider.getList('tasks', {
+      ...createListParams(),
+      filter: { search: '   ' },
+    });
+
+    const params = getQueryParams(fetch.mock.calls[0][0] as string);
+    expect(params.has('search')).toBe(false);
+  });
+
   it('falls back to default timeframe when filters are invalid', async () => {
     const fetch = mockFetch().mockResolvedValue(jsonResponse({ tasks: [] }));
     await dataProvider.getList('tasks', {

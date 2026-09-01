@@ -37,10 +37,15 @@ import (
 )
 
 type repoCapture struct {
-	lastApp    string
-	lastStatus string
-	lastLimit  int
-	lastOffset int
+	lastFilter models.TaskFilter
+}
+
+// deployedHistoryOf matches the rollback-detection lookup for app, so a test
+// expecting it cannot silently absorb a query for a different app or status.
+func deployedHistoryOf(app string) gomock.Matcher {
+	return gomock.Cond(func(filter models.TaskFilter) bool {
+		return filter.App == app && filter.Status == models.StatusDeployedMessage
+	})
 }
 
 // newRepo returns a permissive TaskRepository mock plus the capture struct its
@@ -50,12 +55,9 @@ func newRepo(ctrl *gomock.Controller) (*mocks.MockTaskRepository, *repoCapture) 
 	repo := mocks.NewMockTaskRepository(ctrl)
 	capture := &repoCapture{}
 	repo.EXPECT().Connect(gomock.Any()).Return(nil).AnyTimes()
-	repo.EXPECT().GetTasks(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_, _ float64, app, status string, limit, offset int) ([]models.Task, int64) {
-			capture.lastApp = app
-			capture.lastStatus = status
-			capture.lastLimit = limit
-			capture.lastOffset = offset
+	repo.EXPECT().GetTasks(gomock.Any()).
+		DoAndReturn(func(filter models.TaskFilter) ([]models.Task, int64) {
+			capture.lastFilter = filter
 			return []models.Task{}, 0
 		}).AnyTimes()
 	repo.EXPECT().SetTaskStatus(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
@@ -458,7 +460,7 @@ func TestGetStateForwardsFilters(t *testing.T) {
 
 	req, err := http.NewRequest(
 		http.MethodGet,
-		"/api/v1/tasks?from_timestamp=0&app=checkout-api&status=in+progress",
+		"/api/v1/tasks?from_timestamp=0&app=checkout-api&status=in+progress&search=+v1.2.3+",
 		nil,
 	)
 	require.NoError(t, err)
@@ -467,8 +469,57 @@ func TestGetStateForwardsFilters(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Equal(t, "checkout-api", capture.lastApp)
-	assert.Equal(t, "in progress", capture.lastStatus)
+	assert.Equal(t, "checkout-api", capture.lastFilter.App)
+	assert.Equal(t, "in progress", capture.lastFilter.Status)
+	assert.Equal(t, "v1.2.3", capture.lastFilter.Search)
+}
+
+// TestGetStateRejectsOversizedSearch covers the 400 returned for a search term
+// longer than any field it is matched against, which could never match a task.
+func TestGetStateRejectsOversizedSearch(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	repo, capture := newRepo(ctrl)
+	argo := &argocd.Argo{}
+	argo.Init(repo, newArgoAPI(ctrl), newMetrics(ctrl))
+
+	env := &Env{argo: argo, config: &config.ServerConfig{}}
+	router := chi.NewRouter()
+	router.Get("/api/v1/tasks", env.getState)
+
+	// Multi-byte, so a regression from runes to bytes would reject a term the cap
+	// allows instead of quietly passing an ASCII one.
+	atCap := strings.Repeat("é", maxTaskSearchLength)
+
+	get := func(t *testing.T, search string) *httptest.ResponseRecorder {
+		t.Helper()
+		target := "/api/v1/tasks?from_timestamp=0&search=" + url.QueryEscape(search)
+		req, err := http.NewRequest(http.MethodGet, target, nil)
+		require.NoError(t, err)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		return w
+	}
+
+	t.Run("a term at the cap is accepted intact", func(t *testing.T) {
+		assert.Equal(t, http.StatusOK, get(t, atCap).Code)
+		assert.Equal(t, atCap, capture.lastFilter.Search)
+	})
+
+	t.Run("one rune past the cap is rejected", func(t *testing.T) {
+		w := get(t, atCap+"é")
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+		assert.Contains(t, w.Body.String(), "search term too long")
+	})
+
+	t.Run("padding is trimmed before the cap is measured", func(t *testing.T) {
+		assert.Equal(t, http.StatusOK, get(t, "  "+atCap+"  ").Code)
+		assert.Equal(t, atCap, capture.lastFilter.Search)
+	})
+
+	t.Run("a whitespace-only term drops the search entirely", func(t *testing.T) {
+		assert.Equal(t, http.StatusOK, get(t, "   ").Code)
+		assert.Empty(t, capture.lastFilter.Search)
+	})
 }
 
 // TestGetStateRejectsUnknownStatus covers the 400 returned when the `status` query
@@ -551,7 +602,7 @@ func TestGetStateClampsLimit(t *testing.T) {
 			router.ServeHTTP(w, req)
 
 			assert.Equal(t, http.StatusOK, w.Code)
-			assert.Equal(t, tc.expected, capture.lastLimit)
+			assert.Equal(t, tc.expected, capture.lastFilter.Limit)
 		})
 	}
 }
@@ -1900,7 +1951,7 @@ func TestAddTaskEndpoint(t *testing.T) {
 		// absorb the call before the specific expectation below could match it.
 		ctrl := gomock.NewController(t)
 		repo := mocks.NewMockTaskRepository(ctrl)
-		repo.EXPECT().GetTasks(gomock.Any(), gomock.Any(), "test-app", models.StatusDeployedMessage, gomock.Any(), gomock.Any()).Return([]models.Task{}, int64(0))
+		repo.EXPECT().GetTasks(deployedHistoryOf("test-app")).Return([]models.Task{}, int64(0))
 		// The literal true ties the handler's authority to the state-layer rule.
 		repo.EXPECT().CancelInProgressTasks("test-app", gomock.Any(), gomock.Any(), true).Return(int64(0), nil)
 
@@ -2643,7 +2694,7 @@ func TestAddTaskResolvesTheDeploymentWindow(t *testing.T) {
 			argo := &argocd.Argo{}
 			argo.Init(stateMock, mocks.NewMockArgoApiInterface(ctrl), metricsMock)
 
-			stateMock.EXPECT().GetTasks(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+			stateMock.EXPECT().GetTasks(gomock.Any()).
 				Return([]models.Task{}, int64(0)).AnyTimes()
 			stateMock.EXPECT().CancelInProgressTasks(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 				Return(int64(0), nil).AnyTimes()

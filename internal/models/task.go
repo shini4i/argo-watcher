@@ -121,3 +121,27 @@ type LockdownSchedule struct {
 	Cron     string `json:"cron" example:"0 2 * * *"`
 	Duration string `json:"duration" example:"2h"`
 }
+
+// MatchesSearch reports whether query occurs, case-insensitively, in the task's
+// app name, author, or any of its images formatted as "image:tag". An empty
+// query matches every task. This is the reference for the free-text task search
+// exposed by the API; the Postgres query mirrors it in SQL.
+func (task *Task) MatchesSearch(query string) bool {
+	if query == "" {
+		return true
+	}
+
+	needle := strings.ToLower(query)
+	if strings.Contains(strings.ToLower(task.App), needle) {
+		return true
+	}
+	if strings.Contains(strings.ToLower(task.Author), needle) {
+		return true
+	}
+	for _, image := range task.ListImages() {
+		if strings.Contains(strings.ToLower(image), needle) {
+			return true
+		}
+	}
+	return false
+}

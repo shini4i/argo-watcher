@@ -5,6 +5,9 @@ import SearchIcon from '@mui/icons-material/Search';
 import { tokens } from '../../../theme/tokens';
 import { usePauseRefresh } from './TaskListContext';
 
+/** Mirrors the API's own cap; a longer term is rejected with HTTP 400. */
+const MAX_QUERY_LENGTH = 255;
+
 interface SearchInputProps {
   readonly value: string;
   readonly onChange: (next: string) => void;
@@ -13,18 +16,17 @@ interface SearchInputProps {
 }
 
 /**
- * Callers filter the already-loaded page with this; it is not a server query.
- * Auto-refresh is held paused while focused (and briefly after blur) so the
- * list does not reshuffle mid-keystroke.
- *
- * Below 1200 px the input collapses into an icon button when it has no value,
- * to keep the toolbar from squeezing the other controls.
+ * @description Reports the committed query to `onChange`, debounced, since each
+ * commit reaches the backend as a filtered task query. Auto-refresh stays paused
+ * while focused (and briefly after blur) so the list does not reshuffle
+ * mid-keystroke. Below 1200 px the input collapses into an icon button when it
+ * has no value, to keep the toolbar from squeezing the other controls.
  */
 export const SearchInput = ({
   value,
   onChange,
   placeholder = 'Search…',
-  debounceMs = 200,
+  debounceMs = 350,
 }: SearchInputProps) => {
   const theme = useTheme();
   const isWide = useMediaQuery('(min-width: 1200px)');
@@ -102,6 +104,7 @@ export const SearchInput = ({
       slotProps={{
         htmlInput: {
           'aria-label': 'Search tasks',
+          maxLength: MAX_QUERY_LENGTH,
           onFocus: () => setFocused(true),
           onBlur: () => {
             setFocused(false);

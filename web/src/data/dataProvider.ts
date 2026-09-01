@@ -73,6 +73,7 @@ const selectListWindow = (params: GetListParams) => {
     to: toCandidate == null ? undefined : toUnixSeconds(toCandidate, nowSeconds),
     app: filter.app,
     status: filter.status && ALLOWED_TASK_STATUSES.has(filter.status) ? filter.status : undefined,
+    search: filter.search?.trim() || undefined,
   };
 };
 
@@ -99,6 +100,7 @@ const getList = async (params: GetListParams): Promise<GetListResult<Task>> => {
     to_timestamp: timeframe.to,
     app: timeframe.app,
     status: timeframe.status,
+    search: timeframe.search,
     limit,
     offset,
   });

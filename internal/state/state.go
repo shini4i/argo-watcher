@@ -44,7 +44,7 @@ func imageNamesOverlap(a, b []models.Image) bool {
 type TaskRepository interface {
 	Connect(serverConfig *config.ServerConfig) error
 	AddTask(task models.Task) (*models.Task, error)
-	GetTasks(startTime float64, endTime float64, app string, status string, limit int, offset int) ([]models.Task, int64)
+	GetTasks(filter models.TaskFilter) ([]models.Task, int64)
 	GetTask(id string) (*models.Task, error)
 	SetTaskStatus(id, status, reason string) error
 	// CancelInProgressTasks marks in-progress tasks for the given app as

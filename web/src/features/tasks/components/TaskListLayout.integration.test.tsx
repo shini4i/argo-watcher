@@ -1,7 +1,8 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { AdminContext, HttpError, testDataProvider, useListContext, useRefresh } from 'react-admin';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
+import { RecentTasksToolbar } from './RecentTasksToolbar';
 import { TaskListLayout } from './TaskListLayout';
 
 const providerUnavailable = () =>
@@ -86,5 +87,42 @@ describe('TaskListLayout against react-admin', () => {
 
     expect(screen.getByTestId('datagrid')).toBeInTheDocument();
     expect(screen.queryByText('Argo Watcher cannot verify your session')).not.toBeInTheDocument();
+  });
+
+  // Search must reach the backend, not narrow the loaded page: a client-side
+  // filter would only ever find tasks on the page the user is already looking at.
+  it('sends a typed search term to the data provider', async () => {
+    const getList = vi.fn(() => Promise.resolve({ data: [{ id: 'task-1' }], total: 1 }));
+
+    render(
+      <MemoryRouter>
+        <AdminContext dataProvider={testDataProvider({ getList })}>
+          <TaskListLayout
+            perPageStorageKey="test.perPage"
+            header={<RecentTasksToolbar storageKey="searchIntegration" />}
+          >
+            <div data-testid="datagrid">Rows</div>
+          </TaskListLayout>
+        </AdminContext>
+      </MemoryRouter>,
+    );
+
+    await screen.findByTestId('datagrid');
+    // jsdom reports a narrow viewport, where the input starts collapsed.
+    fireEvent.click(await screen.findByLabelText('Open search'));
+    fireEvent.change(await screen.findByLabelText('Search tasks'), {
+      target: { value: 'checkout' },
+    });
+
+    // The timeout clears SearchInput's own debounce, which gates the commit.
+    await waitFor(
+      () => {
+        expect(getList).toHaveBeenCalledWith(
+          'tasks',
+          expect.objectContaining({ filter: expect.objectContaining({ search: 'checkout' }) }),
+        );
+      },
+      { timeout: 2000 },
+    );
   });
 });

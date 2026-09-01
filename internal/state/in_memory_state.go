@@ -50,21 +50,21 @@ func (state *InMemoryState) AddTask(task models.Task) (*models.Task, error) {
 	return &task, nil
 }
 
-// taskMatchesFilters reports whether a task falls within the time window
-// and matches the optional app/status filters (empty values are wildcards).
-// The lower bound is exclusive and the upper bound is inclusive to match the
-// Postgres query (`created > startTime AND created <= endTime`).
-func taskMatchesFilters(task models.Task, startTime, endTime float64, app, status string) bool {
-	if task.Created <= startTime || task.Created > endTime {
+// taskMatchesFilters reports whether a task falls within the filter's time
+// window and satisfies its optional app/status/search constraints (empty values
+// are wildcards). The lower bound is exclusive and the upper bound is inclusive
+// to match the Postgres query (`created > startTime AND created <= endTime`).
+func taskMatchesFilters(task models.Task, filter models.TaskFilter) bool {
+	if task.Created <= filter.StartTime || task.Created > filter.EndTime {
 		return false
 	}
-	if app != "" && app != task.App {
+	if filter.App != "" && filter.App != task.App {
 		return false
 	}
-	if status != "" && status != task.Status {
+	if filter.Status != "" && filter.Status != task.Status {
 		return false
 	}
-	return true
+	return task.MatchesSearch(filter.Search)
 }
 
 // paginate returns the [offset:offset+limit] slice of tasks, clamping to bounds.
@@ -80,7 +80,7 @@ func paginate(tasks []models.Task, limit, offset int) []models.Task {
 	return tasks[offset:end]
 }
 
-func (state *InMemoryState) GetTasks(startTime float64, endTime float64, app string, status string, limit int, offset int) ([]models.Task, int64) {
+func (state *InMemoryState) GetTasks(filter models.TaskFilter) ([]models.Task, int64) {
 	state.mu.RLock()
 	defer state.mu.RUnlock()
 
@@ -88,16 +88,18 @@ func (state *InMemoryState) GetTasks(startTime float64, endTime float64, app str
 		return []models.Task{}, 0
 	}
 
+	limit := filter.Limit
 	if limit < 0 {
 		limit = 0
 	}
+	offset := filter.Offset
 	if offset < 0 {
 		offset = 0
 	}
 
 	var tasks []models.Task
 	for _, task := range state.tasks {
-		if taskMatchesFilters(task, startTime, endTime, app, status) {
+		if taskMatchesFilters(task, filter) {
 			tasks = append(tasks, task)
 		}
 	}

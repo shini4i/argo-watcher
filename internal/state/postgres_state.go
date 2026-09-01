@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/avast/retry-go/v4"
@@ -94,18 +95,38 @@ func (state *PostgresState) AddTask(task models.Task) (*models.Task, error) {
 	return &task, nil
 }
 
-// GetTasks retrieves a list of tasks from the PostgreSQL database based on the provided time range, app, and status filters.
-// Empty filter values (app == "" or status == "") are treated as wildcards.
-func (state *PostgresState) GetTasks(startTime float64, endTime float64, app string, status string, limit int, offset int) ([]models.Task, int64) {
-	startTimeUTC := time.Unix(int64(startTime), 0).UTC()
-	endTimeUTC := time.Unix(int64(endTime), 0).UTC()
+// escapeLikePattern neutralises the LIKE wildcards in a user-supplied search
+// term so it matches literally. It pairs with `ESCAPE '\'` in the query.
+func escapeLikePattern(value string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(value)
+}
+
+// GetTasks retrieves the tasks matching filter. Empty filter values (App, Status,
+// Search) are wildcards, and the Search clause mirrors models.Task.MatchesSearch.
+func (state *PostgresState) GetTasks(filter models.TaskFilter) ([]models.Task, int64) {
+	startTimeUTC := time.Unix(int64(filter.StartTime), 0).UTC()
+	endTimeUTC := time.Unix(int64(filter.EndTime), 0).UTC()
 
 	query := state.orm.Model(&state_models.TaskModel{}).Where("created > ?", startTimeUTC).Where("created <= ?", endTimeUTC)
-	if app != "" {
-		query = query.Where(`"tasks"."app" = ?`, app)
+	if filter.App != "" {
+		query = query.Where(`"tasks"."app" = ?`, filter.App)
 	}
-	if status != "" {
-		query = query.Where(`"tasks"."status" = ?`, status)
+	if filter.Status != "" {
+		query = query.Where(`"tasks"."status" = ?`, filter.Status)
+	}
+	if filter.Search != "" {
+		// A leading-wildcard ILIKE cannot use an index, so this is a filter over
+		// the rows the `created` range already selected.
+		pattern := "%" + escapeLikePattern(filter.Search) + "%"
+		query = query.Where(
+			`("tasks"."app" ILIKE ? ESCAPE '\'
+			  OR "tasks"."author" ILIKE ? ESCAPE '\'
+			  OR EXISTS (
+			      SELECT 1 FROM jsonb_array_elements("tasks"."images") AS image
+			      WHERE coalesce(image->>'image', '') || ':' || coalesce(image->>'tag', '')
+			            ILIKE ? ESCAPE '\'
+			  ))`,
+			pattern, pattern, pattern)
 	}
 
 	countQuery := query.Session(&gorm.Session{})
@@ -115,11 +136,11 @@ func (state *PostgresState) GetTasks(startTime float64, endTime float64, app str
 		return []models.Task{}, 0
 	}
 
-	if limit > 0 {
-		query = query.Limit(limit)
+	if filter.Limit > 0 {
+		query = query.Limit(filter.Limit)
 	}
-	if offset > 0 {
-		query = query.Offset(offset)
+	if filter.Offset > 0 {
+		query = query.Offset(filter.Offset)
 	}
 
 	query = query.Order("created DESC")

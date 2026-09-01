@@ -17,9 +17,10 @@ import { useTaskListContext } from './TaskListContext';
 interface RecentFiltersValues extends Record<string, unknown> {
   app: string;
   status: string | null;
+  search: string;
 }
 
-const DEFAULTS: RecentFiltersValues = { app: '', status: null };
+const DEFAULTS: RecentFiltersValues = { app: '', status: null, search: '' };
 
 const SCHEMA: FilterStateSchema<RecentFiltersValues> = {
   app: {
@@ -30,6 +31,12 @@ const SCHEMA: FilterStateSchema<RecentFiltersValues> = {
   status: {
     fromUrl: raw => raw ?? null,
     toUrl: value => value || null,
+    storage: false,
+  },
+  // Not persisted: a stored search would silently hide rows on the next visit.
+  search: {
+    fromUrl: raw => raw?.trim() ?? '',
+    toUrl: value => value.trim() || null,
     storage: false,
   },
 };
@@ -48,7 +55,7 @@ export const RecentTasksToolbar = ({ storageKey = 'recentTasks' }: { storageKey?
     defaults: DEFAULTS,
   });
 
-  const { state: { searchQuery }, setSearchQuery, registerClearAll } = useTaskListContext();
+  const { registerClearAll } = useTaskListContext();
 
   const handleApplicationChange = useCallback(
     (next: string) => {
@@ -64,6 +71,13 @@ export const RecentTasksToolbar = ({ storageKey = 'recentTasks' }: { storageKey?
     [apply, values],
   );
 
+  const handleSearchChange = useCallback(
+    (next: string) => {
+      apply({ ...values, search: next });
+    },
+    [apply, values],
+  );
+
   const chips: FilterChipDescriptor[] = [];
   if (applied.app) {
     chips.push({
@@ -73,19 +87,18 @@ export const RecentTasksToolbar = ({ storageKey = 'recentTasks' }: { storageKey?
       onRemove: () => apply({ ...values, app: '' }),
     });
   }
-  if (searchQuery) {
+  if (applied.search) {
     chips.push({
       key: 'search',
       labelPrefix: 'search',
-      labelValue: searchQuery,
-      onRemove: () => setSearchQuery(''),
+      labelValue: applied.search,
+      onRemove: () => apply({ ...values, search: '' }),
     });
   }
 
   const handleClearAll = useCallback(() => {
-    apply({ app: '', status: null });
-    setSearchQuery('');
-  }, [apply, setSearchQuery]);
+    apply({ app: '', status: null, search: '' });
+  }, [apply]);
 
   // `apply` re-identifies on every searchParams/filterValues change, so
   // re-registering the handler each render would thrash the context ref and
@@ -113,9 +126,9 @@ export const RecentTasksToolbar = ({ storageKey = 'recentTasks' }: { storageKey?
               onChange={handleApplicationChange}
             />
             <SearchInput
-              value={searchQuery}
-              onChange={setSearchQuery}
-              placeholder="Filter loaded rows…"
+              value={applied.search}
+              onChange={handleSearchChange}
+              placeholder="Search app, author, image…"
             />
             <RefreshControl onRefresh={handleRefresh} />
           </>
