@@ -87,6 +87,30 @@ describe('SearchInput', () => {
       expect(onChange).toHaveBeenCalledWith('a'.repeat(255));
     });
 
+    // The term is trimmed before it is sent, so padding must not eat into the
+    // cap and leave the end of an otherwise valid term behind.
+    it('does not spend the cap on surrounding whitespace', async () => {
+      const { onChange } = renderWith('', 50);
+      const input = screen.getByLabelText('Search tasks');
+
+      fireEvent.change(input, { target: { value: `  ${'a'.repeat(255)}  ` } });
+      await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
+      expect(onChange.mock.calls[0][0].trim()).toBe('a'.repeat(255));
+    });
+
+    // Trimming the draft itself would delete a space as soon as it was typed.
+    it('keeps a trailing space in the draft so a space can be typed', async () => {
+      const { onChange } = renderWith('', 50);
+      const input = screen.getByLabelText('Search tasks') as HTMLInputElement;
+
+      fireEvent.change(input, { target: { value: 'checkout ' } });
+      expect(input.value).toBe('checkout ');
+      await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
+
+      fireEvent.change(input, { target: { value: 'checkout api' } });
+      await waitFor(() => expect(onChange).toHaveBeenLastCalledWith('checkout api'));
+    });
+
     it('registers "search" pause reason on focus and releases it after blur grace', async () => {
       renderWith('', 50);
       const input = screen.getByLabelText('Search tasks');

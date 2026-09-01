@@ -8,11 +8,13 @@ import { usePauseRefresh } from './TaskListContext';
 /** Mirrors the API's own cap; a longer term is rejected with HTTP 400. */
 const MAX_QUERY_LENGTH = 255;
 
-// Counted in code points, as the API counts runes. The DOM `maxLength` measures
-// UTF-16 code units instead, which would stop a non-BMP term such as an emoji
-// at half the length the API accepts.
+// Measured in code points, as the API counts runes: the DOM `maxLength` measures
+// UTF-16 code units, stopping an emoji term at half the length the API accepts.
+// Surrounding whitespace is measured out but left in the draft, since the term
+// is trimmed before it is sent and stripping it here would stop a typed space.
 const clampQuery = (value: string): string => {
-  const points = [...value];
+  const trimmed = value.trim();
+  const points = [...trimmed];
   return points.length > MAX_QUERY_LENGTH ? points.slice(0, MAX_QUERY_LENGTH).join('') : value;
 };
 
