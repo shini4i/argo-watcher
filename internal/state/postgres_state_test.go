@@ -128,21 +128,107 @@ func TestPostgresState_GetTasks(t *testing.T) {
 	env.addTask(t, sampleTask("ObsoleteApp"))
 	end := float64(time.Now().Add(time.Hour).Unix())
 
-	tasks, total := env.state.GetTasks(start, end, "", "", 0, 0)
+	tasks, total := env.state.GetTasks(models.TaskFilter{StartTime: start, EndTime: end})
 	assert.Len(t, tasks, 3)
 	assert.Equal(t, int64(3), total)
 
-	tasks, total = env.state.GetTasks(start, end, "Test", "", 0, 0)
+	tasks, total = env.state.GetTasks(models.TaskFilter{StartTime: start, EndTime: end, App: "Test"})
 	assert.Len(t, tasks, 1)
 	assert.Equal(t, int64(1), total)
 
-	tasks, total = env.state.GetTasks(start, end, "", models.StatusInProgressMessage, 0, 0)
+	tasks, total = env.state.GetTasks(models.TaskFilter{StartTime: start, EndTime: end, Status: models.StatusInProgressMessage})
 	assert.Len(t, tasks, 3)
 	assert.Equal(t, int64(3), total)
 
-	tasks, total = env.state.GetTasks(start, end, "", "deployed", 0, 0)
+	tasks, total = env.state.GetTasks(models.TaskFilter{StartTime: start, EndTime: end, Status: "deployed"})
 	assert.Empty(t, tasks)
 	assert.Equal(t, int64(0), total)
+}
+
+func TestEscapeLikePattern(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{name: "percent is escaped", value: "50%", want: `50\%`},
+		{name: "underscore is escaped", value: "a_b", want: `a\_b`},
+		{name: "backslash is escaped", value: `a\b`, want: `a\\b`},
+		{name: "each metacharacter is escaped once", value: `a%b_c\d`, want: `a\%b\_c\\d`},
+		{name: "plain text is unchanged", value: "checkout", want: "checkout"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, escapeLikePattern(tt.value))
+		})
+	}
+}
+
+func TestPostgresState_GetTasksSearch(t *testing.T) {
+	env := newPostgresTestEnv(t)
+
+	start := float64(time.Now().Add(-time.Hour).Unix())
+	checkout := sampleTask("Checkout-API")
+	checkout.Author = "Jane Doe"
+	checkout.Images = []models.Image{{Image: "ghcr.io/acme/checkout", Tag: "v1.2.3"}}
+	env.addTask(t, checkout)
+	env.addTask(t, sampleTask("payments"))
+
+	// Literal LIKE metacharacters in stored values: escaping must let an exact
+	// term find these, not just stop a wildcard term from matching everything.
+	literals := sampleTask("orders_api")
+	literals.Author = "100% Bot"
+	env.addTask(t, literals)
+	end := float64(time.Now().Add(time.Hour).Unix())
+
+	window := func(search string) models.TaskFilter {
+		return models.TaskFilter{StartTime: start, EndTime: end, Search: search}
+	}
+
+	tests := []struct {
+		name   string
+		search string
+		want   int64
+	}{
+		{name: "app substring, case-insensitively", search: "checkout-a", want: 1},
+		{name: "author substring", search: "jane", want: 1},
+		{name: "image name substring", search: "acme/check", want: 1},
+		{name: "image and tag joined by a colon", search: "checkout:v1.2.3", want: 1},
+		{name: "matches the task carrying the default author", search: "test author", want: 1},
+		{name: "matches every task sharing an image tag", search: "v0.0.1", want: 2},
+		{name: "no match", search: "nothing-here", want: 0},
+		{name: "project is not searched", search: "test project", want: 0},
+		// A wildcard term finds only the row holding that character, not all three.
+		{name: "a percent sign matches literally", search: "%", want: 1},
+		{name: "underscore is not a single-character wildcard", search: "_heckout", want: 0},
+		{name: "a literal underscore is found", search: "orders_api", want: 1},
+		{name: "a literal percent sign is found", search: "100%", want: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tasks, total := env.state.GetTasks(window(tt.search))
+			assert.Equal(t, tt.want, total)
+			assert.Len(t, tasks, int(tt.want))
+		})
+	}
+
+	// The point of a server-side search: the page bounds the rows returned, not
+	// the rows searched, and the total counts every match beyond the page.
+	t.Run("pagination applies after the search", func(t *testing.T) {
+		filter := window("v0.0.1")
+		filter.Limit = 1
+		tasks, total := env.state.GetTasks(filter)
+		assert.Len(t, tasks, 1)
+		assert.Equal(t, int64(2), total)
+
+		filter.Offset = 1
+		second, total := env.state.GetTasks(filter)
+		assert.Len(t, second, 1)
+		assert.Equal(t, int64(2), total)
+		assert.NotEqual(t, tasks[0].Id, second[0].Id)
+	})
 }
 
 func TestPostgresState_GetTask(t *testing.T) {

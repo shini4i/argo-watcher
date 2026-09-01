@@ -249,9 +249,8 @@ const ViewButton = ({ id }: { id: string }) => (
  */
 const FilteredEmptyState = () => {
   const { filterValues } = useListContext();
-  const { state, clearAll } = useTaskListContext();
-  const hasFilters =
-    Object.keys(filterValues ?? {}).length > 0 || Boolean(state.searchQuery);
+  const { clearAll } = useTaskListContext();
+  const hasFilters = Object.keys(filterValues ?? {}).length > 0;
 
   if (!hasFilters) {
     return (

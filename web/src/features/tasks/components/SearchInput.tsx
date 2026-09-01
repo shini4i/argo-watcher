@@ -5,6 +5,19 @@ import SearchIcon from '@mui/icons-material/Search';
 import { tokens } from '../../../theme/tokens';
 import { usePauseRefresh } from './TaskListContext';
 
+/** Mirrors the API's own cap; a longer term is rejected with HTTP 400. */
+const MAX_QUERY_LENGTH = 255;
+
+// Measured in code points, as the API counts runes: the DOM `maxLength` measures
+// UTF-16 code units, stopping an emoji term at half the length the API accepts.
+// Surrounding whitespace is measured out but left in the draft, since the term
+// is trimmed before it is sent and stripping it here would stop a typed space.
+const clampQuery = (value: string): string => {
+  const trimmed = value.trim();
+  const points = [...trimmed];
+  return points.length > MAX_QUERY_LENGTH ? points.slice(0, MAX_QUERY_LENGTH).join('') : value;
+};
+
 interface SearchInputProps {
   readonly value: string;
   readonly onChange: (next: string) => void;
@@ -13,18 +26,17 @@ interface SearchInputProps {
 }
 
 /**
- * Callers filter the already-loaded page with this; it is not a server query.
- * Auto-refresh is held paused while focused (and briefly after blur) so the
- * list does not reshuffle mid-keystroke.
- *
- * Below 1200 px the input collapses into an icon button when it has no value,
- * to keep the toolbar from squeezing the other controls.
+ * @description Reports the committed query to `onChange`, debounced, since each
+ * commit reaches the backend as a filtered task query. Auto-refresh stays paused
+ * while focused (and briefly after blur) so the list does not reshuffle
+ * mid-keystroke. Below 1200 px the input collapses into an icon button when it
+ * has no value, to keep the toolbar from squeezing the other controls.
  */
 export const SearchInput = ({
   value,
   onChange,
   placeholder = 'Search…',
-  debounceMs = 200,
+  debounceMs = 350,
 }: SearchInputProps) => {
   const theme = useTheme();
   const isWide = useMediaQuery('(min-width: 1200px)');
@@ -96,7 +108,7 @@ export const SearchInput = ({
     <TextField
       size="small"
       value={draft}
-      onChange={event => setDraft(event.target.value)}
+      onChange={event => setDraft(clampQuery(event.target.value))}
       placeholder={placeholder}
       inputRef={inputRef}
       slotProps={{

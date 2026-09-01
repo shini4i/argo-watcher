@@ -73,11 +73,6 @@ vi.mock('./StatusTabs', () => ({
   ),
 }));
 
-const taskListContextState = {
-  searchQuery: '',
-  setSearchQuery: vi.fn(),
-};
-
 vi.mock('./TaskListContext', () => ({
   TaskListProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   useTaskListContext: () => ({
@@ -85,13 +80,11 @@ vi.mock('./TaskListContext', () => ({
       pausedReasons: new Set<string>(),
       intervalSec: 30,
       lastRefetchedAt: 0,
-      searchQuery: taskListContextState.searchQuery,
     },
     pause: () => {},
     resume: () => {},
     setInterval: () => {},
     markRefetched: () => {},
-    setSearchQuery: taskListContextState.setSearchQuery,
     registerClearAll: () => () => {},
     clearAll: () => {},
   }),
@@ -136,8 +129,6 @@ describe('RecentTasksToolbar', () => {
     capturedLocation = undefined;
     localStorage.clear();
     refreshMock.mockReset();
-    taskListContextState.searchQuery = '';
-    taskListContextState.setSearchQuery.mockReset();
   });
 
   it('hydrates the application filter from URL on mount', async () => {
@@ -206,24 +197,46 @@ describe('RecentTasksToolbar', () => {
     });
   });
 
-  it('renders the search query as a removable chip and clears it on remove', () => {
-    taskListContextState.searchQuery = 'checkout';
-    renderToolbar('/tasks');
+  it('hydrates the search term from the URL into filterValues', async () => {
+    const { setFilters } = renderToolbar('/tasks?search=checkout');
+    await waitFor(() => {
+      expect(setFilters).toHaveBeenCalledWith({ search: 'checkout' }, {}, false);
+    });
+  });
+
+  it('renders the search term as a removable chip and clears it on remove', async () => {
+    const { setFilters } = renderToolbar('/tasks?search=checkout');
 
     const removeButton = screen.getByRole('button', { name: /remove filter search checkout/i });
     expect(screen.getByText(/search:/i)).toBeInTheDocument();
     expect(screen.getByText('checkout')).toBeInTheDocument();
 
+    setFilters.mockReset();
     fireEvent.click(removeButton);
-    expect(taskListContextState.setSearchQuery).toHaveBeenCalledWith('');
+    await waitFor(() => {
+      expect(setFilters).toHaveBeenCalledWith({}, {}, false);
+    });
+    expect(capturedLocation?.search).not.toContain('search=');
   });
 
-  it('clears the search query when "Clear all" is clicked', () => {
-    taskListContextState.searchQuery = 'alpha';
-    const { setFilters } = renderToolbar('/tasks?app=alpha');
+  it('typing in the search box commits the term to filterValues', async () => {
+    const { setFilters } = renderToolbar('/tasks');
+    setFilters.mockReset();
+
+    fireEvent.change(screen.getByTestId('search-input'), { target: { value: 'v1.2.3' } });
+
+    await waitFor(() => {
+      expect(setFilters).toHaveBeenCalledWith({ search: 'v1.2.3' }, {}, false);
+    });
+  });
+
+  it('clears the search term when "Clear all" is clicked', async () => {
+    const { setFilters } = renderToolbar('/tasks?app=alpha&search=alpha');
     setFilters.mockReset();
 
     fireEvent.click(screen.getByRole('button', { name: /clear all/i }));
-    expect(taskListContextState.setSearchQuery).toHaveBeenCalledWith('');
+    await waitFor(() => {
+      expect(setFilters).toHaveBeenCalledWith({}, {}, false);
+    });
   });
 });

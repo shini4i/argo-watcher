@@ -235,7 +235,12 @@ func (argo *Argo) AddTask(task models.Task) (*models.Task, error) {
 // current (most recently deployed) version; redeploying the current version is not a
 // rollback. The returned ID is the most recent earlier task carrying that image set.
 func (argo *Argo) detectRollback(task models.Task) string {
-	deployed, _ := argo.State.GetTasks(0, float64(time.Now().Unix()), task.App, models.StatusDeployedMessage, rollbackHistoryWindow, 0)
+	deployed, _ := argo.State.GetTasks(models.TaskFilter{
+		EndTime: float64(time.Now().Unix()),
+		App:     task.App,
+		Status:  models.StatusDeployedMessage,
+		Limit:   rollbackHistoryWindow,
+	})
 	if len(deployed) == 0 {
 		return ""
 	}
@@ -270,8 +275,8 @@ func imageSignature(task models.Task) string {
 // the read to a live ArgoCD `session/userinfo` call would make the whole list hang on
 // the API retry budget and then hide existing tasks behind an error. Note the /readyz
 // endpoint probes only the state backend (SimpleHealthCheck), not ArgoCD.
-func (argo *Argo) GetTasks(startTime float64, endTime float64, app string, status string, limit int, offset int) models.TasksResponse {
-	tasks, total := argo.State.GetTasks(startTime, endTime, app, status, limit, offset)
+func (argo *Argo) GetTasks(filter models.TaskFilter) models.TasksResponse {
+	tasks, total := argo.State.GetTasks(filter)
 
 	return models.TasksResponse{
 		Tasks: tasks,

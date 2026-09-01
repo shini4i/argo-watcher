@@ -4,7 +4,6 @@ import { List, Pagination, useListContext, useRefresh, type ListProps } from 're
 import { describeReadFailure } from '../../../data/readFailure';
 import { PerPagePersistence, readPersistentPerPage } from '../../../shared/hooks/usePersistentPerPage';
 import { EmptyState, EmptyStateCta } from './EmptyState';
-import { SearchFilteredView } from './SearchFilteredView';
 import { TaskListProvider } from './TaskListContext';
 
 interface TaskListLayoutProps {
@@ -119,9 +118,7 @@ export const TaskListLayout = ({
           <Box sx={{ width: '100%' }} />
         )}
       </Stack>
-      <ListBody emptyComponent={emptyComponent}>
-        <SearchFilteredView>{children}</SearchFilteredView>
-      </ListBody>
+      <ListBody emptyComponent={emptyComponent}>{children}</ListBody>
     </List>
     </TaskListProvider>
   );

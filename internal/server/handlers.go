@@ -5,7 +5,9 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 
@@ -21,6 +23,12 @@ var version = "local"
 // any caller drain the entire task table in a single request. The cap is
 // applied at the HTTP boundary so the data layer stays simple.
 const maxTaskListLimit = 1000
+
+// maxTaskSearchLength caps the free-text search term accepted by
+// GET /api/v1/tasks, so an unbounded pattern cannot be pushed into the
+// per-row ILIKE the search compiles to. It mirrors the length limit on the
+// app and author fields it matches against.
+const maxTaskSearchLength = models.MaxTaskFieldLength
 
 // maxTaskTimeout caps the rollout window a submission may ask for, in seconds.
 // Submission takes no credential, and the timeout decides how long the watcher
@@ -171,6 +179,7 @@ func (env *Env) addTask(w http.ResponseWriter, r *http.Request) {
 // @Tags backend, frontend
 // @Param app query string false "App name"
 // @Param status query string false "Task status (e.g. 'in progress', 'failed', 'deployed', 'cancelled')"
+// @Param search query string false "Substring of app, author or image:tag"
 // @Param from_timestamp query int true "From timestamp" default(1648390029)
 // @Param to_timestamp query int false "To timestamp"
 // @Param limit query int false "Maximum number of tasks to return (1-1000, defaults to 1000)"
@@ -200,6 +209,12 @@ func (env *Env) getState(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	search := strings.TrimSpace(query.Get("search"))
+	if utf8.RuneCountInString(search) > maxTaskSearchLength {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "search term too long"})
+		return
+	}
+
 	limit, err := strconv.Atoi(query.Get("limit"))
 	if err != nil && query.Get("limit") != "" {
 		slog.Debug("invalid limit, defaulting to 0", "limit", query.Get("limit"))
@@ -215,7 +230,15 @@ func (env *Env) getState(w http.ResponseWriter, r *http.Request) {
 		offset = 0
 	}
 
-	writeJSON(w, http.StatusOK, env.argo.GetTasks(startTime, endTime, app, status, limit, offset))
+	writeJSON(w, http.StatusOK, env.argo.GetTasks(models.TaskFilter{
+		StartTime: startTime,
+		EndTime:   endTime,
+		App:       app,
+		Status:    status,
+		Search:    search,
+		Limit:     limit,
+		Offset:    offset,
+	}))
 }
 
 // getTaskStatus godoc

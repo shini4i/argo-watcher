@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The task search box now searches every task in the current view, not just the rows
+  already on screen. It filtered the loaded page in the browser, so finding a failed
+  deployment meant first paging to whichever page happened to hold it — while the
+  All/In progress/Failed counts beside it, which always queried the server, reported
+  the deployment as present. Searching is now done by the server, so a match is found
+  wherever it sits in the result set, and the status counts narrow to the search along
+  with the table. The term is matched case-insensitively against the application name,
+  the author, and each `image:tag`.
+
 - Deployments no longer go missing from Prometheus range queries. A `deployments_total`
   series was created only when its first deployment ended, so it came into existence
   already holding `1` — and `increase()`, `rate()` and `delta()` measure the change
@@ -27,6 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   record its first outcome on a zero Prometheus never saw.
 
 ### Changed
+
+- `GET /api/v1/tasks` accepts a `search` query parameter: a case-insensitive substring
+  matched against an application name, an author, or an `image:tag`. Terms longer than
+  255 characters are rejected with HTTP 400.
 
 - The example Grafana dashboard now scopes every Overview panel to the selected time
   range, so the tiles can no longer contradict one another. "Apps With Failures" and

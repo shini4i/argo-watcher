@@ -425,7 +425,7 @@ func TestAppTokenAuthorizesAnInScopeSubmission(t *testing.T) {
 			repo.EXPECT().CancelInProgressTasks(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 				Return(int64(0), nil).AnyTimes()
 			// AddTask consults the history for rollback detection before inserting.
-			repo.EXPECT().GetTasks(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+			repo.EXPECT().GetTasks(gomock.Any()).
 				Return([]models.Task{}, int64(0)).AnyTimes()
 
 			// Capture the task, then fail the insert: the success path would spawn the

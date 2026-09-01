@@ -43,6 +43,8 @@ export interface TaskListFilter {
   to?: Date | string | number;
   app?: string;
   status?: string;
+  /** Free-text term matched by the backend against app, author and image:tag. */
+  search?: string;
 }
 
 export interface TaskListResult {

@@ -50,7 +50,7 @@ vi.mock('react-admin', () => ({
   List: ListMock,
   Pagination: PaginationMock,
   useRefresh: () => refreshMock,
-  // SearchFilteredView + TaskListLayout body both read useListContext.
+  // The TaskListLayout body reads useListContext to gate on rows and errors.
   useListContext: () => listContextRef.current,
   ListContextProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
