@@ -12,11 +12,13 @@ on:
     paths:
       - 'test/e2e/**'
       - '.github/workflows/e2e-harness.yml'
+      - '.github/actions/setup-bats/**'
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
       - 'test/e2e/**'
       - '.github/workflows/e2e-harness.yml'
+      - '.github/actions/setup-bats/**'
 
 permissions:
   contents: read
@@ -38,42 +40,22 @@ jobs:
           # lookup, which shares the runner IP 60 req/h anonymous quota.
           version: 3.53.1
 
-      # bats is absent from the runner image; shellcheck is present but pinned here
-      # anyway, because the runner ships 0.9.0 while the flake devshell provides
-      # 0.11.0 — and findings differ between them, so an unpinned version would let
-      # CI and `nix develop` disagree. yq (4.53.3) and jq come from the image.
-      #
-      # bats-support/-assert are separate from bats core and lib.bats loads both, so
-      # they are installed into a BATS_LIB_PATH dir (the flake gets them from
-      # bats.withLibraries).
-      - name: Install bats and shellcheck
+      - uses: ./.github/actions/setup-bats
+
+      # shellcheck is present on the runner but pinned here anyway, because the image
+      # ships 0.9.0 while the flake devshell provides 0.11.0 — and findings differ
+      # between them, so an unpinned version would let CI and `nix develop` disagree.
+      # yq (4.53.3) and jq come from the image.
+      - name: Install shellcheck
         env:
-          BATS_VERSION: v1.12.0
-          BATS_SUPPORT_VERSION: v0.3.0
-          BATS_ASSERT_VERSION: v2.2.4
           SHELLCHECK_VERSION: v0.11.0
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"
-          curl --proto '=https' --tlsv1.2 -fsSL \
-            "https://github.com/bats-core/bats-core/archive/refs/tags/${BATS_VERSION}.tar.gz" \
-            | tar -xz -C "$tmp" --strip-components=1
-          sudo "$tmp/install.sh" /usr/local
-
-          sudo mkdir -p /usr/local/lib/bats/bats-support /usr/local/lib/bats/bats-assert
-          curl --proto '=https' --tlsv1.2 -fsSL \
-            "https://github.com/bats-core/bats-support/archive/refs/tags/${BATS_SUPPORT_VERSION}.tar.gz" \
-            | sudo tar -xz -C /usr/local/lib/bats/bats-support --strip-components=1
-          curl --proto '=https' --tlsv1.2 -fsSL \
-            "https://github.com/bats-core/bats-assert/archive/refs/tags/${BATS_ASSERT_VERSION}.tar.gz" \
-            | sudo tar -xz -C /usr/local/lib/bats/bats-assert --strip-components=1
-
           curl --proto '=https' --tlsv1.2 -fsSL \
             "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" \
             | tar -xJ -C "$tmp" --strip-components=1 "shellcheck-${SHELLCHECK_VERSION}/shellcheck"
           sudo install -m 0755 "$tmp/shellcheck" /usr/local/bin/
 
       - name: Lint bash and run the offline suites
-        env:
-          BATS_LIB_PATH: /usr/local/lib/bats
         run: task -d test/e2e lint

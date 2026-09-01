@@ -9,6 +9,12 @@ on:
       - 'go.sum'
       - 'web/**'
       - '.golangci.yml'
+      # A migrations-only change must still reach the forward-only check, which
+      # would otherwise never run on the PR that needs it.
+      - 'db/migrations/**'
+      - 'scripts/lint-migrations.sh'
+      - 'scripts/lint-migrations.bats'
+      - '.github/actions/setup-bats/**'
       # Every job here runs `task install-deps`, `task mocks`, `task ci-migrate`
       # or `task test`, so a Taskfile-only change can break this workflow.
       - 'Taskfile.yml'
@@ -20,6 +26,12 @@ on:
       - 'go.sum'
       - 'web/**'
       - '.golangci.yml'
+      # A migrations-only change must still reach the forward-only check, which
+      # would otherwise never run on the PR that needs it.
+      - 'db/migrations/**'
+      - 'scripts/lint-migrations.sh'
+      - 'scripts/lint-migrations.bats'
+      - '.github/actions/setup-bats/**'
       # Every job here runs `task install-deps`, `task mocks`, `task ci-migrate`
       # or `task test`, so a Taskfile-only change can break this workflow.
       - 'Taskfile.yml'
@@ -46,6 +58,13 @@ jobs:
           # An exact version skips the unauthenticated go-task tags API
           # lookup, which shares the runner IP 60 req/h anonymous quota.
           version: 3.53.1
+
+      - uses: ./.github/actions/setup-bats
+
+      # Placed before the Go toolchain installs, so a migration that breaks rollback
+      # fails the job in seconds.
+      - name: Check migrations are forward-only
+        run: task lint-migrations
 
       - name: Install environment dependencies
         run: task install-deps

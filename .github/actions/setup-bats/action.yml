@@ -1,0 +1,33 @@
+name: Set up bats
+description: Install bats core plus bats-support and bats-assert on a GitHub runner.
+
+runs:
+  using: composite
+  steps:
+    # Pinned here rather than in each workflow so run-tests, e2e and e2e-harness
+    # cannot drift onto different bats versions. The flake devshell provides the
+    # same three through bats.withLibraries.
+    - name: Install bats and its libraries
+      shell: bash
+      env:
+        BATS_VERSION: v1.12.0
+        BATS_SUPPORT_VERSION: v0.3.0
+        BATS_ASSERT_VERSION: v2.2.4
+        # bats defaults BATS_LIB_PATH to /usr/lib/bats, so installing the libraries
+        # there lets bats_load_library find them with no environment set by callers.
+        BATS_LIB_DIR: /usr/lib/bats
+      run: |
+        set -euo pipefail
+        tmp="$(mktemp -d)"
+        curl --proto '=https' --tlsv1.2 -fsSL \
+          "https://github.com/bats-core/bats-core/archive/refs/tags/${BATS_VERSION}.tar.gz" \
+          | tar -xz -C "$tmp" --strip-components=1
+        sudo "$tmp/install.sh" /usr/local
+
+        sudo mkdir -p "${BATS_LIB_DIR}/bats-support" "${BATS_LIB_DIR}/bats-assert"
+        curl --proto '=https' --tlsv1.2 -fsSL \
+          "https://github.com/bats-core/bats-support/archive/refs/tags/${BATS_SUPPORT_VERSION}.tar.gz" \
+          | sudo tar -xz -C "${BATS_LIB_DIR}/bats-support" --strip-components=1
+        curl --proto '=https' --tlsv1.2 -fsSL \
+          "https://github.com/bats-core/bats-assert/archive/refs/tags/${BATS_ASSERT_VERSION}.tar.gz" \
+          | sudo tar -xz -C "${BATS_LIB_DIR}/bats-assert" --strip-components=1
