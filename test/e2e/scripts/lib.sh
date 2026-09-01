@@ -294,7 +294,7 @@ run_client() {
 go_version() {
   local gomod="$1" v
   v="$(awk '/^go [0-9]/{v=$2} /^toolchain go/{v=substr($2,3)} END{print v}' "$gomod")" || return 1
-  if [ -z "$v" ]; then
+  if [[ -z "$v" ]]; then
     echo "go_version: no go or toolchain directive in ${gomod}" >&2
     return 1
   fi
