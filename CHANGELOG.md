@@ -43,6 +43,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that it did, and starts. Going back to an earlier version has never rolled the schema
   back, and still does not.
 
+  One caveat applies to this release only. Builds before it predate the guard and call
+  `Up()` unconditionally, so going back to 1.1.0 or earlier still fails at the hook —
+  this release advances the schema to version 10, which those builds do not carry. Drop
+  back to 9 first, with `migrate -path db/migrations -database "$DSN" down 1`, or roll
+  forward instead. Every later pair of versions is unaffected.
+
 ### Changed
 
 - A migration that removes something an older build still reads now records the oldest
