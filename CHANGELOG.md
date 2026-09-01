@@ -35,13 +35,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fire-and-forget, or an app already in the desired state on the first poll — can still
   record its first outcome on a zero Prometheus never saw.
 
-- Rolling a release back no longer fails. The migration hook ran `--migrate` from the
-  older image, which found the database at a schema version newer than the migrations
-  that image carries and stopped with `no migration found for version N`, aborting the
-  rollback and stranding the deployment on the version being backed out of. Migrations
-  are forward-only, so there is nothing for the older build to apply: it now leaves the
-  newer schema untouched, logs that it did, and starts. Rolling a release back has never
-  rolled the schema back, and still does not.
+- Deploying an earlier version no longer fails at the migration hook. That hook runs
+  `--migrate` from the older image, which found the database at a schema version newer
+  than the migrations that image carries and stopped with `no migration found for
+  version N`, so the deployment never started. Migrations are forward-only, so there is
+  nothing for the older build to apply: it now leaves the newer schema untouched, logs
+  that it did, and starts. Going back to an earlier version has never rolled the schema
+  back, and still does not.
 
 ### Changed
 
