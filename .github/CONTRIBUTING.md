@@ -65,6 +65,10 @@ The UI in `web/` is React and TypeScript. Lint with `task lint-web` and test wit
 
 Schema changes ship as a new numbered pair of migration files in `db/migrations/` — both `.up.sql` and `.down.sql`. Never edit a migration that has already been released.
 
+Migrations are forward-only: a rolled-back release runs against the schema its successor left behind, so a migration must only add. One that removes or narrows something an older build still reads has to record a compatibility floor in `schema_compatibility`, which makes that build refuse to start instead of failing later on what is missing. `task lint-migrations` fails the build otherwise. See [Database](../docs/operations/database.md#rolling-back-a-release) for the floor and how to pick its value.
+
+The `.down.sql` files are for local development against a scratch database; they are not run in production.
+
 ### API Documentation
 
 The Swagger spec is generated from [swag](https://github.com/swaggo/swag) annotations on the handlers, so those annotations are the source of truth: when you add a route or change a request or response model, update the annotations in the same commit.

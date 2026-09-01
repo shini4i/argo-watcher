@@ -33,6 +33,13 @@ There are two tables. `tasks` stores every deployment task and its status; index
 | `manual_lock` | `boolean NOT NULL DEFAULT false` | `true` while an operator-set lockdown is active. |
 | `override_until` | `timestamptz` | Deadline of a temporary override of a scheduled lockdown; `NULL` when none is active. |
 
+`schema_compatibility` records the oldest build allowed to run against the current schema, so a rolled-back release refuses to start rather than failing on something a later migration removed. See [Rolling back a release](#rolling-back-a-release). Like `deploy_lock` it always holds exactly one row.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `int` | Primary key, pinned to `1` by a `CHECK` constraint so a second row cannot exist. |
+| `min_bundled_version` | `int NOT NULL DEFAULT 0` | Migration version of the oldest build this schema tolerates; `0` while no migration has removed anything. |
+
 ## Migrations
 
 Schema migrations live under [`db/migrations/`](https://github.com/shini4i/argo-watcher/tree/main/db/migrations) and are managed with [`golang-migrate/migrate`](https://github.com/golang-migrate/migrate). Filenames follow the `NNNNNN_description.{up,down}.sql` convention.
@@ -60,10 +67,24 @@ migrate \
   up
 ```
 
-Use `down 1` to roll back the most recent migration. Down migrations exist for every applied change.
+### Rolling back a release
+
+Migrations are **forward-only**: rolling a release back does not roll the schema back. The older binary starts against the newer schema and ignores the columns it does not know about. Its `--migrate` run notices the database is ahead of the migrations it ships, logs a warning, and applies nothing.
+
+That works because migrations only ever add. When one genuinely has to remove something an older build reads, it records the oldest build the resulting schema still tolerates, as a migration version:
+
+```sql
+ALTER TABLE tasks DROP COLUMN legacy_field;
+UPDATE schema_compatibility
+   SET min_bundled_version = GREATEST(min_bundled_version, 11);
+```
+
+A build whose newest bundled migration is below that number refuses to start and names both versions, rather than starting and then failing on a column that is gone. Roll forward to a release at or above it instead.
+
+`task lint-migrations` fails any migration that removes something without recording a floor, so the two cannot drift apart.
 
 !!! warning
-    Always back up the database before applying down migrations in production. Several down migrations drop indexes and revert column types — they are designed to be safe but a backup turns "almost certainly safe" into "definitely safe".
+    The `down` migrations exist for local development against a scratch database. They are not a supported production operation, and the first three are empty files — `migrate down` below version 4 reports success while leaving the tables in place.
 
 ## Backups
 

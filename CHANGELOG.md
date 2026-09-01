@@ -35,7 +35,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fire-and-forget, or an app already in the desired state on the first poll — can still
   record its first outcome on a zero Prometheus never saw.
 
+- Rolling a release back no longer fails. The migration hook ran `--migrate` from the
+  older image, which found the database at a schema version newer than the migrations
+  that image carries and stopped with `no migration found for version N`, aborting the
+  rollback and stranding the deployment on the version being backed out of. Migrations
+  are forward-only, so there is nothing for the older build to apply: it now leaves the
+  newer schema untouched, logs that it did, and starts. Rolling a release back has never
+  rolled the schema back, and still does not.
+
 ### Changed
+
+- A migration that removes something an older build still reads now records the oldest
+  build the resulting schema tolerates, in a new `schema_compatibility` table. A build
+  below that floor refuses to start and names both versions, instead of starting and
+  then failing on a column that is gone. No migration records a floor today, so nothing
+  changes for existing deployments.
 
 - `GET /api/v1/tasks` accepts a `search` query parameter: a case-insensitive substring
   matched against an application name, an author, or an `image:tag`. Terms longer than

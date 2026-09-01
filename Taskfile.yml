@@ -64,6 +64,19 @@ tasks:
       # job run the same checks.
       - golangci-lint run ./...
 
+  lint-migrations:
+    desc: Check that migrations stay forward-only
+    cmds:
+      - echo "===> Checking migrations"
+      - ./scripts/lint-migrations.sh
+      # The check only ever passes on this tree, so its own cases run too —
+      # otherwise a regression that makes it permissive would look identical.
+      - ./scripts/lint-migrations_test.sh
+    sources:
+      - db/migrations/*.up.sql
+      - scripts/lint-migrations.sh
+      - scripts/lint-migrations_test.sh
+
   test:
     desc: Run tests
     deps: [mocks, docs]

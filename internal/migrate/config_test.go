@@ -3,6 +3,7 @@ package migrate
 import (
 	"net/url"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/golang-migrate/migrate/v4/database"
@@ -100,7 +101,24 @@ func TestNewMigrationConfig_ConnectTimeoutRejectsNonPositive(t *testing.T) {
 	}
 }
 
+// restoreEnvAfter puts the process environment back once the test finishes.
+// os.Clearenv wipes it for the whole test binary, which would otherwise strip
+// POSTGRES_DSN from every later test in this package and silently skip them.
+func restoreEnvAfter(t *testing.T) {
+	t.Helper()
+	saved := os.Environ()
+	t.Cleanup(func() {
+		os.Clearenv()
+		for _, entry := range saved {
+			if key, value, found := strings.Cut(entry, "="); found {
+				_ = os.Setenv(key, value)
+			}
+		}
+	})
+}
+
 func TestNewMigrationConfig_ValidationError(t *testing.T) {
+	restoreEnvAfter(t)
 	os.Clearenv() // Ensure no conflicting variables are set.
 
 	cfg, err := NewMigrationConfig()

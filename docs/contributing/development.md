@@ -80,6 +80,7 @@ origin from the API, and the server allows no cross-origin request without it.
 | `task docs` | Generate the Swagger spec into `web/public/swagger/` |
 | `task build` | Build the server binary |
 | `task build-ui` | Build the frontend bundle into `web/dist` |
+| `task lint-migrations` | Check that migrations stay forward-only (see [Database](../operations/database.md#rolling-back-a-release)) |
 | `task test` | Backend tests (generates mocks and docs first) |
 | `task test-integration` | GitOps updater against real Gitea + Toxiproxy, and the Keycloak auth flow (Docker) |
 | `task test-web` | Frontend unit tests (Vitest) |
