@@ -35,8 +35,11 @@ for file in "$MIGRATIONS_DIR"/*.up.sql; do
   [[ "$version" -le "$GRANDFATHERED_THROUGH" ]] && continue
 
   # Every pattern below matches on literal spaces, so all whitespace is flattened
-  # first. Leaving tabs in place would let tab-formatted SQL slip past unnoticed.
-  sql=$(sed 's/--.*$//' "$file" | tr '[:space:]' ' ' | tr -s ' ' | tr '[:lower:]' '[:upper:]')
+  # first; leaving tabs in place would let tab-formatted SQL slip past. Line
+  # comments go before that, block comments after, since they span lines. Both must
+  # go, or a floor update that is only commented out would satisfy the pairing.
+  sql=$(sed 's/--.*$//' "$file" | tr '[:space:]' ' ' | tr -s ' ' \
+    | sed -E 's|/\*[^*]*\*+([^/*][^*]*\*+)*/| |g' | tr '[:lower:]' '[:upper:]')
 
   findings=$(printf '%s' "$sql" | awk '
     {

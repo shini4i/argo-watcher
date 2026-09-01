@@ -185,6 +185,32 @@ CREATE INDEX idx_x ON tasks (app);'
   assert_success
 }
 
+@test "ignores a destructive keyword inside a block comment" {
+  migration '/* one day we will
+   DROP COLUMN foo */
+CREATE INDEX idx_x ON tasks (app);'
+  run "$LINT" "$MIGRATIONS"
+  assert_success
+}
+
+# A commented-out floor update is not an executable one, so it must not satisfy
+# the pairing that lets a destructive migration through.
+@test "rejects a DROP COLUMN whose floor update is only inside a block comment" {
+  migration 'ALTER TABLE tasks DROP COLUMN foo;
+/* UPDATE schema_compatibility SET min_bundled_version = 10; */'
+  run "$LINT" "$MIGRATIONS"
+  assert_failure
+  assert_output --partial 'DROP COLUMN'
+}
+
+@test "rejects a DROP COLUMN whose floor update is only inside a line comment" {
+  migration 'ALTER TABLE tasks DROP COLUMN foo;
+-- UPDATE schema_compatibility SET min_bundled_version = 10;'
+  run "$LINT" "$MIGRATIONS"
+  assert_failure
+  assert_output --partial 'DROP COLUMN'
+}
+
 @test "accepts a DROP COLUMN that records a compatibility floor" {
   migration 'ALTER TABLE tasks DROP COLUMN foo;
 UPDATE schema_compatibility SET min_bundled_version = GREATEST(min_bundled_version, 10);'

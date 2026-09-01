@@ -113,7 +113,7 @@ func (m *Migrator) Run() error {
 func (m *Migrator) skipAhead(current uint) error {
 	floor, err := m.compat.MinBundledVersion()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to check the compatibility floor: %w", err)
 	}
 	floor = max(floor, minCompatibleBundledVersion)
 
