@@ -73,17 +73,8 @@ jobs:
           sudo install -m 0755 "$tmp"/kind "$tmp"/kubectl "$tmp"/helm /usr/local/bin/
 
       # The phase suite runs under bats (test/e2e/phases.bats); the runner image
-      # does not ship it. phases.bats loads no bats libraries, so core is enough.
-      - name: Install bats
-        env:
-          BATS_VERSION: v1.12.0
-        run: |
-          set -euo pipefail
-          tmp="$(mktemp -d)"
-          curl --proto '=https' --tlsv1.2 -fsSL \
-            "https://github.com/bats-core/bats-core/archive/refs/tags/${BATS_VERSION}.tar.gz" \
-            | tar -xz -C "$tmp" --strip-components=1
-          sudo "$tmp/install.sh" /usr/local
+      # does not ship it.
+      - uses: ./.github/actions/setup-bats
 
       - name: Run e2e lab
         working-directory: test/e2e

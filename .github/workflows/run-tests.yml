@@ -14,6 +14,7 @@ on:
       - 'db/migrations/**'
       - 'scripts/lint-migrations.sh'
       - 'scripts/lint-migrations.bats'
+      - '.github/actions/setup-bats/**'
       # Every job here runs `task install-deps`, `task mocks`, `task ci-migrate`
       # or `task test`, so a Taskfile-only change can break this workflow.
       - 'Taskfile.yml'
@@ -30,6 +31,7 @@ on:
       - 'db/migrations/**'
       - 'scripts/lint-migrations.sh'
       - 'scripts/lint-migrations.bats'
+      - '.github/actions/setup-bats/**'
       # Every job here runs `task install-deps`, `task mocks`, `task ci-migrate`
       # or `task test`, so a Taskfile-only change can break this workflow.
       - 'Taskfile.yml'
@@ -57,35 +59,11 @@ jobs:
           # lookup, which shares the runner IP 60 req/h anonymous quota.
           version: 3.53.1
 
-      # bats is absent from the runner image. Versions match the e2e-harness
-      # workflow, which installs the same three so both suites run what the flake
-      # devshell provides (bats.withLibraries).
-      - name: Install bats
-        env:
-          BATS_VERSION: v1.12.0
-          BATS_SUPPORT_VERSION: v0.3.0
-          BATS_ASSERT_VERSION: v2.2.4
-        run: |
-          set -euo pipefail
-          tmp="$(mktemp -d)"
-          curl --proto '=https' --tlsv1.2 -fsSL \
-            "https://github.com/bats-core/bats-core/archive/refs/tags/${BATS_VERSION}.tar.gz" \
-            | tar -xz -C "$tmp" --strip-components=1
-          sudo "$tmp/install.sh" /usr/local
-
-          sudo mkdir -p /usr/local/lib/bats/bats-support /usr/local/lib/bats/bats-assert
-          curl --proto '=https' --tlsv1.2 -fsSL \
-            "https://github.com/bats-core/bats-support/archive/refs/tags/${BATS_SUPPORT_VERSION}.tar.gz" \
-            | sudo tar -xz -C /usr/local/lib/bats/bats-support --strip-components=1
-          curl --proto '=https' --tlsv1.2 -fsSL \
-            "https://github.com/bats-core/bats-assert/archive/refs/tags/${BATS_ASSERT_VERSION}.tar.gz" \
-            | sudo tar -xz -C /usr/local/lib/bats/bats-assert --strip-components=1
+      - uses: ./.github/actions/setup-bats
 
       # Placed before the Go toolchain installs, so a migration that breaks rollback
       # fails the job in seconds.
       - name: Check migrations are forward-only
-        env:
-          BATS_LIB_PATH: /usr/local/lib/bats
         run: task lint-migrations
 
       - name: Install environment dependencies
