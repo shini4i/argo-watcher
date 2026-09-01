@@ -8,6 +8,14 @@ import { usePauseRefresh } from './TaskListContext';
 /** Mirrors the API's own cap; a longer term is rejected with HTTP 400. */
 const MAX_QUERY_LENGTH = 255;
 
+// Counted in code points, as the API counts runes. The DOM `maxLength` measures
+// UTF-16 code units instead, which would stop a non-BMP term such as an emoji
+// at half the length the API accepts.
+const clampQuery = (value: string): string => {
+  const points = [...value];
+  return points.length > MAX_QUERY_LENGTH ? points.slice(0, MAX_QUERY_LENGTH).join('') : value;
+};
+
 interface SearchInputProps {
   readonly value: string;
   readonly onChange: (next: string) => void;
@@ -98,13 +106,12 @@ export const SearchInput = ({
     <TextField
       size="small"
       value={draft}
-      onChange={event => setDraft(event.target.value)}
+      onChange={event => setDraft(clampQuery(event.target.value))}
       placeholder={placeholder}
       inputRef={inputRef}
       slotProps={{
         htmlInput: {
           'aria-label': 'Search tasks',
-          maxLength: MAX_QUERY_LENGTH,
           onFocus: () => setFocused(true),
           onBlur: () => {
             setFocused(false);

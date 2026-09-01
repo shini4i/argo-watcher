@@ -65,6 +65,28 @@ describe('SearchInput', () => {
       expect(onChange).toHaveBeenCalledWith('abc');
     });
 
+    // The API caps the term at 255 runes. Counting UTF-16 code units instead
+    // would stop an emoji term at 127 characters, short of what the API takes.
+    it('caps the term at 255 code points, not UTF-16 code units', async () => {
+      const { onChange } = renderWith('', 50);
+      const input = screen.getByLabelText('Search tasks');
+
+      fireEvent.change(input, { target: { value: '😀'.repeat(255) } });
+      await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
+      const emitted = onChange.mock.calls[0][0] as string;
+      expect([...emitted]).toHaveLength(255);
+      expect(emitted).toBe('😀'.repeat(255));
+    });
+
+    it('drops code points beyond the cap', async () => {
+      const { onChange } = renderWith('', 50);
+      const input = screen.getByLabelText('Search tasks');
+
+      fireEvent.change(input, { target: { value: 'a'.repeat(300) } });
+      await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
+      expect(onChange).toHaveBeenCalledWith('a'.repeat(255));
+    });
+
     it('registers "search" pause reason on focus and releases it after blur grace', async () => {
       renderWith('', 50);
       const input = screen.getByLabelText('Search tasks');
