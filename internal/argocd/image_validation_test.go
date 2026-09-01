@@ -324,6 +324,7 @@ func TestWaitForRolloutCountsImageNotPartOfAppAsFailed(t *testing.T) {
 	metrics.EXPECT().AddInProgressTask()
 	metrics.EXPECT().RemoveInProgressTask()
 	metrics.EXPECT().AddFailedDeployment(task.App)
+	metrics.EXPECT().InitDeploymentOutcomes(task.App)
 	metrics.EXPECT().AddDeploymentOutcome(task.App, models.StatusFailedMessage).Times(1)
 	state.EXPECT().
 		SetTaskStatus(task.Id, models.StatusFailedMessage, gomock.Any()).

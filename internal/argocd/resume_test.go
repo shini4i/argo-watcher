@@ -206,6 +206,7 @@ func TestResumeRollout_KeepsTheOriginalDeadline(t *testing.T) {
 	metricsMock.EXPECT().AddInProgressTask()
 	metricsMock.EXPECT().RemoveInProgressTask()
 	metricsMock.EXPECT().ResetFailedDeployment(task.App)
+	metricsMock.EXPECT().InitDeploymentOutcomes(task.App)
 	metricsMock.EXPECT().AddDeploymentOutcome(task.App, models.StatusDeployedMessage)
 	metricsMock.EXPECT().ObserveDeploymentDuration(task.App, gomock.Any())
 	stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
@@ -275,6 +276,9 @@ func TestResumeRollout_StopsWhenTheReplicaStartsDraining(t *testing.T) {
 
 	metricsMock.EXPECT().AddInProgressTask()
 	metricsMock.EXPECT().RemoveInProgressTask()
+	// Allowed because it reports nothing: it creates the outcome series at zero on
+	// confirmation, which happens before the drain is observed.
+	metricsMock.EXPECT().InitDeploymentOutcomes(task.App).Times(1)
 	// No SetTaskStatus and no deployment metrics are expected: gomock fails the test
 	// if the abandoned monitor records anything.
 
@@ -394,6 +398,9 @@ func TestResumeRollout_WritesNothingWhenShutdownBeginsMidPoll(t *testing.T) {
 
 			metricsMock.EXPECT().AddInProgressTask()
 			metricsMock.EXPECT().RemoveInProgressTask()
+			// Allowed because it reports nothing: it creates the outcome series at zero on
+			// confirmation, which happens before the drain is observed.
+			metricsMock.EXPECT().InitDeploymentOutcomes(task.App).Times(1)
 			// Nothing else is declared: gomock fails the test if this replica records a
 			// status, a deployment metric or a failure for a rollout it is abandoning.
 

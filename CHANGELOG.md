@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Deployments no longer go missing from Prometheus range queries. A `deployments_total`
+  series was created only when its first deployment ended, so it came into existence
+  already holding `1` — and `increase()`, `rate()` and `delta()` measure the change
+  between samples, which for such a series is zero. Any application whose only
+  deployment in a window was its first was therefore counted as none. The effect was
+  loudest on a dashboard's success rate, where a retried failure incremented an existing
+  series and registered while a one-off success did not, so the same hour could read
+  100% or 0% depending on which outcome happened to repeat. All five `result` series are
+  now created at `0` as soon as Argo CD confirms the application, so the first
+  deployment registers as an increase like every later one.
+
+  Two things follow. Series now appear for an application that has not finished a
+  deployment yet, which is what makes the first one visible. And the zeros only help
+  once scraped: a deployment reaching a terminal state inside a single scrape interval —
+  fire-and-forget, or an app already in the desired state on the first poll — can still
+  record its first outcome on a zero Prometheus never saw.
+
+### Changed
+
+- The example Grafana dashboard now scopes every Overview panel to the selected time
+  range, so the tiles can no longer contradict one another. "Apps With Failures" and
+  "Failing Applications" previously read the `failed_deployment` gauge, which counts
+  failures since an application's last success and ignores the time picker entirely —
+  they could report failures while the success rate for the same window read 100%. Both
+  now read `deployments_total`, as do the deployment totals. A new tile surfaces
+  `unconfirmed_deployment_failures`, the failures that never reach `deployments_total`
+  because Argo CD never confirmed the application and no other panel could show them.
+
+  "Deployment Outcomes" became a pie chart over the whole range, replacing a stacked bar
+  graph whose legend total double-counted whenever the rate interval exceeded the graph
+  step. The four duration panels became p50/p95/p99 stat tiles over the range, replacing
+  quantile time series that rendered as disconnected spikes wherever observations were
+  sparse. The `Application` variable no longer assumes the scrape job is named
+  `argo-watcher`, so the dashboard works unmodified across environments.
+
 ## [1.1.0] - 2026-08-31
 
 ### Added

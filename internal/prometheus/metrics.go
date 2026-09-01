@@ -2,13 +2,27 @@ package prometheus
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/shini4i/argo-watcher/internal/models"
 )
+
+// terminalResults lists every value AddDeploymentOutcome can record as the result label.
+// InitDeploymentOutcomes creates one series per entry, so an outcome missing here stays
+// invisible to PromQL range functions until the application produces it twice.
+var terminalResults = []string{
+	models.StatusDeployedMessage,
+	models.StatusFailedMessage,
+	models.StatusAborted,
+	models.StatusAppNotFoundMessage,
+	models.StatusCancelledMessage,
+}
 
 // MetricsInterface defines the interface for the metrics service. This is required
 // for dependency injection and mocking in tests.
 type MetricsInterface interface {
 	AddAcceptedDeployment()
 	AddDeploymentOutcome(app, result string)
+	InitDeploymentOutcomes(app string)
 	AddUnconfirmedFailure()
 	AddFailedDeployment(app string)
 	ResetFailedDeployment(app string)
@@ -162,6 +176,16 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 // result. Call once per deployment, and only for a confirmed application; see that field.
 func (m *Metrics) AddDeploymentOutcome(app, result string) {
 	m.DeploymentsTotal.WithLabelValues(app, result).Inc()
+}
+
+// InitDeploymentOutcomes creates app's DeploymentsTotal series at zero, one per terminal
+// result. A counter series born already holding 1 reports no increase() over any window,
+// so without this the first deployment of an application is invisible to every
+// range-scoped panel. Call it once ArgoCD confirmed the app (issue #552); repeats are safe.
+func (m *Metrics) InitDeploymentOutcomes(app string) {
+	for _, result := range terminalResults {
+		m.DeploymentsTotal.WithLabelValues(app, result)
+	}
 }
 
 // AddAcceptedDeployment increments AcceptedDeployments; see that field for why it carries

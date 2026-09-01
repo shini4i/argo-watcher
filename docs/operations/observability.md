@@ -16,7 +16,7 @@ Fourteen metrics, all defined in [`internal/prometheus/metrics.go`](https://gith
 | Metric | Type | Labels | Description |
 |---|---|---|---|
 | `failed_deployment` | gauge | `app` | Failed deployments of a confirmed application since its last success; reset to 0 on success. Includes deployments aborted because Argo CD became unreachable mid-rollout. |
-| `deployments_total` | counter | `app`, `result` | Deployments of a confirmed application by the terminal status they reached (`deployed`, `failed`, `aborted`, `app not found`, `cancelled`). Counted once, when the deployment ends. |
+| `deployments_total` | counter | `app`, `result` | Deployments of a confirmed application by the terminal status they reached (`deployed`, `failed`, `aborted`, `app not found`, `cancelled`). Counted once, when the deployment ends. All five series appear at `0` as soon as Argo CD confirms the application, so a first deployment registers as an increase — see the note below. |
 | `accepted_deployments` | counter | | Deployments accepted, counted at submission — before Argo CD is asked anything. |
 | `unconfirmed_deployment_failures` | counter | | Deployments that failed before Argo CD confirmed the application: a missing or misspelled name, Argo CD unreachable, or a resumed task whose window had already elapsed. |
 | `in_progress_tasks` | gauge | | Tasks between submission and a terminal state. |
@@ -34,6 +34,21 @@ Fourteen metrics, all defined in [`internal/prometheus/metrics.go`](https://gith
     `POST /api/v1/tasks` accepts a task without a credential, and the application name is free text — so nothing may become a label value until Argo CD has answered for that application. A deployment is therefore counted twice on its way through: once in `accepted_deployments` at submission, and once in `deployments_total{app,result}` when it ends. The gap between the two is mostly deployments naming an application Argo CD never confirmed — read it as an upper bound, since deployments still in flight, one superseded before its first check, or one whose replica died before it widen the gap as well. `unconfirmed_deployment_failures` counts the failures on that side of the confirmation, `unauthenticated_reads` still labels a read that did not resolve to a task as `app="unknown"`.
 
     The same openness means anyone who can reach the endpoint and knows a managed application's name can raise `gitops_writeback_skipped_unvalidated`. Treat a rise as "investigate", not automatically "our pipeline regressed".
+
+!!! note "Why `deployments_total` starts at zero"
+    `increase()`, `rate()` and `delta()` measure the change between samples inside their
+    window. A counter series that first appears already holding `1` has no change to
+    measure, so a deployment that is an application's only one in the window would be
+    invisible to every range-scoped panel and alert — and a one-off failure would be
+    missing from a success rate while a retried one was not. Argo CD confirming an
+    application therefore creates all five of its `result` series at `0`, before the
+    rollout it is about to record. Two consequences: a `deployments_total` series can
+    exist for an application that has not finished a deployment yet, and the zeros only
+    help once they have been scraped. A deployment that reaches a terminal state inside a
+    single scrape interval — one in `argo-watcher/fire-and-forget` mode, or one whose app
+    is already in the desired state on the first poll — can still land its first outcome
+    on a zero Prometheus never saw, and an application's first deployment after a restart
+    is subject to the same race.
 
 !!! note "Aggregate the gauges across replicas"
     `failed_deployment` and `in_progress_tasks` count what one process saw. Each
@@ -145,7 +160,7 @@ groups:
 
 ## Example dashboard
 
-A ready-made Grafana dashboard lives at [`monitoring/grafana/dashboards/argo-watcher.json`](https://github.com/shini4i/argo-watcher/blob/main/monitoring/grafana/dashboards/argo-watcher.json). Its **Overview** row covers availability, in-progress tasks, the success rate and deployment counts for the selected range, failing apps and how deployments ended; the **Per-Application Breakdown** row is driven by an `Application` template variable and shows that app's deployment counts, failures, end-to-end duration, and the refresh / write-back / lock-wait percentiles. `gitops_batch_size`, `state_unavailable`, `accepted_deployments` and `unconfirmed_deployment_failures` have no panel yet.
+A ready-made Grafana dashboard lives at [`monitoring/grafana/dashboards/argo-watcher.json`](https://github.com/shini4i/argo-watcher/blob/main/monitoring/grafana/dashboards/argo-watcher.json). Its **Overview** row covers availability, in-progress tasks, the success rate, deployment counts, failing apps and unconfirmed failures — all scoped to the selected time range, so the tiles cannot contradict each other — plus a breakdown of how those deployments ended. The **Per-Application Breakdown** row is driven by an `Application` template variable and shows that app's deployment counts, failures, and the refresh / write-back / lock-wait / end-to-end durations as p50, p95 and p99 over the whole range. `gitops_batch_size`, `state_unavailable` and `accepted_deployments` have no panel yet.
 
 Import it through **Dashboards → New → Import** — a **Data source** picker at the top of the dashboard selects which Prometheus to query, so no datasource UID has to match. Or run it next to the dev server:
 
