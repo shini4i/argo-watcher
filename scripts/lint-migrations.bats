@@ -211,6 +211,30 @@ CREATE INDEX idx_x ON tasks (app);'
   assert_output --partial 'DROP COLUMN'
 }
 
+@test "rejects a DROP COLUMN whose floor update is only inside a string literal" {
+  migration "ALTER TABLE tasks DROP COLUMN foo;
+INSERT INTO audit (note) VALUES ('UPDATE schema_compatibility SET min_bundled_version = 10');"
+  run "$LINT" "$MIGRATIONS"
+  assert_failure
+  assert_output --partial 'DROP COLUMN'
+}
+
+@test "ignores a destructive keyword inside a string literal" {
+  migration "INSERT INTO audit (note) VALUES ('DROP COLUMN foo was considered');"
+  run "$LINT" "$MIGRATIONS"
+  assert_success
+}
+
+# A doubled quote escapes one inside a literal, so the strip must not treat it as
+# a closing quote and spill back into executable SQL.
+@test "handles an escaped quote inside a string literal" {
+  migration "ALTER TABLE tasks DROP COLUMN foo;
+INSERT INTO audit (note) VALUES ('it''s gone');"
+  run "$LINT" "$MIGRATIONS"
+  assert_failure
+  assert_output --partial 'DROP COLUMN'
+}
+
 @test "accepts a DROP COLUMN that records a compatibility floor" {
   migration 'ALTER TABLE tasks DROP COLUMN foo;
 UPDATE schema_compatibility SET min_bundled_version = GREATEST(min_bundled_version, 10);'

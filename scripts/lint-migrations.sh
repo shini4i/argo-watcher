@@ -34,12 +34,13 @@ for file in "$MIGRATIONS_DIR"/*.up.sql; do
   version=$((10#$prefix))
   [[ "$version" -le "$GRANDFATHERED_THROUGH" ]] && continue
 
-  # Every pattern below matches on literal spaces, so all whitespace is flattened
-  # first; leaving tabs in place would let tab-formatted SQL slip past. Line
-  # comments go before that, block comments after, since they span lines. Both must
-  # go, or a floor update that is only commented out would satisfy the pairing.
+  # Everything the patterns below must not see is removed first: line comments per
+  # line, then block comments and string literals once flattened, since both can
+  # span lines. Text that is not executable must not satisfy the floor pairing, nor
+  # be classified as a schema change. Whitespace flattens so ' ' matches tabs too.
   sql=$(sed 's/--.*$//' "$file" | tr '[:space:]' ' ' | tr -s ' ' \
-    | sed -E 's|/\*[^*]*\*+([^/*][^*]*\*+)*/| |g' | tr '[:lower:]' '[:upper:]')
+    | sed -E 's|/\*[^*]*\*+([^/*][^*]*\*+)*/| |g' \
+    | sed -E "s/'([^']|'')*'/ /g" | tr '[:lower:]' '[:upper:]')
 
   findings=$(printf '%s' "$sql" | awk '
     {
