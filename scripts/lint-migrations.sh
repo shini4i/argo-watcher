@@ -15,7 +15,7 @@ status=0
 checked=0
 
 for file in "$MIGRATIONS_DIR"/*.up.sql; do
-  [ -e "$file" ] || continue
+  [[ -e "$file" ]] || continue
 
   name="${file##*/}"
 
@@ -32,7 +32,7 @@ for file in "$MIGRATIONS_DIR"/*.up.sql; do
 
   checked=$((checked + 1))
   version=$((10#$prefix))
-  [ "$version" -le "$GRANDFATHERED_THROUGH" ] && continue
+  [[ "$version" -le "$GRANDFATHERED_THROUGH" ]] && continue
 
   # Every pattern below matches on literal spaces, so all whitespace is flattened
   # first. Leaving tabs in place would let tab-formatted SQL slip past unnoticed.
@@ -80,7 +80,7 @@ for file in "$MIGRATIONS_DIR"/*.up.sql; do
     }
   ' | sort -u)
 
-  [ -z "$findings" ] && continue
+  [[ -z "$findings" ]] && continue
 
   # The floor tells an older build to refuse to start rather than fail later on a
   # column that is gone. It must name a real version: setting it to 0 would
@@ -103,12 +103,12 @@ done
 
 # A renamed directory, or the task run from elsewhere, would otherwise leave the
 # glob unmatched and report a pass without having checked anything.
-if [ "$checked" -eq 0 ]; then
+if [[ "$checked" -eq 0 ]]; then
   echo "===> ERROR: no *.up.sql found in $MIGRATIONS_DIR" >&2
   exit 1
 fi
 
-if [ "$status" -eq 0 ]; then
+if [[ "$status" -eq 0 ]]; then
   echo "===> Checked $checked migrations; all forward-only"
 fi
 

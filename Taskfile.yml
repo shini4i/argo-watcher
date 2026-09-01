@@ -71,11 +71,11 @@ tasks:
       - ./scripts/lint-migrations.sh
       # The check only ever passes on this tree, so its own cases run too —
       # otherwise a regression that makes it permissive would look identical.
-      - ./scripts/lint-migrations_test.sh
+      - bats scripts/lint-migrations.bats
     sources:
       - db/migrations/*.up.sql
       - scripts/lint-migrations.sh
-      - scripts/lint-migrations_test.sh
+      - scripts/lint-migrations.bats
 
   test:
     desc: Run tests

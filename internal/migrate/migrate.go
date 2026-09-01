@@ -14,6 +14,8 @@ import (
 	// links, instead of pulling a second PostgreSQL driver (lib/pq) into the binary.
 	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
 	"github.com/golang-migrate/migrate/v4/source"
+	// Registers the "file" source driver, which backs the file:// URL both
+	// source.Open and highestVersion read the bundled migrations through.
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
