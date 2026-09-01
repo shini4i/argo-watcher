@@ -177,6 +177,12 @@ func (monitor *DeploymentMonitor) CountDeploymentOutcome(app, result string) {
 	monitor.argo.metrics.AddDeploymentOutcome(app, result)
 }
 
+// InitDeploymentOutcomes creates app's outcome counters at zero; see the metrics method
+// for why the first deployment is invisible without it.
+func (monitor *DeploymentMonitor) InitDeploymentOutcomes(app string) {
+	monitor.argo.metrics.InitDeploymentOutcomes(app)
+}
+
 // StoreInitialAppStatus caches the initial rollout status for comparison during monitoring.
 func (monitor *DeploymentMonitor) StoreInitialAppStatus(task *models.Task, application *models.Application) error {
 	if application == nil {

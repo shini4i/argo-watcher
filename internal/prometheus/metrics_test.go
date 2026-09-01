@@ -264,3 +264,46 @@ func TestMetrics_LabellessCountersStartAtZero(t *testing.T) {
 		"accepted_deployments", "unconfirmed_deployment_failures")
 	assert.NoError(t, err)
 }
+
+// InitDeploymentOutcomes exists so PromQL range functions can see the first deployment of
+// an application; the zero samples it creates are what makes that first increment a
+// visible increase, so every result label must be present at zero.
+func TestMetrics_InitDeploymentOutcomes(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := NewMetrics(reg)
+	expectedMetric := `
+		# HELP deployments_total Deployments that reached a terminal state for an application ArgoCD confirmed, by outcome.
+		# TYPE deployments_total counter
+		deployments_total{app="test-app",result="aborted"} 0
+		deployments_total{app="test-app",result="app not found"} 0
+		deployments_total{app="test-app",result="cancelled"} 0
+		deployments_total{app="test-app",result="deployed"} 0
+		deployments_total{app="test-app",result="failed"} 0
+	`
+
+	m.InitDeploymentOutcomes("test-app")
+
+	assert.NoError(t, testutil.CollectAndCompare(reg, strings.NewReader(expectedMetric), "deployments_total"))
+}
+
+// A task is confirmed on every deployment, so initialisation runs repeatedly against
+// counters that already carry a count. It must never reset them.
+func TestMetrics_InitDeploymentOutcomesKeepsExistingCounts(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := NewMetrics(reg)
+	expectedMetric := `
+		# HELP deployments_total Deployments that reached a terminal state for an application ArgoCD confirmed, by outcome.
+		# TYPE deployments_total counter
+		deployments_total{app="test-app",result="aborted"} 0
+		deployments_total{app="test-app",result="app not found"} 0
+		deployments_total{app="test-app",result="cancelled"} 0
+		deployments_total{app="test-app",result="deployed"} 1
+		deployments_total{app="test-app",result="failed"} 0
+	`
+
+	m.InitDeploymentOutcomes("test-app")
+	m.AddDeploymentOutcome("test-app", models.StatusDeployedMessage)
+	m.InitDeploymentOutcomes("test-app")
+
+	assert.NoError(t, testutil.CollectAndCompare(reg, strings.NewReader(expectedMetric), "deployments_total"))
+}

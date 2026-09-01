@@ -260,6 +260,12 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task,
 		return nil, 0, false, err
 	}
 
+	// Done here rather than next to CountDeploymentOutcome: the zero samples must be scraped
+	// during the rollout that follows. A deployment finishing inside one scrape interval —
+	// fire-and-forget, or an app already in the desired state — still lands its first outcome
+	// on an unscraped zero and stays invisible to increase().
+	updater.monitor.InitDeploymentOutcomes(task.App)
+
 	if err := updater.monitor.StoreInitialAppStatus(&task, app); err != nil {
 		return nil, 0, true, err
 	}
