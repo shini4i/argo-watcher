@@ -435,6 +435,40 @@ func TestArgoAddTask(t *testing.T) {
 		assert.False(t, captured.IsRollback)
 		assert.Empty(t, captured.RollbackTargetId)
 	})
+
+	t.Run("Argo - Client-supplied server-owned fields are discarded", func(t *testing.T) {
+		api := newArgoApiMock(ctrl)
+		metrics := mocks.NewMockMetricsInterface(ctrl)
+		state := newTaskRepositoryMock(ctrl)
+
+		metrics.EXPECT().AddAcceptedDeployment()
+
+		state.EXPECT().GetTasks(deployedHistoryFilter("test-app", anyLimit)).Return([]models.Task{}, int64(0))
+
+		var captured models.Task
+		state.EXPECT().CancelInProgressTasks("test-app", gomock.Any(), gomock.Any(), gomock.Any()).Return(int64(0), nil)
+		state.EXPECT().AddTask(gomock.Any()).DoAndReturn(func(task models.Task) (*models.Task, error) {
+			captured = task
+			task.Id = uuid.NewString()
+			return &task, nil
+		})
+
+		argo := &Argo{}
+		argo.Init(state, api, metrics)
+		newTask, err := argo.AddTask(models.Task{
+			App:          "test-app",
+			Images:       []models.Image{{Image: "app", Tag: "v1"}},
+			StatusReason: "attacker-controlled",
+			Updated:      4102444800,
+		})
+
+		assert.NoError(t, err)
+		assert.Empty(t, captured.StatusReason, "the stored task must not carry a client-supplied status reason")
+		assert.Zero(t, captured.Updated, "the stored task must not carry a client-supplied update time")
+		require.NotNil(t, newTask)
+		assert.Empty(t, newTask.StatusReason, "the accepted task must not reach the start notification with it")
+		assert.Zero(t, newTask.Updated, "the accepted task must not reach the start notification with it")
+	})
 }
 
 func TestArgoDetectRollback(t *testing.T) {
