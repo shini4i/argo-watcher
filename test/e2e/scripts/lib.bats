@@ -244,6 +244,61 @@ PROM
   assert_equal "$(jq -r '.images[0].image' <<<"$json")" "custom/img"
 }
 
+# --- go_version ---------------------------------------------------------------
+# The -race image's base tag is built from this, and the golang image refuses a
+# toolchain older than the module's floor, so a wrong answer here breaks the lab
+# build with a message that points at Docker rather than at go.mod.
+
+gomod_fixture() {
+  printf '%s\n' "$@" >"${BATS_TEST_TMPDIR}/go.mod"
+  printf '%s' "${BATS_TEST_TMPDIR}/go.mod"
+}
+
+@test "go_version reads the go directive" {
+  run go_version "$(gomod_fixture 'module x' '' 'go 1.26.7' '' 'require (' ')')"
+  assert_success
+  assert_output "1.26.7"
+}
+
+@test "go_version prefers a toolchain directive over the go directive" {
+  run go_version "$(gomod_fixture 'module x' '' 'go 1.26.0' '' 'toolchain go1.26.9')"
+  assert_success
+  assert_output "1.26.9"
+}
+
+@test "go_version accepts a two-part go directive" {
+  run go_version "$(gomod_fixture 'module x' '' 'go 1.25')"
+  assert_success
+  assert_output "1.25"
+}
+
+@test "go_version ignores 'toolchain default' and keeps the go directive" {
+  run go_version "$(gomod_fixture 'module x' '' 'go 1.26.7' '' 'toolchain default')"
+  assert_success
+  assert_output "1.26.7"
+}
+
+@test "go_version ignores a go directive that is not at the start of a line" {
+  run go_version "$(gomod_fixture 'module x' '' 'go 1.26.7' '' 'require (' '	rsc.io/go 1.0.0' ')')"
+  assert_success
+  assert_output "1.26.7"
+}
+
+@test "go_version fails loudly when no version is declared" {
+  run ! go_version "$(gomod_fixture 'module x' '' 'require (' ')')"
+  assert_output --partial "no go or toolchain directive"
+}
+
+@test "go_version reads the repository's own go.mod" {
+  run go_version "${BATS_TEST_DIRNAME}/../../../go.mod"
+  assert_success
+  assert_output --regexp '^[0-9]+\.[0-9]+(\.[0-9]+)?$'
+}
+
+@test "go_version fails when handed no path" {
+  run ! go_version
+}
+
 # --- retry -------------------------------------------------------------------
 # These counters are deliberately named `attempts` and `delay` — the same names
 # retry takes as parameters. A command retry runs executes in the same shell, so if

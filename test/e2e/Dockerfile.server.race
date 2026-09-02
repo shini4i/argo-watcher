@@ -1,8 +1,10 @@
-# Lab-only argo-watcher image built with the Go race detector. Not the shipped
-# image. Build from the repo root: web/dist must already exist there (the
-# build-race-image task runs `task build-ui` first).
+# Lab-only argo-watcher image built with -race, not the shipped image. Build from the repo root;
+# the build-race-image task runs `task build-ui` first so web/dist exists.
 
-FROM golang:1.26.5-bookworm AS build
+# GO_VERSION comes from go.mod via the build-race-image task. The golang image
+# sets GOTOOLCHAIN=local, so a base older than the go directive fails outright.
+ARG GO_VERSION
+FROM golang:${GO_VERSION}-bookworm AS build
 
 WORKDIR /src
 
