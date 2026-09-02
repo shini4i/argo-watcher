@@ -77,6 +77,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sparse. The `Application` variable no longer assumes the scrape job is named
   `argo-watcher`, so the dashboard works unmodified across environments.
 
+### Security
+
+- A task submission can no longer set the fields the server owns. `status_reason` and
+  `updated` are written by the server as a deployment progresses, but both were ordinary
+  JSON fields on the submission payload, and `POST /api/v1/tasks` takes no credential by
+  design. A crafted `status_reason` was stored verbatim by the in-memory backend and
+  re-served to every reader of the task, and on both backends it reached the webhook and
+  Mattermost start notification, whose message format is an operator-supplied template
+  over the whole task. A submitted `updated` likewise rendered a fabricated timestamp
+  there. Both fields are now cleared when the deployment is accepted, alongside the
+  existing server-side overwrite of the rollback fields.
+
 ## [1.1.0] - 2026-08-31
 
 ### Added

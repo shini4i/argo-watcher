@@ -163,7 +163,8 @@ func (argo *Argo) StartLivenessProbe(ctx context.Context, interval time.Duration
 	}
 }
 
-// AddTask validates a new deployment task and adds it to the task repository.
+// AddTask validates a new deployment task, overwrites the fields a client must not
+// set, and adds it to the task repository.
 func (argo *Argo) AddTask(task models.Task) (*models.Task, error) {
 	// Gate on the cached reachability instead of a live Check(): a deploy
 	// attempted during an ArgoCD outage then fails fast with a clear error
@@ -188,6 +189,12 @@ func (argo *Argo) AddTask(task models.Task) (*models.Task, error) {
 	// action) can never influence the stored result.
 	task.RollbackTargetId = argo.detectRollback(task)
 	task.IsRollback = task.RollbackTargetId != ""
+
+	// StatusReason and Updated are server-owned but JSON-bindable, and submission takes
+	// no credential. Clearing them keeps a client-supplied value out of the in-memory
+	// store and out of the task the start notification renders.
+	task.StatusReason = ""
+	task.Updated = 0
 
 	// Superseding stops the watcher polling ArgoCD for a rollout nobody is waiting
 	// on anymore (issue #353). Matching on image name

@@ -58,10 +58,22 @@ func TestImageNamesOverlap(t *testing.T) {
 func TestInMemoryState_AddTask(t *testing.T) {
 	state := InMemoryState{}
 
-	firstTask, err := state.AddTask(createTestTask("Test"))
+	// The web UI derives a task's duration from created/updated, so the store stamps
+	// both itself. Poisoned here so the assertions below pin the overwrite, not just
+	// that a value ended up non-zero.
+	const farFuture = 4102444800
+	poisoned := createTestTask("Test")
+	poisoned.Created = farFuture
+	poisoned.Updated = farFuture
+
+	firstTask, err := state.AddTask(poisoned)
 	require.NoError(t, err)
 	assert.NotEmpty(t, firstTask.Id)
 	assert.Equal(t, models.StatusInProgressMessage, firstTask.Status)
+	assert.NotZero(t, firstTask.Created)
+	assert.NotZero(t, firstTask.Updated)
+	assert.NotEqual(t, float64(farFuture), firstTask.Created)
+	assert.NotEqual(t, float64(farFuture), firstTask.Updated)
 
 	secondTask, err := state.AddTask(createTestTask("Test2"))
 	require.NoError(t, err)

@@ -26,15 +26,20 @@ const MaxTaskImages = 50
 const MaxTaskFieldLength = 255
 
 type Task struct {
-	Id           string  `json:"id,omitempty"`
-	Created      float64 `json:"created,omitempty"`
-	Updated      float64 `json:"updated,omitempty"`
-	App          string  `json:"app" binding:"required,max=255" example:"argo-watcher"`
-	Author       string  `json:"author" binding:"required,max=255" example:"John Doe"`
-	Project      string  `json:"project" binding:"required,max=255" example:"Demo"`
-	Images       []Image `json:"images" binding:"required,max=50,dive"`
-	Status       string  `json:"status,omitempty"`
-	StatusReason string  `json:"status_reason,omitempty"`
+	// Id, Created and Updated are server-owned: the state backend stamps all three,
+	// and AddTask additionally clears Updated, which the backend would otherwise leave
+	// carrying a submitted value into the start notification.
+	Id      string  `json:"id,omitempty"`
+	Created float64 `json:"created,omitempty"`
+	Updated float64 `json:"updated,omitempty"`
+	App     string  `json:"app" binding:"required,max=255" example:"argo-watcher"`
+	Author  string  `json:"author" binding:"required,max=255" example:"John Doe"`
+	Project string  `json:"project" binding:"required,max=255" example:"Demo"`
+	Images  []Image `json:"images" binding:"required,max=50,dive"`
+	Status  string  `json:"status,omitempty"`
+	// StatusReason is server-owned: it is written when a deployment reaches a terminal
+	// state, so AddTask discards a submitted value before the task is stored or notified.
+	StatusReason string `json:"status_reason,omitempty"`
 	// Validated records whether the request that created this task presented a valid
 	// credential. It gates the git write-back and, since it also decides what a task
 	// may supersede, it is never accepted from or served over the API.

@@ -1937,6 +1937,49 @@ func TestAddTaskEndpoint(t *testing.T) {
 		assert.False(t, stored.Validated, "a body-supplied validated flag must not grant authority")
 	})
 
+	// status_reason and updated are written by the server as a deployment progresses,
+	// but both bind from the request body and submission takes no credential. This
+	// pins the clearing at the HTTP boundary, so moving task normalisation out of
+	// argo.AddTask cannot reopen the hole with the argocd unit test still green.
+	t.Run("body-supplied server-owned fields are ignored", func(t *testing.T) {
+		lockdown, _ := NewLockdown("", lock.NewInMemoryDeployLockStore())
+		strategies := make(map[string]auth.AuthStrategy)
+
+		ctrl := gomock.NewController(t)
+		repo, _ := newRepo(ctrl)
+		repo.EXPECT().Check().Return(true).AnyTimes()
+
+		var stored models.Task
+		repo.EXPECT().AddTask(gomock.Any()).DoAndReturn(func(task models.Task) (*models.Task, error) {
+			stored = task
+			return nil, fmt.Errorf("stop before the rollout goroutine")
+		})
+		argo := &argocd.Argo{}
+		argo.Init(repo, newArgoAPI(ctrl), newMetrics(ctrl))
+
+		env := &Env{
+			lockdown:      lockdown,
+			strategies:    strategies,
+			authenticator: auth.NewAuthenticator(strategies),
+			argo:          argo,
+			config:        &config.ServerConfig{DeploymentTimeout: 900},
+		}
+
+		router := chi.NewRouter()
+		router.Post("/api/v1/tasks", env.addTask)
+
+		taskJSON := `{"app": "test-app", "author": "test-author", "project": "test-project", "images": [{"image": "test", "tag": "v1"}], "status_reason": "attacker-controlled", "updated": 4102444800}`
+		req, _ := http.NewRequest(http.MethodPost, "/api/v1/tasks", strings.NewReader(taskJSON))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		// Only these two: id, created and status are stamped by the state backend, so
+		// at a mock repo they legitimately still carry whatever the body sent.
+		assert.Empty(t, stored.StatusReason, "a body-supplied status reason must not be stored")
+		assert.Zero(t, stored.Updated, "a body-supplied update time must not be stored")
+	})
+
 	// The mirrored positive case. Without it, mutating the assignment to
 	// `task.Validated = false` keeps the whole Go suite green: the state and argocd
 	// tests set Validated directly, so this handler line is the only place the
