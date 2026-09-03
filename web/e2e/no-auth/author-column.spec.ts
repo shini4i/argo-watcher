@@ -1,6 +1,5 @@
 import { expect, test } from '@playwright/test';
 import { seedTask, waitForDeployed } from '../helpers';
-import { AUTHOR_MAX_WIDTH } from '../../src/features/tasks/components/TasksDatagrid';
 
 /**
  * @description An unbreakable CI bot address sets the Author cell's min-content
@@ -10,7 +9,12 @@ import { AUTHOR_MAX_WIDTH } from '../../src/features/tasks/components/TasksDatag
  */
 const BOT_AUTHOR = 'project_1758_bot_062d75c8b91e27fa4e5bb374cd9c1c39@noreply.example.net';
 
-/** Cell padding on top of the text cap; the column may exceed neither together. */
+/**
+ * @description Mirrors `AUTHOR_MAX_WIDTH` in TasksDatagrid.tsx, restated because
+ * this suite compiles without JSX support and cannot import a component module.
+ * `CELL_PADDING_ALLOWANCE` covers the surrounding table cell's own padding.
+ */
+const AUTHOR_MAX_WIDTH = 200;
 const CELL_PADDING_ALLOWANCE = 48;
 
 test('a long bot author is clipped instead of widening its column', async ({ page, request }) => {
