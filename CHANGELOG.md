@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A long author address no longer stretches the task table sideways. The Author cell
+  already refused to wrap, but nothing capped its width, so an address with no break
+  opportunity — a GitLab bot such as `project_1758_bot_<hash>@noreply.example.net` —
+  set the column's minimum content width and pushed the Images and Details columns out
+  of view. The address is now capped at a fixed width and ellipsised, with the full
+  address available in its tooltip and on the task detail page.
+
 ## [1.1.1] - 2026-09-02
 
 ### Fixed
