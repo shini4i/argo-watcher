@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import type { Task } from '../../../data/types';
-import { TasksDatagrid, __testing } from './TasksDatagrid';
+import { AUTHOR_MAX_WIDTH, TasksDatagrid, __testing } from './TasksDatagrid';
 import { TaskListProvider, useTaskListContext } from './TaskListContext';
 
 const sampleRecord: Task = {
@@ -55,7 +55,7 @@ describe('TasksDatagrid', () => {
     renderInRouter(<TasksDatagrid />);
     expect(screen.getByTestId('function-app')).toBeInTheDocument();
     expect(screen.getByTestId('function-project')).toBeInTheDocument();
-    expect(screen.getByTestId('function-author')).toBeInTheDocument();
+    expect(screen.getByTestId('function-author')).toHaveTextContent(sampleRecord.author);
     expect(screen.getByTestId('function-status')).toBeInTheDocument();
     expect(screen.getByTestId('function-created')).toBeInTheDocument();
     expect(screen.getByTestId('function-updated')).toBeInTheDocument();
@@ -127,6 +127,32 @@ describe('TasksDatagrid', () => {
       </TaskListProvider>,
     );
     expect(screen.getByTestId('reasons').textContent).toBe('');
+  });
+
+  describe('AuthorCell', () => {
+    const { AuthorCell } = __testing;
+
+    it('renders an em-dash placeholder when the author is empty', () => {
+      render(<AuthorCell author="" />);
+      expect(screen.getByText('—')).toBeInTheDocument();
+    });
+
+    it('caps a long author at a fixed width and keeps the full value in the tooltip', () => {
+      const author = 'project_1758_bot_062d75c8b91e27fa4e5bb374cd9c1c39@noreply.gitlab.dyninno.net';
+      render(<AuthorCell author={author} />);
+
+      const cell = screen.getByText(author);
+      expect(cell).toHaveStyle({
+        // Without an explicit block box the unbreakable address sets the cell's
+        // min-content width and stretches the whole table.
+        display: 'block',
+        maxWidth: `${AUTHOR_MAX_WIDTH}px`,
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+      });
+      expect(cell).toHaveAttribute('title', author);
+    });
   });
 
   describe('ProjectCell', () => {

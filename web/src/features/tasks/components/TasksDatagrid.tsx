@@ -16,6 +16,9 @@ import { RollbackIndicator } from './RollbackIndicator';
 import { TimeCell } from './TimeCell';
 import { usePauseRefresh, useTaskListContext } from './TaskListContext';
 
+/** Widest the author text may grow, in px, before the address is ellipsised. */
+export const AUTHOR_MAX_WIDTH = 200;
+
 /**
  * Shared by both the recent and history views. `rowClick="expand"` means any
  * click inside a row toggles the status-reason panel, so nested links and
@@ -64,16 +67,7 @@ export const TasksDatagrid = () => {
         label="Author"
         sortBy="author"
         cellClassName="cell-author"
-        render={(record: Task) => (
-          <Typography
-            variant="body2"
-            sx={{ fontFamily: tokens.fontMono, fontSize: 11.5 }}
-            noWrap
-            title={record.author}
-          >
-            {record.author || '—'}
-          </Typography>
-        )}
+        render={(record: Task) => <AuthorCell author={record.author} />}
       />
       <FunctionField
         source="status"
@@ -163,7 +157,7 @@ const datagridSx: SxProps<Theme> = theme => {
     },
     '& .cell-app': { minWidth: 200, maxWidth: 280 },
     '& .cell-project': { minWidth: 180, maxWidth: 280 },
-    '& .cell-author': { width: 200 },
+    '& .cell-author': { width: AUTHOR_MAX_WIDTH },
     '& .cell-status': { width: 156 },
     '& .cell-created': {
       width: 200,
@@ -182,6 +176,32 @@ const datagridSx: SxProps<Theme> = theme => {
       paddingRight: theme.spacing(1.5),
     },
   };
+};
+
+const AuthorCell = ({ author }: { author?: string | null }) => {
+  if (!author) {
+    return <EmptyCell />;
+  }
+  return (
+    <Typography
+      variant="body2"
+      sx={{
+        // A bot address such as project_1758_bot_<hash>@noreply.example.net has no
+        // break opportunity, so without an explicit capped block box it sets the
+        // cell's min-content width and stretches the whole table sideways.
+        display: 'block',
+        maxWidth: AUTHOR_MAX_WIDTH,
+        fontFamily: tokens.fontMono,
+        fontSize: 11.5,
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+      }}
+      title={author}
+    >
+      {author}
+    </Typography>
+  );
 };
 
 const ProjectCell = ({ project }: { project?: string | null }) => {
@@ -305,6 +325,7 @@ const StatusReasonContent = ({ record }: { record?: Task | null }) => {
 };
 
 export const __testing = {
+  AuthorCell,
   ProjectCell,
   StatusReasonContent,
   StatusReasonPanel,
