@@ -18,6 +18,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `author` submitted through the open task endpoint from adding keys of its own to the body.
   A `WEBHOOK_CONTENT_TYPE` that is not JSON is left alone and keeps receiving literal text.
 
+### Changed
+
+- A `WEBHOOK_FORMAT` that quotes a value itself must stop doing so. Values reaching a JSON
+  body are now escaped before the template renders them, so a format such as
+  `{"text": {{printf "%q" .StatusReason}}}` escapes an already-escaped value and the receiver
+  shows a literal `\n` where a line break belongs. Drop the `printf` and put the value inside
+  quotes instead: `{"text": "{{.StatusReason}}"}`. A format written the way the guide
+  documents needs no change.
+
 ### Fixed
 
 - A git write-back that succeeded is no longer reported as a failure when the database

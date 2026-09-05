@@ -24,6 +24,16 @@ Argo Watcher does not sign the payload; the receiver authenticates the request t
 
 When `WEBHOOK_CONTENT_TYPE` is a JSON type, values are escaped for you before the template renders them, so a quote or a newline in `StatusReason` cannot break the body. Put each value inside a JSON string (`"{{.Author}}"`) and quote nothing yourself. For any other content type the values are rendered as they are.
 
+!!! warning "If your format quotes values itself"
+    A format that produces its own quotes — `{{printf "%q" .StatusReason}}` — now escapes an
+    already-escaped value, and the receiver shows a literal `\n` instead of a line break.
+    Drop the `printf` and wrap the value in quotes instead:
+
+    ```diff
+    - WEBHOOK_FORMAT='{"text": {{printf "%q" .StatusReason}}}'
+    + WEBHOOK_FORMAT='{"text": "{{.StatusReason}}"}'
+    ```
+
 | Variable | Type | Description |
 |---|---|---|
 | `Id` | `string` | Task id (UUID) |

@@ -349,6 +349,23 @@ func TestSendEscapesValuesForAJSONBody(t *testing.T) {
 		assert.Equal(t, `{"app": "demo", "author": "ci-bot"}`, body)
 	})
 
+	// Pins the one incompatibility: a template that quotes the value itself now
+	// double-escapes, because the value reaches it already escaped. Such a format
+	// has to drop its own quoting — see the migration note in the notifications
+	// guide.
+	t.Run("a template that quotes the value itself double-escapes", func(t *testing.T) {
+		body := renderBody(t,
+			`{"text": {{printf "%q" .StatusReason}}}`,
+			"application/json",
+			models.Task{StatusReason: "line one\nline two"},
+		)
+
+		var parsed map[string]any
+		require.NoError(t, json.Unmarshal([]byte(body), &parsed))
+		assert.Equal(t, `line one\nline two`, parsed["text"],
+			"the value arrives escaped, so the template's own quoting escapes it again")
+	})
+
 	// A receiver expecting something other than JSON must keep receiving the
 	// literal text it always did.
 	t.Run("a non-JSON body is left alone", func(t *testing.T) {
