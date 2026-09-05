@@ -379,6 +379,25 @@ func TestSendEscapesValuesForAJSONBody(t *testing.T) {
 	})
 }
 
+func TestIsJSONBody(t *testing.T) {
+	tests := map[string]bool{
+		"application/json":                  true,
+		"application/json; charset=utf-8":   true,
+		"APPLICATION/JSON":                  true,
+		"application/vnd.api+json":          true,
+		"application/problem+json":          true,
+		"text/plain":                        false,
+		"text/plain; profile=json":          false,
+		"application/x-www-form-urlencoded": false,
+		"":                                  false,
+		"not a media type":                  false,
+	}
+
+	for contentType, want := range tests {
+		assert.Equal(t, want, isJSONBody(contentType), "content type %q", contentType)
+	}
+}
+
 func sortedKeys(m map[string]any) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"mime"
 	"net/http"
 	"slices"
 	"strings"
@@ -68,8 +69,17 @@ func (n *Notifier) Send(task models.Task) error {
 
 // isJSONBody reports whether the configured content type describes JSON, and so
 // whether the values rendered into the body have to be escaped as JSON strings.
+// The media type is parsed rather than searched: a parameter may contain "json"
+// while the body is something else entirely ("text/plain; profile=json").
 func isJSONBody(contentType string) bool {
-	return strings.Contains(strings.ToLower(contentType), "json")
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return false
+	}
+
+	_, subtype, found := strings.Cut(mediaType, "/")
+
+	return found && (subtype == "json" || strings.HasSuffix(subtype, "+json"))
 }
 
 // escapeForJSON returns a copy of task whose every string field is escaped for
