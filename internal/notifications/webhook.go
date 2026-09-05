@@ -101,23 +101,18 @@ func escapeForJSON(task models.Task) models.Task {
 // quotes. HTML escaping is off so a value keeps the bytes it arrived with
 // wherever JSON does not require otherwise.
 func jsonStringBody(s string) string {
-	if s == "" {
-		return s
-	}
-
 	var buf bytes.Buffer
 	encoder := json.NewEncoder(&buf)
 	encoder.SetEscapeHTML(false)
-	if err := encoder.Encode(s); err != nil {
-		// Unreachable: encoding a string cannot fail. Returning it unescaped
-		// keeps a notification going out rather than dropping it.
-		slog.Error("failed to escape a webhook value", "error", err)
-		return s
-	}
 
-	encoded := strings.TrimRight(buf.String(), "\n")
+	// Encoding a string cannot fail: bytes.Buffer never errors, string is always
+	// a supported type, and invalid UTF-8 is replaced rather than rejected.
+	_ = encoder.Encode(s)
 
-	return encoded[1 : len(encoded)-1]
+	// Encode appends a newline after the quoted string.
+	quoted := strings.TrimRight(buf.String(), "\n")
+
+	return strings.TrimSuffix(strings.TrimPrefix(quoted, `"`), `"`)
 }
 
 // WebhookStrategy holds the configuration and a pre-compiled template for sending webhooks.
