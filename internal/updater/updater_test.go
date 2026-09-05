@@ -758,6 +758,29 @@ helm:
 		assert.Contains(t, out, "<<: *d")
 	})
 
+	t.Run("a scalar helm key is refused", func(t *testing.T) {
+		path := write(t, "helm: 5\n")
+
+		_, err := repo.mergeOverrideFileContent(path, newContent)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not a YAML mapping")
+	})
+
+	t.Run("parameter entries of the wrong shape are reported", func(t *testing.T) {
+		path := write(t, "helm:\n  parameters:\n    - 1\n    - 2\n")
+
+		_, err := repo.mergeOverrideFileContent(path, newContent)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unmarshal")
+	})
+
+	t.Run("a malformed later document is reported, not ignored", func(t *testing.T) {
+		path := write(t, "helm:\n  parameters: []\n---\nkey: value: invalid\n")
+
+		_, err := repo.mergeOverrideFileContent(path, newContent)
+		require.Error(t, err)
+	})
+
 	t.Run("a null document is written as a fresh override", func(t *testing.T) {
 		path := write(t, "~\n")
 
