@@ -69,6 +69,26 @@ func TestLockdown_Parse(t *testing.T) {
 		{"Fri - mon 06:30", true, nil},
 		{"Fri 13:20 -", true, nil},
 		{"", true, nil},
+		// A time with no colon reached strconv with a one-element slice and
+		// panicked, taking the process down at startup instead of reporting the
+		// typo like every other malformed input here.
+		{"Fri 1320 - Mon 06:30", true, nil},
+		{"Fri 13:20 - Mon 0630", true, nil},
+		// Out-of-range components parse as integers but name an instant the clock
+		// never reaches, so the window silently never opens.
+		{"Fri 25:00 - Mon 06:30", true, nil},
+		{"Fri 13:60 - Mon 06:30", true, nil},
+		{"Fri 13:20 - Mon 24:00", true, nil},
+		{"Fri -1:20 - Mon 06:30", true, nil},
+		// A same-day window may not end at or before it starts: the same-day
+		// branch of timeWithinSchedule does not wrap, so such a window is never
+		// active. Rejecting it surfaces the mistake instead of freezing nothing.
+		{"Fri 18:00 - Fri 09:00", true, nil},
+		{"Fri 09:00 - Fri 09:00", true, nil},
+		// The legitimate same-day window still parses.
+		{"Fri 09:00 - Fri 18:00", false, []LockdownSchedule{
+			{time.Friday, 9, 0, time.Friday, 18, 0},
+		}},
 	}
 
 	for _, tt := range testCases {

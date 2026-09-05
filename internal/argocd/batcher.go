@@ -157,8 +157,8 @@ func (b *Batcher) flush(batch []*batchWriteRequest) {
 		return nil
 	})
 	if lockErr != nil {
-		// The lock itself failed (e.g. the Postgres advisory-lock transaction);
-		// no write-back ran, so fail the whole batch with that error.
+		// The lock was never acquired, so nothing ran — WithLock reports only an
+		// acquisition failure here, never the outcome of the callback.
 		b.deliverAll(batch, lockErr)
 		return
 	}

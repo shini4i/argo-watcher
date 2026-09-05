@@ -211,15 +211,17 @@ func TestGenerateOverrideFileContent(t *testing.T) {
 		assert.Contains(t, err.Error(), "img2")
 	})
 
-	t.Run("Skips images that do not match any managed image", func(t *testing.T) {
+	// A zero-parameter override is indistinguishable from having nothing to write,
+	// and UpdateGitImageTag's nil check is what stops it reaching the repository:
+	// there is no tag to change, so a clone and a commit would only rewrite the file.
+	t.Run("Reports nothing to write when no image matches a managed image", func(t *testing.T) {
 		app := newAppWithImages("app")
 		task := &models.Task{Id: "test-id", Images: []models.Image{{Image: "unmanaged", Tag: "v1"}}}
 
 		override, err := generateOverrideFileContent(app.Metadata.Annotations, task)
 
 		require.NoError(t, err)
-		require.NotNil(t, override)
-		assert.Empty(t, override.Helm.Parameters)
+		assert.Nil(t, override)
 	})
 }
 

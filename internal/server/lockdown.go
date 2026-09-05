@@ -72,6 +72,15 @@ func parseSchedule(schedule string) (LockdownSchedule, error) {
 		return LockdownSchedule{}, err
 	}
 
+	// timeWithinSchedule's same-day branch does not wrap the way its cross-day
+	// branch does, so such a window can never be active. An overnight freeze is
+	// expressed by naming the next day ("Sat 22:00 - Sun 06:00").
+	if startDay == endDay && !timeBefore(startHour, startMin, endHour, endMin) {
+		return LockdownSchedule{}, fmt.Errorf(
+			"invalid timeframe: a same-day window must end after it starts, got %02d:%02d - %02d:%02d on %s",
+			startHour, startMin, endHour, endMin, startDay)
+	}
+
 	return LockdownSchedule{
 		StartDay:  startDay,
 		StartHour: startHour,
@@ -82,16 +91,31 @@ func parseSchedule(schedule string) (LockdownSchedule, error) {
 	}, nil
 }
 
+// parseTime reads an "HH:MM" component of a schedule. Both halves are range
+// checked: an hour of 25 parses as an integer but names an instant the clock
+// never reaches, which would leave the window silently never active.
 func parseTime(timeStr string) (int, int, error) {
 	timeParts := strings.Split(timeStr, ":")
+	if len(timeParts) != 2 {
+		return 0, 0, fmt.Errorf("invalid time format %q, want HH:MM", timeStr)
+	}
+
 	hour, err := strconv.Atoi(timeParts[0])
 	if err != nil {
 		return 0, 0, err
 	}
+	if hour < 0 || hour > 23 {
+		return 0, 0, fmt.Errorf("invalid hour %d in %q, want 0-23", hour, timeStr)
+	}
+
 	minutes, err := strconv.Atoi(timeParts[1])
 	if err != nil {
 		return 0, 0, err
 	}
+	if minutes < 0 || minutes > 59 {
+		return 0, 0, fmt.Errorf("invalid minute %d in %q, want 0-59", minutes, timeStr)
+	}
+
 	return hour, minutes, nil
 }
 

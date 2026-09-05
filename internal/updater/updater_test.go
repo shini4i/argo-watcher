@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -516,7 +518,10 @@ func TestMergeOverrideFileContent(t *testing.T) {
 		tmpFile := filepath.Join(t.TempDir(), "values.yaml")
 		finalContent, err := repo.mergeOverrideFileContent(tmpFile, newContent)
 		require.NoError(t, err)
-		assert.Equal(t, newContent, finalContent)
+
+		expected, err := yaml.Marshal(newContent)
+		require.NoError(t, err)
+		assert.Equal(t, string(expected), string(finalContent))
 	})
 
 	t.Run("File Read Fails", func(t *testing.T) {
@@ -534,11 +539,306 @@ func TestMergeOverrideFileContent(t *testing.T) {
 	})
 }
 
+// The override file is not exclusively argo-watcher's: the default target is
+// Argo CD's own .argocd-source-<app>.yaml, and write-back-filename can point at
+// an operator's file. Only helm.parameters may be rewritten.
+func TestMergeOverrideFileContentPreservesTheRestOfTheFile(t *testing.T) {
+	repo := newTestRepo(t, nil)
+
+	write := func(t *testing.T, content string) string {
+		t.Helper()
+		path := filepath.Join(t.TempDir(), "values-override.yaml")
+		require.NoError(t, os.WriteFile(path, []byte(content), 0644))
+		return path
+	}
+
+	newContent := &ArgoOverrideFile{}
+	newContent.Helm.Parameters = []ArgoParameterOverride{
+		{Name: "app.image.tag", Value: "v2", ForceString: true},
+	}
+
+	t.Run("keeps sibling helm keys and top-level keys", func(t *testing.T) {
+		path := write(t, `helm:
+  parameters:
+    - name: app.image.tag
+      value: v1
+      forceString: true
+  valueFiles:
+    - values-prod.yaml
+  values: |
+    replicaCount: 3
+kustomize:
+  namePrefix: prod-
+`)
+		merged, err := repo.mergeOverrideFileContent(path, newContent)
+		require.NoError(t, err)
+
+		out := string(merged)
+		assert.Contains(t, out, "valueFiles")
+		assert.Contains(t, out, "values-prod.yaml")
+		assert.Contains(t, out, "replicaCount: 3")
+		assert.Contains(t, out, "namePrefix: prod-")
+		assert.Contains(t, out, "value: v2")
+		assert.NotContains(t, out, "value: v1")
+	})
+
+	t.Run("keeps comments", func(t *testing.T) {
+		path := write(t, `# pinned by the platform team
+helm:
+  parameters:
+    - name: app.image.tag
+      value: v1
+  # the prod overlay must stay last
+  valueFiles:
+    - values-prod.yaml
+`)
+		merged, err := repo.mergeOverrideFileContent(path, newContent)
+		require.NoError(t, err)
+
+		out := string(merged)
+		assert.Contains(t, out, "# pinned by the platform team")
+		assert.Contains(t, out, "# the prod overlay must stay last")
+	})
+
+	// commitLocal skips the commit on a byte-identical render, so a comment
+	// layout that shifted on each round trip would commit on every deployment.
+	t.Run("a commented file reaches a fixed point", func(t *testing.T) {
+		path := write(t, `# pinned by the platform team
+
+helm:
+  # argo-watcher owns these
+  parameters:
+    - name: app.image.tag
+      value: v1
+
+  # the prod overlay must stay last
+  valueFiles:
+    - values-prod.yaml   # trailing comment
+
+# footer comment
+`)
+		first, err := repo.mergeOverrideFileContent(path, newContent)
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(path, first, 0644))
+
+		second, err := repo.mergeOverrideFileContent(path, newContent)
+		require.NoError(t, err)
+		assert.Equal(t, string(first), string(second))
+	})
+
+	t.Run("adds the helm block to a file that has none", func(t *testing.T) {
+		path := write(t, "replicaCount: 3\n")
+
+		merged, err := repo.mergeOverrideFileContent(path, newContent)
+		require.NoError(t, err)
+
+		out := string(merged)
+		assert.Contains(t, out, "replicaCount: 3")
+		assert.Contains(t, out, "app.image.tag")
+		assert.Contains(t, out, "value: v2")
+	})
+
+	t.Run("appends a parameter the file does not carry", func(t *testing.T) {
+		path := write(t, `helm:
+  parameters:
+    - name: other.tag
+      value: keepme
+`)
+		merged, err := repo.mergeOverrideFileContent(path, newContent)
+		require.NoError(t, err)
+
+		var parsed ArgoOverrideFile
+		require.NoError(t, yaml.Unmarshal(merged, &parsed))
+		assert.Equal(t, []ArgoParameterOverride{
+			{Name: "other.tag", Value: "keepme"},
+			{Name: "app.image.tag", Value: "v2", ForceString: true},
+		}, parsed.Helm.Parameters)
+	})
+
+	t.Run("an empty file is written as a fresh override", func(t *testing.T) {
+		path := write(t, "")
+
+		merged, err := repo.mergeOverrideFileContent(path, newContent)
+		require.NoError(t, err)
+
+		expected, err := yaml.Marshal(newContent)
+		require.NoError(t, err)
+		assert.Equal(t, string(expected), string(merged))
+	})
+
+	t.Run("a non-mapping document is refused rather than overwritten", func(t *testing.T) {
+		path := write(t, "- just\n- a\n- list\n")
+
+		_, err := repo.mergeOverrideFileContent(path, newContent)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "mapping")
+	})
+
+	// Only the first document survives a Node round-trip, so editing such a file
+	// would drop the rest of it.
+	t.Run("a multi-document file is refused rather than truncated", func(t *testing.T) {
+		path := write(t, `helm:
+  parameters:
+    - name: app.image.tag
+      value: v1
+---
+second: document
+`)
+		_, err := repo.mergeOverrideFileContent(path, newContent)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "more than one YAML document")
+	})
+
+	t.Run("a bare helm key is filled in rather than refused", func(t *testing.T) {
+		path := write(t, "helm:\nother: 1\n")
+
+		merged, err := repo.mergeOverrideFileContent(path, newContent)
+		require.NoError(t, err)
+
+		out := string(merged)
+		assert.Contains(t, out, "other: 1")
+		assert.Contains(t, out, "app.image.tag")
+		assert.Contains(t, out, "value: v2")
+	})
+
+	// An alias hides the node we would have to edit, and editing the target would
+	// change every other place it is referenced from.
+	t.Run("an aliased parameters sequence is refused", func(t *testing.T) {
+		path := write(t, `defaults: &params
+  - name: app.image.tag
+    value: v1
+helm:
+  parameters: *params
+`)
+		_, err := repo.mergeOverrideFileContent(path, newContent)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "alias")
+	})
+
+	t.Run("an aliased helm mapping is refused", func(t *testing.T) {
+		path := write(t, `defaults: &base
+  parameters: []
+helm: *base
+`)
+		_, err := repo.mergeOverrideFileContent(path, newContent)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "alias")
+	})
+
+	// Adding a local `parameters` next to a merge key would shadow the inherited
+	// one, silently dropping every parameter the anchor supplied.
+	t.Run("a merge key that would supply the parameters is refused", func(t *testing.T) {
+		path := write(t, `defaults: &d
+  parameters:
+    - name: other.tag
+      value: keepme
+helm:
+  <<: *d
+`)
+		_, err := repo.mergeOverrideFileContent(path, newContent)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "merge key")
+	})
+
+	// The merge key is only a hazard when it would supply the key being created.
+	t.Run("a merge key beside an explicit parameters list is edited normally", func(t *testing.T) {
+		path := write(t, `defaults: &d
+  keep: yes
+helm:
+  <<: *d
+  parameters:
+    - name: app.image.tag
+      value: v1
+`)
+		merged, err := repo.mergeOverrideFileContent(path, newContent)
+		require.NoError(t, err)
+
+		out := string(merged)
+		assert.Contains(t, out, "value: v2")
+		assert.Contains(t, out, "<<: *d")
+	})
+
+	t.Run("a scalar helm key is refused", func(t *testing.T) {
+		path := write(t, "helm: 5\n")
+
+		_, err := repo.mergeOverrideFileContent(path, newContent)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not a YAML mapping")
+	})
+
+	t.Run("parameter entries of the wrong shape are reported", func(t *testing.T) {
+		path := write(t, "helm:\n  parameters:\n    - 1\n    - 2\n")
+
+		_, err := repo.mergeOverrideFileContent(path, newContent)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unmarshal")
+	})
+
+	t.Run("a malformed later document is reported, not ignored", func(t *testing.T) {
+		path := write(t, "helm:\n  parameters: []\n---\nkey: value: invalid\n")
+
+		_, err := repo.mergeOverrideFileContent(path, newContent)
+		require.Error(t, err)
+	})
+
+	t.Run("a null document is written as a fresh override", func(t *testing.T) {
+		path := write(t, "~\n")
+
+		merged, err := repo.mergeOverrideFileContent(path, newContent)
+		require.NoError(t, err)
+
+		expected, err := yaml.Marshal(newContent)
+		require.NoError(t, err)
+		assert.Equal(t, string(expected), string(merged))
+	})
+
+	// The common case: the file Argo Watcher created on the first deployment, read
+	// back on the second. Any drift here commits on every deployment forever.
+	t.Run("a file Argo Watcher wrote round-trips unchanged", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), ".argocd-source-app.yaml")
+		fresh, err := repo.mergeOverrideFileContent(path, newContent)
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(path, fresh, 0644))
+
+		again, err := repo.mergeOverrideFileContent(path, newContent)
+		require.NoError(t, err)
+		assert.Equal(t, string(fresh), string(again))
+	})
+
+	t.Run("rewriting with the same values is byte-stable", func(t *testing.T) {
+		path := write(t, `helm:
+  parameters:
+    - name: app.image.tag
+      value: v2
+      forceString: true
+  valueFiles:
+    - values-prod.yaml
+`)
+		first, err := repo.mergeOverrideFileContent(path, newContent)
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(path, first, 0644))
+
+		second, err := repo.mergeOverrideFileContent(path, newContent)
+		require.NoError(t, err)
+		assert.Equal(t, string(first), string(second),
+			"a repeat write-back must not churn the file, or commitLocal commits on every deploy")
+	})
+}
+
+// renderOverride is the bytes CommitAppLocal would hand commitLocal for a file
+// that does not exist yet.
+func renderOverride(t *testing.T, content *ArgoOverrideFile) []byte {
+	t.Helper()
+	rendered, err := yaml.Marshal(content)
+	require.NoError(t, err)
+	return rendered
+}
+
 // commitLocalAndPush is the single-app compose (commit locally, then push) that
 // UpdateApp performs; tests that assert on remote state use it directly.
 func commitLocalAndPush(t *testing.T, repo *GitRepo, fullPath, msg string, content *ArgoOverrideFile) {
 	t.Helper()
-	committed, err := repo.commitLocal(fullPath, msg, content)
+	committed, err := repo.commitLocal(fullPath, msg, renderOverride(t, content))
 	require.NoError(t, err)
 	require.True(t, committed)
 	require.NoError(t, repo.push(context.Background()))
@@ -562,7 +862,7 @@ func TestCommitLocal_SkipsWhenContentUnchanged(t *testing.T) {
 	headBefore, err := localRepo.Head()
 	require.NoError(t, err)
 
-	committed, err := repo.commitLocal(fullPath, "msg", params)
+	committed, err := repo.commitLocal(fullPath, "msg", renderOverride(t, params))
 	require.NoError(t, err)
 	assert.False(t, committed, "unchanged content must report not committed")
 
@@ -650,7 +950,7 @@ func TestCommitLocal_WriteFileError(t *testing.T) {
 	fullPath := filepath.Join(localPath, "apps")
 	require.NoError(t, os.Mkdir(fullPath, 0755))
 
-	_, err = repo.commitLocal(fullPath, "msg", &ArgoOverrideFile{})
+	_, err = repo.commitLocal(fullPath, "msg", renderOverride(t, &ArgoOverrideFile{}))
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to write override file")
 }
