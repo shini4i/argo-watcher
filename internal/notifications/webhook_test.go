@@ -1,9 +1,11 @@
 package notifications
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"testing"
 	"text/template"
@@ -262,4 +264,109 @@ type errorReader struct {
 
 func (r *errorReader) Read(p []byte) (n int, err error) {
 	return 0, r.err
+}
+
+// A JSON body is assembled by a text/template, which does no escaping of its
+// own, so the values are escaped before rendering. Author, App and Project come
+// from an unauthenticated submission, and StatusReason carries newlines and
+// quoted operator messages built by internal/models.
+func TestSendEscapesValuesForAJSONBody(t *testing.T) {
+	renderBody := func(t *testing.T, format, contentType string, task models.Task) string {
+		t.Helper()
+
+		tmpl, err := template.New("webhook").Parse(format)
+		require.NoError(t, err)
+
+		ctrl := gomock.NewController(t)
+		mockClient := mocks.NewMockHTTPClient(ctrl)
+
+		var sent string
+		mockClient.EXPECT().Do(gomock.Any()).DoAndReturn(func(req *http.Request) (*http.Response, error) {
+			body, _ := io.ReadAll(req.Body)
+			sent = string(body)
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(""))}, nil
+		})
+
+		service := &WebhookStrategy{
+			url:                  "http://testhost/hook",
+			contentType:          contentType,
+			allowedResponseCodes: []int{200},
+			client:               mockClient,
+			template:             tmpl,
+		}
+		require.NoError(t, service.Send(task))
+
+		return sent
+	}
+
+	t.Run("an author that closes the string cannot add keys", func(t *testing.T) {
+		body := renderBody(t,
+			`{"app": "{{.App}}", "author": "{{.Author}}"}`,
+			"application/json",
+			models.Task{App: "demo", Author: `x", "channel": "#alerts", "z": "`},
+		)
+
+		var parsed map[string]any
+		require.NoError(t, json.Unmarshal([]byte(body), &parsed))
+		assert.Equal(t, []string{"app", "author"}, sortedKeys(parsed))
+		assert.Equal(t, `x", "channel": "#alerts", "z": "`, parsed["author"])
+	})
+
+	t.Run("a multi-line status reason stays valid JSON", func(t *testing.T) {
+		reason := "Out-of-sync resources:\n\tDeployment/demo\n\nLast sync operation: Failed, message: \"one or more objects failed to apply\""
+		body := renderBody(t,
+			`{"text": "{{.App}}: {{.Status}}{{with .StatusReason}} — {{.}}{{end}}"}`,
+			"application/json",
+			models.Task{App: "demo", Status: "app not available", StatusReason: reason},
+		)
+
+		var parsed map[string]any
+		require.NoError(t, json.Unmarshal([]byte(body), &parsed))
+		assert.Contains(t, parsed["text"], reason)
+	})
+
+	t.Run("images are escaped too", func(t *testing.T) {
+		body := renderBody(t,
+			`{"images": [{{range $i, $img := .Images}}{{if $i}},{{end}}{"image": "{{$img.Image}}", "tag": "{{$img.Tag}}"}{{end}}]}`,
+			"application/json",
+			models.Task{Images: []models.Image{{Image: `evil", "x": "`, Tag: "v1"}}},
+		)
+
+		var parsed map[string]any
+		require.NoError(t, json.Unmarshal([]byte(body), &parsed))
+		images := parsed["images"].([]any)
+		require.Len(t, images, 1)
+		assert.Equal(t, `evil", "x": "`, images[0].(map[string]any)["image"])
+	})
+
+	t.Run("ordinary values render exactly as before", func(t *testing.T) {
+		body := renderBody(t,
+			`{"app": "{{.App}}", "author": "{{.Author}}"}`,
+			"application/json",
+			models.Task{App: "demo", Author: "ci-bot"},
+		)
+
+		assert.Equal(t, `{"app": "demo", "author": "ci-bot"}`, body)
+	})
+
+	// A receiver expecting something other than JSON must keep receiving the
+	// literal text it always did.
+	t.Run("a non-JSON body is left alone", func(t *testing.T) {
+		body := renderBody(t,
+			`{{.App}} deployed by {{.Author}}`,
+			"text/plain",
+			models.Task{App: "demo", Author: `someone "quoted"`},
+		)
+
+		assert.Equal(t, `demo deployed by someone "quoted"`, body)
+	})
+}
+
+func sortedKeys(m map[string]any) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }

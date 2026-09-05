@@ -3,6 +3,7 @@ package notifications
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -65,6 +66,60 @@ func (n *Notifier) Send(task models.Task) error {
 	return nil
 }
 
+// isJSONBody reports whether the configured content type describes JSON, and so
+// whether the values rendered into the body have to be escaped as JSON strings.
+func isJSONBody(contentType string) bool {
+	return strings.Contains(strings.ToLower(contentType), "json")
+}
+
+// escapeForJSON returns a copy of task whose every string field is escaped for
+// use inside a JSON string literal. A value carrying a quote or a newline —
+// an author from an unauthenticated submission, a StatusReason quoting Argo CD —
+// would otherwise end the string it sits in and break the body.
+func escapeForJSON(task models.Task) models.Task {
+	task.Id = jsonStringBody(task.Id)
+	task.App = jsonStringBody(task.App)
+	task.Author = jsonStringBody(task.Author)
+	task.Project = jsonStringBody(task.Project)
+	task.Status = jsonStringBody(task.Status)
+	task.StatusReason = jsonStringBody(task.StatusReason)
+	task.RollbackTargetId = jsonStringBody(task.RollbackTargetId)
+
+	images := make([]models.Image, len(task.Images))
+	for i, image := range task.Images {
+		images[i] = models.Image{
+			Image: jsonStringBody(image.Image),
+			Tag:   jsonStringBody(image.Tag),
+		}
+	}
+	task.Images = images
+
+	return task
+}
+
+// jsonStringBody renders s as a JSON string and returns what belongs between the
+// quotes. HTML escaping is off so a value keeps the bytes it arrived with
+// wherever JSON does not require otherwise.
+func jsonStringBody(s string) string {
+	if s == "" {
+		return s
+	}
+
+	var buf bytes.Buffer
+	encoder := json.NewEncoder(&buf)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(s); err != nil {
+		// Unreachable: encoding a string cannot fail. Returning it unescaped
+		// keeps a notification going out rather than dropping it.
+		slog.Error("failed to escape a webhook value", "error", err)
+		return s
+	}
+
+	encoded := strings.TrimRight(buf.String(), "\n")
+
+	return encoded[1 : len(encoded)-1]
+}
+
 // WebhookStrategy holds the configuration and a pre-compiled template for sending webhooks.
 type WebhookStrategy struct {
 	url                  string
@@ -112,8 +167,16 @@ func (s *WebhookStrategy) Send(task models.Task) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	// The template assembles the body by hand and text/template escapes nothing,
+	// so the values are escaped instead. Left alone for a receiver that is not
+	// expecting JSON, which wants the literal text it has always been sent.
+	data := task
+	if isJSONBody(s.contentType) {
+		data = escapeForJSON(task)
+	}
+
 	var payload bytes.Buffer
-	if err := s.template.Execute(&payload, task); err != nil {
+	if err := s.template.Execute(&payload, data); err != nil {
 		return fmt.Errorf("failed to execute webhook template: %w", err)
 	}
 

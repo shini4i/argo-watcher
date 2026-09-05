@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Webhook notifications no longer break when a value contains a quote or a newline. The body
+  is assembled by a Go template, which escapes nothing, so a `StatusReason` — which carries
+  newlines and quotes Argo CD's own messages — produced invalid JSON and the receiver rejected
+  it. Failure notifications were the ones affected, since a successful deployment has no
+  reason to report, so the integration looked healthy while exactly the alerts worth having
+  went missing. Values are now escaped before the template renders them, which also stops an
+  `author` submitted through the open task endpoint from adding keys of its own to the body.
+  A `WEBHOOK_CONTENT_TYPE` that is not JSON is left alone and keeps receiving literal text.
+
+### Fixed
+
 - A git write-back that succeeded is no longer reported as a failure when the database
   hiccups. The advisory lock that serializes write-backs is held in a Postgres transaction
   for the whole clone-commit-push, and the driver returns that transaction's `COMMIT` error
