@@ -66,6 +66,8 @@ The override file name is derived from the application name, so application `Dem
 sandbox/charts/demo/.argocd-source-demo.yaml
 ```
 
+Argo Watcher rewrites only the `helm.parameters` entries it manages, leaving the rest of the file alone. That matters when `argo-watcher/write-back-filename` points at a file you also maintain.
+
 ### Fire-and-forget mode
 
 When the new image will not run on its own — an application containing only `CronJob` resources, for instance — annotate it:

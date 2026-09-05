@@ -3,6 +3,7 @@ package lock
 import (
 	"hash/fnv"
 	"io"
+	"log/slog"
 
 	"gorm.io/gorm"
 )
@@ -18,16 +19,40 @@ func NewPostgresLocker(db *gorm.DB) Locker {
 }
 
 // WithLock acquires a transaction-level advisory lock, executes the function,
-// and releases the lock upon transaction commit or rollback.
+// and releases the lock upon transaction commit or rollback. Once f has run its
+// outcome is the answer: gorm returns the COMMIT error when the callback
+// succeeded, and returning that would tell a caller its work never ran.
 func (p *PostgresLocker) WithLock(key string, f func() error) error {
-	return p.db.Transaction(func(tx *gorm.DB) error {
+	var (
+		acquired bool
+		fnErr    error
+	)
+
+	txErr := p.db.Transaction(func(tx *gorm.DB) error {
 		lockID := generateLockID(key)
 		if err := tx.Exec("SELECT pg_advisory_xact_lock(?)", lockID).Error; err != nil {
 			return err
 		}
-		// The lock is released automatically when the transaction ends.
-		return f()
+
+		acquired = true
+		fnErr = f()
+
+		// Reported outside, so f's error is never mistaken for the lock's. There
+		// is nothing here a rollback would undo.
+		return nil
 	})
+
+	if !acquired {
+		return txErr
+	}
+
+	// The transaction holds nothing but the lock, which ending it releases either way.
+	if txErr != nil {
+		slog.Warn("the advisory-lock transaction did not end cleanly; the lock is released regardless",
+			"key", key, "error", txErr)
+	}
+
+	return fnErr
 }
 
 // generateLockID creates a deterministic 64-bit integer from a string key.

@@ -58,6 +58,15 @@ func generateOverrideFileContent(annotations map[string]string, task *models.Tas
 		}
 	}
 
+	// No image the task carries is managed by this application, so there is no tag
+	// to write. Returning the empty override would clone the repository to write
+	// nothing, and create an override file holding an empty parameter list.
+	if len(overrideFileContent.Helm.Parameters) == 0 {
+		slog.Warn("no task image matches a managed image, skipping write-back",
+			"annotation", managedImagesAnnotation, "id", task.Id)
+		return nil, nil
+	}
+
 	return &overrideFileContent, nil
 }
 

@@ -259,32 +259,146 @@ func assertInsideRoot(root, path string) error {
 	return nil
 }
 
-func (repo *GitRepo) mergeOverrideFileContent(fullPath string, overrideContent *ArgoOverrideFile) (*ArgoOverrideFile, error) {
+// mergeOverrideFileContent renders the bytes to write for an app's override file,
+// merging overrideContent into whatever is already there. The document is edited
+// as a yaml.Node so that sibling keys and comments survive: the target may be
+// Argo CD's own .argocd-source-<app>.yaml, or a file write-back-filename names.
+func (repo *GitRepo) mergeOverrideFileContent(fullPath string, overrideContent *ArgoOverrideFile) ([]byte, error) {
 	existingContent, err := os.ReadFile(fullPath) // #nosec G304 -- path already validated by assertInsideRoot in UpdateApp
 	if err != nil {
 		if os.IsNotExist(err) {
-			return overrideContent, nil
+			return yaml.Marshal(overrideContent)
 		}
 		return nil, fmt.Errorf("failed to read existing override file: %w", err)
 	}
 
+	document, err := singleDocument(existingContent)
+	if err != nil {
+		return nil, fmt.Errorf("cannot update override file %s: %w", fullPath, err)
+	}
+
+	// An empty, comment-only or null file decodes to nothing worth preserving.
+	if document == nil || len(document.Content) == 0 || isNull(document.Content[0]) {
+		return yaml.Marshal(overrideContent)
+	}
+
+	root := document.Content[0]
+	if root.Kind != yaml.MappingNode {
+		return nil, fmt.Errorf("existing override file %s is not a YAML mapping", fullPath)
+	}
+
+	parameters, err := parametersNode(root)
+	if err != nil {
+		return nil, err
+	}
+
 	existingOverrideFile := ArgoOverrideFile{}
-	if err := yaml.Unmarshal(existingContent, &existingOverrideFile); err != nil {
+	if err := parameters.Decode(&existingOverrideFile.Helm.Parameters); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal existing override file: %w", err)
 	}
 
 	mergeParameters(&existingOverrideFile, overrideContent)
 
-	return &existingOverrideFile, nil
-}
-
-func (repo *GitRepo) commitLocal(fullPath, commitMsg string, overrideContent *ArgoOverrideFile) (bool, error) {
-	worktree, err := repo.localRepo.Worktree()
-	if err != nil {
-		return false, err
+	if err := parameters.Encode(existingOverrideFile.Helm.Parameters); err != nil {
+		return nil, fmt.Errorf("failed to render helm parameters: %w", err)
 	}
 
-	contentBytes, err := yaml.Marshal(overrideContent)
+	return yaml.Marshal(document)
+}
+
+// singleDocument decodes the one YAML document an override file may hold, or nil
+// when it holds none. A stream of several is refused: marshalling a Node emits
+// only the first, so editing such a file would drop the rest of it.
+func singleDocument(content []byte) (*yaml.Node, error) {
+	decoder := yaml.NewDecoder(bytes.NewReader(content))
+
+	var first yaml.Node
+	if err := decoder.Decode(&first); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to unmarshal existing override file: %w", err)
+	}
+
+	var second yaml.Node
+	if err := decoder.Decode(&second); err == nil {
+		return nil, fmt.Errorf("it holds more than one YAML document")
+	} else if !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("failed to unmarshal existing override file: %w", err)
+	}
+
+	return &first, nil
+}
+
+// isNull reports whether a node is an explicit or implicit YAML null.
+func isNull(node *yaml.Node) bool {
+	return node == nil || node.Tag == "!!null"
+}
+
+// parametersNode returns the helm.parameters node of an override document,
+// creating the helm mapping and the parameters key when the file has neither.
+func parametersNode(root *yaml.Node) (*yaml.Node, error) {
+	helm, err := childMapping(root, "helm")
+	if err != nil {
+		return nil, err
+	}
+
+	parameters := childValue(helm, "parameters")
+	if parameters == nil {
+		helm.Content = append(helm.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "parameters"},
+			&yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"},
+		)
+		parameters = helm.Content[len(helm.Content)-1]
+	}
+
+	// A null "parameters:" decodes to an empty slice and re-encodes as a sequence.
+	if parameters.Kind != yaml.SequenceNode && parameters.Tag != "!!null" {
+		return nil, fmt.Errorf("helm.parameters is not a YAML sequence")
+	}
+
+	return parameters, nil
+}
+
+// childMapping returns the mapping stored under key, adding an empty one when the
+// key is absent. A key holding anything else is an error: overwriting it would
+// discard whatever the operator put there.
+func childMapping(parent *yaml.Node, key string) (*yaml.Node, error) {
+	if existing := childValue(parent, key); existing != nil {
+		// A bare "helm:" carries no value yet; it becomes the mapping it was
+		// always going to hold.
+		if isNull(existing) {
+			*existing = yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+			return existing, nil
+		}
+		if existing.Kind != yaml.MappingNode {
+			return nil, fmt.Errorf("%s is not a YAML mapping", key)
+		}
+		return existing, nil
+	}
+
+	parent.Content = append(parent.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key},
+		&yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"},
+	)
+
+	return parent.Content[len(parent.Content)-1], nil
+}
+
+// childValue returns the value node stored under key in a mapping, or nil. A
+// mapping's Content alternates key, value.
+func childValue(mapping *yaml.Node, key string) *yaml.Node {
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		if mapping.Content[i].Value == key {
+			return mapping.Content[i+1]
+		}
+	}
+
+	return nil
+}
+
+func (repo *GitRepo) commitLocal(fullPath, commitMsg string, contentBytes []byte) (bool, error) {
+	worktree, err := repo.localRepo.Worktree()
 	if err != nil {
 		return false, err
 	}

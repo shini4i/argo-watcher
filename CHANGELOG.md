@@ -9,12 +9,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A git write-back that succeeded is no longer reported as a failure when the database
+  hiccups. The advisory lock that serializes write-backs is held in a Postgres transaction
+  for the whole clone-commit-push, and the driver returns that transaction's `COMMIT` error
+  in the same place it reports a failure to take the lock. A connection dropped during those
+  seconds — a failover, or a pooler's idle-in-transaction timeout — therefore read as "the
+  lock failed, nothing ran", and every application in the batch was marked failed and
+  announced as such while its commit was already on the remote and Argo CD was syncing it.
+  The lock's outcome and the write-back's are now kept apart: once the write-back has run,
+  its own result is what the deployment is judged on, and a transaction that fails to close
+  is logged instead. The lock is released either way.
+- A write-back to a file named by `argo-watcher/write-back-filename` now preserves the keys
+  it does not own. The override file was rewritten from `helm.parameters` alone, so anything
+  else it held was dropped; it is now edited in place. A file Argo Watcher writes itself holds
+  nothing else and is byte-identical either way.
+- A deployment whose images match none of the application's `argo-watcher/managed-images`
+  no longer clones the repository to write nothing, and no longer creates an override file
+  holding an empty parameter list.
+- A `LOCKDOWN_SCHEDULE` window that can never open is rejected at startup instead of freezing
+  nothing. A same-day window does not wrap, so `Sat 22:00 - Sat 06:00` was never active; name
+  the following day instead (`Sat 22:00 - Sun 06:00`). An out-of-range `Fri 25:00` behaved the
+  same way and is rejected too.
+- A `LOCKDOWN_SCHEDULE` time with no colon no longer panics the server on startup.
+  `Fri 1320 - Mon 06:30` crashed with a stack trace where every other malformed schedule
+  reports the mistake.
+
 - A long author address no longer stretches the task table sideways. The Author cell
   already refused to wrap, but nothing capped its width, so an address with no break
   opportunity — a GitLab bot such as `project_1758_bot_<hash>@noreply.example.net` —
   set the column's minimum content width and pushed the Images and Details columns out
   of view. The address is now capped at a fixed width and ellipsised, with the full
   address available in its tooltip and on the task detail page.
+
+### Changed
+
+- `LOCKDOWN_SCHEDULE` times are now required to be `HH:MM`, the documented format. A time
+  carrying seconds (`Sat 22:00:00`) previously parsed with the seconds ignored and is now
+  refused at startup.
+
+### Security
+
+- Updated `golang.org/x/crypto` to v0.56.0 for GO-2026-6354 and GO-2026-6355, two denial of
+  service advisories in its SSH client. `govulncheck` reported both as reachable through the
+  GitOps write-back's push.
 
 ## [1.1.1] - 2026-09-02
 
