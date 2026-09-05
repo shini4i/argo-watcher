@@ -701,6 +701,63 @@ second: document
 		assert.Contains(t, out, "value: v2")
 	})
 
+	// An alias hides the node we would have to edit, and editing the target would
+	// change every other place it is referenced from.
+	t.Run("an aliased parameters sequence is refused", func(t *testing.T) {
+		path := write(t, `defaults: &params
+  - name: app.image.tag
+    value: v1
+helm:
+  parameters: *params
+`)
+		_, err := repo.mergeOverrideFileContent(path, newContent)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "alias")
+	})
+
+	t.Run("an aliased helm mapping is refused", func(t *testing.T) {
+		path := write(t, `defaults: &base
+  parameters: []
+helm: *base
+`)
+		_, err := repo.mergeOverrideFileContent(path, newContent)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "alias")
+	})
+
+	// Adding a local `parameters` next to a merge key would shadow the inherited
+	// one, silently dropping every parameter the anchor supplied.
+	t.Run("a merge key that would supply the parameters is refused", func(t *testing.T) {
+		path := write(t, `defaults: &d
+  parameters:
+    - name: other.tag
+      value: keepme
+helm:
+  <<: *d
+`)
+		_, err := repo.mergeOverrideFileContent(path, newContent)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "merge key")
+	})
+
+	// The merge key is only a hazard when it would supply the key being created.
+	t.Run("a merge key beside an explicit parameters list is edited normally", func(t *testing.T) {
+		path := write(t, `defaults: &d
+  keep: yes
+helm:
+  <<: *d
+  parameters:
+    - name: app.image.tag
+      value: v1
+`)
+		merged, err := repo.mergeOverrideFileContent(path, newContent)
+		require.NoError(t, err)
+
+		out := string(merged)
+		assert.Contains(t, out, "value: v2")
+		assert.Contains(t, out, "<<: *d")
+	})
+
 	t.Run("a null document is written as a fresh override", func(t *testing.T) {
 		path := write(t, "~\n")
 

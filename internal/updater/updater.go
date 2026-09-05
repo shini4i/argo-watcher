@@ -345,11 +345,19 @@ func parametersNode(root *yaml.Node) (*yaml.Node, error) {
 
 	parameters := childValue(helm, "parameters")
 	if parameters == nil {
+		if err := assertNoMergeKey(helm, "helm.parameters"); err != nil {
+			return nil, err
+		}
+
 		helm.Content = append(helm.Content,
 			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "parameters"},
 			&yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"},
 		)
 		parameters = helm.Content[len(helm.Content)-1]
+	}
+
+	if parameters.Kind == yaml.AliasNode {
+		return nil, fmt.Errorf("helm.parameters is a YAML alias; write the parameters out in this file instead")
 	}
 
 	// A null "parameters:" decodes to an empty slice and re-encodes as a sequence.
@@ -358,6 +366,19 @@ func parametersNode(root *yaml.Node) (*yaml.Node, error) {
 	}
 
 	return parameters, nil
+}
+
+// assertNoMergeKey refuses a mapping that inherits from an anchor when the key we
+// are about to add may be one of the inherited ones. An explicit key takes
+// precedence over a merged one, so adding it would hide the inherited value.
+func assertNoMergeKey(mapping *yaml.Node, adding string) error {
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		if mapping.Content[i].Value == "<<" {
+			return fmt.Errorf("cannot add %s beside a '<<' merge key: an explicit key hides the inherited one", adding)
+		}
+	}
+
+	return nil
 }
 
 // childMapping returns the mapping stored under key, adding an empty one when the
@@ -371,10 +392,17 @@ func childMapping(parent *yaml.Node, key string) (*yaml.Node, error) {
 			*existing = yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
 			return existing, nil
 		}
+		if existing.Kind == yaml.AliasNode {
+			return nil, fmt.Errorf("%s is a YAML alias; write it out in this file instead", key)
+		}
 		if existing.Kind != yaml.MappingNode {
 			return nil, fmt.Errorf("%s is not a YAML mapping", key)
 		}
 		return existing, nil
+	}
+
+	if err := assertNoMergeKey(parent, key); err != nil {
+		return nil, err
 	}
 
 	parent.Content = append(parent.Content,
