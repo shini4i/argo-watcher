@@ -55,9 +55,12 @@ const appBarStyles: SxProps<Theme> = theme => {
   };
 };
 
+// Recent is reached as `/`, but the tasks Resource settles the URL on `/tasks`,
+// so an equality test would light the icon only for the instant before that.
+// `/task/:id` is the detail page and deliberately matches neither.
 const routeIsActive = (pathname: string, target: string) => {
   if (target === '/') {
-    return pathname === target;
+    return pathname === target || pathname === '/tasks' || pathname.startsWith('/tasks?');
   }
   return pathname.startsWith(target);
 };

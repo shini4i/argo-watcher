@@ -1,11 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Stack } from '@mui/material';
-import { useGetIdentity, useListContext, useRefresh } from 'react-admin';
-import {
-  ApplicationFilter,
-  normalizeApplicationFilterValue,
-} from './ApplicationFilter';
-import type { Task } from '../../../data/types';
+import { useGetIdentity, useRefresh } from 'react-admin';
+import { normalizeApplicationFilterValue } from './ApplicationFilter';
 import { getBrowserWindow } from '../../../shared/utils';
 import { useFilterState, type FilterStateSchema } from '../../../shared/hooks/useFilterState';
 import { useKeyboardShortcuts } from '../../../shared/hooks/useKeyboardShortcuts';
@@ -80,8 +76,6 @@ const readExplicitScope = (storageKey: string): TaskScope | null => {
  * is hidden and the scope stays "Everyone".
  */
 export const RecentTasksToolbar = ({ storageKey = 'recentTasks' }: { storageKey?: string }) => {
-  const { data } = useListContext<Task>();
-  const records = useMemo(() => (Array.isArray(data) ? data : []), [data]);
   // Refresh every active query, not just the list: the status pills are backed
   // by their own useGetList, so the list's `refetch` would leave their counts
   // frozen at whatever the first load saw.
@@ -127,13 +121,6 @@ export const RecentTasksToolbar = ({ storageKey = 'recentTasks' }: { storageKey?
     // what makes this fire exactly once per identity change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [identityEmail]);
-
-  const handleApplicationChange = useCallback(
-    (next: string) => {
-      apply({ ...values, app: normalizeApplicationFilterValue(next) });
-    },
-    [apply, values],
-  );
 
   const handleStatusChange = useCallback(
     (next: string | null) => {
@@ -238,12 +225,6 @@ export const RecentTasksToolbar = ({ storageKey = 'recentTasks' }: { storageKey?
         }
         right={
           <>
-            <ApplicationFilter
-              storageKey={`${storageKey}.app`}
-              records={records}
-              value={applied.app}
-              onChange={handleApplicationChange}
-            />
             <SearchInput
               value={applied.search}
               onChange={handleSearchChange}

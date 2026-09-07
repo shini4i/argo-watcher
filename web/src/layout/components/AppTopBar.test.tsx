@@ -70,6 +70,50 @@ describe('AppTopBar', () => {
     });
   });
 
+  // The tasks Resource settles the URL on /tasks, so keying Recent on an exact
+  // `/` left it lit only for the instant before react-admin normalized the path.
+  describe('navigation highlight', () => {
+    const renderAt = (path: string) =>
+      render(
+        <ThemeModeProvider>
+          <DeployLockProvider>
+            <MemoryRouter initialEntries={[path]}>
+              <AppTopBar open title="Argo Watcher" />
+            </MemoryRouter>
+          </DeployLockProvider>
+        </ThemeModeProvider>,
+      );
+
+    // MUI renders `color="secondary"` as a class, which is what the eye reads as
+    // "this is the screen you are on".
+    const isHighlighted = (label: string) =>
+      screen.getByLabelText(label).className.includes('colorSecondary');
+
+    it.each(['/', '/tasks'])('marks Recent as current at %s', path => {
+      renderAt(path);
+
+      expect(isHighlighted('Recent')).toBe(true);
+      expect(isHighlighted('Overview')).toBe(false);
+      expect(isHighlighted('History')).toBe(false);
+    });
+
+    it('marks Overview as current, and leaves Recent unlit', () => {
+      renderAt('/overview');
+
+      expect(isHighlighted('Overview')).toBe(true);
+      expect(isHighlighted('Recent')).toBe(false);
+    });
+
+    // The detail page is not the list, and lighting Recent there would claim it is.
+    it('marks nothing as current on a task detail page', () => {
+      renderAt('/task/abc-123');
+
+      expect(isHighlighted('Recent')).toBe(false);
+      expect(isHighlighted('Overview')).toBe(false);
+      expect(isHighlighted('History')).toBe(false);
+    });
+  });
+
   it('displays version and opens config drawer', async () => {
     httpClientMock.mockResolvedValueOnce({
       data: '1.2.3',

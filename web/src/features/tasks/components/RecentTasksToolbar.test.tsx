@@ -22,16 +22,9 @@ vi.mock('react-admin', async importOriginal => ({
   useGetIdentity: () => identityMock(),
 }));
 
+// Only the normalizer is still reached from here: the toolbar renders no
+// application picker, and the mock keeps this suite off the Autocomplete.
 vi.mock('./ApplicationFilter', () => ({
-  ApplicationFilter: ({ value, onChange }: { value: string; onChange: (next: string) => void }) => (
-    <input
-      aria-label="Application"
-      data-testid="app-filter"
-      value={value}
-      onChange={event => onChange(event.target.value)}
-    />
-  ),
-  readInitialApplication: () => '',
   normalizeApplicationFilterValue: (value?: string | null) => {
     if (typeof value !== 'string') return '';
     const trimmed = value.trim();
@@ -139,38 +132,30 @@ describe('RecentTasksToolbar', () => {
     identityMock.mockReturnValue({ data: undefined });
   });
 
+  // The URL is the only way in now that the picker is gone: the overview links
+  // to `/?app=<name>`, so hydration is the whole contract.
   it('hydrates the application filter from URL on mount', async () => {
     const { setFilters } = renderToolbar('/tasks?app=alpha');
     await waitFor(() => {
       expect(setFilters).toHaveBeenCalledWith({ app: 'alpha' }, {}, false);
     });
-    expect((screen.getByTestId('app-filter') as HTMLInputElement).value).toBe('alpha');
+    expect(screen.getByText('alpha')).toBeInTheDocument();
   });
 
-  it('commits app filter changes and merges with existing search params', async () => {
-    const { setFilters } = renderToolbar('/tasks?page=2&sort=created');
-    setFilters.mockReset();
-    const input = screen.getByTestId('app-filter') as HTMLInputElement;
+  it('offers no application picker, leaving search as the only typed filter', () => {
+    renderToolbar('/tasks');
 
-    fireEvent.change(input, { target: { value: 'alpha' } });
-
-    await waitFor(() => {
-      expect(setFilters).toHaveBeenCalledWith({ app: 'alpha' }, {}, false);
-    });
-    const params = new URLSearchParams(capturedLocation?.search ?? '');
-    expect(params.get('page')).toBe('2');
-    expect(params.get('sort')).toBe('created');
-    expect(params.get('app')).toBe('alpha');
+    expect(screen.queryByTestId('app-filter')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Filter by application')).not.toBeInTheDocument();
   });
 
-  it('removes the app param while preserving other params when filter cleared', async () => {
+  it('removes the app param while preserving other params when the chip is cleared', async () => {
     const { setFilters } = renderToolbar('/tasks?page=3&perPage=50&app=beta');
-    const input = screen.getByTestId('app-filter') as HTMLInputElement;
 
-    await waitFor(() => expect(input.value).toBe('beta'));
+    await waitFor(() => expect(screen.getByText('beta')).toBeInTheDocument());
 
     setFilters.mockReset();
-    fireEvent.change(input, { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: /remove filter app beta/i }));
 
     await waitFor(() => {
       expect(setFilters).toHaveBeenCalledWith({}, {}, false);
