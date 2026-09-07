@@ -126,6 +126,26 @@ describe('useAppSummaries', () => {
     expect(result.current.isRefreshing).toBe(false);
   });
 
+  // Leaving the previous error set kept the error screen up for the whole
+  // retry, so Retry read as a dead button and invited repeated clicking.
+  it('drops the previous error as soon as a retry starts', async () => {
+    httpClient.mockImplementation(() => Promise.reject(new Error('network down')));
+
+    const { result } = renderHook(() => useAppSummaries('24h'));
+    await waitFor(() => expect(result.current.error).toBeInstanceOf(Error));
+
+    httpClient.mockImplementation(() => new Promise(() => {}));
+    act(() => {
+      result.current.refetch();
+    });
+
+    await waitFor(() => expect(result.current.error).toBeNull());
+    // Nothing to show while it runs, so the page owes the reader a skeleton
+    // rather than the empty state it renders for a window with no deployments.
+    expect(result.current.isPending).toBe(true);
+    expect(result.current.isRefreshing).toBe(false);
+  });
+
   it('reports the first load as pending, with nothing to show yet', async () => {
     httpClient.mockImplementation(() => new Promise(() => {}));
 

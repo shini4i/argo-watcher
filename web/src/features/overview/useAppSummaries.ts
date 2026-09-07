@@ -24,7 +24,6 @@ interface AppSummariesState {
  */
 export const useAppSummaries = (window: OverviewWindow): AppSummariesState => {
   const [apps, setApps] = useState<AppSummary[]>([]);
-  const [hasLoaded, setHasLoaded] = useState(false);
   const [isFetching, setIsFetching] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [reloadToken, setReloadToken] = useState(0);
@@ -45,6 +44,8 @@ export const useAppSummaries = (window: OverviewWindow): AppSummariesState => {
   useEffect(() => {
     let cancelled = false;
     setIsFetching(true);
+    // Retry replaces the failure, so the error screen must go with the click.
+    setError(null);
 
     const query = buildQueryString({ from_timestamp: fromTimestamp });
     httpClient<AppSummariesResponse>(`/api/v1/apps/summary${query}`)
@@ -72,7 +73,6 @@ export const useAppSummaries = (window: OverviewWindow): AppSummariesState => {
       .finally(() => {
         if (!cancelled) {
           setIsFetching(false);
-          setHasLoaded(true);
         }
       });
 
@@ -81,10 +81,13 @@ export const useAppSummaries = (window: OverviewWindow): AppSummariesState => {
     };
   }, [fromTimestamp, reloadToken]);
 
+  // Both flags key on what is currently on screen rather than on how many
+  // fetches have run: a retry after a failure has nothing to show and owes the
+  // reader a skeleton, exactly as the first load does.
   return {
     apps,
-    isPending: isFetching && !hasLoaded,
-    isRefreshing: isFetching && hasLoaded,
+    isPending: isFetching && apps.length === 0,
+    isRefreshing: isFetching && apps.length > 0,
     error,
     refetch,
   };
