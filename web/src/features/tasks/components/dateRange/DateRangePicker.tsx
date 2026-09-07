@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   Box,
   Button,
@@ -63,7 +63,12 @@ export const DateRangePicker = ({ value, onApply }: DateRangePickerProps) => {
   const [viewYear, setViewYear] = useState(() => ymd(new Date(), timezone).year);
   const [viewMonth, setViewMonth] = useState(() => ymd(new Date(), timezone).month);
 
-  useEffect(() => {
+  // Opening the popover reseeds the draft and the visible month. Adjusting
+  // during render rather than in an effect means the calendar's first painted
+  // frame is already the right month.
+  const [lastSeed, setLastSeed] = useState({ anchor, value, timezone });
+  if (lastSeed.anchor !== anchor || lastSeed.value !== value || lastSeed.timezone !== timezone) {
+    setLastSeed({ anchor, value, timezone });
     if (anchor) {
       setDraft(value);
       setPickingStart(true);
@@ -72,7 +77,7 @@ export const DateRangePicker = ({ value, onApply }: DateRangePickerProps) => {
       setViewYear(focused.year);
       setViewMonth(focused.month);
     }
-  }, [anchor, value, timezone]);
+  }
 
   const open = Boolean(anchor);
   const handleOpen = useCallback((event: React.MouseEvent<HTMLElement>) => {

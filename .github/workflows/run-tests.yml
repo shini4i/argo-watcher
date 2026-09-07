@@ -79,7 +79,7 @@ jobs:
         with:
           # Matches the version the flake's nixpkgs pin gives the dev shell, so
           # `task lint-go` and this job report the same findings.
-          version: v2.13.1
+          version: v2.13.2
 
   # gosec and govulncheck moved to the dedicated security.yml workflow.
   test:

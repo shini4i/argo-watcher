@@ -45,6 +45,28 @@ describe('DateRangePicker', () => {
     expect(screen.getByRole('option', { name: 'Last 7 days' })).toBeInTheDocument();
   });
 
+  it('opens on the month the committed range starts in, not on today', () => {
+    const start = Math.floor(Date.parse('2026-02-10T00:00:00Z') / 1000);
+    const end = Math.floor(Date.parse('2026-02-14T23:59:59Z') / 1000);
+    render(<DateRangePicker value={{ start, end }} onApply={() => {}} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /10.*Feb.*2026/ }));
+    expect(screen.getByText('February 2026')).toBeInTheDocument();
+  });
+
+  it('discards an uncommitted selection when the popover is reopened', () => {
+    render(<DateRangePicker value={{ start: null, end: null }} onApply={() => {}} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Select date range/ }));
+    fireEvent.click(screen.getByRole('option', { name: 'Today' }));
+    expect(screen.getByRole('button', { name: 'Apply' })).not.toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(screen.getByRole('button', { name: /Select date range/ }));
+    // A clean draft is what re-disables Apply.
+    expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled();
+  });
+
   it('disables Apply until a complete and dirty range is selected', () => {
     render(<DateRangePicker value={{ start: null, end: null }} onApply={() => {}} />);
     fireEvent.click(screen.getByRole('button', { name: /Select date range/ }));

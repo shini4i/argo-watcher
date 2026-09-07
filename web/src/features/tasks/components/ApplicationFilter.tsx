@@ -1,7 +1,7 @@
 import { Autocomplete, InputAdornment, TextField } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import FilterListIcon from '@mui/icons-material/FilterList';
-import { useEffect, useState } from 'react';
+import { useMemo } from 'react';
 import type { Task } from '../../../data/types';
 import { getBrowserWindow } from '../../../shared/utils';
 import { tokens } from '../../../theme/tokens';
@@ -40,16 +40,15 @@ export const ApplicationFilter = ({
   storageKey?: string;
 }) => {
   const theme = useTheme();
-  const [options, setOptions] = useState<string[]>([]);
-
-  useEffect(() => {
-    const unique = Array.from(
-      new Set(
-        records.map(record => normalizeApplicationFilterValue(record.app)).filter(Boolean),
-      ),
-    ).sort((a, b) => a.localeCompare(b));
-    setOptions(unique);
-  }, [records]);
+  const options = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          records.map(record => normalizeApplicationFilterValue(record.app)).filter(Boolean),
+        ),
+      ).sort((a, b) => a.localeCompare(b)),
+    [records],
+  );
 
   return (
     <Autocomplete
