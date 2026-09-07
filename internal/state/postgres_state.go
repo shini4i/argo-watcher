@@ -101,8 +101,133 @@ func escapeLikePattern(value string) string {
 	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(value)
 }
 
+// appSummaryAggregate is one row of the per-app aggregate query.
+type appSummaryAggregate struct {
+	App                   string
+	Total                 int64
+	Failed                int64
+	Running               int64
+	Deployed              int64
+	MedianDurationSeconds float64
+}
+
+// appSummaryRecent is one of the newest rows of an app, ordered by recency.
+type appSummaryRecent struct {
+	App          string
+	Project      string
+	Status       string
+	StatusReason string
+	Created      time.Time
+}
+
+// The counters are exact for the window: Postgres groups every matching row,
+// where the browser could only group one page of them.
+const appSummaryAggregateSQL = `
+SELECT
+    app,
+    count(*) AS total,
+    count(*) FILTER (WHERE status IN (?)) AS failed,
+    count(*) FILTER (WHERE status = ?) AS running,
+    count(*) FILTER (WHERE status = ?) AS deployed,
+    coalesce(
+        percentile_cont(0.5) WITHIN GROUP (
+            ORDER BY extract(epoch FROM (updated - created))
+        ) FILTER (WHERE status <> ? AND updated >= created),
+        0
+    ) AS median_duration_seconds
+FROM tasks
+WHERE created > ? AND created <= ?
+GROUP BY app
+ORDER BY app`
+
+// Recency is computed over the same window, so the strip and the counters can
+// never disagree about which tasks the window contains.
+const appSummaryRecentSQL = `
+SELECT app, project, status, coalesce(status_reason, '') AS status_reason, created
+FROM (
+    SELECT app, project, status, status_reason, created, id,
+           row_number() OVER (PARTITION BY app ORDER BY created DESC, id DESC) AS recency
+    FROM tasks
+    WHERE created > ? AND created <= ?
+) ranked
+WHERE recency <= ?
+ORDER BY app, created DESC, id DESC`
+
+// GetAppSummaries aggregates the window per application in two queries: the
+// counters and median, then the newest rows per app for the outcome strip. Both
+// run in one REPEATABLE READ transaction, so a task inserted or swept between
+// them cannot leave an app counted here and unreported there.
+func (state *PostgresState) GetAppSummaries(filter models.TaskFilter) ([]models.AppSummary, error) {
+	startTimeUTC := time.Unix(int64(filter.StartTime), 0).UTC()
+	endTimeUTC := time.Unix(int64(filter.EndTime), 0).UTC()
+
+	var aggregates []appSummaryAggregate
+	var recent []appSummaryRecent
+
+	// Read-only, so the commit error gorm returns here carries no lost work.
+	err := state.orm.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Raw(
+			appSummaryAggregateSQL,
+			models.FailedTaskStatuses(),
+			models.StatusInProgressMessage,
+			models.StatusDeployedMessage,
+			models.StatusInProgressMessage,
+			startTimeUTC,
+			endTimeUTC,
+		).Scan(&aggregates).Error; err != nil {
+			return fmt.Errorf("failed to aggregate app summaries: %w", err)
+		}
+
+		if err := tx.Raw(
+			appSummaryRecentSQL, startTimeUTC, endTimeUTC, models.RecentOutcomeLimit,
+		).Scan(&recent).Error; err != nil {
+			return fmt.Errorf("failed to query recent app outcomes: %w", err)
+		}
+
+		return nil
+	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	if err != nil {
+		slog.Error("Failed to read app summaries", "error", err)
+		return nil, err
+	}
+
+	byApp := make(map[string][]appSummaryRecent, len(aggregates))
+	for _, row := range recent {
+		byApp[row.App] = append(byApp[row.App], row)
+	}
+
+	summaries := make([]models.AppSummary, 0, len(aggregates))
+	for _, aggregate := range aggregates {
+		summary := models.AppSummary{
+			App:                   aggregate.App,
+			Total:                 aggregate.Total,
+			Failed:                aggregate.Failed,
+			Running:               aggregate.Running,
+			Deployed:              aggregate.Deployed,
+			MedianDurationSeconds: aggregate.MedianDurationSeconds,
+			RecentStatuses:        []string{},
+		}
+
+		rows := byApp[aggregate.App]
+		for _, row := range rows {
+			summary.RecentStatuses = append(summary.RecentStatuses, row.Status)
+		}
+		if len(rows) > 0 {
+			newest := rows[0]
+			summary.Project = newest.Project
+			summary.LastStatus = newest.Status
+			summary.LastStatusReason = newest.StatusReason
+			summary.LastCreated = float64(newest.Created.Unix())
+		}
+
+		summaries = append(summaries, summary)
+	}
+
+	return summaries, nil
+}
+
 // GetTasks retrieves the tasks matching filter. Empty filter values (App, Status,
-// Search) are wildcards, and the Search clause mirrors models.Task.MatchesSearch.
+// Author, Search) are wildcards, and the Search clause mirrors models.Task.MatchesSearch.
 func (state *PostgresState) GetTasks(filter models.TaskFilter) ([]models.Task, int64) {
 	startTimeUTC := time.Unix(int64(filter.StartTime), 0).UTC()
 	endTimeUTC := time.Unix(int64(filter.EndTime), 0).UTC()
@@ -113,6 +238,9 @@ func (state *PostgresState) GetTasks(filter models.TaskFilter) ([]models.Task, i
 	}
 	if filter.Status != "" {
 		query = query.Where(`"tasks"."status" = ?`, filter.Status)
+	}
+	if filter.Author != "" {
+		query = query.Where(`lower("tasks"."author") = lower(?)`, filter.Author)
 	}
 	if filter.Search != "" {
 		// A leading-wildcard ILIKE cannot use an index, so this is a filter over

@@ -17,6 +17,10 @@ type TaskFilter struct {
 	// Search matches a case-insensitive substring of the app name, the author,
 	// or any image formatted as "image:tag". See Task.MatchesSearch.
 	Search string
+	// Author matches the task author exactly, case-insensitively. It is
+	// independent of Search so a caller can scope to one author and still run a
+	// free-text query within that scope.
+	Author string
 	// Limit caps how many tasks are returned; 0 means no cap.
 	Limit int
 	// Offset is how many matching tasks to skip before returning results.

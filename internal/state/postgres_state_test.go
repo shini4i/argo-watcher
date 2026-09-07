@@ -53,6 +53,26 @@ func newPostgresTestEnv(t *testing.T, opts ...func(*config.ServerConfig)) *postg
 	return env
 }
 
+// newSchemalessState connects a second state whose search_path names a schema
+// that does not exist, so every query fails on a missing relation. Nothing is
+// altered, unlike a rename, which a killed test process would leave behind.
+func newSchemalessState(t *testing.T) *PostgresState {
+	t.Helper()
+
+	if os.Getenv("DB_DSN") == "" && os.Getenv("DB_HOST") == "" {
+		t.Skip("Postgres integration tests require DB_DSN or DB_HOST to be configured")
+	}
+
+	databaseConfig, err := envConfig.ParseAs[config.DatabaseConfig]()
+	require.NoError(t, err)
+	databaseConfig.DSN += " search_path=argo_watcher_no_such_schema"
+
+	state := &PostgresState{}
+	require.NoError(t, state.Connect(&config.ServerConfig{StateType: "postgres", Db: databaseConfig}))
+
+	return state
+}
+
 func (env *postgresTestEnv) addTask(t *testing.T, task models.Task) *models.Task {
 	t.Helper()
 	result, err := env.state.AddTask(task)

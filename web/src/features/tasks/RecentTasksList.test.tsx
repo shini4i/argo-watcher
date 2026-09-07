@@ -44,6 +44,7 @@ const {
 
 vi.mock('react-admin', () => ({
   Pagination: PaginationMock,
+  useGetIdentity: () => ({ data: { id: 'user-1', email: 'jane@example.com' } }),
 }));
 
 vi.mock('./components/TaskListLayout', () => ({
@@ -90,8 +91,10 @@ describe('RecentTasksList', () => {
     expect(headerNode.type).toBe(RecentTasksToolbarMock);
     expect(headerNode.props.storageKey).toBe('recentTasks');
 
-    const paginationElement = props.listProps.pagination!;
-    expect(paginationElement.props.rowsPerPageOptions).toEqual([10, 25, 50, 100]);
+    // The pagination slot now also carries the keyboard-shortcut hint, so the
+    // page-size options live inside it rather than on the slot element itself.
+    const { getByTestId } = render(props.listProps.pagination!);
+    expect(getByTestId('recent-pagination').dataset.rows).toBe('10,25,50,100');
     expect(props.listProps.storeKey).toBe('recentTasks');
 
     const emptyComponent = props.emptyComponent;

@@ -45,6 +45,10 @@ type TaskRepository interface {
 	Connect(serverConfig *config.ServerConfig) error
 	AddTask(task models.Task) (*models.Task, error)
 	GetTasks(filter models.TaskFilter) ([]models.Task, int64)
+	// GetAppSummaries aggregates the filter's time window per application. Only
+	// StartTime and EndTime are honoured — the summary is a census of the
+	// window, so narrowing it by app or status would defeat its purpose.
+	GetAppSummaries(filter models.TaskFilter) ([]models.AppSummary, error)
 	GetTask(id string) (*models.Task, error)
 	SetTaskStatus(id, status, reason string) error
 	// CancelInProgressTasks marks in-progress tasks for the given app as

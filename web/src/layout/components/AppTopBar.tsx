@@ -1,5 +1,6 @@
 import RestoreIcon from '@mui/icons-material/Restore';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
+import DashboardIcon from '@mui/icons-material/Dashboard';
 import QuizRoundedIcon from '@mui/icons-material/QuizRounded';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import LocalOfferIcon from '@mui/icons-material/LocalOffer';
@@ -30,6 +31,7 @@ const GITHUB_REPO_URL = 'https://github.com/shini4i/argo-watcher';
 
 const navigationButtons = [
   { to: '/', icon: <RestoreIcon fontSize="small" />, label: 'Recent' },
+  { to: '/overview', icon: <DashboardIcon fontSize="small" />, label: 'Overview' },
   { to: '/history', icon: <CalendarMonthIcon fontSize="small" />, label: 'History' },
 ];
 
@@ -53,9 +55,12 @@ const appBarStyles: SxProps<Theme> = theme => {
   };
 };
 
+// Recent is reached as `/`, but the tasks Resource settles the URL on `/tasks`,
+// so an equality test would light the icon only for the instant before that.
+// `/task/:id` is the detail page and deliberately matches neither.
 const routeIsActive = (pathname: string, target: string) => {
   if (target === '/') {
-    return pathname === target;
+    return pathname === target || pathname === '/tasks' || pathname.startsWith('/tasks?');
   }
   return pathname.startsWith(target);
 };

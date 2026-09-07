@@ -1,32 +1,39 @@
-import { useCallback, useEffect } from 'react';
-import { Box, Button, Link, Typography } from '@mui/material';
+import { Children, isValidElement, useCallback, useEffect, type ReactElement } from 'react';
+import { Box, Typography } from '@mui/material';
 import { type SxProps, type Theme } from '@mui/material/styles';
-import OpenInNewIcon from '@mui/icons-material/OpenInNew';
-import { Datagrid, FunctionField, useListContext, useRecordContext } from 'react-admin';
-import { Link as RouterLink } from 'react-router-dom';
+import {
+  Datagrid,
+  DatagridBody,
+  DatagridRow,
+  FunctionField,
+  useListContext,
+  useRecordContext,
+} from 'react-admin';
 import type { Task } from '../../../data/types';
 import { tokens } from '../../../theme/tokens';
-import { AppCell, describeProject } from './AppCell';
+import { AppCell } from './AppCell';
 import { DurationField } from './DurationField';
 import { EmptyCell } from './EmptyCell';
 import { EmptyState, EmptyStateCta } from './EmptyState';
 import { ImagesCell } from './ImagesCell';
 import { StatusPill } from './StatusPill';
-import { RollbackIndicator } from './RollbackIndicator';
+import { TaskFailureRow } from './TaskFailureRow';
 import { TimeCell } from './TimeCell';
-import { usePauseRefresh, useTaskListContext } from './TaskListContext';
+import { useTaskListContext } from './TaskListContext';
+import { summariseFailure } from '../utils/failureReason';
+import { isFailedStatus, isRunningStatus } from '../utils/statusPresentation';
 
 /** Widest the author text may grow, in px, before the address is ellipsised. */
-export const AUTHOR_MAX_WIDTH = 200;
+export const AUTHOR_MAX_WIDTH = 180;
+
+/** Navigating a whole row means nested links and buttons must stopPropagation. */
+const rowClickToTask = (id: string | number) => `/task/${encodeURIComponent(String(id))}`;
 
 /**
- * Shared by both the recent and history views. `rowClick="expand"` means any
- * click inside a row toggles the status-reason panel, so nested links and
- * buttons must stopPropagation.
- *
- * The wrapping div emits `pause('hover')` reasons through TaskListContext so
- * the toolbar's auto-refresh countdown freezes while the cursor is over the
- * table body.
+ * @description The task table, shared by the recent and history views. A click
+ * anywhere in a row opens that task; a row carrying a status reason is followed
+ * by an always-open panel showing it. The wrapping div emits `pause('hover')`
+ * so the toolbar's countdown freezes while the cursor is over the table body.
  */
 export const TasksDatagrid = () => {
   const { pause, resume } = useTaskListContext();
@@ -40,11 +47,10 @@ export const TasksDatagrid = () => {
   return (
     <Box onMouseEnter={handleEnter} onMouseLeave={handleLeave}>
     <Datagrid
-      rowClick="expand"
+      rowClick={rowClickToTask}
       bulkActionButtons={false}
-      expand={<StatusReasonPanel />}
-      isRowExpandable={(record?: Task) => Boolean(record?.status_reason)}
-      expandSingle
+      body={<DatagridBody row={<TaskRow />} />}
+      rowSx={taskRowSx}
       empty={<FilteredEmptyState />}
       sx={datagridSx}
     >
@@ -53,71 +59,104 @@ export const TasksDatagrid = () => {
         label="Application"
         sortBy="app"
         cellClassName="cell-app"
-        render={(record: Task) => <AppCell app={record.app} />}
-      />
-      <FunctionField
-        source="project"
-        label="Project"
-        sortBy="project"
-        cellClassName="cell-project"
-        render={(record: Task) => <ProjectCell project={record.project} />}
-      />
-      <FunctionField
-        source="author"
-        label="Author"
-        sortBy="author"
-        cellClassName="cell-author"
-        render={(record: Task) => <AuthorCell author={record.author} />}
+        headerClassName="cell-app"
+        render={(record: Task) => (
+          <AppCell app={record.app} project={record.project} isRollback={record.is_rollback} />
+        )}
       />
       <FunctionField
         source="status"
         label="Status"
         sortBy="status"
         cellClassName="cell-status"
-        render={(record: Task) => (
-          <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
-            <StatusPill status={record.status} />
-            <RollbackIndicator isRollback={record.is_rollback} />
-          </Box>
-        )}
+        headerClassName="cell-status"
+        render={(record: Task) => <StatusPill status={record.status} />}
+      />
+      <FunctionField
+        source="images"
+        label="Image · tag"
+        sortable={false}
+        cellClassName="cell-images"
+        headerClassName="cell-images"
+        render={(record: Task) => <ImagesCell images={record.images} />}
+      />
+      <FunctionField
+        source="author"
+        label="Author"
+        sortBy="author"
+        cellClassName="cell-author"
+        headerClassName="cell-author"
+        render={(record: Task) => <AuthorCell author={record.author} />}
       />
       <FunctionField
         source="created"
-        label="Created"
+        label="When"
         sortBy="created"
-        cellClassName="cell-created"
-        render={(record: Task) => <TimeCell ts={record.created} mode="date" />}
-      />
-      <FunctionField
-        source="updated"
-        label="Updated"
-        sortBy="updated"
-        cellClassName="cell-updated"
-        render={(record: Task) => <TimeCell ts={record.updated ?? record.created} mode="relative" />}
+        cellClassName="cell-when"
+        headerClassName="cell-when"
+        render={(record: Task) => <TimeCell ts={record.created} />}
       />
       <FunctionField
         source="duration"
         label="Duration"
         sortable={false}
         cellClassName="cell-duration"
+        headerClassName="cell-duration"
         render={(record: Task) => <DurationField record={record} />}
-      />
-      <FunctionField
-        source="images"
-        label="Images"
-        sortable={false}
-        cellClassName="cell-images"
-        render={(record: Task) => <ImagesCell images={record.images} />}
-      />
-      <FunctionField
-        label="Details"
-        sortable={false}
-        cellClassName="cell-view"
-        render={(record: Task) => <ViewButton id={record.id} />}
       />
     </Datagrid>
     </Box>
   );
+};
+
+/**
+ * @description One task row plus, when the task carries a status reason, the
+ * panel row beneath it. DatagridBody clones this per record inside a
+ * RecordContextProvider, which is where the record comes from.
+ */
+const TaskRow = (props: Record<string, unknown>) => {
+  const record = useRecordContext<Task>();
+  const summary = summariseFailure(record?.status_reason);
+  // The panel spans every data column; the grid renders no checkbox or expander.
+  const colSpan = Children.toArray(props.children as ReactElement[]).filter(isValidElement).length;
+
+  return (
+    <>
+      <DatagridRow {...(props as never)} />
+      {record && summary && (
+        <TaskFailureRow
+          taskId={record.id}
+          summary={summary}
+          colSpan={colSpan}
+          tone={isFailedStatus(record.status) ? 'error' : 'neutral'}
+        />
+      )}
+    </>
+  );
+};
+
+/** Marks a row that needs attention with a 4px edge in its status colour. */
+const taskRowSx = (record: Task): SxProps<Theme> => theme => {
+  const isDark = theme.palette.mode === 'dark';
+  // Cells carry no bottom rule of their own; the divider lives on the row's top
+  // edge, so a row and its reason panel read as one block.
+  const flushCells = { '& .MuiTableCell-root': { borderBottom: 'none' } };
+
+  if (isFailedStatus(record.status)) {
+    return {
+      ...flushCells,
+      borderLeft: `4px solid ${isDark ? tokens.statusFailedFgDark : tokens.statusFailedFg}`,
+      backgroundColor: isDark ? tokens.rowFailedBgDark : tokens.rowFailedBg,
+    };
+  }
+  if (isRunningStatus(record.status)) {
+    return {
+      ...flushCells,
+      borderLeft: `4px solid ${isDark ? tokens.statusRunningFgDark : tokens.statusRunningFg}`,
+      backgroundColor: isDark ? tokens.rowRunningBgDark : tokens.rowRunningBg,
+    };
+  }
+  return { ...flushCells, borderLeft: '4px solid transparent' };
 };
 
 const datagridSx: SxProps<Theme> = theme => {
@@ -125,6 +164,14 @@ const datagridSx: SxProps<Theme> = theme => {
   const rowHover = theme.palette.mode === 'dark' ? tokens.rowHoverDark : tokens.rowHoverLight;
 
   return {
+    // Fixed layout, so the declared column widths hold instead of the browser
+    // redistributing slack into every column and bloating them (issue seen
+    // after the column set shrank from ten to six). Image · tag declares no
+    // width and absorbs whatever is left over.
+    '& .RaDatagrid-table': {
+      tableLayout: 'fixed',
+      width: '100%',
+    },
     '& .RaDatagrid-headerCell': {
       position: 'sticky',
       top: 0,
@@ -136,8 +183,11 @@ const datagridSx: SxProps<Theme> = theme => {
       color: theme.palette.text.secondary,
       borderBottom: `1px solid ${theme.palette.divider}`,
     },
+    // Each row draws the divider ABOVE itself, not below. A reason panel is not
+    // a .RaDatagrid-row, so no line is drawn between a row and its own panel,
+    // while the next task's own top border still closes the block off.
     '& .RaDatagrid-row': {
-      borderBottom: `1px solid ${theme.palette.divider}`,
+      borderTop: `1px solid ${theme.palette.divider}`,
       cursor: 'pointer',
       transition: theme.transitions.create('background-color', {
         duration: theme.transitions.duration.shortest,
@@ -150,30 +200,24 @@ const datagridSx: SxProps<Theme> = theme => {
       paddingTop: theme.spacing(1.25),
       paddingBottom: theme.spacing(1.25),
     },
-    '& .RaDatagrid-expandIcon': {
-      transition: theme.transitions.create('transform', {
-        duration: theme.transitions.duration.shortest,
-      }),
-    },
-    '& .cell-app': { minWidth: 200, maxWidth: 280 },
-    '& .cell-project': { minWidth: 180, maxWidth: 280 },
+    '& .cell-app': { width: 290 },
+    '& .cell-status': { width: 150 },
+    // No width: this is the column that takes up the remaining space.
+    '& .cell-images': { minWidth: 200 },
     '& .cell-author': { width: AUTHOR_MAX_WIDTH },
-    '& .cell-status': { width: 156 },
-    '& .cell-created': {
-      width: 200,
-      fontVariantNumeric: 'tabular-nums',
-    },
-    '& .cell-updated': {
-      width: 130,
-      fontVariantNumeric: 'tabular-nums',
-    },
-    '& .cell-duration': { width: 110, fontVariantNumeric: 'tabular-nums' },
-    '& .cell-images': { width: 280 },
-    '& .cell-view': {
-      width: 96,
+    '& .cell-when': {
+      width: 150,
       textAlign: 'right',
-      paddingLeft: 0,
-      paddingRight: theme.spacing(1.5),
+      fontVariantNumeric: 'tabular-nums',
+    },
+    '& .cell-duration': {
+      width: 100,
+      textAlign: 'right',
+      fontVariantNumeric: 'tabular-nums',
+    },
+    // MUI left-aligns a header cell regardless of its column's own alignment.
+    '& .RaDatagrid-headerCell.cell-when, & .RaDatagrid-headerCell.cell-duration': {
+      textAlign: 'right',
     },
   };
 };
@@ -203,63 +247,6 @@ const AuthorCell = ({ author }: { author?: string | null }) => {
     </Typography>
   );
 };
-
-const ProjectCell = ({ project }: { project?: string | null }) => {
-  if (!project) {
-    return <EmptyCell />;
-  }
-  const info = describeProject(project);
-  if (info.isUrl && info.href) {
-    return (
-      <Link
-        href={info.href}
-        target="_blank"
-        rel="noopener noreferrer"
-        underline="hover"
-        onClick={event => event.stopPropagation()}
-        sx={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 0.25,
-          fontFamily: tokens.fontMono,
-          fontSize: 12,
-          color: 'text.secondary',
-          maxWidth: '100%',
-        }}
-      >
-        <Box
-          component="span"
-          sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-        >
-          {info.label}
-        </Box>
-        <OpenInNewIcon sx={{ fontSize: 12 }} />
-      </Link>
-    );
-  }
-  return (
-    <Typography
-      variant="body2"
-      sx={{ fontFamily: tokens.fontMono, fontSize: 12, color: 'text.secondary' }}
-      noWrap
-      title={info.label}
-    >
-      {info.label}
-    </Typography>
-  );
-};
-
-const ViewButton = ({ id }: { id: string }) => (
-  <Button
-    component={RouterLink}
-    to={`/task/${encodeURIComponent(id)}`}
-    size="small"
-    variant="outlined"
-    onClick={event => event.stopPropagation()}
-  >
-    View
-  </Button>
-);
 
 /**
  * The "Clear filters" CTA drains all three sinks (URL, storage, react-admin
@@ -292,43 +279,10 @@ const FilteredEmptyState = () => {
   );
 };
 
-const StatusReasonPanel = () => {
-  const record = useRecordContext<Task>();
-  // The panel mounts when a row expands and unmounts when it collapses, so a
-  // life-cycle bound pause('expand') exactly tracks the expanded state.
-  usePauseRefresh('expand');
-  return <StatusReasonContent record={record} />;
-};
-
-/** Split from StatusReasonPanel so tests need no react-admin record context. */
-const StatusReasonContent = ({ record }: { record?: Task | null }) => {
-  if (!record) {
-    return null;
-  }
-
-  if (!record.status_reason) {
-    return (
-      <Typography variant="body2" sx={{ color: 'text.secondary', p: 2 }}>
-        No additional status reason provided.
-      </Typography>
-    );
-  }
-
-  return (
-    <Typography
-      component="pre"
-      sx={{ p: 2, fontFamily: theme => theme.typography.fontFamily, whiteSpace: 'pre-wrap' }}
-    >
-      {record.status_reason}
-    </Typography>
-  );
-};
-
 export const __testing = {
   AuthorCell,
-  ProjectCell,
-  StatusReasonContent,
-  StatusReasonPanel,
-  ViewButton,
+  TaskRow,
   datagridSx,
+  rowClickToTask,
+  taskRowSx,
 };

@@ -60,6 +60,11 @@ func newRepo(ctrl *gomock.Controller) (*mocks.MockTaskRepository, *repoCapture) 
 			capture.lastFilter = filter
 			return []models.Task{}, 0
 		}).AnyTimes()
+	repo.EXPECT().GetAppSummaries(gomock.Any()).
+		DoAndReturn(func(filter models.TaskFilter) ([]models.AppSummary, error) {
+			capture.lastFilter = filter
+			return []models.AppSummary{}, nil
+		}).AnyTimes()
 	repo.EXPECT().SetTaskStatus(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	repo.EXPECT().CancelInProgressTasks(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(int64(0), nil).AnyTimes()
 	repo.EXPECT().ProcessObsoleteTasks(gomock.Any()).AnyTimes()

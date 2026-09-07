@@ -13,6 +13,7 @@ With `OIDC_ENABLED` unset — the default — every endpoint below answers any c
 | `POST /api/v1/tasks` | Accepts a deployment (see below) |
 | `GET /api/v1/tasks` | The whole history: application, author, project, images and tags |
 | `GET /api/v1/tasks/{id}` | The same fields for one task |
+| `GET /api/v1/apps/summary` | Every application name with its deployment counts, failure counts, median duration, recent outcomes and the newest failure text |
 | `GET /api/v1/config` | Every non-secret server setting: `argo_cd_url` and its alias, `registry_proxy_url` — both of which usually name an internal host — the OIDC issuer, client id and `privileged_groups`, the lockdown schedule, the state backend type, and the timeouts. Tokens, secrets and the database DSN are excluded |
 | `GET /api/v1/reachability`, `GET /api/v1/version`, `GET /api/v1/deploy-lock` | Argo CD and database reachability, the build version, the lock state |
 | `/ws` | The deploy-lock and reachability transitions, as they happen |
@@ -36,7 +37,7 @@ The payload is [bounded](../reference/api.md#submitting-a-task) so one request c
 
 ## What enabling OIDC closes
 
-[OIDC](../guides/oidc.md) closes the reads only the Web UI consumes — `GET /api/v1/tasks`, `/version`, `/reachability`, `GET /api/v1/deploy-lock` and `/ws` — and makes the deploy-lock writes available to `OIDC_PRIVILEGED_GROUPS` alone. [Protected endpoints](../guides/oidc.md#protected-endpoints) is the full table.
+[OIDC](../guides/oidc.md) closes the reads only the Web UI consumes — `GET /api/v1/tasks`, `/apps/summary`, `/version`, `/reachability`, `GET /api/v1/deploy-lock` and `/ws` — and makes the deploy-lock writes available to `OIDC_PRIVILEGED_GROUPS` alone. [Protected endpoints](../guides/oidc.md#protected-endpoints) is the full table.
 
 Four things stay open by design, and OIDC does not change any of them:
 
