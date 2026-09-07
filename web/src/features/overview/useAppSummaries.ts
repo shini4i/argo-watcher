@@ -6,20 +6,26 @@ import { WINDOW_SECONDS } from './types';
 
 interface AppSummariesState {
   readonly apps: AppSummary[];
+  /** True only before the first answer: there is nothing to render yet. */
   readonly isPending: boolean;
+  /** True while a fetch runs over rows already on screen. */
+  readonly isRefreshing: boolean;
   readonly error: unknown;
   readonly refetch: () => void;
 }
 
 /**
  * @description Loads the per-application aggregate for one window. Counts come
- * from the backend, so nothing here is a sample of a page.
+ * from the backend, so nothing here is a sample of a page. Rows from the
+ * previous window stay until the next answer lands, which is what keeps a
+ * window switch from unmounting the page.
  * @param window the selected look-back range
- * @returns the summaries, the pending flag, any error, and a refetch callback
+ * @returns the summaries, both loading flags, any error, and a refetch callback
  */
 export const useAppSummaries = (window: OverviewWindow): AppSummariesState => {
   const [apps, setApps] = useState<AppSummary[]>([]);
-  const [isPending, setIsPending] = useState(true);
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const [isFetching, setIsFetching] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [reloadToken, setReloadToken] = useState(0);
 
@@ -38,7 +44,7 @@ export const useAppSummaries = (window: OverviewWindow): AppSummariesState => {
   // the second one.
   useEffect(() => {
     let cancelled = false;
-    setIsPending(true);
+    setIsFetching(true);
 
     const query = buildQueryString({ from_timestamp: fromTimestamp });
     httpClient<AppSummariesResponse>(`/api/v1/apps/summary${query}`)
@@ -48,6 +54,7 @@ export const useAppSummaries = (window: OverviewWindow): AppSummariesState => {
         }
         // A soft error in the body means the aggregate failed; surfacing it as
         // an error keeps the page from rendering zeros as if they were counts.
+        // Stale rows go with it: they belong to a window nobody asked for.
         if (data?.error) {
           setError(new HttpError(data.error, status, data));
           setApps([]);
@@ -64,7 +71,8 @@ export const useAppSummaries = (window: OverviewWindow): AppSummariesState => {
       })
       .finally(() => {
         if (!cancelled) {
-          setIsPending(false);
+          setIsFetching(false);
+          setHasLoaded(true);
         }
       });
 
@@ -73,5 +81,11 @@ export const useAppSummaries = (window: OverviewWindow): AppSummariesState => {
     };
   }, [fromTimestamp, reloadToken]);
 
-  return { apps, isPending, error, refetch };
+  return {
+    apps,
+    isPending: isFetching && !hasLoaded,
+    isRefreshing: isFetching && hasLoaded,
+    error,
+    refetch,
+  };
 };

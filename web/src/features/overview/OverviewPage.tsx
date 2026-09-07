@@ -30,7 +30,7 @@ const SectionHeading = ({ children }: { children: string }) => (
 export const OverviewPage = () => {
   const [storedWindow, setStoredWindow] = useStore<OverviewWindow>(WINDOW_STORE_KEY, '24h');
   const window: OverviewWindow = isOverviewWindow(storedWindow) ? storedWindow : '24h';
-  const { apps, isPending, error, refetch } = useAppSummaries(window);
+  const { apps, isPending, isRefreshing, error, refetch } = useAppSummaries(window);
   const { pinned, pin, unpin, shareLink } = usePinnedApps();
 
   useEffect(() => {
@@ -75,7 +75,18 @@ export const OverviewPage = () => {
   }
 
   return (
-    <Stack spacing={2.5} sx={{ mt: { xs: 1.5, sm: 2 }, px: { xs: 1, md: 0 } }}>
+    <Stack
+      spacing={2.5}
+      // A window switch keeps the previous numbers mounted and fades them, so
+      // the page reports that it is working without every section unmounting.
+      aria-busy={isRefreshing}
+      sx={{
+        mt: { xs: 1.5, sm: 2 },
+        px: { xs: 1, md: 0 },
+        opacity: isRefreshing ? 0.65 : 1,
+        transition: 'opacity 120ms ease',
+      }}
+    >
       <KpiStrip kpis={kpis} window={window} isPending={isPending} />
 
       <PinnedApps

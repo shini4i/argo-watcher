@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { localStorageStore, StoreContextProvider } from 'react-admin';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -114,13 +114,16 @@ describe('OverviewPage', () => {
     await waitFor(() => expect(screen.getByText('Application deployment failed. Rollout status is not available')).toBeInTheDocument());
   });
 
+  // `/tasks`, not `/`: react-admin redirects `/` to the first resource's list
+  // and drops the query on the way, so `/?app=x` silently arrives unfiltered.
   it('links a card into the task list filtered to that app', async () => {
     respondWith([summary({ app: 'broken', failed: 1, last_status: 'failed' })]);
     renderPage();
 
     await waitFor(() => expect(screen.getAllByRole('link').length).toBeGreaterThan(0));
     const links = screen.getAllByRole('link').map(link => link.getAttribute('href'));
-    expect(links).toContain('/?app=broken');
+    expect(links).toContain('/tasks?app=broken');
+    expect(links).not.toContain('/?app=broken');
   });
 
   it('refetches when the window changes', async () => {
@@ -131,6 +134,36 @@ describe('OverviewPage', () => {
     fireEvent.click(screen.getByRole('tab', { name: '30 d' }));
 
     await waitFor(() => expect(httpClient).toHaveBeenCalledTimes(2));
+  });
+
+  // Clearing the rows for the round trip unmounted every section, which read as
+  // the page blinking on each window switch.
+  it('holds the current numbers on screen while the next window loads', async () => {
+    respondWith([summary({ app: 'checkout', running: 2 })]);
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText('ALL APPLICATIONS')).toBeInTheDocument());
+
+    let release: (value: unknown) => void = () => {};
+    httpClient.mockImplementation(() => new Promise(resolve => { release = resolve; }));
+    fireEvent.click(screen.getByRole('tab', { name: '30 d' }));
+
+    // Marked busy, but nothing unmounts and no skeleton replaces the numbers.
+    await waitFor(() => expect(document.querySelector('[aria-busy="true"]')).toBeTruthy());
+    expect(screen.getByText('ALL APPLICATIONS')).toBeInTheDocument();
+    expect(screen.getByText('RUNNING NOW')).toBeInTheDocument();
+    expect(screen.getByText('2')).toBeInTheDocument();
+
+    await act(async () => {
+      release({
+        data: { apps: [summary({ app: 'payments', running: 9 })], total_apps: 1 },
+        status: 200,
+        headers: {} as Headers,
+      });
+    });
+
+    await waitFor(() => expect(screen.getByText('9')).toBeInTheDocument());
+    expect(document.querySelector('[aria-busy="true"]')).toBeNull();
   });
 
   it('pins an application and keeps it in its own block', async () => {

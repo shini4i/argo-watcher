@@ -75,7 +75,7 @@ const Tile = ({
       <Box sx={{ minWidth: 0, flexGrow: 1 }}>
         <Box
           component={RouterLink}
-          to={`/?app=${encodeURIComponent(app)}`}
+          to={`/tasks?app=${encodeURIComponent(app)}`}
           sx={{
             display: 'block',
             fontSize: 12.5,

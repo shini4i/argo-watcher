@@ -56,7 +56,7 @@ const AttentionCard = ({ summary }: { summary: AppSummary }) => {
   return (
     <Box
       component={RouterLink}
-      to={`/?app=${encodeURIComponent(summary.app)}`}
+      to={`/tasks?app=${encodeURIComponent(summary.app)}`}
       sx={{
         display: 'block',
         textDecoration: 'none',

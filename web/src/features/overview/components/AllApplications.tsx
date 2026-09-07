@@ -26,7 +26,7 @@ const Row = ({ summary }: { summary: AppSummary }) => {
   return (
     <Stack
       component={RouterLink}
-      to={`/?app=${encodeURIComponent(summary.app)}`}
+      to={`/tasks?app=${encodeURIComponent(summary.app)}`}
       direction="row"
       spacing={1.5}
       sx={{

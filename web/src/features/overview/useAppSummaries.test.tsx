@@ -97,6 +97,44 @@ describe('useAppSummaries', () => {
     expect(params.get('from_timestamp')).toBe(String(expected));
   });
 
+  // Clearing the rows for the round trip unmounted every section of the page,
+  // which read as the whole overview blinking on each window switch.
+  it('keeps the previous rows on screen while the next window loads', async () => {
+    httpClient.mockImplementation(() => ok({ apps: [{ app: 'checkout' }], total_apps: 1 }));
+
+    const { result, rerender } = renderHook(
+      ({ w }: { w: '24h' | '30d' }) => useAppSummaries(w),
+      { initialProps: { w: '24h' as const } },
+    );
+    await waitFor(() => expect(result.current.apps).toHaveLength(1));
+
+    let release: (value: unknown) => void = () => {};
+    httpClient.mockImplementation(() => new Promise(resolve => { release = resolve; }));
+    rerender({ w: '30d' });
+
+    await waitFor(() => expect(result.current.isRefreshing).toBe(true));
+    // The point of the change: rows stay, and the page never falls back to the
+    // first-load skeletons it shows when there is nothing to display.
+    expect(result.current.apps.map(app => app.app)).toEqual(['checkout']);
+    expect(result.current.isPending).toBe(false);
+
+    await act(async () => {
+      release({ data: { apps: [{ app: 'payments' }], total_apps: 1 }, status: 200, headers: {} });
+    });
+
+    expect(result.current.apps.map(app => app.app)).toEqual(['payments']);
+    expect(result.current.isRefreshing).toBe(false);
+  });
+
+  it('reports the first load as pending, with nothing to show yet', async () => {
+    httpClient.mockImplementation(() => new Promise(() => {}));
+
+    const { result } = renderHook(() => useAppSummaries('24h'));
+
+    expect(result.current.isPending).toBe(true);
+    expect(result.current.apps).toEqual([]);
+  });
+
   // A late response from an abandoned window must not overwrite the current one.
   it('ignores an in-flight response once the window has moved on', async () => {
     const resolvers: Array<(value: unknown) => void> = [];
