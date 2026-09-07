@@ -27,19 +27,21 @@ describe('TaskFailureRow', () => {
     });
   });
 
-  it('shows the extracted headline and its source location', () => {
-    renderRow('Error: execution error at (chart/templates/deploy.yaml:34:18): memory limit required');
+  it('shows the headline the backend composed', () => {
+    renderRow('Application deployment failed. Rollout status is not available\n\nSync operation phase: Failed');
 
-    expect(screen.getByText('memory limit required')).toBeInTheDocument();
-    expect(screen.getByText('chart/templates/deploy.yaml:34:18')).toBeInTheDocument();
+    expect(
+      screen.getByText('Application deployment failed. Rollout status is not available'),
+    ).toBeInTheDocument();
   });
 
   it('keeps the raw reason on screen beside the headline', () => {
-    const raw = 'Error: execution error at (a/b.yaml:1:2): boom\nhelm.go:84: [debug] error: boom';
+    const raw =
+      'Application deployment failed. Rollout status is not available\n\nSync operation message: one or more objects failed to apply, reason: Error: UPGRADE FAILED';
     renderRow(raw);
 
     // getByText collapses the newline, so match the raw line by its tail.
-    expect(screen.getByText(/helm\.go:84: \[debug\] error: boom/)).toBeInTheDocument();
+    expect(screen.getByText(/reason: Error: UPGRADE FAILED/)).toBeInTheDocument();
   });
 
   it('does not print a single-line reason twice', () => {
@@ -49,7 +51,7 @@ describe('TaskFailureRow', () => {
   });
 
   it('copies the raw reason, not the headline', () => {
-    const raw = 'Error: execution error at (a/b.yaml:1:2): boom\ntrailing detail';
+    const raw = 'Application deployment failed. Rollout status is not available\n\ntrailing detail';
     renderRow(raw);
 
     fireEvent.click(screen.getByRole('button', { name: 'Copy' }));

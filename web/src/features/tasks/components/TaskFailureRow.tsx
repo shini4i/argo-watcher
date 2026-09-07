@@ -77,16 +77,8 @@ export const TaskFailureRow = ({ taskId, summary, colSpan, tone = 'error' }: Tas
               }}
             >
               {summary.headline}
-              {/* A literal space, so the accessible name does not run the two
-                  together the way an ml-only gap does. */}
-              {summary.location && ' '}
-              {summary.location && (
-                <Box component="span" sx={{ fontFamily: tokens.fontMono, fontWeight: 500, opacity: 0.85 }}>
-                  {summary.location}
-                </Box>
-              )}
             </Typography>
-            {summary.raw.trim() !== summary.headline && (
+            {summary.detail && (
               <Typography
                 sx={{
                   fontFamily: tokens.fontMono,
@@ -97,7 +89,7 @@ export const TaskFailureRow = ({ taskId, summary, colSpan, tone = 'error' }: Tas
                   whiteSpace: 'nowrap',
                 }}
               >
-                {summary.raw}
+                {summary.detail}
               </Typography>
             )}
           </Box>

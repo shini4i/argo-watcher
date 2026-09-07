@@ -105,13 +105,13 @@ describe('OverviewPage', () => {
         app: 'broken',
         failed: 1,
         last_status: 'failed',
-        last_status_reason: 'Error: execution error at (chart/deploy.yaml:3:1): memory required',
+        last_status_reason: 'Application deployment failed. Rollout status is not available\n\nSync operation phase: Failed',
       }),
     ]);
 
     renderPage();
 
-    await waitFor(() => expect(screen.getByText('memory required')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Application deployment failed. Rollout status is not available')).toBeInTheDocument());
   });
 
   it('links a card into the task list filtered to that app', async () => {

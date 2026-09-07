@@ -67,11 +67,6 @@ export const FailureReasonPanel = ({ summary, tone }: FailureReasonPanelProps) =
         <Typography sx={{ fontSize: 16, fontWeight: 600, color: ink, overflowWrap: 'anywhere' }}>
           {summary.headline}
         </Typography>
-        {summary.location && (
-          <Typography sx={{ fontFamily: tokens.fontMono, fontSize: 14, color: ink, mt: 0.5 }}>
-            {summary.location}
-          </Typography>
-        )}
       </output>
 
       <Button

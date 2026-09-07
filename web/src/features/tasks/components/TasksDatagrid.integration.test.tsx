@@ -23,7 +23,7 @@ const FAILED = task({
   app: 'payments-worker',
   status: 'failed',
   status_reason:
-    'Error: execution error at (payments/templates/deployment.yaml:34:18): memory limit required\nhelm.go:84: [debug] error',
+    'Application deployment failed. Rollout status is not available\n\nSync operation phase: Failed\nSync operation message: one or more objects failed to apply',
 });
 
 const CANCELLED = task({
@@ -68,7 +68,7 @@ describe('TasksDatagrid on real react-admin', () => {
     await waitFor(() => expect(screen.getByText('payments-worker')).toBeInTheDocument());
 
     expect(panelRows()).toHaveLength(2);
-    expect(screen.getByText('memory limit required')).toBeInTheDocument();
+    expect(screen.getByText('Application deployment failed. Rollout status is not available')).toBeInTheDocument();
     expect(screen.getByText('Cancelled by lee@example.com')).toBeInTheDocument();
   });
 

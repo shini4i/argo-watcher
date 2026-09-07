@@ -143,7 +143,7 @@ describe('TaskShow', () => {
   });
 
   it('leads with the failure reason and keeps the raw text reachable', async () => {
-    const raw = 'Error: execution error at (chart/templates/deploy.yaml:12:5): memory limit required';
+    const raw = 'Application deployment failed. Rollout status is not available\n\nSync operation phase: Failed';
     mockUseGetOne.mockReturnValue({
       data: buildTask({ status: 'failed', status_reason: raw }),
       isLoading: false,
@@ -154,11 +154,13 @@ describe('TaskShow', () => {
     await renderWithRouter('/task/task-1');
 
     expect(screen.getByText('WHY IT FAILED')).toBeInTheDocument();
-    expect(screen.getByText('memory limit required')).toBeInTheDocument();
-    expect(screen.getByText('chart/templates/deploy.yaml:12:5')).toBeInTheDocument();
+    expect(
+      screen.getByText('Application deployment failed. Rollout status is not available'),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /Full reason from Argo CD/ }));
-    expect(screen.getByText(raw)).toBeInTheDocument();
+    // getByText collapses the newlines, so match the disclosed body by its tail.
+    expect(screen.getByText(/Sync operation phase: Failed/)).toBeInTheDocument();
   });
 
   it('uses neutral wording for a reason that is not a failure', async () => {
