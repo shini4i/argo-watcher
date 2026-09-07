@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { describeTaskStatus, type TaskStatusPresentation } from './statusPresentation';
+import { describeTaskStatus, isFailedStatus, isRunningStatus, type TaskStatusPresentation } from './statusPresentation';
 
 type StatusExpectation = Pick<
   TaskStatusPresentation,
@@ -100,4 +100,56 @@ describe('describeTaskStatus', () => {
       expect(presentation.pillFgDark).toMatch(/^(rgba?\(|#)/);
     });
   }
+});
+
+/**
+ * @description internal/models/constants.go `failedTaskStatuses` is the source
+ * of truth for this set. It is duplicated here because the browser cannot read
+ * Go; pinning the members means a divergence fails a test instead of silently
+ * losing a row's red edge and its place in the overview's failure count.
+ */
+describe('isFailedStatus / isRunningStatus', () => {
+  const FAILED = [
+    'failed',
+    'aborted',
+    'argocd is unavailable',
+    'cannot connect to database',
+    'failed to login to argocd',
+  ];
+
+  it.each(FAILED)('treats %j as failed', status => {
+    expect(isFailedStatus(status)).toBe(true);
+  });
+
+  it('recognises exactly those five, no more', () => {
+    const everyStatus = [
+      ...FAILED,
+      'deployed',
+      'in progress',
+      'cancelled',
+      'app not found',
+      'accepted',
+    ];
+    expect(everyStatus.filter(isFailedStatus)).toEqual(FAILED);
+  });
+
+  it.each(['deployed', 'in progress', 'cancelled', 'app not found', 'accepted', '', 'Failed'])(
+    'does not treat %j as failed',
+    status => {
+      expect(isFailedStatus(status)).toBe(false);
+    },
+  );
+
+  it('handles an absent status', () => {
+    expect(isFailedStatus(undefined)).toBe(false);
+    expect(isFailedStatus(null)).toBe(false);
+    expect(isRunningStatus(undefined)).toBe(false);
+  });
+
+  it('treats only "in progress" as running', () => {
+    expect(isRunningStatus('in progress')).toBe(true);
+    for (const status of ['deployed', 'failed', 'accepted', 'In Progress']) {
+      expect(isRunningStatus(status)).toBe(false);
+    }
+  });
 });

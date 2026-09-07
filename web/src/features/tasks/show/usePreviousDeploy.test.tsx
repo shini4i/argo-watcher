@@ -25,8 +25,11 @@ describe('usePreviousDeploy', () => {
   it('reaches past the provider default 24h window', () => {
     renderHook(() => usePreviousDeploy('demo', 'current', 1000));
 
-    const [, params] = useGetList.mock.calls[0] as [string, { filter: Record<string, unknown> }];
-    expect(params.filter).toMatchObject({ app: 'demo', from: 0 });
+    const [, params] = useGetList.mock.calls[0] as [string, { filter: Record<string, number | string> }];
+    expect(params.filter.app).toBe('demo');
+    // Bounded, not unbounded: GetTasks counts before it pages and `tasks` has
+    // no index on `app`, so an open-ended `from` scans the whole table.
+    expect(params.filter.from).toBe(1000 - 90 * 24 * 60 * 60);
   });
 
   it('skips the query when there is no app to scope it to', () => {

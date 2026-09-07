@@ -4,6 +4,12 @@ import type { Task } from '../../../data/types';
 /** Enough rows to look past this task itself without paging. */
 const LOOKBACK_ROWS = 5;
 
+// GetTasks counts before it pages, and `tasks` carries no index on `app`, so an
+// unbounded `from` makes every detail-page open scan the whole table. Bounding
+// it lets the `created` index do the work; a previous deploy older than this is
+// reported as none found.
+const LOOKBACK_SECONDS = 90 * 24 * 60 * 60;
+
 const QUERY_OPTS = { retry: false, refetchOnWindowFocus: false, staleTime: 60_000 } as const;
 
 /**
@@ -21,8 +27,11 @@ export const usePreviousDeploy = (
 ): Task | null => {
   const { data } = useGetList<Task>(
     'tasks',
-    // from: 0 overrides the provider's 24h default — a previous deploy is often older.
-    { pagination: { page: 1, perPage: LOOKBACK_ROWS }, filter: { app, from: 0 } },
+    // Reaches past the provider's 24h default, which a previous deploy usually predates.
+    {
+      pagination: { page: 1, perPage: LOOKBACK_ROWS },
+      filter: { app, from: (created ?? 0) - LOOKBACK_SECONDS },
+    },
     { ...QUERY_OPTS, enabled: Boolean(app) && created !== null },
   );
 
