@@ -291,6 +291,20 @@ func (argo *Argo) GetTasks(filter models.TaskFilter) models.TasksResponse {
 	}
 }
 
+// GetAppSummaries aggregates the filter's window per application. Like
+// GetTasks, it is not gated on ArgoCD reachability: it reads stored history.
+func (argo *Argo) GetAppSummaries(filter models.TaskFilter) models.AppSummariesResponse {
+	summaries, err := argo.State.GetAppSummaries(filter)
+	if err != nil {
+		return models.AppSummariesResponse{Apps: []models.AppSummary{}, Error: err.Error()}
+	}
+
+	return models.AppSummariesResponse{
+		Apps:      summaries,
+		TotalApps: len(summaries),
+	}
+}
+
 // SimpleHealthCheck checks the state backend only, never ArgoCD.
 func (argo *Argo) SimpleHealthCheck() bool {
 	return argo.State.Check()

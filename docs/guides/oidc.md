@@ -10,7 +10,7 @@ With OIDC disabled (the default) nothing is protected: there is no backend to va
 2. The backend validates the token by calling the provider's **userinfo** endpoint, which it discovers from `<issuer>/.well-known/openid-configuration`. Discovery happens lazily on the first validation, so a provider that is briefly down at boot does not stop Argo Watcher from starting.
 3. An accepted token that names a client other than `OIDC_CLIENT_ID` is refused — see [Audience binding](#audience-binding).
 4. Reads the Web UI performs require a credential — being signed in is enough, no group needed.
-5. Users in a **privileged group** additionally get the **Rollback to this version** button on a task, and control of the [deployment lock](deployment-lock.md).
+5. Users in a **privileged group** additionally get the **Deploy this version again** button on a task, and control of the [deployment lock](deployment-lock.md).
 6. Signed-in users get an account card in the side panel (opened from the logo) showing their avatar, name and email, with **Log out** in its menu.
 
 The browser performs discovery and the code exchange itself, so the issuer must be reachable **from the browser as well as from the server**. When a sign-in cannot complete, the Web UI stops on its loading screen and names the reason instead of bouncing back to the provider — see [Web UI stops on "Sign-in failed"](../operations/troubleshooting.md#web-ui-stops-on-sign-in-failed).
@@ -118,6 +118,7 @@ Enabling OIDC closes the endpoints only the Web UI consumes, so no pipeline is a
 | Endpoint | With OIDC enabled |
 |---|---|
 | `GET /api/v1/tasks` | Credential required |
+| `GET /api/v1/apps/summary` | Credential required |
 | `GET /api/v1/version` | Credential required |
 | `GET /api/v1/reachability` | Credential required |
 | `GET /api/v1/deploy-lock` | Credential required |
@@ -186,4 +187,4 @@ Two other Keycloak-era surfaces went with them. `GET /api/v1/config` no longer m
 
 ## Privileged groups
 
-Members of `OIDC_PRIVILEGED_GROUPS` get three things: the **Rollback to this version** button on a task page, which is hidden from everyone else, the [deployment lock](deployment-lock.md) switch, which others see disabled, and a crown on their account card in the side panel. Restricting rollback per application is not implemented yet.
+Members of `OIDC_PRIVILEGED_GROUPS` get three things: the **Deploy this version again** button on a task page, which is hidden from everyone else, the [deployment lock](deployment-lock.md) switch, which others see disabled, and a crown on their account card in the side panel. Restricting rollback per application is not implemented yet.

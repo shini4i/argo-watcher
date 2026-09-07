@@ -30,6 +30,12 @@ const maxTaskListLimit = 1000
 // app and author fields it matches against.
 const maxTaskSearchLength = models.MaxTaskFieldLength
 
+// maxAppSummaryWindow caps the look-back GET /api/v1/apps/summary will group
+// over, in seconds. The queries carry no LIMIT and sort the whole window, so an
+// unbounded one lets any reader make the database group every task ever stored.
+// The Web UI never asks for more than 30 days.
+const maxAppSummaryWindow = 90 * 24 * 60 * 60
+
 // maxTaskTimeout caps the rollout window a submission may ask for, in seconds.
 // Submission takes no credential, and the timeout decides how long the watcher
 // polls ArgoCD for that one request (issue #562). Nothing else bounds it: the
@@ -180,6 +186,7 @@ func (env *Env) addTask(w http.ResponseWriter, r *http.Request) {
 // @Param app query string false "App name"
 // @Param status query string false "Task status (e.g. 'in progress', 'failed', 'deployed', 'cancelled')"
 // @Param search query string false "Substring of app, author or image:tag"
+// @Param author query string false "Exact author, case-insensitive"
 // @Param from_timestamp query int true "From timestamp" default(1648390029)
 // @Param to_timestamp query int false "To timestamp"
 // @Param limit query int false "Maximum number of tasks to return (1-1000, defaults to 1000)"
@@ -215,6 +222,12 @@ func (env *Env) getState(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	author := strings.TrimSpace(query.Get("author"))
+	if utf8.RuneCountInString(author) > models.MaxTaskFieldLength {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "author too long"})
+		return
+	}
+
 	limit, err := strconv.Atoi(query.Get("limit"))
 	if err != nil && query.Get("limit") != "" {
 		slog.Debug("invalid limit, defaulting to 0", "limit", query.Get("limit"))
@@ -236,8 +249,46 @@ func (env *Env) getState(w http.ResponseWriter, r *http.Request) {
 		App:       app,
 		Status:    status,
 		Search:    search,
+		Author:    author,
 		Limit:     limit,
 		Offset:    offset,
+	}))
+}
+
+// getAppSummaries godoc
+// @Summary Per-application summary of a time window
+// @Description Aggregates the window by application: counts, median duration, recent outcomes.
+// @Tags frontend
+// @Param from_timestamp query int true "From timestamp" default(1648390029)
+// @Param to_timestamp query int false "To timestamp"
+// @Success 200 {object} models.AppSummariesResponse
+// @Failure 401 {object} models.TaskStatus "no credential, or it was rejected (OIDC only)"
+// @Failure 503 {object} models.TaskStatus "the OIDC provider could not be consulted; retry"
+// @Router /api/v1/apps/summary [get]
+func (env *Env) getAppSummaries(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+
+	startTime, err := strconv.ParseFloat(query.Get("from_timestamp"), 64)
+	if err != nil && query.Get("from_timestamp") != "" {
+		slog.Debug("invalid from_timestamp, defaulting to 0", "from_timestamp", query.Get("from_timestamp"))
+	}
+	endTime, err := strconv.ParseFloat(query.Get("to_timestamp"), 64)
+	if err != nil && query.Get("to_timestamp") != "" {
+		slog.Debug("invalid to_timestamp, defaulting to current time", "to_timestamp", query.Get("to_timestamp"))
+	}
+	if endTime == 0 {
+		endTime = float64(time.Now().Unix())
+	}
+
+	// An absent, unparseable or over-long look-back is clamped rather than
+	// rejected, so a caller always gets the widest window it may have.
+	if earliest := endTime - maxAppSummaryWindow; startTime < earliest {
+		startTime = earliest
+	}
+
+	writeJSON(w, http.StatusOK, env.argo.GetAppSummaries(models.TaskFilter{
+		StartTime: startTime,
+		EndTime:   endTime,
 	}))
 }
 

@@ -217,6 +217,42 @@ describe('dataProvider', () => {
     expect(params.has('search')).toBe(false);
   });
 
+  it('forwards a trimmed author filter to the backend', async () => {
+    const fetch = mockFetch().mockResolvedValue(jsonResponse({ tasks: [] }));
+    await dataProvider.getList('tasks', {
+      ...createListParams(),
+      filter: { author: '  jane@example.com  ' },
+    });
+
+    const params = getQueryParams(fetch.mock.calls[0][0] as string);
+    expect(params.get('author')).toBe('jane@example.com');
+  });
+
+  // The "Mine" scope must not cost the user their search term: the backend
+  // treats the two params independently and so must the provider.
+  it('sends author and search together', async () => {
+    const fetch = mockFetch().mockResolvedValue(jsonResponse({ tasks: [] }));
+    await dataProvider.getList('tasks', {
+      ...createListParams(),
+      filter: { author: 'jane@example.com', search: 'checkout' },
+    });
+
+    const params = getQueryParams(fetch.mock.calls[0][0] as string);
+    expect(params.get('author')).toBe('jane@example.com');
+    expect(params.get('search')).toBe('checkout');
+  });
+
+  it('omits the author param when the filter is blank', async () => {
+    const fetch = mockFetch().mockResolvedValue(jsonResponse({ tasks: [] }));
+    await dataProvider.getList('tasks', {
+      ...createListParams(),
+      filter: { author: '   ' },
+    });
+
+    const params = getQueryParams(fetch.mock.calls[0][0] as string);
+    expect(params.has('author')).toBe(false);
+  });
+
   it('falls back to default timeframe when filters are invalid', async () => {
     const fetch = mockFetch().mockResolvedValue(jsonResponse({ tasks: [] }));
     await dataProvider.getList('tasks', {

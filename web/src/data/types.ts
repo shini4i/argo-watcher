@@ -45,6 +45,8 @@ export interface TaskListFilter {
   status?: string;
   /** Free-text term matched by the backend against app, author and image:tag. */
   search?: string;
+  /** Exact author, matched case-insensitively. Independent of `search`. */
+  author?: string;
 }
 
 export interface TaskListResult {

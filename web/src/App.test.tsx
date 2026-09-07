@@ -14,6 +14,7 @@ const {
   MockRoute,
   RecentTasksListStub,
   HistoryTasksListStub,
+  OverviewPageStub,
   TaskShowStub,
   AppNotificationStub,
   dataProviderStub,
@@ -48,6 +49,7 @@ const {
 
   const RecentList = () => <div data-testid="recent-list" />;
   const HistoryList = () => <div data-testid="history-list" />;
+  const Overview = () => <div data-testid="overview" />;
   const TaskShow = () => <div data-testid="task-show" />;
   const AppNotification = () => <div data-testid="app-notification" />;
   const dataProvider = { id: 'data-provider-stub' };
@@ -63,6 +65,7 @@ const {
     MockRoute: Route,
     RecentTasksListStub: RecentList,
     HistoryTasksListStub: HistoryList,
+    OverviewPageStub: Overview,
     TaskShowStub: TaskShow,
     AppNotificationStub: AppNotification,
     dataProviderStub: dataProvider,
@@ -84,6 +87,7 @@ vi.mock('./data/dataProvider', () => ({ dataProvider: dataProviderStub }));
 vi.mock('./auth/authProvider', () => ({ authProvider: authProviderStub }));
 vi.mock('./features/tasks/RecentTasksList', () => ({ RecentTasksList: RecentTasksListStub }));
 vi.mock('./features/tasks/HistoryTasksList', () => ({ HistoryTasksList: HistoryTasksListStub }));
+vi.mock('./features/overview/OverviewPage', () => ({ OverviewPage: OverviewPageStub }));
 vi.mock('./features/tasks/show/TaskShow', () => ({ TaskShow: TaskShowStub }));
 vi.mock('./layout/components/AppNotification', () => ({ AppNotification: AppNotificationStub }));
 vi.mock('./theme', () => ({ useThemeMode: () => ({ theme: { paletteMode: 'dark' } }) }));
@@ -113,7 +117,10 @@ describe('App', () => {
     expect(resourceCalls[0].name).toBe('tasks');
     expect(resourceCalls[0].list).toBe(RecentTasksListStub);
 
-    expect(routeCalls.map(props => props.path)).toEqual(['/history', '/task/:id', '/app-tokens']);
+    expect(routeCalls.map(props => props.path)).toEqual(['/overview', '/history', '/task/:id', '/app-tokens']);
+
+    const overviewRoute = routeCalls.find(props => props.path === '/overview');
+    expect((overviewRoute?.element as ReactElement)?.type).toBe(OverviewPageStub);
 
     const historyRoute = routeCalls.find(props => props.path === '/history');
     expect((historyRoute?.element as ReactElement)?.type).toBe(HistoryTasksListStub);

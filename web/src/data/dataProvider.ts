@@ -74,6 +74,7 @@ const selectListWindow = (params: GetListParams) => {
     app: filter.app,
     status: filter.status && ALLOWED_TASK_STATUSES.has(filter.status) ? filter.status : undefined,
     search: filter.search?.trim() || undefined,
+    author: filter.author?.trim() || undefined,
   };
 };
 
@@ -101,6 +102,7 @@ const getList = async (params: GetListParams): Promise<GetListResult<Task>> => {
     app: timeframe.app,
     status: timeframe.status,
     search: timeframe.search,
+    author: timeframe.author,
     limit,
     offset,
   });

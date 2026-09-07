@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { IconButton, InputAdornment, TextField, useMediaQuery } from '@mui/material';
+import { useEffect, useRef, useState, type RefObject } from 'react';
+import { Box, IconButton, InputAdornment, TextField, useMediaQuery } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import SearchIcon from '@mui/icons-material/Search';
 import { tokens } from '../../../theme/tokens';
@@ -23,6 +23,8 @@ interface SearchInputProps {
   readonly onChange: (next: string) => void;
   readonly placeholder?: string;
   readonly debounceMs?: number;
+  /** Lets the page's "/" shortcut focus this field without reaching into the DOM. */
+  readonly focusRef?: RefObject<(() => void) | null>;
 }
 
 /**
@@ -37,6 +39,7 @@ export const SearchInput = ({
   onChange,
   placeholder = 'Search…',
   debounceMs = 350,
+  focusRef,
 }: SearchInputProps) => {
   const theme = useTheme();
   const isWide = useMediaQuery('(min-width: 1200px)');
@@ -79,6 +82,21 @@ export const SearchInput = ({
   }, [isWide, value, focused]);
 
   usePauseRefresh('search', pauseActive);
+
+  // Expanding first, then focusing on the next frame, covers the collapsed
+  // narrow-viewport state where the input is not mounted yet.
+  useEffect(() => {
+    if (!focusRef) {
+      return undefined;
+    }
+    focusRef.current = () => {
+      setExpanded(true);
+      requestAnimationFrame(() => inputRef.current?.focus());
+    };
+    return () => {
+      focusRef.current = null;
+    };
+  }, [focusRef]);
 
   if (!expanded) {
     return (
@@ -128,6 +146,26 @@ export const SearchInput = ({
               <SearchIcon fontSize="small" sx={{ color: theme.palette.text.secondary }} />
             </InputAdornment>
           ),
+          endAdornment:
+            focused || draft ? null : (
+              <InputAdornment position="end">
+                <Box
+                  aria-hidden
+                  component="kbd"
+                  sx={{
+                    fontFamily: tokens.fontMono,
+                    fontSize: 11,
+                    padding: '1px 5px',
+                    borderRadius: '4px',
+                    color: theme.palette.text.secondary,
+                    backgroundColor:
+                      theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
+                  }}
+                >
+                  /
+                </Box>
+              </InputAdornment>
+            ),
           sx: { height: 34, borderRadius: `${tokens.radiusMd}px`, fontSize: 13.5 },
         },
       }}

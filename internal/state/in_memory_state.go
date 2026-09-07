@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log/slog"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -62,6 +63,9 @@ func taskMatchesFilters(task models.Task, filter models.TaskFilter) bool {
 		return false
 	}
 	if filter.Status != "" && filter.Status != task.Status {
+		return false
+	}
+	if filter.Author != "" && !strings.EqualFold(filter.Author, task.Author) {
 		return false
 	}
 	return task.MatchesSearch(filter.Search)
@@ -220,4 +224,90 @@ func processInMemoryObsoleteTasks(tasks []models.Task) []models.Task {
 		updatedTasks = append(updatedTasks, task)
 	}
 	return updatedTasks
+}
+
+// median returns the middle value of an already-sorted slice, averaging the two
+// middle values for an even count. An empty slice yields 0.
+func median(sorted []float64) float64 {
+	if len(sorted) == 0 {
+		return 0
+	}
+	middle := len(sorted) / 2
+	if len(sorted)%2 == 1 {
+		return sorted[middle]
+	}
+	return (sorted[middle-1] + sorted[middle]) / 2
+}
+
+// GetAppSummaries groups the window per application. The error is always nil;
+// in-memory storage has no query failure.
+func (state *InMemoryState) GetAppSummaries(filter models.TaskFilter) ([]models.AppSummary, error) {
+	state.mu.RLock()
+	defer state.mu.RUnlock()
+
+	// Only the window applies, so an app/status/search value is ignored here.
+	window := models.TaskFilter{StartTime: filter.StartTime, EndTime: filter.EndTime}
+
+	grouped := make(map[string][]models.Task)
+	for _, task := range state.tasks {
+		if taskMatchesFilters(task, window) {
+			grouped[task.App] = append(grouped[task.App], task)
+		}
+	}
+
+	apps := make([]string, 0, len(grouped))
+	for app := range grouped {
+		apps = append(apps, app)
+	}
+	sort.Strings(apps)
+
+	summaries := make([]models.AppSummary, 0, len(apps))
+	for _, app := range apps {
+		tasks := grouped[app]
+		// Id breaks a same-second tie the same way the SQL does, so both backends
+		// report the same task as newest.
+		sort.SliceStable(tasks, func(i, j int) bool {
+			if tasks[i].Created != tasks[j].Created {
+				return tasks[i].Created > tasks[j].Created
+			}
+			return tasks[i].Id > tasks[j].Id
+		})
+
+		summary := models.AppSummary{
+			App:            app,
+			Total:          int64(len(tasks)),
+			RecentStatuses: []string{},
+		}
+
+		durations := make([]float64, 0, len(tasks))
+		for _, task := range tasks {
+			switch {
+			case models.IsFailedTaskStatus(task.Status):
+				summary.Failed++
+			case task.Status == models.StatusInProgressMessage:
+				summary.Running++
+			case task.Status == models.StatusDeployedMessage:
+				summary.Deployed++
+			}
+			if task.Status != models.StatusInProgressMessage && task.Updated >= task.Created {
+				durations = append(durations, task.Updated-task.Created)
+			}
+			if len(summary.RecentStatuses) < models.RecentOutcomeLimit {
+				summary.RecentStatuses = append(summary.RecentStatuses, task.Status)
+			}
+		}
+
+		sort.Float64s(durations)
+		summary.MedianDurationSeconds = median(durations)
+
+		newest := tasks[0]
+		summary.Project = newest.Project
+		summary.LastStatus = newest.Status
+		summary.LastStatusReason = newest.StatusReason
+		summary.LastCreated = newest.Created
+
+		summaries = append(summaries, summary)
+	}
+
+	return summaries, nil
 }

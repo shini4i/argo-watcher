@@ -114,6 +114,9 @@ func getWith(t *testing.T, env *Env, path, header, value string) *httptest.Respo
 
 var protectedReads = []string{
 	"/api/v1/tasks?from_timestamp=0",
+	// A census of every app name plus verbatim failure text, so it is gated
+	// exactly like the task list it summarises.
+	"/api/v1/apps/summary?from_timestamp=0",
 	"/api/v1/version",
 	"/api/v1/deploy-lock",
 	"/api/v1/reachability",

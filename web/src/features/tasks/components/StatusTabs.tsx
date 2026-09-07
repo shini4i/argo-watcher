@@ -1,9 +1,10 @@
 import { useMemo } from 'react';
-import { Stack, Typography } from '@mui/material';
+import { Typography } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { useGetList, useListContext } from 'react-admin';
 import type { Task } from '../../../data/types';
 import { tokens } from '../../../theme/tokens';
+import { PillTabs, type PillTabSpec } from './PillTabs';
 
 interface StatusTabsProps {
   /** Current filterValues mirrored from useListContext (so the parent owns reconciliation). */
@@ -117,80 +118,40 @@ export const StatusTabs = ({ value, onChange }: StatusTabsProps) => {
     failed: statusCounts.get('failed') ?? 0,
   };
 
-  return (
-    <Stack
-      direction="row"
-      role="tablist"
-      aria-label="Status filter"
-      spacing={0.5}
-      sx={{
-        height: 36,
-        padding: '3px',
-        borderRadius: `${tokens.radiusMd}px`,
-        border: `1px solid ${theme.palette.divider}`,
-        backgroundColor: theme.palette.mode === 'dark' ? tokens.surface2Dark : tokens.surface2,
-      }}
-    >
-      {TABS.map(tab => {
-        const isActive = (value ?? null) === (tab.id ?? null);
-        const count = counts[tab.id ?? 'all'] ?? 0;
-        // The "All" pill is the query's own total, which is exact regardless of
-        // perPage; only the status-grouped pills are counted from the fetched
-        // rows and thus subject to truncation, so only they get the "+".
-        const showTruncation = tab.id !== null && truncated;
-        const isDark = theme.palette.mode === 'dark';
-        const activeBg = isDark ? theme.palette.background.paper : tokens.surface;
-        const tabBg = isActive ? activeBg : 'transparent';
-        const activeCountBg = isDark ? tokens.accentSoftDark : tokens.accentSoft;
-        const idleCountBg = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)';
-        const countBg = isActive ? activeCountBg : idleCountBg;
-        return (
-          <button
-            type="button"
-            role="tab"
-            aria-selected={isActive}
-            key={tab.label}
-            onClick={() => onChange(tab.id)}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              border: 'none',
-              padding: '4px 12px',
-              borderRadius: tokens.radiusSm,
-              fontSize: 12.5,
-              fontFamily: tokens.fontSans,
-              fontWeight: isActive ? 600 : 500,
-              cursor: 'pointer',
-              backgroundColor: tabBg,
-              color: isActive ? theme.palette.text.primary : theme.palette.text.secondary,
-              boxShadow: isActive ? '0 1px 2px rgba(15, 23, 42, 0.08)' : 'none',
-              transition: 'background-color 150ms ease, color 150ms ease',
-            }}
-          >
-            {/* Whitespace-only text nodes generate no flex item, so this
-                separates label from count in the accessible name only. */}
-            {tab.label}{' '}
-            <Typography
-              component="span"
-              // The placeholder glyph is announced as "em dash" at best, so give
-              // screen readers the reason for the missing number instead.
-              aria-label={unavailable ? 'count unavailable' : undefined}
-              sx={{
-                fontFamily: tokens.fontMono,
-                fontSize: 11,
-                lineHeight: 1,
-                padding: '1px 6px',
-                borderRadius: tokens.radiusPill,
-                backgroundColor: countBg,
-                color: isActive ? tokens.accent : 'inherit',
-              }}
-            >
-              {unavailable ? COUNT_UNAVAILABLE : formatCount(count, showTruncation)}
-            </Typography>
-          </button>
-        );
-      })}
-    </Stack>
-  );
+  const isDark = theme.palette.mode === 'dark';
+  const pillTabs: PillTabSpec[] = TABS.map(tab => {
+    const isActive = (value ?? null) === (tab.id ?? null);
+    // The "All" pill is the query's own total, which is exact regardless of
+    // perPage; only the status-grouped pills are counted from the fetched rows
+    // and thus subject to truncation, so only they get the "+".
+    const showTruncation = tab.id !== null && truncated;
+    const activeCountBg = isDark ? tokens.accentSoftDark : tokens.accentSoft;
+    const idleCountBg = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)';
+
+    return {
+      id: tab.id,
+      label: tab.label,
+      badge: (
+        <Typography
+          component="span"
+          // The placeholder glyph is announced as "em dash" at best, so give
+          // screen readers the reason for the missing number instead.
+          aria-label={unavailable ? 'count unavailable' : undefined}
+          sx={{
+            fontFamily: tokens.fontMono,
+            fontSize: 11,
+            lineHeight: 1,
+            padding: '1px 6px',
+            borderRadius: tokens.radiusPill,
+            backgroundColor: isActive ? activeCountBg : idleCountBg,
+            color: isActive ? tokens.accent : 'inherit',
+          }}
+        >
+          {unavailable ? COUNT_UNAVAILABLE : formatCount(counts[tab.id ?? 'all'] ?? 0, showTruncation)}
+        </Typography>
+      ),
+    };
+  });
+
+  return <PillTabs tabs={pillTabs} value={value} onChange={onChange} ariaLabel="Status filter" />;
 };

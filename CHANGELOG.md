@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- New **Overview** screen at `/overview`, reachable from the dashboard icon in the top bar. It
+  shows per-application health for a 24 h / 7 d / 30 d window: headline counts, cards for the
+  applications that are failing or deploying, and a searchable list of everything else. Every card
+  and row links into the task list filtered to that application. Applications you pin stay at the
+  top whatever the window; pins live in your own browser, and **Copy view link** produces a
+  `?pinned=` URL that reproduces the set for someone else.
+- `GET /api/v1/apps/summary` returns per-application aggregates for a time window — deployment,
+  failure and in-flight counts, median duration, the newest task's status and reason, and the last
+  ten outcomes. The counts are computed by the database over the whole window, so they are exact
+  rather than a sample of one page. The endpoint requires a credential wherever `GET /api/v1/tasks`
+  does, and the look-back is capped at 90 days.
+- `GET /api/v1/tasks` accepts an `author` parameter matching the task author exactly and
+  case-insensitively. It is independent of `search`, so a caller can scope to one person and still
+  run a free-text query inside that scope.
+- A **Mine / Everyone** switch on Recent Tasks scopes the list to your own deployments, defaulting
+  to Mine once you are signed in. It is hidden in anonymous mode, which has no identity to scope by.
+- Keyboard shortcuts on Recent Tasks, listed beside the pagination controls: `/` focuses search,
+  `a` shows all tasks, `i` in-progress, `f` toggles failed, and `m` toggles the Mine scope.
+- A failed task now carries its reason inline in the list — the extracted headline plus **Copy** and
+  **Full reason** — so finding out why a deployment failed no longer needs a click.
+
+### Changed
+
+- Recent Tasks went from ten columns to six: Application, Status, Image · tag, Author, When and
+  Duration. The project moved under the application name, Created and Updated collapsed into a
+  single relative-plus-exact **When** column, and the rollback flag moved from the Status cell to a
+  labelled chip beside the application it describes. Column widths are now fixed, so a long
+  application or author name no longer stretches the table.
+- Clicking anywhere in a task row opens that task. The row expander and the **View** button are
+  gone, and the extra images in a row collapse to a `+n` counter instead of an inline expander.
+- The task detail screen leads with the failure: the application name is the title, the task id is a
+  copy chip beside it, a breadcrumb replaces the bare Back button so a deep link from CI has an
+  exit, the reason is the first block on the page with the raw Argo CD text one click away, and the
+  lifecycle reads left to right. It also links to the previous deployment of the same application.
+- The task detail page offers one re-deploy action, **Deploy this version again** (previously
+  **Rollback to this version**). The old **Retry deploy** wording is gone — it issued the same
+  request. **Open in Argo CD UI** is now **Argo CD**.
+
 ## [1.2.0] - 2026-09-07
 
 ### Changed

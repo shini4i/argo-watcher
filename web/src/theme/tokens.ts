@@ -85,6 +85,31 @@ export const tokens = {
 
   rowHoverLight: '#F9FAFC',
   rowHoverDark: 'rgba(91, 124, 250, 0.08)',
+
+  // failure-panel inks — darker than statusFailedFg so body text on
+  // statusFailedBg clears 4.5:1; do not lighten either one.
+  failureInk: '#7A1C17',
+  failureInkSecondary: '#8A4B46',
+  failureInkDark: '#FECACA',
+  failureInkSecondaryDark: '#F1A9A4',
+
+  // row tints marking a task that needs attention, paired with a 4px left edge
+  rowFailedBg: '#FFFBFA',
+  rowRunningBg: '#FCFDFF',
+  rowFailedBgDark: 'rgba(211, 47, 47, 0.08)',
+  rowRunningBgDark: 'rgba(237, 108, 2, 0.08)',
+
+  // failure-panel chrome: the border and the raw-reason <pre> backdrop
+  failurePanelBorder: 'rgba(211, 47, 47, 0.25)',
+  failurePanelBorderDark: 'rgba(239, 83, 80, 0.45)',
+  failurePanelCodeBg: 'rgba(122, 28, 23, 0.06)',
+  failurePanelCodeBgDark: 'rgba(0, 0, 0, 0.35)',
+
+  // pinned "My apps" block on the overview
+  pinnedBorder: 'rgba(91, 124, 250, 0.35)',
+  pinnedBg: '#FBFCFF',
+  pinnedBorderDark: 'rgba(91, 124, 250, 0.45)',
+  pinnedBgDark: 'rgba(91, 124, 250, 0.06)',
 } as const;
 
 export type DesignTokens = typeof tokens;

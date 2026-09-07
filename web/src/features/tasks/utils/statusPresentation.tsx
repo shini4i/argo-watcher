@@ -120,3 +120,17 @@ export const describeTaskStatus = (status?: string | null): TaskStatusPresentati
       };
   }
 };
+
+/** Statuses whose task never left the watcher successfully. */
+const FAILED_STATUSES: ReadonlySet<string> = new Set([
+  'failed',
+  'aborted',
+  'argocd is unavailable',
+  'cannot connect to database',
+  'failed to login to argocd',
+]);
+
+export const isFailedStatus = (status?: string | null): boolean =>
+  Boolean(status) && FAILED_STATUSES.has(status!);
+
+export const isRunningStatus = (status?: string | null): boolean => status === 'in progress';

@@ -12,10 +12,14 @@ import { RecentTasksToolbar } from './RecentTasksToolbar';
 // refetch semantics — what makes the status counts reload with the list — come
 // from ra-core/react-query and are out of reach at this level.
 const refreshMock = vi.fn();
+// useGetIdentity is stubbed for the same reason, and lets a test choose between
+// the signed-in and anonymous shape of the toolbar.
+const identityMock = vi.fn<() => { data?: { id: string; email?: string } }>();
 
 vi.mock('react-admin', async importOriginal => ({
   ...(await importOriginal<typeof import('react-admin')>()),
   useRefresh: () => refreshMock,
+  useGetIdentity: () => identityMock(),
 }));
 
 vi.mock('./ApplicationFilter', () => ({
@@ -129,6 +133,10 @@ describe('RecentTasksToolbar', () => {
     capturedLocation = undefined;
     localStorage.clear();
     refreshMock.mockReset();
+    // Anonymous by default, so the pre-existing filter tests see the toolbar
+    // without the scope control.
+    identityMock.mockReset();
+    identityMock.mockReturnValue({ data: undefined });
   });
 
   it('hydrates the application filter from URL on mount', async () => {
@@ -238,5 +246,185 @@ describe('RecentTasksToolbar', () => {
     await waitFor(() => {
       expect(setFilters).toHaveBeenCalledWith({}, {}, false);
     });
+  });
+});
+
+describe('RecentTasksToolbar scope', () => {
+  beforeEach(() => {
+    capturedLocation = undefined;
+    localStorage.clear();
+    refreshMock.mockReset();
+    identityMock.mockReset();
+    identityMock.mockReturnValue({ data: { id: 'u1', email: 'jane.doe@example.com' } });
+  });
+
+  it('defaults a signed-in user to their own deployments', async () => {
+    const { setFilters } = renderToolbar('/tasks');
+
+    await waitFor(() => {
+      expect(setFilters).toHaveBeenCalledWith(
+        expect.objectContaining({ author: 'jane.doe@example.com' }),
+        {},
+        false,
+      );
+    });
+  });
+
+  it('hides the scope control and stays global in anonymous mode', async () => {
+    identityMock.mockReturnValue({ data: undefined });
+    const { setFilters } = renderToolbar('/tasks');
+
+    expect(screen.queryByRole('tablist', { name: 'Deployment scope' })).toBeNull();
+    await waitFor(() => expect(setFilters).toHaveBeenCalled());
+    for (const call of setFilters.mock.calls) {
+      expect(call[0]).not.toHaveProperty('author');
+    }
+  });
+
+  it('drops the author filter when the user switches to Everyone', async () => {
+    const { setFilters } = renderToolbar('/tasks', { author: 'jane.doe@example.com' });
+
+    fireEvent.click(screen.getByRole('tab', { name: /Everyone/ }));
+
+    await waitFor(() => {
+      const last = setFilters.mock.calls.at(-1)![0] as Record<string, unknown>;
+      expect(last).not.toHaveProperty('author');
+    });
+  });
+
+  it('mirrors the scope into the URL so a view can be shared', async () => {
+    renderToolbar('/tasks');
+
+    fireEvent.click(screen.getByRole('tab', { name: /Everyone/ }));
+
+    await waitFor(() => {
+      expect(capturedLocation?.search).toContain('scope=everyone');
+    });
+  });
+
+  // The address is derived from whoever is signed in now, never persisted, so a
+  // restored "mine" cannot scope the list to a previous user.
+  it('stores the choice, never the address', async () => {
+    renderToolbar('/tasks');
+
+    fireEvent.click(screen.getByRole('tab', { name: /Everyone/ }));
+
+    await waitFor(() => expect(localStorage.getItem('recentTasks.scope')).toBe('everyone'));
+    expect(JSON.stringify(localStorage)).not.toContain('jane.doe@example.com');
+  });
+
+  it('shows the active scope as a removable chip', async () => {
+    const { setFilters } = renderToolbar('/tasks');
+
+    const chip = await screen.findByText(/jane\.doe@example\.com/);
+    expect(chip).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Remove filter author/i }));
+    await waitFor(() => {
+      const last = setFilters.mock.calls.at(-1)![0] as Record<string, unknown>;
+      expect(last).not.toHaveProperty('author');
+    });
+  });
+
+  it('scopes to the author without touching the search term', async () => {
+    const { setFilters } = renderToolbar('/tasks?search=checkout');
+
+    await waitFor(() => {
+      const merged = setFilters.mock.calls.map(call => call[0] as Record<string, unknown>);
+      expect(merged.some(f => f.search === 'checkout')).toBe(true);
+    });
+  });
+});
+
+describe('RecentTasksToolbar keyboard shortcuts', () => {
+  beforeEach(() => {
+    capturedLocation = undefined;
+    localStorage.clear();
+    refreshMock.mockReset();
+    identityMock.mockReset();
+    identityMock.mockReturnValue({ data: { id: 'u1', email: 'jane.doe@example.com' } });
+  });
+
+  it('selects the All tab with "a"', async () => {
+    const { setFilters } = renderToolbar('/tasks?status=failed');
+    setFilters.mockReset();
+
+    fireEvent.keyDown(document, { key: 'a' });
+
+    await waitFor(() => {
+      const last = setFilters.mock.calls.at(-1)![0] as Record<string, unknown>;
+      expect(last).not.toHaveProperty('status');
+    });
+  });
+
+  it('selects the In progress tab with "i"', async () => {
+    const { setFilters } = renderToolbar('/tasks');
+
+    fireEvent.keyDown(document, { key: 'i' });
+
+    await waitFor(() => {
+      const last = setFilters.mock.calls.at(-1)![0] as Record<string, unknown>;
+      expect(last.status).toBe('in progress');
+    });
+  });
+
+  // "a" and "i" select outright; only "f" toggles, so there is always one key
+  // that returns to the unfiltered list.
+  it('does not toggle "i" back off on a second press', async () => {
+    const { setFilters } = renderToolbar('/tasks?status=in+progress');
+
+    fireEvent.keyDown(document, { key: 'i' });
+
+    await waitFor(() => {
+      const last = setFilters.mock.calls.at(-1)![0] as Record<string, unknown>;
+      expect(last.status).toBe('in progress');
+    });
+  });
+
+  it('toggles the Failed tab with "f"', async () => {
+    const { setFilters } = renderToolbar('/tasks');
+
+    fireEvent.keyDown(document, { key: 'f' });
+    await waitFor(() => {
+      const last = setFilters.mock.calls.at(-1)![0] as Record<string, unknown>;
+      expect(last.status).toBe('failed');
+    });
+
+    fireEvent.keyDown(document, { key: 'f' });
+    await waitFor(() => {
+      const last = setFilters.mock.calls.at(-1)![0] as Record<string, unknown>;
+      expect(last).not.toHaveProperty('status');
+    });
+  });
+
+  it('toggles the scope with "m"', async () => {
+    renderToolbar('/tasks');
+
+    fireEvent.keyDown(document, { key: 'm' });
+    await waitFor(() => expect(capturedLocation?.search).toContain('scope=everyone'));
+
+    fireEvent.keyDown(document, { key: 'm' });
+    await waitFor(() => expect(capturedLocation?.search).toContain('scope=mine'));
+  });
+
+  it('leaves a key alone while an input is focused', async () => {
+    const { setFilters } = renderToolbar('/tasks');
+    const input = screen.getByTestId('search-input');
+    input.focus();
+
+    const callsBefore = setFilters.mock.calls.length;
+    fireEvent.keyDown(input, { key: 'f' });
+
+    expect(setFilters.mock.calls.length).toBe(callsBefore);
+  });
+
+  it('leaves a key alone when a modifier is held', async () => {
+    const { setFilters } = renderToolbar('/tasks');
+    await waitFor(() => expect(setFilters).toHaveBeenCalled());
+
+    const callsBefore = setFilters.mock.calls.length;
+    fireEvent.keyDown(document, { key: 'f', ctrlKey: true });
+
+    expect(setFilters.mock.calls.length).toBe(callsBefore);
   });
 });
