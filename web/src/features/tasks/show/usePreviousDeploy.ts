@@ -1,7 +1,9 @@
 import { useGetList } from 'react-admin';
 import type { Task } from '../../../data/types';
 
-/** Enough rows to look past this task itself without paging. */
+// The window ends at this task, so the first rows back are already the older
+// ones. Five is only headroom for a burst of same-second deploys sorting ahead
+// of the predecessor — the list orders by `created` alone.
 const LOOKBACK_ROWS = 5;
 
 // GetTasks counts before it pages, and `tasks` carries no index on `app`, so an
@@ -27,10 +29,11 @@ export const usePreviousDeploy = (
 ): Task | null => {
   const { data } = useGetList<Task>(
     'tasks',
-    // Reaches past the provider's 24h default, which a previous deploy usually predates.
+    // Reaches past the provider's 24h default, which a previous deploy usually
+    // predates, and stops at this task so newer deploys cannot fill the page.
     {
       pagination: { page: 1, perPage: LOOKBACK_ROWS },
-      filter: { app, from: (created ?? 0) - LOOKBACK_SECONDS },
+      filter: { app, from: (created ?? 0) - LOOKBACK_SECONDS, to: created ?? 0 },
     },
     { ...QUERY_OPTS, enabled: Boolean(app) && created !== null },
   );

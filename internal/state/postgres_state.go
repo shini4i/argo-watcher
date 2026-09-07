@@ -154,31 +154,41 @@ WHERE recency <= ?
 ORDER BY app, created DESC, id DESC`
 
 // GetAppSummaries aggregates the window per application in two queries: the
-// counters and median, then the newest rows per app for the outcome strip.
+// counters and median, then the newest rows per app for the outcome strip. Both
+// run in one REPEATABLE READ transaction, so a task inserted or swept between
+// them cannot leave an app counted here and unreported there.
 func (state *PostgresState) GetAppSummaries(filter models.TaskFilter) ([]models.AppSummary, error) {
 	startTimeUTC := time.Unix(int64(filter.StartTime), 0).UTC()
 	endTimeUTC := time.Unix(int64(filter.EndTime), 0).UTC()
 
 	var aggregates []appSummaryAggregate
-	if err := state.orm.Raw(
-		appSummaryAggregateSQL,
-		models.FailedTaskStatuses(),
-		models.StatusInProgressMessage,
-		models.StatusDeployedMessage,
-		models.StatusInProgressMessage,
-		startTimeUTC,
-		endTimeUTC,
-	).Scan(&aggregates).Error; err != nil {
-		slog.Error("Failed to aggregate app summaries", "error", err)
-		return nil, fmt.Errorf("failed to aggregate app summaries")
-	}
-
 	var recent []appSummaryRecent
-	if err := state.orm.Raw(
-		appSummaryRecentSQL, startTimeUTC, endTimeUTC, models.RecentOutcomeLimit,
-	).Scan(&recent).Error; err != nil {
-		slog.Error("Failed to query recent app outcomes", "error", err)
-		return nil, fmt.Errorf("failed to query recent app outcomes")
+
+	// Read-only, so the commit error gorm returns here carries no lost work.
+	err := state.orm.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Raw(
+			appSummaryAggregateSQL,
+			models.FailedTaskStatuses(),
+			models.StatusInProgressMessage,
+			models.StatusDeployedMessage,
+			models.StatusInProgressMessage,
+			startTimeUTC,
+			endTimeUTC,
+		).Scan(&aggregates).Error; err != nil {
+			return fmt.Errorf("failed to aggregate app summaries: %w", err)
+		}
+
+		if err := tx.Raw(
+			appSummaryRecentSQL, startTimeUTC, endTimeUTC, models.RecentOutcomeLimit,
+		).Scan(&recent).Error; err != nil {
+			return fmt.Errorf("failed to query recent app outcomes: %w", err)
+		}
+
+		return nil
+	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	if err != nil {
+		slog.Error("Failed to read app summaries", "error", err)
+		return nil, err
 	}
 
 	byApp := make(map[string][]appSummaryRecent, len(aggregates))

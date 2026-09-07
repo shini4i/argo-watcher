@@ -30,5 +30,5 @@ test('an anonymous deployment renders without a sign-in and hides privileged con
   await expect(page.getByRole('img', { name: 'Privileged access' })).toHaveCount(0);
 
   await page.keyboard.press('Escape');
-  await expect(page.getByRole('button', { name: 'Rollback to this version' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Deploy this version again' })).toHaveCount(0);
 });

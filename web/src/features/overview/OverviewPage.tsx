@@ -43,7 +43,10 @@ export const OverviewPage = () => {
 
   const kpis = useMemo(() => deriveKpis(apps), [apps]);
   const attention = useMemo(() => rankByAttention(apps.filter(needsAttention)), [apps]);
-  const appNames = useMemo(() => apps.map(summary => summary.app).sort(), [apps]);
+  const appNames = useMemo(
+    () => apps.map(summary => summary.app).sort((left, right) => left.localeCompare(right)),
+    [apps],
+  );
 
   const windowSelector = (
     <PillTabs

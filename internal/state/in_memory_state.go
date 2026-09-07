@@ -263,51 +263,63 @@ func (state *InMemoryState) GetAppSummaries(filter models.TaskFilter) ([]models.
 
 	summaries := make([]models.AppSummary, 0, len(apps))
 	for _, app := range apps {
-		tasks := grouped[app]
-		// Id breaks a same-second tie the same way the SQL does, so both backends
-		// report the same task as newest.
-		sort.SliceStable(tasks, func(i, j int) bool {
-			if tasks[i].Created != tasks[j].Created {
-				return tasks[i].Created > tasks[j].Created
-			}
-			return tasks[i].Id > tasks[j].Id
-		})
-
-		summary := models.AppSummary{
-			App:            app,
-			Total:          int64(len(tasks)),
-			RecentStatuses: []string{},
-		}
-
-		durations := make([]float64, 0, len(tasks))
-		for _, task := range tasks {
-			switch {
-			case models.IsFailedTaskStatus(task.Status):
-				summary.Failed++
-			case task.Status == models.StatusInProgressMessage:
-				summary.Running++
-			case task.Status == models.StatusDeployedMessage:
-				summary.Deployed++
-			}
-			if task.Status != models.StatusInProgressMessage && task.Updated >= task.Created {
-				durations = append(durations, task.Updated-task.Created)
-			}
-			if len(summary.RecentStatuses) < models.RecentOutcomeLimit {
-				summary.RecentStatuses = append(summary.RecentStatuses, task.Status)
-			}
-		}
-
-		sort.Float64s(durations)
-		summary.MedianDurationSeconds = median(durations)
-
-		newest := tasks[0]
-		summary.Project = newest.Project
-		summary.LastStatus = newest.Status
-		summary.LastStatusReason = newest.StatusReason
-		summary.LastCreated = newest.Created
-
-		summaries = append(summaries, summary)
+		summaries = append(summaries, summariseApp(app, grouped[app]))
 	}
 
 	return summaries, nil
+}
+
+// summariseApp reduces one application's in-window tasks to its overview row:
+// the status counters, the median settled duration, the newest outcomes, and the
+// newest task's own details. It requires at least one task.
+func summariseApp(app string, tasks []models.Task) models.AppSummary {
+	// Id breaks a same-second tie the same way the SQL does, so both backends
+	// report the same task as newest.
+	sort.SliceStable(tasks, func(i, j int) bool {
+		if tasks[i].Created != tasks[j].Created {
+			return tasks[i].Created > tasks[j].Created
+		}
+		return tasks[i].Id > tasks[j].Id
+	})
+
+	summary := models.AppSummary{
+		App:            app,
+		Total:          int64(len(tasks)),
+		RecentStatuses: []string{},
+	}
+
+	durations := make([]float64, 0, len(tasks))
+	for _, task := range tasks {
+		countTaskStatus(&summary, task.Status)
+		if task.Status != models.StatusInProgressMessage && task.Updated >= task.Created {
+			durations = append(durations, task.Updated-task.Created)
+		}
+		if len(summary.RecentStatuses) < models.RecentOutcomeLimit {
+			summary.RecentStatuses = append(summary.RecentStatuses, task.Status)
+		}
+	}
+
+	sort.Float64s(durations)
+	summary.MedianDurationSeconds = median(durations)
+
+	newest := tasks[0]
+	summary.Project = newest.Project
+	summary.LastStatus = newest.Status
+	summary.LastStatusReason = newest.StatusReason
+	summary.LastCreated = newest.Created
+
+	return summary
+}
+
+// countTaskStatus advances the counter the status belongs to. A status in none
+// of the three buckets (accepted, say) counts only towards Total.
+func countTaskStatus(summary *models.AppSummary, status string) {
+	switch {
+	case models.IsFailedTaskStatus(status):
+		summary.Failed++
+	case status == models.StatusInProgressMessage:
+		summary.Running++
+	case status == models.StatusDeployedMessage:
+		summary.Deployed++
+	}
 }

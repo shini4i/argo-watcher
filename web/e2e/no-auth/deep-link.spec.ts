@@ -23,7 +23,6 @@ test.describe('task detail deep link', () => {
     await page.goto(`/task/${id}`);
 
     await expect(page.getByRole('button', { name: /copy task id/i })).toHaveText(id);
-    // Exact: "Rollback to this version" also contains "Back".
     await expect(page.getByRole('button', { name: 'Back', exact: true })).toBeVisible();
   });
 

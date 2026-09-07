@@ -128,8 +128,24 @@ func TestGetAppSummariesReportsABackendFailure(t *testing.T) {
 	// A soft error in the body, matching how /api/v1/tasks reports one, so the
 	// UI can show its retry state instead of a spinner that never resolves.
 	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Equal(t, "failed to aggregate app summaries", body.Error)
+	assert.Equal(t, "failed to read app summaries", body.Error)
 	assert.Empty(t, body.Apps)
+}
+
+// The state layer wraps the driver error so the cause reaches the log, and this
+// body is served to every reader of the overview — including, with OIDC off, an
+// unauthenticated one. The schema it names must not travel with it.
+func TestGetAppSummariesDoesNotLeakTheDatabaseError(t *testing.T) {
+	router, _ := summaryEnv(t, func(models.TaskFilter) ([]models.AppSummary, error) {
+		return nil, fmt.Errorf("failed to aggregate app summaries: %w",
+			errors.New(`ERROR: relation "tasks" does not exist (SQLSTATE 42P01)`))
+	})
+
+	_, body := getSummary(t, router, "?from_timestamp=0")
+
+	assert.Equal(t, "failed to read app summaries", body.Error)
+	assert.NotContains(t, body.Error, "SQLSTATE")
+	assert.NotContains(t, body.Error, "relation")
 }
 
 func TestGetAppSummariesTolerantOfAGarbageTimestamp(t *testing.T) {

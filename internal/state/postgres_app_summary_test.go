@@ -1,6 +1,7 @@
 package state
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -177,4 +178,20 @@ func TestPostgresState_GetAppSummaries_BreaksASameSecondTieById(t *testing.T) {
 
 	assert.Equal(t, models.StatusFailedMessage, summaries[0].LastStatus)
 	assert.Equal(t, []string{models.StatusFailedMessage, models.StatusDeployedMessage}, summaries[0].RecentStatuses)
+}
+
+// The state layer logs what the database said, so the driver's error has to
+// survive as a cause rather than be replaced by a summary. GetAppSummaries is
+// the caller that wraps it; internal/server sanitizes it before it is served.
+func TestPostgresState_GetAppSummaries_WrapsTheDatabaseError(t *testing.T) {
+	state := newSchemalessState(t)
+
+	_, err := state.GetAppSummaries(models.TaskFilter{
+		StartTime: 0,
+		EndTime:   float64(time.Now().Unix()),
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to aggregate app summaries", "the step must stay named")
+	assert.Contains(t, err.Error(), `relation "tasks" does not exist`, "the cause must survive")
+	assert.NotNil(t, errors.Unwrap(err), "the database error must remain a cause, not a summary")
 }

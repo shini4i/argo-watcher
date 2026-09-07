@@ -23,7 +23,6 @@ import type { TaskStatus } from '../../../data/types';
 import { formatDuration } from '../../../shared/utils/time';
 import { describeTaskStatus, isFailedStatus } from '../utils/statusPresentation';
 import { summariseFailure } from '../utils/failureReason';
-import { TaskBreadcrumb } from './components/TaskBreadcrumb';
 import { TaskHeader } from './components/TaskHeader';
 import { FailureReasonPanel } from './components/FailureReasonPanel';
 import { TaskLifecycle } from './components/TaskLifecycle';
@@ -142,6 +141,16 @@ const computeDurationSeconds = (
   return Math.max(0, effectiveUpdated - created);
 };
 
+/** Phrases the elapsed span as the outcome it belongs to, e.g. "failed after 4m". */
+const describeElapsed = (
+  status: string | null,
+  terminalLabel: string,
+  durationSeconds: number,
+): string => {
+  const verb = status === 'in progress' ? 'running for' : `${terminalLabel.toLowerCase()} after`;
+  return `${verb} ${formatDuration(durationSeconds)}`;
+};
+
 
 /** Routed at `/task/:id`. */
 export const TaskShow = () => {
@@ -225,7 +234,7 @@ export const TaskShow = () => {
     createdTimestamp === null ? null : `started ${formatDate(createdTimestamp, CLOCK_FORMAT)}`,
     durationSeconds === null
       ? null
-      : `${status === 'in progress' ? 'running for' : `${descriptor.displayLabel.toLowerCase()} after`} ${formatDuration(durationSeconds)}`,
+      : describeElapsed(status, descriptor.displayLabel, durationSeconds),
   ]
     .filter(Boolean)
     .join(' · ');
@@ -394,8 +403,6 @@ export const TaskShow = () => {
   return (
     <Stack spacing={2.5} sx={{ mt: { xs: 1.5, sm: 2 }, px: { xs: 1, md: 0 } }}>
       <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-        <TaskBreadcrumb app={data.app} taskId={data.id ?? id} />
-        <Box sx={{ flexGrow: 1 }} />
         <Button onClick={handleBack} startIcon={<ArrowBackIcon />} variant="text" size="small">
           Back
         </Button>

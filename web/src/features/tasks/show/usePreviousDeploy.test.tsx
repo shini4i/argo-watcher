@@ -32,6 +32,13 @@ describe('usePreviousDeploy', () => {
     expect(params.filter.from).toBe(1000 - 90 * 24 * 60 * 60);
   });
 
+  it('asks only for tasks up to this one, so newer deploys cannot fill the page', () => {
+    renderHook(() => usePreviousDeploy('demo', 'current', 1000));
+
+    const [, params] = useGetList.mock.calls[0] as [string, { filter: Record<string, number> }];
+    expect(params.filter.to).toBe(1000);
+  });
+
   it('skips the query when there is no app to scope it to', () => {
     renderHook(() => usePreviousDeploy(undefined, 'current', 1000));
 
@@ -60,6 +67,17 @@ describe('usePreviousDeploy', () => {
 
     const { result } = renderHook(() => usePreviousDeploy('demo', 'current', 2000));
     expect(result.current).toBeNull();
+  });
+
+  // The upper bound is inclusive, so a burst of same-second deploys is the only
+  // thing that can crowd the page; the predecessor still has to be found past it.
+  it('looks past same-second siblings of the task being viewed', () => {
+    useGetList.mockReturnValue({
+      data: [task('sibling-a', 2000), task('current', 2000), task('sibling-b', 2000), task('older', 1500)],
+    });
+
+    const { result } = renderHook(() => usePreviousDeploy('demo', 'current', 2000));
+    expect(result.current?.id).toBe('older');
   });
 
   it('returns null before the current task has a timestamp', () => {

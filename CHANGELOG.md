@@ -40,9 +40,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Clicking anywhere in a task row opens that task. The row expander and the **View** button are
   gone, and the extra images in a row collapse to a `+n` counter instead of an inline expander.
 - The task detail screen leads with the failure: the application name is the title, the task id is a
-  copy chip beside it, a breadcrumb replaces the bare Back button so a deep link from CI has an
-  exit, the reason is the first block on the page with the raw Argo CD text one click away, and the
-  lifecycle reads left to right. It also links to the previous deployment of the same application.
+  copy chip beside it, the reason is the first block on the page with the raw Argo CD text one click
+  away, and the lifecycle reads left to right. It also links to the previous deployment of the same
+  application. **Back** now returns to the task list when the page was opened from a deep link,
+  instead of leaving the app.
 - The task detail page offers one re-deploy action, **Deploy this version again** (previously
   **Rollback to this version**). The old **Retry deploy** wording is gone — it issued the same
   request. **Open in Argo CD UI** is now **Argo CD**.

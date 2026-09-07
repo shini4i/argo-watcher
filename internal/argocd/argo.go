@@ -291,12 +291,22 @@ func (argo *Argo) GetTasks(filter models.TaskFilter) models.TasksResponse {
 	}
 }
 
+// appSummariesFailedMessage is the client-facing text for a failed aggregate.
+// The real cause stays in the server log, as internalErrorMessage does for the
+// handlers.
+const appSummariesFailedMessage = "failed to read app summaries"
+
 // GetAppSummaries aggregates the filter's window per application. Like
 // GetTasks, it is not gated on ArgoCD reachability: it reads stored history.
 func (argo *Argo) GetAppSummaries(filter models.TaskFilter) models.AppSummariesResponse {
 	summaries, err := argo.State.GetAppSummaries(filter)
 	if err != nil {
-		return models.AppSummariesResponse{Apps: []models.AppSummary{}, Error: err.Error()}
+		// The state layer logs the cause, which names the database and its
+		// schema; this body is served to any reader of the overview.
+		return models.AppSummariesResponse{
+			Apps:  []models.AppSummary{},
+			Error: appSummariesFailedMessage,
+		}
 	}
 
 	return models.AppSummariesResponse{

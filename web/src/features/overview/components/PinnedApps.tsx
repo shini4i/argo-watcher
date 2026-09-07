@@ -51,10 +51,8 @@ const Tile = ({
   const isDark = theme.palette.mode === 'dark';
   const state: AppState = summary ? deriveAppState(summary) : 'idle';
   const descriptor = describeTaskStatus(summary?.last_status);
-  const stateColor =
-    state === 'idle'
-      ? theme.palette.text.disabled
-      : (isDark ? descriptor.pillFgDark : descriptor.pillFg);
+  const statusColor = isDark ? descriptor.pillFgDark : descriptor.pillFg;
+  const stateColor = state === 'idle' ? theme.palette.text.disabled : statusColor;
 
   return (
     <Box

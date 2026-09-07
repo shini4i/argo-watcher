@@ -22,6 +22,25 @@ const Dot = ({ color }: { color: string }) => (
 );
 
 /**
+ * @description Labels the timeline's terminal stop: the clock time, plus how
+ * long ago it was when the task carries a terminal timestamp.
+ * @param time the formatted clock time, absent while the task runs
+ * @param timestamp the same instant in seconds, for the relative suffix
+ * @param isRunning whether the task is still in progress
+ */
+const describeTerminalStop = (
+  time: string | undefined,
+  timestamp: number | null | undefined,
+  isRunning: boolean,
+): string => {
+  if (isRunning || !time) {
+    return 'in progress';
+  }
+
+  return timestamp ? `${time} · ${formatRelativeTime(timestamp)}` : time;
+};
+
+/**
  * @description Horizontal two-stop timeline: task creation, the span the
  * watcher spent polling Argo CD, and the terminal state. Same two timestamps
  * the vertical timeline showed — there are no intermediate events to draw.
@@ -89,9 +108,7 @@ export const TaskLifecycle = ({
             {terminalLabel}
           </Typography>
           <Typography sx={{ fontFamily: tokens.fontMono, fontSize: 11, color: 'text.secondary' }}>
-            {isRunning || !terminalTime
-              ? 'in progress'
-              : `${terminalTime}${terminalTimestamp ? ` · ${formatRelativeTime(terminalTimestamp)}` : ''}`}
+            {describeTerminalStop(terminalTime, terminalTimestamp, isRunning)}
           </Typography>
         </Box>
       </Stack>

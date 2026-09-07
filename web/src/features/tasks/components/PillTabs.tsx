@@ -47,6 +47,7 @@ export const PillTabs = ({ tabs, value, onChange, ariaLabel, height = 36 }: Pill
     >
       {tabs.map(tab => {
         const isActive = (value ?? null) === (tab.id ?? null);
+        const activeBg = isDark ? theme.palette.background.paper : tokens.surface;
         return (
           <button
             type="button"
@@ -66,9 +67,7 @@ export const PillTabs = ({ tabs, value, onChange, ariaLabel, height = 36 }: Pill
               fontWeight: isActive ? 600 : 500,
               cursor: 'pointer',
               whiteSpace: 'nowrap',
-              backgroundColor: isActive
-                ? (isDark ? theme.palette.background.paper : tokens.surface)
-                : 'transparent',
+              backgroundColor: isActive ? activeBg : 'transparent',
               color: isActive ? theme.palette.text.primary : theme.palette.text.secondary,
               boxShadow: isActive ? '0 1px 2px rgba(15, 23, 42, 0.08)' : 'none',
               transition: 'background-color 150ms ease, color 150ms ease',

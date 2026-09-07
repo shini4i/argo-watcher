@@ -415,7 +415,7 @@ describe('RecentTasksToolbar keyboard shortcuts', () => {
     const callsBefore = setFilters.mock.calls.length;
     fireEvent.keyDown(input, { key: 'f' });
 
-    expect(setFilters.mock.calls.length).toBe(callsBefore);
+    expect(setFilters.mock.calls).toHaveLength(callsBefore);
   });
 
   it('leaves a key alone when a modifier is held', async () => {
@@ -425,6 +425,6 @@ describe('RecentTasksToolbar keyboard shortcuts', () => {
     const callsBefore = setFilters.mock.calls.length;
     fireEvent.keyDown(document, { key: 'f', ctrlKey: true });
 
-    expect(setFilters.mock.calls.length).toBe(callsBefore);
+    expect(setFilters.mock.calls).toHaveLength(callsBefore);
   });
 });

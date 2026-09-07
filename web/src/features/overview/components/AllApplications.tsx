@@ -20,10 +20,8 @@ const Row = ({ summary }: { summary: AppSummary }) => {
   const isDark = theme.palette.mode === 'dark';
   const descriptor = describeTaskStatus(summary.last_status);
   const state = deriveAppState(summary);
-  const dotColor =
-    state === 'idle'
-      ? theme.palette.text.disabled
-      : (isDark ? descriptor.pillFgDark : descriptor.pillFg);
+  const statusColor = isDark ? descriptor.pillFgDark : descriptor.pillFg;
+  const dotColor = state === 'idle' ? theme.palette.text.disabled : statusColor;
 
   return (
     <Stack

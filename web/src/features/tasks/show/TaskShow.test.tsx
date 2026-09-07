@@ -191,7 +191,9 @@ describe('TaskShow', () => {
     expect(screen.queryByText('STATUS REASON')).not.toBeInTheDocument();
   });
 
-  it('links back to the list and to the app slice of it', async () => {
+  // Back and Refresh lead the page. Back is the only exit, including from a CI
+  // deep link, where it falls back to the list rather than leaving the app.
+  it('leads with Back and Refresh', async () => {
     mockUseGetOne.mockReturnValue({
       data: buildTask(),
       isLoading: false,
@@ -201,9 +203,9 @@ describe('TaskShow', () => {
 
     await renderWithRouter('/task/task-1');
 
-    const crumbs = screen.getByRole('navigation', { name: 'Breadcrumb' });
-    expect(crumbs).toHaveTextContent('Recent');
-    expect(screen.getByRole('link', { name: 'demo-app' })).toHaveAttribute('href', '/?app=demo-app');
+    expect(screen.getByRole('button', { name: 'Back' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'Breadcrumb' })).not.toBeInTheDocument();
   });
 
   it('links the previous deploy for the same app when there is one', async () => {

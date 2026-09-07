@@ -5,13 +5,14 @@ import { Link as RouterLink } from 'react-router-dom';
 import { tokens } from '../../../theme/tokens';
 import { useCopyToClipboard } from '../../../shared/hooks/useCopyToClipboard';
 import type { FailureSummary } from '../utils/failureReason';
+import { failureTonePalette, type FailureTone } from '../utils/failureTone';
 
 interface TaskFailureRowProps {
   readonly taskId: string;
   readonly summary: FailureSummary;
   readonly colSpan: number;
   /** `neutral` covers a reason that reports an outcome rather than a failure. */
-  readonly tone?: 'error' | 'neutral';
+  readonly tone?: FailureTone;
 }
 
 /**
@@ -21,21 +22,9 @@ interface TaskFailureRowProps {
  */
 export const TaskFailureRow = ({ taskId, summary, colSpan, tone = 'error' }: TaskFailureRowProps) => {
   const theme = useTheme();
-  const isDark = theme.palette.mode === 'dark';
   const copy = useCopyToClipboard();
   const isError = tone === 'error';
-  const accentFg = isError
-    ? (isDark ? tokens.statusFailedFgDark : tokens.statusFailedFg)
-    : (isDark ? tokens.statusInfoFgDark : tokens.statusInfoFg);
-  const panelBg = isError
-    ? (isDark ? tokens.statusFailedBgDark : tokens.statusFailedBg)
-    : (isDark ? tokens.statusInfoBgDark : tokens.statusInfoBg);
-  const headlineInk = isError
-    ? (isDark ? tokens.failureInkDark : tokens.failureInk)
-    : (isDark ? tokens.textPrimaryDark : tokens.textPrimary);
-  const detailInk = isError
-    ? (isDark ? tokens.failureInkSecondaryDark : tokens.failureInkSecondary)
-    : (isDark ? tokens.textSecondaryDark : tokens.textSecondary);
+  const palette = failureTonePalette(tone, theme.palette.mode === 'dark');
 
   return (
     <TableRow>
@@ -47,11 +36,9 @@ export const TaskFailureRow = ({ taskId, summary, colSpan, tone = 'error' }: Tas
           // owner row's, which only an attention-worthy status colours.
           borderTop: 'none',
           borderBottom: 'none',
-          borderLeft: `4px solid ${isError ? accentFg : 'transparent'}`,
+          borderLeft: `4px solid ${isError ? palette.accent : 'transparent'}`,
           padding: '0 12px 10px',
-          backgroundColor: isError
-            ? (isDark ? tokens.rowFailedBgDark : tokens.rowFailedBg)
-            : 'transparent',
+          backgroundColor: palette.rowBg,
         }}
       >
         <Stack
@@ -59,18 +46,18 @@ export const TaskFailureRow = ({ taskId, summary, colSpan, tone = 'error' }: Tas
           spacing={1.5}
           sx={{
             alignItems: 'center',
-            backgroundColor: panelBg,
+            backgroundColor: palette.panelBg,
             borderRadius: `${tokens.radiusMd}px`,
             padding: '8px 12px',
           }}
         >
-          <ErrorOutlineIcon aria-hidden sx={{ fontSize: 16, color: accentFg, flexShrink: 0 }} />
+          <ErrorOutlineIcon aria-hidden sx={{ fontSize: 16, color: palette.accent, flexShrink: 0 }} />
           <Box sx={{ minWidth: 0, flexGrow: 1 }}>
             <Typography
               sx={{
                 fontSize: 12.5,
                 fontWeight: 600,
-                color: headlineInk,
+                color: palette.ink,
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
@@ -83,7 +70,7 @@ export const TaskFailureRow = ({ taskId, summary, colSpan, tone = 'error' }: Tas
                 sx={{
                   fontFamily: tokens.fontMono,
                   fontSize: 11,
-                  color: detailInk,
+                  color: palette.detailInk,
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
@@ -102,8 +89,8 @@ export const TaskFailureRow = ({ taskId, summary, colSpan, tone = 'error' }: Tas
                 void copy(summary.raw, 'Reason');
               }}
               sx={{
-                color: accentFg,
-                borderColor: accentFg,
+                color: palette.accent,
+                borderColor: palette.accent,
                 minWidth: 0,
                 // MUI shouts button labels by default; the panel is dense and
                 // sits inside a table row, where uppercase reads as an alarm.
@@ -121,7 +108,7 @@ export const TaskFailureRow = ({ taskId, summary, colSpan, tone = 'error' }: Tas
               variant="contained"
               onClick={event => event.stopPropagation()}
               sx={{
-                backgroundColor: accentFg,
+                backgroundColor: palette.accent,
                 minWidth: 0,
                 whiteSpace: 'nowrap',
                 textTransform: 'none',
