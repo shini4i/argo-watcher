@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-07
+
+### Changed
+
+- A `WEBHOOK_FORMAT` that quotes a value itself must stop doing so. Values reaching a JSON
+  body are now escaped before the template renders them, so a format such as
+  `{"text": {{printf "%q" .StatusReason}}}` escapes an already-escaped value and the receiver
+  shows a literal `\n` where a line break belongs. Drop the `printf` and put the value inside
+  quotes instead: `{"text": "{{.StatusReason}}"}`. A format written the way the guide
+  documents needs no change.
+- `LOCKDOWN_SCHEDULE` times are now required to be `HH:MM`, the documented format. A time
+  carrying seconds (`Sat 22:00:00`) previously parsed with the seconds ignored and is now
+  refused at startup.
+
 ### Fixed
 
 - Webhook notifications no longer break when a value contains a quote or a newline. The body
@@ -17,18 +31,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   went missing. Values are now escaped before the template renders them, which also stops an
   `author` submitted through the open task endpoint from adding keys of its own to the body.
   A `WEBHOOK_CONTENT_TYPE` that is not JSON is left alone and keeps receiving literal text.
-
-### Changed
-
-- A `WEBHOOK_FORMAT` that quotes a value itself must stop doing so. Values reaching a JSON
-  body are now escaped before the template renders them, so a format such as
-  `{"text": {{printf "%q" .StatusReason}}}` escapes an already-escaped value and the receiver
-  shows a literal `\n` where a line break belongs. Drop the `printf` and put the value inside
-  quotes instead: `{"text": "{{.StatusReason}}"}`. A format written the way the guide
-  documents needs no change.
-
-### Fixed
-
 - A git write-back that succeeded is no longer reported as a failure when the database
   hiccups. The advisory lock that serializes write-backs is held in a Postgres transaction
   for the whole clone-commit-push, and the driver returns that transaction's `COMMIT` error
@@ -53,19 +55,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A `LOCKDOWN_SCHEDULE` time with no colon no longer panics the server on startup.
   `Fri 1320 - Mon 06:30` crashed with a stack trace where every other malformed schedule
   reports the mistake.
-
 - A long author address no longer stretches the task table sideways. The Author cell
   already refused to wrap, but nothing capped its width, so an address with no break
   opportunity — a GitLab bot such as `project_1758_bot_<hash>@noreply.example.net` —
   set the column's minimum content width and pushed the Images and Details columns out
   of view. The address is now capped at a fixed width and ellipsised, with the full
   address available in its tooltip and on the task detail page.
-
-### Changed
-
-- `LOCKDOWN_SCHEDULE` times are now required to be `HH:MM`, the documented format. A time
-  carrying seconds (`Sat 22:00:00`) previously parsed with the seconds ignored and is now
-  refused at startup.
 
 ### Security
 
@@ -1209,7 +1204,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bumped the Go toolchain to `1.25.11`, resolving a `net/textproto` standard
   library vulnerability present in `go1.25.9`.
 
-[Unreleased]: https://github.com/shini4i/argo-watcher/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/shini4i/argo-watcher/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/shini4i/argo-watcher/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/shini4i/argo-watcher/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/shini4i/argo-watcher/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/shini4i/argo-watcher/compare/v0.15.0...v1.0.0
