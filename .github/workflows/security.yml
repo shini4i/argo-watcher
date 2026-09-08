@@ -47,7 +47,7 @@ jobs:
       - name: Run Gosec Security Scanner
         id: gosec
         continue-on-error: true
-        uses: securego/gosec@9e75c0576c9878035d4221392108d458abe10fc3 # v2.28.0
+        uses: securego/gosec@deb54465fea23d19a77f037e11e6589021f8501d # v2.29.0
         env:
           # The gosec image bundles an older Go with GOTOOLCHAIN=local, so it
           # refuses a go.mod whose toolchain directive names a newer patch. Allow
@@ -151,7 +151,7 @@ jobs:
           persist-credentials: false
 
       - name: Scan for secrets
-        uses: trufflesecurity/trufflehog@bcfcf73aaf4759d4dadc2783177c245a02792318 # v3.97.0
+        uses: trufflesecurity/trufflehog@363923b901c911a9164f50b6c423f47c15372b1c # v3.97.4
         with:
           # .trufflehog-exclude skips files holding intentional non-secrets
           # (local dev credentials, SSH key fixtures). Keep it in sync with the

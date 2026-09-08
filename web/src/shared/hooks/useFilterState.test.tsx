@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { act, renderHook } from '@testing-library/react';
 import type { Location } from 'react-router-dom';
 import { MemoryRouter, useLocation } from 'react-router-dom';
@@ -43,7 +44,10 @@ interface HarnessOptions {
 let lastLocation: Location | undefined;
 
 const LocationProbe = () => {
-  lastLocation = useLocation();
+  const location = useLocation();
+  useEffect(() => {
+    lastLocation = location;
+  }, [location]);
   return null;
 };
 

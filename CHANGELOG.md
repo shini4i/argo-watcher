@@ -47,6 +47,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The task detail page offers one re-deploy action, **Deploy this version again** (previously
   **Rollback to this version**). The old **Retry deploy** wording is gone — it issued the same
   request. **Open in Argo CD UI** is now **Argo CD**.
+- Update backend and frontend dependencies to their latest releases. Building from source now
+  requires Go 1.27, and the bundled web UI moves to Material UI 9.4, react-admin 5.15.3 and React
+  19.2.8. `react-router` deliberately stays on 7 — react-admin still peer-requires
+  `^6.28.1 || ^7.1.1`, so v8 is out of range.
+
+### Fixed
+
+- The local dev stack (`task bootstrap` / `docker compose up`) no longer fails to start. Its
+  `backend` and `mock` services pinned `golang:1.26.4`, below the Go version `go.mod` requires,
+  and the official Go image refuses to fetch a newer toolchain — so both exited immediately with
+  `go.mod requires go >= 1.26.7`.
 
 ## [1.2.0] - 2026-09-07
 

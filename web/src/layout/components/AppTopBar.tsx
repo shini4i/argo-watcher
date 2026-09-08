@@ -90,7 +90,10 @@ export const AppTopBar = (props: AppBarProps) => {
     }
   }, [notify]);
 
+  // The rule does not model the await boundary: `fetchVersion` writes state
+  // only after the request settles.
   useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect
     fetchVersion();
   }, [fetchVersion]);
 

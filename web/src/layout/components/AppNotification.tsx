@@ -64,6 +64,9 @@ export const AppNotification = (props: NotificationProps) => {
     if (notifications.length && !currentNotification) {
       const notification = takeNotification();
       if (notification) {
+        // Draining react-admin's notification queue is external-store
+        // synchronization, which is what the rule's own guidance allows.
+        // oxlint-disable-next-line react/set-state-in-effect
         setCurrentNotification(notification);
         setOpen(true);
       }

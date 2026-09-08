@@ -45,13 +45,18 @@ export const SearchInput = ({
   const isWide = useMediaQuery('(min-width: 1200px)');
   const [draft, setDraft] = useState(value);
   const [focused, setFocused] = useState(false);
-  const [pauseActive, setPauseActive] = useState(false);
+  const [graceActive, setGraceActive] = useState(false);
   const [expanded, setExpanded] = useState(() => isWide || Boolean(value));
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  useEffect(() => {
+  // A committed query arriving from outside replaces the draft. Adjusting
+  // during render is React's documented alternative to a sync-from-prop
+  // effect: the re-render happens before anything is committed.
+  const [lastValue, setLastValue] = useState(value);
+  if (lastValue !== value) {
+    setLastValue(value);
     setDraft(value);
-  }, [value]);
+  }
 
   useEffect(() => {
     if (draft === value) {
@@ -61,27 +66,29 @@ export const SearchInput = ({
     return () => globalThis.clearTimeout(handle);
   }, [draft, debounceMs, onChange, value]);
 
-  // The release is delayed by a grace period so the trailing debounced
-  // onChange does not race a fresh refetch.
+  // Blur starts the grace period, so the release trails the last debounced
+  // onChange rather than racing a fresh refetch.
   useEffect(() => {
-    if (focused) {
-      setPauseActive(true);
+    if (focused || !graceActive) {
       return undefined;
     }
-    const handle = globalThis.setTimeout(() => setPauseActive(false), debounceMs + 100);
+    const handle = globalThis.setTimeout(() => setGraceActive(false), debounceMs + 100);
     return () => globalThis.clearTimeout(handle);
-  }, [focused, debounceMs]);
+  }, [focused, graceActive, debounceMs]);
 
   // A non-empty value forces expansion so the query stays visible — collapsing
   // it would hide the user's own input. While the user is typing `expanded` is
   // left alone; otherwise backspacing the last char (value → '') would collapse
   // the input mid-keystroke on narrow viewports.
-  useEffect(() => {
-    if (focused) return;
-    setExpanded(isWide || Boolean(value));
-  }, [isWide, value, focused]);
+  const [lastGate, setLastGate] = useState({ isWide, value, focused });
+  if (lastGate.isWide !== isWide || lastGate.value !== value || lastGate.focused !== focused) {
+    setLastGate({ isWide, value, focused });
+    if (!focused) {
+      setExpanded(isWide || Boolean(value));
+    }
+  }
 
-  usePauseRefresh('search', pauseActive);
+  usePauseRefresh('search', focused || graceActive);
 
   // Expanding first, then focusing on the next frame, covers the collapsed
   // narrow-viewport state where the input is not mounted yet.
@@ -135,6 +142,7 @@ export const SearchInput = ({
           onFocus: () => setFocused(true),
           onBlur: () => {
             setFocused(false);
+            setGraceActive(true);
             if (!isWide && !draft) {
               setExpanded(false);
             }
