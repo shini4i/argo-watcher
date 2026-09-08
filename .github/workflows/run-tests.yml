@@ -59,7 +59,7 @@ jobs:
           # lookup, which shares the runner IP 60 req/h anonymous quota.
           version: 3.53.1
 
-      - uses: ./.github/actions/setup-bats
+      - uses: $/.github/actions/setup-bats
 
       # Placed before the Go toolchain installs, so a migration that breaks rollback
       # fails the job in seconds.

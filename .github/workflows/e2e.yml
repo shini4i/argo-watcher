@@ -74,7 +74,7 @@ jobs:
 
       # The phase suite runs under bats (test/e2e/phases.bats); the runner image
       # does not ship it.
-      - uses: ./.github/actions/setup-bats
+      - uses: $/.github/actions/setup-bats
 
       - name: Run e2e lab
         working-directory: test/e2e
