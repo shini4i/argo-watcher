@@ -1,55 +1,53 @@
-import { Box, Typography } from '@mui/material';
+import { Typography } from '@mui/material';
 import { useTimezone } from '../../../shared/providers/TimezoneProvider';
 import { formatRelativeTime } from '../../../shared/utils/time';
 import { tokens } from '../../../theme/tokens';
 import { EmptyCell } from './EmptyCell';
 
+export type TimeCellMode = 'date' | 'relative';
+
 interface TimeCellProps {
   readonly ts?: number | null;
+  readonly mode: TimeCellMode;
 }
 
-const CLOCK_FORMAT: Intl.DateTimeFormatOptions = {
+const FULL_FORMAT: Intl.DateTimeFormatOptions = {
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
   hour: '2-digit',
   minute: '2-digit',
   second: '2-digit',
   hour12: false,
 };
 
-const FULL_FORMAT: Intl.DateTimeFormatOptions = {
-  day: '2-digit',
-  month: 'short',
-  year: 'numeric',
-  ...CLOCK_FORMAT,
-};
-
 /**
- * @description The list's "When" column: relative time over the exact clock
- * time, so a row reads at a glance and still pins down the moment. The full
- * date lives in the tooltip, since "3 days ago" alone loses the day.
+ * The Created column passes `mode="date"`; the Updated column passes
+ * `mode="relative"`.
  */
-export const TimeCell = ({ ts }: TimeCellProps) => {
+export const TimeCell = ({ ts, mode }: TimeCellProps) => {
   const { formatDate } = useTimezone();
   if (ts == null) {
     return <EmptyCell />;
   }
 
-  return (
-    <Box title={formatDate(ts, FULL_FORMAT)}>
-      <Typography variant="body2" sx={{ fontSize: 13, lineHeight: 1.2 }}>
-        {formatRelativeTime(ts)}
-      </Typography>
+  if (mode === 'relative') {
+    return (
       <Typography
         variant="body2"
-        sx={{
-          fontFamily: tokens.fontMono,
-          fontSize: 11,
-          color: 'text.secondary',
-          lineHeight: 1.3,
-          fontVariantNumeric: 'tabular-nums',
-        }}
+        sx={{ fontSize: 12.5, color: 'text.secondary', fontFamily: tokens.fontMono, fontVariantNumeric: 'tabular-nums' }}
       >
-        {formatDate(ts, CLOCK_FORMAT)}
+        {formatRelativeTime(ts)}
       </Typography>
-    </Box>
+    );
+  }
+
+  return (
+    <Typography
+      variant="body2"
+      sx={{ fontSize: 13, lineHeight: 1.2, fontVariantNumeric: 'tabular-nums' }}
+    >
+      {formatDate(ts, FULL_FORMAT)}
+    </Typography>
   );
 };

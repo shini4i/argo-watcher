@@ -28,17 +28,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keyboard shortcuts on Recent Tasks, listed beside the pagination controls: `/` focuses search,
   `a` shows all tasks, `i` in-progress, `f` toggles failed, and `m` toggles the Mine scope.
 - A failed task now carries its reason inline in the list — the extracted headline plus **Copy** and
-  **Full reason** — so finding out why a deployment failed no longer needs a click.
+  **Full reason** — so finding out why a deployment failed no longer needs a click. Cancelled tasks
+  are left out: their reason only restates the status.
 
 ### Changed
 
-- Recent Tasks went from ten columns to six: Application, Status, Image · tag, Author, When and
-  Duration. The project moved under the application name, Created and Updated collapsed into a
-  single relative-plus-exact **When** column, and the rollback flag moved from the Status cell to a
-  labelled chip beside the application it describes. Column widths are now fixed, so a long
-  application or author name no longer stretches the table.
-- Clicking anywhere in a task row opens that task. The row expander and the **View** button are
-  gone, and the extra images in a row collapse to a `+n` counter instead of an inline expander.
+- The rollback flag moved out of the Status cell: it is now a labelled chip beneath the
+  application name, which is what it qualifies. Column widths are fixed, so a long application
+  or author name no longer stretches the table.
+- A task row no longer expands: its status reason is always visible, so the expander is gone.
+  **View** remains the way to open a task, and clicking elsewhere in the row does nothing.
 - The task detail screen leads with the failure: the application name is the title, the task id is a
   copy chip beside it, the reason is the first block on the page with the raw Argo CD text one click
   away, and the lifecycle reads left to right. It also links to the previous deployment of the same
@@ -61,6 +60,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The History date range picker no longer loses a selection while you are making it. Any
   re-render of the surrounding filters reset the open calendar, so a range with the start
   clicked but not the end was discarded and the view jumped back to the committed month.
+- `GET /api/v1/tasks/{id}` now reports `is_rollback` and `rollback_target_id`. The task list
+  served both, but the single-task response omitted them, so a client reading one task could not
+  tell a rollback from an ordinary deployment. The task detail page now flags one.
 
 ## [1.2.0] - 2026-09-07
 

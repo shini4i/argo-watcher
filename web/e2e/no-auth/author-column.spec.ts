@@ -14,7 +14,7 @@ const BOT_AUTHOR = 'project_1758_bot_062d75c8b91e27fa4e5bb374cd9c1c39@noreply.ex
  * this suite compiles without JSX support and cannot import a component module.
  * `CELL_PADDING_ALLOWANCE` covers the surrounding table cell's own padding.
  */
-const AUTHOR_MAX_WIDTH = 180;
+const AUTHOR_MAX_WIDTH = 200;
 const CELL_PADDING_ALLOWANCE = 48;
 
 test('a long bot author is clipped instead of widening its column', async ({ page, request }) => {

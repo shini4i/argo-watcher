@@ -1,4 +1,5 @@
-import { Box, Stack, Typography } from '@mui/material';
+import { useState, useCallback } from 'react';
+import { Box, ButtonBase, Stack, Typography } from '@mui/material';
 import type { Image } from '../../../data/types';
 import { tokens } from '../../../theme/tokens';
 import { EmptyCell } from './EmptyCell';
@@ -64,7 +65,7 @@ const ImageRow = ({ image }: ImageRowProps) => (
         lineHeight: '18px',
         padding: '0 6px',
         borderRadius: tokens.radiusPill,
-        backgroundColor: theme => (theme.palette.mode === 'dark' ? tokens.accentSoftDark : tokens.accentSoft),
+        backgroundColor: tokens.accentSoft,
         color: tokens.accent,
         fontFamily: tokens.fontMono,
         fontSize: 11,
@@ -76,36 +77,59 @@ const ImageRow = ({ image }: ImageRowProps) => (
   </Stack>
 );
 
-/**
- * @description One line per task: the first image and a count of the rest. The
- * extras are named in the counter's tooltip and listed in full on the task
- * detail page, so nothing here competes with the row's own click target.
- */
+/** The "+N more" toggle stops propagation so it does not also expand the row. */
 export const ImagesCell = ({ images }: ImagesCellProps) => {
+  const [expanded, setExpanded] = useState(false);
+  const handleToggle = useCallback(
+    (event: React.MouseEvent) => {
+      event.stopPropagation();
+      setExpanded(prev => !prev);
+    },
+    [],
+  );
+
   if (!images?.length) {
     return <EmptyCell />;
   }
 
   const [primary, ...rest] = images;
+  const moreCount = rest.length;
 
   return (
-    <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', minWidth: 0 }}>
-      <Box sx={{ minWidth: 0 }}>
-        <ImageRow image={primary} />
-      </Box>
-      {rest.length > 0 && (
-        <Typography
-          component="span"
-          title={rest.map(image => `${stripRegistryPrefix(image.image)}:${image.tag}`).join(', ')}
+    <Stack spacing={0.5} sx={{ minWidth: 0 }}>
+      <ImageRow image={primary} />
+      {moreCount > 0 && !expanded && (
+        <ButtonBase
+          onClick={handleToggle}
           sx={{
-            flexShrink: 0,
+            justifyContent: 'flex-start',
             fontFamily: tokens.fontMono,
             fontSize: 11,
             color: 'text.secondary',
+            '&:hover': { color: 'text.primary' },
           }}
         >
-          +{rest.length}
-        </Typography>
+          +{moreCount} more
+        </ButtonBase>
+      )}
+      {expanded && (
+        <>
+          {rest.map((image, index) => (
+            <ImageRow key={`${image.image}:${image.tag}:${index}`} image={image} />
+          ))}
+          <ButtonBase
+            onClick={handleToggle}
+            sx={{
+              justifyContent: 'flex-start',
+              fontFamily: tokens.fontMono,
+              fontSize: 11,
+              color: 'text.secondary',
+              '&:hover': { color: 'text.primary' },
+            }}
+          >
+            Show less
+          </ButtonBase>
+        </>
       )}
     </Stack>
   );

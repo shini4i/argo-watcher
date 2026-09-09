@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { describeTaskStatus, isFailedStatus, isRunningStatus, type TaskStatusPresentation } from './statusPresentation';
+import {
+  describeTaskStatus,
+  hasInformativeReason,
+  isFailedStatus,
+  isRunningStatus,
+  type TaskStatusPresentation,
+} from './statusPresentation';
 
 type StatusExpectation = Pick<
   TaskStatusPresentation,
@@ -151,5 +157,22 @@ describe('isFailedStatus / isRunningStatus', () => {
     for (const status of ['deployed', 'failed', 'accepted', 'In Progress']) {
       expect(isRunningStatus(status)).toBe(false);
     }
+  });
+
+  describe('hasInformativeReason', () => {
+    it('withholds a panel from cancelled, whose reason restates the status', () => {
+      expect(hasInformativeReason('cancelled')).toBe(false);
+    });
+
+    it('keeps the panel for every status whose reason carries a diagnosis', () => {
+      for (const status of ['failed', 'aborted', 'app not found', 'deployed', 'in progress']) {
+        expect(hasInformativeReason(status), status).toBe(true);
+      }
+    });
+
+    it('keeps the panel when the status is missing — nothing says it is redundant', () => {
+      expect(hasInformativeReason(undefined)).toBe(true);
+      expect(hasInformativeReason(null)).toBe(true);
+    });
   });
 });

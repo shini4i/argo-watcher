@@ -1694,6 +1694,39 @@ func TestGetTaskStatusEndpoint(t *testing.T) {
 		assert.Contains(t, w.Body.String(), "test-app")
 	})
 
+	t.Run("carries the rollback flag and its target", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		repo, _ := newRepo(ctrl)
+		repo.EXPECT().GetTask(gomock.Any()).DoAndReturn(func(id string) (*models.Task, error) {
+			return &models.Task{
+				Id:               id,
+				App:              "test-app",
+				Author:           "test-author",
+				Project:          "test-project",
+				Status:           "deployed",
+				IsRollback:       true,
+				RollbackTargetId: "previous-task-id",
+			}, nil
+		}).AnyTimes()
+		argo := &argocd.Argo{}
+		argo.Init(repo, newArgoAPI(ctrl), newMetrics(ctrl))
+
+		env := &Env{argo: argo}
+
+		router := chi.NewRouter()
+		router.Get("/api/v1/tasks/{id}", env.getTaskStatus)
+
+		req, _ := http.NewRequest(http.MethodGet, "/api/v1/tasks/test-task-id", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		// The task list serves both fields, so the detail view must too or the
+		// UI cannot tell a rollback apart from an ordinary deployment.
+		assert.Contains(t, w.Body.String(), `"is_rollback":true`)
+		assert.Contains(t, w.Body.String(), `"rollback_target_id":"previous-task-id"`)
+	})
+
 	t.Run("returns 404 when task not found", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		repo, _ := newRepo(ctrl)

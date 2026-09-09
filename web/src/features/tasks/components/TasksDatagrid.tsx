@@ -1,6 +1,7 @@
 import { Children, isValidElement, useCallback, useEffect, type ReactElement } from 'react';
-import { Box, Typography } from '@mui/material';
+import { Box, Button, Link, Typography } from '@mui/material';
 import { type SxProps, type Theme } from '@mui/material/styles';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import {
   Datagrid,
   DatagridBody,
@@ -9,9 +10,10 @@ import {
   useListContext,
   useRecordContext,
 } from 'react-admin';
+import { Link as RouterLink } from 'react-router-dom';
 import type { Task } from '../../../data/types';
 import { tokens } from '../../../theme/tokens';
-import { AppCell } from './AppCell';
+import { AppCell, describeProject } from './AppCell';
 import { DurationField } from './DurationField';
 import { EmptyCell } from './EmptyCell';
 import { EmptyState, EmptyStateCta } from './EmptyState';
@@ -21,19 +23,17 @@ import { TaskFailureRow } from './TaskFailureRow';
 import { TimeCell } from './TimeCell';
 import { useTaskListContext } from './TaskListContext';
 import { summariseFailure } from '../utils/failureReason';
-import { isFailedStatus, isRunningStatus } from '../utils/statusPresentation';
+import { hasInformativeReason, isFailedStatus, isRunningStatus } from '../utils/statusPresentation';
 
 /** Widest the author text may grow, in px, before the address is ellipsised. */
-export const AUTHOR_MAX_WIDTH = 180;
-
-/** Navigating a whole row means nested links and buttons must stopPropagation. */
-const rowClickToTask = (id: string | number) => `/task/${encodeURIComponent(String(id))}`;
+export const AUTHOR_MAX_WIDTH = 200;
 
 /**
- * @description The task table, shared by the recent and history views. A click
- * anywhere in a row opens that task; a row carrying a status reason is followed
- * by an always-open panel showing it. The wrapping div emits `pause('hover')`
- * so the toolbar's countdown freezes while the cursor is over the table body.
+ * @description The task table, shared by the recent and history views. The View
+ * button is the only way into a task, and a row carrying a status reason is
+ * followed by an always-open panel showing it. The wrapping div emits
+ * `pause('hover')` so the toolbar's countdown freezes while the cursor is over
+ * the table body.
  */
 export const TasksDatagrid = () => {
   const { pause, resume } = useTaskListContext();
@@ -47,7 +47,7 @@ export const TasksDatagrid = () => {
   return (
     <Box onMouseEnter={handleEnter} onMouseLeave={handleLeave}>
     <Datagrid
-      rowClick={rowClickToTask}
+      rowClick={false}
       bulkActionButtons={false}
       body={<DatagridBody row={<TaskRow />} />}
       rowSx={taskRowSx}
@@ -60,25 +60,15 @@ export const TasksDatagrid = () => {
         sortBy="app"
         cellClassName="cell-app"
         headerClassName="cell-app"
-        render={(record: Task) => (
-          <AppCell app={record.app} project={record.project} isRollback={record.is_rollback} />
-        )}
+        render={(record: Task) => <AppCell app={record.app} isRollback={record.is_rollback} />}
       />
       <FunctionField
-        source="status"
-        label="Status"
-        sortBy="status"
-        cellClassName="cell-status"
-        headerClassName="cell-status"
-        render={(record: Task) => <StatusPill status={record.status} />}
-      />
-      <FunctionField
-        source="images"
-        label="Image · tag"
-        sortable={false}
-        cellClassName="cell-images"
-        headerClassName="cell-images"
-        render={(record: Task) => <ImagesCell images={record.images} />}
+        source="project"
+        label="Project"
+        sortBy="project"
+        cellClassName="cell-project"
+        headerClassName="cell-project"
+        render={(record: Task) => <ProjectCell project={record.project} />}
       />
       <FunctionField
         source="author"
@@ -89,12 +79,28 @@ export const TasksDatagrid = () => {
         render={(record: Task) => <AuthorCell author={record.author} />}
       />
       <FunctionField
+        source="status"
+        label="Status"
+        sortBy="status"
+        cellClassName="cell-status"
+        headerClassName="cell-status"
+        render={(record: Task) => <StatusPill status={record.status} />}
+      />
+      <FunctionField
         source="created"
-        label="When"
+        label="Created"
         sortBy="created"
-        cellClassName="cell-when"
-        headerClassName="cell-when"
-        render={(record: Task) => <TimeCell ts={record.created} />}
+        cellClassName="cell-created"
+        headerClassName="cell-created"
+        render={(record: Task) => <TimeCell ts={record.created} mode="date" />}
+      />
+      <FunctionField
+        source="updated"
+        label="Updated"
+        sortBy="updated"
+        cellClassName="cell-updated"
+        headerClassName="cell-updated"
+        render={(record: Task) => <TimeCell ts={record.updated ?? record.created} mode="relative" />}
       />
       <FunctionField
         source="duration"
@@ -103,6 +109,21 @@ export const TasksDatagrid = () => {
         cellClassName="cell-duration"
         headerClassName="cell-duration"
         render={(record: Task) => <DurationField record={record} />}
+      />
+      <FunctionField
+        source="images"
+        label="Images"
+        sortable={false}
+        cellClassName="cell-images"
+        headerClassName="cell-images"
+        render={(record: Task) => <ImagesCell images={record.images} />}
+      />
+      <FunctionField
+        label="Details"
+        sortable={false}
+        cellClassName="cell-view"
+        headerClassName="cell-view"
+        render={(record: Task) => <ViewButton id={record.id} />}
       />
     </Datagrid>
     </Box>
@@ -116,7 +137,10 @@ export const TasksDatagrid = () => {
  */
 const TaskRow = (props: Record<string, unknown>) => {
   const record = useRecordContext<Task>();
-  const summary = summariseFailure(record?.status_reason);
+  // A cancelled task's reason restates its status, so it earns no panel here.
+  const summary = hasInformativeReason(record?.status)
+    ? summariseFailure(record?.status_reason)
+    : null;
   // The panel spans every data column; the grid renders no checkbox or expander.
   const colSpan = Children.toArray(props.children as ReactElement[]).filter(isValidElement).length;
 
@@ -164,10 +188,8 @@ const datagridSx: SxProps<Theme> = theme => {
   const rowHover = theme.palette.mode === 'dark' ? tokens.rowHoverDark : tokens.rowHoverLight;
 
   return {
-    // Fixed layout, so the declared column widths hold instead of the browser
-    // redistributing slack into every column and bloating them (issue seen
-    // after the column set shrank from ten to six). Image · tag declares no
-    // width and absorbs whatever is left over.
+    // Fixed, because the always-open reason panel spans every column and its
+    // nowrap headline would otherwise set the table's width under auto layout.
     '& .RaDatagrid-table': {
       tableLayout: 'fixed',
       width: '100%',
@@ -181,43 +203,54 @@ const datagridSx: SxProps<Theme> = theme => {
       fontSize: 11,
       letterSpacing: 0.8,
       color: theme.palette.text.secondary,
-      borderBottom: `1px solid ${theme.palette.divider}`,
+      // An inset shadow, not a border — including MUI's own TableCell default:
+      // border-collapse hands the border to the table, which a sticky cell
+      // cannot carry, so it renders in fragments once the header sticks.
+      borderBottom: 'none',
+      boxShadow: `inset 0 -1px 0 ${theme.palette.divider}`,
     },
-    // Each row draws the divider ABOVE itself, not below. A reason panel is not
-    // a .RaDatagrid-row, so no line is drawn between a row and its own panel,
-    // while the next task's own top border still closes the block off.
-    '& .RaDatagrid-row': {
+    // Scoped to the body — react-admin puts RaDatagrid-row on the header row too.
+    // Each row draws the divider ABOVE itself, not below: a reason panel is not
+    // a .RaDatagrid-row, so no line falls between a row and its own panel, while
+    // the next task's own top border still closes the block off.
+    '& tbody .RaDatagrid-row': {
       borderTop: `1px solid ${theme.palette.divider}`,
-      cursor: 'pointer',
       transition: theme.transitions.create('background-color', {
         duration: theme.transitions.duration.shortest,
       }),
       '&:hover': {
         backgroundColor: rowHover,
       },
+      // The header rule is a shadow, which does not collapse with this border;
+      // both together would stack into a 2px line.
+      '&:first-of-type': {
+        borderTop: 'none',
+      },
     },
     '& .RaDatagrid-cell': {
       paddingTop: theme.spacing(1.25),
       paddingBottom: theme.spacing(1.25),
     },
-    '& .cell-app': { width: 290 },
-    '& .cell-status': { width: 150 },
-    // No width: this is the column that takes up the remaining space.
-    '& .cell-images': { minWidth: 200 },
+    // Definite widths, not min/max: a fixed layout ignores both.
+    '& .cell-app': { width: 240 },
+    '& .cell-project': { width: 220 },
     '& .cell-author': { width: AUTHOR_MAX_WIDTH },
-    '& .cell-when': {
-      width: 150,
-      textAlign: 'right',
+    '& .cell-status': { width: 156 },
+    '& .cell-created': {
+      width: 200,
       fontVariantNumeric: 'tabular-nums',
     },
-    '& .cell-duration': {
-      width: 100,
-      textAlign: 'right',
+    '& .cell-updated': {
+      width: 130,
       fontVariantNumeric: 'tabular-nums',
     },
-    // MUI left-aligns a header cell regardless of its column's own alignment.
-    '& .RaDatagrid-headerCell.cell-when, & .RaDatagrid-headerCell.cell-duration': {
+    '& .cell-duration': { width: 110, fontVariantNumeric: 'tabular-nums' },
+    '& .cell-images': { width: 280 },
+    '& .cell-view': {
+      width: 96,
       textAlign: 'right',
+      paddingLeft: 0,
+      paddingRight: theme.spacing(1.5),
     },
   };
 };
@@ -248,11 +281,66 @@ const AuthorCell = ({ author }: { author?: string | null }) => {
   );
 };
 
+const ProjectCell = ({ project }: { project?: string | null }) => {
+  if (!project) {
+    return <EmptyCell />;
+  }
+  const info = describeProject(project);
+  if (info.isUrl && info.href) {
+    return (
+      <Link
+        href={info.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        underline="hover"
+        sx={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 0.25,
+          fontFamily: tokens.fontMono,
+          fontSize: 12,
+          color: 'text.secondary',
+          maxWidth: '100%',
+        }}
+      >
+        <Box
+          component="span"
+          sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+        >
+          {info.label}
+        </Box>
+        <OpenInNewIcon sx={{ fontSize: 12 }} />
+      </Link>
+    );
+  }
+  return (
+    <Typography
+      variant="body2"
+      sx={{ fontFamily: tokens.fontMono, fontSize: 12, color: 'text.secondary' }}
+      noWrap
+      title={info.label}
+    >
+      {info.label}
+    </Typography>
+  );
+};
+
+/** The only way into a task from the list: the row itself does not navigate. */
+const ViewButton = ({ id }: { id: string }) => (
+  <Button
+    component={RouterLink}
+    to={`/task/${encodeURIComponent(id)}`}
+    size="small"
+    variant="outlined"
+  >
+    View
+  </Button>
+);
+
 /**
- * The "Clear filters" CTA drains all three sinks (URL, storage, react-admin
- * filterValues) via the page's registered clearAll handler — react-admin's
- * default ListNoResults only resets filterValues, leaving the toolbar chips
- * stuck.
+ * @description The "Clear filters" CTA drains all three sinks (URL, storage,
+ * filterValues) through the page's clearAll handler — react-admin's default
+ * ListNoResults resets only filterValues, leaving the toolbar chips stuck.
  */
 const FilteredEmptyState = () => {
   const { filterValues } = useListContext();
@@ -281,8 +369,9 @@ const FilteredEmptyState = () => {
 
 export const __testing = {
   AuthorCell,
+  ProjectCell,
   TaskRow,
+  ViewButton,
   datagridSx,
-  rowClickToTask,
   taskRowSx,
 };
