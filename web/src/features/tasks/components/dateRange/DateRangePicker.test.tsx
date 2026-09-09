@@ -28,6 +28,7 @@ describe('DateRangePicker', () => {
   afterEach(() => {
     vi.useRealTimers();
     mockTimezone = 'utc';
+    process.env.TZ = 'UTC';
   });
 
   it('renders "Select date range" placeholder when value is empty', () => {
@@ -171,13 +172,17 @@ describe('DateRangePicker', () => {
   });
 
   it('names the month and its cells in local time when the timezone is local', () => {
+    // 12:00 UTC on 30 April is already 1 May at UTC+14, so a calendar that
+    // slipped back to UTC would say April here.
+    process.env.TZ = 'Pacific/Kiritimati';
+    vi.setSystemTime(new Date('2026-04-30T12:00:00Z'));
     mockTimezone = 'local';
     render(<DateRangePicker value={{ start: null, end: null }} onApply={() => {}} />);
 
     fireEvent.click(screen.getByRole('button', { name: /Select date range/ }));
 
-    expect(screen.getByText('April 2026')).toBeInTheDocument();
-    expect(dayCell('20 April 2026')).toBeInTheDocument();
+    expect(screen.getByText('May 2026')).toBeInTheDocument();
+    expect(dayCell('1 May 2026')).toBeInTheDocument();
   });
 
   it('Cancel closes the popover without firing onApply', () => {
