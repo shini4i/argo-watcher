@@ -21,7 +21,7 @@ const truncate = (value: string): string =>
 /**
  * @description Extracts a one-line headline from a task's `status_reason`.
  * argo-watcher composes every reason itself and puts a purpose-built headline on
- * the first line (models.Application.RolloutFailureHeadline, ImageNotPartOfAppError.Reason,
+ * the first line (argocd.rolloutFailureHeadline, ImageNotPartOfAppError.Reason,
  * ArgoAPIErrorTemplate, StaleTaskAbortReason), so the first line IS the headline —
  * searching the body for an error-looking line would discard it in favour of a
  * nested one, and Argo CD sync messages routinely embed "Error:".

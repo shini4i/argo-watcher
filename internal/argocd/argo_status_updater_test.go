@@ -77,7 +77,7 @@ func zeroDelay(_ uint, _ error, _ *retry.Config) time.Duration {
 
 // newArgoApiMock builds an ArgoApi mock pre-loaded with the best-effort defaults every test
 // tolerates. The failure-path resource-tree fetch is best-effort, so it defaults to "no tree"
-// (GetRolloutMessage then falls back to the app's top-level resources). Only tests that assert
+// (rolloutMessage then falls back to the app's top-level resources). Only tests that assert
 // on tree-derived diagnostics register their own GetResourceTree expectation (using a raw mock).
 //
 // Register any future best-effort (optional) ArgoApi call here so adding one never has to touch
@@ -588,7 +588,7 @@ func TestDeploymentMonitorHandleDeploymentFailureHandlesStateError(t *testing.T)
 		SetTaskStatus(task.Id, models.StatusFailedMessage, gomock.Any()).
 		Return(errors.New("update failed"))
 
-	monitor.handleDeploymentFailure(&task, models.ArgoRolloutAppNotHealthy, application, 0)
+	monitor.handleDeploymentFailure(&task, ArgoRolloutAppNotHealthy, application, 0)
 	assert.Equal(t, models.StatusFailedMessage, task.Status)
 }
 
@@ -632,7 +632,7 @@ func TestDeploymentMonitorHandleDeploymentFailureEnrichesReasonFromResourceTree(
 			return nil
 		})
 
-	monitor.handleDeploymentFailure(&task, models.ArgoRolloutAppNotAvailable, application, 0)
+	monitor.handleDeploymentFailure(&task, ArgoRolloutAppNotAvailable, application, 0)
 
 	assert.Contains(t, capturedReason, "Unhealthy resources:")
 	assert.Contains(t, capturedReason, `Pod(app-xyz) Degraded with message Back-off pulling image "example.com/app:v2": ErrImagePull`)
@@ -721,7 +721,7 @@ func TestDeploymentMonitorHandleDeploymentFailureResourceTreeErrorIsNonFatal(t *
 			return nil
 		})
 
-	monitor.handleDeploymentFailure(&task, models.ArgoRolloutAppNotAvailable, application, 0)
+	monitor.handleDeploymentFailure(&task, ArgoRolloutAppNotAvailable, application, 0)
 
 	assert.Equal(t, models.StatusFailedMessage, task.Status)
 	assert.Contains(t, capturedReason, "Rollout status is not available")
@@ -1825,14 +1825,14 @@ func TestCheckRolloutStatus(t *testing.T) {
 	app.Status.Health.Status = "Healthy"
 
 	t.Run("returnsNilOnSuccess", func(t *testing.T) {
-		err := checkRolloutStatus(task, app, app.GetRolloutStatus(task.ListImages(), "", false))
+		err := checkRolloutStatus(task, app, rolloutStatus(app, task.ListImages(), "", false))
 		assert.NoError(t, err)
 	})
 
 	t.Run("returnsForceRetryOnPending", func(t *testing.T) {
 		pending := *app
 		pending.Status.Health.Status = "Progressing"
-		err := checkRolloutStatus(task, &pending, pending.GetRolloutStatus(task.ListImages(), "", false))
+		err := checkRolloutStatus(task, &pending, rolloutStatus(&pending, task.ListImages(), "", false))
 		require.Error(t, err)
 		assert.True(t, retry.IsRecoverable(err))
 	})
@@ -1845,7 +1845,7 @@ func TestCheckRolloutStatus(t *testing.T) {
 		taskCopy := task
 		taskCopy.SavedAppStatus.ImagesHash = helpers.GenerateHash("example.com/app:v1")
 
-		err := checkRolloutStatus(taskCopy, &degraded, degraded.GetRolloutStatus(taskCopy.ListImages(), "", false))
+		err := checkRolloutStatus(taskCopy, &degraded, rolloutStatus(&degraded, taskCopy.ListImages(), "", false))
 		require.Error(t, err)
 		assert.False(t, retry.IsRecoverable(err))
 		// The sentinel identity is load-bearing: WaitRollout keys on it to report the degraded
@@ -1862,7 +1862,7 @@ func TestCheckRolloutStatus(t *testing.T) {
 		taskCopy := task
 		taskCopy.SavedAppStatus.ImagesHash = hash
 
-		err := checkRolloutStatus(taskCopy, &degraded, degraded.GetRolloutStatus(taskCopy.ListImages(), "", false))
+		err := checkRolloutStatus(taskCopy, &degraded, rolloutStatus(&degraded, taskCopy.ListImages(), "", false))
 		require.Error(t, err)
 		assert.True(t, retry.IsRecoverable(err))
 	})

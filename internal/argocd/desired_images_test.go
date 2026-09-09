@@ -1,13 +1,15 @@
-package models
+package argocd
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/shini4i/argo-watcher/internal/models"
 )
 
-func resource(targetState string) ManagedResource {
-	return ManagedResource{TargetState: targetState}
+func resource(targetState string) models.ManagedResource {
+	return models.ManagedResource{TargetState: targetState}
 }
 
 const deploymentManifest = `{
@@ -44,7 +46,7 @@ const cronJobManifest = `{
 const serviceManifest = `{"apiVersion": "v1", "kind": "Service", "spec": {"ports": [{"port": 80}]}}`
 
 func TestDesiredImageNamesCollectsWorkloadKinds(t *testing.T) {
-	resources := ManagedResources{Items: []ManagedResource{
+	resources := models.ManagedResources{Items: []models.ManagedResource{
 		resource(deploymentManifest),
 		resource(cronJobManifest),
 		resource(serviceManifest),
@@ -55,12 +57,12 @@ func TestDesiredImageNamesCollectsWorkloadKinds(t *testing.T) {
 		"busybox",
 		"ghcr.io/shini4i/app",
 		"ghcr.io/shini4i/cleanup",
-	}, resources.DesiredImageNames())
+	}, desiredImageNames(&resources))
 }
 
 // A single unparsable manifest must not blind the check to the images it can read.
 func TestDesiredImageNamesSkipsUnusableItems(t *testing.T) {
-	resources := ManagedResources{Items: []ManagedResource{
+	resources := models.ManagedResources{Items: []models.ManagedResource{
 		resource(""),
 		resource("not json"),
 		resource(`{"kind": "Deployment", "spec": {"template": {"spec": {"containers": "not-a-list"}}}}`),
@@ -68,26 +70,26 @@ func TestDesiredImageNamesSkipsUnusableItems(t *testing.T) {
 		resource(deploymentManifest),
 	}}
 
-	assert.Equal(t, []string{"busybox", "ghcr.io/shini4i/app"}, resources.DesiredImageNames())
+	assert.Equal(t, []string{"busybox", "ghcr.io/shini4i/app"}, desiredImageNames(&resources))
 }
 
 // An image declared outside a pod template — an operator CR is the common case — still
 // counts as part of the application.
 func TestDesiredImageNamesCollectsNonTemplateImages(t *testing.T) {
-	resources := ManagedResources{Items: []ManagedResource{
+	resources := models.ManagedResources{Items: []models.ManagedResource{
 		resource(`{"kind":"Workflow","spec":{"templates":[{"container":{"image":"ghcr.io/shini4i/step:v1"}}]}}`),
 		// An "image" key holding an object, not a reference, must not be recorded.
 		resource(`{"kind":"ConfigMap","data":{"image":{"repository":"ignored"}}}`),
 	}}
 
-	assert.Equal(t, []string{"ghcr.io/shini4i/step"}, resources.DesiredImageNames())
+	assert.Equal(t, []string{"ghcr.io/shini4i/step"}, desiredImageNames(&resources))
 }
 
 // An empty list is what callers treat as "cannot conclude".
 func TestDesiredImageNamesEmpty(t *testing.T) {
-	resources := ManagedResources{Items: []ManagedResource{resource(serviceManifest)}}
-	assert.Empty(t, resources.DesiredImageNames())
+	resources := models.ManagedResources{Items: []models.ManagedResource{resource(serviceManifest)}}
+	assert.Empty(t, desiredImageNames(&resources))
 
-	empty := ManagedResources{}
-	assert.Empty(t, empty.DesiredImageNames())
+	empty := models.ManagedResources{}
+	assert.Empty(t, desiredImageNames(&empty))
 }

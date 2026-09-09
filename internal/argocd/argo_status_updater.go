@@ -148,9 +148,8 @@ func (updater *ArgoStatusUpdater) waitForRollout(task models.Task, resumed bool,
 
 	// start bounds the deployment-duration metric: a monotonic in-process clock over the whole
 	// deployment, write-back included. It is taken after the start notification so a slow
-	// synchronous notifier does not inflate the measured duration, and deliberately not derived
-	// from task.Created (whose stored unit differs across state backends). The failure message
-	// reports waited instead, which covers the rollout polling alone.
+	// synchronous notifier does not inflate the measured duration. The failure message reports
+	// waited instead, which covers the rollout polling alone.
 	start := time.Now()
 
 	// Both conditions end the rollout the same way, so the poll loop and the

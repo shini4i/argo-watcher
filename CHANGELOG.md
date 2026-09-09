@@ -27,6 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The troubleshooting page no longer lists an uncommitted tag as a cause of "Image is not part of
   application" — that check compares image names only — and the task lifecycle table notes that a
   `cancelled` task still exits non-zero.
+- With the PostgreSQL backend, the task handed to the start notification carried `created` in Unix
+  milliseconds and an empty `updated`; both are now Unix seconds, matching the API responses and the
+  in-memory backend, so a webhook template that renders `{{ .Created }}` or `{{ .Updated }}` gets
+  the documented value.
 
 ## [1.3.0] - 2026-09-09
 

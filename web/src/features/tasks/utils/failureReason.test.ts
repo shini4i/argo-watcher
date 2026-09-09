@@ -3,7 +3,7 @@ import { summariseFailure } from './failureReason';
 
 /**
  * @description Real `status_reason` shapes, generated from the Go that composes
- * them: models.Application.RolloutFailureHeadline + GetRolloutMessage,
+ * them: argocd.rolloutFailureHeadline + rolloutMessage,
  * ImageNotPartOfAppError.Reason, argocd.ArgoAPIErrorTemplate and
  * state.StaleTaskAbortReason. Regenerate from those functions if the backend's
  * wording changes — hand-invented Argo CD text is not evidence.

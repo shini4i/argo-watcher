@@ -27,12 +27,6 @@ func createTestTask(app string) models.Task {
 	}
 }
 
-func taskWithImage(app, image string) models.Task {
-	task := createTestTask(app)
-	task.Images = []models.Image{{Image: image, Tag: "v0.0.1"}}
-	return task
-}
-
 // Tags are ignored, and a single shared image name counts as an overlap.
 func TestImageNamesOverlap(t *testing.T) {
 	tests := []struct {
@@ -53,52 +47,6 @@ func TestImageNamesOverlap(t *testing.T) {
 			assert.Equal(t, tt.want, imageNamesOverlap(tt.a, tt.b))
 		})
 	}
-}
-
-func TestInMemoryState_AddTask(t *testing.T) {
-	state := InMemoryState{}
-
-	// The web UI derives a task's duration from created/updated, so the store stamps
-	// both itself. Poisoned here so the assertions below pin the overwrite, not just
-	// that a value ended up non-zero.
-	const farFuture = 4102444800
-	poisoned := createTestTask("Test")
-	poisoned.Created = farFuture
-	poisoned.Updated = farFuture
-
-	firstTask, err := state.AddTask(poisoned)
-	require.NoError(t, err)
-	assert.NotEmpty(t, firstTask.Id)
-	assert.Equal(t, models.StatusInProgressMessage, firstTask.Status)
-	assert.NotZero(t, firstTask.Created)
-	assert.NotZero(t, firstTask.Updated)
-	assert.NotEqual(t, float64(farFuture), firstTask.Created)
-	assert.NotEqual(t, float64(farFuture), firstTask.Updated)
-
-	secondTask, err := state.AddTask(createTestTask("Test2"))
-	require.NoError(t, err)
-	assert.NotEmpty(t, secondTask.Id)
-	assert.NotEqual(t, firstTask.Id, secondTask.Id, "Each task should have a unique ID")
-}
-
-func TestInMemoryState_GetTask(t *testing.T) {
-	state := InMemoryState{}
-
-	addedTask, err := state.AddTask(createTestTask("Test"))
-	require.NoError(t, err)
-
-	retrievedTask, err := state.GetTask(addedTask.Id)
-	require.NoError(t, err)
-	assert.NotNil(t, retrievedTask)
-	assert.Equal(t, addedTask.Id, retrievedTask.Id)
-	assert.Equal(t, models.StatusInProgressMessage, retrievedTask.Status)
-}
-
-func TestInMemoryState_GetTask_NotFound(t *testing.T) {
-	state := InMemoryState{}
-	task, err := state.GetTask("non-existent-id")
-	assert.Nil(t, task)
-	assert.ErrorIs(t, err, ErrTaskNotFound)
 }
 
 func TestInMemoryState_GetTasks(t *testing.T) {
@@ -254,194 +202,6 @@ func TestInMemoryState_GetTasks_EdgeCases(t *testing.T) {
 	})
 }
 
-func TestInMemoryState_SetTaskStatus(t *testing.T) {
-	state := InMemoryState{}
-
-	task, err := state.AddTask(createTestTask("Test"))
-	require.NoError(t, err)
-
-	err = state.SetTaskStatus(task.Id, models.StatusDeployedMessage, "deployed successfully")
-	assert.NoError(t, err)
-
-	updatedTask, err := state.GetTask(task.Id)
-	require.NoError(t, err)
-	assert.Equal(t, models.StatusDeployedMessage, updatedTask.Status)
-	assert.Equal(t, "deployed successfully", updatedTask.StatusReason)
-}
-
-func TestInMemoryState_SetTaskStatus_NotFound(t *testing.T) {
-	state := InMemoryState{}
-	err := state.SetTaskStatus("non-existent-id", models.StatusDeployedMessage, "")
-	assert.Error(t, err)
-	assert.Equal(t, "task not found", err.Error())
-}
-
-func TestInMemoryState_CancelInProgressTasks(t *testing.T) {
-	state := InMemoryState{}
-
-	inProgress, err := state.AddTask(taskWithImage("app-a", "image-a"))
-	require.NoError(t, err)
-
-	sameAppOtherImage, err := state.AddTask(taskWithImage("app-a", "image-b"))
-	require.NoError(t, err)
-
-	otherApp, err := state.AddTask(taskWithImage("app-b", "image-a"))
-	require.NoError(t, err)
-
-	finished, err := state.AddTask(taskWithImage("app-a", "image-a"))
-	require.NoError(t, err)
-	require.NoError(t, state.SetTaskStatus(finished.Id, models.StatusDeployedMessage, ""))
-
-	count, err := state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-a", Tag: "v2"}}, "superseded", false)
-	require.NoError(t, err)
-	assert.Equal(t, int64(1), count, "only the in-progress app-a task sharing image-a should be cancelled")
-
-	got, err := state.GetTask(inProgress.Id)
-	require.NoError(t, err)
-	assert.Equal(t, models.StatusCancelledMessage, got.Status)
-	assert.Equal(t, "superseded", got.StatusReason)
-
-	gotSameApp, err := state.GetTask(sameAppOtherImage.Id)
-	require.NoError(t, err)
-	assert.Equal(t, models.StatusInProgressMessage, gotSameApp.Status)
-
-	gotOther, err := state.GetTask(otherApp.Id)
-	require.NoError(t, err)
-	assert.Equal(t, models.StatusInProgressMessage, gotOther.Status)
-
-	gotFinished, err := state.GetTask(finished.Id)
-	require.NoError(t, err)
-	assert.Equal(t, models.StatusDeployedMessage, gotFinished.Status)
-}
-
-// TestInMemoryState_CancelInProgressTasks_MultiImageOverlap verifies the "any
-// shared image name" semantics: a multi-image in-progress task is cancelled when
-// the new deployment shares only one of its images, while a task sharing none is
-// left alone. This is what distinguishes overlap from set-equality matching.
-func TestInMemoryState_CancelInProgressTasks_MultiImageOverlap(t *testing.T) {
-	state := InMemoryState{}
-
-	overlapping := createTestTask("app-a")
-	overlapping.Images = []models.Image{{Image: "image-a", Tag: "v1"}, {Image: "image-b", Tag: "v1"}}
-	overlappingTask, err := state.AddTask(overlapping)
-	require.NoError(t, err)
-
-	disjoint := createTestTask("app-a")
-	disjoint.Images = []models.Image{{Image: "image-c", Tag: "v1"}, {Image: "image-d", Tag: "v1"}}
-	disjointTask, err := state.AddTask(disjoint)
-	require.NoError(t, err)
-
-	count, err := state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-b", Tag: "v2"}, {Image: "image-e", Tag: "v1"}}, "superseded", false)
-	require.NoError(t, err)
-	assert.Equal(t, int64(1), count, "only the task sharing an image name should be cancelled")
-
-	gotOverlapping, err := state.GetTask(overlappingTask.Id)
-	require.NoError(t, err)
-	assert.Equal(t, models.StatusCancelledMessage, gotOverlapping.Status)
-
-	gotDisjoint, err := state.GetTask(disjointTask.Id)
-	require.NoError(t, err)
-	assert.Equal(t, models.StatusInProgressMessage, gotDisjoint.Status)
-}
-
-func TestInMemoryState_CancelInProgressTasks_Count(t *testing.T) {
-	state := InMemoryState{}
-
-	first, err := state.AddTask(taskWithImage("app-a", "image-a"))
-	require.NoError(t, err)
-	second, err := state.AddTask(taskWithImage("app-a", "image-a"))
-	require.NoError(t, err)
-
-	count, err := state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-z", Tag: "v1"}}, "superseded", false)
-	require.NoError(t, err)
-	assert.Equal(t, int64(0), count, "a deployment sharing no image should cancel nothing")
-
-	count, err = state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-a", Tag: "v2"}}, "superseded", false)
-	require.NoError(t, err)
-	assert.Equal(t, int64(2), count, "every matching in-progress task must be cancelled")
-
-	gotFirst, err := state.GetTask(first.Id)
-	require.NoError(t, err)
-	assert.Equal(t, models.StatusCancelledMessage, gotFirst.Status)
-	gotSecond, err := state.GetTask(second.Id)
-	require.NoError(t, err)
-	assert.Equal(t, models.StatusCancelledMessage, gotSecond.Status)
-}
-
-// TestInMemoryState_CancelInProgressTasks_Authority locks the rule that a task
-// may only supersede in-flight work carrying no more authority than itself: an
-// uncredentialed (unvalidated) deployment must never cancel a credentialed one.
-// That is what stops an anonymous request from aborting a credentialed
-// deployment's pending git write-back. Every other combination still supersedes,
-// so token-less setups keep behaving exactly as before.
-func TestInMemoryState_CancelInProgressTasks_Authority(t *testing.T) {
-	tests := []struct {
-		name             string
-		victimValidated  bool
-		newTaskValidated bool
-		wantCancelled    bool
-	}{
-		{"unvalidated must not cancel validated", true, false, false},
-		{"validated cancels validated", true, true, true},
-		{"unvalidated cancels unvalidated", false, false, true},
-		{"validated cancels unvalidated", false, true, true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			state := InMemoryState{}
-
-			victim := taskWithImage("app-a", "image-a")
-			victim.Validated = tt.victimValidated
-			inFlight, err := state.AddTask(victim)
-			require.NoError(t, err)
-
-			count, err := state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-a", Tag: "v2"}}, "superseded", tt.newTaskValidated)
-			require.NoError(t, err)
-
-			got, err := state.GetTask(inFlight.Id)
-			require.NoError(t, err)
-
-			if tt.wantCancelled {
-				assert.Equal(t, int64(1), count)
-				assert.Equal(t, models.StatusCancelledMessage, got.Status)
-				return
-			}
-			assert.Equal(t, int64(0), count)
-			assert.Equal(t, models.StatusInProgressMessage, got.Status)
-		})
-	}
-}
-
-// TestInMemoryState_CancelInProgressTasks_AuthorityMixedFleet covers the setup
-// that motivates a per-task rule rather than an instance-wide one: a single app
-// with both a credentialed and an uncredentialed rollout in flight. An anonymous
-// deployment supersedes only the uncredentialed one and leaves the credentialed
-// rollout running.
-func TestInMemoryState_CancelInProgressTasks_AuthorityMixedFleet(t *testing.T) {
-	state := InMemoryState{}
-
-	credentialed := taskWithImage("app-a", "image-a")
-	credentialed.Validated = true
-	credentialedTask, err := state.AddTask(credentialed)
-	require.NoError(t, err)
-
-	anonymousTask, err := state.AddTask(taskWithImage("app-a", "image-a"))
-	require.NoError(t, err)
-
-	count, err := state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-a", Tag: "v2"}}, "superseded", false)
-	require.NoError(t, err)
-	assert.Equal(t, int64(1), count, "only the uncredentialed rollout may be superseded")
-
-	gotCredentialed, err := state.GetTask(credentialedTask.Id)
-	require.NoError(t, err)
-	assert.Equal(t, models.StatusInProgressMessage, gotCredentialed.Status)
-
-	gotAnonymous, err := state.GetTask(anonymousTask.Id)
-	require.NoError(t, err)
-	assert.Equal(t, models.StatusCancelledMessage, gotAnonymous.Status)
-}
-
 func TestInMemoryState_ProcessObsoleteTasks(t *testing.T) {
 	state := InMemoryState{}
 
@@ -581,4 +341,10 @@ func TestInMemoryState_ProcessObsoleteTasksSparesALongerTimeout(t *testing.T) {
 	got, err = state.GetTask(stored.Id)
 	require.NoError(t, err)
 	assert.Equal(t, models.StatusAborted, got.Status)
+}
+
+func TestInMemoryState_Contract(t *testing.T) {
+	runTaskRepositoryContract(t, func(t *testing.T) TaskRepository {
+		return &InMemoryState{}
+	})
 }
