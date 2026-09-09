@@ -131,13 +131,14 @@ curl -sSI "$ARGO_WATCHER_URL/api/v1/config"
 
 **Symptom:** the deployment fails immediately with `Image "<name>" is not part of application "<app>"`, followed by the images the application does declare.
 
-**Meaning:** the application finished rolling out — synced and healthy — but its desired state never declares the requested image, so waiting would only burn the timeout. The desired state comes from Argo CD's managed resources, not from running pods, so a workload with no pod yet (an untriggered `CronJob`, a `Deployment` scaled to zero) still counts as declaring its image.
+**Meaning:** the application finished rolling out — synced and healthy — but its desired state never declares the requested image, so waiting would only burn the timeout. The check compares image names and ignores the tag. The desired state comes from Argo CD's managed resources, not from running pods, so a workload with no pod yet (an untriggered `CronJob`, a `Deployment` scaled to zero) still counts as declaring its image.
 
 **Likely causes**
 
 - The image name is misspelled, or its registry prefix does not match the manifests.
 - The deployment targets a real but different application — it exists, so it is not `app not found`, but it does not contain this image.
-- The tag was never committed: see [Image tag is never committed](#image-tag-is-never-committed-write-back-skipped).
+
+An uncommitted tag does not trigger this error: the image name is still declared, so the task polls until `DEPLOYMENT_TIMEOUT` and fails with a timeout instead. See [Image tag is never committed](#image-tag-is-never-committed-write-back-skipped).
 
 **How to verify:** compare the requested image against the list in the failure reason, or run `argocd app manifests <app> | grep image:`.
 

@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A new guide, **Wait for an Argo CD Deployment from CI**, compares Argo Watcher with
+  `argocd app wait`, polling the Argo CD API, and `kubectl rollout status`, and spells out what the
+  client waits for and how the common task outcomes reach the pipeline.
+
+### Changed
+
+- The README, documentation home page, OpenAPI description, and container image label now lead with
+  the concrete problem — waiting for an Argo CD deployment from a CI pipeline and learning whether
+  the built image rolled out — instead of the "feedback loop for GitOps" tagline. The README gains a
+  short **Why not `argocd app wait`?** section pointing at the new guide.
+
+### Fixed
+
+- The Web UI browser tab is titled "Argo Watcher" on first load instead of "Argo Watcher
+  React-admin".
+- The troubleshooting page no longer lists an uncommitted tag as a cause of "Image is not part of
+  application" — that check compares image names only — and the task lifecycle table notes that a
+  `cancelled` task still exits non-zero.
+
 ## [1.3.0] - 2026-09-09
 
 ### Added

@@ -2,9 +2,9 @@
 
 # Argo Watcher
 
-**A feedback loop for your GitOps workflow.**
+**Wait for an Argo CD deployment from your CI pipeline, and learn whether the image you just built rolled out.**
 
-Argo Watcher bridges the gap between your CI pipeline and Argo CD, providing real-time status and visibility into your deployments. No more "fire-and-forget" deployments.
+Argo Watcher tracks Argo CD deployments for CI/CD pipelines. After a pipeline builds and pushes an image, the Argo Watcher client waits for that exact image to be deployed and exits with success or failure, so the pipeline can act on it. A feedback loop for your GitOps workflow, with an optional built-in GitOps updater.
 
 ![GitHub Actions](https://img.shields.io/github/actions/workflow/status/shini4i/argo-watcher/run-tests.yml?branch=main)
 ![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/shini4i/argo-watcher)
@@ -34,6 +34,12 @@ Argo Watcher watches the Argo CD application for the images the pipeline just bu
 - **Deployment lock** — freeze deployments on a schedule or on demand.
 - **Notifications** — webhook or Mattermost, on deployment start and result.
 - **Authentication** — a deploy token or JWT for pipelines, any OIDC provider (Keycloak, Authentik, …) for the Web UI.
+
+## Why not `argocd app wait`?
+
+`argocd app wait` waits for an application to be `Synced` and `Healthy`. It has no argument for a revision or an image tag, so if Argo CD has not picked up your commit yet, the previous revision already satisfies it and the command returns success for a deployment that has not started. It also needs the `argocd` CLI and an Argo CD token in every pipeline.
+
+Argo Watcher waits for the application to be `Synced` and `Healthy` **with the image tag you built running**, fails fast when the application finishes rolling out without declaring that image name at all, and keeps every deployment as history in the Web UI. Pipelines need only the server URL and an optional deploy token. The full comparison, including polling the API and `kubectl rollout status`, is in [Wait for an Argo CD Deployment from CI](https://argo-watcher.readthedocs.io/en/latest/guides/ci-pipeline-wait/).
 
 ## Architecture
 

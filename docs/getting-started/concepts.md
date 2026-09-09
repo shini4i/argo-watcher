@@ -8,6 +8,8 @@ A CI pipeline builds an image, pushes it, and updates a Git repository. Argo CD 
 
 Argo Watcher watches the Argo CD application for the images the pipeline just built and reports the deployment's final state back to it — turning an asynchronous process into a result the pipeline can branch on.
 
+Coming from `argocd app wait`, API polling, or `kubectl rollout status`? [Wait for an Argo CD Deployment from CI](../guides/ci-pipeline-wait.md) compares them with Argo Watcher.
+
 ## Server, client, and updater
 
 - **Server** — the long-running service. It talks to Argo CD, persists task state, exposes the HTTP API, and serves the Web UI, which shows every task in real time.
@@ -25,7 +27,7 @@ Argo Watcher watches the Argo CD application for the images the pipeline just bu
 | `failed` | Argo CD reported a health or sync failure, `DEPLOYMENT_TIMEOUT` elapsed, or the application finished rolling out without ever declaring the requested image (see [Image is not part of application](../operations/troubleshooting.md#image-is-not-part-of-application)). |
 | `app not found` | Argo CD has no application with that name, or the token cannot see it. Counted under `unconfirmed_deployment_failures`, or under `failed_deployment` in the rarer case where an application that was already confirmed disappeared mid-rollout. |
 | `aborted` | The outcome could not be confirmed: Argo CD was unreachable during the check, or the task sat in progress past the staleness window. Counts as a failure — under `failed_deployment` when Argo CD had already confirmed the application, under `unconfirmed_deployment_failures` when it never did; `argocd_unavailable` tells you whether Argo CD was the reason. |
-| `cancelled` | Superseded by a newer deployment of one of the same images before reaching a final state; polling stops. Not counted as a failure. |
+| `cancelled` | Superseded by a newer deployment of one of the same images before reaching a final state; polling stops. Not counted as a failure in the metrics, but the client still exits non-zero. |
 
 Every terminal status also increments `deployments_total{app,result}` once the deployment ends, provided Argo CD confirmed the application — see [Observability](../operations/observability.md#metrics).
 
