@@ -17,7 +17,6 @@
           gotools
           gosec
           golangci-lint
-          mockgen
           go-swag
           toxiproxy
           goreleaser
