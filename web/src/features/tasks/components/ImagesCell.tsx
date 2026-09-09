@@ -65,7 +65,8 @@ const ImageRow = ({ image }: ImageRowProps) => (
         lineHeight: '18px',
         padding: '0 6px',
         borderRadius: tokens.radiusPill,
-        backgroundColor: tokens.accentSoft,
+        backgroundColor: theme =>
+          theme.palette.mode === 'dark' ? tokens.accentSoftDark : tokens.accentSoft,
         color: tokens.accent,
         fontFamily: tokens.fontMono,
         fontSize: 11,
@@ -77,16 +78,10 @@ const ImageRow = ({ image }: ImageRowProps) => (
   </Stack>
 );
 
-/** The "+N more" toggle stops propagation so it does not also expand the row. */
+/** The "+N more" toggle reveals the remaining images in place. */
 export const ImagesCell = ({ images }: ImagesCellProps) => {
   const [expanded, setExpanded] = useState(false);
-  const handleToggle = useCallback(
-    (event: React.MouseEvent) => {
-      event.stopPropagation();
-      setExpanded(prev => !prev);
-    },
-    [],
-  );
+  const handleToggle = useCallback(() => setExpanded(prev => !prev), []);
 
   if (!images?.length) {
     return <EmptyCell />;

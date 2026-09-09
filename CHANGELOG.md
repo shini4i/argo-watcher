@@ -62,7 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   clicked but not the end was discarded and the view jumped back to the committed month.
 - `GET /api/v1/tasks/{id}` now reports `is_rollback` and `rollback_target_id`. The task list
   served both, but the single-task response omitted them, so a client reading one task could not
-  tell a rollback from an ordinary deployment. The task detail page now flags one.
+  tell a rollback from an ordinary deployment. The task detail page now flags one as such.
 
 ## [1.2.0] - 2026-09-07
 

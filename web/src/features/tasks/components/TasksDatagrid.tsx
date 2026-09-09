@@ -23,7 +23,7 @@ import { TaskFailureRow } from './TaskFailureRow';
 import { TimeCell } from './TimeCell';
 import { useTaskListContext } from './TaskListContext';
 import { summariseFailure } from '../utils/failureReason';
-import { hasInformativeReason, isFailedStatus, isRunningStatus } from '../utils/statusPresentation';
+import { isFailedStatus, isRunningStatus, statusExplainsItself } from '../utils/statusPresentation';
 
 /** Widest the author text may grow, in px, before the address is ellipsised. */
 export const AUTHOR_MAX_WIDTH = 200;
@@ -137,10 +137,10 @@ export const TasksDatagrid = () => {
  */
 const TaskRow = (props: Record<string, unknown>) => {
   const record = useRecordContext<Task>();
-  // A cancelled task's reason restates its status, so it earns no panel here.
-  const summary = hasInformativeReason(record?.status)
-    ? summariseFailure(record?.status_reason)
-    : null;
+  // A cancelled task's pill already names its only cause, so it earns no panel.
+  const summary = statusExplainsItself(record?.status)
+    ? null
+    : summariseFailure(record?.status_reason);
   // The panel spans every data column; the grid renders no checkbox or expander.
   const colSpan = Children.toArray(props.children as ReactElement[]).filter(isValidElement).length;
 
@@ -369,6 +369,7 @@ const FilteredEmptyState = () => {
 
 export const __testing = {
   AuthorCell,
+  FilteredEmptyState,
   ProjectCell,
   TaskRow,
   ViewButton,

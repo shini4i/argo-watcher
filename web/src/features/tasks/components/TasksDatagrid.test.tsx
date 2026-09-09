@@ -2,7 +2,9 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
+import { createTheme } from '@mui/material/styles';
 import type { Task } from '../../../data/types';
+import { tokens } from '../../../theme/tokens';
 import { AUTHOR_MAX_WIDTH, TasksDatagrid, __testing } from './TasksDatagrid';
 import { TaskListProvider, useTaskListContext } from './TaskListContext';
 
@@ -23,6 +25,9 @@ const sampleRecord: Task = {
 
 const datagridPropsLog: Array<Record<string, unknown>> = [];
 
+/** Mutable so a test can drive FilteredEmptyState down either branch. */
+const listContext: { filterValues: Record<string, unknown> } = { filterValues: {} };
+
 vi.mock('react-admin', () => ({
   Datagrid: (props: Record<string, unknown>) => {
     datagridPropsLog.push(props);
@@ -34,7 +39,7 @@ vi.mock('react-admin', () => ({
     <div data-testid={`function-${source ?? label}`}>{render(sampleRecord)}</div>
   ),
   useRecordContext: () => sampleRecord,
-  useListContext: () => ({ filterValues: {} }),
+  useListContext: () => listContext,
   // The failure panel's Copy button reaches for it through useCopyToClipboard.
   useNotify: () => vi.fn(),
 }));
@@ -123,6 +128,67 @@ describe('TasksDatagrid', () => {
     );
 
     expect(screen.getByTestId('reasons').textContent).toBe('');
+  });
+
+  describe('taskRowSx', () => {
+    const { taskRowSx } = __testing;
+    const resolve = (record: Task) => {
+      const factory = taskRowSx(record) as (theme: unknown) => Record<string, string>;
+      return factory(createTheme({ palette: { mode: 'light' } }));
+    };
+
+    it('marks a failed row with the failed edge and tint', () => {
+      const style = resolve({ ...sampleRecord, status: 'failed' });
+      expect(style.borderLeft).toBe(`4px solid ${tokens.statusFailedFg}`);
+      expect(style.backgroundColor).toBe(tokens.rowFailedBg);
+    });
+
+    it('treats an aborted task as failed — the deployment did not land', () => {
+      expect(resolve({ ...sampleRecord, status: 'aborted' }).borderLeft).toBe(
+        `4px solid ${tokens.statusFailedFg}`,
+      );
+    });
+
+    it('marks a running row with the running edge and tint', () => {
+      const style = resolve({ ...sampleRecord, status: 'in progress' });
+      expect(style.borderLeft).toBe(`4px solid ${tokens.statusRunningFg}`);
+      expect(style.backgroundColor).toBe(tokens.rowRunningBg);
+    });
+
+    it('keeps a transparent edge on a settled row so widths never shift', () => {
+      expect(resolve({ ...sampleRecord, status: 'deployed' }).borderLeft).toBe(
+        '4px solid transparent',
+      );
+    });
+  });
+
+  describe('FilteredEmptyState', () => {
+    const { FilteredEmptyState } = __testing;
+
+    it('says nothing matches the view when no filter is active', () => {
+      listContext.filterValues = {};
+      renderInRouter(
+        <TaskListProvider>
+          <FilteredEmptyState />
+        </TaskListProvider>,
+      );
+
+      expect(screen.getByText('No tasks to show')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull();
+    });
+
+    it('offers the clear-filters CTA once a filter is narrowing the list', () => {
+      listContext.filterValues = { status: 'failed' };
+      renderInRouter(
+        <TaskListProvider>
+          <FilteredEmptyState />
+        </TaskListProvider>,
+      );
+
+      expect(screen.getByText('No tasks match the active filters')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Clear filters' })).toBeInTheDocument();
+      listContext.filterValues = {};
+    });
   });
 
   describe('AuthorCell', () => {

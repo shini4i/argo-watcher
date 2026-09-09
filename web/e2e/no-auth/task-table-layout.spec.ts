@@ -42,15 +42,30 @@ test('the header rule survives the header sticking to the top', async ({ page, r
   expect(firstRowBorder).toBe('0px');
 });
 
-test('the header row is not presented as a clickable task row', async ({ page, request }) => {
-  const id = await seedTask(request, 'layout-header-cursor');
+test('no row navigates on click — only the View button does', async ({ page, request }) => {
+  const id = await seedTask(request, 'layout-row-inert');
   await waitForDeployed(request, id);
 
   await page.goto('/');
-  const headerRow = page.locator('.RaDatagrid-headerRow');
-  await expect(headerRow).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: 'Application' })).toBeVisible();
+  const listPath = new URL(page.url()).pathname;
 
   // react-admin puts RaDatagrid-row on the header row too, so a rule meant for
-  // task rows gives the header a pointer cursor and the row hover highlight.
-  await expect(headerRow).not.toHaveCSS('cursor', 'pointer');
+  // task rows would style the header as one; neither may act as a link.
+  await page.locator('.RaDatagrid-headerRow').click();
+  await page.locator('tbody .RaDatagrid-row td.cell-author').first().click();
+  // react-admin keeps its list state in the query string, so compare the path.
+  await expect
+    .poll(() => new URL(page.url()).pathname, { message: 'a row click must not navigate' })
+    .toBe(listPath);
+
+  // Scoped and exact: an unscoped substring match also hits the top bar's Overview link.
+  await page
+    .locator('tbody .RaDatagrid-row td.cell-view')
+    .first()
+    .getByRole('link', { name: 'View', exact: true })
+    .click();
+  await expect
+    .poll(() => new URL(page.url()).pathname)
+    .toMatch(/^\/task\/[0-9a-f-]{36}$/);
 });

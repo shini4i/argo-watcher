@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   describeTaskStatus,
-  hasInformativeReason,
+  statusExplainsItself,
   isFailedStatus,
   isRunningStatus,
   type TaskStatusPresentation,
@@ -159,20 +159,20 @@ describe('isFailedStatus / isRunningStatus', () => {
     }
   });
 
-  describe('hasInformativeReason', () => {
-    it('withholds a panel from cancelled, whose reason restates the status', () => {
-      expect(hasInformativeReason('cancelled')).toBe(false);
+  describe('statusExplainsItself', () => {
+    it('claims cancelled, whose pill names its only cause', () => {
+      expect(statusExplainsItself('cancelled')).toBe(true);
     });
 
-    it('keeps the panel for every status whose reason carries a diagnosis', () => {
+    it('claims no status whose reason carries a diagnosis', () => {
       for (const status of ['failed', 'aborted', 'app not found', 'deployed', 'in progress']) {
-        expect(hasInformativeReason(status), status).toBe(true);
+        expect(statusExplainsItself(status), status).toBe(false);
       }
     });
 
-    it('keeps the panel when the status is missing — nothing says it is redundant', () => {
-      expect(hasInformativeReason(undefined)).toBe(true);
-      expect(hasInformativeReason(null)).toBe(true);
+    it('claims nothing when the status is missing', () => {
+      expect(statusExplainsItself(undefined)).toBe(false);
+      expect(statusExplainsItself(null)).toBe(false);
     });
   });
 });

@@ -135,14 +135,14 @@ export const isFailedStatus = (status?: string | null): boolean =>
 
 export const isRunningStatus = (status?: string | null): boolean => status === 'in progress';
 
-/** Statuses with exactly one cause, whose reason only restates the status label. */
+/** Statuses with exactly one cause, which the pill already names in full. */
 const SELF_EXPLANATORY_STATUSES: ReadonlySet<string> = new Set(['cancelled']);
 
 /**
- * @description Whether a task's stored reason tells a reader anything its status
- * label does not, and so earns a panel in the list.
+ * @description Whether the status pill already conveys the task's single cause,
+ * so the list can withhold a reason panel that would only repeat it.
  * @param status the task's status
- * @returns false for a status that already explains itself
+ * @returns true for a status the pill fully explains on its own
  */
-export const hasInformativeReason = (status?: string | null): boolean =>
-  !status || !SELF_EXPLANATORY_STATUSES.has(status);
+export const statusExplainsItself = (status?: string | null): boolean =>
+  Boolean(status) && SELF_EXPLANATORY_STATUSES.has(status!);
