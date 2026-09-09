@@ -50,6 +50,8 @@ const formatTriggerLabel = (range: DateRangeValue, formatDate: (ts: number, opts
 
 const MONTH_FORMAT: Intl.DateTimeFormatOptions = { month: 'long', year: 'numeric' };
 
+const CELL_FORMAT: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'long', year: 'numeric' };
+
 /**
  * `value` is in Unix seconds; `onApply` fires only when the user clicks Apply
  * with a complete and dirty range. Computation honours the active timezone.
@@ -63,12 +65,23 @@ export const DateRangePicker = ({ value, onApply }: DateRangePickerProps) => {
   const [viewYear, setViewYear] = useState(() => ymd(new Date(), timezone).year);
   const [viewMonth, setViewMonth] = useState(() => ymd(new Date(), timezone).month);
 
-  // Opening the popover reseeds the draft and the visible month. Adjusting
-  // during render rather than in an effect means the calendar's first painted
-  // frame is already the right month.
-  const [lastSeed, setLastSeed] = useState({ anchor, value, timezone });
-  if (lastSeed.anchor !== anchor || lastSeed.value !== value || lastSeed.timezone !== timezone) {
-    setLastSeed({ anchor, value, timezone });
+  // Opening the popover reseeds the draft and the visible month; adjusting
+  // during render means the first painted frame is already the right month.
+  // The guard compares endpoints, not the `value` object — callers pass a fresh
+  // literal each render, and identity would drop a half-picked range.
+  const [lastSeed, setLastSeed] = useState({
+    anchor,
+    start: value.start,
+    end: value.end,
+    timezone,
+  });
+  if (
+    lastSeed.anchor !== anchor ||
+    lastSeed.start !== value.start ||
+    lastSeed.end !== value.end ||
+    lastSeed.timezone !== timezone
+  ) {
+    setLastSeed({ anchor, start: value.start, end: value.end, timezone });
     if (anchor) {
       setDraft(value);
       setPickingStart(true);
@@ -125,6 +138,17 @@ export const DateRangePicker = ({ value, onApply }: DateRangePickerProps) => {
   const grid = useMemo(
     () => buildMonthGrid(viewYear, viewMonth, timezone),
     [viewYear, viewMonth, timezone],
+  );
+
+  // The grid spills into the neighbouring months, so a bare day number names
+  // two cells. One formatter, reused across all 42.
+  const cellFormatter = useMemo(
+    () =>
+      new Intl.DateTimeFormat('en-GB', {
+        ...CELL_FORMAT,
+        timeZone: timezone === 'utc' ? 'UTC' : undefined,
+      }),
+    [timezone],
   );
 
   const draftStartDate = draft.start === null ? null : new Date(draft.start * 1000);
@@ -314,6 +338,7 @@ export const DateRangePicker = ({ value, onApply }: DateRangePickerProps) => {
                   <CalendarCell
                     key={cell.date.toISOString()}
                     label={String(ymd(cell.date, timezone).day)}
+                    accessibleLabel={cellFormatter.format(cell.date)}
                     isInMonth={cell.inMonth}
                     isToday={cell.isToday}
                     isStart={isStart}
@@ -364,6 +389,7 @@ export const DateRangePicker = ({ value, onApply }: DateRangePickerProps) => {
 
 interface CalendarCellProps {
   readonly label: string;
+  readonly accessibleLabel: string;
   readonly isInMonth: boolean;
   readonly isToday: boolean;
   readonly isStart: boolean;
@@ -372,7 +398,16 @@ interface CalendarCellProps {
   readonly onClick: () => void;
 }
 
-const CalendarCell = ({ label, isInMonth, isToday, isStart, isEnd, isInRange, onClick }: CalendarCellProps) => {
+const CalendarCell = ({
+  label,
+  accessibleLabel,
+  isInMonth,
+  isToday,
+  isStart,
+  isEnd,
+  isInRange,
+  onClick,
+}: CalendarCellProps) => {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
   const isEndpoint = isStart || isEnd;
@@ -402,6 +437,7 @@ const CalendarCell = ({ label, isInMonth, isToday, isStart, isEnd, isInRange, on
   return (
     <ButtonBase
       role="gridcell"
+      aria-label={accessibleLabel}
       aria-selected={isEndpoint}
       onClick={onClick}
       sx={{
