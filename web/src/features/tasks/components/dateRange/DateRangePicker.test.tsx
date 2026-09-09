@@ -2,9 +2,11 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DateRangePicker } from './DateRangePicker';
 
+let mockTimezone: 'utc' | 'local' = 'utc';
+
 vi.mock('../../../../shared/providers/TimezoneProvider', () => ({
   useTimezone: () => ({
-    timezone: 'utc',
+    timezone: mockTimezone,
     formatDate: (ts: number, opts?: Intl.DateTimeFormatOptions) => {
       const date = new Date(ts * 1000);
       return new Intl.DateTimeFormat('en-GB', { ...opts, timeZone: 'UTC' }).format(date);
@@ -25,6 +27,7 @@ describe('DateRangePicker', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    mockTimezone = 'utc';
   });
 
   it('renders "Select date range" placeholder when value is empty', () => {
@@ -165,6 +168,16 @@ describe('DateRangePicker', () => {
 
     // A stale draft would still read as dirty and re-enable Apply.
     expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled();
+  });
+
+  it('names the month and its cells in local time when the timezone is local', () => {
+    mockTimezone = 'local';
+    render(<DateRangePicker value={{ start: null, end: null }} onApply={() => {}} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Select date range/ }));
+
+    expect(screen.getByText('April 2026')).toBeInTheDocument();
+    expect(dayCell('20 April 2026')).toBeInTheDocument();
   });
 
   it('Cancel closes the popover without firing onApply', () => {
