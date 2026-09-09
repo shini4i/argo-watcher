@@ -145,4 +145,4 @@ const SELF_EXPLANATORY_STATUSES: ReadonlySet<string> = new Set(['cancelled']);
  * @returns true for a status the pill fully explains on its own
  */
 export const statusExplainsItself = (status?: string | null): boolean =>
-  Boolean(status) && SELF_EXPLANATORY_STATUSES.has(status!);
+  SELF_EXPLANATORY_STATUSES.has(status ?? '');

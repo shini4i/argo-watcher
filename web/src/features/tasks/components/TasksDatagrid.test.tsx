@@ -21,6 +21,7 @@ const sampleRecord: Task = {
   ],
   status: 'deployed',
   status_reason: 'all green',
+  is_rollback: true,
 };
 
 const datagridPropsLog: Array<Record<string, unknown>> = [];
@@ -128,6 +129,53 @@ describe('TasksDatagrid', () => {
     );
 
     expect(screen.getByTestId('reasons').textContent).toBe('');
+  });
+
+  it('flags a rollback in the application cell, not the status cell', () => {
+    renderInRouter(<TasksDatagrid />);
+    // The chip qualifies the deployment, so it travels with the app name.
+    expect(screen.getByTestId('function-app')).toHaveTextContent('Rollback');
+    expect(screen.getByTestId('function-status')).not.toHaveTextContent('Rollback');
+  });
+
+  describe('datagridSx', () => {
+    const { datagridSx } = __testing;
+    const resolve = (mode: 'light' | 'dark') => {
+      const theme = createTheme({ palette: { mode } });
+      const factory = datagridSx as (theme: unknown) => Record<string, Record<string, unknown>>;
+      return { sx: factory(theme), divider: theme.palette.divider };
+    };
+
+    it('paints the header rule as an inset shadow, never as a collapsed border', () => {
+      const { sx, divider } = resolve('dark');
+      const header = sx['& .RaDatagrid-headerCell'];
+      // A collapsed border belongs to the table, not the cell, so a sticky
+      // header cannot carry it and the rule renders in fragments once stuck.
+      expect(header.position).toBe('sticky');
+      expect(header.borderBottom).toBe('none');
+      expect(header.boxShadow).toBe(`inset 0 -1px 0 ${divider}`);
+    });
+
+    it('scopes the row rule to the body, which the header row is not part of', () => {
+      const { sx } = resolve('light');
+      // react-admin puts RaDatagrid-row on the header row too, so an unscoped
+      // rule hands the header the task rows' hover tint.
+      expect(sx['& .RaDatagrid-row']).toBeUndefined();
+      expect(sx['& tbody .RaDatagrid-row']).toBeDefined();
+    });
+
+    it('drops the first row top border so it does not stack with the shadow', () => {
+      const row = resolve('light').sx['& tbody .RaDatagrid-row'];
+      expect(row['&:first-of-type']).toEqual({ borderTop: 'none' });
+    });
+
+    it('tints the row hover per theme', () => {
+      const hover = (mode: 'light' | 'dark') =>
+        (resolve(mode).sx['& tbody .RaDatagrid-row']['&:hover'] as Record<string, string>)
+          .backgroundColor;
+      expect(hover('light')).toBe(tokens.rowHoverLight);
+      expect(hover('dark')).toBe(tokens.rowHoverDark);
+    });
   });
 
   describe('taskRowSx', () => {

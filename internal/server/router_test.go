@@ -1692,6 +1692,10 @@ func TestGetTaskStatusEndpoint(t *testing.T) {
 		assert.Equal(t, http.StatusOK, w.Code)
 		assert.Contains(t, w.Body.String(), "test-task-id")
 		assert.Contains(t, w.Body.String(), "test-app")
+		// Both carry omitempty, so an ordinary deployment omits the keys entirely.
+		// Without this a handler hardcoding the flag would still look correct.
+		assert.NotContains(t, w.Body.String(), "is_rollback")
+		assert.NotContains(t, w.Body.String(), "rollback_target_id")
 	})
 
 	t.Run("carries the rollback flag and its target", func(t *testing.T) {

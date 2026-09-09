@@ -114,6 +114,18 @@ describe('TasksDatagrid on real react-admin', () => {
     );
   });
 
+  it('shows Created as an absolute date and Updated as a relative one', async () => {
+    renderDatagrid([CLEAN]);
+
+    await waitFor(() => expect(screen.getByText('billing')).toBeInTheDocument());
+
+    const row = screen.getAllByRole('row').find(r => within(r).queryByText('billing'))!;
+    // The two columns divide the labour; swapping their modes reads as a bug.
+    expect(row.querySelector('td.cell-created')!.textContent).toMatch(/\d{4}/);
+    expect(row.querySelector('td.cell-updated')!.textContent).toMatch(/ago|just now/i);
+    expect(row.querySelector('td.cell-updated')!.textContent).not.toMatch(/\d{4}/);
+  });
+
   it('renders the full column set, with Project on its own', async () => {
     renderDatagrid([CLEAN]);
 

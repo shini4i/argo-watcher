@@ -48,16 +48,27 @@ test('no row navigates on click — only the View button does', async ({ page, r
 
   await page.goto('/');
   await expect(page.getByRole('columnheader', { name: 'Application' })).toBeVisible();
-  const listPath = new URL(page.url()).pathname;
+
+  // Counting history entries beats polling the URL: polling an unchanged value
+  // passes on its first sample, racing any navigation the click may still start.
+  await page.evaluate(() => {
+    const w = window as unknown as { __navCount: number };
+    w.__navCount = 0;
+    const original = history.pushState.bind(history);
+    history.pushState = (...args: Parameters<typeof history.pushState>) => {
+      w.__navCount += 1;
+      return original(...args);
+    };
+  });
+  const navCount = () =>
+    page.evaluate(() => (window as unknown as { __navCount: number }).__navCount);
 
   // react-admin puts RaDatagrid-row on the header row too, so a rule meant for
   // task rows would style the header as one; neither may act as a link.
   await page.locator('.RaDatagrid-headerRow').click();
   await page.locator('tbody .RaDatagrid-row td.cell-author').first().click();
-  // react-admin keeps its list state in the query string, so compare the path.
-  await expect
-    .poll(() => new URL(page.url()).pathname, { message: 'a row click must not navigate' })
-    .toBe(listPath);
+  await page.waitForTimeout(500);
+  expect(await navCount(), 'a row click must not navigate').toBe(0);
 
   // Scoped and exact: an unscoped substring match also hits the top bar's Overview link.
   await page
@@ -68,4 +79,5 @@ test('no row navigates on click — only the View button does', async ({ page, r
   await expect
     .poll(() => new URL(page.url()).pathname)
     .toMatch(/^\/task\/[0-9a-f-]{36}$/);
+  expect(await navCount(), 'the View link must navigate exactly once').toBe(1);
 });
