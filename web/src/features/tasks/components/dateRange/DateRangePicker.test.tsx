@@ -14,6 +14,17 @@ vi.mock('../../../../shared/providers/TimezoneProvider', () => ({
 
 const FIXED_NOW = new Date('2026-04-27T12:00:00Z'); // a Monday
 
+const dayCell = (day: string) => {
+  const grid = screen.getByRole('grid', { name: 'Calendar' });
+  const matches = within(grid)
+    .getAllByRole('gridcell')
+    .filter(cell => cell.textContent === day);
+  if (matches.length !== 1) {
+    throw new Error(`expected one calendar cell labelled ${day}, found ${matches.length}`);
+  }
+  return matches[0];
+};
+
 describe('DateRangePicker', () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -91,20 +102,77 @@ describe('DateRangePicker', () => {
     const onApply = vi.fn();
     render(<DateRangePicker value={{ start: null, end: null }} onApply={onApply} />);
     fireEvent.click(screen.getByRole('button', { name: /Select date range/ }));
-    const grid = screen.getByRole('grid', { name: 'Calendar' });
-
-    const cells = within(grid).getAllByRole('gridcell');
-    const cell27 = cells.find(c => c.textContent === '27' && !c.hasAttribute('disabled'));
-    const cell20 = cells.find(c => c.textContent === '20' && !c.hasAttribute('disabled'));
-    if (!cell27 || !cell20) throw new Error('expected calendar cells not found');
-    fireEvent.click(cell27);
-    fireEvent.click(cell20);
+    fireEvent.click(dayCell('27'));
+    fireEvent.click(dayCell('20'));
 
     fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
     expect(onApply).toHaveBeenCalledWith({
       start: Math.floor(Date.parse('2026-04-20T00:00:00Z') / 1000),
       end: Math.floor(Date.parse('2026-04-27T23:59:59Z') / 1000),
     });
+  });
+
+  it('keeps an in-progress selection when the parent re-renders with an equal range', () => {
+    // HistoryFilters hands the picker a fresh object literal on every render.
+    const onApply = vi.fn();
+    const empty = () => <DateRangePicker value={{ start: null, end: null }} onApply={onApply} />;
+    const { rerender } = render(empty());
+
+    fireEvent.click(screen.getByRole('button', { name: /Select date range/ }));
+    fireEvent.click(dayCell('20'));
+
+    rerender(empty());
+
+    expect(dayCell('20')).toHaveAttribute('aria-selected', 'true');
+    // Closing the range on the next click is what proves pickingStart survived too.
+    fireEvent.click(dayCell('27'));
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    expect(onApply).toHaveBeenCalledWith({
+      start: Math.floor(Date.parse('2026-04-20T00:00:00Z') / 1000),
+      end: Math.floor(Date.parse('2026-04-27T23:59:59Z') / 1000),
+    });
+  });
+
+  it('keeps the browsed month when the parent re-renders with an equal range', () => {
+    const empty = () => <DateRangePicker value={{ start: null, end: null }} onApply={() => {}} />;
+    const { rerender } = render(empty());
+
+    fireEvent.click(screen.getByRole('button', { name: /Select date range/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Previous month' }));
+    expect(screen.getByText('March 2026')).toBeInTheDocument();
+
+    rerender(empty());
+
+    expect(screen.getByText('March 2026')).toBeInTheDocument();
+  });
+
+  it('reseeds the draft when the committed range changes while the popover is open', () => {
+    const start = Math.floor(Date.parse('2026-02-10T00:00:00Z') / 1000);
+    const end = Math.floor(Date.parse('2026-02-14T23:59:59Z') / 1000);
+    const { rerender } = render(
+      <DateRangePicker value={{ start: null, end: null }} onApply={() => {}} />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Select date range/ }));
+    rerender(<DateRangePicker value={{ start, end }} onApply={() => {}} />);
+
+    expect(screen.getByText('February 2026')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled();
+  });
+
+  it('reseeds the draft when only the committed end moves while the popover is open', () => {
+    const start = Math.floor(Date.parse('2026-02-10T00:00:00Z') / 1000);
+    const end = Math.floor(Date.parse('2026-02-14T23:59:59Z') / 1000);
+    const laterEnd = Math.floor(Date.parse('2026-02-18T23:59:59Z') / 1000);
+    const { rerender } = render(
+      <DateRangePicker value={{ start, end }} onApply={() => {}} />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /10.*Feb.*2026/ }));
+    rerender(<DateRangePicker value={{ start, end: laterEnd }} onApply={() => {}} />);
+
+    // A stale draft would still read as dirty and re-enable Apply.
+    expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled();
   });
 
   it('Cancel closes the popover without firing onApply', () => {

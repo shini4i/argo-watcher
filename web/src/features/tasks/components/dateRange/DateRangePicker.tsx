@@ -63,12 +63,23 @@ export const DateRangePicker = ({ value, onApply }: DateRangePickerProps) => {
   const [viewYear, setViewYear] = useState(() => ymd(new Date(), timezone).year);
   const [viewMonth, setViewMonth] = useState(() => ymd(new Date(), timezone).month);
 
-  // Opening the popover reseeds the draft and the visible month. Adjusting
-  // during render rather than in an effect means the calendar's first painted
-  // frame is already the right month.
-  const [lastSeed, setLastSeed] = useState({ anchor, value, timezone });
-  if (lastSeed.anchor !== anchor || lastSeed.value !== value || lastSeed.timezone !== timezone) {
-    setLastSeed({ anchor, value, timezone });
+  // Opening the popover reseeds the draft and the visible month; adjusting
+  // during render means the first painted frame is already the right month.
+  // The guard compares endpoints, not the `value` object — callers pass a fresh
+  // literal each render, and identity would drop a half-picked range.
+  const [lastSeed, setLastSeed] = useState({
+    anchor,
+    start: value.start,
+    end: value.end,
+    timezone,
+  });
+  if (
+    lastSeed.anchor !== anchor ||
+    lastSeed.start !== value.start ||
+    lastSeed.end !== value.end ||
+    lastSeed.timezone !== timezone
+  ) {
+    setLastSeed({ anchor, start: value.start, end: value.end, timezone });
     if (anchor) {
       setDraft(value);
       setPickingStart(true);

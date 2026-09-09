@@ -58,6 +58,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `backend` and `mock` services pinned `golang:1.26.4`, below the Go version `go.mod` requires,
   and the official Go image refuses to fetch a newer toolchain — so both exited immediately with
   `go.mod requires go >= 1.26.7`.
+- The History date range picker no longer loses a selection while you are making it. Any
+  re-render of the surrounding filters — the periodic task-list refresh among them — reset the
+  open calendar, so a range with the start clicked but not the end was discarded and the view
+  jumped back to the committed month.
 
 ## [1.2.0] - 2026-09-07
 
