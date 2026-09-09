@@ -113,7 +113,11 @@ type TaskStatus struct {
 	Images       []Image `json:"images,omitempty" binding:"required"`
 	Status       string  `json:"status,omitempty"`
 	StatusReason string  `json:"status_reason,omitempty"`
-	Error        string  `json:"error,omitempty"`
+	// Served alongside the task list's own copies, so the detail view can tell a
+	// rollback apart from an ordinary deployment and link to what it returned to.
+	IsRollback       bool   `json:"is_rollback,omitempty"`
+	RollbackTargetId string `json:"rollback_target_id,omitempty"`
+	Error            string `json:"error,omitempty"`
 }
 
 type ArgoApiErrorResponse struct {

@@ -25,34 +25,26 @@ describe('TimeCell', () => {
   });
 
   it('renders an em-dash when ts is missing', () => {
-    render(<TimeCell ts={null} />);
+    render(<TimeCell ts={null} mode="date" />);
     expect(screen.getByText('—')).toBeInTheDocument();
   });
 
-  it('stacks the relative time over the exact clock time', () => {
+  it('renders the full date with year and seconds in "date" mode', () => {
     const ts = Math.floor(new Date('2026-04-27T14:12:08Z').getTime() / 1000);
-    render(<TimeCell ts={ts} />);
+    render(<TimeCell ts={ts} mode="date" />);
 
-    expect(screen.getByText(`relative-${ts}`)).toBeInTheDocument();
+    const passed = formatDateMock.mock.calls[0][1] as Intl.DateTimeFormatOptions;
+    expect(passed.year).toBe('numeric');
+    expect(passed.second).toBe('2-digit');
     expect(screen.getByText('formatted')).toBeInTheDocument();
+    expect(screen.queryByText(`relative-${ts}`)).toBeNull();
   });
 
-  it('shows only hours, minutes and seconds on the exact line', () => {
+  it('renders the relative-to-now string in "relative" mode', () => {
     const ts = Math.floor(new Date('2026-04-27T14:12:08Z').getTime() / 1000);
-    render(<TimeCell ts={ts} />);
+    render(<TimeCell ts={ts} mode="relative" />);
 
-    const optionSets = formatDateMock.mock.calls.map(call => call[1] as Intl.DateTimeFormatOptions);
-    const clockOnly = optionSets.find(options => options.year === undefined);
-    expect(clockOnly).toMatchObject({ hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-  });
-
-  it('carries the full timestamp as a tooltip for the ambiguous relative line', () => {
-    const ts = Math.floor(new Date('2026-04-27T14:12:08Z').getTime() / 1000);
-    formatDateMock.mockImplementation((_value: number, options: Intl.DateTimeFormatOptions) =>
-      options.year ? 'full-timestamp' : 'clock-only',
-    );
-    render(<TimeCell ts={ts} />);
-
-    expect(screen.getByTitle('full-timestamp')).toBeInTheDocument();
+    expect(formatDateMock).not.toHaveBeenCalled();
+    expect(screen.getByText(`relative-${ts}`)).toBeInTheDocument();
   });
 });

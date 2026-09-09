@@ -62,14 +62,15 @@ const panelRows = () =>
     .filter(row => row.querySelectorAll('td').length === 1 && row.querySelector('td[colspan]'));
 
 describe('TasksDatagrid on real react-admin', () => {
-  it('renders one reason panel per task carrying a status_reason', async () => {
+  it('renders a reason panel per task whose reason adds something', async () => {
     renderDatagrid([FAILED, CANCELLED, CLEAN]);
 
     await waitFor(() => expect(screen.getByText('payments-worker')).toBeInTheDocument());
 
-    expect(panelRows()).toHaveLength(2);
+    // Cancelled has one cause, so its reason only restates the status label.
+    expect(panelRows()).toHaveLength(1);
     expect(screen.getByText('Application deployment failed. Rollout status is not available')).toBeInTheDocument();
-    expect(screen.getByText('Cancelled by lee@example.com')).toBeInTheDocument();
+    expect(screen.queryByText('Cancelled by lee@example.com')).toBeNull();
   });
 
   it('renders no panel for a task without a status_reason', async () => {
@@ -113,13 +114,35 @@ describe('TasksDatagrid on real react-admin', () => {
     );
   });
 
-  it('drops the separate project column, carrying the project in the app cell', async () => {
+  it('shows Created as an absolute date and Updated as a relative one', async () => {
+    renderDatagrid([CLEAN]);
+
+    await waitFor(() => expect(screen.getByText('billing')).toBeInTheDocument());
+
+    const row = screen.getAllByRole('row').find(r => within(r).queryByText('billing'))!;
+    // The two columns divide the labour; swapping their modes reads as a bug.
+    expect(row.querySelector('td.cell-created')!.textContent).toMatch(/\d{4}/);
+    expect(row.querySelector('td.cell-updated')!.textContent).toMatch(/ago|just now/i);
+    expect(row.querySelector('td.cell-updated')!.textContent).not.toMatch(/\d{4}/);
+  });
+
+  it('renders the full column set, with Project on its own', async () => {
     renderDatagrid([CLEAN]);
 
     await waitFor(() => expect(screen.getByText('billing')).toBeInTheDocument());
 
     const headers = screen.getAllByRole('columnheader').map(cell => cell.textContent?.trim());
-    expect(headers).toEqual(['Application', 'Status', 'Image · tag', 'Author', 'When', 'Duration']);
+    expect(headers).toEqual([
+      'Application',
+      'Project',
+      'Author',
+      'Status',
+      'Created',
+      'Updated',
+      'Duration',
+      'Images',
+      'Details',
+    ]);
     expect(screen.getByText('acme/checkout')).toBeInTheDocument();
   });
 });

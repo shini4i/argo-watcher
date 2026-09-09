@@ -134,3 +134,15 @@ export const isFailedStatus = (status?: string | null): boolean =>
   Boolean(status) && FAILED_STATUSES.has(status!);
 
 export const isRunningStatus = (status?: string | null): boolean => status === 'in progress';
+
+/** Statuses with exactly one cause, which the pill already names in full. */
+const SELF_EXPLANATORY_STATUSES: ReadonlySet<string> = new Set(['cancelled']);
+
+/**
+ * @description Whether the status pill already conveys the task's single cause,
+ * so the list can withhold a reason panel that would only repeat it.
+ * @param status the task's status
+ * @returns true for a status the pill fully explains on its own
+ */
+export const statusExplainsItself = (status?: string | null): boolean =>
+  SELF_EXPLANATORY_STATUSES.has(status ?? '');

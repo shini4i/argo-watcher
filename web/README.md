@@ -70,7 +70,7 @@ Playwright covers only what jsdom structurally cannot: real cross-document navig
 
 | Project | Covers |
 |---|---|
-| `no-auth` | The server's SPA fallback for a deep-linked task URL; Back from a directly-opened task page; and the auth-less mode, which must render with no sign-in and no privileged controls. |
+| `no-auth` | The server's SPA fallback for a deep-linked task URL; Back from a directly-opened task page; the auth-less mode, which must render with no sign-in and no privileged controls; and the task table's header rule surviving `position: sticky`, plus the header row not being styled as a clickable task row. |
 | `auth` | The top-level OIDC redirect and the stripping of its callback query; returning to the linked task via `url_state`; session recovery through the SSO cookie after a reload; the deploy-lock banner arriving over the live socket and being toggled from the drawer; rollback as a privileged user; and privilege gating for a privileged versus a regular user. |
 
 Two constraints when adding specs:

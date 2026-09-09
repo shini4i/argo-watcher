@@ -337,15 +337,17 @@ func (env *Env) getTaskStatus(w http.ResponseWriter, r *http.Request) {
 	} else {
 		setTaskApp(r, task.MetricApp())
 		writeJSON(w, http.StatusOK, models.TaskStatus{
-			Id:           task.Id,
-			Created:      task.Created,
-			Updated:      task.Updated,
-			App:          task.App,
-			Author:       task.Author,
-			Project:      task.Project,
-			Images:       task.Images,
-			Status:       task.Status,
-			StatusReason: task.StatusReason,
+			Id:               task.Id,
+			Created:          task.Created,
+			Updated:          task.Updated,
+			App:              task.App,
+			Author:           task.Author,
+			Project:          task.Project,
+			Images:           task.Images,
+			Status:           task.Status,
+			StatusReason:     task.StatusReason,
+			IsRollback:       task.IsRollback,
+			RollbackTargetId: task.RollbackTargetId,
 		})
 	}
 }

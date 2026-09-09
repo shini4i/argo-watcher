@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { describeTaskStatus, isFailedStatus, isRunningStatus, type TaskStatusPresentation } from './statusPresentation';
+import {
+  describeTaskStatus,
+  statusExplainsItself,
+  isFailedStatus,
+  isRunningStatus,
+  type TaskStatusPresentation,
+} from './statusPresentation';
 
 type StatusExpectation = Pick<
   TaskStatusPresentation,
@@ -151,5 +157,22 @@ describe('isFailedStatus / isRunningStatus', () => {
     for (const status of ['deployed', 'failed', 'accepted', 'In Progress']) {
       expect(isRunningStatus(status)).toBe(false);
     }
+  });
+});
+
+describe('statusExplainsItself', () => {
+  it('claims cancelled, whose pill names its only cause', () => {
+    expect(statusExplainsItself('cancelled')).toBe(true);
+  });
+
+  it('claims no status whose reason carries a diagnosis', () => {
+    for (const status of ['failed', 'aborted', 'app not found', 'deployed', 'in progress']) {
+      expect(statusExplainsItself(status), status).toBe(false);
+    }
+  });
+
+  it('claims nothing when the status is missing', () => {
+    expect(statusExplainsItself(undefined)).toBe(false);
+    expect(statusExplainsItself(null)).toBe(false);
   });
 });

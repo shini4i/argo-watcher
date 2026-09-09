@@ -2,11 +2,11 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
-import { createTheme, ThemeProvider } from '@mui/material/styles';
+import { createTheme } from '@mui/material/styles';
 import type { Task } from '../../../data/types';
+import { tokens } from '../../../theme/tokens';
 import { AUTHOR_MAX_WIDTH, TasksDatagrid, __testing } from './TasksDatagrid';
 import { TaskListProvider, useTaskListContext } from './TaskListContext';
-import { tokens } from '../../../theme/tokens';
 
 const sampleRecord: Task = {
   id: 'task-1',
@@ -26,6 +26,9 @@ const sampleRecord: Task = {
 
 const datagridPropsLog: Array<Record<string, unknown>> = [];
 
+/** Mutable so a test can drive FilteredEmptyState down either branch. */
+const listContext: { filterValues: Record<string, unknown> } = { filterValues: {} };
+
 vi.mock('react-admin', () => ({
   Datagrid: (props: Record<string, unknown>) => {
     datagridPropsLog.push(props);
@@ -37,7 +40,8 @@ vi.mock('react-admin', () => ({
     <div data-testid={`function-${source ?? label}`}>{render(sampleRecord)}</div>
   ),
   useRecordContext: () => sampleRecord,
-  useListContext: () => ({ filterValues: {} }),
+  useListContext: () => listContext,
+  // The failure panel's Copy button reaches for it through useCopyToClipboard.
   useNotify: () => vi.fn(),
 }));
 
@@ -45,50 +49,43 @@ const renderInRouter = (ui: ReactNode) =>
   render(<MemoryRouter>{ui}</MemoryRouter>);
 
 describe('TasksDatagrid', () => {
-  it('opens the task when a row is clicked instead of expanding it', () => {
+  it('leaves the row inert — the View button is the only way into a task', () => {
     datagridPropsLog.length = 0;
     renderInRouter(<TasksDatagrid />);
 
     const props = datagridPropsLog.at(-1);
-    expect(props).toMatchObject({ bulkActionButtons: false });
+    expect(props).toMatchObject({ bulkActionButtons: false, rowClick: false });
+    // The reason panel goes through DatagridBody, not the expand mechanism.
     expect(props?.expand).toBeUndefined();
     expect(props?.isRowExpandable).toBeUndefined();
-
-    const rowClick = props?.rowClick as (id: string) => string;
-    expect(rowClick('task-1')).toBe('/task/task-1');
+    expect(props?.body).toBeDefined();
   });
 
-  it('escapes an id that would otherwise break out of the path', () => {
-    const { rowClickToTask } = __testing;
-    expect(rowClickToTask('a/b?c')).toBe('/task/a%2Fb%3Fc');
-  });
-
-  it('renders the six task columns and no details action', () => {
+  it('renders all expected task columns in the new layout', () => {
     renderInRouter(<TasksDatagrid />);
     expect(screen.getByTestId('function-app')).toBeInTheDocument();
-    expect(screen.getByTestId('function-status')).toBeInTheDocument();
-    expect(screen.getByTestId('function-images')).toBeInTheDocument();
+    expect(screen.getByTestId('function-project')).toBeInTheDocument();
     expect(screen.getByTestId('function-author')).toHaveTextContent(sampleRecord.author);
+    expect(screen.getByTestId('function-status')).toBeInTheDocument();
     expect(screen.getByTestId('function-created')).toBeInTheDocument();
+    expect(screen.getByTestId('function-updated')).toBeInTheDocument();
     expect(screen.getByTestId('function-duration')).toBeInTheDocument();
-    expect(screen.queryByTestId('function-Details')).toBeNull();
+    expect(screen.getByTestId('function-images')).toBeInTheDocument();
+    expect(screen.getByTestId('function-Details')).toBeInTheDocument();
   });
 
-  it('drops the separate project column — the app cell carries the project', () => {
-    renderInRouter(<TasksDatagrid />);
-    expect(screen.queryByTestId('function-project')).toBeNull();
-    expect(screen.getByTestId('function-app')).toHaveTextContent('github.com/repo');
-  });
+  it('renders the failure panel beneath a row carrying a status reason', () => {
+    const { TaskRow } = __testing;
+    renderInRouter(
+      <table>
+        <tbody>
+          <TaskRow></TaskRow>
+        </tbody>
+      </table>,
+    );
 
-  it('collapses created and updated into one column', () => {
-    renderInRouter(<TasksDatagrid />);
-    expect(screen.queryByTestId('function-updated')).toBeNull();
-  });
-
-  it('moves the rollback flag out of the status cell and onto the app', () => {
-    renderInRouter(<TasksDatagrid />);
-    expect(screen.getByTestId('function-status')).not.toHaveTextContent('Rollback');
-    expect(screen.getByTestId('function-app')).toHaveTextContent('Rollback');
+    expect(screen.getByTestId('datagrid-row')).toBeInTheDocument();
+    expect(screen.getByText(sampleRecord.status_reason!)).toBeInTheDocument();
   });
 
   it('pauses auto-refresh while the cursor is over the table body', () => {
@@ -113,18 +110,20 @@ describe('TasksDatagrid', () => {
     expect(screen.getByTestId('reasons').textContent).toBe('');
   });
 
-  it('adds no pause reason for the failure panel — it is static', () => {
+  it('adds no pause reason for the failure panel — it is always open, not expanded', () => {
+    const { TaskRow } = __testing;
     const Probe = () => {
       const ctx = useTaskListContext();
       return <span data-testid="reasons">{Array.from(ctx.state.pausedReasons).join(',')}</span>;
     };
-    const { TaskRow } = __testing;
 
     renderInRouter(
       <TaskListProvider>
         <Probe />
         <table>
-          <TaskRow></TaskRow>
+          <tbody>
+            <TaskRow></TaskRow>
+          </tbody>
         </table>
       </TaskListProvider>,
     );
@@ -132,18 +131,50 @@ describe('TasksDatagrid', () => {
     expect(screen.getByTestId('reasons').textContent).toBe('');
   });
 
-  describe('TaskRow', () => {
-    const { TaskRow } = __testing;
+  it('flags a rollback in the application cell, not the status cell', () => {
+    renderInRouter(<TasksDatagrid />);
+    // The chip qualifies the deployment, so it travels with the app name.
+    expect(screen.getByTestId('function-app')).toHaveTextContent('Rollback');
+    expect(screen.getByTestId('function-status')).not.toHaveTextContent('Rollback');
+  });
 
-    it('renders the failure panel beneath a row carrying a status reason', () => {
-      renderInRouter(
-        <table>
-          <TaskRow></TaskRow>
-        </table>,
-      );
+  describe('datagridSx', () => {
+    const { datagridSx } = __testing;
+    const resolve = (mode: 'light' | 'dark') => {
+      const theme = createTheme({ palette: { mode } });
+      const factory = datagridSx as (theme: unknown) => Record<string, Record<string, unknown>>;
+      return { sx: factory(theme), divider: theme.palette.divider };
+    };
 
-      expect(screen.getByTestId('datagrid-row')).toBeInTheDocument();
-      expect(screen.getByText('all green')).toBeInTheDocument();
+    it('paints the header rule as an inset shadow, never as a collapsed border', () => {
+      const { sx, divider } = resolve('dark');
+      const header = sx['& .RaDatagrid-headerCell'];
+      // A collapsed border belongs to the table, not the cell, so a sticky
+      // header cannot carry it and the rule renders in fragments once stuck.
+      expect(header.position).toBe('sticky');
+      expect(header.borderBottom).toBe('none');
+      expect(header.boxShadow).toBe(`inset 0 -1px 0 ${divider}`);
+    });
+
+    it('scopes the row rule to the body, which the header row is not part of', () => {
+      const { sx } = resolve('light');
+      // react-admin puts RaDatagrid-row on the header row too, so an unscoped
+      // rule hands the header the task rows' hover tint.
+      expect(sx['& .RaDatagrid-row']).toBeUndefined();
+      expect(sx['& tbody .RaDatagrid-row']).toBeDefined();
+    });
+
+    it('drops the first row top border so it does not stack with the shadow', () => {
+      const row = resolve('light').sx['& tbody .RaDatagrid-row'];
+      expect(row['&:first-of-type']).toEqual({ borderTop: 'none' });
+    });
+
+    it('tints the row hover per theme', () => {
+      const hover = (mode: 'light' | 'dark') =>
+        (resolve(mode).sx['& tbody .RaDatagrid-row']['&:hover'] as Record<string, string>)
+          .backgroundColor;
+      expect(hover('light')).toBe(tokens.rowHoverLight);
+      expect(hover('dark')).toBe(tokens.rowHoverDark);
     });
   });
 
@@ -179,6 +210,35 @@ describe('TasksDatagrid', () => {
     });
   });
 
+  describe('FilteredEmptyState', () => {
+    const { FilteredEmptyState } = __testing;
+
+    it('says nothing matches the view when no filter is active', () => {
+      listContext.filterValues = {};
+      renderInRouter(
+        <TaskListProvider>
+          <FilteredEmptyState />
+        </TaskListProvider>,
+      );
+
+      expect(screen.getByText('No tasks to show')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull();
+    });
+
+    it('offers the clear-filters CTA once a filter is narrowing the list', () => {
+      listContext.filterValues = { status: 'failed' };
+      renderInRouter(
+        <TaskListProvider>
+          <FilteredEmptyState />
+        </TaskListProvider>,
+      );
+
+      expect(screen.getByText('No tasks match the active filters')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Clear filters' })).toBeInTheDocument();
+      listContext.filterValues = {};
+    });
+  });
+
   describe('AuthorCell', () => {
     const { AuthorCell } = __testing;
 
@@ -204,17 +264,41 @@ describe('TasksDatagrid', () => {
       expect(cell).toHaveAttribute('title', author);
     });
   });
-});
 
-describe('ThemeProvider smoke', () => {
-  it('renders the datagrid under a dark theme without throwing', () => {
-    render(
-      <MemoryRouter>
-        <ThemeProvider theme={createTheme({ palette: { mode: 'dark' } })}>
-          <TasksDatagrid />
-        </ThemeProvider>
-      </MemoryRouter>,
-    );
-    expect(screen.getByTestId('datagrid')).toBeInTheDocument();
+  describe('ProjectCell', () => {
+    const { ProjectCell } = __testing;
+
+    it('renders an em-dash placeholder when project is empty', () => {
+      render(<ProjectCell project={null} />);
+      expect(screen.getByText('—')).toBeInTheDocument();
+    });
+
+    it('renders plain projects as monospace text', () => {
+      render(<ProjectCell project="infra/prod" />);
+      expect(screen.getByText('infra/prod')).toBeInTheDocument();
+      expect(screen.queryByRole('link')).toBeNull();
+    });
+
+    it('renders URL projects as external links', () => {
+      render(<ProjectCell project="https://github.com/org/repo/" />);
+      const link = screen.getByRole('link');
+      expect(link).toHaveAttribute('href', 'https://github.com/org/repo/');
+      expect(link).toHaveAttribute('target', '_blank');
+      expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'));
+    });
+  });
+
+  describe('ViewButton', () => {
+    const { ViewButton } = __testing;
+
+    it('navigates to the task detail page', () => {
+      renderInRouter(<ViewButton id="task-42" />);
+      expect(screen.getByRole('link', { name: /view/i })).toHaveAttribute('href', '/task/task-42');
+    });
+
+    it('escapes an id that would otherwise break out of the path', () => {
+      renderInRouter(<ViewButton id="a/b?c" />);
+      expect(screen.getByRole('link', { name: /view/i })).toHaveAttribute('href', '/task/a%2Fb%3Fc');
+    });
   });
 });

@@ -5,20 +5,31 @@ import { tokens } from '../../../theme/tokens';
 
 export interface RollbackIndicatorProps {
   readonly isRollback?: boolean;
+  /** `medium` matches StatusPill, for placing the badge beside one. */
+  readonly size?: 'small' | 'medium';
 }
+
+/** `medium` mirrors StatusPill's metrics so the two read as one row of labels. */
+const SIZES = {
+  small: { height: 18, padding: '0 6px', fontSize: 10.5, iconSize: 12, gap: '3px' },
+  medium: { height: 24, padding: '0 10px', fontSize: 12, iconSize: 14, gap: '4px' },
+} as const;
 
 /**
  * @description Chip flagging a deployment that returns to a previously deployed
- * version; renders nothing otherwise. It belongs beside the app name rather than
- * in the status cell, because a rollback qualifies the deployment, not its outcome.
+ * version; renders nothing otherwise. It qualifies the deployment rather than its
+ * outcome, so it accompanies the application name rather than the status.
+ * @param size `medium` where it sits beside a StatusPill, `small` in a table row
  */
-export const RollbackIndicator = ({ isRollback }: RollbackIndicatorProps) => {
+export const RollbackIndicator = ({ isRollback, size = 'small' }: RollbackIndicatorProps) => {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
 
   if (!isRollback) {
     return null;
   }
+
+  const metrics = SIZES[size];
 
   return (
     <Tooltip title="Rollback to a previously deployed version">
@@ -27,19 +38,19 @@ export const RollbackIndicator = ({ isRollback }: RollbackIndicatorProps) => {
         sx={{
           display: 'inline-flex',
           alignItems: 'center',
-          gap: '3px',
-          height: 18,
-          padding: '0 6px',
+          gap: metrics.gap,
+          height: metrics.height,
+          padding: metrics.padding,
           borderRadius: tokens.radiusPill,
           backgroundColor: isDark ? tokens.statusRunningBgDark : tokens.statusRunningBg,
           color: isDark ? tokens.statusRunningFgDark : tokens.statusRunningFg,
-          fontSize: 10.5,
+          fontSize: metrics.fontSize,
           fontWeight: 600,
           whiteSpace: 'nowrap',
           flexShrink: 0,
         }}
       >
-        <RestoreIcon aria-hidden sx={{ fontSize: 12 }} />
+        <RestoreIcon aria-hidden sx={{ fontSize: metrics.iconSize }} />
         Rollback
       </Box>
     </Tooltip>

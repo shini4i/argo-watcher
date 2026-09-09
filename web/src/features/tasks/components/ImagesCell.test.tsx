@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { ImagesCell, stripRegistryPrefix, TAG_MAX_WIDTH } from './ImagesCell';
 
@@ -26,14 +26,14 @@ describe('ImagesCell', () => {
     expect(screen.getByText('—')).toBeInTheDocument();
   });
 
-  it('renders a single image with no counter', () => {
+  it('renders a single image inline without a toggle', () => {
     render(<ImagesCell images={[{ image: 'api', tag: 'v1' }]} />);
     expect(screen.getByText('api')).toBeInTheDocument();
     expect(screen.getByText('v1')).toBeInTheDocument();
-    expect(screen.queryByText(/^\+/)).toBeNull();
+    expect(screen.queryByText(/more/)).toBeNull();
   });
 
-  it('shows only the first image and counts the rest', () => {
+  it('collapses extra images behind a +N more toggle', () => {
     render(
       <ImagesCell
         images={[
@@ -45,10 +45,13 @@ describe('ImagesCell', () => {
     );
     expect(screen.getByText('api')).toBeInTheDocument();
     expect(screen.queryByText('worker')).toBeNull();
-    expect(screen.getByText('+2')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '+2 more' }));
+    expect(screen.getByText('worker')).toBeInTheDocument();
+    expect(screen.getByText('cron')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Show less' })).toBeInTheDocument();
   });
 
-  it('offers no control to expand, so a click always reaches the row', () => {
+  it('collapses again on a second click, so the row can be folded back', () => {
     render(
       <ImagesCell
         images={[
@@ -57,20 +60,12 @@ describe('ImagesCell', () => {
         ]}
       />,
     );
-    expect(screen.queryByRole('button')).toBeNull();
-  });
 
-  it('names the hidden images in the counter tooltip', () => {
-    render(
-      <ImagesCell
-        images={[
-          { image: 'api', tag: 'v1' },
-          { image: 'ghcr.io/org/worker', tag: 'v2' },
-          { image: 'cron', tag: 'v3' },
-        ]}
-      />,
-    );
-    expect(screen.getByText('+2')).toHaveAttribute('title', 'worker:v2, cron:v3');
+    fireEvent.click(screen.getByRole('button', { name: '+1 more' }));
+    expect(screen.getByText('worker')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /show less/i }));
+    expect(screen.getByRole('button', { name: '+1 more' })).toBeInTheDocument();
   });
 
   it('keeps a hyphenated tag on one line instead of shrinking its badge', () => {
@@ -91,6 +86,7 @@ describe('ImagesCell', () => {
       maxWidth: `${TAG_MAX_WIDTH}px`,
       overflow: 'hidden',
       textOverflow: 'ellipsis',
+      // With inline-block the line-height, not flex alignment, centers the text.
       height: '18px',
       lineHeight: '18px',
     });

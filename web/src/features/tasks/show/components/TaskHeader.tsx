@@ -80,7 +80,7 @@ export const TaskHeader = ({
             {app}
           </Typography>
           <StatusPill status={task.status} />
-          <RollbackIndicator isRollback={task.is_rollback} />
+          <RollbackIndicator isRollback={task.is_rollback} size="medium" />
         </Stack>
         <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', mt: 0.5 }}>
           {task.id && <CopyChip value={task.id} label="Task id" />}
