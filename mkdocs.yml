@@ -151,10 +151,9 @@ plugins:
       markdown_description: >-
         Argo Watcher lets a CI/CD pipeline wait for an Argo CD deployment and
         learn whether the image it just built rolled out. Unlike `argocd app
-        wait`, it tracks the specific image tag, fails when the application
-        rolls out without it, and keeps every deployment as history. It can
-        also commit image tags to the GitOps repository, replacing Argo CD
-        Image Updater.
+        wait`, it waits for the specific image tag to be running and keeps
+        every deployment as history. It can also commit image tags to the
+        GitOps repository, replacing Argo CD Image Updater.
       sections:
         Getting Started:
           - getting-started/index.md: Starting point for new users.

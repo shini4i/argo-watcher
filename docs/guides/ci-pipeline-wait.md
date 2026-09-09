@@ -19,7 +19,7 @@ This guide compares the ways to close that gap and explains when Argo Watcher is
 
 **It does not know about your image.** The command takes an application name and waits for `Synced` and `Healthy`. Its flags select *which* conditions to wait for (`--sync`, `--health`, `--operation`, `--suspended`, `--degraded`, `--delete`, `--hydrated`) and *which* resources to watch (`--resource`, `--selector`). None of them names a revision or an image tag. If Argo CD has not noticed your commit yet, the application is still `Synced` and `Healthy` on the previous revision, that condition is already met, and the command returns success for a deployment that has not started.
 
-**It reports a state, not an outcome.** When it does time out, you know the application is unhealthy — not whether your image was ever part of it, whether a newer deployment replaced yours, or what the failing resource was. Argo Watcher fails a task as soon as the application finishes rolling out without declaring the requested image, and records the reason ([Image is not part of application](../operations/troubleshooting.md#image-is-not-part-of-application)).
+**It reports a state, not an outcome.** When it does time out, all you have is an exit code in one pipeline log. Argo Watcher records every deployment as a task with its final status and reason, so the outcome outlives the pipeline run and sits in the Web UI next to the deployments before and after it.
 
 **It lives in the pipeline.** Every project's CI needs the `argocd` binary and an Argo CD token with read access to its applications. Argo Watcher holds the single Argo CD token; pipelines talk to Argo Watcher with a URL and an optional [deploy token](../reference/api.md#authentication).
 

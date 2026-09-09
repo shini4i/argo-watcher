@@ -39,7 +39,7 @@ Argo Watcher watches the Argo CD application for the images the pipeline just bu
 
 `argocd app wait` waits for an application to be `Synced` and `Healthy`. It has no argument for a revision or an image tag, so if Argo CD has not picked up your commit yet, the previous revision already satisfies it and the command returns success for a deployment that has not started. It also needs the `argocd` CLI and an Argo CD token in every pipeline.
 
-Argo Watcher waits for the application to be `Synced` and `Healthy` **with the image tag you built running**, fails fast when the application finishes rolling out without declaring that image name at all, and keeps every deployment as history in the Web UI. Pipelines need only the server URL and an optional deploy token. The full comparison, including polling the API and `kubectl rollout status`, is in [Wait for an Argo CD Deployment from CI](https://argo-watcher.readthedocs.io/en/latest/guides/ci-pipeline-wait/).
+Argo Watcher waits until the image tag you built is running in a `Synced` and `Healthy` application, and keeps every deployment as history in the Web UI. Pipelines need only the server URL and an optional deploy token. The full comparison, including polling the API and `kubectl rollout status`, is in [Wait for an Argo CD Deployment from CI](https://argo-watcher.readthedocs.io/en/latest/guides/ci-pipeline-wait/).
 
 ## Architecture
 
