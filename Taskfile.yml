@@ -7,24 +7,26 @@ tasks:
     cmds:
       - echo "===> Installing dependencies"
       - go install github.com/swaggo/swag/cmd/swag@latest
-      - go install go.uber.org/mock/mockgen@latest
       - go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
       - echo "===> Done"
     status:
-      - type swag mockgen migrate
+      - type swag migrate
 
   mocks:
     desc: Generate mocks for tests
     cmds:
       - echo "===> Generating mocks"
-      - mockgen --source=internal/argocd/argo_api.go --destination=internal/mocks/argo_api.go --package=mocks
-      - mockgen --source=internal/state/state.go --destination=internal/mocks/state.go --package=mocks
-      - mockgen --source=internal/prometheus/metrics.go --destination=internal/mocks/metrics.go --package=mocks
-      - mockgen --source=internal/updater/interfaces.go --destination=internal/mocks/updater.go --package=mocks
-      - mockgen --source=internal/notifications/webhook.go --destination=internal/mocks/notifications.go --package=mocks
-      - mockgen --source=internal/auth/auth.go --destination=internal/mocks/auth.go --package=mocks
-      - mockgen --source=internal/migrate/migrate.go --destination=internal/mocks/migrate.go --package=mocks
+      - go tool mockgen --source=internal/argocd/argo_api.go --destination=internal/mocks/argo_api.go --package=mocks
+      - go tool mockgen --source=internal/state/state.go --destination=internal/mocks/state.go --package=mocks
+      - go tool mockgen --source=internal/prometheus/metrics.go --destination=internal/mocks/metrics.go --package=mocks
+      - go tool mockgen --source=internal/updater/interfaces.go --destination=internal/mocks/updater.go --package=mocks
+      - go tool mockgen --source=internal/notifications/webhook.go --destination=internal/mocks/notifications.go --package=mocks
+      - go tool mockgen --source=internal/auth/auth.go --destination=internal/mocks/auth.go --package=mocks
+      - go tool mockgen --source=internal/migrate/migrate.go --destination=internal/mocks/migrate.go --package=mocks
     sources:
+      # go.mod pins mockgen via its tool directive, so a version bump must
+      # invalidate the fingerprint and regenerate.
+      - go.mod
       - internal/argocd/argo_api.go
       - internal/state/state.go
       - internal/prometheus/metrics.go
