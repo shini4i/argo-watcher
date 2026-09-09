@@ -50,6 +50,8 @@ const formatTriggerLabel = (range: DateRangeValue, formatDate: (ts: number, opts
 
 const MONTH_FORMAT: Intl.DateTimeFormatOptions = { month: 'long', year: 'numeric' };
 
+const CELL_FORMAT: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'long', year: 'numeric' };
+
 /**
  * `value` is in Unix seconds; `onApply` fires only when the user clicks Apply
  * with a complete and dirty range. Computation honours the active timezone.
@@ -136,6 +138,17 @@ export const DateRangePicker = ({ value, onApply }: DateRangePickerProps) => {
   const grid = useMemo(
     () => buildMonthGrid(viewYear, viewMonth, timezone),
     [viewYear, viewMonth, timezone],
+  );
+
+  // The grid spills into the neighbouring months, so a bare day number names
+  // two cells. One formatter, reused across all 42.
+  const cellFormatter = useMemo(
+    () =>
+      new Intl.DateTimeFormat('en-GB', {
+        ...CELL_FORMAT,
+        timeZone: timezone === 'utc' ? 'UTC' : undefined,
+      }),
+    [timezone],
   );
 
   const draftStartDate = draft.start === null ? null : new Date(draft.start * 1000);
@@ -325,6 +338,7 @@ export const DateRangePicker = ({ value, onApply }: DateRangePickerProps) => {
                   <CalendarCell
                     key={cell.date.toISOString()}
                     label={String(ymd(cell.date, timezone).day)}
+                    accessibleLabel={cellFormatter.format(cell.date)}
                     isInMonth={cell.inMonth}
                     isToday={cell.isToday}
                     isStart={isStart}
@@ -375,6 +389,7 @@ export const DateRangePicker = ({ value, onApply }: DateRangePickerProps) => {
 
 interface CalendarCellProps {
   readonly label: string;
+  readonly accessibleLabel: string;
   readonly isInMonth: boolean;
   readonly isToday: boolean;
   readonly isStart: boolean;
@@ -383,7 +398,16 @@ interface CalendarCellProps {
   readonly onClick: () => void;
 }
 
-const CalendarCell = ({ label, isInMonth, isToday, isStart, isEnd, isInRange, onClick }: CalendarCellProps) => {
+const CalendarCell = ({
+  label,
+  accessibleLabel,
+  isInMonth,
+  isToday,
+  isStart,
+  isEnd,
+  isInRange,
+  onClick,
+}: CalendarCellProps) => {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
   const isEndpoint = isStart || isEnd;
@@ -413,6 +437,7 @@ const CalendarCell = ({ label, isInMonth, isToday, isStart, isEnd, isInRange, on
   return (
     <ButtonBase
       role="gridcell"
+      aria-label={accessibleLabel}
       aria-selected={isEndpoint}
       onClick={onClick}
       sx={{

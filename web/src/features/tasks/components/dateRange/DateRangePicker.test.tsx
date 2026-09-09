@@ -14,16 +14,8 @@ vi.mock('../../../../shared/providers/TimezoneProvider', () => ({
 
 const FIXED_NOW = new Date('2026-04-27T12:00:00Z'); // a Monday
 
-const dayCell = (day: string) => {
-  const grid = screen.getByRole('grid', { name: 'Calendar' });
-  const matches = within(grid)
-    .getAllByRole('gridcell')
-    .filter(cell => cell.textContent === day);
-  if (matches.length !== 1) {
-    throw new Error(`expected one calendar cell labelled ${day}, found ${matches.length}`);
-  }
-  return matches[0];
-};
+const dayCell = (date: string) =>
+  within(screen.getByRole('grid', { name: 'Calendar' })).getByRole('gridcell', { name: date });
 
 describe('DateRangePicker', () => {
   beforeEach(() => {
@@ -102,8 +94,8 @@ describe('DateRangePicker', () => {
     const onApply = vi.fn();
     render(<DateRangePicker value={{ start: null, end: null }} onApply={onApply} />);
     fireEvent.click(screen.getByRole('button', { name: /Select date range/ }));
-    fireEvent.click(dayCell('27'));
-    fireEvent.click(dayCell('20'));
+    fireEvent.click(dayCell('27 April 2026'));
+    fireEvent.click(dayCell('20 April 2026'));
 
     fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
     expect(onApply).toHaveBeenCalledWith({
@@ -119,13 +111,13 @@ describe('DateRangePicker', () => {
     const { rerender } = render(empty());
 
     fireEvent.click(screen.getByRole('button', { name: /Select date range/ }));
-    fireEvent.click(dayCell('20'));
+    fireEvent.click(dayCell('20 April 2026'));
 
     rerender(empty());
 
-    expect(dayCell('20')).toHaveAttribute('aria-selected', 'true');
+    expect(dayCell('20 April 2026')).toHaveAttribute('aria-selected', 'true');
     // Closing the range on the next click is what proves pickingStart survived too.
-    fireEvent.click(dayCell('27'));
+    fireEvent.click(dayCell('27 April 2026'));
     fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
     expect(onApply).toHaveBeenCalledWith({
       start: Math.floor(Date.parse('2026-04-20T00:00:00Z') / 1000),
