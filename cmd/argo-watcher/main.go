@@ -15,7 +15,7 @@ import (
 
 // @title Argo-Watcher API
 // @version 1.0
-// @description A small tool that will help to improve deployment visibility
+// @description Track Argo CD deployments from CI pipelines and wait for an image tag to roll out.
 // @BasePath /
 func main() {
 	// Configure structured logging up front so both the --migrate and server
