@@ -35,6 +35,8 @@ A task names the application, the images, and the tag the pipeline expects. The 
 
 The full list of states is in [Concepts](../getting-started/concepts.md#task-lifecycle).
 
+Two opt-ins relax the check. The [`argo-watcher/fire-and-forget`](../reference/annotations.md) annotation marks a task `deployed` without monitoring the rollout, and [`ACCEPT_SUSPENDED_APP`](../reference/server-env.md#core) treats a `Synced` application whose health is `Suspended` as deployed.
+
 Beyond the exit code, every task is kept as history and shown in the Web UI, can trigger [notifications](notifications.md), is blocked by the [deployment lock](deployment-lock.md), and can carry the image-tag commit itself through the [GitOps Updater](gitops-updater.md).
 
 ## Minimal pipeline step
