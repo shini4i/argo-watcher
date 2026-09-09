@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-09-09
+
 ### Added
 
 - New **Overview** screen at `/overview`, reachable from the dashboard icon in the top bar. It
@@ -1261,7 +1263,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bumped the Go toolchain to `1.25.11`, resolving a `net/textproto` standard
   library vulnerability present in `go1.25.9`.
 
-[Unreleased]: https://github.com/shini4i/argo-watcher/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/shini4i/argo-watcher/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/shini4i/argo-watcher/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/shini4i/argo-watcher/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/shini4i/argo-watcher/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/shini4i/argo-watcher/compare/v1.0.0...v1.1.0
