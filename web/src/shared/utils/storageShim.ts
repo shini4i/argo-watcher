@@ -1,27 +1,52 @@
 /**
- * @description Builds a Storage backed by a Map, for a browser that has none.
- * Values are not own properties, so `storage.foo`, `storage[0]` and
- * `Object.keys` do not see them the way native Storage allows — enough for
- * getItem/setItem callers, which is all this app and ra-core's store need.
+ * @description Builds a Storage for a browser that has none. Keys are own
+ * enumerable properties of the returned object, as on a native Storage, so
+ * callers that enumerate it see the values — ra-core's store walks
+ * `Object.keys` in reset and `Object.entries` in listItems.
  * @returns an in-memory Storage; values live until the page is left
  */
 const createMemoryStorage = (): Storage => {
-  const values = new Map<string, string>();
+  const storage = {} as Storage;
+  const values = storage as unknown as Record<string, unknown>;
 
-  return {
-    get length() {
-      return values.size;
+  const define = (name: string, member: PropertyDescriptor) => {
+    Object.defineProperty(storage, name, { configurable: true, ...member });
+  };
+
+  define('length', { get: () => Object.keys(storage).length });
+  define('clear', {
+    value: () => {
+      for (const key of Object.keys(storage)) {
+        delete values[key];
+      }
     },
-    clear: () => values.clear(),
-    getItem: (key: string) => values.get(key) ?? null,
-    key: (index: number) => Array.from(values.keys())[index] ?? null,
-    removeItem: (key: string) => {
-      values.delete(key);
+  });
+  define('getItem', {
+    value: (key: string) => {
+      // Only a stored key is an own enumerable property, so this reads past
+      // neither this object's own members nor a polluted Object.prototype.
+      const stored = Object.getOwnPropertyDescriptor(storage, key);
+      return stored?.enumerable === true ? (stored.value as string) : null;
     },
-    setItem: (key: string, value: string) => {
-      values.set(key, String(value));
+  });
+  define('key', { value: (index: number) => Object.keys(storage)[index] ?? null });
+  define('removeItem', {
+    value: (key: string) => {
+      delete values[key];
     },
-  } as Storage;
+  });
+  define('setItem', {
+    value: (key: string, value: string) => {
+      Object.defineProperty(storage, key, {
+        configurable: true,
+        enumerable: true,
+        value: String(value),
+        writable: true,
+      });
+    },
+  });
+
+  return storage;
 };
 
 /**

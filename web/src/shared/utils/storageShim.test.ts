@@ -50,6 +50,62 @@ describe('installStorageShim', () => {
     }
   });
 
+  // ra-core's store enumerates the Storage object itself: reset() and
+  // removeItems() walk Object.keys, listItems() walks Object.entries.
+  it('exposes its keys as own enumerable properties', () => {
+    const restore = blockStorageAccess();
+    try {
+      installStorageShim();
+      const storage = window.localStorage;
+
+      storage.setItem('shim.a', 'one');
+      storage.setItem('shim.b', 'two');
+
+      expect(Object.entries(storage)).toEqual([
+        ['shim.a', 'one'],
+        ['shim.b', 'two'],
+      ]);
+
+      // Every consumer rewrites a key it already holds.
+      storage.setItem('shim.a', 'three');
+      expect(storage.getItem('shim.a')).toBe('three');
+      expect(Object.keys(storage)).toEqual(['shim.a', 'shim.b']);
+
+      // oidc-client-ts reads length once, then walks key(0..length-1).
+      storage.removeItem('shim.a');
+      expect(Object.keys(storage)).toEqual(['shim.b']);
+      expect(storage.length).toBe(1);
+      expect(storage.key(0)).toBe('shim.b');
+
+      storage.clear();
+      expect(Object.keys(storage)).toEqual([]);
+      expect(storage.key(0)).toBeNull();
+    } finally {
+      restore();
+    }
+  });
+
+  // Only a stored key may read back as a value. Its own members and anything
+  // inherited must read as absent, or ra-core's tryParse chokes on them.
+  it('reads back nothing it was not given', () => {
+    const restore = blockStorageAccess();
+    const polluted = Object.prototype as unknown as Record<string, string>;
+    try {
+      installStorageShim();
+      const storage = window.localStorage;
+
+      storage.setItem('shim.a', 'one');
+      polluted['shim.inherited'] = 'from the prototype';
+
+      expect(storage.getItem('length')).toBeNull();
+      expect(storage.getItem('getItem')).toBeNull();
+      expect(storage.getItem('shim.inherited')).toBeNull();
+    } finally {
+      delete polluted['shim.inherited'];
+      restore();
+    }
+  });
+
   // Some sandboxed iframes and old WebViews report the property as undefined
   // instead of throwing, and they need the shim just as much.
   it('replaces a localStorage that reads as undefined', () => {

@@ -24,11 +24,13 @@ describe('storage shim against react-admin', () => {
 
     expect(store.getItem('shim.probe')).toBe('value');
 
-    // A Map-backed Storage exposes no own enumerable keys, so ra-core's
-    // Object.keys/entries paths degrade to no-ops. They must not throw —
-    // react-admin calls reset() on logout.
-    expect(() => store.reset()).not.toThrow();
-    expect(() => store.listItems()).not.toThrow();
+    // react-admin calls reset() on logout, and both it and listItems()
+    // enumerate the Storage object rather than calling its methods.
+    expect(store.listItems()).toEqual({ 'shim.probe': 'value' });
+
+    store.reset();
+    expect(store.getItem('shim.probe')).toBeUndefined();
+    expect(store.listItems()).toEqual({});
   });
 
   // The bootstrap module is the middle link: main.tsx imports it for its side
