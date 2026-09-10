@@ -23,6 +23,7 @@ import {
   endOfDay,
   isSameDay,
   matchPreset,
+  shiftMonth,
   startOfDay,
   ymd,
   type DateRangeValue,
@@ -51,12 +52,6 @@ const formatTriggerLabel = (range: DateRangeValue, formatDate: (ts: number, opts
 const MONTH_FORMAT: Intl.DateTimeFormatOptions = { month: 'long', year: 'numeric' };
 
 const CELL_FORMAT: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'long', year: 'numeric' };
-
-/** Steps the browsed month by delta, carrying into the year. */
-const shiftMonth = (year: number, month: number, delta: number) => {
-  const absolute = year * 12 + month + delta;
-  return { year: Math.floor(absolute / 12), month: ((absolute % 12) + 12) % 12 };
-};
 
 /** The " · N days selected" suffix, empty while the range is incomplete. */
 const spanSuffix = (range: DateRangeValue) => {

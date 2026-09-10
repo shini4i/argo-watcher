@@ -177,3 +177,9 @@ export const dayCount = (start: number, end: number): number => {
   if (end < start) return 0;
   return Math.max(1, Math.round((end - start) / (60 * 60 * 24)));
 };
+
+/** Steps the browsed month by delta, carrying into the year. */
+export const shiftMonth = (year: number, month: number, delta: number): { year: number; month: number } => {
+  const absolute = year * 12 + month + delta;
+  return { year: Math.floor(absolute / 12), month: ((absolute % 12) + 12) % 12 };
+};
