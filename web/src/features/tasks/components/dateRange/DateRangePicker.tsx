@@ -59,7 +59,11 @@ const spanSuffix = (range: DateRangeValue) => {
     return '';
   }
   const span = dayCount(range.start, range.end);
-  return span > 0 ? ` · ${span} ${span === 1 ? 'day' : 'days'} selected` : '';
+  if (span === 0) {
+    return '';
+  }
+  const dayWord = span === 1 ? 'day' : 'days';
+  return ` · ${span} ${dayWord} selected`;
 };
 
 /**
