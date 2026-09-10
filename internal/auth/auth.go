@@ -24,9 +24,9 @@ type TokenAuthenticator interface {
 	Authenticate(token string) error
 }
 
-// AppScopedStrategy is implemented by a strategy whose tokens are confined to
+// AppValidator is implemented by a strategy whose tokens are confined to
 // named applications. One that authorizes the whole estate does not.
-type AppScopedStrategy interface {
+type AppValidator interface {
 	ValidateForApp(token, app string) (bool, error)
 }
 
@@ -162,7 +162,7 @@ func authenticate(strategy AuthStrategy, token string) (bool, error) {
 // are confined to named applications exposes ValidateForApp; one whose tokens
 // authorize the whole estate does not, and answers the unscoped question instead.
 func validateForApp(strategy AuthStrategy, token, app string) (bool, error) {
-	scoped, ok := strategy.(AppScopedStrategy)
+	scoped, ok := strategy.(AppValidator)
 	if !ok {
 		return strategy.Validate(token)
 	}
@@ -329,9 +329,9 @@ var (
 	_ TokenAuthenticator = (*OIDCAuthService)(nil)
 	_ TokenAuthenticator = (*AppTokenAuthService)(nil)
 	_ TokenAuthenticator = (*PrefixRouter)(nil)
-	_ AppScopedStrategy  = (*AppTokenAuthService)(nil)
-	_ AppScopedStrategy  = (*JWTAuthService)(nil)
-	_ AppScopedStrategy  = (*PrefixRouter)(nil)
+	_ AppValidator       = (*AppTokenAuthService)(nil)
+	_ AppValidator       = (*JWTAuthService)(nil)
+	_ AppValidator       = (*PrefixRouter)(nil)
 	_ UserIdentifier     = (*OIDCAuthService)(nil)
 	_ TokenMatcher       = (*PrefixRouter)(nil)
 )

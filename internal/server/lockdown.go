@@ -302,12 +302,12 @@ func timeWithinSchedule(now time.Time, startDay, endDay time.Weekday, startHour,
 	}
 }
 
-func timeAtOrAfter(hour, min, refHour, refMin int) bool {
-	return hour > refHour || (hour == refHour && min >= refMin)
+func timeAtOrAfter(hour, minute, refHour, refMin int) bool {
+	return hour > refHour || (hour == refHour && minute >= refMin)
 }
 
-func timeBefore(hour, min, refHour, refMin int) bool {
-	return hour < refHour || (hour == refHour && min < refMin)
+func timeBefore(hour, minute, refHour, refMin int) bool {
+	return hour < refHour || (hour == refHour && minute < refMin)
 }
 
 // dayInRange reports whether day falls within [start, end], wrapping to the next
