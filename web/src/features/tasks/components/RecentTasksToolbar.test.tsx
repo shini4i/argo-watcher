@@ -271,6 +271,20 @@ describe('RecentTasksToolbar scope', () => {
     });
   });
 
+  // A link asking for the whole estate wins the visit, but it is not a choice,
+  // so it must leave the reader's own Mine standing for next time.
+  it('lets a link ask for Everyone without erasing a stored "mine"', async () => {
+    localStorage.setItem('recentTasks.scopeChoice', 'mine');
+    const { setFilters } = renderToolbar('/tasks?scope=everyone');
+
+    expect(screen.getByRole('tab', { name: /Everyone/ })).toHaveAttribute('aria-selected', 'true');
+    await waitFor(() => expect(setFilters).toHaveBeenCalled());
+    for (const call of setFilters.mock.calls) {
+      expect(call[0]).not.toHaveProperty('author');
+    }
+    expect(localStorage.getItem('recentTasks.scopeChoice')).toBe('mine');
+  });
+
   // Releases up to 1.3.0 wrote `recentTasks.scope` for readers who never chose
   // it, so that key is not evidence of a choice and must not win the default.
   it('ignores a scope left behind by an earlier release', async () => {
@@ -296,16 +310,19 @@ describe('RecentTasksToolbar scope', () => {
     await waitFor(() => expect(localStorage.getItem('recentTasks.scopeChoice')).toBeNull());
   });
 
-  // The removeItem path above would still pass if some other apply wrote the
-  // default; this covers an apply the reader made for an unrelated reason.
-  it('leaves the scope unwritten when another filter is applied', async () => {
-    renderToolbar('/tasks');
+  // A scope from a link is not a choice, so an apply the reader made for an
+  // unrelated reason must not turn it into their remembered one.
+  it('leaves a link-derived scope unwritten when another filter is applied', async () => {
+    const { setFilters } = renderToolbar('/tasks?scope=mine');
+    await waitFor(() => expect(setFilters).toHaveBeenCalled());
 
     fireEvent.click(screen.getByRole('button', { name: 'failed' }));
 
-    await waitFor(() => expect(localStorage.getItem('recentTasks.app')).toBeNull());
+    await waitFor(() => expect(capturedLocation?.search).toContain('status=failed'));
     expect(localStorage.getItem('recentTasks.scopeChoice')).toBeNull();
-    expect(capturedLocation?.search).not.toContain('scope=');
+    expect(localStorage.getItem('recentTasks.app')).toBeNull();
+    // The link still scopes the visit it was opened in.
+    expect(setFilters.mock.calls.at(-1)![0]).toHaveProperty('author');
   });
 
   it('erases the remembered choice when everything is cleared', async () => {
@@ -380,6 +397,7 @@ describe('RecentTasksToolbar scope', () => {
   });
 
   it('shows the active scope as a removable chip', async () => {
+    localStorage.setItem('recentTasks.scopeChoice', 'mine');
     const { setFilters } = renderToolbar('/tasks?scope=mine');
 
     const chip = await screen.findByText(/jane\.doe@example\.com/);
@@ -390,6 +408,8 @@ describe('RecentTasksToolbar scope', () => {
       const last = setFilters.mock.calls.at(-1)![0] as Record<string, unknown>;
       expect(last).not.toHaveProperty('author');
     });
+    // Removing the chip is a scope decision, so it must be remembered as one.
+    expect(localStorage.getItem('recentTasks.scopeChoice')).toBeNull();
   });
 
   it('scopes to the author without touching the search term', async () => {
@@ -468,10 +488,13 @@ describe('RecentTasksToolbar keyboard shortcuts', () => {
 
     fireEvent.keyDown(document, { key: 'm' });
     await waitFor(() => expect(capturedLocation?.search).toContain('scope=mine'));
+    // The shortcut picks a scope like the pills do, so it is remembered too.
+    expect(localStorage.getItem('recentTasks.scopeChoice')).toBe('mine');
 
     // Everyone is the default, so it leaves the URL rather than naming itself.
     fireEvent.keyDown(document, { key: 'm' });
     await waitFor(() => expect(capturedLocation?.search).not.toContain('scope='));
+    expect(localStorage.getItem('recentTasks.scopeChoice')).toBeNull();
   });
 
   it('leaves a key alone while an input is focused', async () => {

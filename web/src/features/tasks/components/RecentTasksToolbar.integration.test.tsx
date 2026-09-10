@@ -203,6 +203,52 @@ describe('RecentTasksToolbar on real react-admin list params', () => {
     }
   });
 
+  // A shared link carries the sender's scope, not a choice the reader made, so
+  // opening one must not leave Mine behind as the reader's default.
+  it('does not carry a link-derived scope into a later unscoped visit', async () => {
+    identity.mockReturnValue({ data: undefined, isLoading: true });
+    const first = renderToolbar('/?scope=mine');
+    await waitFor(() => expect(first.getList).toHaveBeenCalled());
+
+    identity.mockReturnValue({ data: { id: 'u1', email: 'jane@example.com' }, isLoading: false });
+    fireEvent.click(screen.getByRole('button', { name: /refresh now/i }));
+    await waitFor(() => expect(first.lastFilter()).toMatchObject({ author: 'jane@example.com' }));
+
+    expect(localStorage.getItem('integrationRecent.scopeChoice')).toBeNull();
+    first.unmount();
+
+    const second = renderToolbar('/');
+    await waitFor(() => expect(second.getList).toHaveBeenCalled());
+    await new Promise(resolve => setTimeout(resolve, 150));
+
+    expect(screen.getByRole('tab', { name: /Everyone/ })).toHaveAttribute('aria-selected', 'true');
+    for (const filter of second.filters()) {
+      expect(filter).not.toHaveProperty('author');
+    }
+  });
+
+  // The remembered pick is read under the toolbar's own storage key, and only
+  // this suite drives the real list params it has to reach.
+  it('honours a remembered scope on an unscoped visit', async () => {
+    localStorage.setItem('integrationRecent.scopeChoice', 'mine');
+    const { lastFilter } = renderToolbar('/');
+
+    await waitFor(() => expect(lastFilter()).toMatchObject({ author: 'jane@example.com' }));
+    expect(screen.getByRole('tab', { name: /Mine/ })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  // Touching any other filter used to mirror every stored field, which turned the
+  // link's scope into the reader's default on the first ordinary click.
+  it('does not store a link-derived scope when an unrelated filter is applied', async () => {
+    const { lastFilter } = renderToolbar('/?scope=mine');
+    await waitFor(() => expect(lastFilter()).toMatchObject({ author: 'jane@example.com' }));
+
+    fireEvent.click(screen.getByRole('tab', { name: /Failed/ }));
+    await waitFor(() => expect(lastFilter()).toMatchObject({ status: 'failed' }));
+
+    expect(localStorage.getItem('integrationRecent.scopeChoice')).toBeNull();
+  });
+
   it('settles to a bounded number of list queries', async () => {
     const { getList } = renderToolbar('/?app=checkout');
 

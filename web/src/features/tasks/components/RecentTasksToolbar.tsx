@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Stack } from '@mui/material';
 import { useGetIdentity, useRefresh } from 'react-admin';
 import { normalizeApplicationFilterValue } from './ApplicationFilter';
+import { getBrowserWindow } from '../../../shared/utils';
 import { useFilterState, type FilterStateSchema } from '../../../shared/hooks/useFilterState';
 import { useKeyboardShortcuts } from '../../../shared/hooks/useKeyboardShortcuts';
 import { ActiveFilterBar, type FilterChipDescriptor } from './ActiveFilterBar';
@@ -20,6 +21,34 @@ interface RecentFiltersValues extends Record<string, unknown> {
 }
 
 const DEFAULTS: RecentFiltersValues = { app: '', status: null, search: '', scope: 'everyone' };
+
+const scopeChoicePath = (storageKey: string) => `${storageKey}.scopeChoice`;
+
+/**
+ * @description Reads the scope the reader last picked.
+ * @param storageKey namespace this toolbar stores under
+ * @returns the remembered scope, or the Everyone default when none is stored
+ */
+const readScopeChoice = (storageKey: string): TaskScope =>
+  getBrowserWindow()?.localStorage?.getItem(scopeChoicePath(storageKey)) === 'mine'
+    ? 'mine'
+    : 'everyone';
+
+/**
+ * @description Records a scope the reader picked, or forgets it when they go
+ * back to Everyone. Only a pick reaches here, which is what keeps a scope that
+ * arrived from a shared link out of the reader's own default.
+ * @param storageKey namespace this toolbar stores under
+ * @param scope the scope just picked
+ */
+const writeScopeChoice = (storageKey: string, scope: TaskScope): void => {
+  const storage = getBrowserWindow()?.localStorage;
+  if (scope === 'mine') {
+    storage?.setItem(scopeChoicePath(storageKey), 'mine');
+  } else {
+    storage?.removeItem(scopeChoicePath(storageKey));
+  }
+};
 
 /**
  * @description Builds the filter schema, closing over the signed-in address so
@@ -48,17 +77,16 @@ const buildSchema = (identityEmail: string): FilterStateSchema<RecentFiltersValu
     toUrl: value => value.trim() || null,
     storage: false,
   },
-  // Only Mine is written, to URL and storage alike: absence means the Everyone
-  // default, so nothing pins a scope the reader never picked — and no shared
-  // link pins Everyone over their own Mine. The field is fresh because releases
-  // up to 1.3.0 auto-wrote `scope=mine` for readers who never chose it.
+  // Only Mine reaches the URL: absence means the Everyone default, so no shared
+  // link pins Everyone over the reader's own Mine. Storage is not the hook's —
+  // any apply mirrors every stored field, which would turn a link's scope into
+  // the reader's default; readScopeChoice/writeScopeChoice own it instead.
   scope: {
     fromUrl: raw => (raw === 'mine' ? 'mine' : 'everyone'),
     toUrl: value => (value === 'mine' ? 'mine' : null),
     filterKey: 'author',
     toFilter: value => (value === 'mine' && identityEmail ? identityEmail : undefined),
-    storage: true,
-    storageField: 'scopeChoice',
+    storage: false,
   },
 });
 
@@ -81,10 +109,17 @@ export const RecentTasksToolbar = ({ storageKey = 'recentTasks' }: { storageKey?
 
   const schema = useMemo(() => buildSchema(identityEmail), [identityEmail]);
 
+  // The remembered pick is the mount default, so the hook still prefers a scope
+  // named in the URL over it without ever writing one back.
+  const defaults = useMemo(
+    () => ({ ...DEFAULTS, scope: readScopeChoice(storageKey) }),
+    [storageKey],
+  );
+
   const { values, applied, apply } = useFilterState<RecentFiltersValues>({
     storageKey,
     schema,
-    defaults: DEFAULTS,
+    defaults,
   });
 
   const { registerClearAll } = useTaskListContext();
@@ -121,9 +156,11 @@ export const RecentTasksToolbar = ({ storageKey = 'recentTasks' }: { storageKey?
 
   const handleScopeChange = useCallback(
     (next: TaskScope) => {
+      // Storage last, so a browser that refuses the write still switches the list.
       apply({ ...values, scope: next });
+      writeScopeChoice(storageKey, next);
     },
-    [apply, values],
+    [apply, storageKey, values],
   );
 
   useKeyboardShortcuts(
@@ -171,7 +208,8 @@ export const RecentTasksToolbar = ({ storageKey = 'recentTasks' }: { storageKey?
 
   const handleClearAll = useCallback(() => {
     apply({ ...DEFAULTS });
-  }, [apply]);
+    writeScopeChoice(storageKey, DEFAULTS.scope);
+  }, [apply, storageKey]);
 
   // `apply` re-identifies on every searchParams/filterValues change, so
   // re-registering the handler each render would thrash the context ref and
