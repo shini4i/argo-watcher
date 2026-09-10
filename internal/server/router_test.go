@@ -239,44 +239,6 @@ func TestDeployLockEndpointRegistration(t *testing.T) {
 	})
 }
 
-func TestRemoveWebSocketConnection(t *testing.T) {
-	conn := &websocket.Conn{}
-	connectionsMutex.Lock()
-	connections = append(connections, conn)
-	connectionsMutex.Unlock()
-	removeWebSocketConnection(conn)
-	connectionsMutex.Lock()
-	assert.NotContains(t, connections, conn)
-	connectionsMutex.Unlock()
-}
-
-func TestWebSocketConnectionsConcurrentAccess(t *testing.T) {
-	connectionsMutex.Lock()
-	connections = nil
-	connectionsMutex.Unlock()
-
-	var wg sync.WaitGroup
-	numGoroutines := 10
-
-	for i := 0; i < numGoroutines; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			conn := &websocket.Conn{}
-			connectionsMutex.Lock()
-			connections = append(connections, conn)
-			connectionsMutex.Unlock()
-			removeWebSocketConnection(conn)
-		}()
-	}
-
-	wg.Wait()
-
-	connectionsMutex.Lock()
-	assert.Empty(t, connections)
-	connectionsMutex.Unlock()
-}
-
 // signJWT mints an HS256 token valid for an hour, so a claim assertion is never
 // decided by expiry.
 func signJWT(t *testing.T, secret string, claims jwt.MapClaims) string {
@@ -867,11 +829,6 @@ func TestWebSocketInterceptor(t *testing.T) {
 // (wired in .github/workflows/run-tests.yml), since a plain run cannot observe
 // it. Keep the -race CI step if you touch this test.
 func TestWebSocketConnectionIntegration(t *testing.T) {
-
-	connectionsMutex.Lock()
-	connections = nil
-	connectionsMutex.Unlock()
-
 	tmpDir := t.TempDir()
 	err := os.WriteFile(tmpDir+"/index.html", []byte("<html></html>"), 0644)
 	assert.NoError(t, err)
@@ -889,13 +846,10 @@ func TestWebSocketConnectionIntegration(t *testing.T) {
 	// Use httptest.Server for real HTTP connection (supports hijacking)
 	server := httptest.NewServer(router)
 
-	// Cleanup: shut down the env (stops checkConnection goroutines), then the HTTP server, then reset connections.
+	// Shut the env down first: that stops the checkConnection goroutines.
 	t.Cleanup(func() {
 		shutdownEnv(env)
 		server.Close()
-		connectionsMutex.Lock()
-		connections = nil
-		connectionsMutex.Unlock()
 	})
 
 	// Capture debug output around the handshake: a successful upgrade must not
@@ -964,11 +918,6 @@ func TestDeployLockNotifiedOnlyByWatcher(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			connectionsMutex.Lock()
-			connections = nil
-			closedConns = make(map[*websocket.Conn]bool)
-			connectionsMutex.Unlock()
-
 			tmpDir := t.TempDir()
 			require.NoError(t, os.WriteFile(tmpDir+"/index.html", []byte("<html></html>"), 0644))
 
@@ -998,10 +947,6 @@ func TestDeployLockNotifiedOnlyByWatcher(t *testing.T) {
 			t.Cleanup(func() {
 				shutdownEnv(env)
 				server.Close()
-				connectionsMutex.Lock()
-				connections = nil
-				closedConns = make(map[*websocket.Conn]bool)
-				connectionsMutex.Unlock()
 			})
 
 			dialCtx, dialCancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -1015,7 +960,7 @@ func TestDeployLockNotifiedOnlyByWatcher(t *testing.T) {
 			// Run the watcher far faster than production so the test does not wait 5s.
 			stop := make(chan struct{})
 			defer close(stop)
-			go lockdown.WatchTransitions(stop, 5*time.Millisecond, notifyWebSocketClients)
+			go lockdown.WatchTransitions(stop, 5*time.Millisecond, env.notifyWebSocketClients)
 
 			// The watcher captures its baseline on entry, and only a change against
 			// that baseline is broadcast. Wait for the baseline read before mutating,
@@ -1384,141 +1329,6 @@ func TestStartRouter(t *testing.T) {
 	assert.Equal(t, 30*time.Second, srv.ReadTimeout)
 	assert.Equal(t, 120*time.Second, srv.WriteTimeout)
 	assert.Equal(t, 120*time.Second, srv.IdleTimeout)
-}
-
-func TestNotifyWebSocketClients(t *testing.T) {
-	t.Run("notifies with no connections", func(t *testing.T) {
-		connectionsMutex.Lock()
-		connections = nil
-		closedConns = make(map[*websocket.Conn]bool)
-		connectionsMutex.Unlock()
-
-		t.Cleanup(func() {
-			connectionsMutex.Lock()
-			connections = nil
-			closedConns = make(map[*websocket.Conn]bool)
-			connectionsMutex.Unlock()
-		})
-
-		notifyWebSocketClients("test message")
-	})
-}
-
-func TestRemoveWebSocketConnectionCleanup(t *testing.T) {
-	t.Run("removes connection and cleans up closedConns", func(t *testing.T) {
-		connectionsMutex.Lock()
-		connections = nil
-		closedConns = make(map[*websocket.Conn]bool)
-		connectionsMutex.Unlock()
-
-		t.Cleanup(func() {
-			connectionsMutex.Lock()
-			connections = nil
-			closedConns = make(map[*websocket.Conn]bool)
-			connectionsMutex.Unlock()
-		})
-
-		removeWebSocketConnection(nil)
-
-		connectionsMutex.RLock()
-		assert.Len(t, connections, 0)
-		assert.Len(t, closedConns, 0)
-		connectionsMutex.RUnlock()
-	})
-
-	t.Run("removes actual connection from slice", func(t *testing.T) {
-		connectionsMutex.Lock()
-		connections = nil
-		closedConns = make(map[*websocket.Conn]bool)
-		connectionsMutex.Unlock()
-
-		t.Cleanup(func() {
-			connectionsMutex.Lock()
-			connections = nil
-			closedConns = make(map[*websocket.Conn]bool)
-			connectionsMutex.Unlock()
-		})
-
-		conn := &websocket.Conn{}
-		connectionsMutex.Lock()
-		connections = append(connections, conn)
-		connectionsMutex.Unlock()
-
-		removeWebSocketConnection(conn)
-
-		connectionsMutex.RLock()
-		assert.NotContains(t, connections, conn)
-		assert.Len(t, closedConns, 0)
-		connectionsMutex.RUnlock()
-	})
-
-	t.Run("removes connection from middle of slice", func(t *testing.T) {
-		connectionsMutex.Lock()
-		connections = nil
-		closedConns = make(map[*websocket.Conn]bool)
-		connectionsMutex.Unlock()
-
-		t.Cleanup(func() {
-			connectionsMutex.Lock()
-			connections = nil
-			closedConns = make(map[*websocket.Conn]bool)
-			connectionsMutex.Unlock()
-		})
-
-		conn1 := &websocket.Conn{}
-		conn2 := &websocket.Conn{}
-		conn3 := &websocket.Conn{}
-		connectionsMutex.Lock()
-		connections = append(connections, conn1, conn2, conn3)
-		connectionsMutex.Unlock()
-
-		removeWebSocketConnection(conn2)
-
-		connectionsMutex.RLock()
-		assert.Len(t, connections, 2)
-		// Check by pointer address, not value (all zero-value Conns are equal by value)
-		foundConn1 := false
-		foundConn2 := false
-		foundConn3 := false
-		for _, c := range connections {
-			if c == conn1 {
-				foundConn1 = true
-			}
-			if c == conn2 {
-				foundConn2 = true
-			}
-			if c == conn3 {
-				foundConn3 = true
-			}
-		}
-		connectionsMutex.RUnlock()
-
-		assert.True(t, foundConn1, "conn1 should still be in the slice")
-		assert.False(t, foundConn2, "conn2 should have been removed")
-		assert.True(t, foundConn3, "conn3 should still be in the slice")
-	})
-}
-
-func TestNotifyWebSocketClientsFiltersClosedConnections(t *testing.T) {
-	connectionsMutex.Lock()
-	connections = nil
-	closedConns = make(map[*websocket.Conn]bool)
-	connectionsMutex.Unlock()
-
-	t.Cleanup(func() {
-		connectionsMutex.Lock()
-		connections = nil
-		closedConns = make(map[*websocket.Conn]bool)
-		connectionsMutex.Unlock()
-	})
-
-	conn := &websocket.Conn{}
-	connectionsMutex.Lock()
-	connections = append(connections, conn)
-	closedConns[conn] = true
-	connectionsMutex.Unlock()
-
-	notifyWebSocketClients("test message")
 }
 
 func TestConnWgTracking(t *testing.T) {

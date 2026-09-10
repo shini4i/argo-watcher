@@ -10,7 +10,7 @@ Setting up a local environment. What a change must satisfy before it can be merg
 - **[Task](https://taskfile.dev/)** — every automation lives in `Taskfile.yml`
 - **[pre-commit](https://pre-commit.com/)** — `pre-commit install`
 
-`nix develop` provides all of the above plus the scanners CI runs (`trufflehog`, `gosec`, `govulncheck`, `trivy`, `zizmor`). Without Nix, install `trufflehog` yourself — one pre-commit hook is a secret scan and fails without it. The frontend scanner, retire.js, is a `web/` dev dependency rather than a Nix package, so `task scan-web` provides it via `npm ci`.
+`nix develop` provides all of the above except Docker, plus the scanners CI runs (`trufflehog`, `gosec`, `govulncheck`, `trivy`, `zizmor`). Without Nix, install `trufflehog` yourself — one pre-commit hook is a secret scan and fails without it. The frontend scanner, retire.js, is a `web/` dev dependency rather than a Nix package, so `task scan-web` provides it via `npm ci`.
 
 Then install the Go tooling (`swag`, `migrate`):
 

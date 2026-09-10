@@ -31,8 +31,9 @@
         # bats-assert/-support are needed by test/e2e/scripts/lib.bats; yq-go by
         # test/e2e/ports.bats, which reads the lab's kind/NodePort YAML.
         # NOTE: this covers `task -d test/e2e lint` only. Running the lab itself also
-        # needs kind, kubectl, helm, jq and task, which this shell does NOT provide.
+        # needs kind, kubectl, helm and jq, which this shell does NOT provide.
         shellToolchain = with pkgs; [
+          go-task
           shellcheck
           yq-go
           (bats.withLibraries (p: [ p.bats-support p.bats-assert ]))

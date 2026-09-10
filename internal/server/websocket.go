@@ -2,24 +2,52 @@ package server
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/coder/websocket"
-
-	"github.com/shini4i/argo-watcher/internal/auth"
-	"github.com/shini4i/argo-watcher/internal/models"
 )
 
-var (
-	connectionsMutex sync.RWMutex
-	connections      []*websocket.Conn
-	closedConns      = make(map[*websocket.Conn]bool) // Track closed connections to prevent use-after-close
-)
+// wsRegistry holds the WebSocket connections one server broadcasts to. It is a
+// field of Env rather than a package variable so that two servers running in the
+// same process — which is every test that starts one — never see each other's
+// clients.
+type wsRegistry struct {
+	mu    sync.RWMutex
+	conns []*websocket.Conn
+}
+
+func (r *wsRegistry) add(conn *websocket.Conn) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.conns = append(r.conns, conn)
+}
+
+// remove drops conn from the registry. Callers close the connection first.
+// slices.Delete clears the vacated tail slot, so a closed connection is not left
+// reachable through the backing array.
+func (r *wsRegistry) remove(conn *websocket.Conn) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if i := slices.Index(r.conns, conn); i >= 0 {
+		r.conns = slices.Delete(r.conns, i, i+1)
+	}
+}
+
+// snapshot copies the registered connections, so a broadcast can write to them
+// without holding the lock for the length of every write.
+func (r *wsRegistry) snapshot() []*websocket.Conn {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	return slices.Clone(r.conns)
+}
 
 const (
 	// wsSubprotocol is the protocol the server negotiates. A browser fails the
@@ -55,27 +83,7 @@ func (env *Env) authorizeWebSocket(w http.ResponseWriter, r *http.Request) bool 
 		return true
 	}
 
-	// Mirrors requireAuthenticatedRead: a provider outage is 503, so a reconnecting tab
-	// does not discard a session that may still be valid.
-	if errors.Is(err, auth.ErrProviderUnavailable) {
-		slog.Error("rejecting websocket: authentication provider unavailable", "error", err)
-		writeJSON(w, http.StatusServiceUnavailable, models.TaskStatus{
-			Status: providerUnavailableMessage,
-			Error:  err.Error(),
-		})
-		return false
-	}
-
-	if err != nil {
-		slog.Warn("rejecting websocket with invalid credential", "error", err)
-	} else {
-		slog.Warn("rejecting unauthenticated websocket")
-	}
-	writeJSON(w, http.StatusUnauthorized, models.TaskStatus{
-		Status: unauthorizedMessage,
-		Error:  "authentication required (offer the " + wsTokenSubprotocolPrefix + "<token> subprotocol)",
-	})
-
+	writeAuthRejection(w, r, err, "websocket", wsCredentialHint)
 	return false
 }
 
@@ -125,9 +133,7 @@ func (env *Env) handleWebSocketConnection(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	connectionsMutex.Lock()
-	connections = append(connections, conn)
-	connectionsMutex.Unlock()
+	env.ws.add(conn)
 
 	env.connWg.Add(1)
 	go env.checkConnection(conn)
@@ -143,7 +149,7 @@ func (env *Env) checkConnection(c *websocket.Conn) {
 		select {
 		case <-env.shutdownCh:
 			_ = c.Close(websocket.StatusGoingAway, "server shutdown")
-			removeWebSocketConnection(c)
+			env.ws.remove(c)
 			return
 		case <-ticker.C:
 			// we are not using c.Ping here, because it's not working as expected
@@ -153,7 +159,7 @@ func (env *Env) checkConnection(c *websocket.Conn) {
 			if c.Write(ctx, websocket.MessageText, []byte("heartbeat")) != nil {
 				cancel()
 				_ = c.Close(websocket.StatusNormalClosure, "heartbeat failed")
-				removeWebSocketConnection(c)
+				env.ws.remove(c)
 				return
 			}
 			cancel()
@@ -161,51 +167,25 @@ func (env *Env) checkConnection(c *websocket.Conn) {
 	}
 }
 
-func notifyWebSocketClients(message string) {
+// notifyWebSocketClients pushes message to every connected client, dropping any
+// connection the write fails on. It returns once every write has finished or
+// timed out.
+func (env *Env) notifyWebSocketClients(message string) {
 	var wg sync.WaitGroup
 
-	connectionsMutex.RLock()
-	connsCopy := make([]*websocket.Conn, 0, len(connections))
-	for _, c := range connections {
-		if !closedConns[c] {
-			connsCopy = append(connsCopy, c)
-		}
-	}
-	connectionsMutex.RUnlock()
-
-	for _, conn := range connsCopy {
+	for _, conn := range env.ws.snapshot() {
 		wg.Add(1)
 
-		go func(c *websocket.Conn, message string) {
+		go func(c *websocket.Conn) {
 			defer wg.Done()
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			if c.Write(ctx, websocket.MessageText, []byte(message)) != nil {
 				_ = c.Close(websocket.StatusNormalClosure, "write failed")
-				removeWebSocketConnection(c)
+				env.ws.remove(c)
 			}
-		}(conn, message)
+		}(conn)
 	}
 
 	wg.Wait()
-}
-
-// removeWebSocketConnection removes conn from the global connections slice under
-// the mutex. Callers are responsible for closing the connection first.
-func removeWebSocketConnection(conn *websocket.Conn) {
-	connectionsMutex.Lock()
-	defer connectionsMutex.Unlock()
-
-	// Mark as closed first to prevent use-after-close during concurrent access
-	closedConns[conn] = true
-
-	for i := range connections {
-		if connections[i] == conn {
-			connections = append(connections[:i], connections[i+1:]...)
-			break
-		}
-	}
-
-	// Clean up closedConns entry to prevent memory leak
-	delete(closedConns, conn)
 }

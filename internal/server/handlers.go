@@ -406,14 +406,10 @@ func (env *Env) getConfig(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, env.config)
 }
 
-// requireOIDCAuth validates the OIDC token from the Oidc-Authorization header when
-// OIDC auth is enabled. It returns true if validation passes (or OIDC is disabled).
-// On failure the response distinguishes:
-//   - 401 with "authentication required" when no auth header was sent.
-//   - 401 with the strategy's reason when the token was rejected.
-//   - 503 when the provider could not be consulted at all, so that a provider
-//     outage does not make the Web UI treat the session as dead (see
-//     requireAuthenticatedRead). Details land in the server log only.
+// requireOIDCAuth reports whether the request may perform a privileged action,
+// writing the rejection itself when it may not (see writeAuthRejection). It
+// demands the OIDC token from the Oidc-Authorization header, which alone carries
+// privileged-group membership. With OIDC disabled it always passes.
 func (env *Env) requireOIDCAuth(w http.ResponseWriter, r *http.Request) bool {
 	if !env.config.OIDC.Enabled {
 		return true
@@ -423,42 +419,15 @@ func (env *Env) requireOIDCAuth(w http.ResponseWriter, r *http.Request) bool {
 	if valid {
 		return true
 	}
-	if errors.Is(err, auth.ErrProviderUnavailable) {
-		slog.Error("rejecting request: authentication provider unavailable",
-			"method", r.Method, "url", r.URL.Path, "error", err)
-		writeJSON(w, http.StatusServiceUnavailable, models.TaskStatus{
-			Status: providerUnavailableMessage,
-			Error:  err.Error(),
-		})
-		return false
-	}
-	if err != nil {
-		slog.Warn("rejected request with invalid token",
-			"method", r.Method, "url", r.URL.Path, "error", err)
-		writeJSON(w, http.StatusUnauthorized, models.TaskStatus{
-			Status: unauthorizedMessage,
-			Error:  err.Error(),
-		})
-		return false
-	}
 
-	slog.Warn("rejected unauthenticated request", "method", r.Method, "url", r.URL.Path)
-	writeJSON(w, http.StatusUnauthorized, models.TaskStatus{
-		Status: unauthorizedMessage,
-		Error:  "authentication required (set " + oidcHeader + " header)",
-	})
+	writeAuthRejection(w, r, err, "request", headerCredentialHint)
 	return false
 }
 
 // requireAuthenticatedRead returns middleware that rejects reads carrying no valid
-// credential once OIDC auth is enabled; with OIDC disabled it is a no-op.
-//
-// Any configured credential is accepted — an OIDC session, the deploy token or a CI
-// JWT — and reads are deliberately not restricted to OIDC_PRIVILEGED_GROUPS, which
-// gates the deploy-lock writes alone.
-//
-// A rejected or missing credential is 401; a provider that could not be consulted is
-// 503, because the Web UI discards its session on a 401.
+// credential once OIDC auth is enabled; with OIDC disabled it is a no-op. Any
+// configured credential is accepted — an OIDC session, the deploy token or a CI JWT
+// — because reads are deliberately not restricted to OIDC_PRIVILEGED_GROUPS.
 func (env *Env) requireAuthenticatedRead() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -473,31 +442,7 @@ func (env *Env) requireAuthenticatedRead() func(http.Handler) http.Handler {
 				return
 			}
 
-			if errors.Is(err, auth.ErrProviderUnavailable) {
-				slog.Error("rejecting read: authentication provider unavailable",
-					"method", r.Method, "url", r.URL.Path, "error", err)
-				writeJSON(w, http.StatusServiceUnavailable, models.TaskStatus{
-					Status: providerUnavailableMessage,
-					Error:  err.Error(),
-				})
-				return
-			}
-
-			if err != nil {
-				slog.Warn("rejecting read with invalid credential",
-					"method", r.Method, "url", r.URL.Path, "error", err)
-				writeJSON(w, http.StatusUnauthorized, models.TaskStatus{
-					Status: unauthorizedMessage,
-					Error:  err.Error(),
-				})
-				return
-			}
-
-			slog.Warn("rejecting unauthenticated read", "method", r.Method, "url", r.URL.Path)
-			writeJSON(w, http.StatusUnauthorized, models.TaskStatus{
-				Status: unauthorizedMessage,
-				Error:  "authentication required (set " + oidcHeader + " header)",
-			})
+			writeAuthRejection(w, r, err, "read", headerCredentialHint)
 		})
 	}
 }
@@ -545,7 +490,7 @@ func (env *Env) hasCredential(request *http.Request) bool {
 			continue
 		}
 
-		if handler, ok := strategy.(interface{ Handles(token string) bool }); ok && !handler.Handles(token) {
+		if matcher, ok := strategy.(auth.TokenMatcher); ok && !matcher.Handles(token) {
 			continue
 		}
 
