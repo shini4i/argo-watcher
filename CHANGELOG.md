@@ -26,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The Web UI now loads in a browser that blocks site data, such as a Safari private window or a
+  Firefox with cookies blocked. Reading the saved theme threw before the page mounted, so nothing
+  rendered at all. Preferences that are normally remembered — theme, timezone, refresh interval,
+  filters, page size — simply do not persist there.
 - A deployment no longer fails with `Image "<name>" is not part of application` when one of the
   application's desired manifests cannot be read. Argo Watcher used to check the requested image
   against only the manifests it could decode, so an unreadable one that declared the image looked

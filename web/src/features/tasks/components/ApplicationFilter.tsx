@@ -3,7 +3,7 @@ import { useTheme } from '@mui/material/styles';
 import FilterListIcon from '@mui/icons-material/FilterList';
 import { useMemo } from 'react';
 import type { Task } from '../../../data/types';
-import { getBrowserWindow } from '../../../shared/utils';
+import { safeGetItem, safeRemoveItem, safeSetItem } from '../../../shared/utils';
 import { tokens } from '../../../theme/tokens';
 
 const DEFAULT_STORAGE_KEY = 'recentTasks.app';
@@ -26,7 +26,7 @@ export const normalizeApplicationFilterValue = (value?: string | null): string =
 };
 
 const readStoredApp = (storageKey: string) =>
-  normalizeApplicationFilterValue(getBrowserWindow()?.localStorage?.getItem(storageKey));
+  normalizeApplicationFilterValue(safeGetItem(storageKey));
 
 export const ApplicationFilter = ({
   records,
@@ -57,11 +57,10 @@ export const ApplicationFilter = ({
       value={value}
       onChange={(_event, newValue = '') => {
         const next = normalizeApplicationFilterValue(newValue);
-        const storage = getBrowserWindow()?.localStorage;
         if (next) {
-          storage?.setItem(storageKey, next);
+          safeSetItem(storageKey, next);
         } else {
-          storage?.removeItem(storageKey);
+          safeRemoveItem(storageKey);
         }
         onChange(next);
       }}

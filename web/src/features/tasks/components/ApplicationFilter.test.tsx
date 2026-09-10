@@ -22,8 +22,14 @@ const localStorageStub = {
   }),
 };
 
-vi.mock('../../../shared/utils', () => ({
-  getBrowserWindow: () => ({ localStorage: localStorageStub }),
+// Only the storage helpers are replaced, so a revert to a raw localStorage
+// access would reach the real ones, miss the stub, and fail the assertions
+// below. Their try/catch is covered in shared/utils/storage.test.ts.
+vi.mock('../../../shared/utils', async importOriginal => ({
+  ...(await importOriginal<typeof import('../../../shared/utils')>()),
+  safeGetItem: (key: string) => localStorageStub.getItem(key),
+  safeSetItem: (key: string, value: string) => localStorageStub.setItem(key, value),
+  safeRemoveItem: (key: string) => localStorageStub.removeItem(key),
 }));
 
 let lastAutocompleteProps: AutocompleteProps | undefined;

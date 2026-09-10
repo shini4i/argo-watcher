@@ -1,4 +1,5 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
+import { blockStorageAccess } from '../../test/blockStorage';
 import { __testing, readPersistentPerPage } from './usePersistentPerPage';
 
 describe('usePersistentPerPage', () => {
@@ -21,6 +22,16 @@ describe('usePersistentPerPage', () => {
     delete globalThis.window;
     expect(readPersistentPerPage('history.perPage', 10)).toBe(10);
     globalThis.window = originalWindow;
+  });
+
+  it('falls back and stays quiet when the browser blocks storage', () => {
+    const restore = blockStorageAccess();
+    try {
+      expect(readPersistentPerPage('recent.perPage', 25)).toBe(25);
+      expect(() => __testing.writePerPage('recent.perPage', 50)).not.toThrow();
+    } finally {
+      restore();
+    }
   });
 
   it('writes per-page values via helper utilities', () => {

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Stack } from '@mui/material';
 import { useGetIdentity, useRefresh } from 'react-admin';
 import { normalizeApplicationFilterValue } from './ApplicationFilter';
-import { getBrowserWindow } from '../../../shared/utils';
+import { safeGetItem, safeRemoveItem, safeSetItem } from '../../../shared/utils';
 import { useFilterState, type FilterStateSchema } from '../../../shared/hooks/useFilterState';
 import { useKeyboardShortcuts } from '../../../shared/hooks/useKeyboardShortcuts';
 import { ActiveFilterBar, type FilterChipDescriptor } from './ActiveFilterBar';
@@ -30,9 +30,7 @@ const scopeChoicePath = (storageKey: string) => `${storageKey}.scopeChoice`;
  * @returns the remembered scope, or the Everyone default when none is stored
  */
 const readScopeChoice = (storageKey: string): TaskScope =>
-  getBrowserWindow()?.localStorage?.getItem(scopeChoicePath(storageKey)) === 'mine'
-    ? 'mine'
-    : 'everyone';
+  safeGetItem(scopeChoicePath(storageKey)) === 'mine' ? 'mine' : 'everyone';
 
 /**
  * @description Records a scope the reader picked, or forgets it when they go
@@ -42,11 +40,10 @@ const readScopeChoice = (storageKey: string): TaskScope =>
  * @param scope the scope just picked
  */
 const writeScopeChoice = (storageKey: string, scope: TaskScope): void => {
-  const storage = getBrowserWindow()?.localStorage;
   if (scope === 'mine') {
-    storage?.setItem(scopeChoicePath(storageKey), 'mine');
+    safeSetItem(scopeChoicePath(storageKey), 'mine');
   } else {
-    storage?.removeItem(scopeChoicePath(storageKey));
+    safeRemoveItem(scopeChoicePath(storageKey));
   }
 };
 

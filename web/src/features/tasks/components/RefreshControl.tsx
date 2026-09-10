@@ -4,7 +4,7 @@ import { keyframes, useTheme } from '@mui/material/styles';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { tokens } from '../../../theme/tokens';
 import { useTaskListContext } from './TaskListContext';
-import { getBrowserWindow } from '../../../shared/utils';
+import { getBrowserWindow, safeGetItem, safeSetItem } from '../../../shared/utils';
 
 const REFRESH_OPTIONS: ReadonlyArray<{ readonly label: string; readonly seconds: number }> = [
   { label: 'Off', seconds: 0 },
@@ -27,26 +27,6 @@ interface RefreshControlProps {
 const ALLOWED_INTERVAL_SECONDS: ReadonlySet<number> = new Set(
   REFRESH_OPTIONS.map(option => option.seconds),
 );
-
-// Some browsers (Safari private mode, Firefox with cookies blocked) throw
-// SecurityError on any localStorage access. Swallow those failures so the
-// countdown still hydrates from the provider default rather than crashing
-// the toolbar.
-const safeGetItem = (storageKey: string): string | null => {
-  try {
-    return getBrowserWindow()?.localStorage?.getItem(storageKey) ?? null;
-  } catch {
-    return null;
-  }
-};
-
-const safeSetItem = (storageKey: string, value: string): void => {
-  try {
-    getBrowserWindow()?.localStorage?.setItem(storageKey, value);
-  } catch {
-    // Ignore — same restricted-storage rationale as safeGetItem.
-  }
-};
 
 const readStoredInterval = (storageKey: string, fallback: number) => {
   const value = Number.parseInt(safeGetItem(storageKey) ?? '', 10);

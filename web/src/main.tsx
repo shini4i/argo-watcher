@@ -1,3 +1,8 @@
+// FIRST, and it must stay first: react-admin builds its default store while its
+// module evaluates, reading `window.localStorage` outside its own try/catch, so
+// a browser with site data blocked throws before anything renders. Static
+// imports run in source order, which is what gets the shim in ahead of it.
+import './shared/utils/storageShim.bootstrap';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';

@@ -6,6 +6,7 @@ import { ListContextProvider } from 'react-admin';
 import type { ListContextValue } from 'react-admin';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { Task } from '../../../data/types';
+import { blockStorageAccess } from '../../../test/blockStorage';
 import { RecentTasksToolbar } from './RecentTasksToolbar';
 
 // useRefresh needs a QueryClientProvider ancestor; stub just that hook so the
@@ -269,6 +270,32 @@ describe('RecentTasksToolbar scope', () => {
         false,
       );
     });
+  });
+
+  // readScopeChoice runs while rendering, so an unguarded read would take the
+  // list down instead of merely forgetting the scope.
+  it('defaults to Everyone and still switches when storage is blocked', async () => {
+    const restore = blockStorageAccess();
+    try {
+      const { setFilters } = renderToolbar('/tasks');
+
+      expect(screen.getByRole('tab', { name: /Everyone/ })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      );
+
+      fireEvent.click(screen.getByRole('tab', { name: /Mine/ }));
+
+      await waitFor(() =>
+        expect(setFilters).toHaveBeenLastCalledWith(
+          expect.objectContaining({ author: 'jane.doe@example.com' }),
+          {},
+          false,
+        ),
+      );
+    } finally {
+      restore();
+    }
   });
 
   // A link asking for the whole estate wins the visit, but it is not a choice,

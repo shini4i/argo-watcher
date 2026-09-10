@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useListContext } from 'react-admin';
 import { useSearchParams } from 'react-router-dom';
-import { getBrowserWindow } from '../utils/browser';
+import { safeGetItem, safeRemoveItem, safeSetItem } from '../utils/storage';
 
 export interface FilterFieldSchema<V> {
   /** Receives null when the param is absent from the URL. */
@@ -59,12 +59,11 @@ const readStorageValue = <V>(
   schemaKey: string,
   fallback: V,
 ): V => {
-  const storage = getBrowserWindow()?.localStorage;
-  if (!storage || !field.storage) {
+  if (!field.storage) {
     return fallback;
   }
   const path = `${storageKey}.${field.storageField ?? schemaKey}`;
-  const raw = storage.getItem(path);
+  const raw = safeGetItem(path);
   if (raw === null) {
     return fallback;
   }
@@ -77,16 +76,15 @@ const writeStorageValue = <V>(
   schemaKey: string,
   value: V,
 ): void => {
-  const storage = getBrowserWindow()?.localStorage;
-  if (!storage || !field.storage) {
+  if (!field.storage) {
     return;
   }
   const path = `${storageKey}.${field.storageField ?? schemaKey}`;
   const serialised = field.toUrl(value);
   if (serialised === null || serialised === '') {
-    storage.removeItem(path);
+    safeRemoveItem(path);
   } else {
-    storage.setItem(path, serialised);
+    safeSetItem(path, serialised);
   }
 };
 

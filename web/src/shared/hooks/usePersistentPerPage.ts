@@ -1,25 +1,16 @@
 import { useEffect } from 'react';
 import { useListPaginationContext } from 'react-admin';
-import { getBrowserWindow } from '../utils';
+import { safeGetItem, safeSetItem } from '../utils';
 
 const readPerPage = (storageKey: string, fallback: number) => {
-  const storage = getBrowserWindow()?.localStorage;
-  if (!storage) {
-    return fallback;
-  }
-
-  const raw = storage.getItem(storageKey);
+  const raw = safeGetItem(storageKey);
   const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
 
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 };
 
 const writePerPage = (storageKey: string, value: number) => {
-  const storage = getBrowserWindow()?.localStorage;
-  if (!storage) {
-    return;
-  }
-  storage.setItem(storageKey, String(value));
+  safeSetItem(storageKey, String(value));
 };
 
 /** Falls back to `fallback` when nothing is stored or the stored value is unusable. */

@@ -3,6 +3,7 @@ import { ThemeProvider, Theme } from '@mui/material/styles';
 import type { ReactNode } from 'react';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { createAppTheme } from '.';
+import { safeGetItem, safeSetItem } from '../shared/utils/storage';
 
 interface ThemeModeContextValue {
   mode: PaletteMode;
@@ -27,7 +28,7 @@ const resolveDocument = () => {
 const readInitialMode = (): PaletteMode => {
   const browserWindow = resolveWindow();
   if (browserWindow) {
-    const stored = browserWindow.localStorage.getItem(STORAGE_KEY);
+    const stored = safeGetItem(STORAGE_KEY);
     if (stored === 'light' || stored === 'dark') {
       return stored;
     }
@@ -45,10 +46,7 @@ export const ThemeModeProvider = ({ children }: { children: ReactNode }) => {
   const [mode, setMode] = useState<PaletteMode>(() => readInitialMode());
 
   useEffect(() => {
-    const browserWindow = resolveWindow();
-    if (browserWindow) {
-      browserWindow.localStorage.setItem(STORAGE_KEY, mode);
-    }
+    safeSetItem(STORAGE_KEY, mode);
 
     const browserDocument = resolveDocument();
     if (browserDocument) {
