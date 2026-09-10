@@ -247,9 +247,21 @@ describe('RecentTasksToolbar scope', () => {
     identityMock.mockReturnValue({ data: { id: 'u1', email: 'jane.doe@example.com' } });
   });
 
-  it('defaults a signed-in user to their own deployments', async () => {
+  it('defaults a signed-in user to every deployment', async () => {
     const { setFilters } = renderToolbar('/tasks');
 
+    expect(screen.getByRole('tab', { name: /Everyone/ })).toHaveAttribute('aria-selected', 'true');
+    await waitFor(() => expect(setFilters).toHaveBeenCalled());
+    for (const call of setFilters.mock.calls) {
+      expect(call[0]).not.toHaveProperty('author');
+    }
+  });
+
+  it('restores a stored "mine" choice on the next visit', async () => {
+    localStorage.setItem('recentTasks.scopeChoice', 'mine');
+    const { setFilters } = renderToolbar('/tasks');
+
+    expect(screen.getByRole('tab', { name: /Mine/ })).toHaveAttribute('aria-selected', 'true');
     await waitFor(() => {
       expect(setFilters).toHaveBeenCalledWith(
         expect.objectContaining({ author: 'jane.doe@example.com' }),
@@ -257,6 +269,56 @@ describe('RecentTasksToolbar scope', () => {
         false,
       );
     });
+  });
+
+  // Releases up to 1.3.0 wrote `recentTasks.scope` for readers who never chose
+  // it, so that key is not evidence of a choice and must not win the default.
+  it('ignores a scope left behind by an earlier release', async () => {
+    localStorage.setItem('recentTasks.scope', 'mine');
+    const { setFilters } = renderToolbar('/tasks');
+
+    expect(screen.getByRole('tab', { name: /Everyone/ })).toHaveAttribute('aria-selected', 'true');
+    await waitFor(() => expect(setFilters).toHaveBeenCalled());
+    for (const call of setFilters.mock.calls) {
+      expect(call[0]).not.toHaveProperty('author');
+    }
+  });
+
+  // Persisting the default would make it a "choice", which is what stopped the
+  // previous default flip from reaching anyone.
+  it('stores nothing when the scope is Everyone', async () => {
+    renderToolbar('/tasks');
+
+    fireEvent.click(screen.getByRole('tab', { name: /Mine/ }));
+    await waitFor(() => expect(localStorage.getItem('recentTasks.scopeChoice')).toBe('mine'));
+
+    fireEvent.click(screen.getByRole('tab', { name: /Everyone/ }));
+    await waitFor(() => expect(localStorage.getItem('recentTasks.scopeChoice')).toBeNull());
+  });
+
+  // The removeItem path above would still pass if some other apply wrote the
+  // default; this covers an apply the reader made for an unrelated reason.
+  it('leaves the scope unwritten when another filter is applied', async () => {
+    renderToolbar('/tasks');
+
+    fireEvent.click(screen.getByRole('button', { name: 'failed' }));
+
+    await waitFor(() => expect(localStorage.getItem('recentTasks.app')).toBeNull());
+    expect(localStorage.getItem('recentTasks.scopeChoice')).toBeNull();
+    expect(capturedLocation?.search).not.toContain('scope=');
+  });
+
+  it('erases the remembered choice when everything is cleared', async () => {
+    localStorage.setItem('recentTasks.scopeChoice', 'mine');
+    const { setFilters } = renderToolbar('/tasks?app=alpha');
+    await screen.findByText(/jane\.doe@example\.com/);
+
+    fireEvent.click(screen.getByRole('button', { name: /clear all/i }));
+
+    await waitFor(() => expect(localStorage.getItem('recentTasks.scopeChoice')).toBeNull());
+    expect(setFilters.mock.calls.at(-1)![0]).toEqual({});
+    expect(screen.getByRole('tab', { name: /Everyone/ })).toHaveAttribute('aria-selected', 'true');
+    expect(capturedLocation?.search).not.toContain('scope=');
   });
 
   it('hides the scope control and stays global in anonymous mode', async () => {
@@ -270,8 +332,23 @@ describe('RecentTasksToolbar scope', () => {
     }
   });
 
-  it('drops the author filter when the user switches to Everyone', async () => {
-    const { setFilters } = renderToolbar('/tasks', { author: 'jane.doe@example.com' });
+  // An OIDC deployment switched to anonymous, or the gap between sign-out and
+  // sign-in, leaves a remembered Mine with no address behind it.
+  it('ignores a remembered "mine" when there is no identity', async () => {
+    identityMock.mockReturnValue({ data: undefined });
+    localStorage.setItem('recentTasks.scopeChoice', 'mine');
+    const { setFilters } = renderToolbar('/tasks');
+
+    expect(screen.queryByRole('tablist', { name: 'Deployment scope' })).toBeNull();
+    expect(screen.queryByText(/Remove filter author/i)).toBeNull();
+    await waitFor(() => expect(setFilters).toHaveBeenCalled());
+    for (const call of setFilters.mock.calls) {
+      expect(call[0]).not.toHaveProperty('author');
+    }
+  });
+
+  it('drops the author filter when the user switches back to Everyone', async () => {
+    const { setFilters } = renderToolbar('/tasks?scope=mine', { author: 'jane.doe@example.com' });
 
     fireEvent.click(screen.getByRole('tab', { name: /Everyone/ }));
 
@@ -284,10 +361,10 @@ describe('RecentTasksToolbar scope', () => {
   it('mirrors the scope into the URL so a view can be shared', async () => {
     renderToolbar('/tasks');
 
-    fireEvent.click(screen.getByRole('tab', { name: /Everyone/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /Mine/ }));
 
     await waitFor(() => {
-      expect(capturedLocation?.search).toContain('scope=everyone');
+      expect(capturedLocation?.search).toContain('scope=mine');
     });
   });
 
@@ -296,14 +373,14 @@ describe('RecentTasksToolbar scope', () => {
   it('stores the choice, never the address', async () => {
     renderToolbar('/tasks');
 
-    fireEvent.click(screen.getByRole('tab', { name: /Everyone/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /Mine/ }));
 
-    await waitFor(() => expect(localStorage.getItem('recentTasks.scope')).toBe('everyone'));
+    await waitFor(() => expect(localStorage.getItem('recentTasks.scopeChoice')).toBe('mine'));
     expect(JSON.stringify(localStorage)).not.toContain('jane.doe@example.com');
   });
 
   it('shows the active scope as a removable chip', async () => {
-    const { setFilters } = renderToolbar('/tasks');
+    const { setFilters } = renderToolbar('/tasks?scope=mine');
 
     const chip = await screen.findByText(/jane\.doe@example\.com/);
     expect(chip).toBeInTheDocument();
@@ -316,7 +393,7 @@ describe('RecentTasksToolbar scope', () => {
   });
 
   it('scopes to the author without touching the search term', async () => {
-    const { setFilters } = renderToolbar('/tasks?search=checkout');
+    const { setFilters } = renderToolbar('/tasks?scope=mine&search=checkout');
 
     await waitFor(() => {
       const merged = setFilters.mock.calls.map(call => call[0] as Record<string, unknown>);
@@ -390,10 +467,11 @@ describe('RecentTasksToolbar keyboard shortcuts', () => {
     renderToolbar('/tasks');
 
     fireEvent.keyDown(document, { key: 'm' });
-    await waitFor(() => expect(capturedLocation?.search).toContain('scope=everyone'));
-
-    fireEvent.keyDown(document, { key: 'm' });
     await waitFor(() => expect(capturedLocation?.search).toContain('scope=mine'));
+
+    // Everyone is the default, so it leaves the URL rather than naming itself.
+    fireEvent.keyDown(document, { key: 'm' });
+    await waitFor(() => expect(capturedLocation?.search).not.toContain('scope='));
   });
 
   it('leaves a key alone while an input is focused', async () => {
