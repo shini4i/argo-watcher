@@ -193,4 +193,50 @@ describe('DateRangePicker', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(onApply).not.toHaveBeenCalled();
   });
+
+  it('shows no day-count while only one endpoint is picked', () => {
+    render(<DateRangePicker value={{ start: null, end: null }} onApply={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: /Select date range/ }));
+    fireEvent.click(dayCell('20 April 2026'));
+
+    expect(screen.queryByText(/selected/)).not.toBeInTheDocument();
+  });
+
+  it('counts a single-day range as one day', () => {
+    render(<DateRangePicker value={{ start: null, end: null }} onApply={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: /Select date range/ }));
+    fireEvent.click(dayCell('20 April 2026'));
+    fireEvent.click(dayCell('20 April 2026'));
+
+    expect(screen.getByText(/1 day selected/)).toBeInTheDocument();
+  });
+
+  it('pluralises a multi-day range', () => {
+    render(<DateRangePicker value={{ start: null, end: null }} onApply={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: /Select date range/ }));
+    fireEvent.click(dayCell('20 April 2026'));
+    fireEvent.click(dayCell('27 April 2026'));
+
+    expect(screen.getByText(/8 days selected/)).toBeInTheDocument();
+  });
+
+  it('browses back from January into the previous December', () => {
+    render(<DateRangePicker value={{ start: null, end: null }} onApply={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: /Select date range/ }));
+
+    const previous = screen.getByRole('button', { name: 'Previous month' });
+    for (let i = 0; i < 4; i++) fireEvent.click(previous);
+
+    expect(screen.getByText('December 2025')).toBeInTheDocument();
+  });
+
+  it('browses forward from December into the next January', () => {
+    render(<DateRangePicker value={{ start: null, end: null }} onApply={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: /Select date range/ }));
+
+    const next = screen.getByRole('button', { name: 'Next month' });
+    for (let i = 0; i < 9; i++) fireEvent.click(next);
+
+    expect(screen.getByText('January 2027')).toBeInTheDocument();
+  });
 });
