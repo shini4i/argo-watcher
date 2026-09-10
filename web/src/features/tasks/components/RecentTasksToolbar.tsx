@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Stack } from '@mui/material';
 import { useGetIdentity, useRefresh } from 'react-admin';
 import { normalizeApplicationFilterValue } from './ApplicationFilter';
-import { getBrowserWindow } from '../../../shared/utils';
 import { useFilterState, type FilterStateSchema } from '../../../shared/hooks/useFilterState';
 import { useKeyboardShortcuts } from '../../../shared/hooks/useKeyboardShortcuts';
 import { ActiveFilterBar, type FilterChipDescriptor } from './ActiveFilterBar';
@@ -30,10 +29,13 @@ const DEFAULTS: RecentFiltersValues = { app: '', status: null, search: '', scope
  * @param identityEmail signed-in address, or '' when anonymous
  */
 const buildSchema = (identityEmail: string): FilterStateSchema<RecentFiltersValues> => ({
+  // Not persisted: Recent has no application picker, so an app filter only ever
+  // arrives from a link and remembering it would hide the rest of the estate on
+  // the next visit. History persists its own, because there it is a picked value.
   app: {
     fromUrl: raw => normalizeApplicationFilterValue(raw),
     toUrl: value => value || null,
-    storage: true,
+    storage: false,
   },
   status: {
     fromUrl: raw => raw ?? null,
@@ -46,34 +48,26 @@ const buildSchema = (identityEmail: string): FilterStateSchema<RecentFiltersValu
     toUrl: value => value.trim() || null,
     storage: false,
   },
-  // Stored as the choice; the address is derived here on every apply, so a
-  // scope restored from a previous session follows whoever is signed in now.
+  // Only Mine is written, to URL and storage alike: absence means the Everyone
+  // default, so nothing pins a scope the reader never picked — and no shared
+  // link pins Everyone over their own Mine. The field is fresh because releases
+  // up to 1.3.0 auto-wrote `scope=mine` for readers who never chose it.
   scope: {
     fromUrl: raw => (raw === 'mine' ? 'mine' : 'everyone'),
-    toUrl: value => value,
+    toUrl: value => (value === 'mine' ? 'mine' : null),
     filterKey: 'author',
     toFilter: value => (value === 'mine' && identityEmail ? identityEmail : undefined),
     storage: true,
+    storageField: 'scopeChoice',
   },
 });
 
-const SCOPE_URL_KEY = 'scope';
-
-/** Whether the reader has an explicit scope choice, as opposed to the default. */
-const readExplicitScope = (storageKey: string): TaskScope | null => {
-  const fromUrl = new URLSearchParams(globalThis.location?.search ?? '').get(SCOPE_URL_KEY);
-  if (fromUrl === 'mine' || fromUrl === 'everyone') {
-    return fromUrl;
-  }
-  const stored = getBrowserWindow()?.localStorage?.getItem(`${storageKey}.${SCOPE_URL_KEY}`);
-  return stored === 'mine' || stored === 'everyone' ? stored : null;
-};
-
 /**
  * @description Filter bar for the recent list. The scope pills default to
- * "Mine" for a signed-in user, since a developer's usual question is whether
- * their own deployment landed; anonymous mode has no identity, so the control
- * is hidden and the scope stays "Everyone".
+ * "Everyone" — the readers of this list are on-call, and their usual question
+ * is what the whole estate is doing, not what they personally deployed. A
+ * chosen scope is remembered; anonymous mode has no identity to scope by, so
+ * the control is hidden.
  */
 export const RecentTasksToolbar = ({ storageKey = 'recentTasks' }: { storageKey?: string }) => {
   // Refresh every active query, not just the list: the status pills are backed
@@ -85,22 +79,12 @@ export const RecentTasksToolbar = ({ storageKey = 'recentTasks' }: { storageKey?
   const scopeAvailable = Boolean(identityEmail);
   const searchFocusRef = useRef<(() => void) | null>(null);
 
-  // Read once: whether the reader ever chose a scope, as opposed to inheriting
-  // the default. The identity may not have resolved yet on a cold load, so the
-  // default cannot be baked into the frozen `initial` below.
-  const explicitScopeRef = useRef<TaskScope | null>(readExplicitScope(storageKey));
-
-  const defaults = useMemo<RecentFiltersValues>(
-    () => ({ ...DEFAULTS, scope: explicitScopeRef.current ?? (scopeAvailable ? 'mine' : 'everyone') }),
-    [scopeAvailable],
-  );
-
   const schema = useMemo(() => buildSchema(identityEmail), [identityEmail]);
 
   const { values, applied, apply } = useFilterState<RecentFiltersValues>({
     storageKey,
     schema,
-    defaults,
+    defaults: DEFAULTS,
   });
 
   const { registerClearAll } = useTaskListContext();
@@ -108,15 +92,14 @@ export const RecentTasksToolbar = ({ storageKey = 'recentTasks' }: { storageKey?
   const effectiveScope: TaskScope = scopeAvailable ? applied.scope : 'everyone';
 
   // The identity arrives after mount on a cold load, so re-apply once it lands:
-  // the author projection needs it, and an unchosen scope defaults to Mine.
+  // a scope of Mine has no address to project onto until then.
   const syncedIdentityRef = useRef(identityEmail);
   useEffect(() => {
     if (syncedIdentityRef.current === identityEmail) {
       return;
     }
     syncedIdentityRef.current = identityEmail;
-    const scope = explicitScopeRef.current ?? (identityEmail ? 'mine' : 'everyone');
-    apply({ ...values, scope });
+    apply(values);
     // `apply` and `values` re-identify every render; keying on the identity is
     // what makes this fire exactly once per identity change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -138,8 +121,6 @@ export const RecentTasksToolbar = ({ storageKey = 'recentTasks' }: { storageKey?
 
   const handleScopeChange = useCallback(
     (next: TaskScope) => {
-      // Recording the choice stops a later identity change reverting it.
-      explicitScopeRef.current = next;
       apply({ ...values, scope: next });
     },
     [apply, values],
@@ -189,10 +170,7 @@ export const RecentTasksToolbar = ({ storageKey = 'recentTasks' }: { storageKey?
   }
 
   const handleClearAll = useCallback(() => {
-    // Clearing every filter is itself a choice of Everyone, so record it —
-    // otherwise the identity effect would restore Mine on the next mount.
-    explicitScopeRef.current = 'everyone';
-    apply({ app: '', status: null, search: '', scope: 'everyone' });
+    apply({ ...DEFAULTS });
   }, [apply]);
 
   // `apply` re-identifies on every searchParams/filterValues change, so

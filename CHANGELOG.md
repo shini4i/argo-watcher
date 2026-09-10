@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The **Mine / Everyone** switch on Recent Tasks now defaults to **Everyone** for a signed-in user
+  as well. The list is read mostly by DevOps and SRE, whose first question is what the whole estate
+  is doing. Picking Mine is still remembered for your next visit. A scope remembered from 1.3.0 is
+  discarded on upgrade, because that release also recorded the default as though you had chosen it.
 - The README, documentation home page, OpenAPI description, and container image label now lead with
   the concrete problem — waiting for an Argo CD deployment from a CI pipeline and learning whether
   the built image rolled out — instead of the "feedback loop for GitOps" tagline. The README gains a
@@ -22,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Recent Tasks no longer remembers an application filter. Opening the list from an Overview card
+  filtered it to that application and kept the filter for every later visit, so returning to the
+  main page after viewing a task showed only that application's deployments. The History page still
+  remembers its application, which is picked there rather than arriving from a link.
 - The Web UI browser tab is titled "Argo Watcher" on first load instead of "Argo Watcher
   React-admin".
 - The troubleshooting page no longer lists an uncommitted tag as a cause of "Image is not part of
