@@ -20,10 +20,6 @@ import (
 func wsAuthServer(t *testing.T, oidcEnabled bool, strategies map[string]auth.AuthStrategy) (*Env, string) {
 	t.Helper()
 
-	connectionsMutex.Lock()
-	connections = nil
-	connectionsMutex.Unlock()
-
 	env, _ := readAuthEnv(t, oidcEnabled, strategies)
 	env.config.DevEnvironment = true // accept the httptest origin
 	server := httptest.NewServer(env.CreateRouter())
@@ -31,9 +27,6 @@ func wsAuthServer(t *testing.T, oidcEnabled bool, strategies map[string]auth.Aut
 	t.Cleanup(func() {
 		shutdownEnv(env)
 		server.Close()
-		connectionsMutex.Lock()
-		connections = nil
-		connectionsMutex.Unlock()
 	})
 
 	return env, "ws" + strings.TrimPrefix(server.URL, "http") + "/ws"
@@ -63,10 +56,8 @@ func dialWS(t *testing.T, url string, opts *websocket.DialOptions) (int, string)
 	return status, subprotocol
 }
 
-func activeConnections() int {
-	connectionsMutex.RLock()
-	defer connectionsMutex.RUnlock()
-	return len(connections)
+func activeConnections(env *Env) int {
+	return len(env.ws.snapshot())
 }
 
 func TestWebSocketAuthDisabled(t *testing.T) {
@@ -88,7 +79,7 @@ func TestWebSocketAuthRejectsUncredentialed(t *testing.T) {
 	status, _ := dialWS(t, url, nil)
 
 	assert.Equal(t, http.StatusUnauthorized, status)
-	assert.Zero(t, activeConnections(), "a rejected handshake must not register a connection")
+	assert.Zero(t, activeConnections(env), "a rejected handshake must not register a connection")
 
 	// The rejection happens before the hijack, so shutdown has nothing to drain.
 	shutdownEnv(env)
@@ -176,7 +167,7 @@ func TestWebSocketAuthAcceptsSubprotocolCredential(t *testing.T) {
 }
 
 func TestWebSocketAuthRejectsBadSubprotocolCredential(t *testing.T) {
-	_, url := wsAuthServer(t, true, map[string]auth.AuthStrategy{
+	env, url := wsAuthServer(t, true, map[string]auth.AuthStrategy{
 		oidcHeader: oidcLikeStrategy{authenticated: false},
 	})
 
@@ -185,13 +176,13 @@ func TestWebSocketAuthRejectsBadSubprotocolCredential(t *testing.T) {
 	})
 
 	assert.Equal(t, http.StatusUnauthorized, status)
-	assert.Zero(t, activeConnections())
+	assert.Zero(t, activeConnections(env))
 }
 
 // TestWebSocketAuthProviderUnavailable keeps the handshake consistent with the reads:
 // a provider outage is 503, so a reconnecting tab does not treat it as a dead session.
 func TestWebSocketAuthProviderUnavailable(t *testing.T) {
-	_, url := wsAuthServer(t, true, map[string]auth.AuthStrategy{
+	env, url := wsAuthServer(t, true, map[string]auth.AuthStrategy{
 		oidcHeader: oidcLikeStrategy{unavailable: true},
 	})
 
@@ -200,7 +191,7 @@ func TestWebSocketAuthProviderUnavailable(t *testing.T) {
 	})
 
 	assert.Equal(t, http.StatusServiceUnavailable, status)
-	assert.Zero(t, activeConnections())
+	assert.Zero(t, activeConnections(env))
 }
 
 // TestWebSocketSubprotocolTokenParsing covers the wire format directly, including the

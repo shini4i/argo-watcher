@@ -334,9 +334,6 @@ func TestKeycloakWebSocketHandshake(t *testing.T) {
 		defer cancel()
 		env.Shutdown(ctx)
 		srv.Close()
-		connectionsMutex.Lock()
-		connections = nil
-		connectionsMutex.Unlock()
 	})
 
 	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws"

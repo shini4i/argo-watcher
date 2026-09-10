@@ -119,17 +119,23 @@ func parseTime(timeStr string) (int, int, error) {
 	return hour, minutes, nil
 }
 
-// Parse parses the lockdown schedules from a string and stores them in the Lockdown struct.
-func (l *Lockdown) Parse(schedules string) error {
+// parse replaces the lockdown schedules with the ones described by the given
+// comma-separated string. The whole string is parsed before anything is stored, so
+// a malformed entry leaves the previous schedules in place rather than half of the
+// new ones.
+func (l *Lockdown) parse(schedules string) error {
 	timeFramesSplit := strings.Split(schedules, ",")
 
+	parsed := make([]LockdownSchedule, 0, len(timeFramesSplit))
 	for _, tf := range timeFramesSplit {
 		schedule, err := parseSchedule(tf)
 		if err != nil {
 			return err
 		}
-		l.Schedules = append(l.Schedules, schedule)
+		parsed = append(parsed, schedule)
 	}
+
+	l.Schedules = parsed
 
 	slog.Debug("parsed lockdown schedules", "schedules", l.Schedules)
 
@@ -261,7 +267,7 @@ func NewLockdown(schedules string, store lock.DeployLockStore) (*Lockdown, error
 		overrideDuration: defaultOverrideDuration,
 	}
 	if schedules != "" {
-		if err := lockdown.Parse(schedules); err != nil {
+		if err := lockdown.parse(schedules); err != nil {
 			return nil, err
 		}
 	}
@@ -296,12 +302,12 @@ func timeWithinSchedule(now time.Time, startDay, endDay time.Weekday, startHour,
 	}
 }
 
-func timeAtOrAfter(hour, min, refHour, refMin int) bool {
-	return hour > refHour || (hour == refHour && min >= refMin)
+func timeAtOrAfter(hour, minute, refHour, refMin int) bool {
+	return hour > refHour || (hour == refHour && minute >= refMin)
 }
 
-func timeBefore(hour, min, refHour, refMin int) bool {
-	return hour < refHour || (hour == refHour && min < refMin)
+func timeBefore(hour, minute, refHour, refMin int) bool {
+	return hour < refHour || (hour == refHour && minute < refMin)
 }
 
 // dayInRange reports whether day falls within [start, end], wrapping to the next

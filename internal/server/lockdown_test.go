@@ -93,7 +93,7 @@ func TestLockdown_Parse(t *testing.T) {
 
 	for _, tt := range testCases {
 		l := Lockdown{}
-		err := l.Parse(tt.input)
+		err := l.parse(tt.input)
 
 		if tt.expectError {
 			assert.Error(t, err)
@@ -597,4 +597,30 @@ func TestLockdown_IsLockedWith(t *testing.T) {
 			assert.Equal(t, tt.expected, l.isLockedWith(tt.state, now))
 		})
 	}
+}
+
+// TestLockdown_ParseReplacesSchedules pins that parsing is idempotent: a second
+// parse describes the whole configuration, it does not add to the previous one.
+func TestLockdown_ParseReplacesSchedules(t *testing.T) {
+	l := Lockdown{}
+
+	require.NoError(t, l.parse("Fri 13:20 - Mon 06:30"))
+	require.NoError(t, l.parse("Tue 03:00 - Thu 08:00"))
+
+	assert.Equal(t, []LockdownSchedule{
+		{time.Tuesday, 3, 0, time.Thursday, 8, 0},
+	}, l.Schedules)
+}
+
+// TestLockdown_ParseRejectionKeepsSchedules pins that a rejected schedule string
+// leaves the previously parsed configuration untouched rather than half-applied.
+func TestLockdown_ParseRejectionKeepsSchedules(t *testing.T) {
+	l := Lockdown{}
+	require.NoError(t, l.parse("Fri 13:20 - Mon 06:30"))
+
+	require.Error(t, l.parse("Tue 03:00 - Thu 08:00, garbage"))
+
+	assert.Equal(t, []LockdownSchedule{
+		{time.Friday, 13, 20, time.Monday, 6, 30},
+	}, l.Schedules)
 }

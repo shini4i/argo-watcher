@@ -30,7 +30,7 @@ func TestNewServer_Success(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, s)
-	assert.Equal(t, cfg, s.config)
+	assert.Equal(t, cfg, s.env.config)
 	// A zero drainDelay silently skips the readiness-propagation phase of shutdown,
 	// and every other test constructs Server directly — so this is the only place a
 	// dropped wiring line would be caught before the lab.

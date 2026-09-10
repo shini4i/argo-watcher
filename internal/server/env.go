@@ -38,6 +38,8 @@ type Env struct {
 	shutdownOnce sync.Once
 	// connWg tracks active WebSocket connection goroutines for graceful shutdown.
 	connWg sync.WaitGroup
+	// ws holds the clients this server broadcasts to.
+	ws wsRegistry
 }
 
 // lockdownPollInterval is how often the lockdown watcher re-evaluates the lock
@@ -69,7 +71,7 @@ func (env *Env) StartLockdownWatcher() {
 	env.connWg.Add(1)
 	go func() {
 		defer env.connWg.Done()
-		env.lockdown.WatchTransitions(env.shutdownCh, lockdownPollInterval, notifyWebSocketClients)
+		env.lockdown.WatchTransitions(env.shutdownCh, lockdownPollInterval, env.notifyWebSocketClients)
 	}()
 }
 
@@ -108,7 +110,7 @@ func (env *Env) StartArgoWatcher() {
 	env.connWg.Add(1)
 	go func() {
 		defer env.connWg.Done()
-		watchArgoTransitions(env.shutdownCh, argoWatchInterval, env.argo.UnavailableReason, notifyWebSocketClients)
+		watchArgoTransitions(env.shutdownCh, argoWatchInterval, env.argo.UnavailableReason, env.notifyWebSocketClients)
 	}()
 }
 

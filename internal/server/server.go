@@ -44,9 +44,6 @@ const (
 
 type Server struct {
 	router      http.Handler
-	config      *config.ServerConfig
-	argo        *argocd.Argo
-	metrics     *prom.Metrics
 	updater     *argocd.ArgoStatusUpdater
 	env         *Env
 	probeCancel context.CancelFunc
@@ -144,9 +141,6 @@ func NewServer(serverConfig *config.ServerConfig, reg prometheus.Registerer) (*S
 
 	return &Server{
 		router:      router,
-		config:      serverConfig,
-		argo:        argo,
-		metrics:     metrics,
 		updater:     statusUpdater,
 		env:         env,
 		probeCancel: probeCancel,
