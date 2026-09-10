@@ -5,6 +5,7 @@ import { MemoryRouter, useLocation } from 'react-router-dom';
 import { ListContextProvider } from 'react-admin';
 import type { ListContextValue } from 'react-admin';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { blockStorageAccess } from '../../test/blockStorage';
 import { useFilterState, type FilterStateSchema } from './useFilterState';
 
 interface HistoryFilters extends Record<string, unknown> {
@@ -154,6 +155,32 @@ describe('useFilterState', () => {
     expect(params.get('app')).toBe('demo');
     expect(params.get('startDate')).toBe('1700000000');
     expect(params.get('endDate')).toBe('1700100000');
+  });
+
+  // `initial` is computed during render, so an unguarded read here would take
+  // the whole list page down rather than lose a remembered filter.
+  it('falls back to defaults and still applies when storage is blocked', () => {
+    const restore = blockStorageAccess();
+    try {
+      const setFilters = vi.fn();
+      const wrapper = wrapperFactory({ setFilters });
+
+      const { result } = renderHook(
+        () => useFilterState({ storageKey: 'history', schema, defaults }),
+        { wrapper },
+      );
+
+      expect(result.current.values).toEqual(defaults);
+
+      act(() => result.current.apply({ app: 'demo', start: null, end: null }));
+
+      // The failed storage write must not abort the URL and filterValues
+      // mirroring that the list actually reads.
+      expect(setFilters).toHaveBeenLastCalledWith({ app: 'demo' }, {}, false);
+      expect(new URLSearchParams(lastLocation?.search ?? '').get('app')).toBe('demo');
+    } finally {
+      restore();
+    }
   });
 
   it('removes URL params and storage entries when values are cleared', () => {

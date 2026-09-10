@@ -189,9 +189,9 @@ func (monitor *DeploymentMonitor) StoreInitialAppStatus(task *models.Task, appli
 		return errors.New("application is nil")
 	}
 
-	status := application.GetRolloutStatus(task.ListImages(), monitor.registryProxyUrl, monitor.acceptSuspended)
+	status := rolloutStatus(application, task.ListImages(), monitor.registryProxyUrl, monitor.acceptSuspended)
 	// The ArgoCD API may return images in different orders between calls; sorting guarantees stable hash comparisons.
-	normalizedImages := helpers.NormalizeImages(application.Status.Summary.Images)
+	normalizedImages := normalizeImages(application.Status.Summary.Images)
 
 	task.SavedAppStatus = models.SavedAppStatus{
 		Status:     status,
@@ -265,7 +265,7 @@ func (monitor *DeploymentMonitor) WaitRollout(task models.Task, abandoned func()
 			return nil
 		}
 
-		status := app.GetRolloutStatus(task.ListImages(), monitor.registryProxyUrl, monitor.acceptSuspended)
+		status := rolloutStatus(app, task.ListImages(), monitor.registryProxyUrl, monitor.acceptSuspended)
 
 		if !imagesValidated && refresh && shouldValidateDesiredImages(app, status) {
 			imagesValidated = true
@@ -310,7 +310,7 @@ func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) ([]ret
 
 	retryOptions = append(retryOptions, retry.Delay(delay))
 
-	delaySeconds := helpers.CeilDivDuration(delay, time.Second)
+	delaySeconds := ceilDivDuration(delay, time.Second)
 
 	defaultAttempts := monitor.resolvedDefaultAttempts(delay)
 
@@ -325,14 +325,14 @@ func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) ([]ret
 			slog.Debug("No per-task timeout override, using the instance default",
 				"attempts", defaultAttempts, "id", task.Id)
 		}
-		return append(retryOptions, retry.Attempts(defaultAttempts)), helpers.MulDurationSaturating(defaultAttempts, delay)
+		return append(retryOptions, retry.Attempts(defaultAttempts)), mulDurationSaturating(defaultAttempts, delay)
 	}
 
 	attempts := monitor.rolloutAttempts(task, delay)
 
 	slog.Debug("Overriding task timeout", "timeout_seconds", task.Timeout, "retry_delay", delay, "delay_step_seconds", delaySeconds, "attempts", attempts, "id", task.Id)
 
-	return append(retryOptions, retry.Attempts(attempts)), helpers.MulDurationSaturating(attempts, delay)
+	return append(retryOptions, retry.Attempts(attempts)), mulDurationSaturating(attempts, delay)
 }
 
 // rolloutAttempts is how many polls a task is given: its timeout in whole delay steps
@@ -343,7 +343,7 @@ func (monitor *DeploymentMonitor) rolloutAttempts(task models.Task, delay time.D
 		return monitor.resolvedDefaultAttempts(delay)
 	}
 
-	return helpers.SafeIntToUint(int64(task.Timeout)/helpers.CeilDivDuration(delay, time.Second) + 1)
+	return safeIntToUint(int64(task.Timeout)/ceilDivDuration(delay, time.Second) + 1)
 }
 
 // rolloutWindow is the wall-clock span the poll loop is given for task, which is the
@@ -356,19 +356,19 @@ func (monitor *DeploymentMonitor) rolloutAttempts(task models.Task, delay time.D
 func (monitor *DeploymentMonitor) rolloutWindow(task models.Task) time.Duration {
 	delay := monitor.resolvedDelay()
 
-	return helpers.MulDurationSaturating(monitor.rolloutAttempts(task, delay), delay)
+	return mulDurationSaturating(monitor.rolloutAttempts(task, delay), delay)
 }
 
 // ProcessDeploymentResult determines if the deployment was successful and updates the appropriate
 // status and metrics. waited is how long the rollout was polled, reported in the failure message so
 // the user can tell a rollout that ran out its window from one that failed immediately.
 func (monitor *DeploymentMonitor) ProcessDeploymentResult(task *models.Task, application *models.Application, waited time.Duration) {
-	status := application.GetRolloutStatus(task.ListImages(), monitor.registryProxyUrl, monitor.acceptSuspended)
+	status := rolloutStatus(application, task.ListImages(), monitor.registryProxyUrl, monitor.acceptSuspended)
 	if application.IsFireAndForgetModeActive() {
-		status = models.ArgoRolloutAppSuccess
+		status = ArgoRolloutAppSuccess
 	}
 
-	if status == models.ArgoRolloutAppSuccess {
+	if status == ArgoRolloutAppSuccess {
 		monitor.handleDeploymentSuccess(task)
 	} else {
 		monitor.handleDeploymentFailure(task, status, application, waited)
@@ -461,8 +461,8 @@ func (monitor *DeploymentMonitor) handleDeploymentFailure(task *models.Task, sta
 	tree := monitor.fetchResourceTree(task)
 	reason := fmt.Sprintf(
 		"%s\n\n%s",
-		application.RolloutFailureHeadline(status, waited),
-		application.GetRolloutMessage(status, task.ListImages(), tree),
+		rolloutFailureHeadline(application, status, waited),
+		rolloutMessage(application, status, task.ListImages(), tree),
 	)
 	if err := monitor.argo.State.SetTaskStatus(task.Id, models.StatusFailedMessage, reason); err != nil {
 		slog.Error("Failed to change task status", "error", err, "id", task.Id)
@@ -476,7 +476,7 @@ const resourceTreeTimeout = 10 * time.Second
 
 // fetchResourceTree best-effort fetches the application's live resource tree to enrich the
 // failure reason with pod-level causes (ImagePullBackOff, CrashLoopBackOff). It is deliberately
-// non-fatal: any error yields a nil tree and GetRolloutMessage falls back to the app's top-level
+// non-fatal: any error yields a nil tree and rolloutMessage falls back to the app's top-level
 // resources, so a resource-tree hiccup never prevents the deployment from being marked failed.
 func (monitor *DeploymentMonitor) fetchResourceTree(task *models.Task) *models.ApplicationTree {
 	ctx, cancel := context.WithTimeout(context.Background(), resourceTreeTimeout)
@@ -502,7 +502,7 @@ func handleApplicationFetchError(task models.Task, err error) error {
 // lacks an expected image. Only then is the image's absence worth investigating: while the
 // app is unsynced or unhealthy the image may still be on its way.
 func shouldValidateDesiredImages(app *models.Application, status string) bool {
-	return status == models.ArgoRolloutAppNotAvailable &&
+	return status == ArgoRolloutAppNotAvailable &&
 		app.Status.Sync.Status == "Synced" &&
 		app.Status.Health.Status == "Healthy"
 }
@@ -521,15 +521,20 @@ func (monitor *DeploymentMonitor) validateDesiredImages(ctx context.Context, tas
 		return nil
 	}
 
-	desired := resources.DesiredImageNames()
+	desired, err := desiredImageNames(resources)
+	if err != nil {
+		slog.Warn("Could not read the application's desired state to validate images", "error", err, "id", task.Id)
+		return nil
+	}
+
 	if len(desired) == 0 {
 		slog.Debug("Application desired state declares no images; skipping validation", "id", task.Id)
 		return nil
 	}
 
 	for index := range task.Images {
-		name := helpers.ImageName(task.Images[index].Image)
-		if helpers.ImagesContains(desired, name, monitor.registryProxyUrl) {
+		name := imageName(task.Images[index].Image)
+		if imagesContains(desired, name, monitor.registryProxyUrl) {
 			continue
 		}
 		return &ImageNotPartOfAppError{App: task.App, Image: name, DesiredImages: desired}
@@ -543,14 +548,14 @@ func (monitor *DeploymentMonitor) validateDesiredImages(ctx context.Context, tas
 // already applied — i.e. the image hash moved off the saved initial one.
 func checkRolloutStatus(task models.Task, application *models.Application, status string) error {
 	switch status {
-	case models.ArgoRolloutAppDegraded:
+	case ArgoRolloutAppDegraded:
 		slog.Debug("Application is degraded", "id", task.Id)
-		normalizedImages := helpers.NormalizeImages(application.Status.Summary.Images)
+		normalizedImages := normalizeImages(application.Status.Summary.Images)
 		hash := helpers.GenerateHash(strings.Join(normalizedImages, ","))
 		if !bytes.Equal(task.SavedAppStatus.ImagesHash, hash) {
 			return retry.Unrecoverable(errAppDegraded)
 		}
-	case models.ArgoRolloutAppSuccess:
+	case ArgoRolloutAppSuccess:
 		slog.Debug("Application rollout finished", "id", task.Id)
 		return nil
 	default:
@@ -607,5 +612,5 @@ func (monitor *DeploymentMonitor) resolvedDefaultAttempts(delay time.Duration) u
 
 	fallbackWindow := time.Duration(legacyRetryIntervals) * ArgoSyncRetryDelay
 
-	return helpers.SafeIntToUint(helpers.CeilDivDuration(fallbackWindow, delay))
+	return safeIntToUint(ceilDivDuration(fallbackWindow, delay))
 }

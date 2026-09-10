@@ -101,17 +101,6 @@ func sampleTask(app string) models.Task {
 	}
 }
 
-func TestPostgresState_AddTask(t *testing.T) {
-	env := newPostgresTestEnv(t)
-
-	task := sampleTask("Test")
-	result := env.addTask(t, task)
-
-	assert.NotEmpty(t, result.Id)
-	assert.Equal(t, models.StatusInProgressMessage, result.Status)
-	assert.Equal(t, "Test", result.App)
-}
-
 func TestPostgresState_RollbackFieldsRoundTrip(t *testing.T) {
 	env := newPostgresTestEnv(t)
 
@@ -251,29 +240,6 @@ func TestPostgresState_GetTasksSearch(t *testing.T) {
 	})
 }
 
-func TestPostgresState_GetTask(t *testing.T) {
-	env := newPostgresTestEnv(t)
-	inserted := env.addTask(t, sampleTask("Test"))
-
-	task, err := env.state.GetTask(inserted.Id)
-	require.NoError(t, err)
-	require.NotNil(t, task)
-	assert.Equal(t, inserted.Id, task.Id)
-	assert.Equal(t, models.StatusInProgressMessage, task.Status)
-}
-
-// TestPostgresState_GetTask_NotFound verifies that GetTask returns the
-// ErrTaskNotFound sentinel (not a generic error) when no row matches, so the
-// HTTP layer can map it to 404 while other failures surface as 500.
-func TestPostgresState_GetTask_NotFound(t *testing.T) {
-	env := newPostgresTestEnv(t)
-
-	// Valid UUID that was never inserted -> gorm.ErrRecordNotFound.
-	task, err := env.state.GetTask("00000000-0000-0000-0000-000000000000")
-	assert.Nil(t, task)
-	assert.ErrorIs(t, err, ErrTaskNotFound)
-}
-
 // TestPostgresState_GetTask_MalformedID verifies that a non-UUID id is mapped to
 // ErrTaskNotFound (HTTP 404) rather than reaching the uuid-typed column and
 // producing a client-triggerable backend error (HTTP 500). The parse guard runs
@@ -300,103 +266,6 @@ func TestPostgresState_GetTask_BackendError(t *testing.T) {
 	assert.Nil(t, task)
 	require.Error(t, err)
 	assert.NotErrorIs(t, err, ErrTaskNotFound)
-}
-
-func TestPostgresState_SetTaskStatus(t *testing.T) {
-	env := newPostgresTestEnv(t)
-	inserted := env.addTask(t, sampleTask("Test"))
-
-	err := env.state.SetTaskStatus(inserted.Id, models.StatusDeployedMessage, "finished")
-	assert.NoError(t, err)
-
-	taskInfo, err := env.state.GetTask(inserted.Id)
-	require.NoError(t, err)
-	require.NotNil(t, taskInfo)
-	assert.Equal(t, models.StatusDeployedMessage, taskInfo.Status)
-	assert.Equal(t, "finished", taskInfo.StatusReason)
-}
-
-func TestPostgresState_CancelInProgressTasks(t *testing.T) {
-	env := newPostgresTestEnv(t)
-
-	inProgress := env.addTask(t, taskWithImage("app-a", "image-a"))
-	sameAppOtherImage := env.addTask(t, taskWithImage("app-a", "image-b"))
-	otherApp := env.addTask(t, taskWithImage("app-b", "image-a"))
-	finished := env.addTask(t, taskWithImage("app-a", "image-a"))
-	require.NoError(t, env.state.SetTaskStatus(finished.Id, models.StatusDeployedMessage, ""))
-
-	count, err := env.state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-a", Tag: "v2"}}, "superseded", false)
-	require.NoError(t, err)
-	assert.Equal(t, int64(1), count, "only the in-progress app-a task sharing image-a should be cancelled")
-
-	got, err := env.state.GetTask(inProgress.Id)
-	require.NoError(t, err)
-	assert.Equal(t, models.StatusCancelledMessage, got.Status)
-	assert.Equal(t, "superseded", got.StatusReason)
-
-	gotSameApp, err := env.state.GetTask(sameAppOtherImage.Id)
-	require.NoError(t, err)
-	assert.Equal(t, models.StatusInProgressMessage, gotSameApp.Status)
-
-	gotOther, err := env.state.GetTask(otherApp.Id)
-	require.NoError(t, err)
-	assert.Equal(t, models.StatusInProgressMessage, gotOther.Status)
-
-	gotFinished, err := env.state.GetTask(finished.Id)
-	require.NoError(t, err)
-	assert.Equal(t, models.StatusDeployedMessage, gotFinished.Status)
-}
-
-// TestPostgresState_CancelInProgressTasks_MultiImageOverlap mirrors the
-// in-memory multi-image test: a task sharing one image name is cancelled while a
-// fully disjoint task is left alone, exercising overlap (not equality) matching.
-func TestPostgresState_CancelInProgressTasks_MultiImageOverlap(t *testing.T) {
-	env := newPostgresTestEnv(t)
-
-	overlapping := sampleTask("app-a")
-	overlapping.Images = []models.Image{{Image: "image-a", Tag: "v1"}, {Image: "image-b", Tag: "v1"}}
-	overlappingTask := env.addTask(t, overlapping)
-
-	disjoint := sampleTask("app-a")
-	disjoint.Images = []models.Image{{Image: "image-c", Tag: "v1"}, {Image: "image-d", Tag: "v1"}}
-	disjointTask := env.addTask(t, disjoint)
-
-	count, err := env.state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-b", Tag: "v2"}, {Image: "image-e", Tag: "v1"}}, "superseded", false)
-	require.NoError(t, err)
-	assert.Equal(t, int64(1), count, "only the task sharing an image name should be cancelled")
-
-	gotOverlapping, err := env.state.GetTask(overlappingTask.Id)
-	require.NoError(t, err)
-	assert.Equal(t, models.StatusCancelledMessage, gotOverlapping.Status)
-
-	gotDisjoint, err := env.state.GetTask(disjointTask.Id)
-	require.NoError(t, err)
-	assert.Equal(t, models.StatusInProgressMessage, gotDisjoint.Status)
-}
-
-// TestPostgresState_CancelInProgressTasks_Count mirrors the in-memory count test
-// for CI: no-overlap returns 0 (the len(ids) == 0 early return) and an
-// overlapping deployment cancels every matching in-progress task.
-func TestPostgresState_CancelInProgressTasks_Count(t *testing.T) {
-	env := newPostgresTestEnv(t)
-
-	first := env.addTask(t, taskWithImage("app-a", "image-a"))
-	second := env.addTask(t, taskWithImage("app-a", "image-a"))
-
-	count, err := env.state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-z", Tag: "v1"}}, "superseded", false)
-	require.NoError(t, err)
-	assert.Equal(t, int64(0), count, "a deployment sharing no image should cancel nothing")
-
-	count, err = env.state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-a", Tag: "v2"}}, "superseded", false)
-	require.NoError(t, err)
-	assert.Equal(t, int64(2), count, "every matching in-progress task must be cancelled")
-
-	gotFirst, err := env.state.GetTask(first.Id)
-	require.NoError(t, err)
-	assert.Equal(t, models.StatusCancelledMessage, gotFirst.Status)
-	gotSecond, err := env.state.GetTask(second.Id)
-	require.NoError(t, err)
-	assert.Equal(t, models.StatusCancelledMessage, gotSecond.Status)
 }
 
 // TestPostgresState_ValidatedFlagPersists locks the storage contract the
@@ -430,55 +299,6 @@ func TestPostgresState_ValidatedFlagPersists(t *testing.T) {
 		assert.False(t, stored.Validated,
 			"a re-read task must not claim authority; write-back reads the in-process task, not this one")
 	})
-}
-
-// TestPostgresState_CancelInProgressTasks_Authority mirrors the in-memory
-// authority test against real Postgres: an uncredentialed deployment must not
-// cancel a credentialed in-flight rollout, while every other combination still
-// supersedes. Running it here matters because the Postgres path filters
-// candidates in Go after reading them back, so the column must be selected.
-func TestPostgresState_CancelInProgressTasks_Authority(t *testing.T) {
-	tests := []struct {
-		name             string
-		victimValidated  bool
-		newTaskValidated bool
-		wantCancelled    bool
-	}{
-		{"unvalidated must not cancel validated", true, false, false},
-		{"validated cancels validated", true, true, true},
-		{"unvalidated cancels unvalidated", false, false, true},
-		{"validated cancels unvalidated", false, true, true},
-	}
-
-	// Guard at the top level so an unconfigured database reports SKIP for this test
-	// rather than PASS with four skipped children — this is the only unit-level
-	// cover for the Postgres half of the rule, and a green no-op would hide that.
-	// Each case still builds its own env, which truncates tasks for isolation.
-	newPostgresTestEnv(t)
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			env := newPostgresTestEnv(t)
-
-			victim := taskWithImage("app-a", "image-a")
-			victim.Validated = tt.victimValidated
-			inFlight := env.addTask(t, victim)
-
-			count, err := env.state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-a", Tag: "v2"}}, "superseded", tt.newTaskValidated)
-			require.NoError(t, err)
-
-			got, err := env.state.GetTask(inFlight.Id)
-			require.NoError(t, err)
-
-			if tt.wantCancelled {
-				assert.Equal(t, int64(1), count)
-				assert.Equal(t, models.StatusCancelledMessage, got.Status)
-				return
-			}
-			assert.Equal(t, int64(0), count)
-			assert.Equal(t, models.StatusInProgressMessage, got.Status)
-		})
-	}
 }
 
 func TestPostgresState_ProcessObsoleteTasks(t *testing.T) {
@@ -833,4 +653,14 @@ func TestPostgresState_TaskRetentionCollectsUnleasedTaskAbortedByTheSamePass(t *
 
 	assert.False(t, env.taskExists(t, unclaimed.Id),
 		"with no replica holding it, a stale task is aborted and removed by the one sweep")
+}
+
+func TestPostgresState_Contract(t *testing.T) {
+	// Guard at the top level so an unconfigured database reports SKIP for this test
+	// rather than PASS with every child skipped.
+	newPostgresTestEnv(t)
+
+	runTaskRepositoryContract(t, func(t *testing.T) TaskRepository {
+		return newPostgresTestEnv(t).state
+	})
 }

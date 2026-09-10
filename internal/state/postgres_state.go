@@ -68,7 +68,7 @@ func (state *PostgresState) Connect(serverConfig *config.ServerConfig) error {
 	return nil
 }
 
-// AddTask returns the task with the DB-generated id and creation time.
+// AddTask returns the task with the DB-generated id and timestamps, in Unix seconds.
 func (state *PostgresState) AddTask(task models.Task) (*models.Task, error) {
 	ormTask := state_models.TaskModel{
 		Images:           datatypes.NewJSONSlice(task.Images),
@@ -89,7 +89,8 @@ func (state *PostgresState) AddTask(task models.Task) (*models.Task, error) {
 	}
 
 	task.Id = ormTask.Id.String()
-	task.Created = float64(ormTask.Created.UnixMilli())
+	task.Created = float64(ormTask.Created.Unix())
+	task.Updated = float64(ormTask.Updated.Unix())
 	task.Status = models.StatusInProgressMessage
 
 	return &task, nil
@@ -308,7 +309,7 @@ func (state *PostgresState) GetTask(id string) (*models.Task, error) {
 	return ormTask.ConvertToExternalTask(), nil
 }
 
-// SetTaskStatus errors if the id is malformed or no matching task exists.
+// SetTaskStatus errors if the id is malformed and returns ErrTaskNotFound when no task matches.
 func (state *PostgresState) SetTaskStatus(id, status, reason string) error {
 	uuidv4, err := uuid.Parse(id)
 	if err != nil {
@@ -320,7 +321,7 @@ func (state *PostgresState) SetTaskStatus(id, status, reason string) error {
 		return result.Error
 	}
 	if result.RowsAffected == 0 {
-		return errors.New("task not found")
+		return ErrTaskNotFound
 	}
 
 	return nil

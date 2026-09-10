@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 import { DEFAULT_DATE_FORMAT, formatDateTime } from '../utils/time';
+import { safeGetItem, safeSetItem } from '../utils/storage';
 
 export type TimezoneMode = 'local' | 'utc';
 
@@ -14,11 +15,7 @@ const STORAGE_KEY = 'argo-watcher:timezone';
 const TimezoneContext = createContext<TimezoneContextValue | undefined>(undefined);
 
 const readInitialTimezone = (): TimezoneMode => {
-  const browserWindow = globalThis.window;
-  if (!browserWindow) {
-    return 'utc';
-  }
-  const stored = browserWindow.localStorage.getItem(STORAGE_KEY);
+  const stored = safeGetItem(STORAGE_KEY);
   if (stored === 'local' || stored === 'utc') {
     return stored;
   }
@@ -30,10 +27,7 @@ export const TimezoneProvider = ({ children }: { children: ReactNode }) => {
 
   const persistTimezone = useCallback((mode: TimezoneMode) => {
     setTimezone(mode);
-    const browserWindow = globalThis.window;
-    if (browserWindow) {
-      browserWindow.localStorage.setItem(STORAGE_KEY, mode);
-    }
+    safeSetItem(STORAGE_KEY, mode);
   }, []);
 
   const formatDate = useCallback(

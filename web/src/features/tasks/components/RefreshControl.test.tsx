@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { blockStorageAccess } from '../../../test/blockStorage';
 import { RefreshControl } from './RefreshControl';
 import { TaskListProvider, usePauseRefresh } from './TaskListContext';
 
@@ -20,6 +21,25 @@ describe('RefreshControl', () => {
     const onRefresh = vi.fn();
     renderWithProvider(<RefreshControl onRefresh={onRefresh} />, 10);
     expect(screen.getByText(/Live · 10s/)).toBeInTheDocument();
+  });
+
+  // A blocked-storage browser must get the provider default rather than a
+  // crashed toolbar; the interval is only ever a remembered convenience.
+  it('hydrates from the provider default when storage is blocked', () => {
+    const restore = blockStorageAccess();
+    try {
+      const onRefresh = vi.fn();
+      renderWithProvider(<RefreshControl onRefresh={onRefresh} />, 30);
+
+      expect(screen.getByText(/Live · 30s/)).toBeInTheDocument();
+
+      // Choosing an interval still works, it just is not remembered.
+      fireEvent.mouseDown(screen.getByLabelText('Auto-refresh interval'));
+      fireEvent.click(screen.getByRole('option', { name: '10s' }));
+      expect(screen.getByText(/Live · 10s/)).toBeInTheDocument();
+    } finally {
+      restore();
+    }
   });
 
   it('fires onRefresh exactly once when the countdown reaches zero', () => {

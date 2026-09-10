@@ -9,7 +9,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/shini4i/argo-watcher/internal/helpers"
 	"github.com/shini4i/argo-watcher/internal/prometheus"
 	"github.com/shini4i/argo-watcher/internal/state"
 
@@ -272,7 +271,7 @@ func (argo *Argo) detectRollback(task models.Task) string {
 // imageSignature returns a key for a task's image set that is independent of the
 // order the images arrived in.
 func imageSignature(task models.Task) string {
-	return strings.Join(helpers.NormalizeImages(task.ListImages()), ",")
+	return strings.Join(normalizeImages(task.ListImages()), ",")
 }
 
 // GetTasks retrieves tasks from the state.

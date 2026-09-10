@@ -142,7 +142,7 @@ An uncommitted tag does not trigger this error: the image name is still declared
 
 **How to verify:** compare the requested image against the list in the failure reason, or run `argocd app manifests <app> | grep image:`.
 
-**When the check does not run:** it needs a freshly reconciled application, so it is skipped when `ARGO_REFRESH_APP` is `false` or the task sets `TASK_REFRESH=false`.
+**When the check does not run:** it needs a freshly reconciled application, so it is skipped when `ARGO_REFRESH_APP` is `false` or the task sets `TASK_REFRESH=false`. It also abstains when one of the application's desired manifests cannot be read, logging `Could not read the application's desired state to validate images` at `warn`; the deployment then polls to a timeout instead of failing fast.
 
 **When the check is wrong:** two kinds of image belong to an application yet never appear in the desired state Argo CD reports, so a correct name still fails:
 

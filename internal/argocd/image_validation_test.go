@@ -49,11 +49,11 @@ func TestShouldValidateDesiredImages(t *testing.T) {
 		status   string
 		expected bool
 	}{
-		{"settledWithoutImage", "Synced", "Healthy", models.ArgoRolloutAppNotAvailable, true},
-		{"stillSyncing", "OutOfSync", "Healthy", models.ArgoRolloutAppNotAvailable, false},
-		{"stillProgressing", "Synced", "Progressing", models.ArgoRolloutAppNotAvailable, false},
-		{"imageAlreadyThere", "Synced", "Healthy", models.ArgoRolloutAppSuccess, false},
-		{"degraded", "Synced", "Degraded", models.ArgoRolloutAppDegraded, false},
+		{"settledWithoutImage", "Synced", "Healthy", ArgoRolloutAppNotAvailable, true},
+		{"stillSyncing", "OutOfSync", "Healthy", ArgoRolloutAppNotAvailable, false},
+		{"stillProgressing", "Synced", "Progressing", ArgoRolloutAppNotAvailable, false},
+		{"imageAlreadyThere", "Synced", "Healthy", ArgoRolloutAppSuccess, false},
+		{"degraded", "Synced", "Degraded", ArgoRolloutAppDegraded, false},
 	}
 
 	for _, test := range tests {
@@ -176,6 +176,24 @@ func TestValidateDesiredImages(t *testing.T) {
 		api.EXPECT().GetManagedResources(gomock.Any(), task.App).Return(nil, errors.New("unavailable"))
 
 		assert.NoError(t, newMonitor(api, "").validateDesiredImages(context.Background(), task, settledApp()))
+	})
+
+	// The undecodable manifest may be the very one declaring the requested image, so
+	// its absence from the readable resources is not proof of anything. The warning is
+	// the only sign an operator gets that validation went quiet for the app.
+	t.Run("keepsWaitingWhenDesiredStateCannotBeRead", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		api := mocks.NewMockArgoApiInterface(ctrl)
+		api.EXPECT().GetManagedResources(gomock.Any(), task.App).Return(
+			managedResources(deploymentWith("ghcr.io/shini4i/app:v1"), "not json"), nil)
+
+		logs := captureDebugLogs(t)
+
+		assert.NoError(t, newMonitor(api, "").validateDesiredImages(context.Background(), task, settledApp()))
+		assert.Contains(t, logs.String(), "Could not read the application's desired state")
+		assert.Contains(t, logs.String(), task.Id)
 	})
 
 	t.Run("keepsWaitingWhenDesiredStateDeclaresNoImages", func(t *testing.T) {

@@ -26,9 +26,9 @@ const MaxTaskImages = 50
 const MaxTaskFieldLength = 255
 
 type Task struct {
-	// Id, Created and Updated are server-owned: the state backend stamps all three,
-	// and AddTask additionally clears Updated, which the backend would otherwise leave
-	// carrying a submitted value into the start notification.
+	// Id, Created and Updated are server-owned: the state backend stamps all three in
+	// Unix seconds, and Argo.AddTask clears Updated before the store or the start
+	// notification can see a submitted value.
 	Id      string  `json:"id,omitempty"`
 	Created float64 `json:"created,omitempty"`
 	Updated float64 `json:"updated,omitempty"`
@@ -124,11 +124,6 @@ type ArgoApiErrorResponse struct {
 	Error   string `json:"error"`
 	Code    int32  `json:"code"`
 	Message string `json:"message"`
-}
-
-type LockdownSchedule struct {
-	Cron     string `json:"cron" example:"0 2 * * *"`
-	Duration string `json:"duration" example:"2h"`
 }
 
 // MatchesSearch reports whether query occurs, case-insensitively, in the task's

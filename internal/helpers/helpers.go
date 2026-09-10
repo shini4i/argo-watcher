@@ -4,38 +4,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httputil"
-	"slices"
 	"strings"
 
 	"crypto/sha256"
 )
-
-// ImagesContains reports whether images contains image. When a registry proxy is
-// set it matches the image both with and without the proxy prefix.
-func ImagesContains(images []string, image string, registryProxy string) bool {
-	if registryProxy != "" {
-		imageWithProxy := registryProxy + "/" + image
-		// We need to check image with and without proxy because mutating webhook
-		// might not have finished image copy during first rollout part. (due to 30s timeout)
-		return slices.Contains(images, image) || slices.Contains(images, imageWithProxy)
-	} else {
-		return slices.Contains(images, image)
-	}
-}
-
-// ImageName returns the repository part of a container image reference, with any
-// tag and digest removed ("registry:5000/team/app:v1" -> "registry:5000/team/app").
-// A colon only introduces a tag when it appears after the last path separator, so a
-// registry host's port is preserved.
-func ImageName(reference string) string {
-	name, _, _ := strings.Cut(reference, "@")
-
-	if colon := strings.LastIndex(name, ":"); colon > strings.LastIndex(name, "/") {
-		name = name[:colon]
-	}
-
-	return name
-}
 
 // CurlCommandFromRequest renders an HTTP request as an equivalent cURL command
 // (method, headers, body, URL). The value of any header whose name matches
@@ -100,11 +72,4 @@ func GenerateHash(s string) []byte {
 	// hash.Write is documented never to return an error.
 	hash.Write([]byte(s))
 	return hash.Sum(nil)
-}
-
-// NormalizeImages returns a sorted copy, leaving the original untouched.
-func NormalizeImages(images []string) []string {
-	copied := append([]string(nil), images...)
-	slices.Sort(copied)
-	return copied
 }

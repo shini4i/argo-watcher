@@ -1,7 +1,6 @@
 package state
 
 import (
-	"errors"
 	"log/slog"
 	"sort"
 	"strings"
@@ -43,9 +42,10 @@ func (state *InMemoryState) AddTask(task models.Task) (*models.Task, error) {
 	state.mu.Lock()
 	defer state.mu.Unlock()
 
+	now := float64(time.Now().Unix())
 	task.Id = uuid.New().String()
-	task.Created = float64(time.Now().Unix())
-	task.Updated = float64(time.Now().Unix())
+	task.Created = now
+	task.Updated = now
 	task.Status = models.StatusInProgressMessage
 	state.tasks = append(state.tasks, task)
 	return &task, nil
@@ -132,7 +132,7 @@ func (state *InMemoryState) GetTask(id string) (*models.Task, error) {
 	return nil, ErrTaskNotFound
 }
 
-// SetTaskStatus errors when no task matches the given id.
+// SetTaskStatus returns ErrTaskNotFound when no task matches.
 func (state *InMemoryState) SetTaskStatus(id, status, reason string) error {
 	state.mu.Lock()
 	defer state.mu.Unlock()
@@ -145,7 +145,7 @@ func (state *InMemoryState) SetTaskStatus(id, status, reason string) error {
 			return nil
 		}
 	}
-	return errors.New("task not found")
+	return ErrTaskNotFound
 }
 
 // CancelInProgressTasks marks in-progress tasks for the given app as cancelled

@@ -11,8 +11,8 @@ import (
 
 var errDesiredRetry = errors.New("desired retry error")
 
-// ErrTaskNotFound is returned by TaskRepository.GetTask when no task exists for
-// the requested id. Callers use errors.Is to distinguish a genuine "not found"
+// ErrTaskNotFound is returned by TaskRepository.GetTask and SetTaskStatus when no
+// task exists for the requested id. Callers use errors.Is to distinguish a genuine "not found"
 // (HTTP 404) from a backend failure (HTTP 500), so a database outage is not
 // silently reported as a missing task.
 var ErrTaskNotFound = errors.New("task not found")
@@ -43,12 +43,15 @@ func imageNamesOverlap(a, b []models.Image) bool {
 // TaskRepository defines the contract for task persistence.
 type TaskRepository interface {
 	Connect(serverConfig *config.ServerConfig) error
+	// AddTask stores the task and returns it with the server-owned fields filled
+	// in: id, in-progress status, and Created/Updated as Unix seconds.
 	AddTask(task models.Task) (*models.Task, error)
 	GetTasks(filter models.TaskFilter) ([]models.Task, int64)
 	// GetAppSummaries aggregates the filter's time window per application. Only
 	// StartTime and EndTime are honoured — the summary is a census of the
 	// window, so narrowing it by app or status would defeat its purpose.
 	GetAppSummaries(filter models.TaskFilter) ([]models.AppSummary, error)
+	// GetTask and SetTaskStatus return ErrTaskNotFound when no task matches id.
 	GetTask(id string) (*models.Task, error)
 	SetTaskStatus(id, status, reason string) error
 	// CancelInProgressTasks marks in-progress tasks for the given app as

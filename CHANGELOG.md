@@ -26,6 +26,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The Web UI now loads in a browser that blocks site data, such as a Safari private window or a
+  Firefox with cookies blocked. Reading the saved theme threw before the page mounted, so nothing
+  rendered at all. Preferences that are normally remembered — theme, timezone, refresh interval,
+  filters, page size — simply do not persist there.
+- A deployment no longer fails with `Image "<name>" is not part of application` when one of the
+  application's desired manifests cannot be read. Argo Watcher used to check the requested image
+  against only the manifests it could decode, so an unreadable one that declared the image looked
+  like proof of its absence. The check now stands aside and the deployment runs to its real outcome.
 - Recent Tasks no longer remembers an application filter. Opening the list from an Overview card
   filtered it to that application and kept the filter for every later visit, so returning to the
   main page after viewing a task showed only that application's deployments. The History page still
@@ -35,6 +43,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The troubleshooting page no longer lists an uncommitted tag as a cause of "Image is not part of
   application" — that check compares image names only — and the task lifecycle table notes that a
   `cancelled` task still exits non-zero.
+- With the PostgreSQL backend, the task handed to the start notification carried `created` in Unix
+  milliseconds and an empty `updated`; both are now Unix seconds, matching the API responses and the
+  in-memory backend, so a webhook template that renders `{{ .Created }}` or `{{ .Updated }}` gets
+  the documented value.
 
 ## [1.3.0] - 2026-09-09
 

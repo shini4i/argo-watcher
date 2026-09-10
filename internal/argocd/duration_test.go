@@ -1,4 +1,4 @@
-package helpers
+package argocd
 
 import (
 	"math"
@@ -25,7 +25,7 @@ func TestMulDurationSaturating(t *testing.T) {
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			got := MulDurationSaturating(tc.count, tc.unit)
+			got := mulDurationSaturating(tc.count, tc.unit)
 			assert.Equal(t, tc.expected, got)
 			assert.GreaterOrEqual(t, got, time.Duration(0), "deadline must never be negative")
 		})
@@ -104,7 +104,7 @@ func TestCeilDivDuration(t *testing.T) {
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			result := CeilDivDuration(tc.d, tc.unit)
+			result := ceilDivDuration(tc.d, tc.unit)
 			assert.Equal(t, tc.expected, result)
 		})
 	}
@@ -126,7 +126,7 @@ func TestSafeIntToUint(t *testing.T) {
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			result := SafeIntToUint(tc.input)
+			result := safeIntToUint(tc.input)
 			assert.Equal(t, tc.expected, result)
 		})
 	}
