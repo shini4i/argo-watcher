@@ -67,8 +67,6 @@ test('no row navigates on click — only the View button does', async ({ page, r
   // task rows would style the header as one; neither may act as a link.
   await page.locator('.RaDatagrid-headerRow').click();
   await page.locator('tbody .RaDatagrid-row td.cell-author').first().click();
-  await page.waitForTimeout(500);
-  expect(await navCount(), 'a row click must not navigate').toBe(0);
 
   // Scoped and exact: an unscoped substring match also hits the top bar's Overview link.
   await page
@@ -79,5 +77,12 @@ test('no row navigates on click — only the View button does', async ({ page, r
   await expect
     .poll(() => new URL(page.url()).pathname)
     .toMatch(/^\/task\/[0-9a-f-]{36}$/);
-  expect(await navCount(), 'the View link must navigate exactly once').toBe(1);
+
+  // The View click is the only navigation the test performs, so a total of one
+  // is also what proves the two clicks above navigated nowhere. Waiting on this
+  // count beats sleeping after those clicks to see whether anything happened.
+  expect(
+    await navCount(),
+    'the View link must navigate exactly once, and the header and row clicks not at all',
+  ).toBe(1);
 });

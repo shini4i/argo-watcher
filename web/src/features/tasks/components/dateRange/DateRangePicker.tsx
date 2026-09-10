@@ -13,7 +13,7 @@ import CalendarMonthOutlinedIcon from '@mui/icons-material/CalendarMonthOutlined
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
-import { useTimezone } from '../../../../shared/providers/TimezoneProvider';
+import { useTimezone, type TimezoneMode } from '../../../../shared/providers/TimezoneProvider';
 import { tokens } from '../../../../theme/tokens';
 import {
   PRESETS,
@@ -52,6 +52,55 @@ const MONTH_FORMAT: Intl.DateTimeFormatOptions = { month: 'long', year: 'numeric
 
 const CELL_FORMAT: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'long', year: 'numeric' };
 
+/** Steps the browsed month by delta, carrying into the year. */
+const shiftMonth = (year: number, month: number, delta: number) => {
+  const absolute = year * 12 + month + delta;
+  return { year: Math.floor(absolute / 12), month: ((absolute % 12) + 12) % 12 };
+};
+
+/** The " · N days selected" suffix, empty while the range is incomplete. */
+const spanSuffix = (range: DateRangeValue) => {
+  if (range.start === null || range.end === null) {
+    return '';
+  }
+  const span = dayCount(range.start, range.end);
+  return span > 0 ? ` · ${span} ${span === 1 ? 'day' : 'days'} selected` : '';
+};
+
+/**
+ * @description Reseeds the draft and browsed month when the popover opens or the
+ * committed range changes beneath it, during render so the first painted frame is
+ * already correct. The guard compares endpoints rather than the `value` object:
+ * callers pass a fresh literal each render, and identity would drop a half-picked
+ * range.
+ */
+const usePopoverSeed = (
+  anchor: HTMLElement | null,
+  value: DateRangeValue,
+  timezone: TimezoneMode,
+  reseed: (value: DateRangeValue) => void,
+) => {
+  const [lastSeed, setLastSeed] = useState({
+    anchor,
+    start: value.start,
+    end: value.end,
+    timezone,
+  });
+
+  const changed =
+    lastSeed.anchor !== anchor ||
+    lastSeed.start !== value.start ||
+    lastSeed.end !== value.end ||
+    lastSeed.timezone !== timezone;
+
+  if (changed) {
+    setLastSeed({ anchor, start: value.start, end: value.end, timezone });
+    if (anchor) {
+      reseed(value);
+    }
+  }
+};
+
 /**
  * `value` is in Unix seconds; `onApply` fires only when the user clicks Apply
  * with a complete and dirty range. Computation honours the active timezone.
@@ -65,32 +114,14 @@ export const DateRangePicker = ({ value, onApply }: DateRangePickerProps) => {
   const [viewYear, setViewYear] = useState(() => ymd(new Date(), timezone).year);
   const [viewMonth, setViewMonth] = useState(() => ymd(new Date(), timezone).month);
 
-  // Opening the popover reseeds the draft and the visible month; adjusting
-  // during render means the first painted frame is already the right month.
-  // The guard compares endpoints, not the `value` object — callers pass a fresh
-  // literal each render, and identity would drop a half-picked range.
-  const [lastSeed, setLastSeed] = useState({
-    anchor,
-    start: value.start,
-    end: value.end,
-    timezone,
+  usePopoverSeed(anchor, value, timezone, seed => {
+    setDraft(seed);
+    setPickingStart(true);
+    const anchorDate = seed.start == null ? new Date() : new Date(seed.start * 1000);
+    const focused = ymd(anchorDate, timezone);
+    setViewYear(focused.year);
+    setViewMonth(focused.month);
   });
-  if (
-    lastSeed.anchor !== anchor ||
-    lastSeed.start !== value.start ||
-    lastSeed.end !== value.end ||
-    lastSeed.timezone !== timezone
-  ) {
-    setLastSeed({ anchor, start: value.start, end: value.end, timezone });
-    if (anchor) {
-      setDraft(value);
-      setPickingStart(true);
-      const anchorDate = value.start == null ? new Date() : new Date(value.start * 1000);
-      const focused = ymd(anchorDate, timezone);
-      setViewYear(focused.year);
-      setViewMonth(focused.month);
-    }
-  }
 
   const open = Boolean(anchor);
   const handleOpen = useCallback((event: React.MouseEvent<HTMLElement>) => {
@@ -154,33 +185,19 @@ export const DateRangePicker = ({ value, onApply }: DateRangePickerProps) => {
   const draftStartDate = draft.start === null ? null : new Date(draft.start * 1000);
   const draftEndDate = draft.end === null ? null : new Date(draft.end * 1000);
 
-  const goPrevMonth = () => {
-    if (viewMonth === 0) {
-      setViewMonth(11);
-      setViewYear(viewYear - 1);
-    } else {
-      setViewMonth(viewMonth - 1);
-    }
+  const browseMonth = (delta: number) => {
+    const next = shiftMonth(viewYear, viewMonth, delta);
+    setViewYear(next.year);
+    setViewMonth(next.month);
   };
-  const goNextMonth = () => {
-    if (viewMonth === 11) {
-      setViewMonth(0);
-      setViewYear(viewYear + 1);
-    } else {
-      setViewMonth(viewMonth + 1);
-    }
-  };
+  const goPrevMonth = () => browseMonth(-1);
+  const goNextMonth = () => browseMonth(1);
 
-  const isDirty =
-    draft.start !== value.start || draft.end !== value.end;
+  const isDirty = draft.start !== value.start || draft.end !== value.end;
   const isComplete = draft.start !== null && draft.end !== null;
   const canApply = isDirty && isComplete;
 
-  const span = isComplete && draft.start !== null && draft.end !== null
-    ? dayCount(draft.start, draft.end)
-    : 0;
-  const dayWord = span === 1 ? 'day' : 'days';
-  const spanLabel = span > 0 ? ` · ${span} ${dayWord} selected` : '';
+  const spanLabel = spanSuffix(draft);
 
   // formatDate merges over DEFAULT_DATE_FORMAT, which leaks day/hour/minute
   // into the header. Use Intl directly so we get just "April 2026".
