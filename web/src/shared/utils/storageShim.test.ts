@@ -30,7 +30,7 @@ describe('installStorageShim', () => {
 
       expect(storage.getItem('shim.a')).toBe('one');
       expect(storage.getItem('shim.absent')).toBeNull();
-      expect(storage.length).toBe(2);
+      expect(storage).toHaveLength(2);
       expect(storage.key(0)).toBe('shim.a');
       expect(storage.key(1)).toBe('shim.b');
       expect(storage.key(5)).toBeNull();
@@ -43,7 +43,7 @@ describe('installStorageShim', () => {
       expect(storage.getItem('shim.a')).toBeNull();
 
       storage.clear();
-      expect(storage.length).toBe(0);
+      expect(storage).toHaveLength(0);
       expect(storage.getItem('shim.b')).toBeNull();
     } finally {
       restore();
@@ -74,7 +74,7 @@ describe('installStorageShim', () => {
       // oidc-client-ts reads length once, then walks key(0..length-1).
       storage.removeItem('shim.a');
       expect(Object.keys(storage)).toEqual(['shim.b']);
-      expect(storage.length).toBe(1);
+      expect(storage).toHaveLength(1);
       expect(storage.key(0)).toBe('shim.b');
 
       storage.clear();
