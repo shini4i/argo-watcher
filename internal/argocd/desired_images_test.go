@@ -1,9 +1,11 @@
 package argocd
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/shini4i/argo-watcher/internal/models"
 )
@@ -53,24 +55,48 @@ func TestDesiredImageNamesCollectsWorkloadKinds(t *testing.T) {
 		resource(deploymentManifest),
 	}}
 
+	names, err := desiredImageNames(&resources)
+
+	require.NoError(t, err)
 	assert.Equal(t, []string{
 		"busybox",
 		"ghcr.io/shini4i/app",
 		"ghcr.io/shini4i/cleanup",
-	}, desiredImageNames(&resources))
+	}, names)
 }
 
-// A single unparsable manifest must not blind the check to the images it can read.
-func TestDesiredImageNamesSkipsUnusableItems(t *testing.T) {
+// A resource that declares no image contributes nothing, without making the whole set
+// unusable: one that exists only in the cluster carries the target state "null" or none
+// at all, and a container may simply have no image key.
+func TestDesiredImageNamesSkipsImagelessItems(t *testing.T) {
 	resources := models.ManagedResources{Items: []models.ManagedResource{
 		resource(""),
-		resource("not json"),
+		resource("null"),
 		resource(`{"kind": "Deployment", "spec": {"template": {"spec": {"containers": "not-a-list"}}}}`),
 		resource(`{"kind": "Deployment", "spec": {"template": {"spec": {"containers": [{"name": "no-image"}]}}}}`),
 		resource(deploymentManifest),
 	}}
 
-	assert.Equal(t, []string{"busybox", "ghcr.io/shini4i/app"}, desiredImageNames(&resources))
+	names, err := desiredImageNames(&resources)
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"busybox", "ghcr.io/shini4i/app"}, names)
+}
+
+// An undecodable manifest may be the one declaring the requested image, so the set is
+// reported as unusable rather than as a smaller set of images.
+func TestDesiredImageNamesReportsUndecodableItem(t *testing.T) {
+	resources := models.ManagedResources{Items: []models.ManagedResource{
+		resource(deploymentManifest),
+		resource("not json"),
+	}}
+
+	names, err := desiredImageNames(&resources)
+
+	require.Error(t, err)
+	assert.Nil(t, names)
+	assert.Contains(t, err.Error(), "item 1")
+	assert.NotNil(t, errors.Unwrap(err), "the decoder's error must stay in the chain")
 }
 
 // An image declared outside a pod template — an operator CR is the common case — still
@@ -82,14 +108,26 @@ func TestDesiredImageNamesCollectsNonTemplateImages(t *testing.T) {
 		resource(`{"kind":"ConfigMap","data":{"image":{"repository":"ignored"}}}`),
 	}}
 
-	assert.Equal(t, []string{"ghcr.io/shini4i/step"}, desiredImageNames(&resources))
+	names, err := desiredImageNames(&resources)
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"ghcr.io/shini4i/step"}, names)
 }
 
-// An empty list is what callers treat as "cannot conclude".
+// "Cannot conclude" has two shapes, and callers respond to them differently: an empty
+// list means the desired state declares no image, an error means it could not be read.
 func TestDesiredImageNamesEmpty(t *testing.T) {
 	resources := models.ManagedResources{Items: []models.ManagedResource{resource(serviceManifest)}}
-	assert.Empty(t, desiredImageNames(&resources))
+	names, err := desiredImageNames(&resources)
+	require.NoError(t, err)
+	assert.Empty(t, names)
 
 	empty := models.ManagedResources{}
-	assert.Empty(t, desiredImageNames(&empty))
+	names, err = desiredImageNames(&empty)
+	require.NoError(t, err)
+	assert.Empty(t, names)
+
+	names, err = desiredImageNames(nil)
+	require.NoError(t, err)
+	assert.Nil(t, names)
 }

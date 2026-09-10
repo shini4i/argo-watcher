@@ -521,7 +521,12 @@ func (monitor *DeploymentMonitor) validateDesiredImages(ctx context.Context, tas
 		return nil
 	}
 
-	desired := desiredImageNames(resources)
+	desired, err := desiredImageNames(resources)
+	if err != nil {
+		slog.Warn("Could not read the application's desired state to validate images", "error", err, "id", task.Id)
+		return nil
+	}
+
 	if len(desired) == 0 {
 		slog.Debug("Application desired state declares no images; skipping validation", "id", task.Id)
 		return nil

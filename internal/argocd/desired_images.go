@@ -2,18 +2,19 @@ package argocd
 
 import (
 	"encoding/json"
+	"fmt"
 	"slices"
 
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
-// desiredImageNames returns the sorted, de-duplicated repository names (tags and
-// digests stripped) of every container image declared in the application's desired
-// state. An unreadable item is skipped rather than aborting the walk: ArgoCD marshals
-// every target state, so an item that fails to decode carries nothing to read anyway.
-func desiredImageNames(resources *models.ManagedResources) []string {
+// desiredImageNames returns the sorted, de-duplicated repository names (tags and digests
+// stripped) of every container image declared in the application's desired state. An
+// undecodable target state is an error, not a skip: the item may be the one declaring the
+// image the caller looks for, and a shorter list reads as proof of an absence.
+func desiredImageNames(resources *models.ManagedResources) ([]string, error) {
 	if resources == nil {
-		return nil
+		return nil, nil
 	}
 
 	found := make(map[string]struct{})
@@ -26,7 +27,7 @@ func desiredImageNames(resources *models.ManagedResources) []string {
 
 		var manifest any
 		if err := json.Unmarshal([]byte(targetState), &manifest); err != nil {
-			continue
+			return nil, fmt.Errorf("decoding the target state of item %d: %w", index, err)
 		}
 
 		collectImages(manifest, found)
@@ -38,7 +39,7 @@ func desiredImageNames(resources *models.ManagedResources) []string {
 	}
 	slices.Sort(names)
 
-	return names
+	return names, nil
 }
 
 // collectImages records the repository name of every string stored under an "image" key, at any

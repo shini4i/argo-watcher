@@ -408,7 +408,10 @@ func TestArgoApiGetManagedResourcesSuccess(t *testing.T) {
 
 	result, err := api.GetManagedResources(context.Background(), "demo")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"demo"}, desiredImageNames(result))
+
+	names, err := desiredImageNames(result)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"demo"}, names)
 }
 
 func TestArgoApiGetManagedResourcesError(t *testing.T) {

@@ -26,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A deployment no longer fails with `Image "<name>" is not part of application` when one of the
+  application's desired manifests cannot be read. Argo Watcher used to check the requested image
+  against only the manifests it could decode, so an unreadable one that declared the image looked
+  like proof of its absence. The check now stands aside and the deployment runs to its real outcome.
 - Recent Tasks no longer remembers an application filter. Opening the list from an Overview card
   filtered it to that application and kept the filter for every later visit, so returning to the
   main page after viewing a task showed only that application's deployments. The History page still

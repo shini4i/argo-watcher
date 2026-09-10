@@ -178,6 +178,24 @@ func TestValidateDesiredImages(t *testing.T) {
 		assert.NoError(t, newMonitor(api, "").validateDesiredImages(context.Background(), task, settledApp()))
 	})
 
+	// The undecodable manifest may be the very one declaring the requested image, so
+	// its absence from the readable resources is not proof of anything. The warning is
+	// the only sign an operator gets that validation went quiet for the app.
+	t.Run("keepsWaitingWhenDesiredStateCannotBeRead", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		api := mocks.NewMockArgoApiInterface(ctrl)
+		api.EXPECT().GetManagedResources(gomock.Any(), task.App).Return(
+			managedResources(deploymentWith("ghcr.io/shini4i/app:v1"), "not json"), nil)
+
+		logs := captureDebugLogs(t)
+
+		assert.NoError(t, newMonitor(api, "").validateDesiredImages(context.Background(), task, settledApp()))
+		assert.Contains(t, logs.String(), "Could not read the application's desired state")
+		assert.Contains(t, logs.String(), task.Id)
+	})
+
 	t.Run("keepsWaitingWhenDesiredStateDeclaresNoImages", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
