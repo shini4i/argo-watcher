@@ -685,10 +685,10 @@ func TestPostgresState_GetTasks_ReportsABackendFailure(t *testing.T) {
 	assert.Zero(t, total)
 }
 
-// The in-memory backend breaks a same-second tie by id; this is the SQL half, so
-// the two demonstrably agree rather than incidentally matching. detectRollback
-// reads the first deployed task as the current version, so an unstable first row
-// makes rollback detection non-deterministic on the backend that runs in production.
+// created is a timestamptz, so a tie here needs microsecond-identical rows and id
+// breaks it only to keep a page totally ordered across offsets. detectRollback reads
+// the first deployed task as the current version, so an unstable first row makes
+// rollback detection non-deterministic on the backend that runs in production.
 func TestPostgresState_GetTasksBreaksAnExactTieById(t *testing.T) {
 	env := newPostgresTestEnv(t)
 
@@ -713,7 +713,7 @@ func TestPostgresState_GetTasksBreaksAnExactTieById(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, tasks, 3)
 		assert.Equal(t, ids, []string{tasks[0].Id, tasks[1].Id, tasks[2].Id},
-			"an exact tie must resolve by id, as sortByRecency does")
+			"an exact tie must resolve by id so paging stays total")
 	}
 }
 

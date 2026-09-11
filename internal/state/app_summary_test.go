@@ -238,15 +238,15 @@ func TestInMemoryState_GetTasks_AuthorFilter(t *testing.T) {
 	})
 }
 
-// Second-granularity timestamps make two deployments of one app in the same
-// second ordinary; without a tie-breaker each backend picks a different winner.
-func TestInMemoryState_GetAppSummaries_BreaksASameSecondTieById(t *testing.T) {
+// Second-granularity timestamps make two deployments of one app in the same second
+// ordinary, and the summary names the newest of them as the app's last outcome.
+func TestInMemoryState_GetAppSummaries_BreaksASameSecondTieByInsertionOrder(t *testing.T) {
 	older := summaryTask("checkout", models.StatusDeployedMessage, 500, 510)
-	older.Id = "aaaaaaaa-0000-4000-8000-000000000001"
+	older.Id = "bbbbbbbb-0000-4000-8000-000000000002"
 	newer := summaryTask("checkout", models.StatusFailedMessage, 500, 520)
-	newer.Id = "bbbbbbbb-0000-4000-8000-000000000002"
+	newer.Id = "aaaaaaaa-0000-4000-8000-000000000001"
 
-	// Seeded oldest-id first, so insertion order alone would report the wrong one.
+	// The newer task carries the lower id, so ordering by id reports the wrong one.
 	summaries, err := seedSummaryState(older, newer).GetAppSummaries(
 		models.TaskFilter{StartTime: 0, EndTime: 1000},
 	)

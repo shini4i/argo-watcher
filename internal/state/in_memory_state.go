@@ -2,6 +2,7 @@ package state
 
 import (
 	"log/slog"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -76,16 +77,14 @@ func taskMatchesFilters(task models.Task, filter models.TaskFilter) bool {
 	return task.MatchesSearch(filter.Search)
 }
 
-// sortByRecency orders tasks newest first, breaking a same-second tie by Id as the
-// SQL does, so both backends name the same task as newest. Created holds whole
-// seconds here, so ties are ordinary rather than rare, and detectRollback reads the
-// first deployed task as the current version.
+// sortByRecency orders tasks newest first. The slice must arrive in insertion order:
+// Created holds whole seconds here, so ties are ordinary, and reversing before a
+// stable sort puts the task stored last within a second first. Ids are random uuids
+// and carry no order of their own.
 func sortByRecency(tasks []models.Task) {
+	slices.Reverse(tasks)
 	sort.SliceStable(tasks, func(i, j int) bool {
-		if tasks[i].Created != tasks[j].Created {
-			return tasks[i].Created > tasks[j].Created
-		}
-		return tasks[i].Id > tasks[j].Id
+		return tasks[i].Created > tasks[j].Created
 	})
 }
 

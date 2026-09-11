@@ -283,7 +283,8 @@ func (state *PostgresState) GetTasks(filter models.TaskFilter) ([]models.Task, i
 		query = query.Offset(filter.Offset)
 	}
 
-	// id breaks a tie so the page is totally ordered and matches sortByRecency.
+	// created is a timestamptz, so a tie needs microsecond-identical rows; id breaks
+	// it only to keep the page totally ordered across offsets.
 	query = query.Order("created DESC, id DESC")
 
 	var ormTasks []state_models.TaskModel

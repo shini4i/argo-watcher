@@ -64,7 +64,7 @@ func TestInMemoryState_GetTasks(t *testing.T) {
 		tasks, total, _ := state.GetTasks(models.TaskFilter{StartTime: now - 10, EndTime: now + 10})
 		assert.Len(t, tasks, 2)
 		assert.Equal(t, int64(2), total)
-		// Both tasks are present, newest first, id descending on a tie.
+		// Both tasks are present, newest first.
 		taskIDs := []string{tasks[0].Id, tasks[1].Id}
 		assert.Contains(t, taskIDs, firstTask.Id)
 		assert.Contains(t, taskIDs, secondTask.Id)
@@ -350,10 +350,10 @@ func TestInMemoryState_Contract(t *testing.T) {
 }
 
 // detectRollback takes the first deployed task as the current version, so a
-// same-second tie has to resolve the same way every call and the same way the
-// Postgres backend resolves it. Seconds-granularity Created makes ties ordinary
-// in-memory, where Postgres stores microseconds and rarely sees one.
-func TestInMemoryState_GetTasksBreaksASameSecondTieById(t *testing.T) {
+// same-second tie has to name the task that really came last. Created holds whole
+// seconds in-memory, which makes ties ordinary, and the ids are random uuids that
+// say nothing about order — only the insertion position does.
+func TestInMemoryState_GetTasksBreaksASameSecondTieByInsertionOrder(t *testing.T) {
 	state := &InMemoryState{}
 
 	now := float64(time.Now().Unix())
@@ -369,7 +369,57 @@ func TestInMemoryState_GetTasksBreaksASameSecondTieById(t *testing.T) {
 			App:     "app-a",
 		})
 		require.Len(t, tasks, 3)
-		assert.Equal(t, []string{"cccc", "bbbb", "aaaa"}, []string{tasks[0].Id, tasks[1].Id, tasks[2].Id},
-			"a same-second tie must resolve by id, as summariseApp already does")
+		assert.Equal(t, []string{"bbbb", "cccc", "aaaa"}, []string{tasks[0].Id, tasks[1].Id, tasks[2].Id},
+			"the task added last in a second must be the one reported as current")
 	}
+}
+
+// The production shape: ties inside more than one second. Created decides first and
+// insertion order only within a second, which a sort applied before the reverse — or
+// an unstable one — gets wrong. Reading must also leave the store as it found it.
+func TestInMemoryState_GetTasksOrdersByCreatedThenInsertion(t *testing.T) {
+	state := &InMemoryState{}
+
+	now := float64(time.Now().Unix())
+	state.tasks = append(state.tasks,
+		models.Task{Id: "a-early", App: "app-a", Created: now - 1},
+		models.Task{Id: "b-late", App: "app-a", Created: now},
+		models.Task{Id: "c-early", App: "app-a", Created: now - 1},
+		models.Task{Id: "d-late", App: "app-a", Created: now},
+	)
+
+	for range 2 {
+		tasks, _, _ := state.GetTasks(models.TaskFilter{EndTime: now + 1, App: "app-a"})
+		require.Len(t, tasks, 4)
+		assert.Equal(t, []string{"d-late", "b-late", "c-early", "a-early"},
+			[]string{tasks[0].Id, tasks[1].Id, tasks[2].Id, tasks[3].Id})
+	}
+
+	assert.Equal(t, []string{"a-early", "b-late", "c-early", "d-late"},
+		[]string{state.tasks[0].Id, state.tasks[1].Id, state.tasks[2].Id, state.tasks[3].Id},
+		"reading must not reorder the stored insertion sequence")
+}
+
+// Insertion position is the only recency a same-second tie has, so the sweep that
+// rewrites the store must not reorder what it keeps.
+func TestInMemoryState_ProcessObsoleteTasksKeepsInsertionOrder(t *testing.T) {
+	state := &InMemoryState{}
+
+	now := float64(time.Now().Unix())
+	stale := now - TaskStaleThresholdSeconds - 60
+	state.tasks = append(state.tasks,
+		models.Task{Id: "kept-first", App: "app-a", Status: models.StatusDeployedMessage, Created: now, Updated: now},
+		models.Task{Id: "dropped", App: "app-a", Status: models.StatusAppNotFoundMessage, Created: now, Updated: now},
+		models.Task{Id: "aborted", App: "app-a", Status: models.StatusInProgressMessage, Created: stale, Updated: stale},
+		models.Task{Id: "kept-last", App: "app-a", Status: models.StatusDeployedMessage, Created: now, Updated: now},
+	)
+
+	state.ProcessObsoleteTasks(1)
+
+	assert.Equal(t, []string{"kept-first", "aborted", "kept-last"},
+		[]string{state.tasks[0].Id, state.tasks[1].Id, state.tasks[2].Id})
+
+	tasks, _, _ := state.GetTasks(models.TaskFilter{EndTime: now + 1, App: "app-a"})
+	require.NotEmpty(t, tasks)
+	assert.Equal(t, "kept-last", tasks[0].Id, "the last task stored in a second stays the current one")
 }

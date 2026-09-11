@@ -10,6 +10,7 @@ import (
 
 	"github.com/shini4i/argo-watcher/internal/mocks"
 	"github.com/shini4i/argo-watcher/internal/models"
+	"github.com/shini4i/argo-watcher/internal/state"
 )
 
 // detectRollback reads the app's deployed history to decide whether this
@@ -83,4 +84,42 @@ func TestArgoGetTasks_SuccessCarriesNoError(t *testing.T) {
 	assert.Empty(t, response.Error)
 	assert.Equal(t, stored, response.Tasks)
 	assert.Equal(t, int64(1), response.Total)
+}
+
+// The whole point of the in-memory backend's insertion-order tie-break, exercised
+// at the seam that consumes it: detectRollback reads the first deployed task as the
+// current version, and two deployments of one app land in the same whole second.
+func TestArgoDetectRollback_SameSecondHistoryNamesTheLastDeployment(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	argo := &Argo{}
+	argo.Init(&state.InMemoryState{}, newArgoApiMock(ctrl), mocks.NewMockMetricsInterface(ctrl))
+
+	deploy := func(tag string) string {
+		task, err := argo.State.AddTask(models.Task{
+			App:    "app-a",
+			Images: []models.Image{{Image: "app", Tag: tag}},
+		})
+		require.NoError(t, err)
+		require.NoError(t, argo.State.SetTaskStatus(task.Id, models.StatusDeployedMessage, ""))
+		return task.Id
+	}
+
+	firstId := deploy("v1")
+	deploy("v2")
+
+	current, err := argo.detectRollback(models.Task{
+		App:    "app-a",
+		Images: []models.Image{{Image: "app", Tag: "v2"}},
+	})
+	require.NoError(t, err)
+	assert.Empty(t, current, "redeploying the version deployed last is not a rollback")
+
+	back, err := argo.detectRollback(models.Task{
+		App:    "app-a",
+		Images: []models.Image{{Image: "app", Tag: "v1"}},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, firstId, back, "returning to the earlier version is a rollback to it")
 }

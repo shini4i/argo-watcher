@@ -93,9 +93,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   indistinguishable from "no deployments ran": `GET /api/v1/tasks` now answers with an `error`
   field and no tasks, and a deployment is refused rather than recorded with the wrong rollback flag
   when its history could not be read.
-- With the in-memory backend, deployments created in the same second are ordered consistently
-  instead of arbitrarily. The order decided which version counted as current, so a redeployment
-  could be recorded as a rollback, or a rollback missed.
+- With the in-memory backend, deployments created in the same second are now ordered by when they
+  were submitted. They used to be ordered by task id, which is a random uuid, so the older of the
+  two could count as the current version — recording a redeployment as a rollback, or missing a
+  rollback. The PostgreSQL backend stores microseconds and was never affected.
 
 ### Security
 

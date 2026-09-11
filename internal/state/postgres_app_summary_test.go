@@ -150,8 +150,9 @@ func TestPostgresState_GetTasks_AuthorFilter(t *testing.T) {
 	})
 }
 
-// The in-memory sort and the SQL must agree on which same-second task is newest;
-// see TestInMemoryState_GetAppSummaries_BreaksASameSecondTieById.
+// created is a timestamptz, so a tie needs microsecond-identical rows and id breaks
+// it only to keep the summary deterministic. The in-memory backend stores whole
+// seconds and breaks its far more common tie by insertion order instead.
 func TestPostgresState_GetAppSummaries_BreaksASameSecondTieById(t *testing.T) {
 	env := newPostgresTestEnv(t)
 
