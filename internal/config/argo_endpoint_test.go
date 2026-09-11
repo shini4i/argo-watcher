@@ -100,7 +100,7 @@ func TestNewServerConfig_ArgoUrlRejectionKeepsCredentialsOut(t *testing.T) {
 		// reason cannot satisfy the redaction assertions on its own.
 		want string
 	}{
-		{name: "unusable scheme", url: "ftp://admin:s3cret@argocd.example.com", want: "ArgoUrl"},
+		{name: "unusable scheme", url: "gopher://admin:s3cret@argocd.example.com", want: "ArgoUrl"},
 		{name: "username read as the scheme", url: "admin:s3cret@argocd.example.com", want: "ArgoUrl"},
 		// Rejected by url.Parse itself, whose *url.Error quotes the whole value.
 		{name: "url.Parse refuses it", url: "https://admin:s3cret @argocd.example.com", want: "invalid userinfo"},

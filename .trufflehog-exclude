@@ -1,3 +1,4 @@
 docker-compose\.yml
 internal/updater/updater_test\.go
 docs/operations/database\.md
+internal/config/argo_endpoint_test\.go

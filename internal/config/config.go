@@ -51,7 +51,7 @@ func (u *URL) UnmarshalText(text []byte) error {
 	if err != nil {
 		var parseErr *url.Error
 		if errors.As(err, &parseErr) {
-			return parseErr.Err
+			err = parseErr.Err
 		}
 		return err
 	}
