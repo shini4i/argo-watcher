@@ -440,6 +440,13 @@ func (monitor *DeploymentMonitor) recordStatus(task *models.Task, status, reason
 		slog.Info("Left the outcome to whichever replica resumes this deployment.", "id", task.Id)
 		return false
 	}
+	if errors.Is(err, state.ErrTaskEnded) {
+		// A newer deployment cancelled it, or the sweep gave up on it, while this replica
+		// was deciding. That outcome is stored and is what the client polling the task
+		// reads; announcing or counting one of our own here would contradict it.
+		slog.Info("Deployment was already ended by something else; leaving its outcome alone.", "id", task.Id)
+		return false
+	}
 	if err != nil {
 		slog.Error("Failed to change task status", "error", err, "id", task.Id)
 	}

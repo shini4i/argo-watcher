@@ -423,3 +423,27 @@ func TestInMemoryState_ProcessObsoleteTasksKeepsInsertionOrder(t *testing.T) {
 	require.NotEmpty(t, tasks)
 	assert.Equal(t, "kept-last", tasks[0].Id, "the last task stored in a second stays the current one")
 }
+
+// A newer deployment cancels an in-flight task while its own replica is still deciding an
+// outcome — the window that the resource-tree fetch on the failure path widens to seconds.
+// The late write must not land on top of the cancellation.
+func TestInMemorySetTaskStatusRefusesToOverwriteATerminalStatus(t *testing.T) {
+	store := &InMemoryState{}
+	_ = store.Connect(nil)
+
+	task, _, err := store.SupersedeAndAdd(models.Task{App: "demo", Images: []models.Image{{Image: "app", Tag: "v1"}}}, "")
+	require.NoError(t, err)
+
+	// The newer deployment for the same app cancels it.
+	_, cancelled, err := store.SupersedeAndAdd(models.Task{App: "demo", Images: []models.Image{{Image: "app", Tag: "v2"}}}, "superseded")
+	require.NoError(t, err)
+	require.Equal(t, int64(1), cancelled)
+
+	err = store.SetTaskStatus(task.Id, models.StatusFailedMessage, "decided too late")
+
+	require.ErrorIs(t, err, ErrTaskEnded)
+	stored, err := store.GetTask(task.Id)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusCancelledMessage, stored.Status, "the cancellation must stand")
+	assert.Equal(t, "superseded", stored.StatusReason)
+}

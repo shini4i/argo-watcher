@@ -23,6 +23,12 @@ var ErrTaskNotFound = errors.New("task not found")
 // would land on the outcome they reach. Only the shared backend reports it.
 var ErrTaskNotOwned = errors.New("task is not this instance's to finish")
 
+// ErrTaskEnded is returned by SetTaskStatus when the task already holds a terminal
+// status — cancelled by a newer deployment, or given up by the staleness sweep — while
+// this caller was still deciding. Whatever wrote it got there first and its outcome is
+// the one that stands, so the caller must report that rather than its own.
+var ErrTaskEnded = errors.New("task already reached a terminal status")
+
 // maySupersede reports whether a deployment may cancel an in-flight task, by
 // comparing the credential each one presented. Only the uncredentialed-cancels-
 // credentialed direction is refused.
@@ -60,7 +66,9 @@ type TaskRepository interface {
 	// StartTime and EndTime are honoured — the summary is a census of the
 	// window, so narrowing it by app or status would defeat its purpose.
 	GetAppSummaries(filter models.TaskFilter) ([]models.AppSummary, error)
-	// GetTask and SetTaskStatus return ErrTaskNotFound when no task matches id.
+	// GetTask and SetTaskStatus return ErrTaskNotFound when no task matches id, and
+	// SetTaskStatus returns ErrTaskEnded — from either backend — when the task already
+	// reached a terminal status.
 	GetTask(id string) (*models.Task, error)
 	SetTaskStatus(id, status, reason string) error
 	// SupersedeAndAdd cancels the in-progress tasks the new one supersedes and stores

@@ -210,11 +210,16 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task, resumed bool,
 		recorded = updater.monitor.ProcessDeploymentResult(&task, application, waited)
 	}
 
-	// The claim moved on while this replica was writing, so the outcome stored is
-	// the new owner's. Counting or announcing one here would report the deployment
-	// twice, and the two reports can disagree.
+	// The write was refused. A handover has a successor that reports the outcome; a cancelled
+	// or aborted task has none, since a sweep only re-claims one still in progress, so its
+	// outcome is reported here or nowhere. A status that cannot be read stays silent as well:
+	// the stored outcome is right either way, and announcing a guess would not be.
 	if !recorded {
-		return
+		ended := updater.monitor.storedTaskStatus(task.Id)
+		if ended != models.StatusCancelledMessage && ended != models.StatusAborted {
+			return
+		}
+		task.Status = ended
 	}
 
 	// Counted once: the branches that return early leave the outcome to the replica that

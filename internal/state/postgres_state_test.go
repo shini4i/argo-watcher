@@ -745,3 +745,23 @@ func TestPostgresState_GetTasks_ReportsAFailedRowFetch(t *testing.T) {
 	assert.Empty(t, tasks)
 	assert.Zero(t, total, "a total beside an error would read as a real count")
 }
+
+// The shared backend must refuse the same late write the in-memory one does: a newer
+// deployment cancels an in-flight task while its own replica is still deciding an outcome,
+// and that outcome must not land on top of the cancellation.
+func TestPostgresState_SetTaskStatusRefusesToOverwriteATerminalStatus(t *testing.T) {
+	env := newPostgresTestEnv(t)
+
+	task := env.addTask(t, sampleTask("fenced-app"))
+
+	// Cancelled by whatever got there first — a newer deployment for the same app.
+	require.NoError(t, env.state.SetTaskStatus(task.Id, models.StatusCancelledMessage, "superseded"))
+
+	err := env.state.SetTaskStatus(task.Id, models.StatusFailedMessage, "decided too late")
+
+	require.ErrorIs(t, err, ErrTaskEnded)
+	stored, err := env.state.GetTask(task.Id)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusCancelledMessage, stored.Status, "the cancellation must stand")
+	assert.Equal(t, "superseded", stored.StatusReason)
+}

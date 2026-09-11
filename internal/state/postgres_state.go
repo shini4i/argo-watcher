@@ -322,8 +322,9 @@ func (state *PostgresState) GetTask(id string) (*models.Task, error) {
 	return ormTask.ConvertToExternalTask(), nil
 }
 
-// SetTaskStatus errors if the id is malformed, returns ErrTaskNotFound when no task
-// exists, and ErrTaskNotOwned when another instance holds the claim.
+// SetTaskStatus errors if the id is malformed, returns ErrTaskNotFound when no task exists,
+// ErrTaskNotOwned when another instance holds the claim, and ErrTaskEnded when the task already
+// reached a terminal status.
 func (state *PostgresState) SetTaskStatus(id, status, reason string) error {
 	uuidv4, err := uuid.Parse(id)
 	if err != nil {
@@ -336,13 +337,14 @@ func (state *PostgresState) SetTaskStatus(id, status, reason string) error {
 		return ErrTaskNotFound
 	}
 
-	// Fenced on ownership: a task claimed elsewhere since this instance checked its
-	// lease has that owner monitoring it too. A row never claimed at all stays
-	// writable, AddTask's claim being best-effort, and is told apart from one released
-	// at shutdown by having no lease deadline — a released row is somebody else's now.
+	// Fenced on ownership — a task claimed elsewhere has that owner monitoring it too, while a
+	// row never claimed stays writable (AddTask's claim is best-effort) and is told apart from
+	// one released at shutdown by having no lease deadline. Fenced on the status too: whoever
+	// ended the task first wins, the same rule supersedeInProgress applies when it cancels.
 	var ormTask = state_models.TaskModel{Id: uuidv4}
 	result := state.orm.Model(ormTask).
 		Where("owner_id = ? OR (owner_id IS NULL AND lease_expires_at IS NULL)", state.ownerId).
+		Where(whereStatusEquals, models.StatusInProgressMessage).
 		Updates(state_models.TaskModel{Status: status, StatusReason: sql.NullString{String: reason, Valid: true}})
 	if result.Error != nil {
 		return result.Error
@@ -354,16 +356,22 @@ func (state *PostgresState) SetTaskStatus(id, status, reason string) error {
 	return nil
 }
 
-// classifyRefusedWrite tells the two reasons SetTaskStatus matched no row apart:
-// an id that never existed is a caller bug, while a task held elsewhere is an
-// ordinary handover the caller must stop writing for.
+// classifyRefusedWrite tells the three reasons SetTaskStatus matched no row apart: an id
+// that never existed is a caller bug, a task already in a terminal status was ended by
+// something else whose outcome stands, and one held elsewhere is an ordinary handover.
 func (state *PostgresState) classifyRefusedWrite(id uuid.UUID) error {
-	var count int64
-	if err := state.orm.Model(&state_models.TaskModel{}).Where("id = ?", id).Count(&count).Error; err != nil {
+	var stored state_models.TaskModel
+	// Only the status is read: decoding the row.s jsonb on an error path would add a failure
+	// mode to a function whose whole job is to classify one.
+	err := state.orm.Select("status").Where("id = ?", id).First(&stored).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return ErrTaskNotFound
+	}
+	if err != nil {
 		return err
 	}
-	if count == 0 {
-		return ErrTaskNotFound
+	if stored.Status != models.StatusInProgressMessage {
+		return ErrTaskEnded
 	}
 
 	return ErrTaskNotOwned

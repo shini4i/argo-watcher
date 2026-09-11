@@ -147,13 +147,20 @@ func (state *InMemoryState) GetTask(id string) (*models.Task, error) {
 	return nil, ErrTaskNotFound
 }
 
-// SetTaskStatus returns ErrTaskNotFound when no task matches.
+// SetTaskStatus returns ErrTaskNotFound when no task matches, and ErrTaskEnded when the task
+// already reached a terminal status.
 func (state *InMemoryState) SetTaskStatus(id, status, reason string) error {
 	state.mu.Lock()
 	defer state.mu.Unlock()
 
 	for idx, task := range state.tasks {
 		if task.Id == id {
+			// Only a task still running may be given an outcome: a newer deployment may
+			// have cancelled it, or the sweep given up on it, while this caller decided.
+			if task.Status != models.StatusInProgressMessage {
+				return ErrTaskEnded
+			}
+
 			state.tasks[idx].Status = status
 			state.tasks[idx].StatusReason = reason
 			state.tasks[idx].Updated = float64(time.Now().Unix())
