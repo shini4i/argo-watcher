@@ -20,6 +20,11 @@ import (
 // sweep instead, once an hour, without naming the setting at fault.
 const maxTaskRetentionDays = 36500
 
+// maxArgoApiTimeout is the ceiling on ARGO_API_TIMEOUT, in seconds. It is far
+// below where `time.Duration(seconds) * time.Second` overflows int64 back into a
+// non-positive value, which http.Client reads as no timeout at all.
+const maxArgoApiTimeout = 3600
+
 // URL is a url.URL that crosses every boundary as a URL string: the JSON of
 // GET /api/v1/config and the structured logs, which would otherwise carry the
 // eleven exported fields of a url.URL for every consumer to reassemble. It parses
@@ -38,10 +43,16 @@ func (u URL) MarshalText() ([]byte, error) {
 }
 
 // UnmarshalText parses a URL string, rejecting one url.Parse cannot read. It backs
-// both env parsing and JSON decoding of the config payload.
+// both env parsing and JSON decoding of the config payload. Only the parse reason
+// is returned: *url.Error quotes the value it rejected, which for ARGO_URL renders
+// basic-auth credentials into the startup error, as MarshalText notes.
 func (u *URL) UnmarshalText(text []byte) error {
 	parsed, err := url.Parse(string(text))
 	if err != nil {
+		var parseErr *url.Error
+		if errors.As(err, &parseErr) {
+			err = parseErr.Err
+		}
 		return err
 	}
 	u.URL = *parsed
@@ -278,6 +289,59 @@ func taskRetentionProblems(config *ServerConfig) []string {
 	return nil
 }
 
+// argoApiProblems reports the settings that decide whether the Argo CD client can
+// reach the API at all. Each is wrong in a way that surfaces far from its cause:
+// a call that never times out, or one that fails on the protocol scheme.
+func argoApiProblems(config *ServerConfig) []string {
+	var problems []string
+
+	if config.ArgoApiRetries < 1 || config.ArgoApiRetries > 10 {
+		problems = append(problems, fmt.Sprintf("  - ArgoApiRetries: must be between 1 and 10, got %d", config.ArgoApiRetries))
+	}
+
+	// url.Parse reads a bare host as a relative path, so without this the server
+	// starts and every call fails on "unsupported protocol scheme" — with the token
+	// silently dropped too, since a cookie jar keys its cookies by scheme. Only the
+	// parsed parts are echoed: String() would render basic-auth userinfo.
+	if scheme := config.ArgoUrl.Scheme; (scheme != "http" && scheme != "https") || config.ArgoUrl.Host == "" {
+		problems = append(problems, fmt.Sprintf("  - ArgoUrl: must be an absolute http(s) URL with a host, got scheme %q and host %q",
+			config.ArgoUrl.Scheme, config.ArgoUrl.Host))
+	}
+
+	// The lower bound is load-bearing: http.Client reads a non-positive timeout as
+	// "no timeout". The upper one is a policy ceiling that also keeps the value far
+	// from the nanosecond overflow, which lands in the same place (maxArgoApiTimeout).
+	if config.ArgoApiTimeout < 1 || config.ArgoApiTimeout > maxArgoApiTimeout {
+		problems = append(problems, fmt.Sprintf("  - ArgoApiTimeout: must be between 1 and %d seconds, got %d", maxArgoApiTimeout, config.ArgoApiTimeout))
+	}
+
+	return problems
+}
+
+// oidcProblems reports the OIDC settings that contradict each other. A switch
+// honoured on its own would leave a read endpoint open while the configuration
+// reads as though it were closed.
+func oidcProblems(config *ServerConfig) []string {
+	var problems []string
+
+	// With OIDC enabled the issuer and client id are mandatory; discovery and the
+	// login redirect cannot proceed without them.
+	if config.OIDC.Enabled {
+		if strings.TrimSpace(config.OIDC.IssuerURL) == "" {
+			problems = append(problems, "  - OIDC.IssuerURL: must be set when OIDC auth is enabled (OIDC_ISSUER_URL)")
+		}
+		if strings.TrimSpace(config.OIDC.ClientId) == "" {
+			problems = append(problems, "  - OIDC.ClientId: must be set when OIDC auth is enabled (OIDC_CLIENT_ID)")
+		}
+	}
+
+	if config.OIDC.RequireTaskReadAuth && !config.OIDC.Enabled {
+		problems = append(problems, "  - OIDC.RequireTaskReadAuth: OIDC_REQUIRE_TASK_READ_AUTH requires OIDC_ENABLED=true; with OIDC disabled no read endpoint is protected")
+	}
+
+	return problems
+}
+
 // validateServerConfig checks the semantic rules that env parsing cannot
 // express (allowed enum values, numeric ranges). It reports every violation in
 // one grouped message — mirroring helpers.PrettifyEnvError — so an operator can
@@ -288,30 +352,13 @@ func validateServerConfig(config *ServerConfig) error {
 	if config.StateType != "postgres" && config.StateType != "in-memory" {
 		problems = append(problems, fmt.Sprintf("  - StateType: must be one of [postgres in-memory], got %q", config.StateType))
 	}
-	if config.ArgoApiRetries < 1 || config.ArgoApiRetries > 10 {
-		problems = append(problems, fmt.Sprintf("  - ArgoApiRetries: must be between 1 and 10, got %d", config.ArgoApiRetries))
-	}
 	// A non-positive connect timeout means "wait indefinitely" for both pgx and
 	// libpq, silently defeating the fail-fast guard; only relevant for postgres.
 	if config.StateType == "postgres" && config.Db.ConnectTimeout < 1 {
 		problems = append(problems, fmt.Sprintf("  - ConnectTimeout: must be at least 1 second, got %d", config.Db.ConnectTimeout))
 	}
-	// When OIDC auth is enabled the issuer and client id are mandatory; discovery
-	// and the login redirect cannot proceed without them.
-	if config.OIDC.Enabled {
-		if strings.TrimSpace(config.OIDC.IssuerURL) == "" {
-			problems = append(problems, "  - OIDC.IssuerURL: must be set when OIDC auth is enabled (OIDC_ISSUER_URL)")
-		}
-		if strings.TrimSpace(config.OIDC.ClientId) == "" {
-			problems = append(problems, "  - OIDC.ClientId: must be set when OIDC auth is enabled (OIDC_CLIENT_ID)")
-		}
-	}
-	// Rejected rather than ignored: with OIDC disabled no read is protected, so
-	// honouring the switch alone would leave the endpoint open while the configuration
-	// reads as though it were closed.
-	if config.OIDC.RequireTaskReadAuth && !config.OIDC.Enabled {
-		problems = append(problems, "  - OIDC.RequireTaskReadAuth: OIDC_REQUIRE_TASK_READ_AUTH requires OIDC_ENABLED=true; with OIDC disabled no read endpoint is protected")
-	}
+	problems = append(problems, argoApiProblems(config)...)
+	problems = append(problems, oidcProblems(config)...)
 	problems = append(problems, taskRetentionProblems(config)...)
 
 	if len(problems) == 0 {

@@ -222,6 +222,12 @@ func TestGetAppSummariesClampsTheLookBack(t *testing.T) {
 		{name: "epoch from_timestamp", query: "?from_timestamp=0"},
 		{name: "unparseable from_timestamp", query: "?from_timestamp=not-a-number"},
 		{name: "negative from_timestamp", query: "?from_timestamp=-99999999999"},
+		// The clamp is a `<` comparison, which is false for NaN, and the to_timestamp
+		// branch would skip its now-fallback for one too — both reach the query unbounded
+		// unless the parse rejects them.
+		{name: "NaN from_timestamp", query: "?from_timestamp=NaN"},
+		{name: "NaN to_timestamp", query: "?from_timestamp=0&to_timestamp=NaN"},
+		{name: "out-of-range to_timestamp", query: "?from_timestamp=0&to_timestamp=1e308"},
 	}
 
 	for _, tt := range tests {

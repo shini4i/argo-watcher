@@ -3,6 +3,7 @@ package server
 import (
 	"errors"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -19,13 +20,18 @@ import (
 
 var version = "local"
 
-// parseFloatQuery reads a numeric query parameter, yielding 0 when it is absent
-// or unparseable. A present-but-invalid value is logged and then treated as
-// absent: the list endpoints clamp their window rather than reject a caller.
+// parseFloatQuery reads a numeric query parameter, yielding 0 when it is absent,
+// unparseable, or not finite. A present-but-invalid value is logged and then
+// treated as absent: the list endpoints clamp their window rather than reject a
+// caller.
 func parseFloatQuery(query url.Values, name string) float64 {
 	raw := query.Get(name)
 	value, err := strconv.ParseFloat(raw, 64)
-	if err != nil {
+	// ParseFloat accepts "NaN" and "Inf", and every comparison against NaN is false,
+	// so such a value slips past the window clamps. A finite one beyond the epoch
+	// range does the same to the float-to-int64 conversion the state layer performs,
+	// where the Go spec leaves an out-of-range result undefined.
+	if err != nil || math.IsNaN(value) || math.Abs(value) > maxEpochSeconds {
 		if raw != "" {
 			slog.Debug("ignoring an invalid query parameter", "parameter", name, "value", raw)
 		}
@@ -46,6 +52,11 @@ func parseIntQuery(query url.Values, name string) int {
 	}
 	return value
 }
+
+// maxEpochSeconds bounds the Unix timestamps the list endpoints accept. It is far
+// past any real task (the year 33658) and far short of where a float64 stops
+// converting to int64, which is what the state layer does with these values.
+const maxEpochSeconds = 1e12
 
 // maxTaskListLimit caps the page size accepted by GET /api/v1/tasks. The
 // underlying backends treat limit <= 0 as "no LIMIT clause", which would let

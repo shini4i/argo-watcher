@@ -93,15 +93,17 @@ func (api *ArgoApi) doGet(ctx context.Context, reqURL string) ([]byte, int, erro
 		return nil, 0, err
 	}
 
-	req = req.WithContext(ctx)
 	req.Header.Set("Accept", "application/json")
 
-	// Safe to reuse across retries: GET request has no body that would be consumed.
+	// Cloned per attempt rather than reused: the client's jar appends the session
+	// cookie to the request it is handed, so a reused one accumulates a copy of the
+	// token per attempt until a proxy rejects the header. Replaying a clone is safe
+	// only because this GET has no body — Clone shallow-copies Body.
 	var resp *http.Response
 	err = retry.Do(
 		func() error {
 			var doErr error
-			resp, doErr = api.client.Do(req)
+			resp, doErr = api.client.Do(req.Clone(ctx))
 			return doErr
 		},
 		retry.Context(ctx),
