@@ -12,7 +12,6 @@ import (
 	"strings"
 	"sync"
 	"text/template"
-	"time"
 
 	"github.com/shini4i/argo-watcher/internal/config"
 	"github.com/shini4i/argo-watcher/internal/models"
@@ -127,7 +126,7 @@ func (s *MattermostStrategy) Send(task models.Task) error {
 }
 
 func (s *MattermostStrategy) createPost(post mattermostPostRequest) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), deliveryTimeout)
 	defer cancel()
 
 	payload, err := json.Marshal(post)

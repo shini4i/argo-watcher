@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"time"
 
 	"github.com/avast/retry-go/v4"
@@ -73,9 +72,7 @@ func (updater *ArgoStatusUpdater) Init(argo Argo, cfg ArgoStatusUpdaterConfig) e
 
 	var strategies []notifications.NotificationStrategy
 
-	httpClient := &http.Client{
-		Timeout: 15 * time.Second,
-	}
+	httpClient := notifications.NewNotificationHTTPClient()
 
 	if cfg.WebhookConfig != nil && cfg.WebhookConfig.Enabled {
 		webhookStrategy, err := notifications.NewWebhookStrategy(cfg.WebhookConfig, httpClient)

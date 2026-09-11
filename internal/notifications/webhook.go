@@ -22,7 +22,23 @@ import (
 
 const (
 	maxErrorBodySize = 2 * 1024 // 2 KB
+	// deliveryTimeout bounds one notification delivery: the client deadline and the request
+	// context are the same value, so neither silently shadows the other.
+	deliveryTimeout = 15 * time.Second
 )
+
+// NewNotificationHTTPClient builds the client the notification strategies deliver through.
+// Redirects are refused rather than followed: net/http strips Authorization on a cross-host
+// hop, but WEBHOOK_AUTHORIZATION_HEADER_NAME lets the operator name the header, and a custom
+// one survives — so a receiver answering 302 would hand the token to whatever host it names.
+func NewNotificationHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: deliveryTimeout,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+}
 
 // NotificationStrategy defines the contract for delivering task notifications.
 type NotificationStrategy interface {
@@ -197,7 +213,7 @@ func NewWebhookStrategy(cfg *config.WebhookConfig, client HTTPClient) (*WebhookS
 
 // Send delivers the webhook notification for the provided task.
 func (s *WebhookStrategy) Send(task models.Task) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), deliveryTimeout)
 	defer cancel()
 
 	// The template assembles the body by hand and text/template escapes nothing,

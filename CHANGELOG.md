@@ -114,6 +114,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A `ARGO_URL` containing basic-auth credentials no longer has its password written into the startup
   error, and from there into the container log, when the value is rejected. The configuration
   endpoint already stripped userinfo for the same reason.
+- Basic-auth credentials in `ARGO_URL` no longer reach a log line or a task's failure reason. The
+  URL was stored as given and rendered back to build every request, which put the password in full
+  into the debug log and the username into `status_reason` — a field `GET /api/v1/tasks/{id}`
+  serves, without a credential when OIDC is off. The userinfo is now held separately and sent as an
+  `Authorization` header, which is what the HTTP client derived from it anyway, so requests are
+  unchanged on the wire.
+- A webhook receiver answering with a redirect can no longer collect the notification credential.
+  Redirects are refused rather than followed: the HTTP client drops `Authorization` on a hop to
+  another host, but `WEBHOOK_AUTHORIZATION_HEADER_NAME` lets you name the header, and a custom name
+  such as `X-Hook-Secret` was carried to whatever host the redirect pointed at. A redirect is now
+  reported as an unexpected response code. This governs every notification delivery, Mattermost
+  included, so point `WEBHOOK_URL` and `MATTERMOST_URL` at the final address if the receiver or its
+  ingress answers with a redirect — such a receiver delivered before and stops delivering now.
 - A notification that cannot be delivered no longer writes the receiver's URL into the server log.
   `WEBHOOK_URL` is a credential for most receivers — a Slack or Mattermost incoming hook carries its
   secret in the path — and a single timeout logged the whole URL at `ERROR`, where anyone with read

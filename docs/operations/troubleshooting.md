@@ -338,6 +338,7 @@ Also check whether `LOCKDOWN_SCHEDULE` covers the current time. Schedules are ev
 - The receiver answers with a code that is not in `WEBHOOK_ALLOWED_RESPONSE_CODES` (default `200` only). A receiver replying `201` or `204` counts as a failure until you list it.
 - The receiver rejects the request because `WEBHOOK_AUTHORIZATION_HEADER_NAME`/`_VALUE` do not match what it expects, or `WEBHOOK_CONTENT_TYPE` does not match the body.
 - `WEBHOOK_FORMAT` references a field that does not exist. (A template that does not *parse* fails startup instead, so the server would not be running.)
+- The receiver answers with a redirect. Redirects are never followed, for webhook and Mattermost delivery alike — `WEBHOOK_AUTHORIZATION_HEADER_NAME` may name any header, and a custom one would travel to whatever host the redirect points at. The `301`/`302` is reported as an unexpected response code. Point `WEBHOOK_URL` at the final address rather than listing the redirect code as allowed.
 
 **How to verify**
 

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"sort"
 	"strings"
@@ -495,4 +496,40 @@ func TestSendDoesNotLeakANestedURLError(t *testing.T) {
 	assert.Contains(t, err.Error(), "Post")
 	assert.Contains(t, err.Error(), "Get")
 	assert.ErrorIs(t, err, root)
+}
+
+// A receiver that answers with a redirect must not be able to harvest the credential.
+// Go strips Authorization on a cross-host hop but not a header the operator named itself,
+// so the notification client refuses redirects outright.
+func TestWebhookClientDoesNotFollowRedirects(t *testing.T) {
+	var attackerSaw string
+	attacker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attackerSaw = r.Header.Get("X-Hook-Secret")
+	}))
+	defer attacker.Close()
+
+	receiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, attacker.URL, http.StatusFound)
+	}))
+	defer receiver.Close()
+
+	strategy, err := NewWebhookStrategy(&config.WebhookConfig{
+		Enabled:              true,
+		Url:                  receiver.URL,
+		Format:               `{"id":"{{.Id}}"}`,
+		ContentType:          "application/json",
+		AuthorizationHeader:  "X-Hook-Secret",
+		Token:                "SuPerSecreT",
+		AllowedResponseCodes: []int{200},
+	}, NewNotificationHTTPClient())
+	require.NoError(t, err)
+
+	// The 302 is not in AllowedResponseCodes, so delivery fails — which is the point:
+	// the redirect is reported, not followed.
+	err = strategy.Send(models.Task{Id: "task-id", App: "demo"})
+
+	require.Error(t, err)
+	// The operator-facing signal the troubleshooting guide promises: the redirect code itself.
+	assert.ErrorContains(t, err, "received non-allowed status code 302")
+	assert.Empty(t, attackerSaw, "the redirect target must never receive the credential")
 }

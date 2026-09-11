@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"sync"
@@ -1323,6 +1324,42 @@ func TestArgoStatusUpdaterInitWebhook(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.NotNil(t, updater.notifier)
+	})
+
+	// The client is an unexported field of a type in another package, so the wiring is only
+	// observable through behaviour: a bare &http.Client here would follow the redirect and
+	// hand the token to whatever host it names.
+	t.Run("deliversThroughAClientThatRefusesRedirects", func(t *testing.T) {
+		var attackerSaw string
+		attacker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			attackerSaw = r.Header.Get("X-Hook-Secret")
+		}))
+		defer attacker.Close()
+
+		receiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, attacker.URL, http.StatusFound)
+		}))
+		defer receiver.Close()
+
+		updater := &ArgoStatusUpdater{}
+		err := updater.Init(Argo{}, ArgoStatusUpdaterConfig{
+			RetryAttempts: 1,
+			RetryDelay:    time.Second,
+			Locker:        locker,
+			WebhookConfig: &config.WebhookConfig{
+				Enabled:              true,
+				Url:                  receiver.URL,
+				ContentType:          "application/json",
+				AuthorizationHeader:  "X-Hook-Secret",
+				Token:                "SuPerSecreT",
+				AllowedResponseCodes: []int{http.StatusOK},
+				Format:               `{"app":"{{.App}}"}`,
+			},
+		})
+		require.NoError(t, err)
+
+		assert.Error(t, updater.notifier.Send(models.Task{Id: "task-id", App: "demo"}))
+		assert.Empty(t, attackerSaw, "the redirect target must never receive the credential")
 	})
 
 	t.Run("configuresNotifierWhenMattermostEnabled", func(t *testing.T) {
