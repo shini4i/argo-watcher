@@ -3140,3 +3140,52 @@ func TestWaitForRolloutReportsTheOutcomeThatEndedItFirst(t *testing.T) {
 	require.Len(t, capture.sent, 2, "the cancellation still has to be announced by someone")
 	assert.Equal(t, models.StatusCancelledMessage, capture.sent[1].Status)
 }
+
+// The compound case: the write is refused AND the follow-up read fails. The winning status is
+// then unknown, so nothing is announced or counted — reporting a guess would be worse than
+// reporting nothing, and the stored outcome is still correct for the client that polls it.
+func TestWaitForRolloutStaysSilentWhenTheWinningOutcomeCannotBeRead(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	apiMock := newArgoApiMock(ctrl)
+	metricsMock := mocks.NewMockMetricsInterface(ctrl)
+	stateMock := newTaskRepositoryMock(ctrl)
+
+	argo := &Argo{}
+	argo.Init(stateMock, apiMock, metricsMock)
+
+	var writeRefused atomic.Bool
+	stateMock.EXPECT().GetTask(gomock.Any()).
+		DoAndReturn(func(string) (*models.Task, error) {
+			if writeRefused.Load() {
+				return nil, errors.New("database is unreachable")
+			}
+			return &models.Task{Status: models.StatusInProgressMessage}, nil
+		}).AnyTimes()
+	stateMock.EXPECT().SetTaskStatus(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(string, string, string) error {
+			writeRefused.Store(true)
+			return state.ErrTaskEnded
+		})
+
+	updater := initTestUpdater(t, newUpdaterTestConfig(&spyLocker{err: errors.New("boom")}), argo)
+
+	task := models.Task{Id: "test-id", App: "test-app", Validated: true,
+		Status: models.StatusInProgressMessage,
+		Images: []models.Image{{Image: "app", Tag: "v1"}}}
+
+	apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(managedApp(), nil)
+	metricsMock.EXPECT().AddInProgressTask()
+	metricsMock.EXPECT().InitDeploymentOutcomes(task.App)
+	metricsMock.EXPECT().RemoveInProgressTask()
+	// No outcome and no failure gauge are declared: gomock fails the test if one is recorded
+	// for a deployment whose real result could not be read.
+
+	capture := &capturingStrategy{}
+	updater.notifier = notifications.NewNotifier(capture)
+
+	updater.WaitForRollout(task, false, neverDraining)
+
+	require.Len(t, capture.sent, 1, "only the start notification: the outcome is unknown")
+}

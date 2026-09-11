@@ -210,10 +210,10 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task, resumed bool,
 		recorded = updater.monitor.ProcessDeploymentResult(&task, application, waited)
 	}
 
-	// The write was refused. On a handover the new owner reaches the same outcome and
-	// reports it, so this replica stays quiet. A task cancelled or given up on instead has
-	// no successor — a sweep only re-claims one still in progress — so its outcome is
-	// reported here or nowhere, exactly as the superseded and aborted arms above do.
+	// The write was refused. A handover has a successor that reports the outcome; a cancelled
+	// or aborted task has none, since a sweep only re-claims one still in progress, so its
+	// outcome is reported here or nowhere. A status that cannot be read stays silent as well:
+	// the stored outcome is right either way, and announcing a guess would not be.
 	if !recorded {
 		ended := updater.monitor.storedTaskStatus(task.Id)
 		if ended != models.StatusCancelledMessage && ended != models.StatusAborted {
