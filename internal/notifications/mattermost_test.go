@@ -1,10 +1,12 @@
 package notifications
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"text/template"
@@ -293,12 +295,15 @@ func TestMattermostSend(t *testing.T) {
 
 	t.Run("Failed Request Creation", func(t *testing.T) {
 		service := newTestMattermostStrategy(t, unusedHTTPClient(t))
-		service.baseURL = ":invalid-url:"
+		// MATTERMOST_URL is never parsed at construction, so a malformed one first fails
+		// here — where the *url.Error would otherwise quote the whole configured base URL.
+		service.baseURL = "https://mattermost.internal.example.com/SuPerSecreT\n"
 
 		err := service.Send(models.Task{Id: "task-1", App: "app1", Status: models.StatusInProgressMessage})
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to create mattermost request")
+		assert.NotContains(t, err.Error(), "SuPerSecreT")
 	})
 
 	t.Run("Non-201 Status With Body Read Error", func(t *testing.T) {
@@ -327,4 +332,28 @@ func TestMattermostSend(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to execute mattermost template")
 	})
+}
+
+// config.MattermostConfig keeps the instance URL out of GET /api/v1/config, so it must
+// not arrive in an error either: the transport reports a failure as a *url.Error quoting
+// the whole request URL.
+func TestCreatePostDoesNotLeakTheMattermostURL(t *testing.T) {
+	const secretHost = "mattermost.internal.example.com"
+
+	ctrl := gomock.NewController(t)
+	client := mocks.NewMockHTTPClient(ctrl)
+	strategy := newTestMattermostStrategy(t, client)
+	strategy.baseURL = "https://" + secretHost + "/tenant/SuPerSecreT"
+
+	client.EXPECT().Do(gomock.Any()).Return(nil, &url.Error{
+		Op:  "Post",
+		URL: strategy.baseURL + "/api/v4/posts",
+		Err: context.DeadlineExceeded,
+	})
+
+	_, err := strategy.createPost(mattermostPostRequest{ChannelId: "channel123", Message: "hi"})
+
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "SuPerSecreT")
+	assert.Contains(t, err.Error(), context.DeadlineExceeded.Error())
 }

@@ -139,7 +139,7 @@ func (s *MattermostStrategy) createPost(post mattermostPostRequest) (string, err
 
 	req, err := http.NewRequestWithContext(ctx, "POST", s.baseURL+"/api/v4/posts", bytes.NewReader(payload))
 	if err != nil {
-		return "", fmt.Errorf("failed to create mattermost request: %w", err)
+		return "", fmt.Errorf("failed to create mattermost request: %w", redactURL(err))
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -147,7 +147,7 @@ func (s *MattermostStrategy) createPost(post mattermostPostRequest) (string, err
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("failed to send mattermost post: %w", err)
+		return "", fmt.Errorf("failed to send mattermost post: %w", redactURL(err))
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {

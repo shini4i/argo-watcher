@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"mime"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"text/template"
@@ -125,6 +126,19 @@ func jsonStringBody(s string) string {
 	return strings.TrimSuffix(strings.TrimPrefix(quoted, `"`), `"`)
 }
 
+// redactURL strips the request URL out of a transport error: net/http reports every failure
+// as a *url.Error quoting the whole URL, and a webhook URL is itself the credential. The inner
+// cause is kept because it tells a timeout from a refused connection from a bad certificate;
+// every cause reachable here names at most the host, never the path or query holding the secret.
+func redactURL(err error) error {
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return fmt.Errorf("%s: %w", urlErr.Op, urlErr.Err)
+	}
+
+	return err
+}
+
 // WebhookStrategy holds the configuration and a pre-compiled template for sending webhooks.
 type WebhookStrategy struct {
 	url                  string
@@ -189,7 +203,7 @@ func (s *WebhookStrategy) Send(task models.Task) error {
 
 	req, err := http.NewRequestWithContext(ctx, "POST", s.url, &payload)
 	if err != nil {
-		return fmt.Errorf("failed to create webhook request: %w", err)
+		return fmt.Errorf("failed to create webhook request: %w", redactURL(err))
 	}
 
 	req.Header.Set("Content-Type", s.contentType)
@@ -199,7 +213,7 @@ func (s *WebhookStrategy) Send(task models.Task) error {
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to send webhook: %w", err)
+		return fmt.Errorf("failed to send webhook: %w", redactURL(err))
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {

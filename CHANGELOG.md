@@ -111,10 +111,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A failure to read the database no longer puts the driver's own text — the schema, the SQL error
   code, the database host — into the body of `GET /api/v1/tasks` or `POST /api/v1/tasks`. Both are
   served without a credential when OIDC is off. The cause stays in the server log.
-
 - A `ARGO_URL` containing basic-auth credentials no longer has its password written into the startup
   error, and from there into the container log, when the value is rejected. The configuration
   endpoint already stripped userinfo for the same reason.
+- A notification that cannot be delivered no longer writes the receiver's URL into the server log.
+  `WEBHOOK_URL` is a credential for most receivers — a Slack or Mattermost incoming hook carries its
+  secret in the path — and a single timeout logged the whole URL at `ERROR`, where anyone with read
+  access to the logs could take it and post into the channel. The failure is still reported with its
+  cause, so a timeout, a refused connection and a rejected certificate remain distinguishable.
+  `MATTERMOST_URL` is redacted on the same path.
 
 ## [1.3.0] - 2026-09-09
 
