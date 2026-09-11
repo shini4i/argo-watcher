@@ -26,6 +26,10 @@ type batchWriteRequest struct {
 	// resultCh is buffered (size 1) so the flush goroutine never blocks delivering
 	// a result even if the waiting task goroutine has already gone away.
 	resultCh chan error
+	// enqueuedAt is when Submit accepted the request, and is what the lock-wait metric
+	// measures from: batching moves the queueing out of the lock and into the pending
+	// queue, so timing the lock alone would report near-zero however long apps waited.
+	enqueuedAt time.Time
 }
 
 // runBatchWriteBack applies every request in batch to a single shared clone of the

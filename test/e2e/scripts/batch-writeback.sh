@@ -78,9 +78,9 @@ summary="$(mktemp)"
 drv=$?
 cat "$summary"
 
-# Reuse the soak gate. BATCH_MODE swaps the per-app writeback/lock-wait histogram
-# gates (0 by design on the batcher path) for the gitops_batch_size gate, while
-# keeping the zero-lost-update / zero-failed / race-detector gates intact.
+# Reuse the soak gate. BATCH_MODE adds the gitops_batch_size gate on top of the usual
+# ones, all of which — the per-app writeback and lock-wait histograms included — hold
+# on the batcher path too.
 BATCH_MODE=1 "${here}/collect.sh" "$summary"
 col=$?
 

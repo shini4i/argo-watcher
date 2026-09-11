@@ -312,6 +312,11 @@ func TestBatcher_FlushDeliversLockError(t *testing.T) {
 
 	req := newBatchReq("git@example.com:test/repo.git", "main")
 	req.gitopsRepo.Path = "apps"
+	// Populated so this test fails on the assertion rather than on a nil dereference if a
+	// duration is ever observed on a path where the lock was never acquired.
+	req.app = newAppWithImages("app-a")
+	req.task = newImageTask()
+	req.task.App = "app-a"
 
 	err := b.Submit(req)
 
@@ -396,4 +401,105 @@ func TestBatcher_FlushThreadsDrainIntoRetryLoop(t *testing.T) {
 	assert.ErrorIs(t, err, errWritebackDraining, "flush must pass its drain channel into the retry loop")
 	assert.NotContains(t, err.Error(), "after 20 attempts", "the retry budget must not have been spent")
 	assert.True(t, locker.called, "the real flush path must have run")
+}
+
+// GIT_BATCH_WRITEBACK must not silently retire the two write-back histograms: both are
+// documented in observability.md with no batch caveat, the shipped Grafana dashboard queries
+// their buckets, and the alert rule in that page fires on one of them.
+func TestBatcher_FlushObservesDurationsForEveryAppInTheBatch(t *testing.T) {
+	// Only needs to be SET so updater.NewGitRepo can load its config; the clone that
+	// follows fails, which is deliberate — a failed write-back is the slow, retried one
+	// the histograms exist to surface, so it must still be measured.
+	t.Setenv("SSH_KEY_PATH", "/nonexistent/key")
+
+	apps := []string{"app-a", "app-b"}
+
+	ctrl := gomock.NewController(t)
+	metrics := mocks.NewMockMetricsInterface(ctrl)
+	metrics.EXPECT().ObserveGitBatchSize(len(apps)).Times(1)
+	// One lock and one clone/commit/push serve the whole batch, so every app it carried
+	// waited that long and took that long.
+	// The wait is measured from Submit, not from the lock: flushLoop serialises flushes per
+	// repo, so timing the lock alone would report near-zero however long an app queued.
+	const queued = 40 * time.Millisecond
+	for _, app := range apps {
+		metrics.EXPECT().ObserveGitLockWaitDuration(app, gomock.Cond(func(v float64) bool {
+			return v >= queued.Seconds()
+		})).Times(1)
+		metrics.EXPECT().ObserveGitWritebackDuration(app, gomock.Any()).Times(1)
+	}
+
+	locker := &spyLocker{}
+	b := NewBatcher(locker, t.TempDir(), 20, metrics)
+
+	batch := make([]*batchWriteRequest, 0, len(apps))
+	for _, app := range apps {
+		req := newBatchReq("git@example.com:test/repo.git", "main")
+		req.gitopsRepo.Path = "apps"
+		req.app = newAppWithImages(app)
+		req.task = newImageTask()
+		req.task.App = app
+		req.enqueuedAt = time.Now().Add(-queued)
+		batch = append(batch, req)
+	}
+
+	// flush is called directly: the queueing that assembles a batch is covered elsewhere,
+	// and a hand-built batch makes the per-app fan-out deterministic.
+	b.flush(batch)
+
+	assert.True(t, locker.called, "the real flush path must have run")
+}
+
+// The wait is measured from the stamp Submit puts on the request, so that stamp has to be
+// covered through the real Submit path: without it every app would report the time since the
+// zero Time — about two millennia — and poison the histogram rather than leave it empty.
+func TestBatcher_SubmitStampsTheRequestSoLockWaitIsSane(t *testing.T) {
+	t.Setenv("SSH_KEY_PATH", "/nonexistent/key")
+
+	var lockWait float64
+	ctrl := gomock.NewController(t)
+	metrics := mocks.NewMockMetricsInterface(ctrl)
+	metrics.EXPECT().ObserveGitBatchSize(1).Times(1)
+	metrics.EXPECT().ObserveGitLockWaitDuration("app-a", gomock.Any()).
+		Do(func(_ string, seconds float64) { lockWait = seconds }).Times(1)
+	metrics.EXPECT().ObserveGitWritebackDuration("app-a", gomock.Any()).Times(1)
+
+	b := NewBatcher(&spyLocker{}, t.TempDir(), 20, metrics)
+
+	req := newBatchReq("git@example.com:test/repo.git", "main")
+	req.gitopsRepo.Path = "apps"
+	req.app = newAppWithImages("app-a")
+	req.task = newImageTask()
+	req.task.App = "app-a"
+
+	// The clone fails, which is fine: the durations are recorded either way.
+	require.Error(t, b.Submit(req))
+
+	assert.GreaterOrEqual(t, lockWait, 0.0)
+	assert.Less(t, lockWait, 60.0, "an unstamped request would report the time since the zero Time")
+}
+
+// The shortcut before the lock: no lock was requested, so no wait and no work happened,
+// and reporting either would invent a measurement.
+func TestBatcher_FlushWithoutAGitRepoDeliversTheErrorAndObservesNoDurations(t *testing.T) {
+	t.Setenv("SSH_KEY_PATH", "/nonexistent/key")
+	// Rejected by NewGitConfig, so updater.NewGitRepo fails before flush reaches the lock.
+	t.Setenv("GIT_OP_TIMEOUT", "0s")
+
+	ctrl := gomock.NewController(t)
+	metrics := mocks.NewMockMetricsInterface(ctrl)
+	// Only the batch size is declared: any duration observation fails as an unexpected call.
+	metrics.EXPECT().ObserveGitBatchSize(1).Times(1)
+
+	locker := &spyLocker{}
+	b := NewBatcher(locker, t.TempDir(), 20, metrics)
+
+	req := newBatchReq("git@example.com:test/repo.git", "main")
+	req.gitopsRepo.Path = "apps"
+	req.app = newAppWithImages("app-a")
+	req.task = newImageTask()
+	req.task.App = "app-a"
+
+	require.Error(t, b.Submit(req))
+	assert.False(t, locker.called, "the batch must short-circuit before the lock")
 }
