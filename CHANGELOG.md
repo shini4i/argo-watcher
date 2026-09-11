@@ -85,8 +85,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   write-back. `app = myimage` left the alias and the image each carrying a space, so neither matched
   and the tag was never committed — the deployment then timed out reporting that the image was not
   part of the application, naming everything except the annotation that caused it.
+- A replica that lost a deployment to another one can no longer overwrite the outcome that
+  replica recorded. Ownership is now checked by the database on every status write, because a
+  replica can spend seconds reaching its verdict after its claim has already moved on. The same
+  deployment is also no longer counted or announced twice when that happens.
+- The task list no longer shows an empty estate when the database cannot be read. A failed read was
+  indistinguishable from "no deployments ran": `GET /api/v1/tasks` now answers with an `error`
+  field and no tasks, and a deployment is refused rather than recorded with the wrong rollback flag
+  when its history could not be read.
+- With the in-memory backend, deployments created in the same second are ordered consistently
+  instead of arbitrarily. The order decided which version counted as current, so a redeployment
+  could be recorded as a rollback, or a rollback missed.
 
 ### Security
+
+- A failure to read the database no longer puts the driver's own text — the schema, the SQL error
+  code, the database host — into the body of `GET /api/v1/tasks` or `POST /api/v1/tasks`. Both are
+  served without a credential when OIDC is off. The cause stays in the server log.
 
 - A `ARGO_URL` containing basic-auth credentials no longer has its password written into the startup
   error, and from there into the container log, when the value is rejected. The configuration

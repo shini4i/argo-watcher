@@ -17,6 +17,12 @@ var errDesiredRetry = errors.New("desired retry error")
 // silently reported as a missing task.
 var ErrTaskNotFound = errors.New("task not found")
 
+// ErrTaskNotOwned is returned by SetTaskStatus when the task is claimed by
+// another instance. The caller checked its lease seconds earlier, so a lapse in
+// between is an ordinary handover: the new owner reaches its own outcome, and
+// writing here would land on top of it. Only the shared backend reports it.
+var ErrTaskNotOwned = errors.New("task is claimed by another instance")
+
 // maySupersede reports whether a deployment may cancel an in-flight task, by
 // comparing the credential each one presented. Only the uncredentialed-cancels-
 // credentialed direction is refused.
@@ -46,7 +52,10 @@ type TaskRepository interface {
 	// AddTask stores the task and returns it with the server-owned fields filled
 	// in: id, in-progress status, and Created/Updated as Unix seconds.
 	AddTask(task models.Task) (*models.Task, error)
-	GetTasks(filter models.TaskFilter) ([]models.Task, int64)
+	// GetTasks returns the page the filter selects and the total matching it,
+	// newest first. A backend failure is returned rather than rendered as an empty
+	// page: a caller cannot otherwise tell "no deployments" from "cannot read".
+	GetTasks(filter models.TaskFilter) ([]models.Task, int64, error)
 	// GetAppSummaries aggregates the filter's time window per application. Only
 	// StartTime and EndTime are honoured — the summary is a census of the
 	// window, so narrowing it by app or status would defeat its purpose.

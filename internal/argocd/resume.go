@@ -32,11 +32,12 @@ func (updater *ArgoStatusUpdater) ResumeRollout(task models.Task, draining func(
 	remaining, resumable := updater.monitor.remainingWindow(task, time.Now())
 	if !resumable {
 		slog.Info("Not resuming a deployment whose window already elapsed", "id", task.Id, "app", task.App)
-		updater.monitor.abortStaleTask(&task)
 		// The replica that accepted this deployment announced it as started, and this
 		// is where it ends, so the terminal notification is owed here as much as on
-		// any other final status.
-		sendNotification(task, updater.notifier)
+		// any other final status — unless the claim moved on and the abort was refused.
+		if updater.monitor.abortStaleTask(&task) {
+			sendNotification(task, updater.notifier)
+		}
 		return
 	}
 
@@ -74,11 +75,12 @@ func (monitor *DeploymentMonitor) remainingWindow(task models.Task, now time.Tim
 // this replica never asked ArgoCD about the application, and whether the replica
 // that accepted the deployment got that far cannot be known here, so the name is
 // only as trustworthy as the submission that supplied it (issue #552).
-func (monitor *DeploymentMonitor) abortStaleTask(task *models.Task) {
-	monitor.argo.metrics.AddUnconfirmedFailure()
-
-	if err := monitor.argo.State.SetTaskStatus(task.Id, models.StatusAborted, StaleResumedTaskReason); err != nil {
-		slog.Error("Failed to change task status", "error", err, "id", task.Id)
-	}
+func (monitor *DeploymentMonitor) abortStaleTask(task *models.Task) bool {
+	recorded := monitor.recordStatus(task, models.StatusAborted, StaleResumedTaskReason)
 	task.Status = models.StatusAborted
+	if recorded {
+		monitor.argo.metrics.AddUnconfirmedFailure()
+	}
+
+	return recorded
 }

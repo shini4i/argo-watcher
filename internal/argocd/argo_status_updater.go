@@ -166,6 +166,9 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task, resumed bool,
 	}
 
 	var imageErr *ImageNotPartOfAppError
+	// The arms that stop without writing leave this true: there is no refused write
+	// to suppress, and they return before it is read.
+	recorded := true
 
 	switch {
 	case errors.Is(err, errReplicaDraining):
@@ -183,7 +186,7 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task, resumed bool,
 		slog.Info("Stopped monitoring a deployment taken over by another replica.", "id", task.Id)
 		return
 	case errors.As(err, &imageErr):
-		updater.monitor.HandleImageNotPartOfApp(&task, imageErr)
+		recorded = updater.monitor.HandleImageNotPartOfApp(&task, imageErr)
 	case errors.Is(err, errTaskSuperseded):
 		// A newer deployment for the same app already marked this task "cancelled"
 		// in the shared state (possibly on another replica). Stop without writing a
@@ -197,9 +200,16 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task, resumed bool,
 		slog.Info("Deployment already given up on by the staleness sweep; stopping.", "id", task.Id)
 		task.Status = models.StatusAborted
 	case err != nil:
-		updater.monitor.HandleArgoAPIFailure(&task, err, confirmed)
+		recorded = updater.monitor.HandleArgoAPIFailure(&task, err, confirmed)
 	default:
-		updater.monitor.ProcessDeploymentResult(&task, application, waited)
+		recorded = updater.monitor.ProcessDeploymentResult(&task, application, waited)
+	}
+
+	// The claim moved on while this replica was writing, so the outcome stored is
+	// the new owner's. Counting or announcing one here would report the deployment
+	// twice, and the two reports can disagree.
+	if !recorded {
+		return
 	}
 
 	// Counted once: the branches that return early leave the outcome to the replica that

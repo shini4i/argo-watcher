@@ -207,7 +207,7 @@ func TestInMemoryState_GetTasks_AuthorFilter(t *testing.T) {
 	t.Run("matches exactly, ignoring case", func(t *testing.T) {
 		filter := window
 		filter.Author = "jane.doe@example.com"
-		tasks, total := state.GetTasks(filter)
+		tasks, total, _ := state.GetTasks(filter)
 		require.Equal(t, int64(1), total)
 		assert.Equal(t, "Jane.Doe@example.com", tasks[0].Author)
 	})
@@ -215,7 +215,7 @@ func TestInMemoryState_GetTasks_AuthorFilter(t *testing.T) {
 	t.Run("is not a substring match", func(t *testing.T) {
 		filter := window
 		filter.Author = "jane"
-		_, total := state.GetTasks(filter)
+		_, total, _ := state.GetTasks(filter)
 		assert.Equal(t, int64(0), total)
 	})
 
@@ -224,16 +224,16 @@ func TestInMemoryState_GetTasks_AuthorFilter(t *testing.T) {
 		filter := window
 		filter.Author = "jane.doe@example.com"
 		filter.Search = "nothing-here"
-		_, total := state.GetTasks(filter)
+		_, total, _ := state.GetTasks(filter)
 		assert.Equal(t, int64(0), total)
 
 		filter.Search = "checkout"
-		_, total = state.GetTasks(filter)
+		_, total, _ = state.GetTasks(filter)
 		assert.Equal(t, int64(1), total)
 	})
 
 	t.Run("an empty author is a wildcard", func(t *testing.T) {
-		_, total := state.GetTasks(window)
+		_, total, _ := state.GetTasks(window)
 		assert.Equal(t, int64(2), total)
 	})
 }

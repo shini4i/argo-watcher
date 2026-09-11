@@ -3,6 +3,7 @@ package state
 import (
 	"errors"
 	"os"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -10,6 +11,7 @@ import (
 	envConfig "github.com/caarlos0/env/v11"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 
 	"github.com/shini4i/argo-watcher/internal/config"
 	"github.com/shini4i/argo-watcher/internal/models"
@@ -140,19 +142,19 @@ func TestPostgresState_GetTasks(t *testing.T) {
 	env.addTask(t, sampleTask("ObsoleteApp"))
 	end := float64(time.Now().Add(time.Hour).Unix())
 
-	tasks, total := env.state.GetTasks(models.TaskFilter{StartTime: start, EndTime: end})
+	tasks, total, _ := env.state.GetTasks(models.TaskFilter{StartTime: start, EndTime: end})
 	assert.Len(t, tasks, 3)
 	assert.Equal(t, int64(3), total)
 
-	tasks, total = env.state.GetTasks(models.TaskFilter{StartTime: start, EndTime: end, App: "Test"})
+	tasks, total, _ = env.state.GetTasks(models.TaskFilter{StartTime: start, EndTime: end, App: "Test"})
 	assert.Len(t, tasks, 1)
 	assert.Equal(t, int64(1), total)
 
-	tasks, total = env.state.GetTasks(models.TaskFilter{StartTime: start, EndTime: end, Status: models.StatusInProgressMessage})
+	tasks, total, _ = env.state.GetTasks(models.TaskFilter{StartTime: start, EndTime: end, Status: models.StatusInProgressMessage})
 	assert.Len(t, tasks, 3)
 	assert.Equal(t, int64(3), total)
 
-	tasks, total = env.state.GetTasks(models.TaskFilter{StartTime: start, EndTime: end, Status: "deployed"})
+	tasks, total, _ = env.state.GetTasks(models.TaskFilter{StartTime: start, EndTime: end, Status: "deployed"})
 	assert.Empty(t, tasks)
 	assert.Equal(t, int64(0), total)
 }
@@ -220,7 +222,7 @@ func TestPostgresState_GetTasksSearch(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tasks, total := env.state.GetTasks(window(tt.search))
+			tasks, total, _ := env.state.GetTasks(window(tt.search))
 			assert.Equal(t, tt.want, total)
 			assert.Len(t, tasks, int(tt.want))
 		})
@@ -231,12 +233,12 @@ func TestPostgresState_GetTasksSearch(t *testing.T) {
 	t.Run("pagination applies after the search", func(t *testing.T) {
 		filter := window("v0.0.1")
 		filter.Limit = 1
-		tasks, total := env.state.GetTasks(filter)
+		tasks, total, _ := env.state.GetTasks(filter)
 		assert.Len(t, tasks, 1)
 		assert.Equal(t, int64(2), total)
 
 		filter.Offset = 1
-		second, total := env.state.GetTasks(filter)
+		second, total, _ := env.state.GetTasks(filter)
 		assert.Len(t, second, 1)
 		assert.Equal(t, int64(2), total)
 		assert.NotEqual(t, tasks[0].Id, second[0].Id)
@@ -666,4 +668,80 @@ func TestPostgresState_Contract(t *testing.T) {
 	runTaskRepositoryContract(t, func(t *testing.T) TaskRepository {
 		return newPostgresTestEnv(t).state
 	})
+}
+
+// Re-swallowing the read at the backend would put the finding straight back: an
+// outage would render as an empty page again, and every caller above believes the
+// interface. This reaches the Count branch, which runs first.
+func TestPostgresState_GetTasks_ReportsABackendFailure(t *testing.T) {
+	state := newSchemalessState(t)
+
+	tasks, total, err := state.GetTasks(models.TaskFilter{
+		EndTime: float64(time.Now().Add(time.Hour).Unix()),
+	})
+
+	require.Error(t, err, "a failed read must never be reported as an empty page")
+	assert.Empty(t, tasks)
+	assert.Zero(t, total)
+}
+
+// The in-memory backend breaks a same-second tie by id; this is the SQL half, so
+// the two demonstrably agree rather than incidentally matching. detectRollback
+// reads the first deployed task as the current version, so an unstable first row
+// makes rollback detection non-deterministic on the backend that runs in production.
+func TestPostgresState_GetTasksBreaksAnExactTieById(t *testing.T) {
+	env := newPostgresTestEnv(t)
+
+	var ids []string
+	for range 3 {
+		ids = append(ids, env.addTask(t, sampleTask("app-tie")).Id)
+	}
+
+	// Forced, because Postgres stores microseconds and would not otherwise tie.
+	db, err := env.state.orm.DB()
+	require.NoError(t, err)
+	_, err = db.Exec("UPDATE tasks SET created = now() WHERE app = $1", "app-tie")
+	require.NoError(t, err)
+
+	sort.Sort(sort.Reverse(sort.StringSlice(ids)))
+
+	for range 5 {
+		tasks, _, err := env.state.GetTasks(models.TaskFilter{
+			EndTime: float64(time.Now().Add(time.Hour).Unix()),
+			App:     "app-tie",
+		})
+		require.NoError(t, err)
+		require.Len(t, tasks, 3)
+		assert.Equal(t, ids, []string{tasks[0].Id, tasks[1].Id, tasks[2].Id},
+			"an exact tie must resolve by id, as sortByRecency does")
+	}
+}
+
+// The count and the row fetch fail independently, and only the count is covered by
+// the schemaless state — it never reaches the fetch. A fetch whose error was
+// dropped would serve an empty page beside a non-zero total and no error at all,
+// which is the shape this change set exists to make impossible.
+func TestPostgresState_GetTasks_ReportsAFailedRowFetch(t *testing.T) {
+	env := newPostgresTestEnv(t)
+	env.addTask(t, sampleTask("app-fetch"))
+
+	// The count runs first and must succeed, so the failure is injected on the
+	// second query of the call. Registered on this env's handle only.
+	var queries int
+	require.NoError(t, env.state.orm.Callback().Query().Before("gorm:query").
+		Register("test:fail_second_query", func(db *gorm.DB) {
+			queries++
+			if queries == 2 {
+				_ = db.AddError(errors.New("row fetch failed"))
+			}
+		}))
+
+	tasks, total, err := env.state.GetTasks(models.TaskFilter{
+		EndTime: float64(time.Now().Add(time.Hour).Unix()),
+		App:     "app-fetch",
+	})
+
+	require.Error(t, err, "a failed row fetch must not be served as an empty page")
+	assert.Empty(t, tasks)
+	assert.Zero(t, total, "a total beside an error would read as a real count")
 }

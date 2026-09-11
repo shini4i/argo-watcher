@@ -33,6 +33,7 @@ import (
 	"github.com/shini4i/argo-watcher/internal/models"
 	"github.com/shini4i/argo-watcher/internal/notifications"
 	"github.com/shini4i/argo-watcher/internal/prometheus"
+	"github.com/shini4i/argo-watcher/internal/state"
 )
 
 var (
@@ -2933,4 +2934,57 @@ func TestWaitForRollout_EveryTerminalOutcomeIsPreCreated(t *testing.T) {
 			assert.NoError(t, testutil.CollectAndCompare(reg, strings.NewReader(expected.String()), "deployments_total"))
 		})
 	}
+}
+
+// The gauge operators alert on must not move for an outcome this replica did not
+// decide: the owner counts the same deployment, so a second increment trips a
+// threshold of N consecutive failures after N-1 real ones. The mirror case is a
+// loser's success clearing a gauge that holds the owner's failures.
+func TestDeploymentMonitorRefusedWriteLeavesTheGaugesAlone(t *testing.T) {
+	newMonitor := func(t *testing.T) (*DeploymentMonitor, *mocks.MockTaskRepository, models.Task) {
+		t.Helper()
+		ctrl := gomock.NewController(t)
+		metrics := mocks.NewMockMetricsInterface(ctrl)
+		stateMock := newTaskRepositoryMock(ctrl)
+		// No metrics expectation is declared anywhere below: gomock fails the test if
+		// any gauge is touched for a write the backend refused.
+		monitor := NewDeploymentMonitor(Argo{metrics: metrics, State: stateMock}, "",
+			[]retry.Option{retry.DelayType(zeroDelay), retry.LastErrorOnly(true)}, false, time.Millisecond)
+		return monitor, stateMock, models.Task{Id: "refused-id", App: "demo", Validated: true}
+	}
+
+	t.Run("a confirmed API failure does not count one", func(t *testing.T) {
+		monitor, stateMock, task := newMonitor(t)
+		stateMock.EXPECT().SetTaskStatus(task.Id, gomock.Any(), gomock.Any()).Return(state.ErrTaskNotOwned)
+
+		assert.False(t, monitor.HandleArgoAPIFailure(&task, fmt.Errorf("boom"), true))
+	})
+
+	t.Run("an unconfirmed API failure does not count one", func(t *testing.T) {
+		monitor, stateMock, task := newMonitor(t)
+		stateMock.EXPECT().SetTaskStatus(task.Id, gomock.Any(), gomock.Any()).Return(state.ErrTaskNotOwned)
+
+		assert.False(t, monitor.HandleArgoAPIFailure(&task, fmt.Errorf("boom"), false))
+	})
+
+	t.Run("a missing image does not count one", func(t *testing.T) {
+		monitor, stateMock, task := newMonitor(t)
+		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage, gomock.Any()).Return(state.ErrTaskNotOwned)
+
+		imageErr := &ImageNotPartOfAppError{App: task.App, Image: "app", DesiredImages: []string{"other"}}
+		assert.False(t, monitor.HandleImageNotPartOfApp(&task, imageErr))
+	})
+
+	t.Run("a success does not clear the app's failures", func(t *testing.T) {
+		monitor, stateMock, task := newMonitor(t)
+		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "").Return(state.ErrTaskNotOwned)
+
+		app := &models.Application{}
+		app.Status.Summary.Images = []string{"app:v1"}
+		app.Status.Sync.Status = "Synced"
+		app.Status.Health.Status = "Healthy"
+		task.Images = []models.Image{{Image: "app", Tag: "v1"}}
+
+		assert.False(t, monitor.ProcessDeploymentResult(&task, app, time.Second))
+	})
 }

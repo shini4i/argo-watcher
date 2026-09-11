@@ -11,6 +11,7 @@ The server exposes a REST API on its own port (default `8080`), with every endpo
 - `GET /api/v1/tasks` returns at most 1000 tasks per request, which is also its default page size.
 - Authentication failures return `401 Unauthorized`, and `503 Service Unavailable` when the credential could not be checked because the OIDC provider was unreachable.
 - Server-side problems return `500 Internal Server Error`.
+- `GET /api/v1/tasks` and `GET /api/v1/apps/summary` answer `200` with an `error` field and no results when the state backend could not be read. Check `error` before reading an empty list as "nothing deployed".
 
 ## Security headers
 

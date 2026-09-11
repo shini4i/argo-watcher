@@ -117,7 +117,7 @@ func TestPostgresState_GetTasks_AuthorFilter(t *testing.T) {
 	t.Run("matches exactly, ignoring case", func(t *testing.T) {
 		filter := window
 		filter.Author = "jane.doe@example.com"
-		tasks, total := env.state.GetTasks(filter)
+		tasks, total, _ := env.state.GetTasks(filter)
 		require.Equal(t, int64(1), total)
 		assert.Equal(t, "Jane.Doe@example.com", tasks[0].Author)
 	})
@@ -125,7 +125,7 @@ func TestPostgresState_GetTasks_AuthorFilter(t *testing.T) {
 	t.Run("is not a substring match", func(t *testing.T) {
 		filter := window
 		filter.Author = "jane"
-		_, total := env.state.GetTasks(filter)
+		_, total, _ := env.state.GetTasks(filter)
 		assert.Equal(t, int64(0), total)
 	})
 
@@ -133,7 +133,7 @@ func TestPostgresState_GetTasks_AuthorFilter(t *testing.T) {
 	t.Run("treats wildcards literally", func(t *testing.T) {
 		filter := window
 		filter.Author = "%"
-		_, total := env.state.GetTasks(filter)
+		_, total, _ := env.state.GetTasks(filter)
 		assert.Equal(t, int64(0), total)
 	})
 
@@ -141,11 +141,11 @@ func TestPostgresState_GetTasks_AuthorFilter(t *testing.T) {
 		filter := window
 		filter.Author = "jane.doe@example.com"
 		filter.Search = "nothing-here"
-		_, total := env.state.GetTasks(filter)
+		_, total, _ := env.state.GetTasks(filter)
 		assert.Equal(t, int64(0), total)
 
 		filter.Search = "checkout"
-		_, total = env.state.GetTasks(filter)
+		_, total, _ = env.state.GetTasks(filter)
 		assert.Equal(t, int64(1), total)
 	})
 }

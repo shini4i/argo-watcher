@@ -14,6 +14,7 @@ import (
 
 	"github.com/shini4i/argo-watcher/internal/helpers"
 	"github.com/shini4i/argo-watcher/internal/models"
+	"github.com/shini4i/argo-watcher/internal/state"
 )
 
 const (
@@ -362,17 +363,17 @@ func (monitor *DeploymentMonitor) rolloutWindow(task models.Task) time.Duration 
 // ProcessDeploymentResult determines if the deployment was successful and updates the appropriate
 // status and metrics. waited is how long the rollout was polled, reported in the failure message so
 // the user can tell a rollout that ran out its window from one that failed immediately.
-func (monitor *DeploymentMonitor) ProcessDeploymentResult(task *models.Task, application *models.Application, waited time.Duration) {
+func (monitor *DeploymentMonitor) ProcessDeploymentResult(task *models.Task, application *models.Application, waited time.Duration) bool {
 	status := rolloutStatus(application, task.ListImages(), monitor.registryProxyUrl, monitor.acceptSuspended)
 	if application.IsFireAndForgetModeActive() {
 		status = ArgoRolloutAppSuccess
 	}
 
 	if status == ArgoRolloutAppSuccess {
-		monitor.handleDeploymentSuccess(task)
-	} else {
-		monitor.handleDeploymentFailure(task, status, application, waited)
+		return monitor.handleDeploymentSuccess(task)
 	}
+
+	return monitor.handleDeploymentFailure(task, status, application, waited)
 }
 
 // storedTaskStatus returns the task's status as the shared state holds it, or an empty
@@ -408,6 +409,23 @@ func (monitor *DeploymentMonitor) taskEndedElsewhere(id string) error {
 	}
 }
 
+// recordStatus writes the task's terminal status and reports whether this replica
+// decided it. A refusal means the claim moved on mid-write, which is an ordinary
+// handover: the holder reaches the same outcome, so the caller must not count or
+// announce one of its own. Any other failure is logged and the outcome still stands.
+func (monitor *DeploymentMonitor) recordStatus(task *models.Task, status, reason string) bool {
+	err := monitor.argo.State.SetTaskStatus(task.Id, status, reason)
+	if errors.Is(err, state.ErrTaskNotOwned) {
+		slog.Info("Left the outcome to the replica that took the deployment over.", "id", task.Id)
+		return false
+	}
+	if err != nil {
+		slog.Error("Failed to change task status", "error", err, "id", task.Id)
+	}
+
+	return true
+}
+
 // HandleArgoAPIFailure processes API errors and updates task status accordingly.
 // task is taken by pointer so the resolved terminal status is reflected back to
 // the caller, keeping the outgoing failure notification in sync with the stored
@@ -417,57 +435,72 @@ func (monitor *DeploymentMonitor) taskEndedElsewhere(id string) error {
 // Only then may the app name label a metric: without a confirmation the name is only as
 // trustworthy as the submission that supplied it, so the failure is counted under no app
 // at all (issue #552).
-func (monitor *DeploymentMonitor) HandleArgoAPIFailure(task *models.Task, err error, confirmed bool) {
-	if confirmed {
-		monitor.argo.metrics.AddFailedDeployment(task.App)
-	} else {
-		monitor.argo.metrics.AddUnconfirmedFailure()
-	}
+func (monitor *DeploymentMonitor) HandleArgoAPIFailure(task *models.Task, err error, confirmed bool) bool {
 	finalStatus := determineFailureStatus(*task, err)
 	reason := fmt.Sprintf(ArgoAPIErrorTemplate, err.Error())
 	slog.Warn("Deployment not completed", "status", finalStatus, "reason", reason, "id", task.Id)
 
-	if err := monitor.argo.State.SetTaskStatus(task.Id, finalStatus, reason); err != nil {
-		slog.Error("Failed to change task status", "error", err, "id", task.Id)
-	}
+	recorded := monitor.recordStatus(task, finalStatus, reason)
 	task.Status = finalStatus
+
+	// Counted only for an outcome this replica decided: on a handover the owner
+	// counts the same deployment, and two increments would trip a threshold early.
+	if recorded {
+		if confirmed {
+			monitor.argo.metrics.AddFailedDeployment(task.App)
+		} else {
+			monitor.argo.metrics.AddUnconfirmedFailure()
+		}
+	}
+
+	return recorded
 }
 
 // HandleImageNotPartOfApp fails the task immediately instead of letting it run out its
 // timeout waiting for an image the application will never have.
-func (monitor *DeploymentMonitor) HandleImageNotPartOfApp(task *models.Task, imageErr *ImageNotPartOfAppError) {
+func (monitor *DeploymentMonitor) HandleImageNotPartOfApp(task *models.Task, imageErr *ImageNotPartOfAppError) bool {
 	slog.Warn("App deployment failed: expected image is not part of the application.",
 		"image", imageErr.Image, "app", imageErr.App, "id", task.Id)
-	monitor.argo.metrics.AddFailedDeployment(task.App)
 
-	if err := monitor.argo.State.SetTaskStatus(task.Id, models.StatusFailedMessage, imageErr.Reason()); err != nil {
-		slog.Error("Failed to change task status", "error", err, "id", task.Id)
-	}
+	recorded := monitor.recordStatus(task, models.StatusFailedMessage, imageErr.Reason())
 	task.Status = models.StatusFailedMessage
-}
-
-func (monitor *DeploymentMonitor) handleDeploymentSuccess(task *models.Task) {
-	slog.Info("App is running on the expected version.", "id", task.Id)
-	monitor.argo.metrics.ResetFailedDeployment(task.App)
-	if err := monitor.argo.State.SetTaskStatus(task.Id, models.StatusDeployedMessage, ""); err != nil {
-		slog.Error("Failed to change task status", "error", err, "id", task.Id)
+	if recorded {
+		monitor.argo.metrics.AddFailedDeployment(task.App)
 	}
-	task.Status = models.StatusDeployedMessage
+
+	return recorded
 }
 
-func (monitor *DeploymentMonitor) handleDeploymentFailure(task *models.Task, status string, application *models.Application, waited time.Duration) {
+func (monitor *DeploymentMonitor) handleDeploymentSuccess(task *models.Task) bool {
+	slog.Info("App is running on the expected version.", "id", task.Id)
+
+	recorded := monitor.recordStatus(task, models.StatusDeployedMessage, "")
+	task.Status = models.StatusDeployedMessage
+	// Clearing the gauge for a rollout the owner decided would erase its failures.
+	if recorded {
+		monitor.argo.metrics.ResetFailedDeployment(task.App)
+	}
+
+	return recorded
+}
+
+func (monitor *DeploymentMonitor) handleDeploymentFailure(task *models.Task, status string, application *models.Application, waited time.Duration) bool {
 	slog.Warn("App deployment failed.", "id", task.Id)
-	monitor.argo.metrics.AddFailedDeployment(task.App)
 	tree := monitor.fetchResourceTree(task)
 	reason := fmt.Sprintf(
 		"%s\n\n%s",
 		rolloutFailureHeadline(application, status, waited),
 		rolloutMessage(application, status, task.ListImages(), tree),
 	)
-	if err := monitor.argo.State.SetTaskStatus(task.Id, models.StatusFailedMessage, reason); err != nil {
-		slog.Error("Failed to change task status", "error", err, "id", task.Id)
-	}
+	recorded := monitor.recordStatus(task, models.StatusFailedMessage, reason)
 	task.Status = models.StatusFailedMessage
+	// The resource-tree fetch above widens the window between the lease check and
+	// the write, so this is the most likely place for the claim to have moved on.
+	if recorded {
+		monitor.argo.metrics.AddFailedDeployment(task.App)
+	}
+
+	return recorded
 }
 
 // resourceTreeTimeout bounds the best-effort resource-tree fetch on the failure path so

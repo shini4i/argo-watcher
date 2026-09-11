@@ -76,6 +76,19 @@ func taskMatchesFilters(task models.Task, filter models.TaskFilter) bool {
 	return task.MatchesSearch(filter.Search)
 }
 
+// sortByRecency orders tasks newest first, breaking a same-second tie by Id as the
+// SQL does, so both backends name the same task as newest. Created holds whole
+// seconds here, so ties are ordinary rather than rare, and detectRollback reads the
+// first deployed task as the current version.
+func sortByRecency(tasks []models.Task) {
+	sort.SliceStable(tasks, func(i, j int) bool {
+		if tasks[i].Created != tasks[j].Created {
+			return tasks[i].Created > tasks[j].Created
+		}
+		return tasks[i].Id > tasks[j].Id
+	})
+}
+
 // paginate returns the [offset:offset+limit] slice of tasks, clamping to bounds.
 // A non-positive limit means "no upper bound" — return everything from offset onward.
 func paginate(tasks []models.Task, limit, offset int) []models.Task {
@@ -89,12 +102,12 @@ func paginate(tasks []models.Task, limit, offset int) []models.Task {
 	return tasks[offset:end]
 }
 
-func (state *InMemoryState) GetTasks(filter models.TaskFilter) ([]models.Task, int64) {
+func (state *InMemoryState) GetTasks(filter models.TaskFilter) ([]models.Task, int64, error) {
 	state.mu.RLock()
 	defer state.mu.RUnlock()
 
 	if state.tasks == nil {
-		return []models.Task{}, 0
+		return []models.Task{}, 0, nil
 	}
 
 	limit := filter.Limit
@@ -114,14 +127,12 @@ func (state *InMemoryState) GetTasks(filter models.TaskFilter) ([]models.Task, i
 	}
 
 	if len(tasks) == 0 {
-		return []models.Task{}, 0
+		return []models.Task{}, 0, nil
 	}
 
-	sort.Slice(tasks, func(i, j int) bool {
-		return tasks[i].Created > tasks[j].Created
-	})
+	sortByRecency(tasks)
 
-	return paginate(tasks, limit, offset), int64(len(tasks))
+	return paginate(tasks, limit, offset), int64(len(tasks)), nil
 }
 
 // GetTask returns ErrTaskNotFound when no task matches.
@@ -277,14 +288,7 @@ func (state *InMemoryState) GetAppSummaries(filter models.TaskFilter) ([]models.
 // the status counters, the median settled duration, the newest outcomes, and the
 // newest task's own details. It requires at least one task.
 func summariseApp(app string, tasks []models.Task) models.AppSummary {
-	// Id breaks a same-second tie the same way the SQL does, so both backends
-	// report the same task as newest.
-	sort.SliceStable(tasks, func(i, j int) bool {
-		if tasks[i].Created != tasks[j].Created {
-			return tasks[i].Created > tasks[j].Created
-		}
-		return tasks[i].Id > tasks[j].Id
-	})
+	sortByRecency(tasks)
 
 	summary := models.AppSummary{
 		App:            app,

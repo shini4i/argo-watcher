@@ -269,7 +269,7 @@ func runTaskRepositoryContract(t *testing.T, newRepository func(t *testing.T) Ta
 		}
 		assert.Equal(t, int64(submissions-1), totalCancelled, "every submission but the last must have been superseded")
 
-		stored, _ := repository.GetTasks(models.TaskFilter{
+		stored, _, _ := repository.GetTasks(models.TaskFilter{
 			EndTime: float64(time.Now().Add(time.Hour).Unix()),
 			App:     "app-a",
 		})

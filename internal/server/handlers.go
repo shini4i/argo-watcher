@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/shini4i/argo-watcher/internal/argocd"
 	"github.com/shini4i/argo-watcher/internal/auth"
 	"github.com/shini4i/argo-watcher/internal/models"
 	"github.com/shini4i/argo-watcher/internal/state"
@@ -204,9 +205,15 @@ func (env *Env) addTask(w http.ResponseWriter, r *http.Request) {
 	newTask, err := env.argo.AddTask(task)
 	if err != nil {
 		slog.Error("failed to add task", "error", err)
+		// Submission takes no credential, so a backend failure's driver text must not
+		// travel with the response. Every other cause here names a client mistake.
+		message := err.Error()
+		if errors.Is(err, argocd.ErrTaskHistoryUnavailable) {
+			message = internalErrorMessage
+		}
 		writeJSON(w, http.StatusServiceUnavailable, models.TaskStatus{
 			Status: "down",
-			Error:  err.Error(),
+			Error:  message,
 		})
 		return
 	}
@@ -231,7 +238,7 @@ func (env *Env) addTask(w http.ResponseWriter, r *http.Request) {
 // @Param to_timestamp query int false "To timestamp"
 // @Param limit query int false "Maximum number of tasks to return (1-1000, defaults to 1000)"
 // @Param offset query int false "Number of tasks to skip before returning results"
-// @Success 200 {object} models.TasksResponse
+// @Success 200 {object} models.TasksResponse "tasks, or an error field when unreadable"
 // @Failure 401 {object} models.TaskStatus "no credential, or the credential was rejected (only when OIDC auth is enabled)"
 // @Failure 503 {object} models.TaskStatus "the OIDC provider could not be consulted; retry"
 // @Router /api/v1/tasks [get]
