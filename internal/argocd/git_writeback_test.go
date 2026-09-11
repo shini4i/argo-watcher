@@ -158,6 +158,18 @@ func TestExtractManagedImages(t *testing.T) {
 			errContains: `"my alias=image1"`,
 		},
 		{
+			// The mirror of the repeated-alias rejection below: two aliases may share
+			// one image, since each still names a distinct Helm value to write.
+			name: "Accepts two aliases pointing at one image",
+			annotation: map[string]string{
+				managedImagesAnnotation: "alias1=image1,alias2=image1",
+			},
+			expected: map[string]string{
+				"alias1": "image1",
+				"alias2": "image1",
+			},
+		},
+		{
 			// The last shape that could still fail silently: the losing image is
 			// declared managed, matches no alias, and the write-back reports success
 			// without touching git.
