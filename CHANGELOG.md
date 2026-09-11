@@ -85,8 +85,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   write-back. `app = myimage` left the alias and the image each carrying a space, so neither matched
   and the tag was never committed — the deployment then timed out reporting that the image was not
   part of the application, naming everything except the annotation that caused it.
+- A replica that no longer holds a deployment can no longer record its outcome. Ownership is now
+  checked by the database on every status write, because a replica can spend seconds reaching its
+  verdict after its claim has moved on — whether another replica took it over, or this one handed
+  it back while shutting down. The second case mattered most: only an in-progress deployment is
+  picked up again, so a `failed` written on the way out ended a deployment another replica would
+  have finished watching. The same deployment is also no longer counted or announced twice.
+- The task list no longer shows an empty estate when the database cannot be read. A failed read was
+  indistinguishable from "no deployments ran": `GET /api/v1/tasks` now answers with an `error`
+  field and no tasks, and a deployment is refused rather than recorded with the wrong rollback flag
+  when its history could not be read.
+- With the in-memory backend, deployments created in the same second are now ordered by when they
+  were submitted. They used to be ordered by task id, which is a random uuid, so the older of the
+  two could count as the current version — recording a redeployment as a rollback, or missing a
+  rollback. The PostgreSQL backend stores microseconds and was never affected.
 
 ### Security
+
+- A failure to read the database no longer puts the driver's own text — the schema, the SQL error
+  code, the database host — into the body of `GET /api/v1/tasks` or `POST /api/v1/tasks`. Both are
+  served without a credential when OIDC is off. The cause stays in the server log.
 
 - A `ARGO_URL` containing basic-auth credentials no longer has its password written into the startup
   error, and from there into the container log, when the value is rejected. The configuration

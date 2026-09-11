@@ -88,6 +88,9 @@ func (task *Task) IsAppNotFoundError(err error) bool {
 	return strings.Contains(err.Error(), appNotFoundError) || strings.Contains(err.Error(), "permission denied")
 }
 
+// TasksResponse is the body of GET /api/v1/tasks. Error is set, with no tasks and
+// a zero total, when the state backend could not be read — a reader that ignores
+// it cannot tell an outage from an estate with nothing deployed.
 type TasksResponse struct {
 	Tasks []Task `json:"tasks"`
 	Error string `json:"error,omitempty"`

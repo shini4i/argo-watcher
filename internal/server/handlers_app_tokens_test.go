@@ -424,7 +424,7 @@ func TestAppTokenAuthorizesAnInScopeSubmission(t *testing.T) {
 			repo.EXPECT().Check().Return(true).AnyTimes()
 			// AddTask consults the history for rollback detection before inserting.
 			repo.EXPECT().GetTasks(gomock.Any()).
-				Return([]models.Task{}, int64(0)).AnyTimes()
+				Return([]models.Task{}, int64(0), nil).AnyTimes()
 
 			// Capture the task, then fail the insert: the success path would spawn the
 			// real rollout goroutine. Validated is already decided by this point.

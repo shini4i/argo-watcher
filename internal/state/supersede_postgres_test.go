@@ -108,7 +108,7 @@ func TestPostgresState_RejectedInsertRollsBackTheSupersede(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, got.StatusReason, "the rolled-back supersede must leave no reason behind")
 
-	stored, _ := env.state.GetTasks(models.TaskFilter{EndTime: float64(time.Now().Add(time.Hour).Unix()), App: "app-rollback"})
+	stored, _, _ := env.state.GetTasks(models.TaskFilter{EndTime: float64(time.Now().Add(time.Hour).Unix()), App: "app-rollback"})
 	assert.Len(t, stored, 1, "the rejected task must not be stored")
 }
 

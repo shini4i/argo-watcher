@@ -17,7 +17,9 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/shini4i/argo-watcher/internal/argocd"
+	"github.com/shini4i/argo-watcher/internal/auth"
 	"github.com/shini4i/argo-watcher/internal/config"
+	"github.com/shini4i/argo-watcher/internal/lock"
 	"github.com/shini4i/argo-watcher/internal/mocks"
 	"github.com/shini4i/argo-watcher/internal/models"
 )
@@ -253,4 +255,75 @@ func TestGetAppSummariesKeepsAWindowInsideTheCap(t *testing.T) {
 
 	assert.Equal(t, float64(start), seen.StartTime)
 	assert.Equal(t, float64(end), seen.EndTime)
+}
+
+// The overview's sibling assertion, for the task list. This body is what the web
+// client reads, and with OIDC off it is served unauthenticated, so the driver's
+// text must stay in the log while the reader still learns the read failed.
+func TestGetStateReportsABackendFailureWithoutLeakingIt(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	repo := mocks.NewMockTaskRepository(ctrl)
+	repo.EXPECT().GetTasks(gomock.Any()).
+		Return(nil, int64(0), fmt.Errorf(`relation "tasks" does not exist (SQLSTATE 42P01) host=db.internal`))
+
+	argo := &argocd.Argo{}
+	argo.Init(repo, newArgoAPI(ctrl), newMetrics(ctrl))
+
+	env := &Env{argo: argo, config: &config.ServerConfig{}}
+	router := chi.NewRouter()
+	router.Get("/api/v1/tasks", env.getState)
+
+	req, err := http.NewRequest(http.MethodGet, "/api/v1/tasks?from_timestamp=0", nil)
+	require.NoError(t, err)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	var body models.TasksResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+
+	assert.Equal(t, http.StatusOK, w.Code, "the soft-error shape the web client expects")
+	assert.Equal(t, "failed to read tasks", body.Error)
+	assert.Empty(t, body.Tasks, "an empty list alongside the error, never a silent one")
+	assert.NotContains(t, w.Body.String(), "SQLSTATE")
+	assert.NotContains(t, w.Body.String(), "db.internal")
+}
+
+// Submission takes no credential, so the same masking GET /api/v1/tasks got must
+// hold here: the history read now wraps the driver error, and without the mask it
+// would travel to any caller that can reach the endpoint.
+func TestAddTaskDoesNotLeakTheDatabaseErrorFromTheHistoryRead(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	repo := mocks.NewMockTaskRepository(ctrl)
+	repo.EXPECT().Check().Return(true).AnyTimes()
+	repo.EXPECT().GetTasks(gomock.Any()).
+		Return(nil, int64(0), fmt.Errorf(`relation "tasks" does not exist (SQLSTATE 42P01) host=db.internal`))
+
+	lockdown, err := NewLockdown("", lock.NewInMemoryDeployLockStore())
+	require.NoError(t, err)
+	argo := &argocd.Argo{}
+	argo.Init(repo, newArgoAPI(ctrl), newMetrics(ctrl))
+
+	strategies := map[string]auth.AuthStrategy{}
+	env := &Env{
+		lockdown:      lockdown,
+		strategies:    strategies,
+		authenticator: auth.NewAuthenticator(strategies),
+		argo:          argo,
+		config:        &config.ServerConfig{DeploymentTimeout: 900},
+	}
+	router := chi.NewRouter()
+	router.Post("/api/v1/tasks", env.addTask)
+
+	body := `{"app":"demo","author":"ci","project":"demo","images":[{"image":"nginx","tag":"1.0"}]}`
+	req, err := http.NewRequest(http.MethodPost, "/api/v1/tasks", strings.NewReader(body))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	assert.Contains(t, w.Body.String(), internalErrorMessage)
+	assert.NotContains(t, w.Body.String(), "SQLSTATE")
+	assert.NotContains(t, w.Body.String(), "db.internal")
 }

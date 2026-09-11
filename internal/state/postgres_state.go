@@ -240,7 +240,7 @@ func (state *PostgresState) GetAppSummaries(filter models.TaskFilter) ([]models.
 
 // GetTasks retrieves the tasks matching filter. Empty filter values (App, Status,
 // Author, Search) are wildcards, and the Search clause mirrors models.Task.MatchesSearch.
-func (state *PostgresState) GetTasks(filter models.TaskFilter) ([]models.Task, int64) {
+func (state *PostgresState) GetTasks(filter models.TaskFilter) ([]models.Task, int64, error) {
 	startTimeUTC := time.Unix(int64(filter.StartTime), 0).UTC()
 	endTimeUTC := time.Unix(int64(filter.EndTime), 0).UTC()
 
@@ -273,7 +273,7 @@ func (state *PostgresState) GetTasks(filter models.TaskFilter) ([]models.Task, i
 	var total int64
 	if err := countQuery.Count(&total).Error; err != nil {
 		slog.Error("Failed to count tasks", "error", err)
-		return []models.Task{}, 0
+		return nil, 0, err
 	}
 
 	if filter.Limit > 0 {
@@ -283,12 +283,14 @@ func (state *PostgresState) GetTasks(filter models.TaskFilter) ([]models.Task, i
 		query = query.Offset(filter.Offset)
 	}
 
-	query = query.Order("created DESC")
+	// created is a timestamptz, so a tie needs microsecond-identical rows; id breaks
+	// it only to keep the page totally ordered across offsets.
+	query = query.Order("created DESC, id DESC")
 
 	var ormTasks []state_models.TaskModel
 	if err := query.Find(&ormTasks).Error; err != nil {
 		slog.Error("Failed to query tasks", "error", err)
-		return []models.Task{}, 0
+		return nil, 0, err
 	}
 
 	tasks := make([]models.Task, len(ormTasks))
@@ -296,7 +298,7 @@ func (state *PostgresState) GetTasks(filter models.TaskFilter) ([]models.Task, i
 		tasks[i] = *ormTask.ConvertToExternalTask()
 	}
 
-	return tasks, total
+	return tasks, total, nil
 }
 
 // GetTask retrieves a task by id. It returns ErrTaskNotFound when the id is
@@ -320,22 +322,51 @@ func (state *PostgresState) GetTask(id string) (*models.Task, error) {
 	return ormTask.ConvertToExternalTask(), nil
 }
 
-// SetTaskStatus errors if the id is malformed and returns ErrTaskNotFound when no task matches.
+// SetTaskStatus errors if the id is malformed, returns ErrTaskNotFound when no task
+// exists, and ErrTaskNotOwned when another instance holds the claim.
 func (state *PostgresState) SetTaskStatus(id, status, reason string) error {
 	uuidv4, err := uuid.Parse(id)
 	if err != nil {
 		return err
 	}
+	// gorm omits a zero primary key from the WHERE clause. That once left no
+	// condition at all and was caught as a missing where; the fence below would now
+	// satisfy that check and rewrite every unowned row instead.
+	if uuidv4 == uuid.Nil {
+		return ErrTaskNotFound
+	}
+
+	// Fenced on ownership: a task claimed elsewhere since this instance checked its
+	// lease has that owner monitoring it too. A row never claimed at all stays
+	// writable, AddTask's claim being best-effort, and is told apart from one released
+	// at shutdown by having no lease deadline — a released row is somebody else's now.
 	var ormTask = state_models.TaskModel{Id: uuidv4}
-	result := state.orm.Model(ormTask).Updates(state_models.TaskModel{Status: status, StatusReason: sql.NullString{String: reason, Valid: true}})
+	result := state.orm.Model(ormTask).
+		Where("owner_id = ? OR (owner_id IS NULL AND lease_expires_at IS NULL)", state.ownerId).
+		Updates(state_models.TaskModel{Status: status, StatusReason: sql.NullString{String: reason, Valid: true}})
 	if result.Error != nil {
 		return result.Error
 	}
 	if result.RowsAffected == 0 {
-		return ErrTaskNotFound
+		return state.classifyRefusedWrite(uuidv4)
 	}
 
 	return nil
+}
+
+// classifyRefusedWrite tells the two reasons SetTaskStatus matched no row apart:
+// an id that never existed is a caller bug, while a task held elsewhere is an
+// ordinary handover the caller must stop writing for.
+func (state *PostgresState) classifyRefusedWrite(id uuid.UUID) error {
+	var count int64
+	if err := state.orm.Model(&state_models.TaskModel{}).Where("id = ?", id).Count(&count).Error; err != nil {
+		return err
+	}
+	if count == 0 {
+		return ErrTaskNotFound
+	}
+
+	return ErrTaskNotOwned
 }
 
 // SupersedeAndAdd serialises submissions per app with an advisory lock, then

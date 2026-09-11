@@ -40,6 +40,11 @@ claim, which it discovers on its next renewal, or because it has begun shutting
 down and is about to release the claim itself. Either way it stops without
 writing a status, so it cannot clobber the outcome the new owner records.
 
+Stopping is not the only guard. A replica checks its claim and then spends
+seconds reaching the outcome, so the claim can move on while a write is already
+under way. The database refuses that write: a status only lands for the task's
+current owner, or for a task nobody has claimed.
+
 ### How long a deployment is unattended
 
 | Event | Time before another replica resumes it |

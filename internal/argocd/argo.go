@@ -23,6 +23,11 @@ var (
 	ArgoLivenessProbeInterval = 30 * time.Second
 )
 
+// ErrTaskHistoryUnavailable marks a submission refused because the app's deployment
+// history could not be read. The cause carries driver text and submission takes no
+// credential, so the handler answers with a fixed message and leaves detail to the log.
+var ErrTaskHistoryUnavailable = errors.New("could not read the deployment history")
+
 // rollbackHistoryWindow bounds how many of an app's most recent successfully
 // deployed tasks are inspected when deciding whether a new deployment is a
 // rollback. Rollbacks to a version older than this window are not flagged; this
@@ -186,7 +191,11 @@ func (argo *Argo) AddTask(task models.Task) (*models.Task, error) {
 	// Always overwrite the rollback fields from server-side history so a
 	// client-supplied value (e.g. echoed back by the "rollback to this version"
 	// action) can never influence the stored result.
-	task.RollbackTargetId = argo.detectRollback(task)
+	rollbackTargetId, err := argo.detectRollback(task)
+	if err != nil {
+		return nil, err
+	}
+	task.RollbackTargetId = rollbackTargetId
 	task.IsRollback = task.RollbackTargetId != ""
 
 	// StatusReason and Updated are server-owned but JSON-bindable, and submission takes
@@ -227,15 +236,20 @@ func (argo *Argo) AddTask(task models.Task) (*models.Task, error) {
 // rolls back to, or an empty string when it is not one. A rollback's image set was
 // deployed successfully at some earlier point for the app AND differs from the
 // current version — redeploying the current version is not a rollback.
-func (argo *Argo) detectRollback(task models.Task) string {
-	deployed, _ := argo.State.GetTasks(models.TaskFilter{
+func (argo *Argo) detectRollback(task models.Task) (string, error) {
+	deployed, _, err := argo.State.GetTasks(models.TaskFilter{
 		EndTime: float64(time.Now().Unix()),
 		App:     task.App,
 		Status:  models.StatusDeployedMessage,
 		Limit:   rollbackHistoryWindow,
 	})
+	if err != nil {
+		// Treated as an empty history, this would record IsRollback=false for a task
+		// the backend never actually answered for.
+		return "", fmt.Errorf("%w of %q: %w", ErrTaskHistoryUnavailable, task.App, err)
+	}
 	if len(deployed) == 0 {
-		return ""
+		return "", nil
 	}
 
 	target := imageSignature(task)
@@ -243,16 +257,16 @@ func (argo *Argo) detectRollback(task models.Task) string {
 	// GetTasks orders by created DESC, so deployed[0] is the current version.
 	// Matching it means we are redeploying the current version, not rolling back.
 	if imageSignature(deployed[0]) == target {
-		return ""
+		return "", nil
 	}
 
 	for _, previous := range deployed[1:] {
 		if imageSignature(previous) == target {
-			return previous.Id
+			return previous.Id, nil
 		}
 	}
 
-	return ""
+	return "", nil
 }
 
 // imageSignature returns a key for a task's image set that is independent of the
@@ -266,13 +280,23 @@ func imageSignature(task models.Task) string {
 // hang the whole list on the API retry budget during an outage and then hide
 // existing tasks behind an error. /readyz probes only the state backend.
 func (argo *Argo) GetTasks(filter models.TaskFilter) models.TasksResponse {
-	tasks, total := argo.State.GetTasks(filter)
+	tasks, total, err := argo.State.GetTasks(filter)
+	if err != nil {
+		// Reported in the body rather than as an empty page, as GetAppSummaries
+		// does: a reader cannot otherwise tell an outage from a quiet estate.
+		slog.Error("Failed to read tasks", "error", err)
+		return models.TasksResponse{Error: tasksFailedMessage}
+	}
 
 	return models.TasksResponse{
 		Tasks: tasks,
 		Total: total,
 	}
 }
+
+// tasksFailedMessage is the client-facing text for a failed task read. The real
+// cause stays in the server log, as appSummariesFailedMessage does.
+const tasksFailedMessage = "failed to read tasks"
 
 // appSummariesFailedMessage is the client-facing text for a failed aggregate.
 // The real cause stays in the server log, as internalErrorMessage does for the

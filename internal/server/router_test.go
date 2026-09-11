@@ -56,9 +56,9 @@ func newRepo(ctrl *gomock.Controller) (*mocks.MockTaskRepository, *repoCapture) 
 	capture := &repoCapture{}
 	repo.EXPECT().Connect(gomock.Any()).Return(nil).AnyTimes()
 	repo.EXPECT().GetTasks(gomock.Any()).
-		DoAndReturn(func(filter models.TaskFilter) ([]models.Task, int64) {
+		DoAndReturn(func(filter models.TaskFilter) ([]models.Task, int64, error) {
 			capture.lastFilter = filter
-			return []models.Task{}, 0
+			return []models.Task{}, 0, nil
 		}).AnyTimes()
 	repo.EXPECT().GetAppSummaries(gomock.Any()).
 		DoAndReturn(func(filter models.TaskFilter) ([]models.AppSummary, error) {
@@ -1845,7 +1845,7 @@ func TestAddTaskEndpoint(t *testing.T) {
 		// case declares for itself.
 		ctrl := gomock.NewController(t)
 		repo := mocks.NewMockTaskRepository(ctrl)
-		repo.EXPECT().GetTasks(deployedHistoryOf("test-app")).Return([]models.Task{}, int64(0))
+		repo.EXPECT().GetTasks(deployedHistoryOf("test-app")).Return([]models.Task{}, int64(0), nil)
 
 		// The captured task is what ties the handler's authority to the state-layer
 		// rule: its Validated flag is what SupersedeAndAdd weighs.
@@ -2589,7 +2589,7 @@ func TestAddTaskResolvesTheDeploymentWindow(t *testing.T) {
 			argo.Init(stateMock, mocks.NewMockArgoApiInterface(ctrl), metricsMock)
 
 			stateMock.EXPECT().GetTasks(gomock.Any()).
-				Return([]models.Task{}, int64(0)).AnyTimes()
+				Return([]models.Task{}, int64(0), nil).AnyTimes()
 			stateMock.EXPECT().ClaimTask(gomock.Any()).Return(nil).AnyTimes()
 			metricsMock.EXPECT().AddAcceptedDeployment().AnyTimes()
 

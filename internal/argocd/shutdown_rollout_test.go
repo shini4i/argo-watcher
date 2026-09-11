@@ -15,6 +15,7 @@ import (
 	"github.com/shini4i/argo-watcher/internal/mocks"
 	"github.com/shini4i/argo-watcher/internal/models"
 	"github.com/shini4i/argo-watcher/internal/notifications"
+	"github.com/shini4i/argo-watcher/internal/state"
 )
 
 // managedApp is a settled application the watcher writes back for, so a rollout
@@ -335,4 +336,93 @@ func TestWaitForRollout_GivesUpARolloutThatSettledAsTheDrainBegan(t *testing.T) 
 
 	assert.Equal(t, int32(2), fetches.Load(), "the rollout must reach its outcome before it is given up")
 	require.Len(t, capture.sent, 1, "the replica that resumes the task announces the result")
+}
+
+// The claim can move on between the last lease check and the status write, which
+// the backend refuses. The outcome stored is then the new owner's, so counting or
+// announcing one here would report the deployment twice — and the two reports can
+// disagree, this replica saying failed where the owner recorded deployed.
+func TestWaitForRollout_ARefusedWriteIsNotCountedOrAnnounced(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	apiMock := newArgoApiMock(ctrl)
+	metricsMock := mocks.NewMockMetricsInterface(ctrl)
+	stateMock := notSupersededState(ctrl)
+
+	argo := &Argo{}
+	argo.Init(stateMock, apiMock, metricsMock)
+
+	app := &models.Application{}
+	app.Status.Summary.Images = []string{"app:v1"}
+	app.Status.Sync.Status = "Synced"
+	app.Status.Health.Status = "Healthy"
+	apiMock.EXPECT().GetApplication(gomock.Any(), gomock.Any(), gomock.Any()).Return(app, nil).AnyTimes()
+
+	// The rollout succeeded, so this replica tries to record "deployed" — and the
+	// backend refuses it because the claim is no longer here.
+	stateMock.EXPECT().SetTaskStatus("refused-id", models.StatusDeployedMessage, "").
+		Return(state.ErrTaskNotOwned)
+
+	metricsMock.EXPECT().AddInProgressTask()
+	metricsMock.EXPECT().RemoveInProgressTask()
+	metricsMock.EXPECT().InitDeploymentOutcomes("test-app")
+	// Nothing else: gomock fails the test if this replica touches the app's gauge,
+	// counts an outcome or times a deployment the owner already recorded.
+
+	updater := initTestUpdater(t, newUpdaterTestConfig(lock.NewInMemoryLocker()), argo)
+	capture := &capturingStrategy{}
+	updater.notifier = notifications.NewNotifier(capture)
+
+	updater.WaitForRollout(shutdownTestTask("refused-id"), false, neverDraining)
+
+	require.Len(t, capture.sent, 1, "only the start notification may be sent")
+	assert.Equal(t, models.StatusInProgressMessage, capture.sent[0].Status)
+}
+
+// WaitForRollout re-checks draining before dispatching the outcome, and the failure
+// path then fetches the resource tree for up to ten seconds before writing. A drain
+// starting inside that fetch reaches SetTaskStatus unchecked, which is why the store
+// refuses the write rather than another in-process guard.
+func TestWaitForRollout_ADrainStartingInsideTheDiagnosticsFetchStillReachesTheWrite(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	apiMock := mocks.NewMockArgoApiInterface(ctrl)
+	metricsMock := mocks.NewMockMetricsInterface(ctrl)
+	stateMock := notSupersededState(ctrl)
+
+	argo := &Argo{}
+	argo.Init(stateMock, apiMock, metricsMock)
+
+	app := &models.Application{}
+	app.Status.Summary.Images = []string{"app:v1"}
+	app.Status.Sync.Status = "Synced"
+	app.Status.Health.Status = "Degraded"
+	apiMock.EXPECT().GetApplication(gomock.Any(), gomock.Any(), gomock.Any()).Return(app, nil).AnyTimes()
+	apiMock.EXPECT().GetManagedResources(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+
+	var draining atomic.Bool
+	apiMock.EXPECT().GetResourceTree(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(context.Context, string) (*models.ApplicationTree, error) {
+			draining.Store(true)
+			return nil, nil
+		})
+
+	// Reached despite the drain: the check that would have stopped it is already past.
+	stateMock.EXPECT().SetTaskStatus("drained-id", models.StatusFailedMessage, gomock.Any()).
+		Return(state.ErrTaskNotOwned).Times(1)
+
+	metricsMock.EXPECT().AddInProgressTask()
+	metricsMock.EXPECT().RemoveInProgressTask()
+	metricsMock.EXPECT().InitDeploymentOutcomes("test-app")
+
+	updater := initTestUpdater(t, newUpdaterTestConfig(lock.NewInMemoryLocker()), argo)
+	capture := &capturingStrategy{}
+	updater.notifier = notifications.NewNotifier(capture)
+
+	updater.WaitForRollout(shutdownTestTask("drained-id"), false, draining.Load)
+
+	require.Len(t, capture.sent, 1, "only the start notification may be sent")
+	assert.Equal(t, models.StatusInProgressMessage, capture.sent[0].Status)
 }
