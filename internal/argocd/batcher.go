@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/shini4i/argo-watcher/internal/lock"
 	"github.com/shini4i/argo-watcher/internal/models"
@@ -79,6 +80,7 @@ func batchKey(repo *models.GitopsRepo) string {
 // returns that request's individual outcome, or errBatcherClosed when shutting down.
 func (b *Batcher) Submit(req *batchWriteRequest) error {
 	key := batchKey(req.gitopsRepo)
+	req.enqueuedAt = time.Now()
 
 	b.mu.Lock()
 	if b.closed {
@@ -149,10 +151,15 @@ func (b *Batcher) flush(batch []*batchWriteRequest) {
 	}
 
 	var outcomes map[*batchWriteRequest]error
-	// context.Background() mirrors the single-app path (updateGitRepo); git
-	// operations are bounded by GIT_OP_TIMEOUT per attempt rather than by a
-	// caller context.
+	// Both metrics keep the meaning they have on the single-app path: everything an app
+	// waited before its write-back started, then the work itself. Deferred so a failed
+	// batch — typically the slow, retried one — is measured too.
 	lockErr := b.locker.WithLock(repoURL, func() error {
+		workStart := time.Now()
+		defer func() { b.observeDurations(batch, workStart, time.Since(workStart)) }()
+
+		// context.Background() mirrors the single-app path (updateGitRepo); git operations
+		// are bounded by GIT_OP_TIMEOUT per attempt rather than by a caller context.
 		outcomes = runBatchWriteBack(context.Background(), repo, batch, b.drainCh)
 		return nil
 	})
@@ -165,6 +172,20 @@ func (b *Batcher) flush(batch []*batchWriteRequest) {
 
 	for _, req := range batch {
 		req.resultCh <- outcomes[req]
+	}
+}
+
+// observeDurations records the batch's timings against every app it carried. One clone,
+// commit and push serve the whole batch, so each app's write-back really did take that long;
+// the wait is per-app, because requests join a batch at different moments.
+func (b *Batcher) observeDurations(batch []*batchWriteRequest, workStart time.Time, writeback time.Duration) {
+	if b.metrics == nil {
+		return
+	}
+
+	for _, req := range batch {
+		b.metrics.ObserveGitLockWaitDuration(req.task.App, workStart.Sub(req.enqueuedAt).Seconds())
+		b.metrics.ObserveGitWritebackDuration(req.task.App, writeback.Seconds())
 	}
 }
 

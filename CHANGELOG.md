@@ -37,6 +37,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `gitops_writeback_duration_seconds` and `gitops_lock_wait_duration_seconds` are recorded again
+  with `GIT_BATCH_WRITEBACK` enabled. Turning batching on silently stopped both, so the Grafana
+  dashboard's write-back and lock-wait panels went blank and the documented alert on write-backs
+  over 60s stopped firing — at exactly the moment contention made them worth watching. Both keep
+  the meaning they have without batching: the wait is measured from when a deployment's write-back
+  was queued, so an application waiting behind an in-flight batch is reported as waiting, and the
+  duration is the clone, commit and push its batch ran.
 - A deployment that fails because the image tag could not be committed to the GitOps repository
   now says so. The reason read `ArgoCD API Error: …` even though nothing had been asked of Argo CD,
   and a git remote that could not be reached was recorded as `aborted` — the status meaning the
