@@ -83,6 +83,27 @@ func (err *ImageNotPartOfAppError) Reason() string {
 	)
 }
 
+// WriteBackError reports that the git write-back did not complete, so the image tag is
+// not known to have reached the GitOps repository. It is a type of its own because the
+// failure names a different system than an ArgoCD API error does, and because there is
+// no rollout to wait on either way.
+type WriteBackError struct {
+	Err error
+}
+
+func (err *WriteBackError) Error() string {
+	return err.Err.Error()
+}
+
+func (err *WriteBackError) Unwrap() error {
+	return err.Err
+}
+
+// Reason renders the user-facing task failure reason.
+func (err *WriteBackError) Reason() string {
+	return fmt.Sprintf(GitWriteBackErrorTemplate, err.Err.Error())
+}
+
 // DeploymentMonitor encapsulates the logic for tracking ArgoCD application rollouts.
 type DeploymentMonitor struct {
 	argo             Argo
@@ -456,6 +477,23 @@ func (monitor *DeploymentMonitor) HandleArgoAPIFailure(task *models.Task, err er
 	return recorded
 }
 
+// HandleWriteBackFailure fails the task with the git write-back as its reason. The status
+// is always "failed", never the "aborted" reserved for an unreachable ArgoCD: the write-back
+// did not complete, so this replica has no rollout to report at all. The app was confirmed
+// before the write-back ran, so its name may label the metric (issue #552).
+func (monitor *DeploymentMonitor) HandleWriteBackFailure(task *models.Task, writeBackErr *WriteBackError) bool {
+	slog.Warn("App deployment failed: the image tag could not be written back to git.",
+		"app", task.App, "error", writeBackErr.Err, "id", task.Id)
+
+	recorded := monitor.recordStatus(task, models.StatusFailedMessage, writeBackErr.Reason())
+	task.Status = models.StatusFailedMessage
+	if recorded {
+		monitor.argo.metrics.AddFailedDeployment(task.App)
+	}
+
+	return recorded
+}
+
 // HandleImageNotPartOfApp fails the task immediately instead of letting it run out its
 // timeout waiting for an image the application will never have.
 func (monitor *DeploymentMonitor) HandleImageNotPartOfApp(task *models.Task, imageErr *ImageNotPartOfAppError) bool {
@@ -597,6 +635,10 @@ func checkRolloutStatus(task models.Task, application *models.Application, statu
 	return errForceRetry
 }
 
+// determineFailureStatus classifies an error raised while talking to ArgoCD. Only such
+// errors may reach it: isArgoUnavailable treats any transport failure as ArgoCD being
+// unreachable, so an error from another system — a git write-back, say — would be blamed
+// on ArgoCD and aborted rather than failed.
 func determineFailureStatus(task models.Task, err error) string {
 	if task.IsAppNotFoundError(err) {
 		return models.StatusAppNotFoundMessage

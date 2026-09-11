@@ -37,6 +37,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A deployment that fails because the image tag could not be committed to the GitOps repository
+  now says so. The reason read `ArgoCD API Error: …` even though nothing had been asked of Argo CD,
+  and a git remote that could not be reached was recorded as `aborted` — the status meaning the
+  rollout's outcome could not be read — rather than `failed`. Such a failure now reads
+  `Git write-back error: …` and is always `failed`: the write-back did not complete, so there is
+  no rollout to wait on either way.
 - The Web UI now loads in a browser that blocks site data, such as a Safari private window or a
   Firefox with cookies blocked. Reading the saved theme threw before the page mounted, so nothing
   rendered at all. Preferences that are normally remembered — theme, timezone, refresh interval,

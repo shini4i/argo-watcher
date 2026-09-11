@@ -969,6 +969,63 @@ func TestDeploymentMonitorHandleArgoAPIFailureAbortCountsAsFailure(t *testing.T)
 	assert.Equal(t, models.StatusAborted, task.Status)
 }
 
+// A failed write-back is the deployment's own outcome, not Argo CD's: nothing was asked
+// of Argo CD, so naming its API would send an operator to read the wrong logs.
+func TestWaitForRolloutWriteBackFailure(t *testing.T) {
+	// Every case fails the write-back and must end the same way: "failed", blaming git.
+	// The network error matters most: the shared unavailability check cannot tell a git
+	// remote from the Argo CD API, so reaching it at all would classify this "aborted".
+	cases := []struct {
+		name      string
+		lockerErr error
+		reason    string
+	}{
+		{
+			name:      "a plain write-back failure names git",
+			lockerErr: errors.New("lock failed"),
+			reason:    "Git write-back error: lock failed",
+		},
+		{
+			name:      "an unreachable git remote is a failure, not an abort",
+			lockerErr: &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connect: connection refused")},
+			reason:    "Git write-back error: dial tcp: connect: connection refused",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			apiMock := newArgoApiMock(ctrl)
+			metricsMock := mocks.NewMockMetricsInterface(ctrl)
+			stateMock := notSupersededState(ctrl)
+
+			argo := &Argo{}
+			argo.Init(stateMock, apiMock, metricsMock)
+
+			updater := initTestUpdater(t, newUpdaterTestConfig(&spyLocker{err: tc.lockerErr}), argo)
+
+			task := models.Task{
+				Id:        "test-id",
+				App:       "test-app",
+				Validated: true,
+				Images:    []models.Image{{Image: "example.com/app", Tag: "v1"}},
+			}
+
+			apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(managedApp(), nil)
+			metricsMock.EXPECT().AddInProgressTask()
+			metricsMock.EXPECT().InitDeploymentOutcomes(task.App)
+			metricsMock.EXPECT().AddFailedDeployment(task.App)
+			metricsMock.EXPECT().AddDeploymentOutcome(task.App, models.StatusFailedMessage)
+			metricsMock.EXPECT().RemoveInProgressTask()
+			stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage, tc.reason)
+
+			updater.WaitForRollout(task, false, neverDraining)
+		})
+	}
+}
+
 func TestGitUpdaterUpdateIfNeeded(t *testing.T) {
 	makeApp := func(managed bool) *models.Application {
 		app := &models.Application{}
@@ -2975,6 +3032,13 @@ func TestDeploymentMonitorRefusedWriteLeavesTheGaugesAlone(t *testing.T) {
 		assert.False(t, monitor.HandleImageNotPartOfApp(&task, imageErr))
 	})
 
+	t.Run("a write-back failure does not count one", func(t *testing.T) {
+		monitor, stateMock, task := newMonitor(t)
+		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage, gomock.Any()).Return(state.ErrTaskNotOwned)
+
+		assert.False(t, monitor.HandleWriteBackFailure(&task, &WriteBackError{Err: errors.New("push rejected")}))
+	})
+
 	t.Run("a success does not clear the app's failures", func(t *testing.T) {
 		monitor, stateMock, task := newMonitor(t)
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "").Return(state.ErrTaskNotOwned)
@@ -3010,4 +3074,16 @@ func TestDeploymentMonitorRefusedWriteLeavesTheGaugesAlone(t *testing.T) {
 
 		assert.False(t, monitor.ProcessDeploymentResult(&task, app, time.Second))
 	})
+}
+
+// Error() must stay bare: it is what the slog line and any wrapping print, and
+// Reason() is the only place the user-facing prefix is added. A prefix in both
+// would render it twice in the log.
+func TestWriteBackErrorKeepsThePrefixToTheReason(t *testing.T) {
+	cause := errors.New("push rejected")
+	err := &WriteBackError{Err: cause}
+
+	assert.Equal(t, "push rejected", err.Error())
+	assert.Equal(t, "Git write-back error: push rejected", err.Reason())
+	assert.ErrorIs(t, err, cause)
 }

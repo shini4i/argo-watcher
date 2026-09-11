@@ -59,6 +59,10 @@ func TestWaitForRollout_ShutdownWriteBackIsNotADeploymentFailure(t *testing.T) {
 		writeBack    error
 		draining     bool
 		wantStatus   string
+		// wantReason fences the user-facing text, not just the status: the batch path is
+		// the one that used to blame ArgoCD for a git failure, so a wildcard here is what
+		// let that wording regress unnoticed.
+		wantReason string
 	}{
 		{
 			name:         "the batcher was closed before the write-back was queued",
@@ -78,6 +82,7 @@ func TestWaitForRollout_ShutdownWriteBackIsNotADeploymentFailure(t *testing.T) {
 			name:         "a write-back lost to shutdown with nobody to hand over to",
 			closeBatcher: true,
 			wantStatus:   models.StatusFailedMessage,
+			wantReason:   "Git write-back error: git write-back batcher is shutting down",
 		},
 		{
 			// The control: an ordinary write-back failure is still this deployment's
@@ -85,6 +90,7 @@ func TestWaitForRollout_ShutdownWriteBackIsNotADeploymentFailure(t *testing.T) {
 			name:       "an ordinary write-back failure still fails the deployment",
 			writeBack:  gitFailure,
 			wantStatus: models.StatusFailedMessage,
+			wantReason: "Git write-back error: remote refused the update",
 		},
 	}
 
@@ -127,7 +133,7 @@ func TestWaitForRollout_ShutdownWriteBackIsNotADeploymentFailure(t *testing.T) {
 			if tt.wantStatus != "" {
 				metricsMock.EXPECT().AddFailedDeployment(task.App)
 				metricsMock.EXPECT().AddDeploymentOutcome(task.App, tt.wantStatus)
-				stateMock.EXPECT().SetTaskStatus(task.Id, tt.wantStatus, gomock.Any())
+				stateMock.EXPECT().SetTaskStatus(task.Id, tt.wantStatus, tt.wantReason)
 			}
 
 			updater.WaitForRollout(task, false, func() bool { return tt.draining })

@@ -24,7 +24,7 @@ Coming from `argocd app wait`, API polling, or `kubectl rollout status`? [Wait f
 |---|---|
 | `in progress` | Waiting for the requested images to be running, synced, and healthy. |
 | `deployed` | The application is synced and healthy with the requested images. |
-| `failed` | Argo CD reported a health or sync failure, `DEPLOYMENT_TIMEOUT` elapsed, or the application finished rolling out without ever declaring the requested image (see [Image is not part of application](../operations/troubleshooting.md#image-is-not-part-of-application)). |
+| `failed` | Argo CD reported a health or sync failure, `DEPLOYMENT_TIMEOUT` elapsed, the application finished rolling out without ever declaring the requested image (see [Image is not part of application](../operations/troubleshooting.md#image-is-not-part-of-application)), or the image tag could not be committed to the GitOps repository (reason prefix `Git write-back error:`). |
 | `app not found` | Argo CD has no application with that name, or the token cannot see it. Counted under `unconfirmed_deployment_failures`, or under `failed_deployment` in the rarer case where an application that was already confirmed disappeared mid-rollout. |
 | `aborted` | The outcome could not be confirmed: Argo CD was unreachable during the check, or the task sat in progress past the staleness window. Counts as a failure — under `failed_deployment` when Argo CD had already confirmed the application, under `unconfirmed_deployment_failures` when it never did; `argocd_unavailable` tells you whether Argo CD was the reason. |
 | `cancelled` | Superseded by a newer deployment of one of the same images before reaching a final state; polling stops. Not counted as a failure in the metrics, but the client still exits non-zero. |

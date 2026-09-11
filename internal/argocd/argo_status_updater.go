@@ -159,13 +159,16 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task, resumed bool,
 		// a sweep — so this replica is the last one able to announce it.
 	case draining():
 		// Covers the write-back errors shutdown raises (errBatcherClosed,
-		// errWritebackDraining) as well as a poll given up: the predicate is true from
-		// the first shutdown phase, before the batcher is torn down. Classifying those
-		// errors on their own instead would abandon a rollout nothing can resume.
+		// errWritebackDraining) as well as a poll given up. Only shared state reports
+		// draining, so with in-memory state those errors fall through and are reported:
+		// no replica could resume the task, and a dropped deployment is the worse answer.
 		err = errReplicaDraining
 	}
 
-	var imageErr *ImageNotPartOfAppError
+	var (
+		imageErr     *ImageNotPartOfAppError
+		writeBackErr *WriteBackError
+	)
 	// The arms that stop without writing leave this true: there is no refused write
 	// to suppress, and they return before it is read.
 	recorded := true
@@ -199,6 +202,8 @@ func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task, resumed bool,
 		// outcome the sweep decided.
 		slog.Info("Deployment already given up on by the staleness sweep; stopping.", "id", task.Id)
 		task.Status = models.StatusAborted
+	case errors.As(err, &writeBackErr):
+		recorded = updater.monitor.HandleWriteBackFailure(&task, writeBackErr)
 	case err != nil:
 		recorded = updater.monitor.HandleArgoAPIFailure(&task, err, confirmed)
 	default:
@@ -276,7 +281,9 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task,
 		if errors.Is(err, ErrDeploymentSuperseded) {
 			return nil, 0, true, updater.abortedWriteBackCause(task.Id, abandoned())
 		}
-		return nil, 0, true, err
+		// Marked as the write-back's own so the failure is not reported against ArgoCD,
+		// which was never asked for anything here.
+		return nil, 0, true, &WriteBackError{Err: err}
 	}
 
 	application, waited, err := updater.monitor.WaitRollout(task, abandoned)
