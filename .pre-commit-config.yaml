@@ -28,7 +28,7 @@ repos:
         entry: trufflehog filesystem --results=verified,unknown --fail
         language: system
         # The excluded files hold deliberate non-secrets TruffleHog reports as
-        # "unknown": dev credentials, SSH key fixtures, an example DSN, and a URL
-        # whose fake password a test asserts never reaches an error. Filesystem mode
-        # ignores --exclude-paths, so keep this in sync with .trufflehog-exclude.
-        exclude: ^(docker-compose\.yml|internal/updater/updater_test\.go|docs/operations/database\.md|internal/config/argo_endpoint_test\.go)$
+        # "unknown": dev credentials, SSH key fixtures and an example DSN.
+        # Filesystem mode ignores --exclude-paths for explicitly-passed files, so
+        # keep this list in sync with .trufflehog-exclude, which CI uses.
+        exclude: ^(docker-compose\.yml|internal/updater/updater_test\.go|docs/operations/database\.md)$
