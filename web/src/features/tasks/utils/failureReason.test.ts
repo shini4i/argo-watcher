@@ -43,6 +43,8 @@ const REAL = {
 
   apiError: 'ArgoCD API Error: applications.argoproj.io "checkout" not found',
 
+  gitWriteBack: 'Git write-back error: authentication required',
+
   imageNotPartOfApp: [
     'Application deployment failed. Image "app:v2" is not part of application "checkout".',
     '',
@@ -98,6 +100,14 @@ describe('summariseFailure on real backend reasons', () => {
   it('strips the ArgoCD API Error prefix, which the panel already conveys', () => {
     expect(summariseFailure(REAL.apiError)!.headline).toBe(
       'applications.argoproj.io "checkout" not found',
+    );
+  });
+
+  // Unlike the ArgoCD one, this prefix names which system to go and look at, so the
+  // panel must keep it. A regex generalised to any "… Error:" would swallow it.
+  it('keeps the git write-back prefix, which names the system at fault', () => {
+    expect(summariseFailure(REAL.gitWriteBack)!.headline).toBe(
+      'Git write-back error: authentication required',
     );
   });
 

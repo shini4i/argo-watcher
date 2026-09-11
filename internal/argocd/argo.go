@@ -47,6 +47,10 @@ const (
 const (
 	// ArgoAPIErrorTemplate is the template for ArgoCD API errors.
 	ArgoAPIErrorTemplate = "ArgoCD API Error: %s"
+	// GitWriteBackErrorTemplate is the template for a failure to commit the image
+	// tag to the GitOps repository. Kept apart from ArgoAPIErrorTemplate because the
+	// two send an operator to a different system: nothing reached ArgoCD at all.
+	GitWriteBackErrorTemplate = "Git write-back error: %s"
 	// supersededTaskReason is the status reason stored on a deployment that was
 	// cancelled because a newer deployment of the same image superseded it.
 	supersededTaskReason = "superseded by a newer deployment for the same image"

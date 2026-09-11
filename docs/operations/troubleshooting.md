@@ -36,7 +36,7 @@ Read the client's last log line first — it distinguishes these:
 
 | Client says | Meaning |
 |---|---|
-| `The deployment has failed` | Argo CD reported a failure, or the timeout elapsed. Continue with [Deployment times out](#deployment-times-out). |
+| `The deployment has failed` | Argo CD reported a failure, or the timeout elapsed. Continue with [Deployment times out](#deployment-times-out). A reason beginning `Git write-back error:` means the image tag was not committed to the GitOps repository, so there was no rollout to wait on — read the rest of that line and check the repository, not Argo CD. |
 | `Application <name> does not exist` | `ARGO_APP` does not match an Argo CD application (names are case-sensitive). |
 | `Image "<name>" is not part of application` | The application does not declare that image — see [Image is not part of application](#image-is-not-part-of-application). |
 | `The deployment was aborted before its outcome could be confirmed` | Argo CD became unreachable during the check. The application itself may be perfectly healthy — check Argo CD before blaming the deployment. |
@@ -121,9 +121,7 @@ curl -sSI "$ARGO_WATCHER_URL/api/v1/config"
 
 ## Managed-images annotation is rejected
 
-**Symptom:** the deployment fails immediately, reporting `ArgoCD API Error: invalid format for argo-watcher/managed-images annotation: "<entry>" is not alias=image`.
-
-Despite the label, nothing was asked of Argo CD — the annotation is parsed locally, before the write-back, and every failure on that path is reported through the same template.
+**Symptom:** the deployment fails immediately, reporting `Git write-back error: invalid format for argo-watcher/managed-images annotation: "<entry>" is not alias=image`.
 
 Each entry must read `alias=image`. Whitespace around the `=` is ignored, so `app = myimage` is accepted, but neither half may be empty or contain whitespace of its own, and the image may not contain a second `=`.
 
