@@ -16,11 +16,16 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/shini4i/argo-watcher/internal/config"
+	"github.com/shini4i/argo-watcher/internal/lock"
 	"github.com/shini4i/argo-watcher/internal/models"
 	"github.com/shini4i/argo-watcher/internal/state/state_models"
 )
 
 const whereStatusEquals = "status = ?"
+
+// supersedeSavepoint names the savepoint SupersedeAndAdd rolls back to when the
+// supersede fails, so the insert it shares a transaction with can still proceed.
+const supersedeSavepoint = "supersede"
 
 // retentionDeleteBatchSize is how many expired tasks one DELETE removes. It
 // keeps each statement short enough not to hold locks or grow a transaction for
@@ -70,6 +75,12 @@ func (state *PostgresState) Connect(serverConfig *config.ServerConfig) error {
 
 // AddTask returns the task with the DB-generated id and timestamps, in Unix seconds.
 func (state *PostgresState) AddTask(task models.Task) (*models.Task, error) {
+	return insertTask(state.orm, task)
+}
+
+// insertTask writes the task row and returns the task with its server-owned
+// fields filled in. It takes the handle so it can run inside a transaction.
+func insertTask(tx *gorm.DB, task models.Task) (*models.Task, error) {
 	ormTask := state_models.TaskModel{
 		Images:           datatypes.NewJSONSlice(task.Images),
 		Status:           models.StatusInProgressMessage,
@@ -83,7 +94,7 @@ func (state *PostgresState) AddTask(task models.Task) (*models.Task, error) {
 		Refresh:          nullBoolFromPointer(task.Refresh),
 	}
 
-	if err := state.orm.Create(&ormTask).Error; err != nil {
+	if err := tx.Create(&ormTask).Error; err != nil {
 		slog.Error("Failed to create task database record", "error", err)
 		return nil, fmt.Errorf("failed to create task in database")
 	}
@@ -327,18 +338,63 @@ func (state *PostgresState) SetTaskStatus(id, status, reason string) error {
 	return nil
 }
 
-// CancelInProgressTasks marks in-progress tasks for the given app as cancelled
-// and returns how many rows were affected. A task is only cancelled when it
-// shares at least one image name with the supplied images (tags ignored), so
-// independent per-image deployments of the same app do not cancel each other,
-// and only when it carries no more authority than the superseding deployment.
-// Because both checks are evaluated in Go, the in-progress tasks are first
-// fetched, filtered, then updated by id. The UPDATE re-checks the in-progress
-// status so a task that finished between the two queries is not clobbered.
-func (state *PostgresState) CancelInProgressTasks(app string, images []models.Image, reason string, newTaskValidated bool) (int64, error) {
+// SupersedeAndAdd serialises submissions per app with an advisory lock, then
+// cancels what the new task supersedes and inserts it in one transaction. The
+// supersede keeps its best-effort contract through a savepoint, so a failure
+// there cannot poison the insert. See the interface for the supersede rules.
+func (state *PostgresState) SupersedeAndAdd(task models.Task, reason string) (*models.Task, int64, error) {
+	var (
+		added     *models.Task
+		cancelled int64
+	)
+
+	err := state.orm.Transaction(func(tx *gorm.DB) error {
+		// Serialised per application, so a concurrent submission for the same app
+		// waits rather than reading the set of in-progress tasks this one is about
+		// to join. Transaction-scoped: the lock is released by the commit below.
+		if err := tx.Exec("SELECT pg_advisory_xact_lock(?)", appLockID(task.App)).Error; err != nil {
+			return err
+		}
+
+		// Best-effort, as it was before it moved in here: refusing a deployment over a
+		// failed supersede is the worse outcome. The savepoint is what lets the insert
+		// go ahead, since a failed statement would otherwise poison the transaction.
+		// Neither savepoint call reports an error — the postgres driver discards it.
+		tx.SavePoint(supersedeSavepoint)
+
+		var supersedeErr error
+		if cancelled, supersedeErr = supersedeInProgress(tx, task, reason); supersedeErr != nil {
+			slog.Warn("Failed to cancel in-progress deployments for the app", "error", supersedeErr, "app", task.App)
+			cancelled = 0
+			tx.RollbackTo(supersedeSavepoint)
+		}
+
+		var insertErr error
+		added, insertErr = insertTask(tx, task)
+		return insertErr
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return added, cancelled, nil
+}
+
+// appLockID derives the advisory-lock key for an application. Advisory locks are
+// a flat 64-bit namespace shared with the git write-back's per-repository locks,
+// so the prefix is what keeps an application from colliding with a repository URL.
+func appLockID(app string) int64 {
+	return lock.GenerateLockID("app:" + app)
+}
+
+// supersedeInProgress cancels the in-progress tasks of the app that the new task
+// supersedes and reports how many. Selecting the candidates in Go rather than SQL
+// keeps the image-overlap and authority rules in one place, shared with the
+// in-memory backend.
+func supersedeInProgress(tx *gorm.DB, task models.Task, reason string) (int64, error) {
 	var candidates []state_models.TaskModel
-	if err := state.orm.Model(&state_models.TaskModel{}).
-		Where(`"tasks"."app" = ?`, app).
+	if err := tx.Model(&state_models.TaskModel{}).
+		Where(`"tasks"."app" = ?`, task.App).
 		Where(whereStatusEquals, models.StatusInProgressMessage).
 		Find(&candidates).Error; err != nil {
 		return 0, err
@@ -346,7 +402,7 @@ func (state *PostgresState) CancelInProgressTasks(app string, images []models.Im
 
 	var ids []uuid.UUID
 	for _, candidate := range candidates {
-		if maySupersede(newTaskValidated, candidate.Validated) && imageNamesOverlap(candidate.Images, images) {
+		if maySupersede(task.Validated, candidate.Validated) && imageNamesOverlap(candidate.Images, task.Images) {
 			ids = append(ids, candidate.Id)
 		}
 	}
@@ -354,7 +410,7 @@ func (state *PostgresState) CancelInProgressTasks(app string, images []models.Im
 		return 0, nil
 	}
 
-	result := state.orm.Model(&state_models.TaskModel{}).
+	result := tx.Model(&state_models.TaskModel{}).
 		Where("id IN ?", ids).
 		Where(whereStatusEquals, models.StatusInProgressMessage).
 		Updates(state_models.TaskModel{

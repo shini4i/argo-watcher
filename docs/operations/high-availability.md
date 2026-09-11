@@ -67,7 +67,7 @@ window already elapsed while unattended is marked `aborted` rather than resumed.
 |---|---|
 | Task history and status | Shared — one Postgres table. |
 | Deploy lock and its schedule override | Shared. See [Deployment Lock](../guides/deployment-lock.md#multiple-replicas). |
-| Superseding an in-flight deployment | Shared — a new deployment cancels the older one even when another replica is watching it. |
+| Superseding an in-flight deployment | Shared — a new deployment cancels the older one even when another replica is watching it. Serialised per application, so two submissions arriving at once cannot both survive. |
 | Git write-back | Serialized by a Postgres advisory lock, so concurrent write-backs to one repository queue rather than collide. |
 | Rollout monitoring | Owned by one replica at a time, handed over as described above. |
 | Web UI banners (deploy lock, Argo CD reachability) | Each replica polls the shared state, so clients see a change within a few seconds regardless of which replica they are connected to. |

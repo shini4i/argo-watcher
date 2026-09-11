@@ -278,8 +278,7 @@ func TestArgoAddTask(t *testing.T) {
 
 		stateError := fmt.Errorf("database error")
 		state.EXPECT().GetTasks(deployedHistoryFilter("test-app", anyLimit)).Return([]models.Task{}, int64(0))
-		state.EXPECT().CancelInProgressTasks("test-app", gomock.Any(), gomock.Any(), gomock.Any()).Return(int64(0), nil)
-		state.EXPECT().AddTask(gomock.Any()).Return(nil, stateError)
+		state.EXPECT().SupersedeAndAdd(gomock.Any(), supersededTaskReason).Return(nil, int64(0), stateError)
 
 		argo := &Argo{}
 		argo.Init(state, api, metrics)
@@ -329,14 +328,15 @@ func TestArgoAddTask(t *testing.T) {
 			// cancelled before the new task is persisted; otherwise the new task would
 			// match the cancel filter and cancel itself. gomock.InOrder locks that.
 			state.EXPECT().GetTasks(deployedHistoryFilter("test-app", anyLimit)).Return([]models.Task{}, int64(0))
-			gomock.InOrder(
-				// The task's images MUST be forwarded to the cancel call so superseding
-				// is scoped to matching images, not the whole app. Its own Validated flag
-				// MUST be forwarded verbatim: that is what stops an uncredentialed
-				// deployment from cancelling a credentialed one.
-				state.EXPECT().CancelInProgressTasks("test-app", gomock.Eq(task.Images), supersededTaskReason, gomock.Eq(validated)).Return(int64(0), nil),
-				state.EXPECT().AddTask(gomock.Any()).Return(&newTask, nil),
-			)
+			// The task carries what scopes the supersede: its images keep it from
+			// cancelling the whole app, and its Validated flag is what stops an
+			// uncredentialed deployment cancelling a credentialed one.
+			var superseded models.Task
+			state.EXPECT().SupersedeAndAdd(gomock.Any(), supersededTaskReason).
+				DoAndReturn(func(submitted models.Task, _ string) (*models.Task, int64, error) {
+					superseded = submitted
+					return &newTask, 0, nil
+				})
 
 			argo := &Argo{}
 			argo.Init(state, api, metrics)
@@ -344,32 +344,12 @@ func TestArgoAddTask(t *testing.T) {
 
 			assert.Nil(t, err)
 			assert.NotNil(t, newTaskReturned)
+			assert.Equal(t, task.Images, superseded.Images, "the supersede must be scoped to the task's images")
+			assert.Equal(t, validated, superseded.Validated, "the task's own authority decides what it may supersede")
 			uuidRegexp := regexp.MustCompile("^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-4[a-fA-F0-9]{3}-[8|9|aA|bB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}$")
 			assert.Regexp(t, uuidRegexp, newTaskReturned.Id, "Must match Regexp for uuid v4")
 		})
 	}
-
-	t.Run("Argo - Cancel failure does not block new deployment", func(t *testing.T) {
-		api := newArgoApiMock(ctrl)
-		metrics := mocks.NewMockMetricsInterface(ctrl)
-		state := newTaskRepositoryMock(ctrl)
-
-		metrics.EXPECT().AddAcceptedDeployment()
-
-		task := models.Task{App: "test-app", Images: []models.Image{{Tag: taskImageTag}}, Validated: true}
-		newTask := models.Task{Id: uuid.NewString(), App: "test-app", Images: []models.Image{{Tag: taskImageTag}}}
-
-		state.EXPECT().GetTasks(deployedHistoryFilter("test-app", anyLimit)).Return([]models.Task{}, int64(0))
-		state.EXPECT().CancelInProgressTasks("test-app", gomock.Any(), supersededTaskReason, gomock.Any()).Return(int64(0), fmt.Errorf("cancel failed"))
-		state.EXPECT().AddTask(gomock.Any()).Return(&newTask, nil)
-
-		argo := &Argo{}
-		argo.Init(state, api, metrics)
-		newTaskReturned, err := argo.AddTask(task)
-
-		assert.NoError(t, err, "a best-effort cancel failure must not fail the new deployment")
-		assert.NotNil(t, newTaskReturned)
-	})
 
 	t.Run("Argo - Rollback fields are computed and persisted", func(t *testing.T) {
 		api := newArgoApiMock(ctrl)
@@ -386,11 +366,10 @@ func TestArgoAddTask(t *testing.T) {
 		state.EXPECT().GetTasks(deployedHistoryFilter("test-app", anyLimit)).Return(deployed, int64(len(deployed)))
 
 		var captured models.Task
-		state.EXPECT().CancelInProgressTasks("test-app", gomock.Any(), gomock.Any(), gomock.Any()).Return(int64(0), nil)
-		state.EXPECT().AddTask(gomock.Any()).DoAndReturn(func(task models.Task) (*models.Task, error) {
+		state.EXPECT().SupersedeAndAdd(gomock.Any(), supersededTaskReason).DoAndReturn(func(task models.Task, _ string) (*models.Task, int64, error) {
 			captured = task
 			task.Id = uuid.NewString()
-			return &task, nil
+			return &task, 0, nil
 		})
 
 		argo := &Argo{}
@@ -415,11 +394,10 @@ func TestArgoAddTask(t *testing.T) {
 		state.EXPECT().GetTasks(deployedHistoryFilter("test-app", anyLimit)).Return(deployed, int64(len(deployed)))
 
 		var captured models.Task
-		state.EXPECT().CancelInProgressTasks("test-app", gomock.Any(), gomock.Any(), gomock.Any()).Return(int64(0), nil)
-		state.EXPECT().AddTask(gomock.Any()).DoAndReturn(func(task models.Task) (*models.Task, error) {
+		state.EXPECT().SupersedeAndAdd(gomock.Any(), supersededTaskReason).DoAndReturn(func(task models.Task, _ string) (*models.Task, int64, error) {
 			captured = task
 			task.Id = uuid.NewString()
-			return &task, nil
+			return &task, 0, nil
 		})
 
 		argo := &Argo{}
@@ -446,11 +424,10 @@ func TestArgoAddTask(t *testing.T) {
 		state.EXPECT().GetTasks(deployedHistoryFilter("test-app", anyLimit)).Return([]models.Task{}, int64(0))
 
 		var captured models.Task
-		state.EXPECT().CancelInProgressTasks("test-app", gomock.Any(), gomock.Any(), gomock.Any()).Return(int64(0), nil)
-		state.EXPECT().AddTask(gomock.Any()).DoAndReturn(func(task models.Task) (*models.Task, error) {
+		state.EXPECT().SupersedeAndAdd(gomock.Any(), supersededTaskReason).DoAndReturn(func(task models.Task, _ string) (*models.Task, int64, error) {
 			captured = task
 			task.Id = uuid.NewString()
-			return &task, nil
+			return &task, 0, nil
 		})
 
 		argo := &Argo{}
@@ -699,9 +676,8 @@ func TestArgoAddTaskClaimsTheTask(t *testing.T) {
 
 		stateMock.EXPECT().GetTasks(gomock.Any()).
 			Return([]models.Task{}, int64(0)).AnyTimes()
-		stateMock.EXPECT().CancelInProgressTasks(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-			Return(int64(0), nil).AnyTimes()
-		stateMock.EXPECT().AddTask(gomock.Any()).Return(&models.Task{Id: "new-id", App: task.App}, nil)
+		stateMock.EXPECT().SupersedeAndAdd(gomock.Any(), gomock.Any()).
+			Return(&models.Task{Id: "new-id", App: task.App}, int64(0), nil)
 		stateMock.EXPECT().ClaimTask("new-id").Return(nil).Times(1)
 		metricsMock.EXPECT().AddAcceptedDeployment()
 
@@ -722,9 +698,8 @@ func TestArgoAddTaskClaimsTheTask(t *testing.T) {
 
 		stateMock.EXPECT().GetTasks(gomock.Any()).
 			Return([]models.Task{}, int64(0)).AnyTimes()
-		stateMock.EXPECT().CancelInProgressTasks(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-			Return(int64(0), nil).AnyTimes()
-		stateMock.EXPECT().AddTask(gomock.Any()).Return(&models.Task{Id: "new-id", App: task.App}, nil)
+		stateMock.EXPECT().SupersedeAndAdd(gomock.Any(), gomock.Any()).
+			Return(&models.Task{Id: "new-id", App: task.App}, int64(0), nil)
 		stateMock.EXPECT().ClaimTask("new-id").Return(errors.New("database unreachable"))
 		metricsMock.EXPECT().AddAcceptedDeployment()
 

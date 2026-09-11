@@ -42,13 +42,18 @@ func (state *InMemoryState) AddTask(task models.Task) (*models.Task, error) {
 	state.mu.Lock()
 	defer state.mu.Unlock()
 
-	now := float64(time.Now().Unix())
+	return state.appendTask(task, float64(time.Now().Unix())), nil
+}
+
+// appendTask stamps the server-owned fields and stores the task. The caller must
+// hold the write lock, which is what lets SupersedeAndAdd do both under one.
+func (state *InMemoryState) appendTask(task models.Task, now float64) *models.Task {
 	task.Id = uuid.New().String()
 	task.Created = now
 	task.Updated = now
 	task.Status = models.StatusInProgressMessage
 	state.tasks = append(state.tasks, task)
-	return &task, nil
+	return &task
 }
 
 // taskMatchesFilters reports whether a task falls within the filter's time
@@ -148,29 +153,28 @@ func (state *InMemoryState) SetTaskStatus(id, status, reason string) error {
 	return ErrTaskNotFound
 }
 
-// CancelInProgressTasks marks in-progress tasks for the given app as cancelled
-// and returns how many were updated. A task is only cancelled when it shares at
-// least one image name with the supplied images (tags ignored), so independent
-// per-image deployments of the same app do not cancel each other, and only when
-// it carries no more authority than the superseding deployment.
-func (state *InMemoryState) CancelInProgressTasks(app string, images []models.Image, reason string, newTaskValidated bool) (int64, error) {
+// SupersedeAndAdd cancels the in-progress tasks the new one supersedes and stores
+// it, holding the store's lock across both so a concurrent submission cannot read
+// the in-progress set this one is about to join. See the interface for the rules.
+func (state *InMemoryState) SupersedeAndAdd(task models.Task, reason string) (*models.Task, int64, error) {
 	state.mu.Lock()
 	defer state.mu.Unlock()
 
 	var count int64
 	now := float64(time.Now().Unix())
 	for idx := range state.tasks {
-		if state.tasks[idx].App == app &&
+		if state.tasks[idx].App == task.App &&
 			state.tasks[idx].Status == models.StatusInProgressMessage &&
-			maySupersede(newTaskValidated, state.tasks[idx].Validated) &&
-			imageNamesOverlap(state.tasks[idx].Images, images) {
+			maySupersede(task.Validated, state.tasks[idx].Validated) &&
+			imageNamesOverlap(state.tasks[idx].Images, task.Images) {
 			state.tasks[idx].Status = models.StatusCancelledMessage
 			state.tasks[idx].StatusReason = reason
 			state.tasks[idx].Updated = now
 			count++
 		}
 	}
-	return count, nil
+
+	return state.appendTask(task, now), count, nil
 }
 
 // Check always returns true; in-memory storage is always available.

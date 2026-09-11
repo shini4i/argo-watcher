@@ -66,7 +66,6 @@ func newRepo(ctrl *gomock.Controller) (*mocks.MockTaskRepository, *repoCapture) 
 			return []models.AppSummary{}, nil
 		}).AnyTimes()
 	repo.EXPECT().SetTaskStatus(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
-	repo.EXPECT().CancelInProgressTasks(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(int64(0), nil).AnyTimes()
 	repo.EXPECT().ProcessObsoleteTasks(gomock.Any()).AnyTimes()
 	return repo, capture
 }
@@ -1721,7 +1720,7 @@ func TestAddTaskEndpoint(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		repo, _ := newRepo(ctrl)
 		repo.EXPECT().Check().Return(true).AnyTimes()
-		repo.EXPECT().AddTask(gomock.Any()).Return(nil, fmt.Errorf("argo unavailable")).AnyTimes()
+		repo.EXPECT().SupersedeAndAdd(gomock.Any(), gomock.Any()).Return(nil, int64(0), fmt.Errorf("argo unavailable")).AnyTimes()
 		argo := &argocd.Argo{}
 		argo.Init(repo, newArgoAPI(ctrl), newMetrics(ctrl))
 
@@ -1762,9 +1761,9 @@ func TestAddTaskEndpoint(t *testing.T) {
 		// handler's real WaitForRollout goroutine, which this Env has no updater for.
 		// The flag is already decided by the time AddTask is called.
 		var stored models.Task
-		repo.EXPECT().AddTask(gomock.Any()).DoAndReturn(func(task models.Task) (*models.Task, error) {
+		repo.EXPECT().SupersedeAndAdd(gomock.Any(), gomock.Any()).DoAndReturn(func(task models.Task, _ string) (*models.Task, int64, error) {
 			stored = task
-			return nil, fmt.Errorf("stop before the rollout goroutine")
+			return nil, 0, fmt.Errorf("stop before the rollout goroutine")
 		})
 		argo := &argocd.Argo{}
 		argo.Init(repo, newArgoAPI(ctrl), newMetrics(ctrl))
@@ -1802,9 +1801,9 @@ func TestAddTaskEndpoint(t *testing.T) {
 		repo.EXPECT().Check().Return(true).AnyTimes()
 
 		var stored models.Task
-		repo.EXPECT().AddTask(gomock.Any()).DoAndReturn(func(task models.Task) (*models.Task, error) {
+		repo.EXPECT().SupersedeAndAdd(gomock.Any(), gomock.Any()).DoAndReturn(func(task models.Task, _ string) (*models.Task, int64, error) {
 			stored = task
-			return nil, fmt.Errorf("stop before the rollout goroutine")
+			return nil, 0, fmt.Errorf("stop before the rollout goroutine")
 		})
 		argo := &argocd.Argo{}
 		argo.Init(repo, newArgoAPI(ctrl), newMetrics(ctrl))
@@ -1842,18 +1841,18 @@ func TestAddTaskEndpoint(t *testing.T) {
 			"Authorization": newAuthStrategy(t, true, nil),
 		}
 
-		// A bare mock, not newRepo: its permissive CancelInProgressTasks stub would
-		// absorb the call before the specific expectation below could match it.
+		// A bare mock, not newRepo, so nothing stubbed there can absorb the calls this
+		// case declares for itself.
 		ctrl := gomock.NewController(t)
 		repo := mocks.NewMockTaskRepository(ctrl)
 		repo.EXPECT().GetTasks(deployedHistoryOf("test-app")).Return([]models.Task{}, int64(0))
-		// The literal true ties the handler's authority to the state-layer rule.
-		repo.EXPECT().CancelInProgressTasks("test-app", gomock.Any(), gomock.Any(), true).Return(int64(0), nil)
 
+		// The captured task is what ties the handler's authority to the state-layer
+		// rule: its Validated flag is what SupersedeAndAdd weighs.
 		var stored models.Task
-		repo.EXPECT().AddTask(gomock.Any()).DoAndReturn(func(task models.Task) (*models.Task, error) {
+		repo.EXPECT().SupersedeAndAdd(gomock.Any(), gomock.Any()).DoAndReturn(func(task models.Task, _ string) (*models.Task, int64, error) {
 			stored = task
-			return nil, fmt.Errorf("stop before the rollout goroutine")
+			return nil, 0, fmt.Errorf("stop before the rollout goroutine")
 		})
 		argo := &argocd.Argo{}
 		argo.Init(repo, newArgoAPI(ctrl), newMetrics(ctrl))
@@ -2591,17 +2590,15 @@ func TestAddTaskResolvesTheDeploymentWindow(t *testing.T) {
 
 			stateMock.EXPECT().GetTasks(gomock.Any()).
 				Return([]models.Task{}, int64(0)).AnyTimes()
-			stateMock.EXPECT().CancelInProgressTasks(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-				Return(int64(0), nil).AnyTimes()
 			stateMock.EXPECT().ClaimTask(gomock.Any()).Return(nil).AnyTimes()
 			metricsMock.EXPECT().AddAcceptedDeployment().AnyTimes()
 
 			var stored models.Task
-			stateMock.EXPECT().AddTask(gomock.Any()).DoAndReturn(func(task models.Task) (*models.Task, error) {
+			stateMock.EXPECT().SupersedeAndAdd(gomock.Any(), gomock.Any()).DoAndReturn(func(task models.Task, _ string) (*models.Task, int64, error) {
 				stored = task
 				// Returning an error stops the handler before it spawns a rollout, which
 				// this test is not about.
-				return nil, errors.New("stop here")
+				return nil, 0, errors.New("stop here")
 			})
 
 			lockdown, err := NewLockdown("", lock.NewInMemoryDeployLockStore())
