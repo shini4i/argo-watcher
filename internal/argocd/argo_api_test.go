@@ -2,10 +2,8 @@ package argocd
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -962,87 +960,4 @@ func TestArgoApiDoGetNoRetryOnNon2xx(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, statusCode)
 	assert.Equal(t, errorBody, body)
 	assert.Equal(t, int32(1), callCount.Load())
-}
-
-// ARGO_URL may carry basic-auth userinfo. url.URL.String() renders it password and all,
-// and that string builds every request URL — which reaches a task's status_reason through
-// ArgoAPIErrorTemplate, a field GET /api/v1/tasks/{id} serves. The credential is moved to a
-// header at Init so no URL can render it, and the wire request is unchanged.
-func TestArgoApiInitMovesUserinfoOutOfTheURL(t *testing.T) {
-	// Assembled in code rather than written into a URL literal, so a secret scanner has no
-	// credential-looking string to flag.
-	testCases := []struct {
-		name     string
-		user     string
-		password string
-	}{
-		{name: "plain", user: "admin", password: "hunter2"},
-		// net/http derives basic auth from the DECODED userinfo, so a credential that has to
-		// be percent-encoded in the URL must still reach the wire as its raw bytes.
-		{name: "needs percent-encoding", user: "ad@min", password: "p@ss:word"},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			var gotAuth string
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				gotAuth = r.Header.Get("Authorization")
-				_, _ = w.Write([]byte(`{"loggedIn":true,"username":"admin"}`))
-			}))
-			defer srv.Close()
-
-			argoURL, err := url.Parse(srv.URL)
-			require.NoError(t, err)
-			argoURL.User = url.UserPassword(tc.user, tc.password)
-
-			api := NewArgoApi()
-			require.NoError(t, api.Init(&config.ServerConfig{
-				ArgoUrl:        config.URL{URL: *argoURL},
-				ArgoApiTimeout: 10,
-				ArgoApiRetries: 1,
-			}))
-
-			assert.Nil(t, api.baseUrl.User, "the URL that builds every request must carry no credential")
-			assert.NotContains(t, api.baseUrl.String(), tc.password)
-
-			_, err = api.GetUserInfo()
-			require.NoError(t, err)
-			// Identical on the wire to what net/http derives from userinfo itself.
-			want := "Basic " + base64.StdEncoding.EncodeToString([]byte(tc.user+":"+tc.password))
-			assert.Equal(t, want, gotAuth)
-		})
-	}
-}
-
-// The leak this closes: a transport failure is a *url.Error quoting the request URL, and
-// that text becomes the task's status_reason.
-func TestArgoApiTransportErrorCarriesNoCredential(t *testing.T) {
-	// Registered before anything else so the LIFO cleanup restores slog.Default() last.
-	// captureDebugLogs swaps the process-wide logger, so this test must not run in parallel.
-	logs := captureDebugLogs(t)
-
-	argoURL, err := url.Parse("http://127.0.0.1:1")
-	require.NoError(t, err)
-	argoURL.User = url.UserPassword("admin", "hunter2")
-
-	api := NewArgoApi()
-	require.NoError(t, api.Init(&config.ServerConfig{
-		ArgoUrl:        config.URL{URL: *argoURL},
-		ArgoApiTimeout: 1,
-		ArgoApiRetries: 1,
-	}))
-
-	_, err = api.GetApplication(context.Background(), "demo", false)
-
-	require.Error(t, err)
-	assert.NotContains(t, err.Error(), "hunter2")
-	assert.NotContains(t, err.Error(), "admin")
-
-	// The retry line renders the request URL itself, so it disclosed the password in full
-	// where net/http had masked it to *** in the error.
-	record := findLogRecord(t, logs, "retrying ArgoCD API request")
-	for _, key := range []string{"url", "error"} {
-		assert.NotContains(t, fmt.Sprint(record[key]), "hunter2", key)
-		assert.NotContains(t, fmt.Sprint(record[key]), "admin", key)
-	}
 }

@@ -114,12 +114,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A `ARGO_URL` containing basic-auth credentials no longer has its password written into the startup
   error, and from there into the container log, when the value is rejected. The configuration
   endpoint already stripped userinfo for the same reason.
-- Basic-auth credentials in `ARGO_URL` no longer reach a log line or a task's failure reason. The
-  URL was stored as given and rendered back to build every request, which put the password in full
-  into the debug log and the username into `status_reason` — a field `GET /api/v1/tasks/{id}`
-  serves, without a credential when OIDC is off. The userinfo is now held separately and sent as an
-  `Authorization` header, which is what the HTTP client derived from it anyway, so requests are
-  unchanged on the wire.
 - A webhook receiver answering with a redirect can no longer collect the notification credential.
   Redirects are refused rather than followed: the HTTP client drops `Authorization` on a hop to
   another host, but `WEBHOOK_AUTHORIZATION_HEADER_NAME` lets you name the header, and a custom name

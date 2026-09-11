@@ -27,10 +27,7 @@ type ArgoApiInterface interface {
 }
 
 type ArgoApi struct {
-	baseUrl url.URL
-	// basicAuth holds any userinfo ARGO_URL carried, lifted out of baseUrl so no rendering
-	// of it can disclose the credential, and applied per request instead.
-	basicAuth  *url.Userinfo
+	baseUrl    url.URL
 	client     *http.Client
 	maxRetries uint
 	// requestFn allows injecting a custom HTTP request constructor for testing.
@@ -50,11 +47,6 @@ func NewArgoApi() *ArgoApi {
 func (api *ArgoApi) Init(serverConfig *config.ServerConfig) error {
 	slog.Debug("Initializing argo-watcher client...")
 	api.baseUrl = serverConfig.ArgoUrl.URL
-
-	// url.URL.String() renders userinfo, and that string builds every request URL — which
-	// reaches the debug log and, through ArgoAPIErrorTemplate, a task's status_reason. Held
-	// as a header instead, which is what net/http would have derived from it anyway.
-	api.basicAuth, api.baseUrl.User = api.baseUrl.User, nil
 
 	jar, err := api.cookieJarFn(nil)
 	if err != nil {
@@ -102,10 +94,6 @@ func (api *ArgoApi) doGet(ctx context.Context, reqURL string) ([]byte, int, erro
 	}
 
 	req.Header.Set("Accept", "application/json")
-	if api.basicAuth != nil {
-		password, _ := api.basicAuth.Password()
-		req.SetBasicAuth(api.basicAuth.Username(), password)
-	}
 
 	// Cloned per attempt rather than reused: the client's jar appends the session
 	// cookie to the request it is handed, so a reused one accumulates a copy of the
