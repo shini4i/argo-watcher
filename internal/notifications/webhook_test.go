@@ -470,3 +470,29 @@ func TestSendDoesNotLeakTheWebhookURLOnAMalformedURL(t *testing.T) {
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), "SuPerSecreT")
 }
+
+// A cause may itself be a *url.Error — an HTTPClient that retries and wraps, say. Stripping
+// only the outermost one leaves the nested URL to be quoted when the cause is formatted, so
+// every layer is stripped and only the operations survive.
+func TestSendDoesNotLeakANestedURLError(t *testing.T) {
+	tmpl := template.Must(template.New("webhook").Parse(`{"id":"{{.Id}}"}`))
+	root := errors.New("connect: connection refused")
+	inner := &url.Error{Op: "Get", URL: "https://hooks.example.com/services/InnerSecreT", Err: root}
+	outer := &url.Error{Op: "Post", URL: "https://hooks.example.com/services/OuterSecreT", Err: inner}
+
+	ctrl := gomock.NewController(t)
+	mockClient := mocks.NewMockHTTPClient(ctrl)
+	mockClient.EXPECT().Do(gomock.Any()).Return(nil, outer)
+
+	service := &WebhookStrategy{url: outer.URL, client: mockClient, template: tmpl}
+
+	err := service.Send(models.Task{Id: "task-id", App: "demo"})
+
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "OuterSecreT")
+	assert.NotContains(t, err.Error(), "InnerSecreT")
+	// Both operations and the root cause are still reported.
+	assert.Contains(t, err.Error(), "Post")
+	assert.Contains(t, err.Error(), "Get")
+	assert.ErrorIs(t, err, root)
+}

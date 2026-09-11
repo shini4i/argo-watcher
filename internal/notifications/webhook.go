@@ -126,17 +126,31 @@ func jsonStringBody(s string) string {
 	return strings.TrimSuffix(strings.TrimPrefix(quoted, `"`), `"`)
 }
 
-// redactURL strips the request URL out of a transport error: net/http reports every failure
-// as a *url.Error quoting the whole URL, and a webhook URL is itself the credential. The inner
-// cause is kept because it tells a timeout from a refused connection from a bad certificate;
-// every cause reachable here names at most the host, never the path or query holding the secret.
+// redactURL strips every request URL out of a transport error: net/http reports a failure as a
+// *url.Error quoting the whole URL, and a webhook URL is itself the credential. Each layer is
+// unwrapped, because a nested *url.Error would quote its own URL once the cause is formatted.
+// The operations and the root cause are kept, so a timeout still reads as one.
 func redactURL(err error) error {
-	var urlErr *url.Error
-	if errors.As(err, &urlErr) {
-		return fmt.Errorf("%s: %w", urlErr.Op, urlErr.Err)
+	var ops []string
+
+	for {
+		var urlErr *url.Error
+		if !errors.As(err, &urlErr) {
+			break
+		}
+
+		ops = append(ops, urlErr.Op)
+		if urlErr.Err == nil {
+			return errors.New(strings.Join(ops, ": "))
+		}
+		err = urlErr.Err
 	}
 
-	return err
+	if len(ops) == 0 {
+		return err
+	}
+
+	return fmt.Errorf("%s: %w", strings.Join(ops, ": "), err)
 }
 
 // WebhookStrategy holds the configuration and a pre-compiled template for sending webhooks.
