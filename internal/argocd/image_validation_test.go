@@ -351,7 +351,7 @@ func TestWaitForRolloutCountsImageNotPartOfAppAsFailed(t *testing.T) {
 			return nil
 		})
 
-	updater.WaitForRollout(task, false)
+	updater.WaitForRollout(task, false, neverDraining)
 
 	assert.Contains(t, capturedReason, "is not part of application")
 }

@@ -44,7 +44,7 @@ func (updater *ArgoStatusUpdater) ResumeRollout(task models.Task, draining func(
 		"id", task.Id, "app", task.App, "remaining", remaining)
 
 	task.Timeout = int(remaining.Seconds())
-	updater.waitForRollout(task, true, draining)
+	updater.WaitForRollout(task, true, draining)
 }
 
 // remainingWindow returns how much of the task's rollout window is left at now,

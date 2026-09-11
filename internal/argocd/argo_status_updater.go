@@ -112,28 +112,11 @@ func (updater *ArgoStatusUpdater) Close(ctx context.Context) {
 	}
 }
 
-// WaitForRollout monitors the application until it reaches a final state (deployed
-// or failed), or stops early if a newer deployment for the same app supersedes it
-// (issue #353), or if another replica takes the task over.
-//
-// resumed marks a task picked up from another replica: its start notification was
-// already sent by the replica that accepted it, so sending a second one would
-// announce the same deployment twice.
-func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task, resumed bool) {
-	updater.waitForRollout(task, resumed, neverDraining)
-}
-
-// neverDraining is the abandon predicate for a rollout monitored by the replica
-// that accepted the deployment. Such a task has nowhere to be handed back to:
-// nothing else holds its claim, so it is watched until it finishes or until the
-// process ends with it.
-func neverDraining() bool { return false }
-
-// waitForRollout is WaitForRollout with the condition under which this replica
-// gives the rollout up: draining reports that shutdown has begun, which ends the
-// monitoring as a takeover would — without a status, so the replica that resumes
-// the task records the outcome instead.
-func (updater *ArgoStatusUpdater) waitForRollout(task models.Task, resumed bool, draining func() bool) {
+// WaitForRollout monitors the application until it reaches a final state, giving it
+// up without a status when a newer deployment supersedes it (issue #353), when
+// another replica takes the task over, or when draining reports shutdown has begun.
+// resumed marks a task already announced as started by the replica that accepted it.
+func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task, resumed bool, draining func() bool) {
 	updater.monitor.BeginTracking()
 	defer updater.monitor.EndTracking()
 
@@ -175,6 +158,10 @@ func (updater *ArgoStatusUpdater) waitForRollout(task models.Task, resumed bool,
 		// whatever wrote it, and neither a cancelled nor an aborted task is re-claimed by
 		// a sweep — so this replica is the last one able to announce it.
 	case draining():
+		// Covers the write-back errors shutdown raises (errBatcherClosed,
+		// errWritebackDraining) as well as a poll given up: the predicate is true from
+		// the first shutdown phase, before the batcher is torn down. Classifying those
+		// errors on their own instead would abandon a rollout nothing can resume.
 		err = errReplicaDraining
 	}
 

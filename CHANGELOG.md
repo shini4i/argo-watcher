@@ -47,6 +47,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   milliseconds and an empty `updated`; both are now Unix seconds, matching the API responses and the
   in-memory backend, so a webhook template that renders `{{ .Created }}` or `{{ .Updated }}` gets
   the documented value.
+- A deployment still running when Argo Watcher is restarted is no longer recorded as `failed`. On
+  the PostgreSQL backend it is handed to another replica, which watches it to its real outcome —
+  previously the shutdown cut off the deployment's git write-back and that was reported as the
+  deployment failing, and a failed task is never picked up again. Only a deployment the replica had
+  accepted itself was affected; one already taken over from another replica was handed on correctly.
+  With the in-memory backend there is no other replica to hand it to, so an interrupted deployment
+  is still reported as failed rather than disappearing without a result.
 
 ## [1.3.0] - 2026-09-09
 
