@@ -1,10 +1,13 @@
 package notifications
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"testing"
@@ -405,4 +408,91 @@ func sortedKeys(m map[string]any) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// The webhook URL is the credential (config.WebhookConfig keeps it out of
+// GET /api/v1/config for that reason), and the transport reports a failure as a
+// *url.Error quoting the whole URL. One timeout would otherwise log the secret.
+func TestSendDoesNotLeakTheWebhookURL(t *testing.T) {
+	const secretURL = "https://hooks.example.com/services/T000/B000/SuPerSecreT"
+
+	tmpl := template.Must(template.New("webhook").Parse(`{"id":"{{.Id}}"}`))
+	task := models.Task{Id: "task-id", App: "demo"}
+
+	// Every shape the transport actually returns: the inner cause differs, the
+	// *url.Error wrapper carrying the URL does not.
+	testCases := []struct {
+		name   string
+		cause  error
+		wantIs error
+	}{
+		{name: "timeout", cause: context.DeadlineExceeded, wantIs: context.DeadlineExceeded},
+		{name: "connection refused", cause: &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connect: connection refused")}},
+		{name: "dns", cause: &net.DNSError{Err: "no such host", Name: "hooks.example.com"}},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			mockClient := mocks.NewMockHTTPClient(ctrl)
+			mockClient.EXPECT().Do(gomock.Any()).
+				Return(nil, &url.Error{Op: "Post", URL: secretURL, Err: tc.cause})
+
+			service := &WebhookStrategy{url: secretURL, client: mockClient, template: tmpl}
+
+			err := service.Send(task)
+
+			require.Error(t, err)
+			assert.NotContains(t, err.Error(), "SuPerSecreT", "the secret path must never reach the error")
+			assert.NotContains(t, err.Error(), secretURL)
+			// Still diagnosable: the operator must be able to tell these apart.
+			assert.Contains(t, err.Error(), tc.cause.Error())
+			// The chain must survive the redaction, or a caller can no longer classify it.
+			if tc.wantIs != nil {
+				assert.ErrorIs(t, err, tc.wantIs)
+			}
+		})
+	}
+}
+
+// A malformed URL fails in http.NewRequest, whose *url.Error quotes the value it
+// rejected — the same leak by a different route.
+func TestSendDoesNotLeakTheWebhookURLOnAMalformedURL(t *testing.T) {
+	tmpl := template.Must(template.New("webhook").Parse(`{"id":"{{.Id}}"}`))
+	service := &WebhookStrategy{
+		url:      "https://hooks.example.com/services/SuPerSecreT\n",
+		client:   unusedHTTPClient(t),
+		template: tmpl,
+	}
+
+	err := service.Send(models.Task{Id: "task-id", App: "demo"})
+
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "SuPerSecreT")
+}
+
+// A cause may itself be a *url.Error — an HTTPClient that retries and wraps, say. Stripping
+// only the outermost one leaves the nested URL to be quoted when the cause is formatted, so
+// every layer is stripped and only the operations survive.
+func TestSendDoesNotLeakANestedURLError(t *testing.T) {
+	tmpl := template.Must(template.New("webhook").Parse(`{"id":"{{.Id}}"}`))
+	root := errors.New("connect: connection refused")
+	inner := &url.Error{Op: "Get", URL: "https://hooks.example.com/services/InnerSecreT", Err: root}
+	outer := &url.Error{Op: "Post", URL: "https://hooks.example.com/services/OuterSecreT", Err: inner}
+
+	ctrl := gomock.NewController(t)
+	mockClient := mocks.NewMockHTTPClient(ctrl)
+	mockClient.EXPECT().Do(gomock.Any()).Return(nil, outer)
+
+	service := &WebhookStrategy{url: outer.URL, client: mockClient, template: tmpl}
+
+	err := service.Send(models.Task{Id: "task-id", App: "demo"})
+
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "OuterSecreT")
+	assert.NotContains(t, err.Error(), "InnerSecreT")
+	// Both operations and the root cause are still reported.
+	assert.Contains(t, err.Error(), "Post")
+	assert.Contains(t, err.Error(), "Get")
+	assert.ErrorIs(t, err, root)
 }

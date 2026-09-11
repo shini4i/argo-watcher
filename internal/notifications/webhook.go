@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"mime"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"text/template"
@@ -125,6 +126,33 @@ func jsonStringBody(s string) string {
 	return strings.TrimSuffix(strings.TrimPrefix(quoted, `"`), `"`)
 }
 
+// redactURL strips every request URL out of a transport error: net/http reports a failure as a
+// *url.Error quoting the whole URL, and a webhook URL is itself the credential. Each layer is
+// unwrapped, because a nested *url.Error would quote its own URL once the cause is formatted.
+// The operations and the root cause are kept, so a timeout still reads as one.
+func redactURL(err error) error {
+	var ops []string
+
+	for {
+		var urlErr *url.Error
+		if !errors.As(err, &urlErr) {
+			break
+		}
+
+		ops = append(ops, urlErr.Op)
+		if urlErr.Err == nil {
+			return errors.New(strings.Join(ops, ": "))
+		}
+		err = urlErr.Err
+	}
+
+	if len(ops) == 0 {
+		return err
+	}
+
+	return fmt.Errorf("%s: %w", strings.Join(ops, ": "), err)
+}
+
 // WebhookStrategy holds the configuration and a pre-compiled template for sending webhooks.
 type WebhookStrategy struct {
 	url                  string
@@ -189,7 +217,7 @@ func (s *WebhookStrategy) Send(task models.Task) error {
 
 	req, err := http.NewRequestWithContext(ctx, "POST", s.url, &payload)
 	if err != nil {
-		return fmt.Errorf("failed to create webhook request: %w", err)
+		return fmt.Errorf("failed to create webhook request: %w", redactURL(err))
 	}
 
 	req.Header.Set("Content-Type", s.contentType)
@@ -199,7 +227,7 @@ func (s *WebhookStrategy) Send(task models.Task) error {
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to send webhook: %w", err)
+		return fmt.Errorf("failed to send webhook: %w", redactURL(err))
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {

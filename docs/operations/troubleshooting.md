@@ -341,7 +341,7 @@ Also check whether `LOCKDOWN_SCHEDULE` covers the current time. Schedules are ev
 
 **How to verify**
 
-- Look for `Failed to dispatch notification` in the server log — it carries the response code and the receiver's body. `LOG_LEVEL=debug` additionally logs the rendered payload.
+- Look for `Failed to dispatch notification` in the server log — it carries the response code and the receiver's body. `LOG_LEVEL=debug` additionally logs the rendered payload. The receiver's URL is deliberately left out, since it is a secret for most receivers; a connection that never got that far is reported by its cause alone (`Post: dial tcp …`).
 - Reproduce the call by hand:
 
     ```bash
