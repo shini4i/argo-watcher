@@ -29,7 +29,7 @@ func (p *PostgresLocker) WithLock(key string, f func() error) error {
 	)
 
 	txErr := p.db.Transaction(func(tx *gorm.DB) error {
-		lockID := generateLockID(key)
+		lockID := GenerateLockID(key)
 		if err := tx.Exec("SELECT pg_advisory_xact_lock(?)", lockID).Error; err != nil {
 			return err
 		}
@@ -55,9 +55,10 @@ func (p *PostgresLocker) WithLock(key string, f func() error) error {
 	return fnErr
 }
 
-// generateLockID creates a deterministic 64-bit integer from a string key.
-// Using FNV-1a for a fast, non-cryptographic hash suitable for this use case.
-func generateLockID(key string) int64 {
+// GenerateLockID creates a deterministic 64-bit integer from a string key, using
+// FNV-1a. Every caller must derive its key through this: advisory locks share one
+// flat namespace, so two hashings of the same resource would not exclude each other.
+func GenerateLockID(key string) int64 {
 	hasher := fnv.New64a()
 	// The Write method on hash.Hash never returns an error.
 	_, _ = io.WriteString(hasher, key)

@@ -55,6 +55,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   With the in-memory backend there is no other replica to hand it to, so an interrupted deployment
   is still reported as failed rather than disappearing without a result.
 
+- Two deployments of the same application and image submitted at the same moment no longer both
+  run. Each used to check for a rollout to supersede before either had been recorded, so neither
+  cancelled the other, both were monitored, and both wrote back — leaving the Git repository on
+  whichever tag happened to be pushed last while both deployments reported success. Superseding and
+  recording a deployment are now a single step, so the later submission always wins.
+
 ## [1.3.0] - 2026-09-09
 
 ### Added

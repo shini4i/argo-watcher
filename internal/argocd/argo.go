@@ -196,32 +196,20 @@ func (argo *Argo) AddTask(task models.Task) (*models.Task, error) {
 	task.Updated = 0
 
 	// Superseding stops the watcher polling ArgoCD for a rollout nobody is waiting
-	// on anymore (issue #353). Matching on image name
-	// (not just the app) keeps independent per-image deployments of the same app
-	// from cancelling each other. This runs against the shared state, so in an HA
-	// setup it also cancels rollouts being watched by other replicas. Best-effort:
-	// a failure here must not block the new deployment.
-	if cancelled, err := argo.State.CancelInProgressTasks(task.App, task.Images, supersededTaskReason, task.Validated); err != nil {
-		slog.Warn("Failed to cancel in-progress deployments for the app", "error", err, "app", task.App)
-	} else if cancelled > 0 {
-		slog.Info("Cancelled in-progress deployment(s) superseded by the new task", "cancelled", cancelled, "app", task.App)
-	}
-
-	newTask, err := argo.State.AddTask(task)
+	// on anymore (issue #353). It shares a step with the insert so two submissions
+	// racing here cannot each miss the other's task and both survive.
+	newTask, cancelled, err := argo.State.SupersedeAndAdd(task, supersededTaskReason)
 	if err != nil {
 		return nil, err
 	}
+	if cancelled > 0 {
+		slog.Info("Cancelled in-progress deployment(s) superseded by the new task", "cancelled", cancelled, "app", task.App)
+	}
 
-	// This replica is about to start monitoring the rollout, so it claims the task
-	// before any sweep can offer it to another replica.
-	//
-	// Best-effort on purpose: a claim that cannot be written is a database blip, and
-	// refusing the deployment over it would be a worse outcome than proceeding. An
-	// unclaimed task is nobody else's to take for a full lease — the sweep leaves
-	// rows that young alone — so this replica monitors it unopposed, discovers at
-	// its first renewal that it holds no claim, and stops without writing a status.
-	// A sweep then picks the task up and resumes it, re-running the write-back
-	// idempotently. The cost is a delayed deployment, not a lost or duplicated one.
+	// This replica is about to monitor the rollout, so it claims the task before any
+	// sweep can offer it elsewhere. Best-effort: a claim that cannot be written is a
+	// database blip, and the sweep leaves rows this young alone, so the worst case is
+	// a handover on the first failed renewal — a delayed deployment, not a lost one.
 	if err := argo.State.ClaimTask(newTask.Id); err != nil {
 		slog.Warn("Failed to claim the new task for this replica", "error", err, "id", newTask.Id)
 	}
@@ -235,11 +223,10 @@ func (argo *Argo) AddTask(task models.Task) (*models.Task, error) {
 	return newTask, nil
 }
 
-// detectRollback returns the ID of the task this deployment rolls back to, or an
-// empty string when it is not a rollback. A rollback is a deployment whose image set
-// was successfully deployed at some earlier point for the app AND differs from the
-// current (most recently deployed) version; redeploying the current version is not a
-// rollback. The returned ID is the most recent earlier task carrying that image set.
+// detectRollback returns the ID of the most recent earlier task this deployment
+// rolls back to, or an empty string when it is not one. A rollback's image set was
+// deployed successfully at some earlier point for the app AND differs from the
+// current version — redeploying the current version is not a rollback.
 func (argo *Argo) detectRollback(task models.Task) string {
 	deployed, _ := argo.State.GetTasks(models.TaskFilter{
 		EndTime: float64(time.Now().Unix()),
@@ -274,13 +261,10 @@ func imageSignature(task models.Task) string {
 	return strings.Join(normalizeImages(task.ListImages()), ",")
 }
 
-// GetTasks retrieves tasks from the state.
-//
-// Listing is deliberately NOT gated on ArgoCD reachability. Stored task history must
-// stay viewable even when ArgoCD is unavailable (e.g. a DNS/network outage): coupling
-// the read to a live ArgoCD `session/userinfo` call would make the whole list hang on
-// the API retry budget and then hide existing tasks behind an error. Note the /readyz
-// endpoint probes only the state backend (SimpleHealthCheck), not ArgoCD.
+// GetTasks retrieves tasks from the state. Listing is deliberately NOT gated on
+// ArgoCD reachability: coupling the read to a live `session/userinfo` call would
+// hang the whole list on the API retry budget during an outage and then hide
+// existing tasks behind an error. /readyz probes only the state backend.
 func (argo *Argo) GetTasks(filter models.TaskFilter) models.TasksResponse {
 	tasks, total := argo.State.GetTasks(filter)
 

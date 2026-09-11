@@ -22,8 +22,8 @@
 #      and clearing it unblocks deploys again. On in-memory state the lock never
 #      leaves the process that set it and dies with it.
 #   5. supersession under real git contention works on Postgres — a newer deploy
-#      cancels an older retrying one via CancelInProgressTasks (hand-written SQL
-#      that DIFFERS from the in-memory Go path) and the superseded task never
+#      cancels an older retrying one via SupersedeAndAdd, serialised per app by a
+#      Postgres advisory lock the in-memory path does not need, and the superseded task never
 #      clobbers the winner's write-back. This guards git-op correctness on the
 #      Postgres backend specifically.
 #
@@ -201,10 +201,10 @@ wait_ws "$probe_out" unlocked \
 ok "the watcher broadcast 'unlocked' for the shared release"
 
 echo "=== supersession under git contention on Postgres ==="
-# race-supersede.sh drives CancelInProgressTasks — the one deploy-flow query whose
-# SQL differs from the in-memory path. It is self-contained (waits for its app,
-# resets it to a baseline, runs its own competitor) and runs on app1, independent of
-# app4 above; reuses the client binary built here.
+# race-supersede.sh drives SupersedeAndAdd — the one deploy-flow step serialised per
+# app by a Postgres advisory lock, absent on the in-memory path. Self-contained (waits
+# for its app, resets it to a baseline, runs its own competitor) and runs on app1,
+# independent of app4 above; reuses the client binary built here.
 CLIENT_BIN="$CLIENT_BIN" DEPLOY_TOKEN="$DEPLOY_TOKEN" "${here}/race-supersede.sh" \
   || die "supersession under contention failed on Postgres"
 

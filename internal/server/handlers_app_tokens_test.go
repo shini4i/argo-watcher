@@ -422,8 +422,6 @@ func TestAppTokenAuthorizesAnInScopeSubmission(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			repo := mocks.NewMockTaskRepository(ctrl)
 			repo.EXPECT().Check().Return(true).AnyTimes()
-			repo.EXPECT().CancelInProgressTasks(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-				Return(int64(0), nil).AnyTimes()
 			// AddTask consults the history for rollback detection before inserting.
 			repo.EXPECT().GetTasks(gomock.Any()).
 				Return([]models.Task{}, int64(0)).AnyTimes()
@@ -431,9 +429,9 @@ func TestAppTokenAuthorizesAnInScopeSubmission(t *testing.T) {
 			// Capture the task, then fail the insert: the success path would spawn the
 			// real rollout goroutine. Validated is already decided by this point.
 			var stored models.Task
-			repo.EXPECT().AddTask(gomock.Any()).DoAndReturn(func(task models.Task) (*models.Task, error) {
+			repo.EXPECT().SupersedeAndAdd(gomock.Any(), gomock.Any()).DoAndReturn(func(task models.Task, _ string) (*models.Task, int64, error) {
 				stored = task
-				return nil, errors.New("stop before the rollout goroutine")
+				return nil, 0, errors.New("stop before the rollout goroutine")
 			})
 
 			lockdown, err := NewLockdown("", lock.NewInMemoryDeployLockStore())

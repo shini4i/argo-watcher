@@ -46,6 +46,9 @@ func newPostgresTestEnv(t *testing.T, opts ...func(*config.ServerConfig)) *postg
 
 	db, err := env.state.orm.DB()
 	require.NoError(t, err)
+	// Connect sets no connection limit, so a pool left open outlives its test and a
+	// long run ends in "too many clients" rather than a real failure.
+	t.Cleanup(func() { _ = db.Close() })
 
 	_, err = db.Exec("TRUNCATE TABLE tasks")
 	require.NoError(t, err)
@@ -270,7 +273,7 @@ func TestPostgresState_GetTask_BackendError(t *testing.T) {
 
 // TestPostgresState_ValidatedFlagPersists locks the storage contract the
 // authority rule depends on: whether a task presented a credential must survive
-// the round trip, because CancelInProgressTasks reads it back from the row of a
+// the round trip, because SupersedeAndAdd reads it back from the row of a
 // task that may have been created by another replica.
 func TestPostgresState_ValidatedFlagPersists(t *testing.T) {
 	env := newPostgresTestEnv(t)

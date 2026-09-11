@@ -54,19 +54,11 @@ type TaskRepository interface {
 	// GetTask and SetTaskStatus return ErrTaskNotFound when no task matches id.
 	GetTask(id string) (*models.Task, error)
 	SetTaskStatus(id, status, reason string) error
-	// CancelInProgressTasks marks in-progress tasks for the given app as
-	// cancelled and returns how many were affected. A task is only cancelled when
-	// it shares at least one image name with the supplied images, so independent
-	// per-image deployments of the same app do not cancel each other (issue #353).
-	// Tags are ignored on purpose: a newer tag of the same image must still
-	// supersede the older in-flight rollout. Operating on the shared state makes
-	// the cancellation visible to every replica, not just the one handling the new
-	// deployment.
-	//
-	// newTaskValidated is the superseding deployment's own authority: an
-	// uncredentialed task never cancels a credentialed one, which would otherwise
-	// let an anonymous request abort a credentialed rollout's git write-back.
-	CancelInProgressTasks(app string, images []models.Image, reason string, newTaskValidated bool) (int64, error)
+	// SupersedeAndAdd cancels the in-progress tasks the new one supersedes and stores
+	// it atomically, returning it with the number cancelled. It supersedes a task of
+	// the same app sharing an image name (tags ignored) that is no more credentialed
+	// than itself (issue #353); the atomicity stops racing submissions both surviving.
+	SupersedeAndAdd(task models.Task, reason string) (*models.Task, int64, error)
 	Check() bool
 	ProcessObsoleteTasks(retryTimes uint)
 

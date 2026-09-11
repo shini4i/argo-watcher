@@ -37,10 +37,11 @@ func submitTask(t *testing.T, body string, opts ...func(*config.ServerConfig)) (
 	repo.EXPECT().Check().Return(true).AnyTimes()
 
 	var stored models.Task
-	repo.EXPECT().AddTask(gomock.Any()).DoAndReturn(func(task models.Task) (*models.Task, error) {
-		stored = task
-		return nil, fmt.Errorf("stop before the rollout goroutine")
-	}).AnyTimes()
+	repo.EXPECT().SupersedeAndAdd(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(task models.Task, _ string) (*models.Task, int64, error) {
+			stored = task
+			return nil, 0, fmt.Errorf("stop before the rollout goroutine")
+		}).AnyTimes()
 
 	argo := &argocd.Argo{}
 	argo.Init(repo, newArgoAPI(ctrl), newMetrics(ctrl))

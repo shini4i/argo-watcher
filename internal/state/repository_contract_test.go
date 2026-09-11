@@ -1,6 +1,7 @@
 package state
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -101,7 +102,7 @@ func runTaskRepositoryContract(t *testing.T, newRepository func(t *testing.T) Ta
 	})
 
 	// Tags are ignored, and a single shared image name counts as an overlap.
-	t.Run("CancelInProgressTasks cancels only in-progress tasks of the app sharing an image name", func(t *testing.T) {
+	t.Run("SupersedeAndAdd cancels only in-progress tasks of the app sharing an image name", func(t *testing.T) {
 		repository := newRepository(t)
 
 		inProgress, err := repository.AddTask(contractTask("app-a", "image-a"))
@@ -114,8 +115,7 @@ func runTaskRepositoryContract(t *testing.T, newRepository func(t *testing.T) Ta
 		require.NoError(t, err)
 		require.NoError(t, repository.SetTaskStatus(finished.Id, models.StatusDeployedMessage, ""))
 
-		count, err := repository.CancelInProgressTasks("app-a", []models.Image{{Image: "image-a", Tag: "v2"}}, "superseded", false)
-		require.NoError(t, err)
+		count := supersedeWith(t, repository, "app-a", []models.Image{{Image: "image-a", Tag: "v2"}}, false)
 		assert.Equal(t, int64(1), count, "only the in-progress app-a task sharing image-a should be cancelled")
 
 		assertStatus(t, repository, inProgress.Id, models.StatusCancelledMessage)
@@ -129,7 +129,7 @@ func runTaskRepositoryContract(t *testing.T, newRepository func(t *testing.T) Ta
 	})
 
 	// Overlap, not set equality: sharing one of several images is enough.
-	t.Run("CancelInProgressTasks matches on any shared image name", func(t *testing.T) {
+	t.Run("SupersedeAndAdd matches on any shared image name", func(t *testing.T) {
 		repository := newRepository(t)
 
 		overlapping := contractTask("app-a", "image-a")
@@ -142,15 +142,14 @@ func runTaskRepositoryContract(t *testing.T, newRepository func(t *testing.T) Ta
 		disjointTask, err := repository.AddTask(disjoint)
 		require.NoError(t, err)
 
-		count, err := repository.CancelInProgressTasks("app-a", []models.Image{{Image: "image-b", Tag: "v2"}, {Image: "image-e", Tag: "v1"}}, "superseded", false)
-		require.NoError(t, err)
+		count := supersedeWith(t, repository, "app-a", []models.Image{{Image: "image-b", Tag: "v2"}, {Image: "image-e", Tag: "v1"}}, false)
 		assert.Equal(t, int64(1), count, "only the task sharing an image name should be cancelled")
 
 		assertStatus(t, repository, overlappingTask.Id, models.StatusCancelledMessage)
 		assertStatus(t, repository, disjointTask.Id, models.StatusInProgressMessage)
 	})
 
-	t.Run("CancelInProgressTasks reports how many tasks it cancelled", func(t *testing.T) {
+	t.Run("SupersedeAndAdd reports how many tasks it cancelled", func(t *testing.T) {
 		repository := newRepository(t)
 
 		first, err := repository.AddTask(contractTask("app-a", "image-a"))
@@ -158,12 +157,10 @@ func runTaskRepositoryContract(t *testing.T, newRepository func(t *testing.T) Ta
 		second, err := repository.AddTask(contractTask("app-a", "image-a"))
 		require.NoError(t, err)
 
-		count, err := repository.CancelInProgressTasks("app-a", []models.Image{{Image: "image-z", Tag: "v1"}}, "superseded", false)
-		require.NoError(t, err)
+		count := supersedeWith(t, repository, "app-a", []models.Image{{Image: "image-z", Tag: "v1"}}, false)
 		assert.Equal(t, int64(0), count, "a deployment sharing no image should cancel nothing")
 
-		count, err = repository.CancelInProgressTasks("app-a", []models.Image{{Image: "image-a", Tag: "v2"}}, "superseded", false)
-		require.NoError(t, err)
+		count = supersedeWith(t, repository, "app-a", []models.Image{{Image: "image-a", Tag: "v2"}}, false)
 		assert.Equal(t, int64(2), count, "every matching in-progress task must be cancelled")
 
 		assertStatus(t, repository, first.Id, models.StatusCancelledMessage)
@@ -173,7 +170,7 @@ func runTaskRepositoryContract(t *testing.T, newRepository func(t *testing.T) Ta
 	// An uncredentialed deployment must never cancel a credentialed one: that would let an
 	// anonymous request abort a credentialed rollout's pending git write-back. Every other
 	// combination supersedes, so token-less setups keep behaving as before.
-	t.Run("CancelInProgressTasks honours the authority rule", func(t *testing.T) {
+	t.Run("SupersedeAndAdd honours the authority rule", func(t *testing.T) {
 		tests := []struct {
 			name             string
 			victimValidated  bool
@@ -195,8 +192,7 @@ func runTaskRepositoryContract(t *testing.T, newRepository func(t *testing.T) Ta
 				inFlight, err := repository.AddTask(victim)
 				require.NoError(t, err)
 
-				count, err := repository.CancelInProgressTasks("app-a", []models.Image{{Image: "image-a", Tag: "v2"}}, "superseded", tt.newTaskValidated)
-				require.NoError(t, err)
+				count := supersedeWith(t, repository, "app-a", []models.Image{{Image: "image-a", Tag: "v2"}}, tt.newTaskValidated)
 
 				if tt.wantCancelled {
 					assert.Equal(t, int64(1), count)
@@ -211,7 +207,7 @@ func runTaskRepositoryContract(t *testing.T, newRepository func(t *testing.T) Ta
 
 	// One app with a credentialed and an uncredentialed rollout in flight: an anonymous
 	// deployment supersedes only the uncredentialed one. This is why the rule is per task.
-	t.Run("CancelInProgressTasks leaves the credentialed rollout of a mixed fleet running", func(t *testing.T) {
+	t.Run("SupersedeAndAdd leaves the credentialed rollout of a mixed fleet running", func(t *testing.T) {
 		repository := newRepository(t)
 
 		credentialed := contractTask("app-a", "image-a")
@@ -222,13 +218,99 @@ func runTaskRepositoryContract(t *testing.T, newRepository func(t *testing.T) Ta
 		anonymousTask, err := repository.AddTask(contractTask("app-a", "image-a"))
 		require.NoError(t, err)
 
-		count, err := repository.CancelInProgressTasks("app-a", []models.Image{{Image: "image-a", Tag: "v2"}}, "superseded", false)
-		require.NoError(t, err)
+		count := supersedeWith(t, repository, "app-a", []models.Image{{Image: "image-a", Tag: "v2"}}, false)
 		assert.Equal(t, int64(1), count, "only the uncredentialed rollout may be superseded")
 
 		assertStatus(t, repository, credentialedTask.Id, models.StatusInProgressMessage)
 		assertStatus(t, repository, anonymousTask.Id, models.StatusCancelledMessage)
 	})
+
+	// Superseding and inserting are one step so two submissions racing for the same
+	// app and image cannot each find the other's task missing. Both would then be
+	// monitored and both would write back, letting git settle on whichever tag
+	// pushed last while each rollout reported success.
+	t.Run("SupersedeAndAdd leaves one rollout in progress under concurrent submissions", func(t *testing.T) {
+		repository := newRepository(t)
+
+		const submissions = 64
+		type outcome struct {
+			task      *models.Task
+			cancelled int64
+			err       error
+		}
+		// Collected rather than asserted in the goroutines, so a backend failure names
+		// itself instead of surfacing as a confusing count mismatch below.
+		outcomes := make(chan outcome, submissions)
+
+		var wg sync.WaitGroup
+		release := make(chan struct{})
+		for range submissions {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-release
+				task, cancelled, err := repository.SupersedeAndAdd(contractTask("app-a", "image-a"), "superseded")
+				outcomes <- outcome{task: task, cancelled: cancelled, err: err}
+			}()
+		}
+		close(release)
+		wg.Wait()
+		close(outcomes)
+
+		ids := make(map[string]bool, submissions)
+		var totalCancelled int64
+		for result := range outcomes {
+			require.NoError(t, result.err)
+			require.NotNil(t, result.task)
+			ids[result.task.Id] = true
+			// Serialised, each submission finds at most the one survivor before it.
+			assert.LessOrEqual(t, result.cancelled, int64(1), "a submission can only supersede the one rollout it replaces")
+			totalCancelled += result.cancelled
+		}
+		assert.Equal(t, int64(submissions-1), totalCancelled, "every submission but the last must have been superseded")
+
+		stored, _ := repository.GetTasks(models.TaskFilter{
+			EndTime: float64(time.Now().Add(time.Hour).Unix()),
+			App:     "app-a",
+		})
+		require.Len(t, stored, submissions, "every submission must be stored")
+
+		var inProgress []models.Task
+		for _, task := range stored {
+			if task.Status == models.StatusInProgressMessage {
+				inProgress = append(inProgress, task)
+				continue
+			}
+			// Named explicitly: a bare "not in progress" count would accept a task left
+			// in any other status by a partial write.
+			assert.Equal(t, models.StatusCancelledMessage, task.Status, "a superseded task is cancelled")
+			assert.Equal(t, "superseded", task.StatusReason)
+		}
+		require.Len(t, inProgress, 1, "only the newest submission may still be rolling out")
+		assert.True(t, ids[inProgress[0].Id], "the survivor must be one of the tasks the submissions returned")
+	})
+}
+
+// supersedeWith submits a new deployment of app carrying images and the given
+// authority, and reports how many in-progress tasks it superseded.
+func supersedeWith(t *testing.T, repository TaskRepository, app string, images []models.Image, validated bool) int64 {
+	t.Helper()
+	task := contractTask(app, "")
+	task.Images = images
+	task.Validated = validated
+
+	added, cancelled, err := repository.SupersedeAndAdd(task, "superseded")
+	require.NoError(t, err)
+
+	// The stored task goes straight back to the client and into ClaimTask, so it
+	// carries the same server-owned stamping AddTask promises.
+	require.NotNil(t, added)
+	assert.NotEmpty(t, added.Id)
+	assert.Equal(t, models.StatusInProgressMessage, added.Status)
+	assert.InDelta(t, float64(time.Now().Unix()), added.Created, 5)
+	assert.Equal(t, added.Created, added.Updated)
+
+	return cancelled
 }
 
 // assertStatus reads the task back and checks its status.
