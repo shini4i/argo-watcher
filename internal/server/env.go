@@ -158,6 +158,14 @@ func (env *Env) isDraining() bool {
 	return env.draining.Load()
 }
 
+// handsOverOnShutdown reports that a rollout given up now will be picked up again.
+// Only the shared state can hand one over: with in-memory state the task dies with
+// the process, so abandoning it would drop the deployment — its git write-back
+// included — instead of handing it on.
+func (env *Env) handsOverOnShutdown() bool {
+	return env.config.StateType == "postgres" && env.isDraining()
+}
+
 // Shutdown gracefully shuts down the server and all WebSocket connections.
 // This method is safe to call multiple times. It blocks until all WebSocket
 // goroutines have finished or ctx expires. If it gives up, some goroutines may

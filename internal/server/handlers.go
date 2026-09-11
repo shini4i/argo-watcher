@@ -200,7 +200,7 @@ func (env *Env) addTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go env.updater.WaitForRollout(*newTask, false)
+	go env.updater.WaitForRollout(*newTask, false, env.handsOverOnShutdown)
 
 	writeJSON(w, http.StatusAccepted, models.TaskStatus{
 		Id:     newTask.Id,

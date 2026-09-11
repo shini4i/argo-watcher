@@ -75,6 +75,10 @@ func zeroDelay(_ uint, _ error, _ *retry.Config) time.Duration {
 	return 0
 }
 
+// neverDraining is the abandon predicate for a test whose subject is not the
+// shutdown handover: the replica stays up for the whole rollout.
+func neverDraining() bool { return false }
+
 // newArgoApiMock builds an ArgoApi mock pre-loaded with the best-effort defaults every test
 // tolerates. The failure-path resource-tree fetch is best-effort, so it defaults to "no tree"
 // (rolloutMessage then falls back to the app's top-level resources). Only tests that assert
@@ -168,7 +172,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		metricsMock.EXPECT().RemoveInProgressTask()
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
 
-		updater.WaitForRollout(task, false)
+		updater.WaitForRollout(task, false, neverDraining)
 	})
 
 	t.Run("Status Updater - Application deployed with Retry", func(t *testing.T) {
@@ -216,7 +220,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		metricsMock.EXPECT().RemoveInProgressTask()
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
 
-		updater.WaitForRollout(task, false)
+		updater.WaitForRollout(task, false, neverDraining)
 	})
 
 	t.Run("Status Updater - Application deployed with Registry proxy", func(t *testing.T) {
@@ -256,7 +260,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		metricsMock.EXPECT().RemoveInProgressTask()
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
 
-		updater.WaitForRollout(task, false)
+		updater.WaitForRollout(task, false, neverDraining)
 	})
 
 	t.Run("Status Updater - Application deployed without Registry proxy", func(t *testing.T) {
@@ -302,7 +306,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 				"List of expected images:\n"+
 				"\tghcr.io/shini4i/argo-watcher:dev")
 
-		updater.WaitForRollout(task, false)
+		updater.WaitForRollout(task, false, neverDraining)
 	})
 
 	t.Run("Status Updater - Application not found", func(t *testing.T) {
@@ -331,7 +335,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		metricsMock.EXPECT().RemoveInProgressTask()
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusAppNotFoundMessage, "ArgoCD API Error: applications.argoproj.io \"test-app\" not found")
 
-		updater.WaitForRollout(task, false)
+		updater.WaitForRollout(task, false, neverDraining)
 	})
 
 	t.Run("Status Updater - ArgoCD unavailable", func(t *testing.T) {
@@ -358,7 +362,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		metricsMock.EXPECT().RemoveInProgressTask()
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusAborted, "ArgoCD API Error: dial tcp: connect: connection refused")
 
-		updater.WaitForRollout(task, false)
+		updater.WaitForRollout(task, false, neverDraining)
 	})
 
 	t.Run("Status Updater - Application API error", func(t *testing.T) {
@@ -384,7 +388,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		metricsMock.EXPECT().RemoveInProgressTask()
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage, "ArgoCD API Error: unexpected failure")
 
-		updater.WaitForRollout(task, false)
+		updater.WaitForRollout(task, false, neverDraining)
 	})
 
 	t.Run("Status Updater - Application not available", func(t *testing.T) {
@@ -426,7 +430,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 				"List of expected images:\n"+
 				"\tghcr.io/shini4i/argo-watcher:dev")
 
-		updater.WaitForRollout(task, false)
+		updater.WaitForRollout(task, false, neverDraining)
 	})
 
 	t.Run("Status Updater - Application out of Sync", func(t *testing.T) {
@@ -479,7 +483,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 				return nil
 			})
 
-		updater.WaitForRollout(task, false)
+		updater.WaitForRollout(task, false, neverDraining)
 
 		assert.True(t, strings.HasPrefix(capturedReason, "Deployment failed: ArgoCD reports sync status Syncing"),
 			"unexpected headline: %s", capturedReason)
@@ -527,7 +531,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 				"App sync status \"Synced\"\n"+
 				"App health status \"NotHealthy\"")
 
-		updater.WaitForRollout(task, false)
+		updater.WaitForRollout(task, false, neverDraining)
 	})
 }
 
@@ -796,7 +800,7 @@ func TestArgoStatusUpdaterDegradedReportsRolloutDiagnostics(t *testing.T) {
 			return nil
 		})
 
-	updater.WaitForRollout(task, false)
+	updater.WaitForRollout(task, false, neverDraining)
 
 	assert.NotContains(t, capturedReason, "ArgoCD API Error")
 	assert.Contains(t, capturedReason, "Application deployment failed. Rollout status is degraded")
@@ -857,7 +861,7 @@ func TestArgoStatusUpdaterSupersededAfterSuccessfulPollWritesNoStatus(t *testing
 	// No SetTaskStatus and no failed-deployment metric are expected, so gomock fails the test
 	// if the superseded task is mistaken for a reportable rollout state.
 
-	updater.WaitForRollout(task, false)
+	updater.WaitForRollout(task, false, neverDraining)
 
 	require.NotEmpty(t, capture.sent)
 	assert.Equal(t, models.StatusCancelledMessage, capture.sent[len(capture.sent)-1].Status)
@@ -913,7 +917,7 @@ func TestArgoStatusUpdaterAbortsWhenArgoBecomesUnreachableMidPoll(t *testing.T) 
 			return nil
 		})
 
-	updater.WaitForRollout(task, false)
+	updater.WaitForRollout(task, false, neverDraining)
 
 	assert.Contains(t, capturedReason, "connection refused")
 }
@@ -1415,7 +1419,7 @@ func TestArgoStatusUpdaterFailureDurationExcludesSetup(t *testing.T) {
 			return nil
 		})
 
-	updater.WaitForRollout(task, false)
+	updater.WaitForRollout(task, false, neverDraining)
 
 	assert.Equal(t,
 		"Deployment failed: ArgoCD reports sync status OutOfSync.\n\n"+
@@ -1641,7 +1645,7 @@ func TestArgoStatusUpdaterStopsWhenSuperseded(t *testing.T) {
 	// "cancelled" status the newer deployment already wrote untouched. Any
 	// GetApplication or SetTaskStatus call would be unexpected and fail the test.
 
-	updater.WaitForRollout(task, false)
+	updater.WaitForRollout(task, false, neverDraining)
 
 	require.NotEmpty(t, capture.sent)
 	assert.Equal(t, models.StatusCancelledMessage, capture.sent[len(capture.sent)-1].Status)
@@ -1692,7 +1696,7 @@ func TestArgoStatusUpdaterStopsMidPollWhenSuperseded(t *testing.T) {
 	// No SetTaskStatus and no failed-deployment metric: a superseded rollout is not
 	// a failure and its status must not be overwritten.
 
-	updater.WaitForRollout(task, false)
+	updater.WaitForRollout(task, false, neverDraining)
 }
 
 // TestArgoStatusUpdaterAppDisappearsMidRollout is the regression guard for issue #387:
@@ -1747,7 +1751,7 @@ func TestArgoStatusUpdaterAppDisappearsMidRollout(t *testing.T) {
 		fmt.Sprintf(ArgoAPIErrorTemplate, notFound.Error()),
 	)
 
-	updater.WaitForRollout(task, false)
+	updater.WaitForRollout(task, false, neverDraining)
 }
 
 // TestArgoStatusUpdaterProceedsWhenStatusReadFails verifies that a transient
@@ -1791,7 +1795,7 @@ func TestArgoStatusUpdaterProceedsWhenStatusReadFails(t *testing.T) {
 	metricsMock.EXPECT().RemoveInProgressTask()
 	stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
 
-	updater.WaitForRollout(task, false)
+	updater.WaitForRollout(task, false, neverDraining)
 }
 
 func TestHandleApplicationFetchError(t *testing.T) {
@@ -2449,7 +2453,7 @@ func TestArgoStatusUpdaterLostLeaseWritesNoStatus(t *testing.T) {
 				Images:  []models.Image{{Image: "ghcr.io/shini4i/argo-watcher", Tag: "dev"}},
 			}
 
-			updater.WaitForRollout(task, false)
+			updater.WaitForRollout(task, false, neverDraining)
 
 			for _, sent := range capture.sent {
 				assert.Equal(t, models.StatusInProgressMessage, sent.Status,
@@ -2586,7 +2590,7 @@ func TestWaitForRollout_LeavesASupersessionItLostToTheNewOwner(t *testing.T) {
 		Images:  []models.Image{{Image: "demo", Tag: "v1"}},
 	}
 
-	updater.WaitForRollout(task, false)
+	updater.WaitForRollout(task, false, neverDraining)
 
 	for _, sent := range capture.sent {
 		assert.Equal(t, models.StatusInProgressMessage, sent.Status,
@@ -2680,7 +2684,7 @@ func TestWaitForRollout_PerAppSeriesWaitForArgoConfirmation(t *testing.T) {
 		metricsMock.EXPECT().ResetFailedDeployment(task.App)
 		metricsMock.EXPECT().ObserveDeploymentDuration(task.App, gomock.Any())
 
-		updater.WaitForRollout(task, false)
+		updater.WaitForRollout(task, false, neverDraining)
 	})
 
 	t.Run("an application ArgoCD never confirmed is counted without a label", func(t *testing.T) {
@@ -2692,7 +2696,7 @@ func TestWaitForRollout_PerAppSeriesWaitForArgoConfirmation(t *testing.T) {
 		// controller fails the test if the unconfirmed name reaches either.
 		metricsMock.EXPECT().AddUnconfirmedFailure()
 
-		updater.WaitForRollout(task, false)
+		updater.WaitForRollout(task, false, neverDraining)
 	})
 
 	t.Run("a failure after confirmation names the app", func(t *testing.T) {
@@ -2707,7 +2711,7 @@ func TestWaitForRollout_PerAppSeriesWaitForArgoConfirmation(t *testing.T) {
 		metricsMock.EXPECT().AddDeploymentOutcome(task.App, models.StatusAppNotFoundMessage)
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
 
-		updater.WaitForRollout(task, false)
+		updater.WaitForRollout(task, false, neverDraining)
 	})
 
 	t.Run("a resumed deployment is counted by the replica that finishes it", func(t *testing.T) {
@@ -2719,7 +2723,7 @@ func TestWaitForRollout_PerAppSeriesWaitForArgoConfirmation(t *testing.T) {
 		metricsMock.EXPECT().ResetFailedDeployment(task.App)
 		metricsMock.EXPECT().ObserveDeploymentDuration(task.App, gomock.Any())
 
-		updater.WaitForRollout(task, true)
+		updater.WaitForRollout(task, true, neverDraining)
 	})
 }
 
@@ -2806,7 +2810,7 @@ func TestArgoStatusUpdaterStopsWhenTheStaleSweepAborted(t *testing.T) {
 	metricsMock.EXPECT().RemoveInProgressTask()
 	// No SetTaskStatus: the sweep already wrote the terminal status, with its own reason.
 
-	updater.WaitForRollout(task, false)
+	updater.WaitForRollout(task, false, neverDraining)
 
 	// Exactly the start and the result: announcing one deployment twice is the
 	// failure the no-status-written branches exist to avoid.
@@ -2843,7 +2847,7 @@ func TestArgoStatusUpdaterStopsBeforeStartingAnAbortedTask(t *testing.T) {
 	metricsMock.EXPECT().AddInProgressTask()
 	metricsMock.EXPECT().RemoveInProgressTask()
 
-	updater.WaitForRollout(task, false)
+	updater.WaitForRollout(task, false, neverDraining)
 
 	require.Len(t, capture.sent, 2)
 	assert.Empty(t, capture.sent[0].Status, "the first is the start notification")
@@ -2913,7 +2917,7 @@ func TestWaitForRollout_EveryTerminalOutcomeIsPreCreated(t *testing.T) {
 			task := models.Task{Id: "test-id", App: "test-app", Images: []models.Image{{Image: "app", Tag: "v1"}}}
 			tt.arrange(apiMock, task)
 
-			initTestUpdater(t, newUpdaterTestConfig(lock.NewInMemoryLocker()), argo).WaitForRollout(task, false)
+			initTestUpdater(t, newUpdaterTestConfig(lock.NewInMemoryLocker()), argo).WaitForRollout(task, false, neverDraining)
 
 			var expected strings.Builder
 			expected.WriteString("# HELP deployments_total Deployments that reached a terminal state for an application ArgoCD confirmed, by outcome.\n")

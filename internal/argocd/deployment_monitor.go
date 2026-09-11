@@ -49,10 +49,10 @@ var errTaskAborted = errors.New("task aborted by the staleness sweep")
 // rollout without writing a status: the new owner records the outcome.
 var errLeaseLost = errors.New("task taken over by another replica")
 
-// errReplicaDraining is an internal sentinel returned when this replica began
-// shutting down while it was monitoring a resumed rollout. It stops the rollout
-// without writing a status, like errLeaseLost: the claim is released at the end of
-// shutdown and the replica that resumes the task records the outcome.
+// errReplicaDraining is an internal sentinel returned when this replica gives a
+// rollout up to shutdown — whether it accepted or resumed the task, or its
+// write-back never ran. It stops the rollout without writing a status, like
+// errLeaseLost: the replica that resumes the task records the outcome.
 var errReplicaDraining = errors.New("replica is shutting down")
 
 // ImageNotPartOfAppError reports that a task expects an image the application's desired
