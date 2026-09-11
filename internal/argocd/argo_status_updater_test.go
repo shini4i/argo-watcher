@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -3086,4 +3087,56 @@ func TestWriteBackErrorKeepsThePrefixToTheReason(t *testing.T) {
 	assert.Equal(t, "push rejected", err.Error())
 	assert.Equal(t, "Git write-back error: push rejected", err.Reason())
 	assert.ErrorIs(t, err, cause)
+}
+
+// A deployment something else already ended must keep that outcome. There is no successor to
+// announce it either — a sweep only re-claims a task still in progress — so this replica
+// reports the stored result rather than its own, and never writes one of its own on top.
+func TestWaitForRolloutReportsTheOutcomeThatEndedItFirst(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	apiMock := newArgoApiMock(ctrl)
+	metricsMock := mocks.NewMockMetricsInterface(ctrl)
+	stateMock := newTaskRepositoryMock(ctrl)
+
+	argo := &Argo{}
+	argo.Init(stateMock, apiMock, metricsMock)
+
+	// In progress until the terminal write is refused: the race this closes is the store
+	// learning of the cancellation only when that write lands, not during the poll.
+	var endedElsewhere atomic.Bool
+	stateMock.EXPECT().GetTask(gomock.Any()).
+		DoAndReturn(func(string) (*models.Task, error) {
+			if endedElsewhere.Load() {
+				return &models.Task{Status: models.StatusCancelledMessage}, nil
+			}
+			return &models.Task{Status: models.StatusInProgressMessage}, nil
+		}).AnyTimes()
+	stateMock.EXPECT().SetTaskStatus(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(string, string, string) error {
+			endedElsewhere.Store(true)
+			return state.ErrTaskEnded
+		})
+
+	updater := initTestUpdater(t, newUpdaterTestConfig(&spyLocker{err: errors.New("boom")}), argo)
+
+	task := models.Task{Id: "test-id", App: "test-app", Validated: true,
+		Status: models.StatusInProgressMessage,
+		Images: []models.Image{{Image: "app", Tag: "v1"}}}
+
+	apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(managedApp(), nil)
+	metricsMock.EXPECT().AddInProgressTask()
+	metricsMock.EXPECT().InitDeploymentOutcomes(task.App)
+	metricsMock.EXPECT().RemoveInProgressTask()
+	// The outcome counted is the one that won, not the failure this replica had computed.
+	metricsMock.EXPECT().AddDeploymentOutcome(task.App, models.StatusCancelledMessage)
+
+	capture := &capturingStrategy{}
+	updater.notifier = notifications.NewNotifier(capture)
+
+	updater.WaitForRollout(task, false, neverDraining)
+
+	require.Len(t, capture.sent, 2, "the cancellation still has to be announced by someone")
+	assert.Equal(t, models.StatusCancelledMessage, capture.sent[1].Status)
 }

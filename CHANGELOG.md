@@ -37,6 +37,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A superseded deployment is no longer reported as `failed`. When two deployments of the same
+  application ran close together, the older one could finish deciding its own outcome just after
+  the newer one cancelled it, and write that outcome over the cancellation — so the pipeline was
+  told the deployment failed rather than that a newer one took over. A terminal status is now
+  written only while the deployment is still running, matching the rule already applied when a
+  deployment is cancelled. The same applies to a deployment the staleness sweep has given up on.
 - `gitops_writeback_duration_seconds` and `gitops_lock_wait_duration_seconds` are recorded again
   with `GIT_BATCH_WRITEBACK` enabled. Turning batching on silently stopped both, so the Grafana
   dashboard's write-back and lock-wait panels went blank and the documented alert on write-backs
