@@ -17,11 +17,11 @@ var errDesiredRetry = errors.New("desired retry error")
 // silently reported as a missing task.
 var ErrTaskNotFound = errors.New("task not found")
 
-// ErrTaskNotOwned is returned by SetTaskStatus when the task is claimed by
-// another instance. The caller checked its lease seconds earlier, so a lapse in
-// between is an ordinary handover: the new owner reaches its own outcome, and
-// writing here would land on top of it. Only the shared backend reports it.
-var ErrTaskNotOwned = errors.New("task is claimed by another instance")
+// ErrTaskNotOwned is returned by SetTaskStatus when the claim has moved on since
+// the caller checked it — taken by another instance, or released by this one at
+// shutdown. Either way the task is somebody else's to finish, and writing here
+// would land on the outcome they reach. Only the shared backend reports it.
+var ErrTaskNotOwned = errors.New("task is not this instance's to finish")
 
 // maySupersede reports whether a deployment may cancel an in-flight task, by
 // comparing the credential each one presented. Only the uncredentialed-cancels-

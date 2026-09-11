@@ -410,13 +410,13 @@ func (monitor *DeploymentMonitor) taskEndedElsewhere(id string) error {
 }
 
 // recordStatus writes the task's terminal status and reports whether this replica
-// decided it. A refusal means the claim moved on mid-write, which is an ordinary
-// handover: the holder reaches the same outcome, so the caller must not count or
-// announce one of its own. Any other failure is logged and the outcome still stands.
+// decided it. A refusal means the claim moved on mid-write — taken over, or released
+// at shutdown — so whoever resumes the task reaches the outcome and the caller must
+// not count or announce one. Any other failure is logged and the outcome stands.
 func (monitor *DeploymentMonitor) recordStatus(task *models.Task, status, reason string) bool {
 	err := monitor.argo.State.SetTaskStatus(task.Id, status, reason)
 	if errors.Is(err, state.ErrTaskNotOwned) {
-		slog.Info("Left the outcome to the replica that took the deployment over.", "id", task.Id)
+		slog.Info("Left the outcome to whichever replica resumes this deployment.", "id", task.Id)
 		return false
 	}
 	if err != nil {

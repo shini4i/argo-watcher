@@ -2987,4 +2987,27 @@ func TestDeploymentMonitorRefusedWriteLeavesTheGaugesAlone(t *testing.T) {
 
 		assert.False(t, monitor.ProcessDeploymentResult(&task, app, time.Second))
 	})
+
+	// The path that opened the window the store's fence closes: it fetches the
+	// resource tree before writing, so it is the likeliest of the five to be refused.
+	t.Run("a failure does not count one", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		metrics := mocks.NewMockMetricsInterface(ctrl)
+		stateMock := newTaskRepositoryMock(ctrl)
+		// The helper stubs the resource-tree fetch this path makes before writing.
+		api := newArgoApiMock(ctrl)
+
+		monitor := NewDeploymentMonitor(Argo{metrics: metrics, State: stateMock, api: api}, "",
+			[]retry.Option{retry.DelayType(zeroDelay), retry.LastErrorOnly(true)}, false, time.Millisecond)
+		task := models.Task{Id: "refused-id", App: "demo", Validated: true,
+			Images: []models.Image{{Image: "app", Tag: "v1"}}}
+		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage, gomock.Any()).Return(state.ErrTaskNotOwned)
+
+		app := &models.Application{}
+		app.Status.Summary.Images = []string{"app:v1"}
+		app.Status.Sync.Status = "Synced"
+		app.Status.Health.Status = "Degraded"
+
+		assert.False(t, monitor.ProcessDeploymentResult(&task, app, time.Second))
+	})
 }

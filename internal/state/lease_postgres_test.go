@@ -343,6 +343,8 @@ func TestPostgresState_ReleaseOwnedLeases(t *testing.T) {
 
 		assert.False(t, env.storedModel(t, inserted.Id).OwnerId.Valid,
 			"a released task must name no owner")
+		assert.True(t, env.storedModel(t, inserted.Id).LeaseExpiresAt.Valid,
+			"a released task must keep a deadline: that is what tells it from one never claimed")
 
 		held, err := env.state.RenewLease(inserted.Id)
 		require.NoError(t, err)

@@ -113,17 +113,10 @@ func (state *PostgresState) RenewLease(id string) (bool, error) {
 	return result.RowsAffected == 1, nil
 }
 
-// ReleaseOwnedLeases expires every claim this instance holds and reports how
-// many it gave up, so the tasks it was monitoring are picked up by another
-// replica on its next sweep instead of waiting out the full TTL. It is how a
-// graceful shutdown hands its in-flight rollouts over.
-//
-// The owner is cleared as well as the deadline. Nothing waits for the monitoring
-// goroutines, so one of them can outlive this call by a few instructions; while
-// the row still named this instance, its next renewal would take the claim back
-// and undo the handover. Unowned, that renewal reports the claim lost and the
-// rollout stops without writing a status — which is what a replica on its way out
-// should do.
+// ReleaseOwnedLeases expires every claim this instance holds and reports how many it
+// gave up, so a graceful shutdown hands its in-flight rollouts to another replica's
+// next sweep instead of making them wait out the full TTL. A cleared owner alongside
+// a stamped deadline is what marks a row released; SetTaskStatus's fence reads both.
 func (state *PostgresState) ReleaseOwnedLeases() (int64, error) {
 	result := state.orm.Exec(`
 		UPDATE tasks

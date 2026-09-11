@@ -336,13 +336,13 @@ func (state *PostgresState) SetTaskStatus(id, status, reason string) error {
 		return ErrTaskNotFound
 	}
 
-	// Fenced on ownership: this instance checked its lease seconds ago, and a task
-	// claimed by someone else since then has that owner monitoring it too. Unclaimed
-	// stays writable, since AddTask's claim is best-effort; two monitors on one
-	// replica share an owner id, so the fence does not separate those.
+	// Fenced on ownership: a task claimed elsewhere since this instance checked its
+	// lease has that owner monitoring it too. A row never claimed at all stays
+	// writable, AddTask's claim being best-effort, and is told apart from one released
+	// at shutdown by having no lease deadline — a released row is somebody else's now.
 	var ormTask = state_models.TaskModel{Id: uuidv4}
 	result := state.orm.Model(ormTask).
-		Where("owner_id = ? OR owner_id IS NULL", state.ownerId).
+		Where("owner_id = ? OR (owner_id IS NULL AND lease_expires_at IS NULL)", state.ownerId).
 		Updates(state_models.TaskModel{Status: status, StatusReason: sql.NullString{String: reason, Valid: true}})
 	if result.Error != nil {
 		return result.Error

@@ -379,3 +379,50 @@ func TestWaitForRollout_ARefusedWriteIsNotCountedOrAnnounced(t *testing.T) {
 	require.Len(t, capture.sent, 1, "only the start notification may be sent")
 	assert.Equal(t, models.StatusInProgressMessage, capture.sent[0].Status)
 }
+
+// WaitForRollout re-checks draining before dispatching the outcome, and the failure
+// path then fetches the resource tree for up to ten seconds before writing. A drain
+// starting inside that fetch reaches SetTaskStatus unchecked, which is why the store
+// refuses the write rather than another in-process guard.
+func TestWaitForRollout_ADrainStartingInsideTheDiagnosticsFetchStillReachesTheWrite(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	apiMock := mocks.NewMockArgoApiInterface(ctrl)
+	metricsMock := mocks.NewMockMetricsInterface(ctrl)
+	stateMock := notSupersededState(ctrl)
+
+	argo := &Argo{}
+	argo.Init(stateMock, apiMock, metricsMock)
+
+	app := &models.Application{}
+	app.Status.Summary.Images = []string{"app:v1"}
+	app.Status.Sync.Status = "Synced"
+	app.Status.Health.Status = "Degraded"
+	apiMock.EXPECT().GetApplication(gomock.Any(), gomock.Any(), gomock.Any()).Return(app, nil).AnyTimes()
+	apiMock.EXPECT().GetManagedResources(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+
+	var draining atomic.Bool
+	apiMock.EXPECT().GetResourceTree(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(context.Context, string) (*models.ApplicationTree, error) {
+			draining.Store(true)
+			return nil, nil
+		})
+
+	// Reached despite the drain: the check that would have stopped it is already past.
+	stateMock.EXPECT().SetTaskStatus("drained-id", models.StatusFailedMessage, gomock.Any()).
+		Return(state.ErrTaskNotOwned).Times(1)
+
+	metricsMock.EXPECT().AddInProgressTask()
+	metricsMock.EXPECT().RemoveInProgressTask()
+	metricsMock.EXPECT().InitDeploymentOutcomes("test-app")
+
+	updater := initTestUpdater(t, newUpdaterTestConfig(lock.NewInMemoryLocker()), argo)
+	capture := &capturingStrategy{}
+	updater.notifier = notifications.NewNotifier(capture)
+
+	updater.WaitForRollout(shutdownTestTask("drained-id"), false, draining.Load)
+
+	require.Len(t, capture.sent, 1, "only the start notification may be sent")
+	assert.Equal(t, models.StatusInProgressMessage, capture.sent[0].Status)
+}

@@ -85,10 +85,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   write-back. `app = myimage` left the alias and the image each carrying a space, so neither matched
   and the tag was never committed — the deployment then timed out reporting that the image was not
   part of the application, naming everything except the annotation that caused it.
-- A replica that lost a deployment to another one can no longer overwrite the outcome that
-  replica recorded. Ownership is now checked by the database on every status write, because a
-  replica can spend seconds reaching its verdict after its claim has already moved on. The same
-  deployment is also no longer counted or announced twice when that happens.
+- A replica that no longer holds a deployment can no longer record its outcome. Ownership is now
+  checked by the database on every status write, because a replica can spend seconds reaching its
+  verdict after its claim has moved on — whether another replica took it over, or this one handed
+  it back while shutting down. The second case mattered most: only an in-progress deployment is
+  picked up again, so a `failed` written on the way out ended a deployment another replica would
+  have finished watching. The same deployment is also no longer counted or announced twice.
 - The task list no longer shows an empty estate when the database cannot be read. A failed read was
   indistinguishable from "no deployments ran": `GET /api/v1/tasks` now answers with an `error`
   field and no tasks, and a deployment is refused rather than recorded with the wrong rollback flag
