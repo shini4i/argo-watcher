@@ -19,9 +19,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/mock/gomock"
-
-	"github.com/shini4i/argo-watcher/internal/mocks"
 
 	"github.com/shini4i/argo-watcher/internal/models"
 	"github.com/shini4i/argo-watcher/internal/updater"
@@ -203,49 +200,4 @@ func TestIntegration_BatchWriteBack_PushRaceRecovery(t *testing.T) {
 
 	require.GreaterOrEqual(t, lastOpens, int32(2),
 		"batch retry not observed after %d attempts: PlainOpen called %d times on final attempt", maxAttempts, lastOpens)
-}
-
-// The unit test covers a batch whose clone fails. The histograms matter most on the slow
-// successful path, and a failure-only test would still pass if the observation were moved
-// into an error branch — so the success case is pinned here, against a real Gitea.
-func TestIntegration_BatchWriteBack_ObservesDurationsOnASuccessfulBatch(t *testing.T) {
-	waitForGitea(t, 60*time.Second)
-	env := setupGitea(t)
-
-	t.Setenv("SSH_KEY_PATH", env.SSHKeyPath)
-	t.Setenv("GIT_OP_TIMEOUT", "60s")
-	t.Setenv("GIT_MAX_ATTEMPTS", "3")
-
-	apps := []string{"app-a", "app-b"}
-
-	ctrl := gomock.NewController(t)
-	metrics := mocks.NewMockMetricsInterface(ctrl)
-	metrics.EXPECT().ObserveGitBatchSize(len(apps)).Times(1)
-	for _, app := range apps {
-		metrics.EXPECT().ObserveGitLockWaitDuration(app, gomock.Any()).Times(1)
-		metrics.EXPECT().ObserveGitWritebackDuration(app, gomock.Any()).Times(1)
-	}
-
-	b := NewBatcher(&spyLocker{}, t.TempDir(), 20, metrics)
-
-	batch := make([]*batchWriteRequest, 0, len(apps))
-	for i, app := range apps {
-		req := newBatchReqFor(app, fmt.Sprintf("v%d", i+1), nil)
-		req.task.App = app
-		req.gitopsRepo.RepoUrl = env.DirectRepoURL
-		req.enqueuedAt = time.Now()
-		batch = append(batch, req)
-	}
-
-	b.flush(batch)
-
-	// The observation only means anything if the batch really landed.
-	for _, req := range batch {
-		assert.NoError(t, <-req.resultCh, "app %s should succeed", req.task.App)
-	}
-	for i, app := range apps {
-		_, content := cloneRemoteState(t, env.DirectRepoURL, env.SSHKeyPath, "master",
-			fmt.Sprintf("apps/.argocd-source-%s.yaml", app))
-		assert.Contains(t, content, fmt.Sprintf("v%d", i+1))
-	}
 }

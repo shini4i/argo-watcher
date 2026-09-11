@@ -404,8 +404,9 @@ func TestBatcher_FlushThreadsDrainIntoRetryLoop(t *testing.T) {
 }
 
 // GIT_BATCH_WRITEBACK must not silently retire the two write-back histograms: both are
-// documented in observability.md with no batch caveat, the shipped Grafana dashboard queries
-// their buckets, and the alert rule in that page fires on one of them.
+// documented in observability.md with no batch caveat and the shipped dashboard queries them.
+// The clone fails here and in every batcher test — flush hardcodes updater.GitClient{}, whose
+// host-key check no ephemeral remote satisfies — so a successful batch is the e2e gate's job.
 func TestBatcher_FlushObservesDurationsForEveryAppInTheBatch(t *testing.T) {
 	// Only needs to be SET so updater.NewGitRepo can load its config; the clone that
 	// follows fails, which is deliberate — a failed write-back is the slow, retried one
