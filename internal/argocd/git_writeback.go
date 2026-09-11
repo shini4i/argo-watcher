@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/shini4i/argo-watcher/internal/models"
 	"github.com/shini4i/argo-watcher/internal/updater"
@@ -222,21 +223,54 @@ func runGitUpdateAttempt(parentCtx context.Context, repo *updater.GitRepo, opTim
 	return nil
 }
 
-// extractManagedImages maps each application alias from the annotations to its image name.
+// extractManagedImages maps each application alias from the annotations to its
+// image name. Both halves of an "alias=image" entry are trimmed: a space left on
+// either one makes the alias miss its tag annotation and the image miss the
+// task's, which skips the write-back and leaves the rollout blaming the image.
 func extractManagedImages(annotations map[string]string) (map[string]string, error) {
 	managedImages := map[string]string{}
 
-	for annotation, value := range annotations {
-		if annotation == managedImagesAnnotation {
-			for _, image := range strings.Split(value, ",") {
-				if !strings.Contains(image, "=") {
-					return nil, fmt.Errorf("invalid format for %s annotation", managedImagesAnnotation)
-				}
-				managedImage := strings.Split(strings.TrimSpace(image), "=")
-				managedImages[managedImage[0]] = managedImage[1]
-			}
+	value, declared := annotations[managedImagesAnnotation]
+	if !declared {
+		return managedImages, nil
+	}
+
+	for _, entry := range strings.Split(value, ",") {
+		alias, image, err := parseManagedImage(entry)
+		if err != nil {
+			return nil, err
 		}
+		// Two images cannot share an alias: the loser would be declared managed,
+		// match nothing, and let the write-back report success having written
+		// neither. Two aliases sharing one image is a different, supported thing.
+		if _, repeated := managedImages[alias]; repeated {
+			return nil, fmt.Errorf("duplicate alias %q in %s annotation", alias, managedImagesAnnotation)
+		}
+		managedImages[alias] = image
 	}
 
 	return managedImages, nil
+}
+
+// parseManagedImage splits one "alias=image" entry, rejecting anything that could
+// only fail later: a missing separator, an empty half, or a half still carrying a
+// character it cannot hold. Salvaging a prefix instead would write back an image
+// nobody asked for, or skip the write-back and leave the rollout blaming the image.
+func parseManagedImage(entry string) (string, string, error) {
+	alias, image, found := strings.Cut(entry, "=")
+	alias, image = strings.TrimSpace(alias), strings.TrimSpace(image)
+
+	if !found || unusableManagedImageHalf(alias) || unusableManagedImageHalf(image) {
+		return "", "", fmt.Errorf("invalid format for %s annotation: %q is not alias=image", managedImagesAnnotation, strings.TrimSpace(entry))
+	}
+
+	return alias, image, nil
+}
+
+// unusableManagedImageHalf reports whether a trimmed half can never be matched.
+// The alias becomes part of an annotation key and the image is a registry
+// reference, so interior whitespace is impossible in either, and only the first
+// "=" of an entry separates them.
+func unusableManagedImageHalf(half string) bool {
+	return half == "" || strings.ContainsFunc(half, unicode.IsSpace) || strings.Contains(half, "=")
 }

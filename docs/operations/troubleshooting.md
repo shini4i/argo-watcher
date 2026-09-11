@@ -119,6 +119,18 @@ curl -sSI "$ARGO_WATCHER_URL/api/v1/config"
 !!! warning
     Do not work around this by letting the credential follow the redirect. The deploy token does not expire, is not scoped to an application, and authorizes commits to your GitOps repository — whoever answers for the redirect target would receive it on every request.
 
+## Managed-images annotation is rejected
+
+**Symptom:** the deployment fails immediately, reporting `ArgoCD API Error: invalid format for argo-watcher/managed-images annotation: "<entry>" is not alias=image`.
+
+Despite the label, nothing was asked of Argo CD — the annotation is parsed locally, before the write-back, and every failure on that path is reported through the same template.
+
+Each entry must read `alias=image`. Whitespace around the `=` is ignored, so `app = myimage` is accepted, but neither half may be empty or contain whitespace of its own, and the image may not contain a second `=`.
+
+An alias may not be repeated either — `app=one,app=two` is rejected, since only one of the two could ever be written back. Pointing two aliases at the same image is fine.
+
+**Fix:** correct the entry named in the error on the `Application`. The alias must also match the one in the matching `argo-watcher/<alias>.helm.image-tag` annotation.
+
 ## Client refuses a redirect away from https
 
 **Symptom:** the deployment fails immediately with `refused to follow a redirect away from https`, naming the endpoint that answered and the plain-`http` target it pointed at.
