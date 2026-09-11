@@ -29,6 +29,9 @@ func TestExtractManagedImages(t *testing.T) {
 		annotation map[string]string
 		expected   map[string]string
 		expectErr  bool
+		// errContains is the fragment the troubleshooting page tells operators to
+		// look for: the offending entry, named and quoted.
+		errContains string
 	}{
 		{
 			name: "Extracts multiple managed images",
@@ -106,8 +109,99 @@ func TestExtractManagedImages(t *testing.T) {
 			annotation: map[string]string{
 				managedImagesAnnotation: "alias1image1",
 			},
-			expected:  nil,
-			expectErr: true,
+			expectErr:   true,
+			errContains: `"alias1image1"`,
+		},
+		{
+			// The separator is what an operator is most likely to pad. A surviving
+			// space makes the alias miss its tag annotation and the image miss the
+			// task's, so the write-back is skipped and the rollout blames the image.
+			name: "Trims whitespace around the separator, not just the entry",
+			annotation: map[string]string{
+				managedImagesAnnotation: "alias1 = image1 ,\talias2\t=\timage2",
+			},
+			expected: map[string]string{
+				"alias1": "image1",
+				"alias2": "image2",
+			},
+		},
+		{
+			// An image reference cannot contain "=", so a second one is a malformed
+			// entry. Keeping the prefix silently would write back the wrong image.
+			name: "Rejects an entry with more than one separator",
+			annotation: map[string]string{
+				managedImagesAnnotation: "alias1=image1=extra",
+			},
+			expectErr:   true,
+			errContains: `"alias1=image1=extra"`,
+		},
+		{
+			// A YAML block scalar without commas splits into one entry carrying a
+			// newline. It holds no second "=", so it used to pass and then match no
+			// task image — the silent skip this whole guard exists to remove.
+			name: "Rejects an entry split across lines",
+			annotation: map[string]string{
+				managedImagesAnnotation: "alias1=image1\nalias2",
+			},
+			expectErr:   true,
+			errContains: `"alias1=image1\nalias2"`,
+		},
+		{
+			// The alias half has its own reason to reject whitespace: it is formatted
+			// into an annotation key, which cannot hold a space, so it would miss its
+			// tag annotation exactly as a padded image misses the task's.
+			name: "Rejects whitespace inside the alias",
+			annotation: map[string]string{
+				managedImagesAnnotation: "my alias=image1",
+			},
+			expectErr:   true,
+			errContains: `"my alias=image1"`,
+		},
+		{
+			// The last shape that could still fail silently: the losing image is
+			// declared managed, matches no alias, and the write-back reports success
+			// without touching git.
+			name: "Rejects a repeated alias",
+			annotation: map[string]string{
+				managedImagesAnnotation: "alias1=image1,alias1=image2",
+			},
+			expectErr:   true,
+			errContains: `"alias1"`,
+		},
+		{
+			// A Helm template can render this. It is a misconfiguration rather than
+			// "nothing managed", and fails loudly like every other malformed value.
+			name: "Rejects a declared but empty annotation",
+			annotation: map[string]string{
+				managedImagesAnnotation: "",
+			},
+			expectErr:   true,
+			errContains: `""`,
+		},
+		{
+			// Names the entry that is wrong, not the whole annotation value.
+			name: "Names only the offending entry",
+			annotation: map[string]string{
+				managedImagesAnnotation: "alias1=image1,alias2",
+			},
+			expectErr:   true,
+			errContains: `"alias2"`,
+		},
+		{
+			name: "Rejects an empty alias",
+			annotation: map[string]string{
+				managedImagesAnnotation: "=image1",
+			},
+			expectErr:   true,
+			errContains: `"=image1"`,
+		},
+		{
+			name: "Rejects an empty image",
+			annotation: map[string]string{
+				managedImagesAnnotation: "alias1=",
+			},
+			expectErr:   true,
+			errContains: `"alias1="`,
 		},
 	}
 
@@ -115,8 +209,11 @@ func TestExtractManagedImages(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			extractedImages, err := extractManagedImages(test.annotation)
 			if test.expectErr {
-				assert.Error(t, err)
-			} else {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), test.errContains, "the error must name the entry an operator has to correct")
+				return
+			}
+			{
 				assert.NoError(t, err)
 				assert.Equal(t, test.expected, extractedImages)
 			}
@@ -162,6 +259,22 @@ func TestGenerateOverrideFileContent(t *testing.T) {
 
 		require.NoError(t, err)
 		require.NotNil(t, override)
+		require.Len(t, override.Helm.Parameters, 1)
+		assert.Equal(t, "image.tag", override.Helm.Parameters[0].Name)
+		assert.Equal(t, "v1.0.0", override.Helm.Parameters[0].Value)
+	})
+
+	// The defect this guards was silent: a padded separator left the alias and image
+	// carrying a space, so neither matched, no parameter was produced, and the
+	// write-back reported success while never touching git.
+	t.Run("Builds the same override when the annotation is padded", func(t *testing.T) {
+		app := newAppWithImages("app")
+		app.Metadata.Annotations["argo-watcher/managed-images"] = "  app = myimage  "
+
+		override, err := generateOverrideFileContent(app.Metadata.Annotations, newImageTask())
+
+		require.NoError(t, err)
+		require.NotNil(t, override, "a padded annotation must not read as no managed images")
 		require.Len(t, override.Helm.Parameters, 1)
 		assert.Equal(t, "image.tag", override.Helm.Parameters[0].Name)
 		assert.Equal(t, "v1.0.0", override.Helm.Parameters[0].Value)

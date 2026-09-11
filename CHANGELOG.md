@@ -29,6 +29,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dropped the API token, since a cookie jar keys its cookies by scheme. `ARGO_API_TIMEOUT` must be
   between 1 and 3600 seconds — anything outside that range left Argo CD calls with no timeout at
   all. Both are reported by name at startup.
+- A malformed `argo-watcher/managed-images` entry now fails the deployment immediately, naming the
+  entry at fault, instead of quietly skipping the write-back. Rejected shapes are an entry with no
+  `=`, an empty alias or image, whitespace inside either, a second `=`, and the same alias listed
+  twice. Whitespace around the `=` is accepted and trimmed. Pointing two aliases at one image is
+  unaffected.
 
 ### Fixed
 
@@ -76,6 +81,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `NaN`, `Inf` and numbers far outside the range of a real timestamp were parsed as valid, and
   because every comparison against `NaN` is false they slipped past the look-back limit and reached
   the database as written. Such a value is now ignored, as any other unparseable one already was.
+- Spaces around the `=` in an `argo-watcher/managed-images` entry no longer break the image
+  write-back. `app = myimage` left the alias and the image each carrying a space, so neither matched
+  and the tag was never committed — the deployment then timed out reporting that the image was not
+  part of the application, naming everything except the annotation that caused it.
 
 ### Security
 
