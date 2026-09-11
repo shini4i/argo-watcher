@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	gogit "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -405,8 +407,7 @@ func TestBatcher_FlushThreadsDrainIntoRetryLoop(t *testing.T) {
 
 // GIT_BATCH_WRITEBACK must not silently retire the two write-back histograms: both are
 // documented in observability.md with no batch caveat and the shipped dashboard queries them.
-// The clone fails here and in every batcher test — flush hardcodes updater.GitClient{}, whose
-// host-key check no ephemeral remote satisfies — so a successful batch is the e2e gate's job.
+// The clone fails here; the successful batch is covered by its own test below.
 func TestBatcher_FlushObservesDurationsForEveryAppInTheBatch(t *testing.T) {
 	// Only needs to be SET so updater.NewGitRepo can load its config; the clone that
 	// follows fails, which is deliberate — a failed write-back is the slow, retried one
@@ -503,4 +504,94 @@ func TestBatcher_FlushWithoutAGitRepoDeliversTheErrorAndObservesNoDurations(t *t
 
 	require.Error(t, b.Submit(req))
 	assert.False(t, locker.called, "the batch must short-circuit before the lock")
+}
+
+// seedLocalRemote builds a bare git repository on disk, seeded with the apps/ directory the
+// write-back commits into. A filesystem remote needs no network and no host key, which is what
+// makes a SUCCESSFUL batch reachable here at all.
+func seedLocalRemote(t *testing.T) string {
+	t.Helper()
+
+	seed := t.TempDir()
+	repo, err := gogit.PlainInit(seed, false)
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(filepath.Join(seed, "apps"), 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(seed, "apps", ".gitkeep"), nil, 0o600))
+
+	wt, err := repo.Worktree()
+	require.NoError(t, err)
+	_, err = wt.Add("apps/.gitkeep")
+	require.NoError(t, err)
+	_, err = wt.Commit("seed", &gogit.CommitOptions{
+		Author: &object.Signature{Name: "test", Email: "test@example.com", When: time.Now()},
+	})
+	require.NoError(t, err)
+
+	bare := filepath.Join(t.TempDir(), "origin.git")
+	_, err = gogit.PlainClone(bare, true, &gogit.CloneOptions{URL: seed})
+	require.NoError(t, err)
+
+	return bare
+}
+
+// The failing-batch test above proves the observation is not skipped; this one proves it is
+// not confined to an error path. Without it, moving the defer into a failure branch would
+// leave the whole suite green.
+func TestBatcher_FlushObservesDurationsOnASuccessfulBatch(t *testing.T) {
+	t.Setenv("SSH_KEY_PATH", writeThrowawaySSHKey(t))
+	t.Setenv("GIT_OP_TIMEOUT", "60s")
+	t.Setenv("GIT_MAX_ATTEMPTS", "3")
+
+	remote := seedLocalRemote(t)
+	apps := []string{"app-a", "app-b"}
+
+	ctrl := gomock.NewController(t)
+	metrics := mocks.NewMockMetricsInterface(ctrl)
+	metrics.EXPECT().ObserveGitBatchSize(len(apps)).Times(1)
+	for _, app := range apps {
+		metrics.EXPECT().ObserveGitLockWaitDuration(app, gomock.Any()).Times(1)
+		metrics.EXPECT().ObserveGitWritebackDuration(app, gomock.Any()).Times(1)
+	}
+
+	b := NewBatcher(&spyLocker{}, t.TempDir(), 20, metrics)
+
+	batch := make([]*batchWriteRequest, 0, len(apps))
+	for _, app := range apps {
+		req := newBatchReq(remote, "master")
+		req.gitopsRepo.Path = "apps"
+		req.app = newAppWithImages(app)
+		req.task = newImageTask()
+		req.task.App = app
+		req.enqueuedAt = time.Now()
+		batch = append(batch, req)
+	}
+
+	b.flush(batch)
+
+	// The observation only means anything if the batch actually landed.
+	for _, req := range batch {
+		assert.NoError(t, <-req.resultCh, "app %s must succeed", req.task.App)
+	}
+	assert.Equal(t, 2, countRemoteCommitsBeyondSeed(t, remote), "one commit per app")
+}
+
+// countRemoteCommitsBeyondSeed reports how many commits the write-back added on top of the
+// single seed commit.
+func countRemoteCommitsBeyondSeed(t *testing.T, remote string) int {
+	t.Helper()
+
+	dir := t.TempDir()
+	repo, err := gogit.PlainClone(dir, false, &gogit.CloneOptions{URL: remote})
+	require.NoError(t, err)
+
+	iter, err := repo.Log(&gogit.LogOptions{})
+	require.NoError(t, err)
+
+	total := 0
+	require.NoError(t, iter.ForEach(func(*object.Commit) error {
+		total++
+		return nil
+	}))
+
+	return total - 1
 }
