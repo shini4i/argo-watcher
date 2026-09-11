@@ -23,6 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the concrete problem — waiting for an Argo CD deployment from a CI pipeline and learning whether
   the built image rolled out — instead of the "feedback loop for GitOps" tagline. The README gains a
   short **Why not `argocd app wait`?** section pointing at the new guide.
+- The server now refuses to start on two settings it previously accepted and then failed on at
+  runtime. `ARGO_URL` must be an absolute `http`/`https` URL with a host — a bare host was read as a
+  relative path, which made every Argo CD call fail with `unsupported protocol scheme` and silently
+  dropped the API token, since a cookie jar keys its cookies by scheme. `ARGO_API_TIMEOUT` must be
+  between 1 and 3600 seconds — anything outside that range left Argo CD calls with no timeout at
+  all. Both are reported by name at startup.
 
 ### Fixed
 
@@ -60,6 +66,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cancelled the other, both were monitored, and both wrote back — leaving the Git repository on
   whichever tag happened to be pushed last while both deployments reported success. Superseding and
   recording a deployment are now a single step, so the later submission always wins.
+
+- A retried Argo CD API call no longer resends the session token once per attempt. The retry reused
+  one request object, so the HTTP client appended the token again each time and the header grew with
+  every attempt. A proxy refusing the oversized header answers with a client error, which Argo
+  Watcher reads as the deployment failing rather than as Argo CD being unreachable — so a transient
+  blip could end a healthy deployment as `failed`.
+- `from_timestamp` and `to_timestamp` no longer accept a value that no window limit can bound.
+  `NaN`, `Inf` and numbers far outside the range of a real timestamp were parsed as valid, and
+  because every comparison against `NaN` is false they slipped past the look-back limit and reached
+  the database as written. Such a value is now ignored, as any other unparseable one already was.
+
+### Security
+
+- A `ARGO_URL` containing basic-auth credentials no longer has its password written into the startup
+  error, and from there into the container log, when the value is rejected. The configuration
+  endpoint already stripped userinfo for the same reason.
 
 ## [1.3.0] - 2026-09-09
 

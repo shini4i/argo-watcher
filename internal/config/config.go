@@ -20,6 +20,11 @@ import (
 // sweep instead, once an hour, without naming the setting at fault.
 const maxTaskRetentionDays = 36500
 
+// maxArgoApiTimeout is the ceiling on ARGO_API_TIMEOUT, in seconds. It is far
+// below where `time.Duration(seconds) * time.Second` overflows int64 back into a
+// non-positive value, which http.Client reads as no timeout at all.
+const maxArgoApiTimeout = 3600
+
 // URL is a url.URL that crosses every boundary as a URL string: the JSON of
 // GET /api/v1/config and the structured logs, which would otherwise carry the
 // eleven exported fields of a url.URL for every consumer to reassemble. It parses
@@ -38,10 +43,16 @@ func (u URL) MarshalText() ([]byte, error) {
 }
 
 // UnmarshalText parses a URL string, rejecting one url.Parse cannot read. It backs
-// both env parsing and JSON decoding of the config payload.
+// both env parsing and JSON decoding of the config payload. Only the parse reason
+// is returned: *url.Error quotes the value it rejected, which for ARGO_URL renders
+// basic-auth credentials into the startup error, as MarshalText notes.
 func (u *URL) UnmarshalText(text []byte) error {
 	parsed, err := url.Parse(string(text))
 	if err != nil {
+		var parseErr *url.Error
+		if errors.As(err, &parseErr) {
+			return parseErr.Err
+		}
 		return err
 	}
 	u.URL = *parsed
@@ -290,6 +301,20 @@ func validateServerConfig(config *ServerConfig) error {
 	}
 	if config.ArgoApiRetries < 1 || config.ArgoApiRetries > 10 {
 		problems = append(problems, fmt.Sprintf("  - ArgoApiRetries: must be between 1 and 10, got %d", config.ArgoApiRetries))
+	}
+	// url.Parse reads a bare host as a relative path, so without this the server
+	// starts and every call fails on "unsupported protocol scheme" — with the token
+	// silently dropped too, since a cookie jar keys its cookies by scheme. Only the
+	// parsed parts are echoed: String() would render basic-auth userinfo, as above.
+	if scheme := config.ArgoUrl.Scheme; (scheme != "http" && scheme != "https") || config.ArgoUrl.Host == "" {
+		problems = append(problems, fmt.Sprintf("  - ArgoUrl: must be an absolute http(s) URL with a host, got scheme %q and host %q",
+			config.ArgoUrl.Scheme, config.ArgoUrl.Host))
+	}
+	// The lower bound is load-bearing: http.Client reads a non-positive timeout as
+	// "no timeout". The upper one is a policy ceiling that also keeps the value far
+	// from the nanosecond overflow, which lands in the same place (maxArgoApiTimeout).
+	if config.ArgoApiTimeout < 1 || config.ArgoApiTimeout > maxArgoApiTimeout {
+		problems = append(problems, fmt.Sprintf("  - ArgoApiTimeout: must be between 1 and %d seconds, got %d", maxArgoApiTimeout, config.ArgoApiTimeout))
 	}
 	// A non-positive connect timeout means "wait indefinitely" for both pgx and
 	// libpq, silently defeating the fail-fast guard; only relevant for postgres.
