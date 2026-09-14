@@ -130,7 +130,7 @@ const valuesEqual = <T>(a: T, b: T): boolean => {
  * pending values into the URL, storage, and filterValues. `applied` reflects
  * the values currently mirrored, so `isDirty` distinguishes pending edits.
  */
-export const useFilterState = <T extends Record<string, unknown>>(
+export const useFilterState = <T extends object>(
   options: FilterStateOptions<T>,
 ): FilterStateController<T> => {
   const { storageKey, schema, defaults } = options;

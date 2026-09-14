@@ -7,8 +7,8 @@ import LinkIcon from '@mui/icons-material/Link';
 import { Link as RouterLink } from 'react-router-dom';
 import { tokens } from '../../../theme/tokens';
 import { useCopyToClipboard } from '../../../shared/hooks/useCopyToClipboard';
-import { describeTaskStatus } from '../../tasks/utils/statusPresentation';
 import { deriveAppState, type AppState } from '../deriveOverview';
+import { appStateColors } from '../appStateColors';
 import type { AppSummary } from '../types';
 
 interface PinnedAppsProps {
@@ -50,9 +50,8 @@ const Tile = ({
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
   const state: AppState = summary ? deriveAppState(summary) : 'idle';
-  const descriptor = describeTaskStatus(summary?.last_status);
-  const statusColor = isDark ? descriptor.pillFgDark : descriptor.pillFg;
-  const stateColor = state === 'idle' ? theme.palette.text.disabled : statusColor;
+  const stateColor =
+    state === 'idle' ? theme.palette.text.disabled : appStateColors(state, isDark).fg;
 
   return (
     <Box

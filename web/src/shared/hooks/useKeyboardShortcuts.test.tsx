@@ -15,10 +15,10 @@ const Probe = ({ handlers }: { handlers: ShortcutHandlers }) => {
 };
 
 describe('useKeyboardShortcuts', () => {
-  let onF: ReturnType<typeof vi.fn>;
+  let onF: () => void;
 
   beforeEach(() => {
-    onF = vi.fn();
+    onF = vi.fn(() => {});
   });
 
   it('runs the handler for a bare key press', () => {

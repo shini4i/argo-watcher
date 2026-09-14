@@ -1,20 +1,13 @@
 import { Box, Stack, Typography } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { tokens } from '../../../theme/tokens';
+import { monogramSwatch } from '../../../theme/monogram';
 import { RollbackIndicator } from './RollbackIndicator';
 
 interface AppCellProps {
   readonly app: string;
   readonly isRollback?: boolean;
 }
-
-const hashIndex = (name: string, modulo: number): number => {
-  let hash = 0;
-  for (let i = 0; i < name.length; i += 1) {
-    hash = Math.imul(hash, 31) + (name.codePointAt(i) ?? 0);
-  }
-  return Math.abs(hash) % modulo;
-};
 
 /** Derives 1-2 letter monogram initials from an app name (e.g. checkout-api → CA). */
 export const deriveMonogram = (name: string): string => {
@@ -65,9 +58,8 @@ export const describeProject = (project: string): ProjectLinkInfo => {
  */
 export const AppCell = ({ app, isRollback }: AppCellProps) => {
   const theme = useTheme();
-  const swatches = theme.palette.mode === 'dark' ? tokens.monogramSwatchesDark : tokens.monogramSwatches;
   const monogram = deriveMonogram(app);
-  const swatch = swatches[hashIndex(app, swatches.length)];
+  const swatch = monogramSwatch(app, theme.palette.mode === 'dark');
 
   return (
     <Stack

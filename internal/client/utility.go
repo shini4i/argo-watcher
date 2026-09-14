@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,7 +10,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
+
+	"github.com/avast/retry-go/v4"
 
 	"github.com/shini4i/argo-watcher/internal/models"
 )
@@ -26,8 +28,9 @@ func (e transientError) Error() string { return e.err.Error() }
 func (e transientError) Unwrap() error { return e.err }
 
 // doRequest presents the configured credential on every request it sends.
-func (watcher *Watcher) doRequest(method, url string, body io.Reader) (*http.Response, error) {
-	req, err := http.NewRequest(method, url, body)
+// Cancelling ctx aborts the request in flight.
+func (watcher *Watcher) doRequest(ctx context.Context, method, url string, body io.Reader) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
 		return nil, err
 	}
@@ -35,33 +38,39 @@ func (watcher *Watcher) doRequest(method, url string, body io.Reader) (*http.Res
 	return watcher.client.Do(req)
 }
 
-// getJSON sends a GET request to a provided URL, parses the JSON response and
-// stores it in the value pointed by v. Transient failures (network errors or
-// 5xx responses) are retried up to maxTransientRetries times with a fixed
-// backoff, so a temporary networking problem does not abort a long-running
-// deployment poll. Terminal failures (4xx, malformed responses) are returned
-// immediately — retrying them never succeeds.
-func (watcher *Watcher) getJSON(url string, v interface{}) error {
-	for attempt := 0; ; attempt++ {
-		err := watcher.getJSONOnce(url, v)
-		if err == nil {
-			return nil
-		}
+// getJSON GETs url and decodes the JSON response into v. Transient failures are
+// retried maxTransientRetries times with a fixed backoff; terminal ones (4xx, a
+// malformed body) are returned at once, because retrying them never succeeds.
+// Cancelling ctx aborts the request in flight and the wait before the next attempt.
+func (watcher *Watcher) getJSON(ctx context.Context, url string, v interface{}) error {
+	const totalAttempts = maxTransientRetries + 1
 
-		var te transientError
-		if !errors.As(err, &te) || attempt >= maxTransientRetries {
-			return err
-		}
-
-		log.Printf("transient error talking to argo-watcher (attempt %d/%d): %v; retrying in %s",
-			attempt+1, maxTransientRetries, err, watcher.retryDelay)
-		time.Sleep(watcher.retryDelay)
-	}
+	return retry.Do(
+		func() error { return watcher.getJSONOnce(ctx, url, v) },
+		retry.Context(ctx),
+		retry.Attempts(totalAttempts),
+		retry.Delay(watcher.retryDelay),
+		retry.DelayType(retry.FixedDelay),
+		retry.LastErrorOnly(true),
+		retry.RetryIf(func(err error) bool {
+			var te transientError
+			return errors.As(err, &te)
+		}),
+		retry.OnRetry(func(n uint, err error) {
+			// OnRetry also fires for the failure that spends the budget, which
+			// nothing follows; announcing a retry there would be a lie.
+			if n+1 >= totalAttempts {
+				return
+			}
+			log.Printf("transient error talking to argo-watcher (attempt %d/%d): %v; retrying in %s",
+				n+1, maxTransientRetries, err, watcher.retryDelay)
+		}),
+	)
 }
 
 // getJSONOnce wraps retryable failures in transientError; terminal ones are returned as-is.
-func (watcher *Watcher) getJSONOnce(url string, v interface{}) error {
-	resp, err := watcher.doRequest(http.MethodGet, url, nil)
+func (watcher *Watcher) getJSONOnce(ctx context.Context, url string, v interface{}) error {
+	resp, err := watcher.doRequest(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		if errors.Is(err, errInsecureRedirect) {
 			return err // a misconfiguration, not a blip — retrying never clears it
@@ -167,8 +176,8 @@ func printClientConfiguration(watcher *Watcher, task models.Task) {
 // generateAppUrl builds the ArgoCD UI link for the task's application from the
 // server's config, preferring ARGO_URL_ALIAS when the server publishes one.
 // It fails when that config cannot be fetched or carries an unparsable URL.
-func generateAppUrl(watcher *Watcher, task models.Task) (string, error) {
-	cfg, err := watcher.getWatcherConfig()
+func generateAppUrl(ctx context.Context, watcher *Watcher, task models.Task) (string, error) {
+	cfg, err := watcher.getWatcherConfig(ctx)
 	if err != nil {
 		return "", err
 	}

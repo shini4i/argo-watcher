@@ -317,7 +317,7 @@ func TestMattermostSend(t *testing.T) {
 		err := service.Send(models.Task{Id: "task-1", App: "app1", Status: models.StatusInProgressMessage})
 
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "mattermost returned status code 403, and failed to read response body: read error")
+		assert.Contains(t, err.Error(), "mattermost returned status code 403, and failed to read the response body: read error")
 	})
 
 	t.Run("Failed Template Execution", func(t *testing.T) {

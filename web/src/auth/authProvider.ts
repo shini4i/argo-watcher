@@ -465,14 +465,14 @@ export const authProvider: AuthProvider = {
     }
 
     const user = await manager.getUser();
-    const profile = user?.profile ?? {};
-    const id = (profile.sub as Identifier) ?? 'unknown';
+    const profile = user?.profile;
+    const id = (profile?.sub as Identifier) ?? 'unknown';
     // || not ??: a provider that concatenates absent given/family names sends an
     // empty string, which must fall through to the next claim.
-    const fullName = (profile.name as string) || (profile.preferred_username as string) || undefined;
-    const email = (profile.email as string) || undefined;
+    const fullName = profile?.name || (profile?.preferred_username as string) || undefined;
+    const email = profile?.email || undefined;
     const avatar =
-      (profile.picture as string) ||
+      profile?.picture ||
       (serverConfig?.oidc?.gravatar_fallback ? await gravatarUrl(email) : undefined);
 
     return { id, fullName, email, avatar };

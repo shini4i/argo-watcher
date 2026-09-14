@@ -1,5 +1,5 @@
 import { render } from '@testing-library/react';
-import type { ReactElement } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { RecentTasksList } from './RecentTasksList';
 
@@ -15,7 +15,7 @@ const {
 
   const taskListLayout = (props: Record<string, unknown>) => {
     layoutCallsInternal.push(props);
-    return <div data-testid="recent-task-layout">{props.children}</div>;
+    return <div data-testid="recent-task-layout">{props.children as ReactNode}</div>;
   };
 
   const toolbar = ({ storageKey }: { storageKey: string }) => (
@@ -87,7 +87,7 @@ describe('RecentTasksList', () => {
     expect(props.perPageStorageKey).toBe('recentTasks.perPage');
     expect(props.defaultPerPage).toBe(25);
 
-    const headerNode = props.header;
+    const headerNode = props.header as ReactElement<Record<string, unknown>>;
     expect(headerNode.type).toBe(RecentTasksToolbarMock);
     expect(headerNode.props.storageKey).toBe('recentTasks');
 
@@ -97,7 +97,7 @@ describe('RecentTasksList', () => {
     expect(getByTestId('recent-pagination').dataset.rows).toBe('10,25,50,100');
     expect(props.listProps.storeKey).toBe('recentTasks');
 
-    const emptyComponent = props.emptyComponent;
+    const emptyComponent = props.emptyComponent as ReactElement<Record<string, unknown>>;
     expect(emptyComponent.type).toBe(EmptyStateMock);
     expect(emptyComponent.props.icon).toBe('inbox');
     expect(emptyComponent.props.title).toMatch(/No recent tasks/i);

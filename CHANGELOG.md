@@ -34,9 +34,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `=`, an empty alias or image, whitespace inside either, a second `=`, and the same alias listed
   twice. Whitespace around the `=` is accepted and trimmed. Pointing two aliases at one image is
   unaffected.
+- `WEBHOOK_URL` and `MATTERMOST_URL` must be absolute `http`/`https` URLs with a host. A blank or
+  malformed value used to start cleanly and then fail every notification for the life of the
+  process; it is now refused at startup, by name. Surrounding whitespace is trimmed rather than
+  rejected.
+- A replica now opens at most 30 PostgreSQL connections — 20 for task and state queries, 10 for the
+  advisory locks the git write-back serializes on. The pool was previously unbounded, so a burst of
+  concurrent deployments could exhaust the server's `max_connections` and take every other client of
+  that database down with it. Size `max_connections` for at least 30 per replica.
+- Waiting for a lock no longer holds a database connection open. A write-back queued behind another
+  one used to occupy a connection for as long as the holder ran, which is minutes.
+- The client now stops at its next checkpoint on `SIGINT`/`SIGTERM` instead of being killed
+  mid-poll, so a cancelled CI job ends promptly rather than sleeping out its retry interval.
 
 ### Fixed
 
+- An application with failures in the window is no longer badged **Failing** in the success green on
+  the Overview. The badge took its colour from the application's most recent task while taking its
+  text from the window as a whole, so an app that had failed several times but happened to deploy
+  last read as healthy at a glance.
+- Task list columns no longer offer a sort that does nothing. Six headers were clickable and
+  reordered nothing, because neither the API nor the frontend has ever supported sorting.
+- A task list request answered with an empty body — an intermediary or a sign-in page in front of
+  the API — is now reported as a connection failure instead of rendering as an estate with no
+  deployments.
 - A superseded deployment is no longer reported as `failed`. When two deployments of the same
   application ran close together, the older one could finish deciding its own outcome just after
   the newer one cancelled it, and write that outcome over the cancellation — so the pipeline was

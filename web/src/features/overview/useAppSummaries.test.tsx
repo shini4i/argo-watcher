@@ -85,7 +85,7 @@ describe('useAppSummaries', () => {
 
   it('refetches when the window changes', async () => {
     const { rerender } = renderHook(({ w }: { w: '24h' | '30d' }) => useAppSummaries(w), {
-      initialProps: { w: '24h' as const },
+      initialProps: { w: '24h' as '24h' | '30d' },
     });
     await waitFor(() => expect(httpClient).toHaveBeenCalledTimes(1));
 
@@ -104,7 +104,7 @@ describe('useAppSummaries', () => {
 
     const { result, rerender } = renderHook(
       ({ w }: { w: '24h' | '30d' }) => useAppSummaries(w),
-      { initialProps: { w: '24h' as const } },
+      { initialProps: { w: '24h' as '24h' | '30d' } },
     );
     await waitFor(() => expect(result.current.apps).toHaveLength(1));
 
@@ -162,7 +162,7 @@ describe('useAppSummaries', () => {
 
     const { result, rerender } = renderHook(
       ({ w }: { w: '24h' | '30d' }) => useAppSummaries(w),
-      { initialProps: { w: '24h' as const } },
+      { initialProps: { w: '24h' as '24h' | '30d' } },
     );
     await waitFor(() => expect(resolvers).toHaveLength(1));
 

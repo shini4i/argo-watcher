@@ -48,8 +48,9 @@ func newPostgresTestEnv(t *testing.T, opts ...func(*config.ServerConfig)) *postg
 
 	db, err := env.state.orm.DB()
 	require.NoError(t, err)
-	// Connect sets no connection limit, so a pool left open outlives its test and a
-	// long run ends in "too many clients" rather than a real failure.
+	// Connect bounds the pool (configurePool), but a state left open still holds up
+	// to maxOpenConns connections past its test, so a long run ends in "too many
+	// clients" rather than a real failure.
 	t.Cleanup(func() { _ = db.Close() })
 
 	_, err = db.Exec("TRUNCATE TABLE tasks")

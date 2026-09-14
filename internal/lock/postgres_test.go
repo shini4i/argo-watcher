@@ -75,6 +75,32 @@ func TestPostgresLocker(t *testing.T) {
 	assert.Equal(t, expectedOrder, order, "The second goroutine should not have started until the first one committed its transaction")
 }
 
+// Acquiring is not the only way out of the poll loop: a failing probe must return its
+// error. Narrowing that exit turns a dead database into a loop that never returns —
+// reachable in normal operation, because shutdown closes this pool while waiters probe.
+func TestPostgresLocker_ProbeFailureEndsTheWait(t *testing.T) {
+	db := newLockerTestDB(t)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	require.NoError(t, sqlDB.Close())
+
+	locker := NewPostgresLocker(db)
+	done := make(chan error, 1)
+	go func() {
+		done <- locker.WithLock("probe-error-key", func() error {
+			return errors.New("the callback must not run on a closed pool")
+		})
+	}()
+
+	select {
+	case err := <-done:
+		require.Error(t, err)
+		assert.NotContains(t, err.Error(), "the callback must not run")
+	case <-time.After(10 * time.Second):
+		t.Fatal("WithLock kept polling instead of returning the probe error")
+	}
+}
+
 // newLockerTestDB opens the shared integration database, or skips the test.
 func newLockerTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
@@ -109,14 +135,19 @@ func TestPostgresLocker_CommitFailureAfterCallbackKeepsCallbackOutcome(t *testin
 	var ran bool
 	err := locker.WithLock("commit-failure-key", func() error {
 		ran = true
-		// The session holding the lock is the only one idle in a transaction
-		// that took it.
+		// Matched on the lock id, not on query text: the locker probes with
+		// pg_TRY_advisory_xact_lock, and internal/state takes real advisory locks on
+		// this same database from a suite running alongside this one.
 		var pids []int
+		lockID := GenerateLockID("commit-failure-key")
 		require.NoError(t, killer.Raw(`
-			SELECT pid FROM pg_stat_activity
-			WHERE state = 'idle in transaction'
-			  AND query ILIKE '%pg_advisory_xact_lock%'
-			  AND pid <> pg_backend_pid()`).Scan(&pids).Error)
+			SELECT a.pid FROM pg_locks l
+			JOIN pg_stat_activity a ON a.pid = l.pid
+			WHERE l.locktype = 'advisory'
+			  AND l.granted
+			  AND l.objsubid = 1
+			  AND ((l.classid::bigint << 32) | l.objid::bigint) = ?
+			  AND a.pid <> pg_backend_pid()`, lockID).Scan(&pids).Error)
 		require.Len(t, pids, 1, "expected exactly one session holding the advisory lock")
 		require.NoError(t, killer.Exec("SELECT pg_terminate_backend(?)", pids[0]).Error)
 		return nil
@@ -134,4 +165,94 @@ func TestPostgresLocker_CallbackErrorIsReturned(t *testing.T) {
 	err := locker.WithLock("callback-error-key", func() error { return sentinel })
 
 	assert.ErrorIs(t, err, sentinel)
+}
+
+// The pool holds two connections: the holder takes one, the waiter the other, and the
+// holder then needs one to get on with its work. Blocking in pg_advisory_xact_lock
+// parks the waiter's connection until the holder commits, which it then cannot — the
+// deadlock. Gated on POSTGRES_DSN, skipped in short mode.
+func TestPostgresLocker_WaiterDoesNotPinAConnection(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode.")
+	}
+
+	dsn := os.Getenv("POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("POSTGRES_DSN environment variable not set. Skipping integration test.")
+	}
+
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	require.NoError(t, err)
+
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(2)
+
+	locker := NewPostgresLocker(db)
+	key := "contended-pool-key"
+
+	held := make(chan struct{})
+	queried := make(chan error, 1)
+	done := make(chan error, 2)
+
+	go func() {
+		done <- locker.WithLock(key, func() error {
+			close(held)
+			// Stands in for the write-back's own reads: work the holder does while
+			// holding the lock, needing a connection the waiter must not be sitting
+			// on. Reachable only if the waiter releases between probes.
+			<-time.After(5 * lockBasePollInterval)
+			queried <- db.Exec("SELECT 1").Error
+			return nil
+		})
+	}()
+
+	<-held
+	go func() {
+		done <- locker.WithLock(key, func() error { return nil })
+	}()
+
+	select {
+	case err := <-queried:
+		require.NoError(t, err, "the holder must still be able to query while a waiter waits")
+	case <-time.After(30 * time.Second):
+		t.Fatal("a lock waiter pinned a pooled connection; the holder could not get one")
+	}
+
+	for range 2 {
+		select {
+		case err := <-done:
+			require.NoError(t, err)
+		case <-time.After(30 * time.Second):
+			t.Fatal("WithLock did not return")
+		}
+	}
+}
+
+// The advisory-lock pool is bounded so the locker cannot open a connection per
+// concurrent write-back, and its closer must actually close the pool it hands back.
+// Gated on POSTGRES_DSN, skipped in short mode.
+func TestNewPostgresLockerPool_BoundsThePoolAndClosesIt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode.")
+	}
+
+	dsn := os.Getenv("POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("POSTGRES_DSN environment variable not set. Skipping integration test.")
+	}
+
+	locker, closePool, err := NewPostgresLockerPool(dsn)
+	require.NoError(t, err)
+
+	pg, ok := locker.(*PostgresLocker)
+	require.True(t, ok)
+	sqlDB, err := pg.db.DB()
+	require.NoError(t, err)
+	assert.Equal(t, lockMaxOpenConns, sqlDB.Stats().MaxOpenConnections)
+
+	require.NoError(t, closePool())
+	assert.Error(t, pg.db.Exec("SELECT 1").Error, "the closer must close the pool it returned")
 }

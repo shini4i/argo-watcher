@@ -3,7 +3,7 @@ import { HttpError } from 'react-admin';
 import { buildQueryString, httpClient, REQUEST_TIMEOUT_MS } from './httpClient';
 
 const { getAccessTokenMock } = vi.hoisted(() => ({
-  getAccessTokenMock: vi.fn(() => 'token-abc'),
+  getAccessTokenMock: vi.fn<() => string | undefined>(() => 'token-abc'),
 }));
 
 vi.mock('../auth/tokenStore', () => ({

@@ -4,6 +4,7 @@ import LaunchIcon from '@mui/icons-material/Launch';
 import RestoreIcon from '@mui/icons-material/Restore';
 import type { TaskStatus } from '../../../../data/types';
 import { tokens } from '../../../../theme/tokens';
+import { monogramSwatch } from '../../../../theme/monogram';
 import { deriveMonogram } from '../../components/AppCell';
 import { StatusPill } from '../../components/StatusPill';
 import { RollbackIndicator } from '../../components/RollbackIndicator';
@@ -19,14 +20,6 @@ interface TaskHeaderProps {
   readonly redeployLoading: boolean;
   readonly onRedeploy: () => void;
 }
-
-const hashIndex = (name: string, modulo: number): number => {
-  let hash = 0;
-  for (let i = 0; i < name.length; i += 1) {
-    hash = Math.imul(hash, 31) + (name.codePointAt(i) ?? 0);
-  }
-  return Math.abs(hash) % modulo;
-};
 
 /**
  * @description Identity and actions for the task: the app name is the title,
@@ -45,9 +38,7 @@ export const TaskHeader = ({
 }: TaskHeaderProps) => {
   const theme = useTheme();
   const app = task.app ?? 'Unknown';
-  const swatches =
-    theme.palette.mode === 'dark' ? tokens.monogramSwatchesDark : tokens.monogramSwatches;
-  const swatch = swatches[hashIndex(app, swatches.length)];
+  const swatch = monogramSwatch(app, theme.palette.mode === 'dark');
 
   return (
     <Stack

@@ -1,9 +1,10 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { localStorageStore, StoreContextProvider } from 'react-admin';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { OverviewPage } from './OverviewPage';
 import type { AppSummary } from './types';
+import { tokens } from '../../theme/tokens';
 
 const httpClient = vi.fn();
 vi.mock('../../data/httpClient', async importOriginal => ({
@@ -83,6 +84,35 @@ describe('OverviewPage', () => {
 
     await waitFor(() => expect(screen.getByText('ALL APPLICATIONS')).toBeInTheDocument());
     expect(screen.queryByText(/last 1 ?000/i)).toBeNull();
+  });
+
+  // An app whose most recent task deployed but which failed earlier in the window is
+  // still Failing. Taking the badge colour from last_status instead of that derived
+  // state painted the word "Failing" in the success green.
+  it('paints a recovered-but-failing card in the failed colour, not the deployed one', async () => {
+    respondWith([summary({ app: 'flaky', failed: 3, deployed: 1, last_status: 'deployed' })]);
+
+    renderPage();
+
+    const chip = await screen.findByText('Failing');
+    expect(chip).toHaveStyle({ color: tokens.statusFailedFg });
+    expect(chip).not.toHaveStyle({ color: tokens.statusDeployedFg });
+  });
+
+  it('paints a recovered-but-failing pinned tile in the failed colour too', async () => {
+    respondWith([summary({ app: 'flaky', failed: 3, deployed: 1, last_status: 'deployed' })]);
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText('MY APPS')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /Pin an app/ }));
+    fireEvent.click(await screen.findByRole('option', { name: 'flaky' }));
+
+    const unpin = await screen.findByRole('button', { name: 'Unpin flaky' });
+    // Scoped to the tile: the attention card above it also says "Failing".
+    const tile = unpin.parentElement as HTMLElement;
+    const label = within(tile).getByText('Failing');
+    expect(label).toHaveStyle({ color: tokens.statusFailedFg });
+    expect(label).not.toHaveStyle({ color: tokens.statusDeployedFg });
   });
 
   it('cards only the applications needing attention', async () => {

@@ -78,7 +78,7 @@ describe('AppTopBar', () => {
         <ThemeModeProvider>
           <DeployLockProvider>
             <MemoryRouter initialEntries={[path]}>
-              <AppTopBar open title="Argo Watcher" />
+              <AppTopBar title="Argo Watcher" />
             </MemoryRouter>
           </DeployLockProvider>
         </ThemeModeProvider>,
@@ -125,7 +125,7 @@ describe('AppTopBar', () => {
       <ThemeModeProvider>
         <DeployLockProvider>
           <MemoryRouter>
-            <AppTopBar open title="Argo Watcher" />
+            <AppTopBar title="Argo Watcher" />
           </MemoryRouter>
         </DeployLockProvider>
       </ThemeModeProvider>,

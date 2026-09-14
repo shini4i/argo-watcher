@@ -56,7 +56,7 @@ export const SecretRevealDialog = ({ secret, onClose }: SecretRevealDialogProps)
             manager now — if you lose it, revoke it and issue a new one.
           </Alert>
 
-          <Stack direction="row" spacing={1} alignItems="flex-start">
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
             <TextField
               label="Token"
               value={secret ?? ''}

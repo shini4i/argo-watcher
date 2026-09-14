@@ -94,7 +94,7 @@ export const AppTokensPage = () => {
 
   return (
     <Box sx={{ p: 3 }}>
-      <Stack direction="row" alignItems="center" sx={{ mb: 2, width: '100%' }}>
+      <Stack direction="row" sx={{ alignItems: 'center', mb: 2, width: '100%' }}>
         <Box sx={{ flexGrow: 1, minWidth: 0 }}>
           <Typography variant="h6">Deploy tokens</Typography>
           <Typography variant="body2" color="text.secondary">
@@ -118,7 +118,7 @@ export const AppTokensPage = () => {
       )}
 
       {loading && tokens.length === 0 ? (
-        <Stack alignItems="center" sx={{ py: 4 }}>
+        <Stack sx={{ alignItems: 'center', py: 4 }}>
           <CircularProgress size={28} />
         </Stack>
       ) : (

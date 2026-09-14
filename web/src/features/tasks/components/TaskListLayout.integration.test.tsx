@@ -1,3 +1,4 @@
+import type { DataProvider } from 'react-admin';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { AdminContext, HttpError, testDataProvider, useListContext, useRefresh } from 'react-admin';
 import { MemoryRouter } from 'react-router-dom';
@@ -35,7 +36,7 @@ const RefreshButton = () => {
 const renderList = (getList: () => Promise<unknown>) =>
   render(
     <MemoryRouter>
-      <AdminContext dataProvider={testDataProvider({ getList: vi.fn(getList) })}>
+      <AdminContext dataProvider={testDataProvider({ getList: vi.fn(getList) as unknown as DataProvider['getList'] })}>
         <TaskListLayout
           perPageStorageKey="test.perPage"
           header={[<ErrorProbe key="probe" />, <RefreshButton key="refresh" />]}
@@ -96,7 +97,7 @@ describe('TaskListLayout against react-admin', () => {
 
     render(
       <MemoryRouter>
-        <AdminContext dataProvider={testDataProvider({ getList })}>
+        <AdminContext dataProvider={testDataProvider({ getList: getList as unknown as DataProvider['getList'] })}>
           <TaskListLayout
             perPageStorageKey="test.perPage"
             header={<RecentTasksToolbar storageKey="searchIntegration" />}

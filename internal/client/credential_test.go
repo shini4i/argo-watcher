@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -95,9 +96,9 @@ func TestReadsCarryCredential(t *testing.T) {
 			tc.config.Timeout = 30 * time.Second
 			watcher := setupWatcher(tc.config)
 
-			_, err := watcher.getTaskStatus(taskId)
+			_, err := watcher.getTaskStatus(context.Background(), taskId)
 			require.NoError(t, err)
-			_, err = watcher.getWatcherConfig()
+			_, err = watcher.getWatcherConfig(context.Background())
 			require.NoError(t, err)
 
 			assert.Equal(t, tc.wantValue, seen["/api/v1/tasks/"+taskId], "the status poll must carry the credential")
@@ -137,7 +138,7 @@ func TestCredentialDroppedOnCrossHostRedirect(t *testing.T) {
 
 		watcher := setupWatcher(&Config{Url: origin.URL, Token: "s3cr3t-deploy-token", Timeout: 30 * time.Second})
 
-		_, err := watcher.getTaskStatus(taskId)
+		_, err := watcher.getTaskStatus(context.Background(), taskId)
 
 		require.NoError(t, err)
 		assert.Empty(t, elsewhereSaw, "the deploy token must not follow a redirect to another host")
@@ -157,7 +158,7 @@ func TestCredentialDroppedOnCrossHostRedirect(t *testing.T) {
 
 		watcher := setupWatcher(&Config{Url: srv.URL, Token: "s3cr3t-deploy-token", Timeout: 30 * time.Second})
 
-		_, err := watcher.getTaskStatus(taskId)
+		_, err := watcher.getTaskStatus(context.Background(), taskId)
 
 		require.NoError(t, err)
 		assert.Equal(t, "s3cr3t-deploy-token", seen)
@@ -204,7 +205,7 @@ func TestCrossHostRedirectIsReported(t *testing.T) {
 		watcher := setupWatcher(&Config{Url: origin.URL, Token: "s3cr3t-deploy-token", Timeout: 30 * time.Second})
 
 		output := captureLog(t, func() {
-			_, err := watcher.getTaskStatus(taskId)
+			_, err := watcher.getTaskStatus(context.Background(), taskId)
 			require.NoError(t, err)
 		})
 
@@ -229,7 +230,7 @@ func TestCrossHostRedirectIsReported(t *testing.T) {
 		watcher := setupWatcher(&Config{Url: srv.URL, Token: "s3cr3t-deploy-token", Timeout: 30 * time.Second})
 
 		output := captureLog(t, func() {
-			_, err := watcher.getTaskStatus(taskId)
+			_, err := watcher.getTaskStatus(context.Background(), taskId)
 			require.NoError(t, err)
 		})
 
@@ -250,7 +251,7 @@ func TestCrossHostRedirectIsReported(t *testing.T) {
 		watcher := setupWatcher(&Config{Url: origin.URL, Timeout: 30 * time.Second})
 
 		output := captureLog(t, func() {
-			_, err := watcher.getTaskStatus(taskId)
+			_, err := watcher.getTaskStatus(context.Background(), taskId)
 			require.NoError(t, err)
 		})
 
@@ -275,7 +276,7 @@ func TestCrossHostRedirectIsReported(t *testing.T) {
 		watcher := setupWatcher(&Config{Url: origin.URL, JsonWebToken: testJWT, Timeout: 30 * time.Second})
 
 		output := captureLog(t, func() {
-			_, err := watcher.getTaskStatus(taskId)
+			_, err := watcher.getTaskStatus(context.Background(), taskId)
 			require.NoError(t, err)
 		})
 
@@ -300,7 +301,7 @@ func TestCrossHostRedirectIsReported(t *testing.T) {
 		watcher := setupWatcher(&Config{Url: origin.URL, JsonWebToken: testJWT, Timeout: 30 * time.Second})
 
 		output := captureLog(t, func() {
-			_, err := watcher.getTaskStatus(taskId)
+			_, err := watcher.getTaskStatus(context.Background(), taskId)
 			require.NoError(t, err)
 		})
 
@@ -324,9 +325,9 @@ func TestCrossHostRedirectIsReported(t *testing.T) {
 		watcher := setupWatcher(&Config{Url: origin.URL, Token: "s3cr3t-deploy-token", Timeout: 30 * time.Second})
 
 		output := captureLog(t, func() {
-			_, err := watcher.getTaskStatus(taskId)
+			_, err := watcher.getTaskStatus(context.Background(), taskId)
 			require.NoError(t, err)
-			_, err = watcher.getTaskStatus(taskId)
+			_, err = watcher.getTaskStatus(context.Background(), taskId)
 			require.NoError(t, err)
 		})
 
@@ -336,7 +337,7 @@ func TestCrossHostRedirectIsReported(t *testing.T) {
 		// A second watcher is a second run: suppression must not be process-global.
 		second := setupWatcher(&Config{Url: origin.URL, Token: "s3cr3t-deploy-token", Timeout: 30 * time.Second})
 		secondOutput := captureLog(t, func() {
-			_, err := second.getTaskStatus(taskId)
+			_, err := second.getTaskStatus(context.Background(), taskId)
 			require.NoError(t, err)
 		})
 		assert.Equal(t, 1, strings.Count(secondOutput, "without git write-back"),
@@ -370,7 +371,7 @@ func TestCrossHostRedirectIsReported(t *testing.T) {
 
 			watcher := setupWatcher(both(origin.URL))
 			output := captureLog(t, func() {
-				_, err := watcher.getTaskStatus(taskId)
+				_, err := watcher.getTaskStatus(context.Background(), taskId)
 				require.NoError(t, err)
 			})
 
@@ -392,7 +393,7 @@ func TestCrossHostRedirectIsReported(t *testing.T) {
 
 			watcher := setupWatcher(both(origin.URL))
 			output := captureLog(t, func() {
-				_, err := watcher.getTaskStatus(taskId)
+				_, err := watcher.getTaskStatus(context.Background(), taskId)
 				require.NoError(t, err)
 			})
 
@@ -561,7 +562,7 @@ func TestRedirectDowngradeIsRefusedInFlight(t *testing.T) {
 	watcher := setupWatcher(&Config{Url: origin.URL, Token: "s3cr3t-deploy-token", Timeout: 30 * time.Second})
 	watcher.client.Transport = origin.Client().Transport // trust the test server's certificate
 
-	_, err := watcher.getTaskStatus(taskId)
+	_, err := watcher.getTaskStatus(context.Background(), taskId)
 
 	require.ErrorIs(t, err, errInsecureRedirect)
 	assert.Zero(t, plainHits, "the plaintext hop must never be made")
@@ -594,7 +595,7 @@ func TestReadsWithoutCredentialStayBare(t *testing.T) {
 
 	watcher := setupWatcher(&Config{Url: srv.URL, Timeout: 30 * time.Second})
 
-	_, err := watcher.getTaskStatus(taskId)
+	_, err := watcher.getTaskStatus(context.Background(), taskId)
 	require.NoError(t, err)
 
 	assert.Empty(t, headers.Get(jwtHeader))

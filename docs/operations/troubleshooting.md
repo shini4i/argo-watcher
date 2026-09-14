@@ -334,7 +334,8 @@ Also check whether `LOCKDOWN_SCHEDULE` covers the current time. Schedules are ev
 
 **Likely causes**
 
-- `WEBHOOK_ENABLED` is not `true`, or `WEBHOOK_URL` is unset or unreachable from the server.
+- `WEBHOOK_ENABLED` is not `true`, or `WEBHOOK_URL` is set but unreachable from the server. An
+  unset or malformed `WEBHOOK_URL` fails startup instead, so the server would not be running.
 - The receiver answers with a code that is not in `WEBHOOK_ALLOWED_RESPONSE_CODES` (default `200` only). A receiver replying `201` or `204` counts as a failure until you list it.
 - The receiver rejects the request because `WEBHOOK_AUTHORIZATION_HEADER_NAME`/`_VALUE` do not match what it expects, or `WEBHOOK_CONTENT_TYPE` does not match the body.
 - `WEBHOOK_FORMAT` references a field that does not exist. (A template that does not *parse* fails startup instead, so the server would not be running.)

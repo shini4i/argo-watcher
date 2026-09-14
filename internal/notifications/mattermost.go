@@ -2,17 +2,14 @@ package notifications
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
 	"text/template"
-	"time"
 
 	"github.com/shini4i/argo-watcher/internal/config"
 	"github.com/shini4i/argo-watcher/internal/models"
@@ -51,8 +48,9 @@ func NewMattermostStrategy(cfg *config.MattermostConfig, client HTTPClient) (*Ma
 	if !cfg.Enabled {
 		return nil, errors.New("mattermost strategy disabled")
 	}
-	if strings.TrimSpace(cfg.Url) == "" {
-		return nil, errors.New("mattermost url cannot be empty")
+	receiverURL, err := validateReceiverURL("mattermost", cfg.Url)
+	if err != nil {
+		return nil, err
 	}
 	if strings.TrimSpace(cfg.Token) == "" {
 		return nil, errors.New("mattermost token cannot be empty")
@@ -73,7 +71,7 @@ func NewMattermostStrategy(cfg *config.MattermostConfig, client HTTPClient) (*Ma
 	}
 
 	return &MattermostStrategy{
-		baseURL:       strings.TrimSuffix(cfg.Url, "/"),
+		baseURL:       strings.TrimSuffix(receiverURL, "/"),
 		token:         cfg.Token,
 		channelID:     cfg.ChannelId,
 		mentionAuthor: cfg.MentionAuthor,
@@ -127,9 +125,6 @@ func (s *MattermostStrategy) Send(task models.Task) error {
 }
 
 func (s *MattermostStrategy) createPost(post mattermostPostRequest) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
 	payload, err := json.Marshal(post)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal mattermost post: %w", err)
@@ -137,43 +132,22 @@ func (s *MattermostStrategy) createPost(post mattermostPostRequest) (string, err
 
 	slog.Debug("Sending mattermost post", "payload", string(payload))
 
-	req, err := http.NewRequestWithContext(ctx, "POST", s.baseURL+"/api/v4/posts", bytes.NewReader(payload))
-	if err != nil {
-		return "", fmt.Errorf("failed to create mattermost request: %w", redactURL(err))
+	headers := map[string]string{
+		"Content-Type":  "application/json",
+		"Authorization": "Bearer " + s.token,
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+s.token)
-
-	resp, err := s.client.Do(req)
+	body, err := deliverPost(s.client, "mattermost", s.baseURL+"/api/v4/posts", headers, payload, []int{http.StatusCreated})
 	if err != nil {
-		return "", fmt.Errorf("failed to send mattermost post: %w", redactURL(err))
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			slog.Warn("Failed to close mattermost response body", "error", err)
-		}
-	}()
-
-	if resp.StatusCode != http.StatusCreated {
-		lr := io.LimitReader(resp.Body, maxErrorBodySize)
-		body, readErr := io.ReadAll(lr)
-		if readErr != nil {
-			return "", fmt.Errorf("mattermost returned status code %d, and failed to read response body: %w", resp.StatusCode, readErr)
-		}
-		return "", fmt.Errorf("mattermost returned status code %d: %s", resp.StatusCode, string(body))
+		return "", err
 	}
 
 	var created mattermostPostResponse
-	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+	if err := json.Unmarshal(body, &created); err != nil {
 		return "", fmt.Errorf("failed to decode mattermost response: %w", err)
 	}
 	if created.Id == "" {
 		return "", errors.New("mattermost response is missing post id")
-	}
-
-	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
-		slog.Warn("Failed to discard mattermost response body", "error", err)
 	}
 
 	return created.Id, nil

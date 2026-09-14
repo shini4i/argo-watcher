@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { ArgocdStatusListener } from './argocdStatusService';
 import { ArgocdStatusService } from './argocdStatusService';
 import { MockWebSocket } from '../../test/mockWebSocket';
@@ -37,8 +37,8 @@ describe('ArgocdStatusService', () => {
     const service = new ArgocdStatusService();
     service.subscribe(vi.fn());
 
-    await vi.waitUntil(() => (globalThis.fetch as unknown as vi.Mock).mock.calls.length > 0);
-    const fetchCalls = (globalThis.fetch as unknown as vi.Mock).mock.calls;
+    await vi.waitUntil(() => (globalThis.fetch as unknown as Mock).mock.calls.length > 0);
+    const fetchCalls = (globalThis.fetch as unknown as Mock).mock.calls;
     expect(fetchCalls[0][0]).toContain('/api/v1/reachability');
   });
 
@@ -155,13 +155,13 @@ describe('ArgocdStatusService', () => {
     const service = new ArgocdStatusService();
     const unsubscribe = service.subscribe(vi.fn());
 
-    await vi.waitUntil(() => (globalThis.fetch as unknown as vi.Mock).mock.calls.length === 1);
+    await vi.waitUntil(() => (globalThis.fetch as unknown as Mock).mock.calls.length === 1);
     unsubscribe(); // last subscriber leaves -> teardown clears cached state
 
     const listener = vi.fn();
     service.subscribe(listener);
     // currentStatus was reset, so a second bootstrap fetch must fire (not a replay).
-    await vi.waitUntil(() => (globalThis.fetch as unknown as vi.Mock).mock.calls.length === 2);
+    await vi.waitUntil(() => (globalThis.fetch as unknown as Mock).mock.calls.length === 2);
     await vi.waitUntil(() => listener.mock.calls.some(c => c[0].available === false));
     expect(listener).toHaveBeenLastCalledWith({ available: false, reason: 'database' });
   });
@@ -174,7 +174,7 @@ describe('ArgocdStatusService', () => {
     mockFetch([{ body: { available: true } }]);
     const service = new ArgocdStatusService();
     const unsubscribe = service.subscribe(vi.fn());
-    await vi.waitUntil(() => (globalThis.fetch as unknown as vi.Mock).mock.calls.length === 1);
+    await vi.waitUntil(() => (globalThis.fetch as unknown as Mock).mock.calls.length === 1);
 
     let resolveFetch: (r: Response) => void = () => {};
     let markStarted: () => void = () => {};

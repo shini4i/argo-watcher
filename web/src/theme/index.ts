@@ -1,5 +1,5 @@
 import type { PaletteMode, ThemeOptions } from '@mui/material';
-import { createTheme, lighten } from '@mui/material/styles';
+import { createTheme } from '@mui/material/styles';
 import { tokens } from './tokens';
 
 const getDesignTokens = (mode: PaletteMode): ThemeOptions => ({
@@ -36,13 +36,7 @@ const getDesignTokens = (mode: PaletteMode): ThemeOptions => ({
           },
           divider: tokens.divider,
         }),
-    neutral: {
-      main: '#808080',
-    },
-    reason_color: {
-      main: lighten('#ff9800', 0.5),
-    },
-  } as ThemeOptions['palette'],
+  },
   typography: {
     fontFamily: tokens.fontSans,
   },

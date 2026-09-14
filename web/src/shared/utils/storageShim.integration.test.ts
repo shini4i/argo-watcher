@@ -26,11 +26,11 @@ describe('storage shim against react-admin', () => {
 
     // react-admin calls reset() on logout, and both it and listItems()
     // enumerate the Storage object rather than calling its methods.
-    expect(store.listItems()).toEqual({ 'shim.probe': 'value' });
+    expect(store.listItems?.()).toEqual({ 'shim.probe': 'value' });
 
     store.reset();
     expect(store.getItem('shim.probe')).toBeUndefined();
-    expect(store.listItems()).toEqual({});
+    expect(store.listItems?.()).toEqual({});
   });
 
   // The bootstrap module is the middle link: main.tsx imports it for its side

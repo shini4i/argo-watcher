@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { DeployLockListener } from './deployLockService';
 import { DeployLockService } from './deployLockService';
 import { MockWebSocket } from '../../test/mockWebSocket';
@@ -160,14 +160,14 @@ describe('DeployLockService', () => {
     const service = new DeployLockService();
     const unsubscribe = service.subscribe(vi.fn());
 
-    await vi.waitUntil(() => (globalThis.fetch as unknown as vi.Mock).mock.calls.length === 1);
+    await vi.waitUntil(() => (globalThis.fetch as unknown as Mock).mock.calls.length === 1);
     unsubscribe(); // last subscriber leaves -> teardown clears cached state
 
     const listener = vi.fn();
     service.subscribe(listener);
     // currentStatus was reset, so a second bootstrap fetch must fire (not a replay
     // of a value that could have gone stale while nobody was listening).
-    await vi.waitUntil(() => (globalThis.fetch as unknown as vi.Mock).mock.calls.length === 2);
+    await vi.waitUntil(() => (globalThis.fetch as unknown as Mock).mock.calls.length === 2);
     await vi.waitUntil(() => listener.mock.calls.some(call => call[0] === true));
     expect(listener).toHaveBeenLastCalledWith(true);
   });
@@ -331,7 +331,7 @@ describe('DeployLockService', () => {
     mockFetch([{ body: false }]);
     const service = new DeployLockService();
     const unsubscribe = service.subscribe(vi.fn());
-    await vi.waitUntil(() => (globalThis.fetch as unknown as vi.Mock).mock.calls.length === 1);
+    await vi.waitUntil(() => (globalThis.fetch as unknown as Mock).mock.calls.length === 1);
 
     const { resolveWith, started } = mockPendingFetch();
     const pending = service.fetchStatus();
@@ -358,7 +358,7 @@ describe('DeployLockService', () => {
     await service.setLock();
     await service.releaseLock();
 
-    const fetchCalls = (globalThis.fetch as unknown as vi.Mock).mock.calls;
+    const fetchCalls = (globalThis.fetch as unknown as Mock).mock.calls;
     expect(fetchCalls[1][0]).toContain('/api/v1/deploy-lock');
     expect(fetchCalls[1][1]).toMatchObject({ method: 'POST' });
     expect(fetchCalls[2][1]).toMatchObject({ method: 'DELETE' });

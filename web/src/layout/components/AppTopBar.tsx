@@ -67,7 +67,11 @@ const routeIsActive = (pathname: string, target: string) => {
 
 export const AppTopBar = (props: AppBarProps) => {
   const { sx: appBarSxProp, ...appBarProps } = props;
-  const composedSx: SxProps<Theme> = appBarSxProp ? [appBarStyles, appBarSxProp] : appBarStyles;
+  // Flattened, not nested: MUI's sx array form holds style objects, not other arrays.
+  const composedSx: SxProps<Theme> = [
+    appBarStyles,
+    ...(Array.isArray(appBarSxProp) ? appBarSxProp : [appBarSxProp]),
+  ];
   const [version, setVersion] = useState<string>('—');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const notify = useNotify();

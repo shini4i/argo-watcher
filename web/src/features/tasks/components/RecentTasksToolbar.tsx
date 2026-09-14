@@ -13,7 +13,7 @@ import { SearchInput } from './SearchInput';
 import { StatusTabs } from './StatusTabs';
 import { useTaskListContext } from './TaskListContext';
 
-interface RecentFiltersValues extends Record<string, unknown> {
+interface RecentFiltersValues {
   app: string;
   status: string | null;
   search: string;
