@@ -78,6 +78,14 @@ func NewServer(serverConfig *config.ServerConfig, reg prometheus.Registerer) (*S
 	// correct for a single replica only.
 	var locker lock.Locker
 	var closeLockPool func() error
+	// The returned Server takes the pool over; until it does, every error return
+	// below would leak it, and a caller that retries startup accumulates connections.
+	handedOver := false
+	defer func() {
+		if closeLockPool != nil && !handedOver {
+			_ = closeLockPool()
+		}
+	}()
 	var deployLockStore lock.DeployLockStore
 	// Nil unless the state is Postgres, which turns application deploy tokens off:
 	// they must survive a restart and be visible to every replica.
@@ -147,6 +155,8 @@ func NewServer(serverConfig *config.ServerConfig, reg prometheus.Registerer) (*S
 	// error path, so the cancel is always owned by the returned Server.
 	probeCtx, probeCancel := context.WithCancel(context.Background())
 	go argo.StartLivenessProbe(probeCtx, argocd.ArgoLivenessProbeInterval)
+
+	handedOver = true
 
 	return &Server{
 		router:        router,

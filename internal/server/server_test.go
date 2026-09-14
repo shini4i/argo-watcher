@@ -70,6 +70,39 @@ func TestNewServer_PostgresBuildsADedicatedLockPool(t *testing.T) {
 	})
 }
 
+// A startup that fails after the advisory-lock pool is open must still close it.
+// Only the returned Server owns that pool, so a caller retrying startup — a test
+// suite, or a supervised restart in-process — would otherwise pile up connections.
+func TestNewServer_PostgresClosesTheLockPoolWhenStartupFails(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode.")
+	}
+	dsn := os.Getenv("POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("POSTGRES_DSN environment variable not set. Skipping integration test.")
+	}
+
+	argoURL, err := url.Parse("https://argo.example.com")
+	require.NoError(t, err)
+
+	// Rejected by NewBatchConfig, which runs after the pool is created.
+	t.Setenv("GIT_BATCH_WRITEBACK", "true")
+	t.Setenv("GIT_BATCH_MAX_SIZE", "0")
+
+	s, err := NewServer(&config.ServerConfig{
+		ArgoUrl:   config.URL{URL: *argoURL},
+		ArgoToken: "test-token",
+		StateType: "postgres",
+		Db:        config.DatabaseConfig{DSN: dsn},
+	}, prometheus.NewRegistry())
+
+	require.Error(t, err)
+	assert.Nil(t, s)
+	// Names the failure that proves the pool was already open when it happened —
+	// the window the deferred close covers. Fail earlier and this guards nothing.
+	assert.Contains(t, err.Error(), "GIT_BATCH_MAX_SIZE")
+}
+
 func TestNewServer_StateInitFailure(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	argoURL, err := url.Parse("https://argo.example.com")

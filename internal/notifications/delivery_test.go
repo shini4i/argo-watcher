@@ -50,10 +50,12 @@ func TestValidateReceiverURL(t *testing.T) {
 // The receiver URL is itself the credential, so a rejection must describe the fault
 // without reprinting the value: config errors are logged.
 func TestValidateReceiverURL_KeepsTheURLOutOfTheError(t *testing.T) {
-	_, err := validateReceiverURL("webhook", "ftp://user:hunter2@example.com/hook?token=s3cr3t")
+	// Not a real protocol, on purpose: an ftp:// URL carrying userinfo is what secret
+	// scanners are built to flag, and a fixture is not worth a finding to triage.
+	_, err := validateReceiverURL("webhook", "notaprotocol://user:wr0ngpass@example.com/hook?token=s3cr3t")
 
 	require.Error(t, err)
-	assert.NotContains(t, err.Error(), "hunter2")
+	assert.NotContains(t, err.Error(), "wr0ngpass")
 	assert.NotContains(t, err.Error(), "s3cr3t")
 	assert.NotContains(t, err.Error(), "example.com")
 }
