@@ -12,7 +12,7 @@ interface ImagesCellProps {
 export const stripRegistryPrefix = (image: string): string => {
   const cleaned = image.replace(/^ghcr\.io\/[^/]+\//, '').replace(/^docker\.io\/(library\/)?/, '');
   const parts = cleaned.split('/');
-  return parts[parts.length - 1] || cleaned;
+  return parts.at(-1) || cleaned;
 };
 
 interface ImageRowProps {

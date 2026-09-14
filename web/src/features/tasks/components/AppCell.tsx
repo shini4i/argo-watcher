@@ -46,7 +46,7 @@ export const describeProject = (project: string): ProjectLinkInfo => {
   }
   const parts = stripped.split('/').filter(Boolean);
   const host = parts[0] ?? stripped;
-  const lastPath = parts.length > 1 ? parts[parts.length - 1] : '';
+  const lastPath = parts.length > 1 ? (parts.at(-1) ?? '') : '';
   const label = lastPath ? `${host}/${lastPath}` : host;
   return { isUrl: true, label, href: project };
 };
