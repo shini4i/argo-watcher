@@ -86,6 +86,7 @@ origin from the API, and the server allows no cross-origin request without it.
 | `task test-web` | Frontend unit tests (Vitest) |
 | `task test-web-e2e` | Playwright browser suite against the built UI (Docker) |
 | `task lint-web` | Lint the frontend (oxlint) |
+| `task typecheck-web` | Type-check the frontend (tsc, no emit) |
 | `task scan-web` | Scan the frontend's JavaScript for known-vulnerable libraries (retire.js) |
 | `task bootstrap` / `task teardown` | Bring the Compose stack up / down |
 

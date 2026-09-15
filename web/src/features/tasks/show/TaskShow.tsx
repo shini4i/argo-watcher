@@ -220,7 +220,9 @@ export const TaskShow = () => {
   const privilegedGroups: readonly string[] =
     (permissions as { privilegedGroups?: string[] })?.privilegedGroups ?? [];
   const userIsPrivileged = hasPrivilegedAccess(groups, privilegedGroups);
-  const showRollbackButton = oidcEnabled && userIsPrivileged;
+  // `=== true` because useOidcEnabled reports null until the config lands and
+  // showRedeploy is typed boolean; null was already treated as denied.
+  const showRollbackButton = oidcEnabled === true && userIsPrivileged;
   const descriptor = describeTaskStatus(status);
   const createdTimestamp = normalizeTimestamp(data?.created);
   const updatedTimestamp = normalizeTimestamp(data?.updated);

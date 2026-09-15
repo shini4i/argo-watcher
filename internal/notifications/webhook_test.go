@@ -52,6 +52,7 @@ func TestNewWebhookStrategy(t *testing.T) {
 	t.Run("Nil HTTPClient", func(t *testing.T) {
 		cfg := &config.WebhookConfig{
 			Enabled: true,
+			Url:     "http://localhost/webhook",
 			Format:  `{"id":"{{.Id}}"}`,
 		}
 
@@ -66,6 +67,7 @@ func TestNewWebhookStrategy(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		cfg := &config.WebhookConfig{
 			Enabled: true,
+			Url:     "http://localhost/webhook",
 			Format:  "   ",
 		}
 		client := mocks.NewMockHTTPClient(ctrl)
@@ -180,7 +182,7 @@ func TestSend(t *testing.T) {
 		err := service.Send(task)
 
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to send webhook: network error")
+		assert.Contains(t, err.Error(), "failed to send webhook request: network error")
 	})
 
 	t.Run("Non-Allowed Status Code", func(t *testing.T) {
@@ -201,7 +203,7 @@ func TestSend(t *testing.T) {
 		err := service.Send(task)
 
 		require.Error(t, err)
-		assert.Equal(t, "received non-allowed status code 500: {\"error\":\"internal server error\"}", err.Error())
+		assert.Equal(t, "webhook returned status code 500: {\"error\":\"internal server error\"}", err.Error())
 	})
 
 	t.Run("Non-Allowed Status Code with Body Read Error", func(t *testing.T) {
@@ -224,7 +226,7 @@ func TestSend(t *testing.T) {
 		err := service.Send(task)
 
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "received non-allowed status code 403, and failed to read response body: read error")
+		assert.Contains(t, err.Error(), "webhook returned status code 403, and failed to read the response body: read error")
 	})
 }
 

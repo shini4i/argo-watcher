@@ -1,3 +1,4 @@
+import type { DataProvider } from 'react-admin';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { AdminContext, memoryStore, testDataProvider } from 'react-admin';
 import { MemoryRouter } from 'react-router-dom';
@@ -11,6 +12,8 @@ vi.mock('react-admin', async importOriginal => ({
   useGetIdentity: () => identity(),
 }));
 
+// testDataProvider takes the generic DataProvider signature; these doubles answer
+// one resource, so they are cast in rather than made generic.
 type ListCall = { filter?: Record<string, unknown> };
 
 /**
@@ -20,11 +23,13 @@ type ListCall = { filter?: Record<string, unknown> };
  * filters a first writer just set.
  */
 const renderToolbar = (initialEntry: string) => {
-  const getList = vi.fn(() => Promise.resolve({ data: [], total: 0 }));
+  const getList = vi.fn((_resource: string, _params: ListCall) =>
+    Promise.resolve({ data: [], total: 0 }),
+  );
 
   const utils = render(
     <MemoryRouter initialEntries={[initialEntry]}>
-      <AdminContext dataProvider={testDataProvider({ getList })} store={memoryStore()}>
+      <AdminContext dataProvider={testDataProvider({ getList: getList as unknown as DataProvider['getList'] })} store={memoryStore()}>
         <TaskListLayout
           perPageStorageKey="integration.perPage"
           header={<RecentTasksToolbar storageKey="integrationRecent" />}
@@ -36,7 +41,7 @@ const renderToolbar = (initialEntry: string) => {
     </MemoryRouter>,
   );
 
-  const filters = () => getList.mock.calls.map(call => (call[1] as ListCall).filter ?? {});
+  const filters = () => getList.mock.calls.map(call => call[1].filter ?? {});
   return { ...utils, getList, filters, lastFilter: () => filters().at(-1) ?? {} };
 };
 

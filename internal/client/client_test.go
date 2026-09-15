@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -9,11 +10,13 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/shini4i/argo-watcher/internal/models"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -125,7 +128,7 @@ func TestAddTaskServerError(t *testing.T) {
 		},
 	}
 
-	_, err := watcher.addTask(task)
+	_, err := watcher.addTask(context.Background(), task)
 	assert.Error(t, err)
 }
 
@@ -145,7 +148,7 @@ func TestAddTask_AuthFailureSurfacesServerReason(t *testing.T) {
 		Images: []models.Image{{Tag: testVersion, Image: "example"}},
 	}
 
-	_, err := watcher.addTask(task)
+	_, err := watcher.addTask(context.Background(), task)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "401")
 	assert.Contains(t, err.Error(), "deploy token is invalid")
@@ -168,7 +171,7 @@ func TestAddTask_NonAuthFailureSurfacesServerReason(t *testing.T) {
 		Images: []models.Image{{Tag: testVersion, Image: "example"}},
 	}
 
-	_, err := watcher.addTask(task)
+	_, err := watcher.addTask(context.Background(), task)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "503")
 	assert.Contains(t, err.Error(), "argocd is unreachable")
@@ -214,7 +217,7 @@ func TestAddTask(t *testing.T) {
 		},
 	}
 
-	taskId, err := client.addTask(task)
+	taskId, err := client.addTask(context.Background(), task)
 	assert.NoError(t, err)
 	assert.Equal(t, expected.Id, taskId)
 }
@@ -251,7 +254,7 @@ func TestAddTaskJWTHeader(t *testing.T) {
 			defer srv.Close()
 
 			watcher := setupWatcher(&Config{Url: srv.URL, JsonWebToken: tc.input, Timeout: 30 * time.Second})
-			_, err := watcher.addTask(models.Task{App: "test"})
+			_, err := watcher.addTask(context.Background(), models.Task{App: "test"})
 
 			assert.NoError(t, err)
 			assert.Equal(t, tc.wantAuth, gotAuth, "Authorization header must carry the raw JWT without a Bearer prefix")
@@ -281,7 +284,7 @@ func TestAddTaskDeployTokenHeader(t *testing.T) {
 			defer srv.Close()
 
 			watcher := setupWatcher(&Config{Url: srv.URL, Token: tokenInput, Timeout: 30 * time.Second})
-			_, err := watcher.addTask(models.Task{App: "test"})
+			_, err := watcher.addTask(context.Background(), models.Task{App: "test"})
 
 			assert.NoError(t, err)
 			assert.Equal(t, tokenInput, gotToken, "deploy token must be sent verbatim, never prefix-stripped")
@@ -322,7 +325,7 @@ func TestAddTaskDebugLogRedactsToken(t *testing.T) {
 			tc.config.Debug = true
 			tc.config.Timeout = 30 * time.Second
 			watcher := setupWatcher(tc.config)
-			_, err := watcher.addTask(models.Task{App: "test"})
+			_, err := watcher.addTask(context.Background(), models.Task{App: "test"})
 			assert.NoError(t, err)
 
 			logged := logBuf.String()
@@ -335,25 +338,25 @@ func TestAddTaskDebugLogRedactsToken(t *testing.T) {
 
 func TestGetTaskStatus(t *testing.T) {
 	t.Run("received deployed status", func(t *testing.T) {
-		task, err := client.getTaskStatus(taskId)
+		task, err := client.getTaskStatus(context.Background(), taskId)
 		assert.NoError(t, err)
 		assert.Equal(t, models.StatusDeployedMessage, task.Status)
 	})
 
 	t.Run("received app not found status", func(t *testing.T) {
-		task, err := client.getTaskStatus(appNotFoundId)
+		task, err := client.getTaskStatus(context.Background(), appNotFoundId)
 		assert.NoError(t, err)
 		assert.Equal(t, models.StatusAppNotFoundMessage, task.Status)
 	})
 
 	t.Run("received argocd unavailable status", func(t *testing.T) {
-		task, err := client.getTaskStatus(argocdUnavailableId)
+		task, err := client.getTaskStatus(context.Background(), argocdUnavailableId)
 		assert.NoError(t, err)
 		assert.Equal(t, models.StatusArgoCDUnavailableMessage, task.Status)
 	})
 
 	t.Run("received failed status", func(t *testing.T) {
-		task, err := client.getTaskStatus(failedTaskId)
+		task, err := client.getTaskStatus(context.Background(), failedTaskId)
 		assert.NoError(t, err)
 		assert.Equal(t, models.StatusFailedMessage, task.Status)
 	})
@@ -366,7 +369,7 @@ func TestGetTaskStatus(t *testing.T) {
 
 		watcher := NewWatcher(server.URL, false, 30*time.Second)
 
-		_, err := watcher.getTaskStatus("test-id")
+		_, err := watcher.getTaskStatus(context.Background(), "test-id")
 
 		assert.Error(t, err)
 	})
@@ -398,7 +401,7 @@ func TestGetWatcherConfig(t *testing.T) {
 
 	watcher := NewWatcher(server.URL, false, 30*time.Second)
 
-	serverConfig, err := watcher.getWatcherConfig()
+	serverConfig, err := watcher.getWatcherConfig(context.Background())
 
 	assert.NoError(t, err)
 
@@ -459,7 +462,7 @@ func TestWaitForDeployment(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := client.waitForDeployment(tc.taskId, "test", testVersion)
+			err := client.waitForDeployment(context.Background(), tc.taskId, "test", testVersion)
 			if tc.expectedError == "" {
 				assert.NoError(t, err)
 			} else {
@@ -468,6 +471,38 @@ func TestWaitForDeployment(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A cancelled CI job must end the poll at the next checkpoint instead of sleeping out
+// its retry interval. Without the context check the loop would run the full hour.
+func TestWaitForDeployment_CancellingStopsThePoll(t *testing.T) {
+	var polls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
+		polls.Add(1)
+		_, _ = rw.Write([]byte(`{"status":"in progress"}`))
+	}))
+	defer server.Close()
+
+	previous := clientConfig
+	clientConfig = &Config{RetryInterval: time.Hour, ExpectedDeploymentTime: time.Hour}
+	t.Cleanup(func() { clientConfig = previous })
+
+	watcher := newTestWatcher(server.URL)
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		for polls.Load() == 0 {
+			time.Sleep(time.Millisecond)
+		}
+		cancel()
+	}()
+
+	start := time.Now()
+	err := watcher.waitForDeployment(ctx, "task-1", "test", testVersion)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Less(t, time.Since(start), 10*time.Second, "the wait must end with the context, not run its hour out")
+	assert.Equal(t, int32(1), polls.Load(), "no further status request may be sent once the context is done")
 }
 
 func TestIsDeploymentOverTime(t *testing.T) {

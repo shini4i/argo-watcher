@@ -210,37 +210,41 @@ func TestRunBatchWriteBack_DrainStopHaltsRetries(t *testing.T) {
 	}
 }
 
-// TestBackoffBeforeBatchRetry_ReturnsOnDrain verifies the drain signal short-circuits
-// the inter-attempt wait.
-//
-// The returned error is the discriminating signal, not the elapsed time: no other
-// branch of the select can produce errWritebackDraining. A timing bound would prove
-// nothing here, because gitUpdateBackoff applies FULL jitter (uniform over
-// [0, ceiling]), so the ordinary timer branch also returns near-instantly a good
-// fraction of the time.
-func TestBackoffBeforeBatchRetry_ReturnsOnDrain(t *testing.T) {
+// The drain signal short-circuits the inter-attempt wait. The returned error is the
+// discriminating signal, not elapsed time: no other branch of the select produces
+// errWritebackDraining, and gitUpdateBackoff's full jitter lets the timer branch
+// return near-instantly a good fraction of the time.
+func TestBackoffBeforeGitRetry_ReturnsOnDrain(t *testing.T) {
 	drainCh := make(chan struct{})
 	close(drainCh)
 
-	require.ErrorIs(t, backoffBeforeBatchRetry(context.Background(), 3, 5, drainCh), errWritebackDraining)
+	require.ErrorIs(t, backoffBeforeGitRetry(context.Background(), 3, 5, drainCh), errWritebackDraining)
 }
 
-// TestBackoffBeforeBatchRetry_NilDrainIsNotTreatedAsDraining guards the default
-// (non-shutdown) path: a nil drain channel blocks forever in the select and must not
-// be read as "draining", otherwise every production retry would abort immediately.
-// A regression that treats nil as drained returns errWritebackDraining, so NoError is
-// the discriminating assertion.
-func TestBackoffBeforeBatchRetry_NilDrainIsNotTreatedAsDraining(t *testing.T) {
-	require.NoError(t, backoffBeforeBatchRetry(context.Background(), 1, 5, nil))
+// Guards the single-app shape: a nil drain channel blocks forever in the select and
+// must not read as "draining", or every production retry would abort at once. A
+// regression that treats nil as drained returns errWritebackDraining.
+func TestBackoffBeforeGitRetry_NilDrainIsNotTreatedAsDraining(t *testing.T) {
+	require.NoError(t, backoffBeforeGitRetry(context.Background(), 1, 5, nil))
 }
 
-// TestRunBatchWriteBack_DrainPreservesPerAppCommitCause covers the drain path when a
-// request carries its own commit error. Two properties must hold simultaneously, and
-// they pull in opposite directions: the reason must still name that app's own cause
-// (not a generic batch error), AND it must remain identifiable as shutdown-caused so
-// a restart is not mistaken for a genuine git failure. The second app — already
-// resolved as a no-op success before the drain — proves the drain does not retroactively
-// fail requests that were already settled.
+// The single-app path passes a nil drain channel plus trailing log arguments, and
+// relies on the parent context to end a wait. Cancelling it must not sleep out the
+// backoff.
+func TestBackoffBeforeGitRetry_NilDrainStillHonoursACancelledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := backoffBeforeGitRetry(ctx, 1, 5, nil, "id", "task-1")
+
+	require.ErrorIs(t, err, context.Canceled)
+	require.NotErrorIs(t, err, errWritebackDraining)
+}
+
+// The drain path when a request carries its own commit error. Two properties pull in
+// opposite directions: the reason must still name that app's own cause, AND stay
+// identifiable as shutdown-caused. The second app, already resolved before the drain,
+// proves the drain does not retroactively fail settled requests.
 func TestRunBatchWriteBack_DrainPreservesPerAppCommitCause(t *testing.T) {
 	t.Setenv("SSH_KEY_PATH", "/nonexistent/key")
 	t.Setenv("GIT_OP_TIMEOUT", "5s")

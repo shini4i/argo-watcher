@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { Location } from 'react-router-dom';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { ListContextProvider } from 'react-admin';
-import type { ListContextValue } from 'react-admin';
+import type { ListControllerResult } from 'react-admin';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Task } from '../../../data/types';
 import { HistoryFilters } from './HistoryFilters';
@@ -80,7 +80,7 @@ const renderFilters = (initialEntry: string) => {
     data: sampleTasks,
     filterValues: {},
     setFilters,
-  } as unknown as ListContextValue<Task>;
+  } as unknown as ListControllerResult<Task>;
 
   const result = render(
     <MemoryRouter initialEntries={[initialEntry]}>

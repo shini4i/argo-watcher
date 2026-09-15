@@ -94,3 +94,7 @@ Replicas exist for availability, not throughput: a single one comfortably
 handles the polling load of a normal deployment fleet. Two is the useful number
 — it survives a node failure and makes rolling updates transparent. More than
 that mainly adds sweeps against the same database.
+
+Each replica opens at most 30 PostgreSQL connections: 20 for task and state queries,
+and 10 reserved for the advisory locks the git write-back serializes on. Size
+`max_connections` for at least 30 per replica, plus headroom for your other clients.

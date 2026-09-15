@@ -150,6 +150,15 @@ tasks:
       - npm run lint
       - echo "===> Done"
 
+  typecheck-web:
+    desc: Type-check the React-admin workspace
+    deps: [install-web-dependencies]
+    dir: web
+    cmds:
+      - echo "===> Type-checking web workspace"
+      - npm run typecheck
+      - echo "===> Done"
+
   test-web:
     desc: Run React-admin unit tests
     deps: [install-web-dependencies]

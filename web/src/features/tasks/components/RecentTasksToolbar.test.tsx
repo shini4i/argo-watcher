@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { Location } from 'react-router-dom';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { ListContextProvider } from 'react-admin';
-import type { ListContextValue } from 'react-admin';
+import type { ListControllerResult } from 'react-admin';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { Task } from '../../../data/types';
 import { blockStorageAccess } from '../../../test/blockStorage';
@@ -112,7 +112,7 @@ const renderToolbar = (initialEntry: string, filterValues: Record<string, unknow
     filterValues,
     setFilters,
     refetch,
-  } as unknown as ListContextValue<Task>;
+  } as unknown as ListControllerResult<Task>;
 
   const result = render(
     <MemoryRouter initialEntries={[initialEntry]}>

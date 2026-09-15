@@ -159,7 +159,7 @@ func runGitUpdateWithRetry(parentCtx context.Context, repo *updater.GitRepo, app
 			return ErrDeploymentSuperseded
 		}
 
-		invalidateCacheOnFinalAttempt(repo, task, attempt, maxAttempts)
+		invalidateCacheOnFinalAttempt(repo, attempt, maxAttempts, "id", task.Id)
 
 		err := runGitUpdateAttempt(parentCtx, repo, opTimeout, appName, releaseOverrides, task)
 		if err == nil {
@@ -175,7 +175,7 @@ func runGitUpdateWithRetry(parentCtx context.Context, repo *updater.GitRepo, app
 			return err
 		}
 
-		if waitErr := backoffBeforeRetry(parentCtx, task, err, attempt, maxAttempts); waitErr != nil {
+		if waitErr := backoffBeforeGitRetry(parentCtx, attempt, maxAttempts, nil, "error", err, "id", task.Id); waitErr != nil {
 			return waitErr
 		}
 	}
@@ -183,25 +183,43 @@ func runGitUpdateWithRetry(parentCtx context.Context, repo *updater.GitRepo, app
 	return fmt.Errorf("git update failed after %d attempts: %w", maxAttempts, lastErr)
 }
 
-func invalidateCacheOnFinalAttempt(repo *updater.GitRepo, task *models.Task, attempt, maxAttempts uint) {
+// invalidateCacheOnFinalAttempt drops the on-disk clone before the last attempt, so
+// a poisoned cache (partial commit, stale ref, half-written file) self-heals with a
+// fresh clone. logArgs identify the task or the batch in the log lines.
+func invalidateCacheOnFinalAttempt(repo *updater.GitRepo, attempt, maxAttempts uint, logArgs ...any) {
 	if attempt != maxAttempts {
 		return
 	}
-	slog.Warn("Final attempt: invalidating cache and performing fresh clone", "attempt", attempt, "max_attempts", maxAttempts, "id", task.Id)
+	slog.Warn("Final git update attempt: invalidating cache and performing fresh clone",
+		append([]any{"attempt", attempt, "max_attempts", maxAttempts}, logArgs...)...)
 	if invErr := repo.InvalidateCache(); invErr != nil {
-		slog.Warn("Failed to invalidate cache before final attempt; proceeding anyway", "error", invErr, "id", task.Id)
+		slog.Warn("Failed to invalidate cache before the final attempt; proceeding anyway",
+			append([]any{"error", invErr}, logArgs...)...)
 	}
 }
 
-func backoffBeforeRetry(parentCtx context.Context, task *models.Task, attemptErr error, attempt, maxAttempts uint) error {
+// backoffBeforeGitRetry waits out the jittered backoff before the next attempt,
+// unless this was the final one. It returns non-nil when the wait must not finish:
+// parentCtx cancelled, or drainCh closed. A nil drainCh never fires — the single-app
+// path has no batcher, and sees a shutdown through its supersede predicate.
+func backoffBeforeGitRetry(parentCtx context.Context, attempt, maxAttempts uint, drainCh <-chan struct{}, logArgs ...any) error {
 	if attempt >= maxAttempts {
 		return nil
 	}
 	backoff := gitUpdateBackoff(attempt)
-	slog.Warn("Git update attempt failed; retrying", "attempt", attempt, "max_attempts", maxAttempts, "backoff", backoff, "error", attemptErr, "id", task.Id)
+	slog.Warn("Git update attempt left work unresolved; retrying",
+		append([]any{"attempt", attempt, "max_attempts", maxAttempts, "backoff", backoff}, logArgs...)...)
+
+	// The drain is observed here, between attempts, never by cancelling the attempt's
+	// own context: aborting mid-push would report a task failed while its commit is
+	// already live in git. The cost is one more in-flight attempt before it completes.
 	select {
 	case <-parentCtx.Done():
 		return fmt.Errorf("git update cancelled during backoff: %w", parentCtx.Err())
+	case <-drainCh:
+		slog.Warn("Git update stopped retrying: the batcher is draining for shutdown",
+			append([]any{"attempt", attempt, "max_attempts", maxAttempts}, logArgs...)...)
+		return errWritebackDraining
 	case <-time.After(backoff):
 		return nil
 	}

@@ -114,6 +114,8 @@ The `tasks` table grows linearly with the number of deployments. Each row is sma
 | 1 000 | ~365 K | ~200 MB |
 | 10 000 | ~3.7 M | ~2 GB |
 
+Connections are bounded rather than sized by load: a replica opens at most 30 — 20 for task and state queries, 10 reserved for the advisory locks the git write-back serializes on. See [High availability](high-availability.md#sizing) when running more than one.
+
 ## Retention
 
 By default every task is kept forever. Setting `TASK_RETENTION_ENABLED=true` turns on a sweep that deletes finished tasks created longer ago than `TASK_RETENTION_DAYS` (365 by default, between 1 and 36500). It runs with the hourly obsolete-task sweep, in batches of 1 000 rows, so enabling it on a table holding years of history does not lock the table for the duration.

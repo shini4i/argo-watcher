@@ -57,6 +57,12 @@ func (state *PostgresState) Connect(serverConfig *config.ServerConfig) error {
 		state.orm = orm
 	}
 
+	sqlDB, err := state.orm.DB()
+	if err != nil {
+		return fmt.Errorf("could not reach the underlying connection pool: %w", err)
+	}
+	configurePool(sqlDB)
+
 	ownerId, err := newOwnerId()
 	if err != nil {
 		return err
@@ -71,6 +77,27 @@ func (state *PostgresState) Connect(serverConfig *config.ServerConfig) error {
 	}
 
 	return nil
+}
+
+// Connection-pool bounds. database/sql defaults to an unlimited pool, so a burst of
+// concurrent deployments could open a connection each and exhaust the server's
+// max_connections — taking down every other client of that database with it.
+const (
+	maxOpenConns    = 20
+	maxIdleConns    = 10
+	connMaxLifetime = 30 * time.Minute
+	connMaxIdleTime = 5 * time.Minute
+)
+
+// configurePool bounds the pool. Queries queue in Go once the cap is reached, which
+// is safe only because nothing holds a connection from this pool across work that
+// queries it again — the advisory locker holds its own pool for exactly that reason
+// (lock.NewPostgresLockerPool).
+func configurePool(sqlDB *sql.DB) {
+	sqlDB.SetMaxOpenConns(maxOpenConns)
+	sqlDB.SetMaxIdleConns(maxIdleConns)
+	sqlDB.SetConnMaxLifetime(connMaxLifetime)
+	sqlDB.SetConnMaxIdleTime(connMaxIdleTime)
 }
 
 // AddTask returns the task with the DB-generated id and timestamps, in Unix seconds.

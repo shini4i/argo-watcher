@@ -13,6 +13,7 @@
     "test:ui": "vitest --ui",
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install --with-deps chromium",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "typecheck:e2e": "tsc -p tsconfig.node.json --noEmit",
     "scan:js": "retire --path . --ext js,mjs --severity low --ignore dist,coverage,playwright-report,test-results"
   },

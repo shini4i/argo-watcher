@@ -1,3 +1,4 @@
+import type { DataProvider } from 'react-admin';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import { AdminContext, testDataProvider } from 'react-admin';
 import { MemoryRouter } from 'react-router-dom';
@@ -45,7 +46,9 @@ const renderDatagrid = (records: Task[]) =>
     <MemoryRouter>
       <AdminContext
         dataProvider={testDataProvider({
-          getList: vi.fn(() => Promise.resolve({ data: records, total: records.length })),
+          getList: vi.fn(() =>
+            Promise.resolve({ data: records, total: records.length }),
+          ) as unknown as DataProvider['getList'],
         })}
       >
         <TaskListLayout perPageStorageKey="integration.perPage">
@@ -71,6 +74,20 @@ describe('TasksDatagrid on real react-admin', () => {
     expect(panelRows()).toHaveLength(1);
     expect(screen.getByText('Application deployment failed. Rollout status is not available')).toBeInTheDocument();
     expect(screen.queryByText('Cancelled by lee@example.com')).toBeNull();
+  });
+
+  // The backend has no sort parameter and the dataProvider never reads params.sort,
+  // so a clickable column header would reorder nothing while looking like it did.
+  it('offers no sortable column header', async () => {
+    renderDatagrid([FAILED, CLEAN]);
+
+    await waitFor(() => expect(screen.getByText('payments-worker')).toBeInTheDocument());
+
+    const headers = screen.getAllByRole('columnheader');
+    expect(headers.length).toBeGreaterThan(0);
+    for (const header of headers) {
+      expect(within(header).queryByRole('button')).toBeNull();
+    }
   });
 
   it('renders no panel for a task without a status_reason', async () => {

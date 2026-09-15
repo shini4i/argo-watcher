@@ -2,7 +2,10 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"encoding/json"
 	"errors"
@@ -31,6 +34,9 @@ const (
 	// can poll for many minutes, so a single blip must not abort the process.
 	maxTransientRetries = 3
 	defaultRetryDelay   = 2 * time.Second
+	// initialStatusDelay gives the server time to register the submitted task
+	// before its status is first polled.
+	initialStatusDelay = 5 * time.Second
 )
 
 type Watcher struct {
@@ -168,7 +174,8 @@ func (watcher *Watcher) guardRedirect(request *http.Request, via []*http.Request
 }
 
 // addTask presents the watcher's credential and returns the new task ID.
-func (watcher *Watcher) addTask(task models.Task) (string, error) {
+// Cancelling ctx aborts the submission in flight.
+func (watcher *Watcher) addTask(ctx context.Context, task models.Task) (string, error) {
 	requestBody, err := json.Marshal(task)
 	if err != nil {
 		return "", err
@@ -176,7 +183,7 @@ func (watcher *Watcher) addTask(task models.Task) (string, error) {
 
 	url := fmt.Sprintf("%s/api/v1/tasks", watcher.baseUrl)
 
-	request, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(requestBody))
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(requestBody))
 	if err != nil {
 		return "", err
 	}
@@ -222,29 +229,29 @@ func (watcher *Watcher) addTask(task models.Task) (string, error) {
 	return accepted.Id, nil
 }
 
-func (watcher *Watcher) getTaskStatus(id string) (*models.TaskStatus, error) {
+func (watcher *Watcher) getTaskStatus(ctx context.Context, id string) (*models.TaskStatus, error) {
 	url := fmt.Sprintf("%s/api/v1/tasks/%s", watcher.baseUrl, id)
 	var taskStatus models.TaskStatus
-	if err := watcher.getJSON(url, &taskStatus); err != nil {
+	if err := watcher.getJSON(ctx, url, &taskStatus); err != nil {
 		return nil, err
 	}
 	return &taskStatus, nil
 }
 
-func (watcher *Watcher) getWatcherConfig() (*config.ServerConfig, error) {
+func (watcher *Watcher) getWatcherConfig(ctx context.Context) (*config.ServerConfig, error) {
 	url := fmt.Sprintf("%s/api/v1/config", watcher.baseUrl)
 	var serverConfig config.ServerConfig
-	if err := watcher.getJSON(url, &serverConfig); err != nil {
+	if err := watcher.getJSON(ctx, url, &serverConfig); err != nil {
 		return nil, err
 	}
 	return &serverConfig, nil
 }
 
-func (watcher *Watcher) waitForDeployment(id, appName, version string) error {
+func (watcher *Watcher) waitForDeployment(ctx context.Context, id, appName, version string) error {
 	retryCount := 0
 
 	for {
-		taskInfo, err := watcher.getTaskStatus(id)
+		taskInfo, err := watcher.getTaskStatus(ctx, id)
 		if err != nil {
 			return err
 		}
@@ -261,7 +268,9 @@ func (watcher *Watcher) waitForDeployment(id, appName, version string) error {
 				log.Println("Application deployment is taking longer than expected, it might be worth checking ArgoCD UI...")
 			}
 			retryCount++
-			time.Sleep(clientConfig.RetryInterval)
+			if err := waitOrCancel(ctx, clientConfig.RetryInterval); err != nil {
+				return err
+			}
 		case models.StatusAppNotFoundMessage:
 			return fmt.Errorf("Application %s does not exist.\n%s", appName, taskInfo.StatusReason)
 		case models.StatusArgoCDUnavailableMessage:
@@ -280,10 +289,10 @@ func (watcher *Watcher) waitForDeployment(id, appName, version string) error {
 	}
 }
 
-func handleDeploymentError(watcher *Watcher, task models.Task, err error) {
+func handleDeploymentError(ctx context.Context, watcher *Watcher, task models.Task, err error) {
 	log.Println(err)
 	if strings.Contains(err.Error(), "The deployment has failed") {
-		appUrl, err := generateAppUrl(watcher, task)
+		appUrl, err := generateAppUrl(ctx, watcher, task)
 		if err != nil {
 			handleFatalError(err, "Couldn't generate app URL.")
 		}
@@ -300,9 +309,28 @@ func isDeploymentOverTime(retryCount int, retryInterval time.Duration, expectedD
 	return time.Duration(retryCount)*retryInterval > expectedDeploymentTime
 }
 
+// waitOrCancel sleeps for d, or returns early once ctx is done. A cancelled CI job
+// then stops the client instead of leaving it polling until its own budget expires.
+func waitOrCancel(ctx context.Context, d time.Duration) error {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("stopped waiting for the deployment: %w", ctx.Err())
+	case <-timer.C:
+		return nil
+	}
+}
+
 // Run is the client entrypoint: it builds the task, submits it, and waits for the deployment.
+// An interrupt (SIGINT/SIGTERM, e.g. a cancelled CI job) stops the wait at the next
+// checkpoint instead of killing the process mid-poll.
 func Run() {
 	var err error
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	if clientConfig, err = NewClientConfig(); err != nil {
 		log.Fatalf("Couldn't get client configuration. Got the following error: %s", err)
@@ -317,14 +345,17 @@ func Run() {
 
 	log.Printf("Waiting for %s app to be running on %s version.\n", task.App, clientConfig.Tag)
 
-	id, err := watcher.addTask(task)
+	id, err := watcher.addTask(ctx, task)
 	if err != nil {
 		handleFatalError(err, "Couldn't add task.")
 	}
 
-	time.Sleep(5 * time.Second)
+	// The server needs a moment to register the task before its status is meaningful.
+	if err := waitOrCancel(ctx, initialStatusDelay); err != nil {
+		handleFatalError(err, "Stopped before the first status check.")
+	}
 
-	if err = watcher.waitForDeployment(id, task.App, clientConfig.Tag); err != nil {
-		handleDeploymentError(watcher, task, err)
+	if err = watcher.waitForDeployment(ctx, id, task.App, clientConfig.Tag); err != nil {
+		handleDeploymentError(ctx, watcher, task, err)
 	}
 }

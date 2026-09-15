@@ -2,11 +2,13 @@ import { Box, Skeleton, Stack, Typography } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { Link as RouterLink } from 'react-router-dom';
 import { tokens } from '../../../theme/tokens';
+import { monogramSwatch } from '../../../theme/monogram';
 import { formatDuration, formatRelativeTime } from '../../../shared/utils/time';
 import { deriveMonogram } from '../../tasks/components/AppCell';
 import { describeTaskStatus } from '../../tasks/utils/statusPresentation';
 import { summariseFailure } from '../../tasks/utils/failureReason';
 import { deriveAppState, type AppState } from '../deriveOverview';
+import { appStateColors } from '../appStateColors';
 import { RecentOutcomeStrip } from './RecentOutcomeStrip';
 import type { AppSummary } from '../types';
 
@@ -24,14 +26,6 @@ const CHIP_TEXT: Readonly<Record<AppState, string>> = {
   idle: 'Idle',
 };
 
-const hashIndex = (name: string, modulo: number): number => {
-  let hash = 0;
-  for (let i = 0; i < name.length; i += 1) {
-    hash = Math.imul(hash, 31) + (name.codePointAt(i) ?? 0);
-  }
-  return Math.abs(hash) % modulo;
-};
-
 /** The last-event line names the failure when there is one; that is the point. */
 const lastEventText = (summary: AppSummary): string => {
   const failure = summariseFailure(summary.last_status_reason);
@@ -46,11 +40,8 @@ const AttentionCard = ({ summary }: { summary: AppSummary }) => {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
   const state = deriveAppState(summary);
-  const descriptor = describeTaskStatus(summary.last_status);
-  const chipFg = isDark ? descriptor.pillFgDark : descriptor.pillFg;
-  const chipBg = isDark ? descriptor.pillBgDark : descriptor.pillBg;
-  const swatches = isDark ? tokens.monogramSwatchesDark : tokens.monogramSwatches;
-  const swatch = swatches[hashIndex(summary.app, swatches.length)];
+  const { bg: chipBg, fg: chipFg } = appStateColors(state, isDark);
+  const swatch = monogramSwatch(summary.app, isDark);
   const failureRate = summary.total > 0 ? Math.round((summary.failed / summary.total) * 100) : 0;
 
   return (

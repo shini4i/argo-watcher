@@ -82,4 +82,26 @@ describe('AppNotification', () => {
 
     expect(mutationMock).toHaveBeenCalledWith({ isUndo: true });
   });
+
+  // Clearing currentNotification happens only in the exit handler, and the effect
+  // refuses the next notification while it is set. An exit handler not wired to the
+  // transition means the second notification of a session never appears at all.
+  it('shows the next queued notification after the first one exits', async () => {
+    notificationsQueue.push(
+      { message: 'first', type: 'info', notificationOptions: {} },
+      { message: 'second', type: 'info', notificationOptions: {} },
+    );
+
+    render(<AppNotification />);
+
+    expect(await screen.findByText('first')).toBeInTheDocument();
+
+    const close = await screen.findByRole('button', { name: /close/i });
+    await act(async () => {
+      close.click();
+    });
+
+    expect(await screen.findByText('second')).toBeInTheDocument();
+  });
+
 });

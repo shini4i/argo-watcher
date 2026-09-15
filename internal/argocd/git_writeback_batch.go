@@ -57,7 +57,7 @@ type batchWriteRequest struct {
 // stops the loop after the attempt in flight, because the remaining retry budget
 // would outlive the process's grace period — the requests are then resolved with
 // errWritebackDraining instead of being abandoned without a result. The attempt
-// already running is deliberately NOT interrupted; see backoffBeforeBatchRetry.
+// already running is deliberately NOT interrupted; see backoffBeforeGitRetry.
 func runBatchWriteBack(parentCtx context.Context, repo *updater.GitRepo, batch []*batchWriteRequest, drainCh <-chan struct{}) map[*batchWriteRequest]error {
 	outcomes := make(map[*batchWriteRequest]error, len(batch))
 	// commitErrs holds each app's most recent per-app commit error while it is still
@@ -77,7 +77,7 @@ func runBatchWriteBack(parentCtx context.Context, repo *updater.GitRepo, batch [
 			break
 		}
 
-		invalidateBatchCacheOnFinalAttempt(repo, len(active), attempt, maxAttempts)
+		invalidateCacheOnFinalAttempt(repo, attempt, maxAttempts, "batch_size", len(active))
 
 		committed, err := runBatchAttempt(parentCtx, repo, opTimeout, active, outcomes, commitErrs)
 		if err != nil {
@@ -92,7 +92,7 @@ func runBatchWriteBack(parentCtx context.Context, repo *updater.GitRepo, batch [
 		if len(unresolvedRequests(batch, outcomes)) == 0 {
 			break
 		}
-		if waitErr := backoffBeforeBatchRetry(parentCtx, attempt, maxAttempts, drainCh); waitErr != nil {
+		if waitErr := backoffBeforeGitRetry(parentCtx, attempt, maxAttempts, drainCh); waitErr != nil {
 			// A drain is why we stopped, not what went wrong: keep the attempt error
 			// as the cause so the task's failure reason still names the git fault
 			// (e.g. a rejected push) that made retrying necessary. resolveRemaining
@@ -253,49 +253,4 @@ func unresolvedRequests(batch []*batchWriteRequest, outcomes map[*batchWriteRequ
 		}
 	}
 	return active
-}
-
-// invalidateBatchCacheOnFinalAttempt mirrors the single-app
-// invalidateCacheOnFinalAttempt: a poisoned cache self-heals with a fresh clone.
-func invalidateBatchCacheOnFinalAttempt(repo *updater.GitRepo, batchSize int, attempt, maxAttempts uint) {
-	if attempt != maxAttempts {
-		return
-	}
-	slog.Warn("Final batch attempt: invalidating cache and performing fresh clone",
-		"attempt", attempt, "max_attempts", maxAttempts, "batch_size", batchSize)
-	if invErr := repo.InvalidateCache(); invErr != nil {
-		slog.Warn("Failed to invalidate cache before final batch attempt; proceeding anyway", "error", invErr)
-	}
-}
-
-// backoffBeforeBatchRetry waits (jittered) before the next batch attempt, unless this
-// was the final one. It returns a non-nil error if parentCtx is cancelled or the
-// batcher starts draining during the wait. It reuses gitUpdateBackoff so batch and
-// single-app retries share the same anti-thundering-herd behaviour.
-//
-// The drain is observed here — between attempts — rather than by cancelling the
-// per-attempt context, and that placement is the point. Cancelling mid-push would
-// abort a push the remote may have already accepted, so the task would be reported
-// failed while its commit is live in git. Stopping only at the retry boundary keeps
-// every reported outcome truthful, at the cost of one more in-flight attempt
-// (bounded by GIT_OP_TIMEOUT) before the drain completes.
-//
-// A nil drainCh (tests that pass no signal) blocks forever in the select.
-func backoffBeforeBatchRetry(parentCtx context.Context, attempt, maxAttempts uint, drainCh <-chan struct{}) error {
-	if attempt >= maxAttempts {
-		return nil
-	}
-	backoff := gitUpdateBackoff(attempt)
-	slog.Warn("Batch git update attempt left work unresolved; retrying",
-		"attempt", attempt, "max_attempts", maxAttempts, "backoff", backoff)
-	select {
-	case <-parentCtx.Done():
-		return fmt.Errorf("batch git update cancelled during backoff: %w", parentCtx.Err())
-	case <-drainCh:
-		slog.Warn("Batch git update stopped retrying: batcher is draining for shutdown",
-			"attempt", attempt, "max_attempts", maxAttempts)
-		return errWritebackDraining
-	case <-time.After(backoff):
-		return nil
-	}
 }

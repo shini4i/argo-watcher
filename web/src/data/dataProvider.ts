@@ -92,7 +92,8 @@ const ensureSupportedResource = (resource: string) => {
 
 const getList = async (params: GetListParams): Promise<GetListResult<Task>> => {
   const timeframe = selectListWindow(params);
-  const { perPage, page } = params.pagination;
+  // react-admin types pagination as optional; every list view here supplies it.
+  const { page = 1, perPage = 25 } = params.pagination ?? {};
   const limit = perPage;
   const offset = (page - 1) * perPage;
 
@@ -107,8 +108,13 @@ const getList = async (params: GetListParams): Promise<GetListResult<Task>> => {
     offset,
   });
 
-  const { data } = await httpClient<TasksResponse>(`/api/v1/${RESOURCE_TASKS}${query}`);
-  const response = data ?? { tasks: [], total: 0 };
+  const { data: response } = await httpClient<TasksResponse>(`/api/v1/${RESOURCE_TASKS}${query}`);
+  // httpClient throws on a real error status, so an empty body here is a 2xx that
+  // carried no JSON — an intermediary answering, not an estate with no tasks.
+  // Status 0 says transport, matching getOne.
+  if (!response) {
+    throw new HttpError('The server returned no task data', 0);
+  }
 
   // Backend returns HTTP 200 with a non-empty `error` field when ArgoCD is unreachable.
   // Not rejecting lets the empty-state placeholder render instead of leaving the
@@ -156,16 +162,19 @@ const createTask = async (params: CreateParams): Promise<CreateResult<TaskStatus
 const unsupported = (method: string): Promise<never> =>
   Promise.reject(new HttpError(`${method} is not supported by this resource`, 405));
 
+// DataProvider declares every read method generic over RecordType, while this one
+// only ever serves `tasks` — ensureSupportedResource rejects anything else. The casts
+// below bridge that, and are sound exactly because of that guard.
 export const dataProvider: DataProvider = {
-  getList: async (resource, params: GetListParams) => {
+  getList: async <RecordType extends RaRecord = any>(resource: string, params: GetListParams) => {
     ensureSupportedResource(resource);
-    return getList(params);
+    return (await getList(params)) as unknown as GetListResult<RecordType>;
   },
-  getOne: async (resource, params: GetOneParams) => {
+  getOne: async <RecordType extends RaRecord = any>(resource: string, params: GetOneParams) => {
     ensureSupportedResource(resource);
-    return getOne(params);
+    return (await getOne(params)) as unknown as GetOneResult<RecordType>;
   },
-  getMany: async (resource, params: GetManyParams) => {
+  getMany: async <RecordType extends RaRecord = any>(resource: string, params: GetManyParams) => {
     ensureSupportedResource(resource);
     const records = await Promise.all(
       params.ids.map(async id => {
@@ -178,15 +187,21 @@ export const dataProvider: DataProvider = {
       }),
     );
 
-    return { data: records } satisfies GetManyResult<TaskStatus & RaRecord>;
+    return { data: records } as unknown as GetManyResult<RecordType>;
   },
-  getManyReference: async (resource, _params: GetManyReferenceParams): Promise<GetManyReferenceResult<RaRecord>> => {
+  getManyReference: async <RecordType extends RaRecord = any>(
+    resource: string,
+    _params: GetManyReferenceParams,
+  ) => {
     ensureSupportedResource(resource);
-    return { data: [], total: 0 };
+    return { data: [], total: 0 } as unknown as GetManyReferenceResult<RecordType>;
   },
-  create: async (resource, params: CreateParams) => {
+  create: async <ResultRecordType extends RaRecord = any>(
+    resource: string,
+    params: CreateParams,
+  ) => {
     ensureSupportedResource(resource);
-    return createTask(params);
+    return (await createTask(params)) as unknown as CreateResult<ResultRecordType>;
   },
   update: (_resource: string, _params: UpdateParams): Promise<UpdateResult> => unsupported('update'),
   updateMany: (_resource: string, _params: UpdateManyParams): Promise<UpdateManyResult> => unsupported('updateMany'),

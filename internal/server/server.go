@@ -47,6 +47,8 @@ type Server struct {
 	updater     *argocd.ArgoStatusUpdater
 	env         *Env
 	probeCancel context.CancelFunc
+	// closeLockPool releases the advisory-lock connection pool. Nil with in-memory state.
+	closeLockPool func() error
 	// drainDelay is how long shutdown waits after failing readiness before closing
 	// the listener. NewServer sets it to readinessDrainDelay; tests shorten it.
 	drainDelay time.Duration
@@ -75,6 +77,15 @@ func NewServer(serverConfig *config.ServerConfig, reg prometheus.Registerer) (*S
 	// Postgres state; otherwise fall back to in-memory equivalents, which are
 	// correct for a single replica only.
 	var locker lock.Locker
+	var closeLockPool func() error
+	// The returned Server takes the pool over; until it does, every error return
+	// below would leak it, and a caller that retries startup accumulates connections.
+	handedOver := false
+	defer func() {
+		if closeLockPool != nil && !handedOver {
+			_ = closeLockPool()
+		}
+	}()
 	var deployLockStore lock.DeployLockStore
 	// Nil unless the state is Postgres, which turns application deploy tokens off:
 	// they must survive a restart and be visible to every replica.
@@ -88,7 +99,13 @@ func NewServer(serverConfig *config.ServerConfig, reg prometheus.Registerer) (*S
 		if db == nil {
 			return nil, fmt.Errorf("could not get a valid DB connection from the postgres state")
 		}
-		locker = lock.NewPostgresLocker(db)
+		// The locker gets its own pool on purpose: a lock holder keeps its
+		// connection for the whole write-back, and that write-back queries this
+		// state, so sharing one bounded pool would let holders starve themselves.
+		locker, closeLockPool, err = lock.NewPostgresLockerPool(serverConfig.Db.DSN)
+		if err != nil {
+			return nil, err
+		}
 		deployLockStore = lock.NewPostgresDeployLockStore(db)
 		appTokenStore = apptoken.NewPostgresStore(db)
 		slog.Info("Using Postgres advisory locks for distributed locking and a shared deploy lock.")
@@ -139,12 +156,15 @@ func NewServer(serverConfig *config.ServerConfig, reg prometheus.Registerer) (*S
 	probeCtx, probeCancel := context.WithCancel(context.Background())
 	go argo.StartLivenessProbe(probeCtx, argocd.ArgoLivenessProbeInterval)
 
+	handedOver = true
+
 	return &Server{
-		router:      router,
-		updater:     statusUpdater,
-		env:         env,
-		probeCancel: probeCancel,
-		drainDelay:  readinessDrainDelay,
+		router:        router,
+		updater:       statusUpdater,
+		env:           env,
+		probeCancel:   probeCancel,
+		closeLockPool: closeLockPool,
+		drainDelay:    readinessDrainDelay,
 	}, nil
 }
 
@@ -266,4 +286,14 @@ func (s *Server) shutdown(srv httpShutdowner) {
 	// surviving replica does not resume a write-back the drain above is still
 	// flushing. No-op with in-memory state, where nothing else can pick them up.
 	s.env.releaseTaskLeases()
+
+	// Last of all. A holder still in flight keeps its checked-out connection through
+	// COMMIT — Close does not interrupt one — and a waiter whose next probe fails is
+	// absorbed by WaitForRollout's draining arm, which writes no status. Safe only
+	// because the process exits straight after this.
+	if s.closeLockPool != nil {
+		if err := s.closeLockPool(); err != nil {
+			slog.Error("failed to close the advisory-lock connection pool", "error", err)
+		}
+	}
 }

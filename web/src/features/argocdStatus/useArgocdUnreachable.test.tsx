@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { act, renderHook } from '@testing-library/react';
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it, vi, type Mock } from 'vitest';
 
 (
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -18,11 +18,11 @@ import { ArgocdStatusProvider } from './ArgocdStatusProvider';
 import type { ArgocdStatus } from './argocdStatusService';
 import { useArgocdUnreachable } from './useArgocdUnreachable';
 
-let subscribeMock: vi.Mock;
+let subscribeMock: Mock;
 
 beforeAll(async () => {
   const module = await import('./argocdStatusService');
-  subscribeMock = module.argocdStatusService.subscribe as vi.Mock;
+  subscribeMock = module.argocdStatusService.subscribe as Mock;
 });
 
 describe('useArgocdUnreachable', () => {

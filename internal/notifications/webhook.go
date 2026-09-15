@@ -2,26 +2,18 @@ package notifications
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"mime"
 	"net/http"
 	"net/url"
-	"slices"
 	"strings"
 	"text/template"
-	"time"
 
 	"github.com/shini4i/argo-watcher/internal/config"
 	"github.com/shini4i/argo-watcher/internal/models"
-)
-
-const (
-	maxErrorBodySize = 2 * 1024 // 2 KB
 )
 
 // NotificationStrategy defines the contract for delivering task notifications.
@@ -172,6 +164,10 @@ func NewWebhookStrategy(cfg *config.WebhookConfig, client HTTPClient) (*WebhookS
 	if !cfg.Enabled {
 		return nil, errors.New("webhook strategy disabled")
 	}
+	receiverURL, err := validateReceiverURL("webhook", cfg.Url)
+	if err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(cfg.Format) == "" {
 		return nil, errors.New("webhook format cannot be empty")
 	}
@@ -185,7 +181,7 @@ func NewWebhookStrategy(cfg *config.WebhookConfig, client HTTPClient) (*WebhookS
 	}
 
 	return &WebhookStrategy{
-		url:                  cfg.Url,
+		url:                  receiverURL,
 		token:                cfg.Token,
 		authorizationHeader:  cfg.AuthorizationHeader,
 		contentType:          cfg.ContentType,
@@ -197,9 +193,6 @@ func NewWebhookStrategy(cfg *config.WebhookConfig, client HTTPClient) (*WebhookS
 
 // Send delivers the webhook notification for the provided task.
 func (s *WebhookStrategy) Send(task models.Task) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
 	// The template assembles the body by hand and text/template escapes nothing,
 	// so the values are escaped instead. Left alone for a receiver that is not
 	// expecting JSON, which wants the literal text it has always been sent.
@@ -215,39 +208,12 @@ func (s *WebhookStrategy) Send(task models.Task) error {
 
 	slog.Debug("Sending webhook payload", "payload", payload.String(), "id", task.Id)
 
-	req, err := http.NewRequestWithContext(ctx, "POST", s.url, &payload)
-	if err != nil {
-		return fmt.Errorf("failed to create webhook request: %w", redactURL(err))
-	}
-
-	req.Header.Set("Content-Type", s.contentType)
+	headers := map[string]string{"Content-Type": s.contentType}
 	if s.token != "" {
-		req.Header.Set(s.authorizationHeader, s.token)
+		headers[s.authorizationHeader] = s.token
 	}
 
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send webhook: %w", redactURL(err))
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			slog.Warn("Failed to close response body", "error", err, "id", task.Id)
-		}
-	}()
+	_, err := deliverPost(s.client, "webhook", s.url, headers, payload.Bytes(), s.allowedResponseCodes)
 
-	if !slices.Contains(s.allowedResponseCodes, resp.StatusCode) {
-		lr := io.LimitReader(resp.Body, maxErrorBodySize)
-		body, readErr := io.ReadAll(lr)
-		if readErr != nil {
-			return fmt.Errorf("received non-allowed status code %d, and failed to read response body: %w", resp.StatusCode, readErr)
-		}
-		return fmt.Errorf("received non-allowed status code %d: %s", resp.StatusCode, string(body))
-	}
-
-	_, err = io.Copy(io.Discard, resp.Body)
-	if err != nil {
-		slog.Warn("Failed to discard response body on success", "error", err, "id", task.Id)
-	}
-
-	return nil
+	return err
 }

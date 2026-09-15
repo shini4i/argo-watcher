@@ -3,12 +3,12 @@ import { act, renderHook } from '@testing-library/react';
 import type { Location } from 'react-router-dom';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { ListContextProvider } from 'react-admin';
-import type { ListContextValue } from 'react-admin';
+import type { ListControllerResult } from 'react-admin';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { blockStorageAccess } from '../../test/blockStorage';
 import { useFilterState, type FilterStateSchema } from './useFilterState';
 
-interface HistoryFilters extends Record<string, unknown> {
+interface HistoryFilters {
   app: string;
   start: number | null;
   end: number | null;
@@ -57,7 +57,7 @@ const wrapperFactory = ({ initialEntry = '/', setFilters, filterValues = {} }: H
     data: [],
     filterValues,
     setFilters: setFilters ?? vi.fn(),
-  } as unknown as ListContextValue;
+  } as unknown as ListControllerResult;
 
   const Wrapper = ({ children }: { children: React.ReactNode }) => (
     <MemoryRouter initialEntries={[initialEntry]}>
@@ -238,7 +238,7 @@ describe('useFilterState', () => {
   });
 
   it('does not write to localStorage when schema field opts out (storage: false)', () => {
-    interface EphemeralFilters extends Record<string, unknown> {
+    interface EphemeralFilters {
       app: string;
       query: string;
     }

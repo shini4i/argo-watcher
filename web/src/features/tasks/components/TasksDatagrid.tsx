@@ -1,4 +1,4 @@
-import { Children, isValidElement, useCallback, useEffect, type ReactElement } from 'react';
+import { Children, isValidElement, useCallback, useEffect } from 'react';
 import { Box, Button, Link, Typography } from '@mui/material';
 import { type SxProps, type Theme } from '@mui/material/styles';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
@@ -6,6 +6,7 @@ import {
   Datagrid,
   DatagridBody,
   DatagridRow,
+  type DatagridRowProps,
   FunctionField,
   useListContext,
   useRecordContext,
@@ -57,7 +58,7 @@ export const TasksDatagrid = () => {
       <FunctionField
         source="app"
         label="Application"
-        sortBy="app"
+        sortable={false}
         cellClassName="cell-app"
         headerClassName="cell-app"
         render={(record: Task) => <AppCell app={record.app} isRollback={record.is_rollback} />}
@@ -65,7 +66,7 @@ export const TasksDatagrid = () => {
       <FunctionField
         source="project"
         label="Project"
-        sortBy="project"
+        sortable={false}
         cellClassName="cell-project"
         headerClassName="cell-project"
         render={(record: Task) => <ProjectCell project={record.project} />}
@@ -73,7 +74,7 @@ export const TasksDatagrid = () => {
       <FunctionField
         source="author"
         label="Author"
-        sortBy="author"
+        sortable={false}
         cellClassName="cell-author"
         headerClassName="cell-author"
         render={(record: Task) => <AuthorCell author={record.author} />}
@@ -81,7 +82,7 @@ export const TasksDatagrid = () => {
       <FunctionField
         source="status"
         label="Status"
-        sortBy="status"
+        sortable={false}
         cellClassName="cell-status"
         headerClassName="cell-status"
         render={(record: Task) => <StatusPill status={record.status} />}
@@ -89,7 +90,7 @@ export const TasksDatagrid = () => {
       <FunctionField
         source="created"
         label="Created"
-        sortBy="created"
+        sortable={false}
         cellClassName="cell-created"
         headerClassName="cell-created"
         render={(record: Task) => <TimeCell ts={record.created} mode="date" />}
@@ -97,7 +98,7 @@ export const TasksDatagrid = () => {
       <FunctionField
         source="updated"
         label="Updated"
-        sortBy="updated"
+        sortable={false}
         cellClassName="cell-updated"
         headerClassName="cell-updated"
         render={(record: Task) => <TimeCell ts={record.updated ?? record.created} mode="relative" />}
@@ -135,18 +136,18 @@ export const TasksDatagrid = () => {
  * panel row beneath it. DatagridBody clones this per record inside a
  * RecordContextProvider, which is where the record comes from.
  */
-const TaskRow = (props: Record<string, unknown>) => {
+const TaskRow = (props: DatagridRowProps) => {
   const record = useRecordContext<Task>();
   // A cancelled task's pill already names its only cause, so it earns no panel.
   const summary = statusExplainsItself(record?.status)
     ? null
     : summariseFailure(record?.status_reason);
   // The panel spans every data column; the grid renders no checkbox or expander.
-  const colSpan = Children.toArray(props.children as ReactElement[]).filter(isValidElement).length;
+  const colSpan = Children.toArray(props.children).filter(isValidElement).length;
 
   return (
     <>
-      <DatagridRow {...(props as never)} />
+      <DatagridRow {...props} />
       {record && summary && (
         <TaskFailureRow
           taskId={record.id}
@@ -160,28 +161,31 @@ const TaskRow = (props: Record<string, unknown>) => {
 };
 
 /** Marks a row that needs attention with a 4px edge in its status colour. */
-const taskRowSx = (record: Task): SxProps<Theme> => theme => {
-  const isDark = theme.palette.mode === 'dark';
-  // Cells carry no bottom rule of their own; the divider lives on the row's top
-  // edge, so a row and its reason panel read as one block.
-  const flushCells = { '& .MuiTableCell-root': { borderBottom: 'none' } };
+// react-admin types rowSx with MUI's unparameterised SxProps, so the themed
+// callback is cast back at the boundary; it still receives the app theme.
+const taskRowSx = (record: Task): SxProps =>
+  ((theme: Theme) => {
+    const isDark = theme.palette.mode === 'dark';
+    // Cells carry no bottom rule of their own; the divider lives on the row's top
+    // edge, so a row and its reason panel read as one block.
+    const flushCells = { '& .MuiTableCell-root': { borderBottom: 'none' } };
 
-  if (isFailedStatus(record.status)) {
-    return {
-      ...flushCells,
-      borderLeft: `4px solid ${isDark ? tokens.statusFailedFgDark : tokens.statusFailedFg}`,
-      backgroundColor: isDark ? tokens.rowFailedBgDark : tokens.rowFailedBg,
-    };
-  }
-  if (isRunningStatus(record.status)) {
-    return {
-      ...flushCells,
-      borderLeft: `4px solid ${isDark ? tokens.statusRunningFgDark : tokens.statusRunningFg}`,
-      backgroundColor: isDark ? tokens.rowRunningBgDark : tokens.rowRunningBg,
-    };
-  }
-  return { ...flushCells, borderLeft: '4px solid transparent' };
-};
+    if (isFailedStatus(record.status)) {
+      return {
+        ...flushCells,
+        borderLeft: `4px solid ${isDark ? tokens.statusFailedFgDark : tokens.statusFailedFg}`,
+        backgroundColor: isDark ? tokens.rowFailedBgDark : tokens.rowFailedBg,
+      };
+    }
+    if (isRunningStatus(record.status)) {
+      return {
+        ...flushCells,
+        borderLeft: `4px solid ${isDark ? tokens.statusRunningFgDark : tokens.statusRunningFg}`,
+        backgroundColor: isDark ? tokens.rowRunningBgDark : tokens.rowRunningBg,
+      };
+    }
+    return { ...flushCells, borderLeft: '4px solid transparent' };
+  }) as SxProps;
 
 const datagridSx: SxProps<Theme> = theme => {
   const headerBg = theme.palette.mode === 'dark' ? tokens.surface2Dark : tokens.surface2;
