@@ -1,6 +1,7 @@
 package state
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -489,6 +490,12 @@ func supersedeInProgress(tx *gorm.DB, task models.Task, reason string) (int64, e
 	return result.RowsAffected, nil
 }
 
+// checkPingTimeout bounds the health probe's ping. The DSN's connect_timeout covers
+// dialing only, so without it a database that accepts the connection and then answers
+// nothing parks the readiness handler indefinitely. It sits under the chart's 3s
+// readinessProbe timeout, so /readyz answers 503 rather than being abandoned mid-ping.
+const checkPingTimeout = 2 * time.Second
+
 // Check reports whether the database connection is alive.
 func (state *PostgresState) Check() bool {
 	connection, err := state.orm.DB()
@@ -497,7 +504,10 @@ func (state *PostgresState) Check() bool {
 		return false
 	}
 
-	if err = connection.Ping(); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), checkPingTimeout)
+	defer cancel()
+
+	if err = connection.PingContext(ctx); err != nil {
 		slog.Error("Failed to ping DB", "error", err)
 		return false
 	}
@@ -531,8 +541,12 @@ func (state *PostgresState) ProcessObsoleteTasks(retryTimes uint) {
 func (state *PostgresState) doProcessPostgresObsoleteTasks() error {
 	slog.Debug("Removing obsolete tasks...")
 
-	slog.Debug("Removing app not found tasks older than 1 hour from the database...")
-	if err := state.orm.Where(whereStatusEquals, models.StatusAppNotFoundMessage).Where("created < now() - interval '1 hour'").Delete(&state_models.TaskModel{}).Error; err != nil {
+	slog.Debug("Removing expired app not found tasks from the database...")
+	// The deadline is computed by the database, so a replica whose clock drifts cannot
+	// widen or shorten the window the others apply.
+	if err := state.orm.Where(whereStatusEquals, models.StatusAppNotFoundMessage).
+		Where("created < now() - make_interval(secs => ?)", AppNotFoundRetention.Seconds()).
+		Delete(&state_models.TaskModel{}).Error; err != nil {
 		return err
 	}
 

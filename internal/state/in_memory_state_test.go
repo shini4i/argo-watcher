@@ -232,24 +232,55 @@ func TestInMemoryState_ProcessObsoleteTasks(t *testing.T) {
 	assert.Equal(t, StaleTaskAbortReason, retrievedStale.StatusReason)
 }
 
+// TestInMemoryState_ProcessObsoleteTasks_RemovesAppNotFound pins the grace period both
+// backends give an app-not-found task, so the client that submitted it can still read
+// why it failed. Dropping it on the first sweep answered 404 instead.
 func TestInMemoryState_ProcessObsoleteTasks_RemovesAppNotFound(t *testing.T) {
 	state := InMemoryState{}
 
 	normalTask, err := state.AddTask(createTestTask("Normal"))
 	require.NoError(t, err)
 
-	appNotFoundTask, err := state.AddTask(createTestTask("AppNotFound"))
+	recentTask, err := state.AddTask(createTestTask("RecentAppNotFound"))
 	require.NoError(t, err)
-	err = state.SetTaskStatus(appNotFoundTask.Id, models.StatusAppNotFoundMessage, "")
+	require.NoError(t, state.SetTaskStatus(recentTask.Id, models.StatusAppNotFoundMessage, ""))
+
+	expiredTask, err := state.AddTask(createTestTask("ExpiredAppNotFound"))
 	require.NoError(t, err)
+	require.NoError(t, state.SetTaskStatus(expiredTask.Id, models.StatusAppNotFoundMessage, ""))
+
+	touchedTask, err := state.AddTask(createTestTask("TouchedAppNotFound"))
+	require.NoError(t, err)
+	require.NoError(t, state.SetTaskStatus(touchedTask.Id, models.StatusAppNotFoundMessage, ""))
+
+	expiredAt := float64(time.Now().Add(-AppNotFoundRetention - time.Minute).Unix())
+	state.mu.Lock()
+	for idx := range state.tasks {
+		switch state.tasks[idx].Id {
+		case expiredTask.Id:
+			state.tasks[idx].Created = expiredAt
+			state.tasks[idx].Updated = expiredAt
+		case touchedTask.Id:
+			// Old enough to expire but touched since: retention keys on Created, so a
+			// recent Updated must not save it.
+			state.tasks[idx].Created = expiredAt
+		}
+	}
+	state.mu.Unlock()
 
 	state.ProcessObsoleteTasks(1)
 
 	_, err = state.GetTask(normalTask.Id)
 	assert.NoError(t, err)
 
-	_, err = state.GetTask(appNotFoundTask.Id)
+	_, err = state.GetTask(recentTask.Id)
+	assert.NoError(t, err, "an app-not-found task within the grace period stays readable")
+
+	_, err = state.GetTask(expiredTask.Id)
 	assert.ErrorIs(t, err, ErrTaskNotFound)
+
+	_, err = state.GetTask(touchedTask.Id)
+	assert.ErrorIs(t, err, ErrTaskNotFound, "retention keys on Created, not Updated")
 }
 
 func TestInMemoryState_Check(t *testing.T) {
@@ -407,9 +438,10 @@ func TestInMemoryState_ProcessObsoleteTasksKeepsInsertionOrder(t *testing.T) {
 
 	now := float64(time.Now().Unix())
 	stale := now - TaskStaleThresholdSeconds - 60
+	expired := now - AppNotFoundRetention.Seconds() - 60
 	state.tasks = append(state.tasks,
 		models.Task{Id: "kept-first", App: "app-a", Status: models.StatusDeployedMessage, Created: now, Updated: now},
-		models.Task{Id: "dropped", App: "app-a", Status: models.StatusAppNotFoundMessage, Created: now, Updated: now},
+		models.Task{Id: "dropped", App: "app-a", Status: models.StatusAppNotFoundMessage, Created: expired, Updated: expired},
 		models.Task{Id: "aborted", App: "app-a", Status: models.StatusInProgressMessage, Created: stale, Updated: stale},
 		models.Task{Id: "kept-last", App: "app-a", Status: models.StatusDeployedMessage, Created: now, Updated: now},
 	)

@@ -292,3 +292,62 @@ func TestJWTAuthServiceValidateForApp(t *testing.T) {
 		assert.NotContains(t, err.Error(), "allowed_apps")
 	})
 }
+
+// TestJWTAuthService_ClockSkewLeeway pins the tolerance that keeps a CI runner whose
+// clock is a second ahead of the server from being refused. The window is symmetric
+// by construction: the same option that accepts a slightly future iat also honours a
+// token for that long past its exp.
+func TestJWTAuthService_ClockSkewLeeway(t *testing.T) {
+	const secretKey = "test_secret_key"
+	service := NewJWTAuthService(secretKey, "", "")
+
+	sign := func(t *testing.T, claims jwt.MapClaims) string {
+		t.Helper()
+		tokenStr, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(secretKey))
+		require.NoError(t, err)
+		return tokenStr
+	}
+
+	t.Run("accepts a token issued slightly in the future", func(t *testing.T) {
+		tokenStr := sign(t, jwt.MapClaims{
+			"exp": float64(time.Now().Add(time.Hour).Unix()),
+			"iat": float64(time.Now().Add(clockSkewLeeway / 2).Unix()),
+		})
+
+		isValid, err := service.Validate(tokenStr)
+		assert.NoError(t, err)
+		assert.True(t, isValid)
+	})
+
+	t.Run("accepts a token not yet valid by less than the leeway", func(t *testing.T) {
+		tokenStr := sign(t, jwt.MapClaims{
+			"exp": float64(time.Now().Add(time.Hour).Unix()),
+			"nbf": float64(time.Now().Add(clockSkewLeeway / 2).Unix()),
+		})
+
+		isValid, err := service.Validate(tokenStr)
+		assert.NoError(t, err)
+		assert.True(t, isValid)
+	})
+
+	t.Run("honours a token for the leeway past its expiry", func(t *testing.T) {
+		tokenStr := sign(t, jwt.MapClaims{
+			"exp": float64(time.Now().Add(-clockSkewLeeway / 2).Unix()),
+		})
+
+		isValid, err := service.Validate(tokenStr)
+		assert.NoError(t, err)
+		assert.True(t, isValid)
+	})
+
+	t.Run("still rejects skew beyond the leeway", func(t *testing.T) {
+		tokenStr := sign(t, jwt.MapClaims{
+			"exp": float64(time.Now().Add(time.Hour).Unix()),
+			"iat": float64(time.Now().Add(2 * clockSkewLeeway).Unix()),
+		})
+
+		isValid, err := service.Validate(tokenStr)
+		assert.ErrorIs(t, err, jwt.ErrTokenUsedBeforeIssued)
+		assert.False(t, isValid)
+	})
+}

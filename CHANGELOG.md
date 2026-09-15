@@ -46,9 +46,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one used to occupy a connection for as long as the holder ran, which is minutes.
 - The client now stops at its next checkpoint on `SIGINT`/`SIGTERM` instead of being killed
   mid-poll, so a cancelled CI job ends promptly rather than sleeping out its retry interval.
+- The Web UI keeps its WebSocket alive with a protocol-level ping instead of a text `heartbeat`
+  message, and notices a browser tab that closes straight away rather than at the next 30-second
+  tick — so a stale connection is no longer written to for up to half a minute. A client that sends
+  a message on `/ws` is now disconnected: the socket only broadcasts, and never accepted input.
+- The Web UI reads `GET /api/v1/config` once per page load and shares the answer, instead of four
+  separate requests that each decided for themselves what to do when it failed.
 
 ### Fixed
 
+- A deployment is no longer refused because the machine that minted its JWT is a second ahead of the
+  server. Token validation now allows 30 seconds of clock skew, which had made `iat` in the future —
+  routine between a CI runner and the server — an authentication failure with nothing naming the
+  cause. The same tolerance also honours a token for 30 seconds past its expiry.
+- An `app not found` task now stays readable for an hour on the in-memory backend, as it already did
+  on PostgreSQL. It was previously removed by the first cleanup pass, so a client polling for the
+  outcome could be answered `404` instead of being told the application does not exist.
+- The readiness probe now fails within two seconds against a database that accepts the connection
+  and then answers nothing, such as a failover in progress. The check had no timeout, so the probe
+  hung instead of reporting the replica unready, and Kubernetes never took it out of service. The
+  cap sits under the chart's default `readinessProbe.timeoutSeconds` of 3, so the answer arrives
+  before the probe is abandoned.
+- A `GET /api/v1/config` response that is not this server's configuration — a proxy interstitial, a
+  sign-in page in front of the API, a gateway's own error envelope — is now reported as a
+  configuration failure. The Web UI previously read any of them as a server with nothing configured
+  and started as though authentication were disabled, leaving every request to fail with `401` and
+  no way to sign in.
 - An application with failures in the window is no longer badged **Failing** in the success green on
   the Overview. The badge took its colour from the application's most recent task while taking its
   text from the window as a whole, so an app that had failed several times but happened to deploy

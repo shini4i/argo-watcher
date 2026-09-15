@@ -21,6 +21,11 @@ const (
 	// StaleTaskAbortReason is the status reason set when an in-progress task is
 	// aborted for exceeding the staleness window (distinct from an ArgoCD outage).
 	StaleTaskAbortReason = "Deployment did not complete within the staleness window; marked aborted by argo-watcher."
+	// AppNotFoundRetention is how long a task rejected for naming an unknown application
+	// is spared by the sweep; it is removed on the first pass after that, so the window
+	// a client actually sees runs to one ObsoleteTaskCheckInterval beyond it. Both
+	// backends use it.
+	AppNotFoundRetention = time.Hour
 )
 
 // InMemoryState is a thread-safe in-memory implementation of task storage.
@@ -235,7 +240,10 @@ func staleAfterSeconds(task models.Task) float64 {
 func processInMemoryObsoleteTasks(tasks []models.Task) []models.Task {
 	var updatedTasks []models.Task
 	for _, task := range tasks {
-		if task.Status == models.StatusAppNotFoundMessage {
+		// Kept for the grace period so the client that submitted it can still read why
+		// it failed; both backends use the same window.
+		if task.Status == models.StatusAppNotFoundMessage &&
+			task.Created+AppNotFoundRetention.Seconds() < float64(time.Now().Unix()) {
 			continue
 		}
 		if task.Status == models.StatusInProgressMessage && task.Updated+staleAfterSeconds(task) < float64(time.Now().Unix()) {

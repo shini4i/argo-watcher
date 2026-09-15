@@ -766,3 +766,33 @@ func TestPostgresState_SetTaskStatusRefusesToOverwriteATerminalStatus(t *testing
 	assert.Equal(t, models.StatusCancelledMessage, stored.Status, "the cancellation must stand")
 	assert.Equal(t, "superseded", stored.StatusReason)
 }
+
+// TestPostgresState_ProcessObsoleteTasksHonoursTheAppNotFoundWindow pins the grace
+// period an app-not-found task gets before the sweep removes it, so the client that
+// submitted it can still read why it failed. The in-memory backend applies the same
+// window (TestInMemoryState_ProcessObsoleteTasks_RemovesAppNotFound).
+func TestPostgresState_ProcessObsoleteTasksHonoursTheAppNotFoundWindow(t *testing.T) {
+	env := newPostgresTestEnv(t)
+
+	recent, err := env.state.AddTask(models.Task{App: "recent", Images: []models.Image{{Image: "app", Tag: "v1"}}})
+	require.NoError(t, err)
+	require.NoError(t, env.state.SetTaskStatus(recent.Id, models.StatusAppNotFoundMessage, ""))
+
+	expired, err := env.state.AddTask(models.Task{App: "expired", Images: []models.Image{{Image: "app", Tag: "v1"}}})
+	require.NoError(t, err)
+	require.NoError(t, env.state.SetTaskStatus(expired.Id, models.StatusAppNotFoundMessage, ""))
+
+	// Backdated past the window by the database's own clock, the one the sweep compares
+	// against.
+	require.NoError(t, env.state.orm.Exec(
+		"UPDATE tasks SET created = now() - make_interval(secs => ?) WHERE id = ?",
+		AppNotFoundRetention.Seconds()+60, expired.Id).Error)
+
+	require.NoError(t, env.state.doProcessPostgresObsoleteTasks())
+
+	_, err = env.state.GetTask(recent.Id)
+	assert.NoError(t, err, "an app-not-found task within the grace period stays readable")
+
+	_, err = env.state.GetTask(expired.Id)
+	assert.ErrorIs(t, err, ErrTaskNotFound)
+}

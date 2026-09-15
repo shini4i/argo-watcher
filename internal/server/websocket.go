@@ -60,6 +60,11 @@ const (
 	// a URL and a subprotocol list. A query parameter would be the other option, but
 	// it lands in access logs.
 	wsTokenSubprotocolPrefix = "argo-watcher.token."
+
+	// wsHeartbeatInterval is how often an idle connection is pinged, and
+	// wsHeartbeatTimeout how long the pong may take before the peer is dropped.
+	wsHeartbeatInterval = 30 * time.Second
+	wsHeartbeatTimeout  = 5 * time.Second
 )
 
 // authorizeWebSocket reports whether the handshake may proceed, writing the rejection
@@ -139,10 +144,18 @@ func (env *Env) handleWebSocketConnection(w http.ResponseWriter, r *http.Request
 	go env.checkConnection(conn)
 }
 
+// checkConnection owns a connection for its lifetime: it keeps the read side alive,
+// pings the peer, and unregisters the connection once it ends.
 func (env *Env) checkConnection(c *websocket.Conn) {
 	defer env.connWg.Done()
 
-	ticker := time.NewTicker(time.Second * 30)
+	// The socket only broadcasts, so nothing is expected from the client — but the
+	// library answers control frames only while a read is in flight, so without this a
+	// ping never sees its pong and a client's close frame is never noticed. A client that
+	// does send a data message is closed with StatusPolicyViolation, per CloseRead.
+	connCtx := c.CloseRead(context.Background())
+
+	ticker := time.NewTicker(wsHeartbeatInterval)
 	defer ticker.Stop()
 
 	for {
@@ -151,18 +164,19 @@ func (env *Env) checkConnection(c *websocket.Conn) {
 			_ = c.Close(websocket.StatusGoingAway, "server shutdown")
 			env.ws.remove(c)
 			return
+		case <-connCtx.Done():
+			// The peer closed, or the read failed; either way the connection is over.
+			env.ws.remove(c)
+			return
 		case <-ticker.C:
-			// we are not using c.Ping here, because it's not working as expected
-			// for some reason it's failing even if the connection is still alive
-			// if you know how to fix it, please open an issue or PR
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			if c.Write(ctx, websocket.MessageText, []byte("heartbeat")) != nil {
-				cancel()
+			ctx, cancel := context.WithTimeout(connCtx, wsHeartbeatTimeout)
+			err := c.Ping(ctx)
+			cancel()
+			if err != nil {
 				_ = c.Close(websocket.StatusNormalClosure, "heartbeat failed")
 				env.ws.remove(c)
 				return
 			}
-			cancel()
 		}
 	}
 }

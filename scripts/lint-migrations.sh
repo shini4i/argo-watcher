@@ -2,7 +2,7 @@
 # Enforces the forward-only migration rule that makes rollback safe: a release
 # rolled back runs against the schema its successor left behind, so a migration
 # must not remove anything an older build still reads unless it also raises the
-# compatibility floor in schema_compatibility. Tested by lint-migrations_test.sh.
+# compatibility floor in schema_compatibility. Tested by lint-migrations.bats.
 set -euo pipefail
 
 MIGRATIONS_DIR="${1:-db/migrations}"

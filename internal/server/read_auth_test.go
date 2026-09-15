@@ -304,23 +304,28 @@ func TestReadAuthOpenEndpoints(t *testing.T) {
 	})
 }
 
-// TestReadAuthCoversEveryRegisteredRead derives its expectations from the router's own
-// route table rather than a hand-kept list, so a read added later to the wrong group
-// fails here without anyone remembering to extend a test.
-func TestReadAuthCoversEveryRegisteredRead(t *testing.T) {
+// TestEveryRegisteredRouteRequiresACredential derives its expectations from the router's
+// own route table rather than a hand-kept list. It walks every method, because the
+// privileged writes enforce membership inside the handler rather than through
+// middleware, which leaves nothing for a middleware-shaped assertion to see.
+func TestEveryRegisteredRouteRequiresACredential(t *testing.T) {
 	openByDesign := map[string]bool{
-		"/api/v1/config":     true,
-		"/api/v1/tasks/{id}": true,
+		"POST /api/v1/tasks":     true,
+		"GET /api/v1/config":     true,
+		"GET /api/v1/tasks/{id}": true,
 	}
 
 	env, _ := readAuthEnv(t, true, map[string]auth.AuthStrategy{
 		oidcHeader: oidcLikeStrategy{authenticated: true},
 	})
+	// Registered only where the tokens can live, so without a store their routes are
+	// absent from the table and this test would silently stop covering them.
+	env.appTokens = &fakeTokenStore{}
 	router := env.CreateRouter()
 
 	checked := 0
 	err := chi.Walk(router, func(method, route string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
-		if method != http.MethodGet || !strings.HasPrefix(route, "/api/v1/") {
+		if !strings.HasPrefix(route, "/api/v1/") {
 			return nil
 		}
 
@@ -334,19 +339,19 @@ func TestReadAuthCoversEveryRegisteredRead(t *testing.T) {
 		router.ServeHTTP(recorder, req)
 
 		checked++
-		if openByDesign[route] {
+		if openByDesign[method+" "+route] {
 			assert.NotEqual(t, http.StatusUnauthorized, recorder.Code,
-				"%s is exempt by design and must stay reachable", route)
+				"%s %s is exempt by design and must stay reachable", method, route)
 			return nil
 		}
 
 		assert.Equal(t, http.StatusUnauthorized, recorder.Code,
-			"%s is a read with no documented exemption and must require a credential", route)
+			"%s %s has no documented exemption and must require a credential", method, route)
 		return nil
 	})
 	require.NoError(t, err)
 
-	assert.GreaterOrEqual(t, checked, 6, "the route table should have yielded every /api/v1 read")
+	assert.GreaterOrEqual(t, checked, 12, "the route table should have yielded every /api/v1 route")
 }
 
 // TestReadAuthTaskLookupRemainsOpen pins the deliberate exemption: released clients

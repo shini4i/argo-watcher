@@ -1,5 +1,6 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { resetServerConfigCache } from '../../data/serverConfig';
 import { useAppTokensAvailable } from './useAppTokensAvailable';
 
 const jsonResponse = (body: unknown) =>
@@ -11,6 +12,9 @@ const jsonResponse = (body: unknown) =>
 describe('useAppTokensAvailable', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    // The configuration is cached for the page's lifetime, so without this every case
+    // after the first would assert against the first one's response.
+    resetServerConfigCache();
   });
 
   it('starts unknown so callers deny before the config arrives', () => {
@@ -26,7 +30,7 @@ describe('useAppTokensAvailable', () => {
     ['Postgres but no OIDC', { oidc: { enabled: false }, state_type: 'postgres' }, false],
     ['OIDC but in-memory state', { oidc: { enabled: true }, state_type: 'in-memory' }, false],
     ['neither', { oidc: { enabled: false }, state_type: 'in-memory' }, false],
-    ['a payload missing both fields', {}, false],
+    ['a config naming neither field', { oidc: {} }, false],
   ])('reports %s', async (_name, config, expected) => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse(config));
 
@@ -35,6 +39,19 @@ describe('useAppTokensAvailable', () => {
     await waitFor(() => {
       expect(result.current).toBe(expected);
     });
+  });
+
+  it('stays unknown when the config answers 200 with no JSON body', async () => {
+    // Distinct from the `{}` payload case above: an empty body is a proxy or the SPA
+    // catch-all answering, not a server that reported its configuration.
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('<html></html>', { status: 200, headers: { 'Content-Type': 'text/html' } }),
+    );
+
+    const { result } = renderHook(() => useAppTokensAvailable());
+
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+    expect(result.current).toBeNull();
   });
 
   it('stays unknown when the config request fails', async () => {

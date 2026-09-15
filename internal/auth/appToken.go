@@ -154,14 +154,25 @@ func (r *PrefixRouter) Validate(token string) (bool, error) {
 	return strategy.Validate(token)
 }
 
+// Authenticate reports whether the token identifies a live credential. It answers
+// ErrNoCredential when no strategy claims the token's shape, and a plain error when a
+// strategy evaluated the token and refused it.
 func (r *PrefixRouter) Authenticate(token string) error {
 	strategy := r.strategyFor(token)
 	if strategy == nil {
 		return ErrNoCredential
 	}
 
-	if _, err := authenticate(strategy, token); err != nil {
+	valid, err := authenticate(strategy, token)
+	if err != nil {
 		return err
+	}
+
+	// A strategy may refuse through the bool alone; Authenticate carries only an error,
+	// so discarding it would report the refusal as success. Not ErrNoCredential: a
+	// strategy did evaluate this token, and walk skips that sentinel as unread.
+	if !valid {
+		return errors.New("the presented credential was refused")
 	}
 
 	return nil

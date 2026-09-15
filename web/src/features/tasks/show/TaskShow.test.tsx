@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { resetServerConfigCache } from '../../../data/serverConfig';
 import type { TaskStatus } from '../../../data/types';
 import { TaskShow } from './TaskShow';
 
@@ -97,7 +98,10 @@ describe('TaskShow', () => {
     mockUseDeployLockState.mockReturnValue(false);
     mockUseOidcEnabled.mockReturnValue(true);
     mockHttpClient.mockReset();
-    configResponse = {};
+    // The configuration is fetched once per page load and cached, so a case that sets
+    // its own response would otherwise get the previous case's.
+    resetServerConfigCache();
+    configResponse = { oidc: { enabled: false } };
     mockHttpClient.mockImplementation((url: string) => {
       if (url === '/api/v1/config') {
         return Promise.resolve({ data: configResponse, status: 200, headers: {} as Headers });
@@ -519,6 +523,29 @@ describe('TaskShow', () => {
     expect(mockUseNotify).not.toHaveBeenCalledWith(expect.anything(), { type: 'error' });
   });
 
+  it('warns when the configuration answers 200 with no body', async () => {
+    // A proxy interstitial in front of the API. It used to disable the Argo CD button
+    // silently, which reads as "no Argo CD URL configured" rather than a failure.
+    mockUseGetOne.mockReturnValue({
+      data: buildTask(),
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+    mockHttpClient.mockImplementation((url: string) => {
+      if (url === '/api/v1/config') {
+        return Promise.resolve({ data: undefined, status: 200, headers: {} as Headers });
+      }
+      return Promise.resolve({ data: {}, status: 202, headers: {} as Headers });
+    });
+
+    await renderWithRouter('/task/task-1');
+
+    await waitFor(() =>
+      expect(mockUseNotify).toHaveBeenCalledWith(expect.any(String), { type: 'warning' }),
+    );
+  });
+
   it('warns when configuration request fails', async () => {
     mockUseGetOne.mockReturnValue({
       data: buildTask(),
@@ -654,7 +681,7 @@ describe('TaskShow', () => {
   });
 
   it('enables Argo CD link when alias is configured', async () => {
-    configResponse = { argo_cd_url_alias: 'https://argocd.example' };
+    configResponse = { oidc: { enabled: false }, argo_cd_url_alias: 'https://argocd.example' };
     mockUseGetOne.mockReturnValue({
       data: buildTask(),
       isLoading: false,
@@ -669,7 +696,7 @@ describe('TaskShow', () => {
   });
 
   it('keeps the application route in the path of a URL carrying a query', async () => {
-    configResponse = { argo_cd_url: 'https://argocd.local/platform?view=tree#overview' };
+    configResponse = { oidc: { enabled: false }, argo_cd_url: 'https://argocd.local/platform?view=tree#overview' };
     mockUseGetOne.mockReturnValue({
       data: buildTask(),
       isLoading: false,
@@ -689,6 +716,7 @@ describe('TaskShow', () => {
   it('prefers the alias over the server URL', async () => {
     // The alias exists for an ARGO_URL the browser cannot reach.
     configResponse = {
+      oidc: { enabled: false },
       argo_cd_url_alias: 'https://argocd.example',
       argo_cd_url: 'https://argocd.local/platform',
     };
@@ -706,7 +734,7 @@ describe('TaskShow', () => {
   });
 
   it('builds Argo CD link from the server URL', async () => {
-    configResponse = { argo_cd_url: 'https://argocd.local/platform/' };
+    configResponse = { oidc: { enabled: false }, argo_cd_url: 'https://argocd.local/platform/' };
     mockUseGetOne.mockReturnValue({
       data: buildTask(),
       isLoading: false,

@@ -32,6 +32,7 @@ import { useDeployLockState } from '../../deployLock/useDeployLockState';
 import { useOidcEnabled } from '../../../shared/hooks/useOidcEnabled';
 import { getBrowserWindow, hasPrivilegedAccess, normalizeError } from '../../../shared/utils';
 import { httpClient } from '../../../data/httpClient';
+import { useServerConfig, type ServerConfig } from '../../../data/serverConfig';
 import { describeReadFailure } from '../../../data/readFailure';
 import { getAccessToken } from '../../../auth/tokenStore';
 import { useTimezone } from '../../../shared/providers/TimezoneProvider';
@@ -68,11 +69,6 @@ interface RollbackState {
   message: string;
 }
 
-interface ConfigResponse {
-  argo_cd_url_alias?: string;
-  argo_cd_url?: string;
-}
-
 const computeRollbackState = (
   status: string | null,
   deployLock: boolean,
@@ -105,7 +101,7 @@ const computeRollbackState = (
   };
 };
 
-const buildArgoCdUrl = (config: ConfigResponse | null, app?: string | null): string | null => {
+const buildArgoCdUrl = (config: ServerConfig | null, app?: string | null): string | null => {
   if (!config || !app) {
     return null;
   }
@@ -166,7 +162,7 @@ export const TaskShow = () => {
   const theme = useTheme();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [rollbackLoading, setRollbackLoading] = useState(false);
-  const [configData, setConfigData] = useState<ConfigResponse | null>(null);
+  const { config: configData, error: configError } = useServerConfig();
 
   const {
     data,
@@ -193,26 +189,10 @@ export const TaskShow = () => {
   }, [readFailure, notify]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    httpClient<ConfigResponse>('/api/v1/config')
-      .then(response => {
-        if (!cancelled) {
-          setConfigData(response.data ?? null);
-        }
-      })
-      .catch(err => {
-        if (cancelled) {
-          return;
-        }
-        const message = err instanceof Error ? err.message : 'Failed to load configuration.';
-        notify(message, { type: 'warning' });
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [notify]);
+    if (configError) {
+      notify(configError.message, { type: 'warning' });
+    }
+  }, [configError, notify]);
 
   const status = data?.status ?? null;
   const identityEmail = identity?.email ?? '';
