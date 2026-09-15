@@ -44,9 +44,10 @@ func NewMigrationConfig() (*MigrationConfig, error) {
 	// scheme to postgres before connecting, so the rest of the DSN is an ordinary
 	// PostgreSQL URI. connect_timeout bounds the initial connection so an
 	// unreachable database fails fast instead of blocking on the OS TCP timeout.
-	dsn := fmt.Sprintf("pgx5://%s:%s@%s:%s/%s?sslmode=%s&connect_timeout=%d",
-		url.QueryEscape(dbCfg.User),
-		url.QueryEscape(dbCfg.Password),
+	dsn := fmt.Sprintf("pgx5://%s@%s:%s/%s?sslmode=%s&connect_timeout=%d",
+		// url.UserPassword applies userinfo escaping, which is not the query string's:
+		// there a space is "+", which in credentials stays a literal plus.
+		url.UserPassword(dbCfg.User, dbCfg.Password).String(),
 		dbCfg.Host,
 		dbCfg.Port,
 		dbCfg.Name,

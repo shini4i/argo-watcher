@@ -55,6 +55,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A `DB_PASSWORD` containing a space now works. Both connection strings mangled it, each in its own
+  way: the migration runner escaped the credentials as though they were a query string, where a space
+  becomes a literal `+`, and the server left them unquoted in a format that ends a value at the first
+  space. PostgreSQL was sent a password nobody had configured and both failed to authenticate with an
+  error naming nothing. `DB_USER` and `DB_NAME` are quoted on the same terms; supplying `DB_DSN`
+  yourself is unchanged, since that string is yours to encode.
 - A deployment is no longer refused because the machine that minted its JWT is a second ahead of the
   server. Token validation now allows 30 seconds of clock skew, which had made `iat` in the future —
   routine between a CI runner and the server — an authentication failure with nothing naming the
