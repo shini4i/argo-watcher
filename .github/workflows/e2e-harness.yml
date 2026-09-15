@@ -40,7 +40,7 @@ jobs:
           # lookup, which shares the runner IP 60 req/h anonymous quota.
           version: 3.53.1
 
-      - uses: ./.github/actions/setup-bats
+      - uses: $/.github/actions/setup-bats
 
       # shellcheck is present on the runner but pinned here anyway, because the image
       # ships 0.9.0 while the flake devshell provides 0.11.0 — and findings differ

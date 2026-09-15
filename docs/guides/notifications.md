@@ -9,18 +9,33 @@ Two events are sent per deployment: one when the task is accepted (status `in pr
 | Variable | Description | Default | Example |
 |---|---|---|---|
 | `WEBHOOK_ENABLED` | Enable webhook notifications | `false` | |
-| `WEBHOOK_URL` | Where to POST | | `https://example.com/events` |
+| `WEBHOOK_URL` | Where to POST. Must be an absolute `http://` or `https://` URL | | `https://example.com/events` |
 | `WEBHOOK_CONTENT_TYPE` | `Content-Type` of the request | `application/json` | |
 | `WEBHOOK_FORMAT` | Go template rendering the request body | | `{"app": "{{.App}}", "status": "{{.Status}}"}` |
 | `WEBHOOK_AUTHORIZATION_HEADER_NAME` | Header carrying the credential | `Authorization` | `X-Token` |
 | `WEBHOOK_AUTHORIZATION_HEADER_VALUE` | Its value | | `Bearer token` |
 | `WEBHOOK_ALLOWED_RESPONSE_CODES` | Response codes treated as success | `200` | `200,201,202` |
 
+The URL is checked at startup: blank, or missing a scheme or a host, and the server refuses to
+start rather than failing every send for the life of the process.
+
 Argo Watcher does not sign the payload; the receiver authenticates the request through the authorization header above, so treat `WEBHOOK_URL` itself as a secret when the receiver has no other check.
 
 ### Template variables
 
 `WEBHOOK_FORMAT` (and `MATTERMOST_FORMAT`) is a [Go template](https://pkg.go.dev/text/template) rendered over the task:
+
+When `WEBHOOK_CONTENT_TYPE` is a JSON type, values are escaped for you before the template renders them, so a quote or a newline in `StatusReason` cannot break the body. Put each value inside a JSON string (`"{{.Author}}"`) and quote nothing yourself. For any other content type the values are rendered as they are.
+
+!!! warning "If your format quotes values itself"
+    A format that produces its own quotes — `{{printf "%q" .StatusReason}}` — now escapes an
+    already-escaped value, and the receiver shows a literal `\n` instead of a line break.
+    Drop the `printf` and wrap the value in quotes instead:
+
+    ```diff
+    - WEBHOOK_FORMAT='{"text": {{printf "%q" .StatusReason}}}'
+    + WEBHOOK_FORMAT='{"text": "{{.StatusReason}}"}'
+    ```
 
 | Variable | Type | Description |
 |---|---|---|
@@ -68,7 +83,7 @@ It needs a [bot account](https://docs.mattermost.com/integrations/cloud-bot-acco
 | Variable | Description | Default |
 |---|---|---|
 | `MATTERMOST_ENABLED` | Enable Mattermost notifications | `false` |
-| `MATTERMOST_URL` | Base URL of the instance, without `/api/v4` | |
+| `MATTERMOST_URL` | Base URL of the instance, without `/api/v4`. Must be an absolute `http://` or `https://` URL | |
 | `MATTERMOST_TOKEN` | Bot access token | |
 | `MATTERMOST_CHANNEL_ID` | Target channel id (the 26-character id, not the name) | |
 | `MATTERMOST_FORMAT` | Go template rendering the post (markdown) | |

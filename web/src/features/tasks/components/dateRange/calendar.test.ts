@@ -7,6 +7,7 @@ import {
   endOfDay,
   isSameDay,
   matchPreset,
+  shiftMonth,
   startOfDay,
 } from './calendar';
 
@@ -91,5 +92,18 @@ describe('calendar helpers', () => {
   it('dateAt builds midnight in UTC', () => {
     const date = dateAt(2026, 0, 1, 'utc');
     expect(date.toISOString()).toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  it('shiftMonth steps within a year without touching it', () => {
+    expect(shiftMonth(2026, 5, 1)).toEqual({ year: 2026, month: 6 });
+    expect(shiftMonth(2026, 5, -1)).toEqual({ year: 2026, month: 4 });
+  });
+
+  it('shiftMonth carries December forward into the next January', () => {
+    expect(shiftMonth(2026, 11, 1)).toEqual({ year: 2027, month: 0 });
+  });
+
+  it('shiftMonth carries January back into the previous December', () => {
+    expect(shiftMonth(2026, 0, -1)).toEqual({ year: 2025, month: 11 });
   });
 });

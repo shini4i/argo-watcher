@@ -42,10 +42,8 @@ func reapAbandonedTasks(stop <-chan struct{}, draining func() bool, interval tim
 			return
 		case <-ticker.C:
 			// Draining begins several seconds before the shutdown channel closes.
-			// Claiming in that window takes deployments this replica cannot finish: it
-			// releases them again moments later, and a resume that outlives the
-			// write-back drain fails on the closed batcher and writes a terminal status
-			// no other replica will revisit.
+			// Claiming in that window takes deployments this replica cannot finish and
+			// releases them again moments later, delaying the handover it was meant to be.
 			if draining() {
 				continue
 			}
@@ -88,21 +86,10 @@ func (env *Env) releaseTaskLeases() {
 	}
 }
 
-// resumeSafely runs resume and contains a panic to the one task that caused it.
-// A task is only ever abandoned back to the other replicas, so a panic that took
-// the process down would be re-claimed elsewhere and take that replica down too,
-// walking one bad deployment through the whole fleet.
-//
-// Draining is re-checked here because it can begin between the sweep's own check
-// and this goroutine starting. Monitoring a rollout this replica cannot finish is
-// worse than not starting it: once shutdown closes the write-back batcher, the
-// resumed task's write-back fails and records a terminal status for a deployment
-// that is otherwise healthy. Giving up before starting leaves the claim to be
-// released with the rest, so another replica takes it instead.
-//
-// The same predicate is handed to resume, which keeps watching it: shutdown can
-// also begin after a rollout is under way, and that rollout must be given up
-// rather than raced against the teardown.
+// resumeSafely contains a panic to the one task that caused it: a task is only ever
+// abandoned back to the other replicas, so a panic that took the process down would
+// walk one bad deployment through the whole fleet. Draining is re-checked because it
+// can begin after the sweep's own check, and handed on for a mid-rollout shutdown.
 func resumeSafely(task models.Task, draining func() bool, resume func(models.Task, func() bool)) {
 	defer func() {
 		if recovered := recover(); recovered != nil {

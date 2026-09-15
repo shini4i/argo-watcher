@@ -192,9 +192,11 @@ func TestPostgresState_ClaimExpiredTasks(t *testing.T) {
 		require.NoError(t, env.state.ClaimTask(old.Id))
 		env.expireLease(t, old.Id)
 
-		// What accepting a newer deployment for the same app does first.
-		cancelled, err := env.state.CancelInProgressTasks(
-			"Superseded", []models.Image{{Image: "test", Tag: "v0.0.2"}}, "superseded", true)
+		// What accepting a newer deployment for the same app does.
+		newer := sampleTask("Superseded")
+		newer.Images = []models.Image{{Image: "test", Tag: "v0.0.2"}}
+		newer.Validated = true
+		_, cancelled, err := env.state.SupersedeAndAdd(newer, "superseded")
 		require.NoError(t, err)
 		require.Equal(t, int64(1), cancelled)
 
@@ -341,6 +343,8 @@ func TestPostgresState_ReleaseOwnedLeases(t *testing.T) {
 
 		assert.False(t, env.storedModel(t, inserted.Id).OwnerId.Valid,
 			"a released task must name no owner")
+		assert.True(t, env.storedModel(t, inserted.Id).LeaseExpiresAt.Valid,
+			"a released task must keep a deadline: that is what tells it from one never claimed")
 
 		held, err := env.state.RenewLease(inserted.Id)
 		require.NoError(t, err)

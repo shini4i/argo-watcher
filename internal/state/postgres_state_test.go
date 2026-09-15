@@ -3,13 +3,14 @@ package state
 import (
 	"errors"
 	"os"
+	"sort"
 	"sync"
 	"testing"
 	"time"
 
-	envConfig "github.com/caarlos0/env/v11"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 
 	"github.com/shini4i/argo-watcher/internal/config"
 	"github.com/shini4i/argo-watcher/internal/models"
@@ -30,7 +31,7 @@ func newPostgresTestEnv(t *testing.T, opts ...func(*config.ServerConfig)) *postg
 		t.Skip("Postgres integration tests require DB_DSN or DB_HOST to be configured")
 	}
 
-	databaseConfig, err := envConfig.ParseAs[config.DatabaseConfig]()
+	databaseConfig, err := config.NewDatabaseConfig()
 	require.NoError(t, err)
 
 	testConfig := &config.ServerConfig{
@@ -46,11 +47,35 @@ func newPostgresTestEnv(t *testing.T, opts ...func(*config.ServerConfig)) *postg
 
 	db, err := env.state.orm.DB()
 	require.NoError(t, err)
+	// Connect bounds the pool (configurePool), but a state left open still holds up
+	// to maxOpenConns connections past its test, so a long run ends in "too many
+	// clients" rather than a real failure.
+	t.Cleanup(func() { _ = db.Close() })
 
 	_, err = db.Exec("TRUNCATE TABLE tasks")
 	require.NoError(t, err)
 
 	return env
+}
+
+// newSchemalessState connects a second state whose search_path names a schema
+// that does not exist, so every query fails on a missing relation. Nothing is
+// altered, unlike a rename, which a killed test process would leave behind.
+func newSchemalessState(t *testing.T) *PostgresState {
+	t.Helper()
+
+	if os.Getenv("DB_DSN") == "" && os.Getenv("DB_HOST") == "" {
+		t.Skip("Postgres integration tests require DB_DSN or DB_HOST to be configured")
+	}
+
+	databaseConfig, err := config.NewDatabaseConfig()
+	require.NoError(t, err)
+	databaseConfig.DSN += " search_path=argo_watcher_no_such_schema"
+
+	state := &PostgresState{}
+	require.NoError(t, state.Connect(&config.ServerConfig{StateType: "postgres", Db: databaseConfig}))
+
+	return state
 }
 
 func (env *postgresTestEnv) addTask(t *testing.T, task models.Task) *models.Task {
@@ -79,17 +104,6 @@ func sampleTask(app string) models.Task {
 			{Image: "test", Tag: "v0.0.1"},
 		},
 	}
-}
-
-func TestPostgresState_AddTask(t *testing.T) {
-	env := newPostgresTestEnv(t)
-
-	task := sampleTask("Test")
-	result := env.addTask(t, task)
-
-	assert.NotEmpty(t, result.Id)
-	assert.Equal(t, models.StatusInProgressMessage, result.Status)
-	assert.Equal(t, "Test", result.App)
 }
 
 func TestPostgresState_RollbackFieldsRoundTrip(t *testing.T) {
@@ -128,19 +142,19 @@ func TestPostgresState_GetTasks(t *testing.T) {
 	env.addTask(t, sampleTask("ObsoleteApp"))
 	end := float64(time.Now().Add(time.Hour).Unix())
 
-	tasks, total := env.state.GetTasks(models.TaskFilter{StartTime: start, EndTime: end})
+	tasks, total, _ := env.state.GetTasks(models.TaskFilter{StartTime: start, EndTime: end})
 	assert.Len(t, tasks, 3)
 	assert.Equal(t, int64(3), total)
 
-	tasks, total = env.state.GetTasks(models.TaskFilter{StartTime: start, EndTime: end, App: "Test"})
+	tasks, total, _ = env.state.GetTasks(models.TaskFilter{StartTime: start, EndTime: end, App: "Test"})
 	assert.Len(t, tasks, 1)
 	assert.Equal(t, int64(1), total)
 
-	tasks, total = env.state.GetTasks(models.TaskFilter{StartTime: start, EndTime: end, Status: models.StatusInProgressMessage})
+	tasks, total, _ = env.state.GetTasks(models.TaskFilter{StartTime: start, EndTime: end, Status: models.StatusInProgressMessage})
 	assert.Len(t, tasks, 3)
 	assert.Equal(t, int64(3), total)
 
-	tasks, total = env.state.GetTasks(models.TaskFilter{StartTime: start, EndTime: end, Status: "deployed"})
+	tasks, total, _ = env.state.GetTasks(models.TaskFilter{StartTime: start, EndTime: end, Status: "deployed"})
 	assert.Empty(t, tasks)
 	assert.Equal(t, int64(0), total)
 }
@@ -208,7 +222,7 @@ func TestPostgresState_GetTasksSearch(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tasks, total := env.state.GetTasks(window(tt.search))
+			tasks, total, _ := env.state.GetTasks(window(tt.search))
 			assert.Equal(t, tt.want, total)
 			assert.Len(t, tasks, int(tt.want))
 		})
@@ -219,39 +233,16 @@ func TestPostgresState_GetTasksSearch(t *testing.T) {
 	t.Run("pagination applies after the search", func(t *testing.T) {
 		filter := window("v0.0.1")
 		filter.Limit = 1
-		tasks, total := env.state.GetTasks(filter)
+		tasks, total, _ := env.state.GetTasks(filter)
 		assert.Len(t, tasks, 1)
 		assert.Equal(t, int64(2), total)
 
 		filter.Offset = 1
-		second, total := env.state.GetTasks(filter)
+		second, total, _ := env.state.GetTasks(filter)
 		assert.Len(t, second, 1)
 		assert.Equal(t, int64(2), total)
 		assert.NotEqual(t, tasks[0].Id, second[0].Id)
 	})
-}
-
-func TestPostgresState_GetTask(t *testing.T) {
-	env := newPostgresTestEnv(t)
-	inserted := env.addTask(t, sampleTask("Test"))
-
-	task, err := env.state.GetTask(inserted.Id)
-	require.NoError(t, err)
-	require.NotNil(t, task)
-	assert.Equal(t, inserted.Id, task.Id)
-	assert.Equal(t, models.StatusInProgressMessage, task.Status)
-}
-
-// TestPostgresState_GetTask_NotFound verifies that GetTask returns the
-// ErrTaskNotFound sentinel (not a generic error) when no row matches, so the
-// HTTP layer can map it to 404 while other failures surface as 500.
-func TestPostgresState_GetTask_NotFound(t *testing.T) {
-	env := newPostgresTestEnv(t)
-
-	// Valid UUID that was never inserted -> gorm.ErrRecordNotFound.
-	task, err := env.state.GetTask("00000000-0000-0000-0000-000000000000")
-	assert.Nil(t, task)
-	assert.ErrorIs(t, err, ErrTaskNotFound)
 }
 
 // TestPostgresState_GetTask_MalformedID verifies that a non-UUID id is mapped to
@@ -282,106 +273,9 @@ func TestPostgresState_GetTask_BackendError(t *testing.T) {
 	assert.NotErrorIs(t, err, ErrTaskNotFound)
 }
 
-func TestPostgresState_SetTaskStatus(t *testing.T) {
-	env := newPostgresTestEnv(t)
-	inserted := env.addTask(t, sampleTask("Test"))
-
-	err := env.state.SetTaskStatus(inserted.Id, models.StatusDeployedMessage, "finished")
-	assert.NoError(t, err)
-
-	taskInfo, err := env.state.GetTask(inserted.Id)
-	require.NoError(t, err)
-	require.NotNil(t, taskInfo)
-	assert.Equal(t, models.StatusDeployedMessage, taskInfo.Status)
-	assert.Equal(t, "finished", taskInfo.StatusReason)
-}
-
-func TestPostgresState_CancelInProgressTasks(t *testing.T) {
-	env := newPostgresTestEnv(t)
-
-	inProgress := env.addTask(t, taskWithImage("app-a", "image-a"))
-	sameAppOtherImage := env.addTask(t, taskWithImage("app-a", "image-b"))
-	otherApp := env.addTask(t, taskWithImage("app-b", "image-a"))
-	finished := env.addTask(t, taskWithImage("app-a", "image-a"))
-	require.NoError(t, env.state.SetTaskStatus(finished.Id, models.StatusDeployedMessage, ""))
-
-	count, err := env.state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-a", Tag: "v2"}}, "superseded", false)
-	require.NoError(t, err)
-	assert.Equal(t, int64(1), count, "only the in-progress app-a task sharing image-a should be cancelled")
-
-	got, err := env.state.GetTask(inProgress.Id)
-	require.NoError(t, err)
-	assert.Equal(t, models.StatusCancelledMessage, got.Status)
-	assert.Equal(t, "superseded", got.StatusReason)
-
-	gotSameApp, err := env.state.GetTask(sameAppOtherImage.Id)
-	require.NoError(t, err)
-	assert.Equal(t, models.StatusInProgressMessage, gotSameApp.Status)
-
-	gotOther, err := env.state.GetTask(otherApp.Id)
-	require.NoError(t, err)
-	assert.Equal(t, models.StatusInProgressMessage, gotOther.Status)
-
-	gotFinished, err := env.state.GetTask(finished.Id)
-	require.NoError(t, err)
-	assert.Equal(t, models.StatusDeployedMessage, gotFinished.Status)
-}
-
-// TestPostgresState_CancelInProgressTasks_MultiImageOverlap mirrors the
-// in-memory multi-image test: a task sharing one image name is cancelled while a
-// fully disjoint task is left alone, exercising overlap (not equality) matching.
-func TestPostgresState_CancelInProgressTasks_MultiImageOverlap(t *testing.T) {
-	env := newPostgresTestEnv(t)
-
-	overlapping := sampleTask("app-a")
-	overlapping.Images = []models.Image{{Image: "image-a", Tag: "v1"}, {Image: "image-b", Tag: "v1"}}
-	overlappingTask := env.addTask(t, overlapping)
-
-	disjoint := sampleTask("app-a")
-	disjoint.Images = []models.Image{{Image: "image-c", Tag: "v1"}, {Image: "image-d", Tag: "v1"}}
-	disjointTask := env.addTask(t, disjoint)
-
-	count, err := env.state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-b", Tag: "v2"}, {Image: "image-e", Tag: "v1"}}, "superseded", false)
-	require.NoError(t, err)
-	assert.Equal(t, int64(1), count, "only the task sharing an image name should be cancelled")
-
-	gotOverlapping, err := env.state.GetTask(overlappingTask.Id)
-	require.NoError(t, err)
-	assert.Equal(t, models.StatusCancelledMessage, gotOverlapping.Status)
-
-	gotDisjoint, err := env.state.GetTask(disjointTask.Id)
-	require.NoError(t, err)
-	assert.Equal(t, models.StatusInProgressMessage, gotDisjoint.Status)
-}
-
-// TestPostgresState_CancelInProgressTasks_Count mirrors the in-memory count test
-// for CI: no-overlap returns 0 (the len(ids) == 0 early return) and an
-// overlapping deployment cancels every matching in-progress task.
-func TestPostgresState_CancelInProgressTasks_Count(t *testing.T) {
-	env := newPostgresTestEnv(t)
-
-	first := env.addTask(t, taskWithImage("app-a", "image-a"))
-	second := env.addTask(t, taskWithImage("app-a", "image-a"))
-
-	count, err := env.state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-z", Tag: "v1"}}, "superseded", false)
-	require.NoError(t, err)
-	assert.Equal(t, int64(0), count, "a deployment sharing no image should cancel nothing")
-
-	count, err = env.state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-a", Tag: "v2"}}, "superseded", false)
-	require.NoError(t, err)
-	assert.Equal(t, int64(2), count, "every matching in-progress task must be cancelled")
-
-	gotFirst, err := env.state.GetTask(first.Id)
-	require.NoError(t, err)
-	assert.Equal(t, models.StatusCancelledMessage, gotFirst.Status)
-	gotSecond, err := env.state.GetTask(second.Id)
-	require.NoError(t, err)
-	assert.Equal(t, models.StatusCancelledMessage, gotSecond.Status)
-}
-
 // TestPostgresState_ValidatedFlagPersists locks the storage contract the
 // authority rule depends on: whether a task presented a credential must survive
-// the round trip, because CancelInProgressTasks reads it back from the row of a
+// the round trip, because SupersedeAndAdd reads it back from the row of a
 // task that may have been created by another replica.
 func TestPostgresState_ValidatedFlagPersists(t *testing.T) {
 	env := newPostgresTestEnv(t)
@@ -410,55 +304,6 @@ func TestPostgresState_ValidatedFlagPersists(t *testing.T) {
 		assert.False(t, stored.Validated,
 			"a re-read task must not claim authority; write-back reads the in-process task, not this one")
 	})
-}
-
-// TestPostgresState_CancelInProgressTasks_Authority mirrors the in-memory
-// authority test against real Postgres: an uncredentialed deployment must not
-// cancel a credentialed in-flight rollout, while every other combination still
-// supersedes. Running it here matters because the Postgres path filters
-// candidates in Go after reading them back, so the column must be selected.
-func TestPostgresState_CancelInProgressTasks_Authority(t *testing.T) {
-	tests := []struct {
-		name             string
-		victimValidated  bool
-		newTaskValidated bool
-		wantCancelled    bool
-	}{
-		{"unvalidated must not cancel validated", true, false, false},
-		{"validated cancels validated", true, true, true},
-		{"unvalidated cancels unvalidated", false, false, true},
-		{"validated cancels unvalidated", false, true, true},
-	}
-
-	// Guard at the top level so an unconfigured database reports SKIP for this test
-	// rather than PASS with four skipped children — this is the only unit-level
-	// cover for the Postgres half of the rule, and a green no-op would hide that.
-	// Each case still builds its own env, which truncates tasks for isolation.
-	newPostgresTestEnv(t)
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			env := newPostgresTestEnv(t)
-
-			victim := taskWithImage("app-a", "image-a")
-			victim.Validated = tt.victimValidated
-			inFlight := env.addTask(t, victim)
-
-			count, err := env.state.CancelInProgressTasks("app-a", []models.Image{{Image: "image-a", Tag: "v2"}}, "superseded", tt.newTaskValidated)
-			require.NoError(t, err)
-
-			got, err := env.state.GetTask(inFlight.Id)
-			require.NoError(t, err)
-
-			if tt.wantCancelled {
-				assert.Equal(t, int64(1), count)
-				assert.Equal(t, models.StatusCancelledMessage, got.Status)
-				return
-			}
-			assert.Equal(t, int64(0), count)
-			assert.Equal(t, models.StatusInProgressMessage, got.Status)
-		})
-	}
 }
 
 func TestPostgresState_ProcessObsoleteTasks(t *testing.T) {
@@ -813,4 +658,140 @@ func TestPostgresState_TaskRetentionCollectsUnleasedTaskAbortedByTheSamePass(t *
 
 	assert.False(t, env.taskExists(t, unclaimed.Id),
 		"with no replica holding it, a stale task is aborted and removed by the one sweep")
+}
+
+func TestPostgresState_Contract(t *testing.T) {
+	// Guard at the top level so an unconfigured database reports SKIP for this test
+	// rather than PASS with every child skipped.
+	newPostgresTestEnv(t)
+
+	runTaskRepositoryContract(t, func(t *testing.T) TaskRepository {
+		return newPostgresTestEnv(t).state
+	})
+}
+
+// Re-swallowing the read at the backend would put the finding straight back: an
+// outage would render as an empty page again, and every caller above believes the
+// interface. This reaches the Count branch, which runs first.
+func TestPostgresState_GetTasks_ReportsABackendFailure(t *testing.T) {
+	state := newSchemalessState(t)
+
+	tasks, total, err := state.GetTasks(models.TaskFilter{
+		EndTime: float64(time.Now().Add(time.Hour).Unix()),
+	})
+
+	require.Error(t, err, "a failed read must never be reported as an empty page")
+	assert.Empty(t, tasks)
+	assert.Zero(t, total)
+}
+
+// created is a timestamptz, so a tie here needs microsecond-identical rows and id
+// breaks it only to keep a page totally ordered across offsets. detectRollback reads
+// the first deployed task as the current version, so an unstable first row makes
+// rollback detection non-deterministic on the backend that runs in production.
+func TestPostgresState_GetTasksBreaksAnExactTieById(t *testing.T) {
+	env := newPostgresTestEnv(t)
+
+	var ids []string
+	for range 3 {
+		ids = append(ids, env.addTask(t, sampleTask("app-tie")).Id)
+	}
+
+	// Forced, because Postgres stores microseconds and would not otherwise tie.
+	db, err := env.state.orm.DB()
+	require.NoError(t, err)
+	_, err = db.Exec("UPDATE tasks SET created = now() WHERE app = $1", "app-tie")
+	require.NoError(t, err)
+
+	sort.Sort(sort.Reverse(sort.StringSlice(ids)))
+
+	for range 5 {
+		tasks, _, err := env.state.GetTasks(models.TaskFilter{
+			EndTime: float64(time.Now().Add(time.Hour).Unix()),
+			App:     "app-tie",
+		})
+		require.NoError(t, err)
+		require.Len(t, tasks, 3)
+		assert.Equal(t, ids, []string{tasks[0].Id, tasks[1].Id, tasks[2].Id},
+			"an exact tie must resolve by id so paging stays total")
+	}
+}
+
+// The count and the row fetch fail independently, and only the count is covered by
+// the schemaless state — it never reaches the fetch. A fetch whose error was
+// dropped would serve an empty page beside a non-zero total and no error at all,
+// which is the shape this change set exists to make impossible.
+func TestPostgresState_GetTasks_ReportsAFailedRowFetch(t *testing.T) {
+	env := newPostgresTestEnv(t)
+	env.addTask(t, sampleTask("app-fetch"))
+
+	// The count runs first and must succeed, so the failure is injected on the
+	// second query of the call. Registered on this env's handle only.
+	var queries int
+	require.NoError(t, env.state.orm.Callback().Query().Before("gorm:query").
+		Register("test:fail_second_query", func(db *gorm.DB) {
+			queries++
+			if queries == 2 {
+				_ = db.AddError(errors.New("row fetch failed"))
+			}
+		}))
+
+	tasks, total, err := env.state.GetTasks(models.TaskFilter{
+		EndTime: float64(time.Now().Add(time.Hour).Unix()),
+		App:     "app-fetch",
+	})
+
+	require.Error(t, err, "a failed row fetch must not be served as an empty page")
+	assert.Empty(t, tasks)
+	assert.Zero(t, total, "a total beside an error would read as a real count")
+}
+
+// The shared backend must refuse the same late write the in-memory one does: a newer
+// deployment cancels an in-flight task while its own replica is still deciding an outcome,
+// and that outcome must not land on top of the cancellation.
+func TestPostgresState_SetTaskStatusRefusesToOverwriteATerminalStatus(t *testing.T) {
+	env := newPostgresTestEnv(t)
+
+	task := env.addTask(t, sampleTask("fenced-app"))
+
+	// Cancelled by whatever got there first — a newer deployment for the same app.
+	require.NoError(t, env.state.SetTaskStatus(task.Id, models.StatusCancelledMessage, "superseded"))
+
+	err := env.state.SetTaskStatus(task.Id, models.StatusFailedMessage, "decided too late")
+
+	require.ErrorIs(t, err, ErrTaskEnded)
+	stored, err := env.state.GetTask(task.Id)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusCancelledMessage, stored.Status, "the cancellation must stand")
+	assert.Equal(t, "superseded", stored.StatusReason)
+}
+
+// TestPostgresState_ProcessObsoleteTasksHonoursTheAppNotFoundWindow pins the grace
+// period an app-not-found task gets before the sweep removes it, so the client that
+// submitted it can still read why it failed. The in-memory backend applies the same
+// window (TestInMemoryState_ProcessObsoleteTasks_RemovesAppNotFound).
+func TestPostgresState_ProcessObsoleteTasksHonoursTheAppNotFoundWindow(t *testing.T) {
+	env := newPostgresTestEnv(t)
+
+	recent, err := env.state.AddTask(models.Task{App: "recent", Images: []models.Image{{Image: "app", Tag: "v1"}}})
+	require.NoError(t, err)
+	require.NoError(t, env.state.SetTaskStatus(recent.Id, models.StatusAppNotFoundMessage, ""))
+
+	expired, err := env.state.AddTask(models.Task{App: "expired", Images: []models.Image{{Image: "app", Tag: "v1"}}})
+	require.NoError(t, err)
+	require.NoError(t, env.state.SetTaskStatus(expired.Id, models.StatusAppNotFoundMessage, ""))
+
+	// Backdated past the window by the database's own clock, the one the sweep compares
+	// against.
+	require.NoError(t, env.state.orm.Exec(
+		"UPDATE tasks SET created = now() - make_interval(secs => ?) WHERE id = ?",
+		AppNotFoundRetention.Seconds()+60, expired.Id).Error)
+
+	require.NoError(t, env.state.doProcessPostgresObsoleteTasks())
+
+	_, err = env.state.GetTask(recent.Id)
+	assert.NoError(t, err, "an app-not-found task within the grace period stays readable")
+
+	_, err = env.state.GetTask(expired.Id)
+	assert.ErrorIs(t, err, ErrTaskNotFound)
 }

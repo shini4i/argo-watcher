@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { render } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { AppLayout } from './AppLayout';
@@ -7,7 +8,7 @@ const { layoutCalls, LayoutMock, AppTopBarStub } = vi.hoisted(() => {
 
   const layout = (props: Record<string, unknown>) => {
     layoutCallsInternal.push(props);
-    return <div data-testid="layout">{props.children}</div>;
+    return <div data-testid="layout">{props.children as ReactNode}</div>;
   };
 
   const topBar = () => <div data-testid="app-top-bar" />;
@@ -25,13 +26,13 @@ vi.mock('./components/AppTopBar', () => ({
 
 describe('AppLayout', () => {
   it('injects the custom top bar, menu, and sidebar shims', () => {
-    render(<AppLayout />);
+    render(<AppLayout><div /></AppLayout>);
 
     expect(layoutCalls).toHaveLength(1);
     const props = layoutCalls[0] as {
       appBar: unknown;
-      menu: () => unknown;
-      sidebar: () => unknown;
+      menu: (props: unknown) => unknown;
+      sidebar: (props: unknown) => unknown;
       sx: unknown;
     };
     expect(props.appBar).toBe(AppTopBarStub);
@@ -41,7 +42,7 @@ describe('AppLayout', () => {
   });
 
   it('applies custom layout styles removing top margin on all breakpoints', () => {
-    render(<AppLayout />);
+    render(<AppLayout><div /></AppLayout>);
     const props = layoutCalls[0] as { sx: (theme: ThemeLike) => Record<string, unknown> };
     const theme: ThemeLike = {
       breakpoints: {
@@ -50,8 +51,9 @@ describe('AppLayout', () => {
     };
 
     const styles = props.sx(theme);
-    expect(styles['& .RaLayout-appFrame']).toMatchObject({ marginTop: 0 });
-    expect(styles['& .RaLayout-appFrame']['@media (max-width:600px)']).toMatchObject({ marginTop: 0 });
+    const appFrame = styles['& .RaLayout-appFrame'] as Record<string, unknown>;
+    expect(appFrame).toMatchObject({ marginTop: 0 });
+    expect(appFrame['@media (max-width:600px)']).toMatchObject({ marginTop: 0 });
   });
 });
 

@@ -7,14 +7,317 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-09-15
+
 ### Fixed
 
+- A deployment whose image is declared only by an Argo CD sync hook — a PreSync migration Job, a
+  PostSync registrar — is no longer failed with `Image "<name>" is not part of application`. The
+  check read the application's managed resources, which Argo CD reports with every hook resource
+  removed, so such an image looked absent however correctly it was named. It now reads the
+  application's rendered manifests, where hooks are present. Applications that needed
+  `argo-watcher/skip-image-validation` for this reason no longer do. Rendered manifests are
+  produced by the repo server rather than read from a cache, so an application whose manifests
+  fail to render now logs a warning and keeps polling, where the failure was previously silent.
+
+## [1.4.0] - 2026-09-15
+
+### Added
+
+- A new guide, **Wait for an Argo CD Deployment from CI**, compares Argo Watcher with
+  `argocd app wait`, polling the Argo CD API, and `kubectl rollout status`, and spells out what the
+  client waits for and how the common task outcomes reach the pipeline.
+
+### Changed
+
+- The **Mine / Everyone** switch on Recent Tasks now defaults to **Everyone** for a signed-in user
+  as well. The list is read mostly by DevOps and SRE, whose first question is what the whole estate
+  is doing. Picking Mine is still remembered for your next visit. A scope remembered from 1.3.0 is
+  discarded on upgrade, because that release also recorded the default as though you had chosen it.
+- The README, documentation home page, OpenAPI description, and container image label now lead with
+  the concrete problem — waiting for an Argo CD deployment from a CI pipeline and learning whether
+  the built image rolled out — instead of the "feedback loop for GitOps" tagline. The README gains a
+  short **Why not `argocd app wait`?** section pointing at the new guide.
+- The server now refuses to start on two settings it previously accepted and then failed on at
+  runtime. `ARGO_URL` must be an absolute `http`/`https` URL with a host — a bare host was read as a
+  relative path, which made every Argo CD call fail with `unsupported protocol scheme` and silently
+  dropped the API token, since a cookie jar keys its cookies by scheme. `ARGO_API_TIMEOUT` must be
+  between 1 and 3600 seconds — anything outside that range left Argo CD calls with no timeout at
+  all. Both are reported by name at startup.
+- A malformed `argo-watcher/managed-images` entry now fails the deployment immediately, naming the
+  entry at fault, instead of quietly skipping the write-back. Rejected shapes are an entry with no
+  `=`, an empty alias or image, whitespace inside either, a second `=`, and the same alias listed
+  twice. Whitespace around the `=` is accepted and trimmed. Pointing two aliases at one image is
+  unaffected.
+- `WEBHOOK_URL` and `MATTERMOST_URL` must be absolute `http`/`https` URLs with a host. A blank or
+  malformed value used to start cleanly and then fail every notification for the life of the
+  process; it is now refused at startup, by name. Surrounding whitespace is trimmed rather than
+  rejected.
+- A replica now opens at most 30 PostgreSQL connections — 20 for task and state queries, 10 for the
+  advisory locks the git write-back serializes on. The pool was previously unbounded, so a burst of
+  concurrent deployments could exhaust the server's `max_connections` and take every other client of
+  that database down with it. Size `max_connections` for at least 30 per replica.
+- Waiting for a lock no longer holds a database connection open. A write-back queued behind another
+  one used to occupy a connection for as long as the holder ran, which is minutes.
+- The client now stops at its next checkpoint on `SIGINT`/`SIGTERM` instead of being killed
+  mid-poll, so a cancelled CI job ends promptly rather than sleeping out its retry interval.
+- The Web UI keeps its WebSocket alive with a protocol-level ping instead of a text `heartbeat`
+  message, and notices a browser tab that closes straight away rather than at the next 30-second
+  tick — so a stale connection is no longer written to for up to half a minute. A client that sends
+  a message on `/ws` is now disconnected: the socket only broadcasts, and never accepted input.
+- The Web UI reads `GET /api/v1/config` once per page load and shares the answer, instead of four
+  separate requests that each decided for themselves what to do when it failed.
+
+### Fixed
+
+- A `DB_PASSWORD` containing a space now works. Both connection strings mangled it, each in its own
+  way: the migration runner escaped the credentials as though they were a query string, where a space
+  becomes a literal `+`, and the server left them unquoted in a format that ends a value at the first
+  space. PostgreSQL was sent a password nobody had configured and both failed to authenticate with an
+  error naming nothing. `DB_USER` and `DB_NAME` are quoted on the same terms; supplying `DB_DSN`
+  yourself is unchanged, since that string is yours to encode.
+- A deployment is no longer refused because the machine that minted its JWT is a second ahead of the
+  server. Token validation now allows 30 seconds of clock skew, which had made `iat` in the future —
+  routine between a CI runner and the server — an authentication failure with nothing naming the
+  cause. The same tolerance also honours a token for 30 seconds past its expiry.
+- An `app not found` task now stays readable for an hour on the in-memory backend, as it already did
+  on PostgreSQL. It was previously removed by the first cleanup pass, so a client polling for the
+  outcome could be answered `404` instead of being told the application does not exist.
+- The readiness probe now fails within two seconds against a database that accepts the connection
+  and then answers nothing, such as a failover in progress. The check had no timeout, so the probe
+  hung instead of reporting the replica unready, and Kubernetes never took it out of service. The
+  cap sits under the chart's default `readinessProbe.timeoutSeconds` of 3, so the answer arrives
+  before the probe is abandoned.
+- A `GET /api/v1/config` response that is not this server's configuration — a proxy interstitial, a
+  sign-in page in front of the API, a gateway's own error envelope — is now reported as a
+  configuration failure. The Web UI previously read any of them as a server with nothing configured
+  and started as though authentication were disabled, leaving every request to fail with `401` and
+  no way to sign in.
+- An application with failures in the window is no longer badged **Failing** in the success green on
+  the Overview. The badge took its colour from the application's most recent task while taking its
+  text from the window as a whole, so an app that had failed several times but happened to deploy
+  last read as healthy at a glance.
+- Task list columns no longer offer a sort that does nothing. Six headers were clickable and
+  reordered nothing, because neither the API nor the frontend has ever supported sorting.
+- A task list request answered with an empty body — an intermediary or a sign-in page in front of
+  the API — is now reported as a connection failure instead of rendering as an estate with no
+  deployments.
+- A superseded deployment is no longer reported as `failed`. When two deployments of the same
+  application ran close together, the older one could finish deciding its own outcome just after
+  the newer one cancelled it, and write that outcome over the cancellation — so the pipeline was
+  told the deployment failed rather than that a newer one took over. A terminal status is now
+  written only while the deployment is still running, matching the rule already applied when a
+  deployment is cancelled. The same applies to a deployment the staleness sweep has given up on.
+- `gitops_writeback_duration_seconds` and `gitops_lock_wait_duration_seconds` are recorded again
+  with `GIT_BATCH_WRITEBACK` enabled. Turning batching on silently stopped both, so the Grafana
+  dashboard's write-back and lock-wait panels went blank and the documented alert on write-backs
+  over 60s stopped firing — at exactly the moment contention made them worth watching. Both keep
+  the meaning they have without batching: the wait is measured from when a deployment's write-back
+  was queued, so an application waiting behind an in-flight batch is reported as waiting, and the
+  duration is the clone, commit and push its batch ran.
+- A deployment that fails because the image tag could not be committed to the GitOps repository
+  now says so. The reason read `ArgoCD API Error: …` even though nothing had been asked of Argo CD,
+  and a git remote that could not be reached was recorded as `aborted` — the status meaning the
+  rollout's outcome could not be read — rather than `failed`. Such a failure now reads
+  `Git write-back error: …` and is always `failed`: the write-back did not complete, so there is
+  no rollout to wait on either way.
+- The Web UI now loads in a browser that blocks site data, such as a Safari private window or a
+  Firefox with cookies blocked. Reading the saved theme threw before the page mounted, so nothing
+  rendered at all. Preferences that are normally remembered — theme, timezone, refresh interval,
+  filters, page size — simply do not persist there.
+- A deployment no longer fails with `Image "<name>" is not part of application` when one of the
+  application's desired manifests cannot be read. Argo Watcher used to check the requested image
+  against only the manifests it could decode, so an unreadable one that declared the image looked
+  like proof of its absence. The check now stands aside and the deployment runs to its real outcome.
+- Recent Tasks no longer remembers an application filter. Opening the list from an Overview card
+  filtered it to that application and kept the filter for every later visit, so returning to the
+  main page after viewing a task showed only that application's deployments. The History page still
+  remembers its application, which is picked there rather than arriving from a link.
+- The Web UI browser tab is titled "Argo Watcher" on first load instead of "Argo Watcher
+  React-admin".
+- The troubleshooting page no longer lists an uncommitted tag as a cause of "Image is not part of
+  application" — that check compares image names only — and the task lifecycle table notes that a
+  `cancelled` task still exits non-zero.
+- With the PostgreSQL backend, the task handed to the start notification carried `created` in Unix
+  milliseconds and an empty `updated`; both are now Unix seconds, matching the API responses and the
+  in-memory backend, so a webhook template that renders `{{ .Created }}` or `{{ .Updated }}` gets
+  the documented value.
+- A deployment still running when Argo Watcher is restarted is no longer recorded as `failed`. On
+  the PostgreSQL backend it is handed to another replica, which watches it to its real outcome —
+  previously the shutdown cut off the deployment's git write-back and that was reported as the
+  deployment failing, and a failed task is never picked up again. Only a deployment the replica had
+  accepted itself was affected; one already taken over from another replica was handed on correctly.
+  With the in-memory backend there is no other replica to hand it to, so an interrupted deployment
+  is still reported as failed rather than disappearing without a result.
+
+- Two deployments of the same application and image submitted at the same moment no longer both
+  run. Each used to check for a rollout to supersede before either had been recorded, so neither
+  cancelled the other, both were monitored, and both wrote back — leaving the Git repository on
+  whichever tag happened to be pushed last while both deployments reported success. Superseding and
+  recording a deployment are now a single step, so the later submission always wins.
+
+- A retried Argo CD API call no longer resends the session token once per attempt. The retry reused
+  one request object, so the HTTP client appended the token again each time and the header grew with
+  every attempt. A proxy refusing the oversized header answers with a client error, which Argo
+  Watcher reads as the deployment failing rather than as Argo CD being unreachable — so a transient
+  blip could end a healthy deployment as `failed`.
+- `from_timestamp` and `to_timestamp` no longer accept a value that no window limit can bound.
+  `NaN`, `Inf` and numbers far outside the range of a real timestamp were parsed as valid, and
+  because every comparison against `NaN` is false they slipped past the look-back limit and reached
+  the database as written. Such a value is now ignored, as any other unparseable one already was.
+- Spaces around the `=` in an `argo-watcher/managed-images` entry no longer break the image
+  write-back. `app = myimage` left the alias and the image each carrying a space, so neither matched
+  and the tag was never committed — the deployment then timed out reporting that the image was not
+  part of the application, naming everything except the annotation that caused it.
+- A replica that no longer holds a deployment can no longer record its outcome. Ownership is now
+  checked by the database on every status write, because a replica can spend seconds reaching its
+  verdict after its claim has moved on — whether another replica took it over, or this one handed
+  it back while shutting down. The second case mattered most: only an in-progress deployment is
+  picked up again, so a `failed` written on the way out ended a deployment another replica would
+  have finished watching. The same deployment is also no longer counted or announced twice.
+- The task list no longer shows an empty estate when the database cannot be read. A failed read was
+  indistinguishable from "no deployments ran": `GET /api/v1/tasks` now answers with an `error`
+  field and no tasks, and a deployment is refused rather than recorded with the wrong rollback flag
+  when its history could not be read.
+- With the in-memory backend, deployments created in the same second are now ordered by when they
+  were submitted. They used to be ordered by task id, which is a random uuid, so the older of the
+  two could count as the current version — recording a redeployment as a rollback, or missing a
+  rollback. The PostgreSQL backend stores microseconds and was never affected.
+
+### Security
+
+- A failure to read the database no longer puts the driver's own text — the schema, the SQL error
+  code, the database host — into the body of `GET /api/v1/tasks` or `POST /api/v1/tasks`. Both are
+  served without a credential when OIDC is off. The cause stays in the server log.
+- A `ARGO_URL` containing basic-auth credentials no longer has its password written into the startup
+  error, and from there into the container log, when the value is rejected. The configuration
+  endpoint already stripped userinfo for the same reason.
+- A notification that cannot be delivered no longer writes the receiver's URL into the server log.
+  `WEBHOOK_URL` is a credential for most receivers — a Slack or Mattermost incoming hook carries its
+  secret in the path — and a single timeout logged the whole URL at `ERROR`, where anyone with read
+  access to the logs could take it and post into the channel. The failure is still reported with its
+  cause, so a timeout, a refused connection and a rejected certificate remain distinguishable.
+  `MATTERMOST_URL` is redacted on the same path.
+
+## [1.3.0] - 2026-09-09
+
+### Added
+
+- New **Overview** screen at `/overview`, reachable from the dashboard icon in the top bar. It
+  shows per-application health for a 24 h / 7 d / 30 d window: headline counts, cards for the
+  applications that are failing or deploying, and a searchable list of everything else. Every card
+  and row links into the task list filtered to that application. Applications you pin stay at the
+  top whatever the window; pins live in your own browser, and **Copy view link** produces a
+  `?pinned=` URL that reproduces the set for someone else.
+- `GET /api/v1/apps/summary` returns per-application aggregates for a time window — deployment,
+  failure and in-flight counts, median duration, the newest task's status and reason, and the last
+  ten outcomes. The counts are computed by the database over the whole window, so they are exact
+  rather than a sample of one page. The endpoint requires a credential wherever `GET /api/v1/tasks`
+  does, and the look-back is capped at 90 days.
+- `GET /api/v1/tasks` accepts an `author` parameter matching the task author exactly and
+  case-insensitively. It is independent of `search`, so a caller can scope to one person and still
+  run a free-text query inside that scope.
+- A **Mine / Everyone** switch on Recent Tasks scopes the list to your own deployments, defaulting
+  to Mine once you are signed in. It is hidden in anonymous mode, which has no identity to scope by.
+- Keyboard shortcuts on Recent Tasks, listed beside the pagination controls: `/` focuses search,
+  `a` shows all tasks, `i` in-progress, `f` toggles failed, and `m` toggles the Mine scope.
+- A failed task now carries its reason inline in the list — the extracted headline plus **Copy** and
+  **Full reason** — so finding out why a deployment failed no longer needs a click. Cancelled tasks
+  are left out: their reason only restates the status.
+
+### Changed
+
+- The rollback flag moved out of the Status cell: it is now a labelled chip beneath the
+  application name, which is what it qualifies. Column widths are fixed, so a long application
+  or author name no longer stretches the table.
+- A task row no longer expands: its status reason is always visible, so the expander is gone.
+  **View** remains the way to open a task, and clicking elsewhere in the row does nothing.
+- The task detail screen leads with the failure: the application name is the title, the task id is a
+  copy chip beside it, the reason is the first block on the page with the raw Argo CD text one click
+  away, and the lifecycle reads left to right. It also links to the previous deployment of the same
+  application. **Back** now returns to the task list when the page was opened from a deep link,
+  instead of leaving the app.
+- The task detail page offers one re-deploy action, **Deploy this version again** (previously
+  **Rollback to this version**). The old **Retry deploy** wording is gone — it issued the same
+  request. **Open in Argo CD UI** is now **Argo CD**.
+- Update backend and frontend dependencies to their latest releases. Building from source now
+  requires Go 1.27, and the bundled web UI moves to Material UI 9.4, react-admin 5.15.3 and React
+  19.2.8. `react-router` deliberately stays on 7 — react-admin still peer-requires
+  `^6.28.1 || ^7.1.1`, so v8 is out of range.
+
+### Fixed
+
+- The local dev stack (`task bootstrap` / `docker compose up`) no longer fails to start. Its
+  `backend` and `mock` services pinned `golang:1.26.4`, below the Go version `go.mod` requires,
+  and the official Go image refuses to fetch a newer toolchain — so both exited immediately with
+  `go.mod requires go >= 1.26.7`.
+- The History date range picker no longer loses a selection while you are making it. Any
+  re-render of the surrounding filters reset the open calendar, so a range with the start
+  clicked but not the end was discarded and the view jumped back to the committed month.
+- `GET /api/v1/tasks/{id}` now reports `is_rollback` and `rollback_target_id`. The task list
+  served both, but the single-task response omitted them, so a client reading one task could not
+  tell a rollback from an ordinary deployment. The task detail page now flags one as such.
+
+## [1.2.0] - 2026-09-07
+
+### Changed
+
+- A `WEBHOOK_FORMAT` that quotes a value itself must stop doing so. Values reaching a JSON
+  body are now escaped before the template renders them, so a format such as
+  `{"text": {{printf "%q" .StatusReason}}}` escapes an already-escaped value and the receiver
+  shows a literal `\n` where a line break belongs. Drop the `printf` and put the value inside
+  quotes instead: `{"text": "{{.StatusReason}}"}`. A format written the way the guide
+  documents needs no change.
+- `LOCKDOWN_SCHEDULE` times are now required to be `HH:MM`, the documented format. A time
+  carrying seconds (`Sat 22:00:00`) previously parsed with the seconds ignored and is now
+  refused at startup.
+
+### Fixed
+
+- Webhook notifications no longer break when a value contains a quote or a newline. The body
+  is assembled by a Go template, which escapes nothing, so a `StatusReason` — which carries
+  newlines and quotes Argo CD's own messages — produced invalid JSON and the receiver rejected
+  it. Failure notifications were the ones affected, since a successful deployment has no
+  reason to report, so the integration looked healthy while exactly the alerts worth having
+  went missing. Values are now escaped before the template renders them, which also stops an
+  `author` submitted through the open task endpoint from adding keys of its own to the body.
+  A `WEBHOOK_CONTENT_TYPE` that is not JSON is left alone and keeps receiving literal text.
+- A git write-back that succeeded is no longer reported as a failure when the database
+  hiccups. The advisory lock that serializes write-backs is held in a Postgres transaction
+  for the whole clone-commit-push, and the driver returns that transaction's `COMMIT` error
+  in the same place it reports a failure to take the lock. A connection dropped during those
+  seconds — a failover, or a pooler's idle-in-transaction timeout — therefore read as "the
+  lock failed, nothing ran", and every application in the batch was marked failed and
+  announced as such while its commit was already on the remote and Argo CD was syncing it.
+  The lock's outcome and the write-back's are now kept apart: once the write-back has run,
+  its own result is what the deployment is judged on, and a transaction that fails to close
+  is logged instead. The lock is released either way.
+- A write-back to a file named by `argo-watcher/write-back-filename` now preserves the keys
+  it does not own. The override file was rewritten from `helm.parameters` alone, so anything
+  else it held was dropped; it is now edited in place. A file Argo Watcher writes itself holds
+  nothing else and is byte-identical either way.
+- A deployment whose images match none of the application's `argo-watcher/managed-images`
+  no longer clones the repository to write nothing, and no longer creates an override file
+  holding an empty parameter list.
+- A `LOCKDOWN_SCHEDULE` window that can never open is rejected at startup instead of freezing
+  nothing. A same-day window does not wrap, so `Sat 22:00 - Sat 06:00` was never active; name
+  the following day instead (`Sat 22:00 - Sun 06:00`). An out-of-range `Fri 25:00` behaved the
+  same way and is rejected too.
+- A `LOCKDOWN_SCHEDULE` time with no colon no longer panics the server on startup.
+  `Fri 1320 - Mon 06:30` crashed with a stack trace where every other malformed schedule
+  reports the mistake.
 - A long author address no longer stretches the task table sideways. The Author cell
   already refused to wrap, but nothing capped its width, so an address with no break
   opportunity — a GitLab bot such as `project_1758_bot_<hash>@noreply.example.net` —
   set the column's minimum content width and pushed the Images and Details columns out
   of view. The address is now capped at a fixed width and ellipsised, with the full
   address available in its tooltip and on the task detail page.
+
+### Security
+
+- Updated `golang.org/x/crypto` to v0.56.0 for GO-2026-6354 and GO-2026-6355, two denial of
+  service advisories in its SSH client. `govulncheck` reported both as reachable through the
+  GitOps write-back's push.
 
 ## [1.1.1] - 2026-09-02
 
@@ -1152,7 +1455,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bumped the Go toolchain to `1.25.11`, resolving a `net/textproto` standard
   library vulnerability present in `go1.25.9`.
 
-[Unreleased]: https://github.com/shini4i/argo-watcher/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/shini4i/argo-watcher/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/shini4i/argo-watcher/compare/v1.4.0...v1.4.1
+[1.4.0]: https://github.com/shini4i/argo-watcher/compare/v1.3.0...v1.4.0
+[1.3.0]: https://github.com/shini4i/argo-watcher/compare/v1.2.0...v1.3.0
+[1.2.0]: https://github.com/shini4i/argo-watcher/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/shini4i/argo-watcher/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/shini4i/argo-watcher/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/shini4i/argo-watcher/compare/v0.15.0...v1.0.0

@@ -40,6 +40,11 @@ claim, which it discovers on its next renewal, or because it has begun shutting
 down and is about to release the claim itself. Either way it stops without
 writing a status, so it cannot clobber the outcome the new owner records.
 
+Stopping is not the only guard. A replica checks its claim and then spends
+seconds reaching the outcome, so the claim can move on while a write is already
+under way. The database refuses that write: a status only lands for the task's
+current owner, or for a task nobody has claimed.
+
 ### How long a deployment is unattended
 
 | Event | Time before another replica resumes it |
@@ -67,7 +72,7 @@ window already elapsed while unattended is marked `aborted` rather than resumed.
 |---|---|
 | Task history and status | Shared — one Postgres table. |
 | Deploy lock and its schedule override | Shared. See [Deployment Lock](../guides/deployment-lock.md#multiple-replicas). |
-| Superseding an in-flight deployment | Shared — a new deployment cancels the older one even when another replica is watching it. |
+| Superseding an in-flight deployment | Shared — a new deployment cancels the older one even when another replica is watching it. Serialised per application, so two submissions arriving at once cannot both survive. |
 | Git write-back | Serialized by a Postgres advisory lock, so concurrent write-backs to one repository queue rather than collide. |
 | Rollout monitoring | Owned by one replica at a time, handed over as described above. |
 | Web UI banners (deploy lock, Argo CD reachability) | Each replica polls the shared state, so clients see a change within a few seconds regardless of which replica they are connected to. |
@@ -89,3 +94,7 @@ Replicas exist for availability, not throughput: a single one comfortably
 handles the polling load of a normal deployment fleet. Two is the useful number
 — it survives a node failure and makes rolling updates transparent. More than
 that mainly adds sweeps against the same database.
+
+Each replica opens at most 30 PostgreSQL connections: 20 for task and state queries,
+and 10 reserved for the advisory locks the git write-back serializes on. Size
+`max_connections` for at least 30 per replica, plus headroom for your other clients.

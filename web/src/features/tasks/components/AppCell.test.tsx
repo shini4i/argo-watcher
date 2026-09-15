@@ -46,4 +46,14 @@ describe('AppCell', () => {
     expect(screen.getByText('CA')).toBeInTheDocument();
     expect(screen.getByText('checkout-api')).toBeInTheDocument();
   });
+
+  it('flags a rollback beneath the app name, where it qualifies the deployment', () => {
+    render(<AppCell app="checkout-api" isRollback />);
+    expect(screen.getByText('Rollback')).toBeInTheDocument();
+  });
+
+  it('shows no badge for an ordinary deployment', () => {
+    render(<AppCell app="checkout-api" />);
+    expect(screen.queryByText('Rollback')).toBeNull();
+  });
 });

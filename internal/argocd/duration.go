@@ -1,14 +1,14 @@
-package helpers
+package argocd
 
 import (
 	"math"
 	"time"
 )
 
-// MulDurationSaturating returns count*unit, clamped to math.MaxInt64 to avoid the uint->int64
+// mulDurationSaturating returns count*unit, clamped to math.MaxInt64 to avoid the uint->int64
 // overflow that a very large (client-supplied) attempt count could otherwise wrap into a negative
 // duration. A non-positive unit or zero count yields 0.
-func MulDurationSaturating(count uint, unit time.Duration) time.Duration {
+func mulDurationSaturating(count uint, unit time.Duration) time.Duration {
 	if unit <= 0 || count == 0 {
 		return 0
 	}
@@ -21,9 +21,9 @@ func MulDurationSaturating(count uint, unit time.Duration) time.Duration {
 	return time.Duration(count) * unit // #nosec G115 -- count bounded by check above
 }
 
-// CeilDivDuration returns the ceiling of d/unit as an int64, with a minimum of 1.
+// ceilDivDuration returns the ceiling of d/unit as an int64, with a minimum of 1.
 // A non-positive unit is treated as invalid and returns 1 to avoid division by zero.
-func CeilDivDuration(d, unit time.Duration) int64 {
+func ceilDivDuration(d, unit time.Duration) int64 {
 	if unit <= 0 {
 		return 1
 	}
@@ -34,9 +34,9 @@ func CeilDivDuration(d, unit time.Duration) int64 {
 	return result
 }
 
-// SafeIntToUint converts an int64 to uint with overflow protection, enforcing a minimum of 1.
-// On 32-bit platforms where uint is 32 bits, values exceeding math.MaxUint32 are clamped to max uint.
-func SafeIntToUint(v int64) uint {
+// safeIntToUint converts an int64 to uint with overflow protection, enforcing a minimum of 1.
+// On 32-bit platforms values above math.MaxUint32 are clamped to the maximum uint.
+func safeIntToUint(v int64) uint {
 	if v <= 0 {
 		return 1
 	}

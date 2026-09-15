@@ -10,7 +10,7 @@ import { ListToolbar } from './ListToolbar';
 import { useTaskListContext } from './TaskListContext';
 import { useTimezone } from '../../../shared/providers/TimezoneProvider';
 
-interface HistoryFiltersValues extends Record<string, unknown> {
+interface HistoryFiltersValues {
   app: string;
   start: number | null;
   end: number | null;

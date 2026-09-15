@@ -113,7 +113,7 @@ describe('authProvider', () => {
     const provider = await loadAuthProvider();
 
     await expect(provider.checkAuth({})).resolves.toBeUndefined();
-    await expect(provider.getPermissions({})).resolves.toEqual([]);
+    await expect(provider.getPermissions!({})).resolves.toEqual([]);
     const identity = await provider.getIdentity!();
     expect(identity.id).toBe('anonymous');
     expect(MockUserManager).not.toHaveBeenCalled();
@@ -191,7 +191,7 @@ describe('authProvider', () => {
     userManagerMock.getUser.mockResolvedValue(signedInUser());
     const provider = await loadAuthProvider();
 
-    const permissions = (await provider.getPermissions({})) as { groups: string[]; privilegedGroups: string[] };
+    const permissions = (await provider.getPermissions!({})) as { groups: string[]; privilegedGroups: string[] };
     expect(permissions.groups).toContain('admins');
     expect(permissions.privilegedGroups).toContain('admins');
 
@@ -278,7 +278,7 @@ describe('authProvider', () => {
     userManagerMock.getUser.mockResolvedValue(signedInUser({ groups: [] }));
     const provider = await loadAuthProvider();
 
-    const permissions = (await provider.getPermissions({})) as { groups: string[] };
+    const permissions = (await provider.getPermissions!({})) as { groups: string[] };
     expect(permissions.groups).toEqual(['admins']);
     expect(userManagerMock.metadataService.getUserInfoEndpoint).toHaveBeenCalled();
   });
@@ -301,7 +301,7 @@ describe('authProvider', () => {
     });
     const provider = await loadAuthProvider();
 
-    const permissions = (await provider.getPermissions({})) as { groups: string[] };
+    const permissions = (await provider.getPermissions!({})) as { groups: string[] };
     expect(permissions.groups).toEqual(['token-only']);
     warnSpy.mockRestore();
   });
@@ -311,7 +311,7 @@ describe('authProvider', () => {
     userManagerMock.getUser.mockResolvedValue(null);
     const provider = await loadAuthProvider();
 
-    const permissions = (await provider.getPermissions({})) as { groups: string[]; privilegedGroups: string[] };
+    const permissions = (await provider.getPermissions!({})) as { groups: string[]; privilegedGroups: string[] };
     expect(permissions.groups).toEqual([]);
     expect(permissions.privilegedGroups).toContain('admins');
     expect(userManagerMock.signinRedirect).toHaveBeenCalled();

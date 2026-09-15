@@ -3,7 +3,9 @@ package server
 import (
 	"errors"
 	"log/slog"
+	"math"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -11,12 +13,51 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/shini4i/argo-watcher/internal/argocd"
 	"github.com/shini4i/argo-watcher/internal/auth"
 	"github.com/shini4i/argo-watcher/internal/models"
 	"github.com/shini4i/argo-watcher/internal/state"
 )
 
 var version = "local"
+
+// parseFloatQuery reads a numeric query parameter, yielding 0 when it is absent,
+// unparseable, or not finite. A present-but-invalid value is logged and then
+// treated as absent: the list endpoints clamp their window rather than reject a
+// caller.
+func parseFloatQuery(query url.Values, name string) float64 {
+	raw := query.Get(name)
+	value, err := strconv.ParseFloat(raw, 64)
+	// ParseFloat accepts "NaN" and "Inf", and every comparison against NaN is false,
+	// so such a value slips past the window clamps. A finite one beyond the epoch
+	// range does the same to the float-to-int64 conversion the state layer performs,
+	// where the Go spec leaves an out-of-range result undefined.
+	if err != nil || math.IsNaN(value) || math.Abs(value) > maxEpochSeconds {
+		if raw != "" {
+			slog.Debug("ignoring an invalid query parameter", "parameter", name, "value", raw)
+		}
+		return 0
+	}
+	return value
+}
+
+// parseIntQuery is parseFloatQuery for the integer paging parameters.
+func parseIntQuery(query url.Values, name string) int {
+	raw := query.Get(name)
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		if raw != "" {
+			slog.Debug("ignoring an invalid query parameter", "parameter", name, "value", raw)
+		}
+		return 0
+	}
+	return value
+}
+
+// maxEpochSeconds bounds the Unix timestamps the list endpoints accept. It is far
+// past any real task (the year 33658) and far short of where a float64 stops
+// converting to int64, which is what the state layer does with these values.
+const maxEpochSeconds = 1e12
 
 // maxTaskListLimit caps the page size accepted by GET /api/v1/tasks. The
 // underlying backends treat limit <= 0 as "no LIMIT clause", which would let
@@ -29,6 +70,12 @@ const maxTaskListLimit = 1000
 // per-row ILIKE the search compiles to. It mirrors the length limit on the
 // app and author fields it matches against.
 const maxTaskSearchLength = models.MaxTaskFieldLength
+
+// maxAppSummaryWindow caps the look-back GET /api/v1/apps/summary will group
+// over, in seconds. The queries carry no LIMIT and sort the whole window, so an
+// unbounded one lets any reader make the database group every task ever stored.
+// The Web UI never asks for more than 30 days.
+const maxAppSummaryWindow = 90 * 24 * 60 * 60
 
 // maxTaskTimeout caps the rollout window a submission may ask for, in seconds.
 // Submission takes no credential, and the timeout decides how long the watcher
@@ -158,14 +205,20 @@ func (env *Env) addTask(w http.ResponseWriter, r *http.Request) {
 	newTask, err := env.argo.AddTask(task)
 	if err != nil {
 		slog.Error("failed to add task", "error", err)
+		// Submission takes no credential, so a backend failure's driver text must not
+		// travel with the response. Every other cause here names a client mistake.
+		message := err.Error()
+		if errors.Is(err, argocd.ErrTaskHistoryUnavailable) {
+			message = internalErrorMessage
+		}
 		writeJSON(w, http.StatusServiceUnavailable, models.TaskStatus{
 			Status: "down",
-			Error:  err.Error(),
+			Error:  message,
 		})
 		return
 	}
 
-	go env.updater.WaitForRollout(*newTask, false)
+	go env.updater.WaitForRollout(*newTask, false, env.handsOverOnShutdown)
 
 	writeJSON(w, http.StatusAccepted, models.TaskStatus{
 		Id:     newTask.Id,
@@ -180,25 +233,20 @@ func (env *Env) addTask(w http.ResponseWriter, r *http.Request) {
 // @Param app query string false "App name"
 // @Param status query string false "Task status (e.g. 'in progress', 'failed', 'deployed', 'cancelled')"
 // @Param search query string false "Substring of app, author or image:tag"
+// @Param author query string false "Exact author, case-insensitive"
 // @Param from_timestamp query int true "From timestamp" default(1648390029)
 // @Param to_timestamp query int false "To timestamp"
 // @Param limit query int false "Maximum number of tasks to return (1-1000, defaults to 1000)"
 // @Param offset query int false "Number of tasks to skip before returning results"
-// @Success 200 {object} models.TasksResponse
+// @Success 200 {object} models.TasksResponse "tasks, or an error field when unreadable"
 // @Failure 401 {object} models.TaskStatus "no credential, or the credential was rejected (only when OIDC auth is enabled)"
 // @Failure 503 {object} models.TaskStatus "the OIDC provider could not be consulted; retry"
 // @Router /api/v1/tasks [get]
 func (env *Env) getState(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 
-	startTime, err := strconv.ParseFloat(query.Get("from_timestamp"), 64)
-	if err != nil && query.Get("from_timestamp") != "" {
-		slog.Debug("invalid from_timestamp, defaulting to 0", "from_timestamp", query.Get("from_timestamp"))
-	}
-	endTime, err := strconv.ParseFloat(query.Get("to_timestamp"), 64)
-	if err != nil && query.Get("to_timestamp") != "" {
-		slog.Debug("invalid to_timestamp, defaulting to current time", "to_timestamp", query.Get("to_timestamp"))
-	}
+	startTime := parseFloatQuery(query, "from_timestamp")
+	endTime := parseFloatQuery(query, "to_timestamp")
 	if endTime == 0 {
 		endTime = float64(time.Now().Unix())
 	}
@@ -215,14 +263,14 @@ func (env *Env) getState(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limit, err := strconv.Atoi(query.Get("limit"))
-	if err != nil && query.Get("limit") != "" {
-		slog.Debug("invalid limit, defaulting to 0", "limit", query.Get("limit"))
+	author := strings.TrimSpace(query.Get("author"))
+	if utf8.RuneCountInString(author) > models.MaxTaskFieldLength {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "author too long"})
+		return
 	}
-	offset, err := strconv.Atoi(query.Get("offset"))
-	if err != nil && query.Get("offset") != "" {
-		slog.Debug("invalid offset, defaulting to 0", "offset", query.Get("offset"))
-	}
+
+	limit := parseIntQuery(query, "limit")
+	offset := parseIntQuery(query, "offset")
 	if limit <= 0 || limit > maxTaskListLimit {
 		limit = maxTaskListLimit
 	}
@@ -236,8 +284,40 @@ func (env *Env) getState(w http.ResponseWriter, r *http.Request) {
 		App:       app,
 		Status:    status,
 		Search:    search,
+		Author:    author,
 		Limit:     limit,
 		Offset:    offset,
+	}))
+}
+
+// getAppSummaries godoc
+// @Summary Per-application summary of a time window
+// @Description Aggregates the window by application: counts, median duration, recent outcomes.
+// @Tags frontend
+// @Param from_timestamp query int true "From timestamp" default(1648390029)
+// @Param to_timestamp query int false "To timestamp"
+// @Success 200 {object} models.AppSummariesResponse
+// @Failure 401 {object} models.TaskStatus "no credential, or it was rejected (OIDC only)"
+// @Failure 503 {object} models.TaskStatus "the OIDC provider could not be consulted; retry"
+// @Router /api/v1/apps/summary [get]
+func (env *Env) getAppSummaries(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+
+	startTime := parseFloatQuery(query, "from_timestamp")
+	endTime := parseFloatQuery(query, "to_timestamp")
+	if endTime == 0 {
+		endTime = float64(time.Now().Unix())
+	}
+
+	// An absent, unparseable or over-long look-back is clamped rather than
+	// rejected, so a caller always gets the widest window it may have.
+	if earliest := endTime - maxAppSummaryWindow; startTime < earliest {
+		startTime = earliest
+	}
+
+	writeJSON(w, http.StatusOK, env.argo.GetAppSummaries(models.TaskFilter{
+		StartTime: startTime,
+		EndTime:   endTime,
 	}))
 }
 
@@ -275,15 +355,17 @@ func (env *Env) getTaskStatus(w http.ResponseWriter, r *http.Request) {
 	} else {
 		setTaskApp(r, task.MetricApp())
 		writeJSON(w, http.StatusOK, models.TaskStatus{
-			Id:           task.Id,
-			Created:      task.Created,
-			Updated:      task.Updated,
-			App:          task.App,
-			Author:       task.Author,
-			Project:      task.Project,
-			Images:       task.Images,
-			Status:       task.Status,
-			StatusReason: task.StatusReason,
+			Id:               task.Id,
+			Created:          task.Created,
+			Updated:          task.Updated,
+			App:              task.App,
+			Author:           task.Author,
+			Project:          task.Project,
+			Images:           task.Images,
+			Status:           task.Status,
+			StatusReason:     task.StatusReason,
+			IsRollback:       task.IsRollback,
+			RollbackTargetId: task.RollbackTargetId,
 		})
 	}
 }
@@ -342,14 +424,10 @@ func (env *Env) getConfig(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, env.config)
 }
 
-// requireOIDCAuth validates the OIDC token from the Oidc-Authorization header when
-// OIDC auth is enabled. It returns true if validation passes (or OIDC is disabled).
-// On failure the response distinguishes:
-//   - 401 with "authentication required" when no auth header was sent.
-//   - 401 with the strategy's reason when the token was rejected.
-//   - 503 when the provider could not be consulted at all, so that a provider
-//     outage does not make the Web UI treat the session as dead (see
-//     requireAuthenticatedRead). Details land in the server log only.
+// requireOIDCAuth reports whether the request may perform a privileged action,
+// writing the rejection itself when it may not (see writeAuthRejection). It
+// demands the OIDC token from the Oidc-Authorization header, which alone carries
+// privileged-group membership. With OIDC disabled it always passes.
 func (env *Env) requireOIDCAuth(w http.ResponseWriter, r *http.Request) bool {
 	if !env.config.OIDC.Enabled {
 		return true
@@ -359,42 +437,15 @@ func (env *Env) requireOIDCAuth(w http.ResponseWriter, r *http.Request) bool {
 	if valid {
 		return true
 	}
-	if errors.Is(err, auth.ErrProviderUnavailable) {
-		slog.Error("rejecting request: authentication provider unavailable",
-			"method", r.Method, "url", r.URL.Path, "error", err)
-		writeJSON(w, http.StatusServiceUnavailable, models.TaskStatus{
-			Status: providerUnavailableMessage,
-			Error:  err.Error(),
-		})
-		return false
-	}
-	if err != nil {
-		slog.Warn("rejected request with invalid token",
-			"method", r.Method, "url", r.URL.Path, "error", err)
-		writeJSON(w, http.StatusUnauthorized, models.TaskStatus{
-			Status: unauthorizedMessage,
-			Error:  err.Error(),
-		})
-		return false
-	}
 
-	slog.Warn("rejected unauthenticated request", "method", r.Method, "url", r.URL.Path)
-	writeJSON(w, http.StatusUnauthorized, models.TaskStatus{
-		Status: unauthorizedMessage,
-		Error:  "authentication required (set " + oidcHeader + " header)",
-	})
+	writeAuthRejection(w, r, err, "request", headerCredentialHint)
 	return false
 }
 
 // requireAuthenticatedRead returns middleware that rejects reads carrying no valid
-// credential once OIDC auth is enabled; with OIDC disabled it is a no-op.
-//
-// Any configured credential is accepted — an OIDC session, the deploy token or a CI
-// JWT — and reads are deliberately not restricted to OIDC_PRIVILEGED_GROUPS, which
-// gates the deploy-lock writes alone.
-//
-// A rejected or missing credential is 401; a provider that could not be consulted is
-// 503, because the Web UI discards its session on a 401.
+// credential once OIDC auth is enabled; with OIDC disabled it is a no-op. Any
+// configured credential is accepted — an OIDC session, the deploy token or a CI JWT
+// — because reads are deliberately not restricted to OIDC_PRIVILEGED_GROUPS.
 func (env *Env) requireAuthenticatedRead() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -409,31 +460,7 @@ func (env *Env) requireAuthenticatedRead() func(http.Handler) http.Handler {
 				return
 			}
 
-			if errors.Is(err, auth.ErrProviderUnavailable) {
-				slog.Error("rejecting read: authentication provider unavailable",
-					"method", r.Method, "url", r.URL.Path, "error", err)
-				writeJSON(w, http.StatusServiceUnavailable, models.TaskStatus{
-					Status: providerUnavailableMessage,
-					Error:  err.Error(),
-				})
-				return
-			}
-
-			if err != nil {
-				slog.Warn("rejecting read with invalid credential",
-					"method", r.Method, "url", r.URL.Path, "error", err)
-				writeJSON(w, http.StatusUnauthorized, models.TaskStatus{
-					Status: unauthorizedMessage,
-					Error:  err.Error(),
-				})
-				return
-			}
-
-			slog.Warn("rejecting unauthenticated read", "method", r.Method, "url", r.URL.Path)
-			writeJSON(w, http.StatusUnauthorized, models.TaskStatus{
-				Status: unauthorizedMessage,
-				Error:  "authentication required (set " + oidcHeader + " header)",
-			})
+			writeAuthRejection(w, r, err, "read", headerCredentialHint)
 		})
 	}
 }
@@ -481,7 +508,7 @@ func (env *Env) hasCredential(request *http.Request) bool {
 			continue
 		}
 
-		if handler, ok := strategy.(interface{ Handles(token string) bool }); ok && !handler.Handles(token) {
+		if matcher, ok := strategy.(auth.TokenMatcher); ok && !matcher.Handles(token) {
 			continue
 		}
 

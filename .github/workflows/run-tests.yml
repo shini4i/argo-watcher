@@ -59,7 +59,7 @@ jobs:
           # lookup, which shares the runner IP 60 req/h anonymous quota.
           version: 3.53.1
 
-      - uses: ./.github/actions/setup-bats
+      - uses: $/.github/actions/setup-bats
 
       # Placed before the Go toolchain installs, so a migration that breaks rollback
       # fails the job in seconds.
@@ -79,7 +79,7 @@ jobs:
         with:
           # Matches the version the flake's nixpkgs pin gives the dev shell, so
           # `task lint-go` and this job report the same findings.
-          version: v2.13.1
+          version: v2.13.2
 
   # gosec and govulncheck moved to the dedicated security.yml workflow.
   test:
@@ -139,8 +139,8 @@ jobs:
       # task test runs the whole tree without -race; run the server package under
       # the race detector so goroutine/shutdown races (e.g. the WebSocket hijack
       # path) fail CI instead of staying hidden. internal/apptoken is included for
-      # its contended-revocation tests. These tests are untagged and
-      # self-contained, so no integration services are required.
+      # its contended-revocation tests, and internal/lock because its advisory-lock
+      # poll loop is driven by several goroutines at once. These tests are untagged.
       - name: Race-detect the server package
         env:
           DB_HOST: localhost
@@ -151,7 +151,7 @@ jobs:
           STATE_TYPE: in-memory
           ARGO_URL: http://localhost:8081
           POSTGRES_DSN: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
-        run: go test -race -count=1 -timeout=5m ./internal/server/... ./internal/apptoken/...
+        run: go test -race -count=1 -timeout=5m ./internal/server/... ./internal/apptoken/... ./internal/lock/...
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
@@ -255,6 +255,10 @@ jobs:
       - name: Install frontend dependencies
         working-directory: web
         run: npm ci --ignore-scripts
+
+      - name: Type-check the frontend
+        working-directory: web
+        run: npm run typecheck
 
       - name: Run frontend tests with coverage
         working-directory: web

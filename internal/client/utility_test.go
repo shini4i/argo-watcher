@@ -2,13 +2,16 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -56,7 +59,7 @@ func TestGetJSON_RetriesOn5xxThenSucceeds(t *testing.T) {
 	var resp struct {
 		Message string `json:"message"`
 	}
-	err := watcher.getJSON(server.URL, &resp)
+	err := watcher.getJSON(context.Background(), server.URL, &resp)
 
 	assert.NoError(t, err)
 	assert.Equal(t, "OK", resp.Message)
@@ -77,7 +80,7 @@ func TestGetJSON_RetriesNetworkErrorThenSucceeds(t *testing.T) {
 	var resp struct {
 		Message string `json:"message"`
 	}
-	err := watcher.getJSON(server.URL, &resp)
+	err := watcher.getJSON(context.Background(), server.URL, &resp)
 
 	assert.NoError(t, err)
 	assert.Equal(t, "OK", resp.Message)
@@ -93,13 +96,21 @@ func TestGetJSON_ExhaustsRetriesOnPersistent5xx(t *testing.T) {
 	}))
 	defer server.Close()
 
+	var logs bytes.Buffer
+	originalWriter := log.Writer()
+	log.SetOutput(&logs)
+	t.Cleanup(func() { log.SetOutput(originalWriter) })
+
 	watcher := newTestWatcher(server.URL)
 	var dummy struct{}
-	err := watcher.getJSON(server.URL, &dummy)
+	err := watcher.getJSON(context.Background(), server.URL, &dummy)
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "502")
 	assert.Equal(t, int32(maxTransientRetries+1), calls.Load(), "should try once then retry maxTransientRetries times")
+	// The attempt that spends the budget announces nothing: retry-go's OnRetry fires
+	// for it too, and a line promising a retry that never comes misleads an operator.
+	assert.Equal(t, maxTransientRetries, strings.Count(logs.String(), "retrying"))
 }
 
 // TestGetJSON_DoesNotRetryMalformedBody verifies a 200 response with an
@@ -115,7 +126,7 @@ func TestGetJSON_DoesNotRetryMalformedBody(t *testing.T) {
 
 	watcher := newTestWatcher(server.URL)
 	var dummy struct{}
-	err := watcher.getJSON(server.URL, &dummy)
+	err := watcher.getJSON(context.Background(), server.URL, &dummy)
 
 	assert.Error(t, err)
 	assert.Equal(t, int32(1), calls.Load(), "a malformed 200 body must not be retried")
@@ -132,7 +143,7 @@ func TestGetJSON_ExhaustsRetriesOnNetworkError(t *testing.T) {
 	watcher.client.Transport = transport
 
 	var dummy struct{}
-	err := watcher.getJSON(server.URL, &dummy)
+	err := watcher.getJSON(context.Background(), server.URL, &dummy)
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "connection refused")
@@ -152,7 +163,7 @@ func TestGetJSON_DoesNotRetryTerminalError(t *testing.T) {
 
 	watcher := newTestWatcher(server.URL)
 	var dummy struct{}
-	err := watcher.getJSON(server.URL, &dummy)
+	err := watcher.getJSON(context.Background(), server.URL, &dummy)
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "401")
@@ -169,7 +180,7 @@ func TestDoRequest(t *testing.T) {
 		defer server.Close()
 
 		watcher := NewWatcher(server.URL, false, 30*time.Second)
-		resp, err := watcher.doRequest(http.MethodGet, server.URL, nil)
+		resp, err := watcher.doRequest(context.Background(), http.MethodGet, server.URL, nil)
 
 		assert.NoError(t, err)
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
@@ -181,7 +192,7 @@ func TestDoRequest(t *testing.T) {
 
 	t.Run("invalid URL", func(t *testing.T) {
 		watcher := NewWatcher("http://invalid-url", false, 30*time.Second)
-		_, err := watcher.doRequest(http.MethodGet, "http://invalid-url", nil)
+		_, err := watcher.doRequest(context.Background(), http.MethodGet, "http://invalid-url", nil)
 
 		assert.Error(t, err)
 	})
@@ -203,7 +214,7 @@ func TestGetJSON(t *testing.T) {
 	}
 	var resp response
 
-	err := watcher.getJSON(server.URL+"/test", &resp)
+	err := watcher.getJSON(context.Background(), server.URL+"/test", &resp)
 
 	assert.NoError(t, err)
 
@@ -221,7 +232,7 @@ func TestGetJSON_NonOKResponseSurfacesBody(t *testing.T) {
 
 	watcher := NewWatcher(server.URL, false, 30*time.Second)
 	var dummy struct{}
-	err := watcher.getJSON(server.URL, &dummy)
+	err := watcher.getJSON(context.Background(), server.URL, &dummy)
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "401")
@@ -463,7 +474,7 @@ func TestGenerateAppUrl(t *testing.T) {
 			App: "test-app",
 		}
 
-		appUrl, err := generateAppUrl(watcher, task)
+		appUrl, err := generateAppUrl(context.Background(), watcher, task)
 
 		assert.Nil(t, err)
 
@@ -496,7 +507,7 @@ func TestGenerateAppUrl(t *testing.T) {
 			App: "test-app",
 		}
 
-		appUrl, err := generateAppUrl(watcher, task)
+		appUrl, err := generateAppUrl(context.Background(), watcher, task)
 
 		assert.Nil(t, err)
 
@@ -529,7 +540,7 @@ func TestGenerateAppUrl(t *testing.T) {
 
 		watcher := NewWatcher(server.URL, false, 30*time.Second)
 
-		appUrl, err := generateAppUrl(watcher, models.Task{App: "test-app"})
+		appUrl, err := generateAppUrl(context.Background(), watcher, models.Task{App: "test-app"})
 
 		assert.Nil(t, err)
 		assert.Equal(t, "https://argo-cd.example.com/applications/test-app", appUrl)
@@ -557,7 +568,7 @@ func TestGenerateAppUrl(t *testing.T) {
 
 		watcher := NewWatcher(server.URL, false, 30*time.Second)
 
-		appUrl, err := generateAppUrl(watcher, models.Task{App: "test-app"})
+		appUrl, err := generateAppUrl(context.Background(), watcher, models.Task{App: "test-app"})
 
 		assert.Nil(t, err)
 		assert.Equal(t, "https://platform.example.com/argocd/applications/test-app", appUrl)
@@ -585,7 +596,7 @@ func TestGenerateAppUrl(t *testing.T) {
 
 		watcher := NewWatcher(server.URL, false, 30*time.Second)
 
-		appUrl, err := generateAppUrl(watcher, models.Task{App: "test-app"})
+		appUrl, err := generateAppUrl(context.Background(), watcher, models.Task{App: "test-app"})
 
 		assert.Nil(t, err)
 		assert.Equal(t, "https://platform.example.com/argocd/applications/test-app?view=tree#overview", appUrl)
@@ -601,7 +612,7 @@ func TestGenerateAppUrl(t *testing.T) {
 			App: "test-app",
 		}
 
-		appUrl, err := generateAppUrl(watcher, task)
+		appUrl, err := generateAppUrl(context.Background(), watcher, task)
 
 		assert.NotNil(t, err)
 
@@ -631,5 +642,52 @@ func TestSetupWatcher(t *testing.T) {
 		watcher := setupWatcher(&Config{Url: "http://localhost:8080", JsonWebToken: testJWT})
 
 		assert.Equal(t, credential{header: jwtHeader, value: testJWT}, watcher.auth)
+	})
+}
+
+// A cancelled CI job must stop the client at the next checkpoint instead of
+// sleeping out the whole retry budget.
+func TestGetJSON_CancellingStopsTheRetryWait(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		calls.Add(1)
+		rw.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	watcher := newTestWatcher(server.URL)
+	watcher.retryDelay = time.Hour
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		for calls.Load() == 0 {
+			time.Sleep(time.Millisecond)
+		}
+		cancel()
+	}()
+
+	start := time.Now()
+	var dummy struct{}
+	err := watcher.getJSON(ctx, server.URL, &dummy)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Less(t, time.Since(start), 10*time.Second, "the wait must end with the context, not run its hour out")
+	assert.Equal(t, int32(1), calls.Load(), "no attempt may start after the context is done")
+}
+
+func TestWaitOrCancel(t *testing.T) {
+	t.Run("returns once the wait elapses", func(t *testing.T) {
+		require.NoError(t, waitOrCancel(context.Background(), time.Millisecond))
+	})
+
+	t.Run("returns the context error when cancelled", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		err := waitOrCancel(ctx, time.Hour)
+
+		require.Error(t, err)
+		assert.ErrorIs(t, err, context.Canceled)
 	})
 }

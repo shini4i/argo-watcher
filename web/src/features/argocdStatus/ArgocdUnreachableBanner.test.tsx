@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, type Mock } from 'vitest';
 
 vi.mock('./ArgocdStatusProvider', () => ({
   useArgocdStatus: vi.fn(),
@@ -9,7 +9,7 @@ import { useArgocdStatus } from './ArgocdStatusProvider';
 import { ArgocdUnreachableBanner } from './ArgocdUnreachableBanner';
 
 const mockStatus = (status: { available: boolean; reason: string | null }) => {
-  (useArgocdStatus as unknown as vi.Mock).mockReturnValue(status);
+  (useArgocdStatus as unknown as Mock).mockReturnValue(status);
 };
 
 describe('ArgocdUnreachableBanner', () => {

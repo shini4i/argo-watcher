@@ -17,5 +17,5 @@ test('signing in from a shared task link returns to that task', async ({ page, r
   await signIn(page);
 
   await expect(page).toHaveURL(new RegExp(`/task/${id}$`));
-  await expect(page.getByText(`Task ${id.slice(0, 8)}`)).toBeVisible();
+  await expect(page.getByRole('button', { name: /copy task id/i })).toHaveText(id);
 });

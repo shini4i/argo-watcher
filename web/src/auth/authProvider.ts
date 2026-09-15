@@ -9,25 +9,18 @@ import {
   describeRedirectError,
 } from './authFailure';
 import { clearAccessToken, setAccessToken } from './tokenStore';
-
-interface OidcConfig {
-  enabled: boolean;
-  issuer_url?: string;
-  client_id?: string;
-  privileged_groups?: string[];
-  gravatar_fallback?: boolean;
-}
-
-interface ServerConfig {
-  oidc: OidcConfig;
-}
+import {
+  fetchServerConfig,
+  resetServerConfigCache,
+  type ServerConfig,
+  type ServerOidcConfig,
+} from '../data/serverConfig';
 
 interface Permissions {
   groups: string[];
   privilegedGroups: string[];
 }
 
-let serverConfigPromise: Promise<ServerConfig> | null = null;
 let serverConfig: ServerConfig | null = null;
 let userManager: UserManager | null = null;
 let cachedUserGroups: string[] | null = null;
@@ -101,28 +94,10 @@ const currentPath = (): string | undefined => {
   return `${browserWindow.location.pathname}${browserWindow.location.search}`;
 };
 
-const fetchServerConfig = async (): Promise<ServerConfig> => {
-  serverConfigPromise ??= fetch('/api/v1/config', {
-    headers: {
-      Accept: 'application/json',
-    },
-  })
-    .then(async response => {
-      const body = await response.json();
-      if (!response.ok) {
-        throw new HttpError(body?.error ?? 'Failed to load configuration', response.status, body);
-      }
-      return body as ServerConfig;
-    })
-    .catch(error => {
-      serverConfigPromise = null;
-      if (error instanceof HttpError) {
-        throw error;
-      }
-      throw new HttpError('Failed to load configuration', 0, { cause: error });
-    });
-
-  serverConfig = await serverConfigPromise;
+// Caches what the shared fetch returns, so the synchronous readers below (which run
+// while rendering an error, with no chance to await) see the same configuration.
+const loadServerConfig = async (): Promise<ServerConfig> => {
+  serverConfig = await fetchServerConfig();
   return serverConfig;
 };
 
@@ -138,13 +113,13 @@ const requiredOidcField = (value: unknown): string | undefined => {
 };
 
 /** Names the missing fields in configuration-key form, for a user-facing message. */
-const missingOidcFields = (config: OidcConfig): string[] =>
+const missingOidcFields = (config: ServerOidcConfig): string[] =>
   [
     !requiredOidcField(config.issuer_url) && 'issuer_url',
     !requiredOidcField(config.client_id) && 'client_id',
   ].filter((field): field is string => typeof field === 'string');
 
-const assertOidcFields = (config: OidcConfig) => {
+const assertOidcFields = (config: ServerOidcConfig) => {
   if (missingOidcFields(config).length > 0) {
     throw new HttpError('OIDC configuration is incomplete', 500, config);
   }
@@ -160,7 +135,7 @@ const assertOidcFields = (config: OidcConfig) => {
  * redirect, which is what the authorization-code exchange requires.
  */
 const ensureUserManager = async (): Promise<UserManager | null> => {
-  const config = await fetchServerConfig();
+  const config = await loadServerConfig();
   if (!config.oidc?.enabled) {
     return null;
   }
@@ -437,7 +412,7 @@ export const authProvider: AuthProvider = {
   },
 
   async getPermissions() {
-    const config = await fetchServerConfig();
+    const config = await loadServerConfig();
     if (!config.oidc?.enabled) {
       return [];
     }
@@ -465,14 +440,14 @@ export const authProvider: AuthProvider = {
     }
 
     const user = await manager.getUser();
-    const profile = user?.profile ?? {};
-    const id = (profile.sub as Identifier) ?? 'unknown';
+    const profile = user?.profile;
+    const id = (profile?.sub as Identifier) ?? 'unknown';
     // || not ??: a provider that concatenates absent given/family names sends an
     // empty string, which must fall through to the next claim.
-    const fullName = (profile.name as string) || (profile.preferred_username as string) || undefined;
-    const email = (profile.email as string) || undefined;
+    const fullName = profile?.name || (profile?.preferred_username as string) || undefined;
+    const email = profile?.email || undefined;
     const avatar =
-      (profile.picture as string) ||
+      profile?.picture ||
       (serverConfig?.oidc?.gravatar_fallback ? await gravatarUrl(email) : undefined);
 
     return { id, fullName, email, avatar };
@@ -481,7 +456,7 @@ export const authProvider: AuthProvider = {
 
 export const __testing = {
   reset() {
-    serverConfigPromise = null;
+    resetServerConfigCache();
     serverConfig = null;
     userManager = null;
     clearAccessToken();

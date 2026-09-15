@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { ImagesCell, stripRegistryPrefix, TAG_MAX_WIDTH } from './ImagesCell';
 
 describe('stripRegistryPrefix', () => {
@@ -51,25 +51,21 @@ describe('ImagesCell', () => {
     expect(screen.getByRole('button', { name: 'Show less' })).toBeInTheDocument();
   });
 
-  it('stops propagation so row navigation does not fire when toggling', () => {
-    const onRowClick = vi.fn();
+  it('collapses again on a second click, so the row can be folded back', () => {
     render(
-      <button
-        type="button"
-        aria-label="parent row"
-        onClick={onRowClick}
-        onKeyDown={onRowClick}
-      >
-        <ImagesCell
-          images={[
-            { image: 'api', tag: 'v1' },
-            { image: 'worker', tag: 'v2' },
-          ]}
-        />
-      </button>,
+      <ImagesCell
+        images={[
+          { image: 'api', tag: 'v1' },
+          { image: 'worker', tag: 'v2' },
+        ]}
+      />,
     );
+
     fireEvent.click(screen.getByRole('button', { name: '+1 more' }));
-    expect(onRowClick).not.toHaveBeenCalled();
+    expect(screen.getByText('worker')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /show less/i }));
+    expect(screen.getByRole('button', { name: '+1 more' })).toBeInTheDocument();
   });
 
   it('keeps a hyphenated tag on one line instead of shrinking its badge', () => {

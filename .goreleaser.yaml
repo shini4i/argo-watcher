@@ -60,7 +60,7 @@ dockers_v2:
     annotations:
       org.opencontainers.image.created: "{{.Date}}"
       org.opencontainers.image.title: argo-watcher
-      org.opencontainers.image.description: "A feedback loop for your GitOps workflow, bridging CI pipelines and Argo CD."
+      org.opencontainers.image.description: "Wait for an Argo CD deployment from your CI pipeline, and learn whether the image you built rolled out."
       org.opencontainers.image.revision: "{{.FullCommit}}"
       org.opencontainers.image.version: "{{.Version}}"
       org.opencontainers.image.source: "{{.GitURL}}"

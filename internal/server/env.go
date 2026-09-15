@@ -38,6 +38,8 @@ type Env struct {
 	shutdownOnce sync.Once
 	// connWg tracks active WebSocket connection goroutines for graceful shutdown.
 	connWg sync.WaitGroup
+	// ws holds the clients this server broadcasts to.
+	ws wsRegistry
 }
 
 // lockdownPollInterval is how often the lockdown watcher re-evaluates the lock
@@ -69,7 +71,7 @@ func (env *Env) StartLockdownWatcher() {
 	env.connWg.Add(1)
 	go func() {
 		defer env.connWg.Done()
-		env.lockdown.WatchTransitions(env.shutdownCh, lockdownPollInterval, notifyWebSocketClients)
+		env.lockdown.WatchTransitions(env.shutdownCh, lockdownPollInterval, env.notifyWebSocketClients)
 	}()
 }
 
@@ -108,7 +110,7 @@ func (env *Env) StartArgoWatcher() {
 	env.connWg.Add(1)
 	go func() {
 		defer env.connWg.Done()
-		watchArgoTransitions(env.shutdownCh, argoWatchInterval, env.argo.UnavailableReason, notifyWebSocketClients)
+		watchArgoTransitions(env.shutdownCh, argoWatchInterval, env.argo.UnavailableReason, env.notifyWebSocketClients)
 	}()
 }
 
@@ -154,6 +156,14 @@ func (env *Env) beginDraining() {
 
 func (env *Env) isDraining() bool {
 	return env.draining.Load()
+}
+
+// handsOverOnShutdown reports that a rollout given up now will be picked up again.
+// Only the shared state can hand one over: with in-memory state the task dies with
+// the process, so abandoning it would drop the deployment — its git write-back
+// included — instead of handing it on.
+func (env *Env) handsOverOnShutdown() bool {
+	return env.config.StateType == "postgres" && env.isDraining()
 }
 
 // Shutdown gracefully shuts down the server and all WebSocket connections.

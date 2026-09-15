@@ -37,10 +37,11 @@ func submitTask(t *testing.T, body string, opts ...func(*config.ServerConfig)) (
 	repo.EXPECT().Check().Return(true).AnyTimes()
 
 	var stored models.Task
-	repo.EXPECT().AddTask(gomock.Any()).DoAndReturn(func(task models.Task) (*models.Task, error) {
-		stored = task
-		return nil, fmt.Errorf("stop before the rollout goroutine")
-	}).AnyTimes()
+	repo.EXPECT().SupersedeAndAdd(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(task models.Task, _ string) (*models.Task, int64, error) {
+			stored = task
+			return nil, 0, fmt.Errorf("stop before the rollout goroutine")
+		}).AnyTimes()
 
 	argo := &argocd.Argo{}
 	argo.Init(repo, newArgoAPI(ctrl), newMetrics(ctrl))
@@ -206,11 +207,6 @@ func TestApiAcceptsTheLargestLegitimateBody(t *testing.T) {
 // out of an ordinary request. It survives because the hijack clears the deadlines
 // net/http set — which is not visible at the call site that adds a timeout.
 func TestWebSocketOutlivesServerWriteTimeout(t *testing.T) {
-	connectionsMutex.Lock()
-	connections = nil
-	closedConns = make(map[*websocket.Conn]bool)
-	connectionsMutex.Unlock()
-
 	env, _ := readAuthEnv(t, false, nil)
 	env.config.DevEnvironment = true // accept the httptest origin
 
@@ -222,9 +218,6 @@ func TestWebSocketOutlivesServerWriteTimeout(t *testing.T) {
 	t.Cleanup(func() {
 		shutdownEnv(env)
 		server.Close()
-		connectionsMutex.Lock()
-		connections = nil
-		connectionsMutex.Unlock()
 	})
 
 	url := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws"
@@ -237,7 +230,7 @@ func TestWebSocketOutlivesServerWriteTimeout(t *testing.T) {
 	// Past both deadlines the handshake inherited.
 	time.Sleep(300 * time.Millisecond)
 
-	notifyWebSocketClients("still alive")
+	env.notifyWebSocketClients("still alive")
 
 	_, message, err := conn.Read(ctx)
 	require.NoError(t, err)

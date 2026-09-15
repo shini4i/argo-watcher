@@ -4,7 +4,7 @@ import { keyframes, useTheme } from '@mui/material/styles';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { tokens } from '../../../theme/tokens';
 import { useTaskListContext } from './TaskListContext';
-import { getBrowserWindow } from '../../../shared/utils';
+import { getBrowserWindow, safeGetItem, safeSetItem } from '../../../shared/utils';
 
 const REFRESH_OPTIONS: ReadonlyArray<{ readonly label: string; readonly seconds: number }> = [
   { label: 'Off', seconds: 0 },
@@ -28,26 +28,6 @@ const ALLOWED_INTERVAL_SECONDS: ReadonlySet<number> = new Set(
   REFRESH_OPTIONS.map(option => option.seconds),
 );
 
-// Some browsers (Safari private mode, Firefox with cookies blocked) throw
-// SecurityError on any localStorage access. Swallow those failures so the
-// countdown still hydrates from the provider default rather than crashing
-// the toolbar.
-const safeGetItem = (storageKey: string): string | null => {
-  try {
-    return getBrowserWindow()?.localStorage?.getItem(storageKey) ?? null;
-  } catch {
-    return null;
-  }
-};
-
-const safeSetItem = (storageKey: string, value: string): void => {
-  try {
-    getBrowserWindow()?.localStorage?.setItem(storageKey, value);
-  } catch {
-    // Ignore — same restricted-storage rationale as safeGetItem.
-  }
-};
-
 const readStoredInterval = (storageKey: string, fallback: number) => {
   const value = Number.parseInt(safeGetItem(storageKey) ?? '', 10);
   // Only honour values that match a presented option; an unsupported number
@@ -67,10 +47,10 @@ export const RefreshControl = ({ onRefresh, storageKey = 'recentTasks.refreshInt
 
   const [remaining, setRemaining] = useState(intervalSec);
 
-  // Hydrate the interval from localStorage exactly once. A ref guards re-runs
-  // so we can keep all closure values in deps (passing lint without disabling)
-  // while still committing to the "first mount, current props" semantics —
-  // re-hydrating mid-session would overwrite the user's manual selection.
+  // Hydrate the surrounding TaskListProvider exactly once; re-hydrating
+  // mid-session would overwrite the user's manual selection. A ref guards the
+  // re-runs so every closure value can stay in deps. Only the context is
+  // written here — the reseed below picks the new interval up from it.
   const hydratedRef = useRef(false);
   useEffect(() => {
     if (hydratedRef.current) return;
@@ -78,7 +58,6 @@ export const RefreshControl = ({ onRefresh, storageKey = 'recentTasks.refreshInt
     const stored = readStoredInterval(storageKey, intervalSec);
     if (stored !== intervalSec) {
       setIntervalSec(stored);
-      setRemaining(stored);
     }
   }, [storageKey, intervalSec, setIntervalSec]);
 
@@ -86,9 +65,21 @@ export const RefreshControl = ({ onRefresh, storageKey = 'recentTasks.refreshInt
     safeSetItem(storageKey, String(intervalSec));
   }, [storageKey, intervalSec]);
 
-  useEffect(() => {
+  // Seed the countdown whenever the interval changes or a refetch lands.
+  // Adjusting during render is React's documented alternative to a reset
+  // effect: it re-renders before committing, so no intermediate countdown
+  // value ever reaches the DOM.
+  const [lastSeed, setLastSeed] = useState({
+    intervalSec,
+    lastRefetchedAt: state.lastRefetchedAt,
+  });
+  if (
+    lastSeed.intervalSec !== intervalSec ||
+    lastSeed.lastRefetchedAt !== state.lastRefetchedAt
+  ) {
+    setLastSeed({ intervalSec, lastRefetchedAt: state.lastRefetchedAt });
     setRemaining(intervalSec);
-  }, [intervalSec, state.lastRefetchedAt]);
+  }
 
   // The state-updater function intentionally has no side effects: firing
   // onRefresh from inside the updater would run twice under StrictMode. The

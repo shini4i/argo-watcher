@@ -43,3 +43,30 @@ func IsAllowedTaskStatus(status string) bool {
 	_, ok := allowedTaskStatusFilters[status]
 	return ok
 }
+
+// failedTaskStatuses lists the statuses of a task whose deployment did not
+// land. They are grouped for the per-app summary, so an operator scanning for
+// trouble sees an aborted or unreachable-ArgoCD task alongside an outright
+// failure rather than filed as neither.
+var failedTaskStatuses = map[string]struct{}{
+	StatusFailedMessage:            {},
+	StatusAborted:                  {},
+	StatusArgoCDUnavailableMessage: {},
+	StatusConnectionUnavailable:    {},
+	StatusArgoCDFailedLogin:        {},
+}
+
+// IsFailedTaskStatus reports whether the status means the deployment failed.
+func IsFailedTaskStatus(status string) bool {
+	_, ok := failedTaskStatuses[status]
+	return ok
+}
+
+// FailedTaskStatuses returns the failed statuses, for building a SQL predicate.
+func FailedTaskStatuses() []string {
+	statuses := make([]string, 0, len(failedTaskStatuses))
+	for status := range failedTaskStatuses {
+		statuses = append(statuses, status)
+	}
+	return statuses
+}

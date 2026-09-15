@@ -1,9 +1,10 @@
 package state
 
 import (
-	"errors"
 	"log/slog"
+	"slices"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -20,6 +21,11 @@ const (
 	// StaleTaskAbortReason is the status reason set when an in-progress task is
 	// aborted for exceeding the staleness window (distinct from an ArgoCD outage).
 	StaleTaskAbortReason = "Deployment did not complete within the staleness window; marked aborted by argo-watcher."
+	// AppNotFoundRetention is how long a task rejected for naming an unknown application
+	// is spared by the sweep; it is removed on the first pass after that, so the window
+	// a client actually sees runs to one ObsoleteTaskCheckInterval beyond it. Both
+	// backends use it.
+	AppNotFoundRetention = time.Hour
 )
 
 // InMemoryState is a thread-safe in-memory implementation of task storage.
@@ -42,12 +48,18 @@ func (state *InMemoryState) AddTask(task models.Task) (*models.Task, error) {
 	state.mu.Lock()
 	defer state.mu.Unlock()
 
+	return state.appendTask(task, float64(time.Now().Unix())), nil
+}
+
+// appendTask stamps the server-owned fields and stores the task. The caller must
+// hold the write lock, which is what lets SupersedeAndAdd do both under one.
+func (state *InMemoryState) appendTask(task models.Task, now float64) *models.Task {
 	task.Id = uuid.New().String()
-	task.Created = float64(time.Now().Unix())
-	task.Updated = float64(time.Now().Unix())
+	task.Created = now
+	task.Updated = now
 	task.Status = models.StatusInProgressMessage
 	state.tasks = append(state.tasks, task)
-	return &task, nil
+	return &task
 }
 
 // taskMatchesFilters reports whether a task falls within the filter's time
@@ -64,7 +76,21 @@ func taskMatchesFilters(task models.Task, filter models.TaskFilter) bool {
 	if filter.Status != "" && filter.Status != task.Status {
 		return false
 	}
+	if filter.Author != "" && !strings.EqualFold(filter.Author, task.Author) {
+		return false
+	}
 	return task.MatchesSearch(filter.Search)
+}
+
+// sortByRecency orders tasks newest first. The slice must arrive in insertion order:
+// Created holds whole seconds here, so ties are ordinary, and reversing before a
+// stable sort puts the task stored last within a second first. Ids are random uuids
+// and carry no order of their own.
+func sortByRecency(tasks []models.Task) {
+	slices.Reverse(tasks)
+	sort.SliceStable(tasks, func(i, j int) bool {
+		return tasks[i].Created > tasks[j].Created
+	})
 }
 
 // paginate returns the [offset:offset+limit] slice of tasks, clamping to bounds.
@@ -80,12 +106,12 @@ func paginate(tasks []models.Task, limit, offset int) []models.Task {
 	return tasks[offset:end]
 }
 
-func (state *InMemoryState) GetTasks(filter models.TaskFilter) ([]models.Task, int64) {
+func (state *InMemoryState) GetTasks(filter models.TaskFilter) ([]models.Task, int64, error) {
 	state.mu.RLock()
 	defer state.mu.RUnlock()
 
 	if state.tasks == nil {
-		return []models.Task{}, 0
+		return []models.Task{}, 0, nil
 	}
 
 	limit := filter.Limit
@@ -105,14 +131,12 @@ func (state *InMemoryState) GetTasks(filter models.TaskFilter) ([]models.Task, i
 	}
 
 	if len(tasks) == 0 {
-		return []models.Task{}, 0
+		return []models.Task{}, 0, nil
 	}
 
-	sort.Slice(tasks, func(i, j int) bool {
-		return tasks[i].Created > tasks[j].Created
-	})
+	sortByRecency(tasks)
 
-	return paginate(tasks, limit, offset), int64(len(tasks))
+	return paginate(tasks, limit, offset), int64(len(tasks)), nil
 }
 
 // GetTask returns ErrTaskNotFound when no task matches.
@@ -128,45 +152,51 @@ func (state *InMemoryState) GetTask(id string) (*models.Task, error) {
 	return nil, ErrTaskNotFound
 }
 
-// SetTaskStatus errors when no task matches the given id.
+// SetTaskStatus returns ErrTaskNotFound when no task matches, and ErrTaskEnded when the task
+// already reached a terminal status.
 func (state *InMemoryState) SetTaskStatus(id, status, reason string) error {
 	state.mu.Lock()
 	defer state.mu.Unlock()
 
 	for idx, task := range state.tasks {
 		if task.Id == id {
+			// Only a task still running may be given an outcome: a newer deployment may
+			// have cancelled it, or the sweep given up on it, while this caller decided.
+			if task.Status != models.StatusInProgressMessage {
+				return ErrTaskEnded
+			}
+
 			state.tasks[idx].Status = status
 			state.tasks[idx].StatusReason = reason
 			state.tasks[idx].Updated = float64(time.Now().Unix())
 			return nil
 		}
 	}
-	return errors.New("task not found")
+	return ErrTaskNotFound
 }
 
-// CancelInProgressTasks marks in-progress tasks for the given app as cancelled
-// and returns how many were updated. A task is only cancelled when it shares at
-// least one image name with the supplied images (tags ignored), so independent
-// per-image deployments of the same app do not cancel each other, and only when
-// it carries no more authority than the superseding deployment.
-func (state *InMemoryState) CancelInProgressTasks(app string, images []models.Image, reason string, newTaskValidated bool) (int64, error) {
+// SupersedeAndAdd cancels the in-progress tasks the new one supersedes and stores
+// it, holding the store's lock across both so a concurrent submission cannot read
+// the in-progress set this one is about to join. See the interface for the rules.
+func (state *InMemoryState) SupersedeAndAdd(task models.Task, reason string) (*models.Task, int64, error) {
 	state.mu.Lock()
 	defer state.mu.Unlock()
 
 	var count int64
 	now := float64(time.Now().Unix())
 	for idx := range state.tasks {
-		if state.tasks[idx].App == app &&
+		if state.tasks[idx].App == task.App &&
 			state.tasks[idx].Status == models.StatusInProgressMessage &&
-			maySupersede(newTaskValidated, state.tasks[idx].Validated) &&
-			imageNamesOverlap(state.tasks[idx].Images, images) {
+			maySupersede(task.Validated, state.tasks[idx].Validated) &&
+			imageNamesOverlap(state.tasks[idx].Images, task.Images) {
 			state.tasks[idx].Status = models.StatusCancelledMessage
 			state.tasks[idx].StatusReason = reason
 			state.tasks[idx].Updated = now
 			count++
 		}
 	}
-	return count, nil
+
+	return state.appendTask(task, now), count, nil
 }
 
 // Check always returns true; in-memory storage is always available.
@@ -210,7 +240,10 @@ func staleAfterSeconds(task models.Task) float64 {
 func processInMemoryObsoleteTasks(tasks []models.Task) []models.Task {
 	var updatedTasks []models.Task
 	for _, task := range tasks {
-		if task.Status == models.StatusAppNotFoundMessage {
+		// Kept for the grace period so the client that submitted it can still read why
+		// it failed; both backends use the same window.
+		if task.Status == models.StatusAppNotFoundMessage &&
+			task.Created+AppNotFoundRetention.Seconds() < float64(time.Now().Unix()) {
 			continue
 		}
 		if task.Status == models.StatusInProgressMessage && task.Updated+staleAfterSeconds(task) < float64(time.Now().Unix()) {
@@ -220,4 +253,95 @@ func processInMemoryObsoleteTasks(tasks []models.Task) []models.Task {
 		updatedTasks = append(updatedTasks, task)
 	}
 	return updatedTasks
+}
+
+// median returns the middle value of an already-sorted slice, averaging the two
+// middle values for an even count. An empty slice yields 0.
+func median(sorted []float64) float64 {
+	if len(sorted) == 0 {
+		return 0
+	}
+	middle := len(sorted) / 2
+	if len(sorted)%2 == 1 {
+		return sorted[middle]
+	}
+	return (sorted[middle-1] + sorted[middle]) / 2
+}
+
+// GetAppSummaries groups the window per application. The error is always nil;
+// in-memory storage has no query failure.
+func (state *InMemoryState) GetAppSummaries(filter models.TaskFilter) ([]models.AppSummary, error) {
+	state.mu.RLock()
+	defer state.mu.RUnlock()
+
+	// Only the window applies, so an app/status/search value is ignored here.
+	window := models.TaskFilter{StartTime: filter.StartTime, EndTime: filter.EndTime}
+
+	grouped := make(map[string][]models.Task)
+	for _, task := range state.tasks {
+		if taskMatchesFilters(task, window) {
+			grouped[task.App] = append(grouped[task.App], task)
+		}
+	}
+
+	apps := make([]string, 0, len(grouped))
+	for app := range grouped {
+		apps = append(apps, app)
+	}
+	sort.Strings(apps)
+
+	summaries := make([]models.AppSummary, 0, len(apps))
+	for _, app := range apps {
+		summaries = append(summaries, summariseApp(app, grouped[app]))
+	}
+
+	return summaries, nil
+}
+
+// summariseApp reduces one application's in-window tasks to its overview row:
+// the status counters, the median settled duration, the newest outcomes, and the
+// newest task's own details. It requires at least one task.
+func summariseApp(app string, tasks []models.Task) models.AppSummary {
+	sortByRecency(tasks)
+
+	summary := models.AppSummary{
+		App:            app,
+		Total:          int64(len(tasks)),
+		RecentStatuses: []string{},
+	}
+
+	durations := make([]float64, 0, len(tasks))
+	for _, task := range tasks {
+		countTaskStatus(&summary, task.Status)
+		if task.Status != models.StatusInProgressMessage && task.Updated >= task.Created {
+			durations = append(durations, task.Updated-task.Created)
+		}
+		if len(summary.RecentStatuses) < models.RecentOutcomeLimit {
+			summary.RecentStatuses = append(summary.RecentStatuses, task.Status)
+		}
+	}
+
+	sort.Float64s(durations)
+	summary.MedianDurationSeconds = median(durations)
+
+	newest := tasks[0]
+	summary.Project = newest.Project
+	summary.LastStatus = newest.Status
+	summary.LastStatusReason = newest.StatusReason
+	summary.LastCreated = newest.Created
+
+	return summary
+}
+
+// countTaskStatus advances the counter the status belongs to. A status in none
+// of the three buckets (accepted, say) counts only towards Total.
+func countTaskStatus(summary *models.AppSummary, status string) {
+	switch {
+	case models.IsFailedTaskStatus(status):
+		summary.Failed++
+	case status == models.StatusInProgressMessage:
+		summary.Running++
+	case status == models.StatusDeployedMessage:
+		summary.Deployed++
+	}
 }

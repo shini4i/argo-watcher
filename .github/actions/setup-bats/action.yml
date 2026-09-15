@@ -10,7 +10,7 @@ runs:
     - name: Install bats and its libraries
       shell: bash
       env:
-        BATS_VERSION: v1.12.0
+        BATS_VERSION: v1.14.0
         BATS_SUPPORT_VERSION: v0.3.0
         BATS_ASSERT_VERSION: v2.2.4
         # bats defaults BATS_LIB_PATH to /usr/lib/bats, so installing the libraries

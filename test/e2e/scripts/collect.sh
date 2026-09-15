@@ -9,9 +9,8 @@
 #   - in_progress_tasks does not drain back to 0 (leaked/stuck task tracking)
 #   - any of the duration histograms recorded 0 observations, i.e. the
 #     refresh / git-writeback / lock-wait / deployment-duration code path never
-#     ran (silent regression). With BATCH_MODE set, the per-app writeback/lock-wait
-#     gates are replaced by a gitops_batch_size gate (that path records batch size
-#     instead, and must show mean batch size > 1 — real coalescing under contention)
+#     ran (silent regression). With BATCH_MODE set, a gitops_batch_size gate is added
+#     on top, which must show mean batch size > 1 — real coalescing under contention
 #   - a lost update: a fixture app's committed image tag != the last tag the
 #     driver deployed to it (per the driver summary JSON)
 #   - any failed task in the driver summary
@@ -63,9 +62,8 @@ lc=$(metric_sum gitops_lock_wait_duration_seconds_count "$metrics")
 # (all tasks deployed) this MUST be > 0; a zero means the deployment-duration timing
 # never ran.
 dc=$(metric_sum deployment_duration_seconds_count "$metrics")
-# Batch write-back (GIT_BATCH_WRITEBACK) routes through the coalescing batcher,
-# which records gitops_batch_size INSTEAD of the per-app writeback/lock-wait
-# histograms. Collected here so the BATCH_MODE gate below can assert on it.
+# Batch write-back (GIT_BATCH_WRITEBACK) routes through the coalescing batcher, which
+# additionally records gitops_batch_size. Collected here for the BATCH_MODE gate below.
 bc=$(metric_sum gitops_batch_size_count "$metrics")
 bs=$(metric_sum gitops_batch_size_sum "$metrics")
 
@@ -106,9 +104,12 @@ fi
 [[ "${ip:-1}" == "0" ]]  || bad "in_progress_tasks=${ip:-<absent>} did not drain to 0"
 [[ "${rc:-0}" -gt 0 ]]   || bad "argocd_refresh_duration_seconds_count=${rc} (expected > 0)"
 [[ "${dc:-0}" -gt 0 ]]   || bad "deployment_duration_seconds_count=${dc} (expected > 0)"
+# Both write-back paths record these, so they gate in either mode: the batcher times
+# the one lock and the one clone/commit/push it runs, against every app in the batch.
+[[ "${wc:-0}" -gt 0 ]] || bad "gitops_writeback_duration_seconds_count=${wc} (expected > 0)"
+[[ "${lc:-0}" -gt 0 ]] || bad "gitops_lock_wait_duration_seconds_count=${lc} (expected > 0)"
 if [[ -n "${BATCH_MODE:-}" ]]; then
-  # Batch write-back records gitops_batch_size instead of the per-app
-  # writeback/lock-wait histograms (those stay 0 by design in this mode).
+  # gitops_batch_size is the one metric only the batcher records.
   echo "  batch_size_count=${bc} batch_size_sum=${bs}"
   [[ "${bc:-0}" -gt 0 ]] || bad "gitops_batch_size_count=${bc} (batch write-back path never ran)"
   # sum > count => at least one flush coalesced more than one app (mean batch
@@ -116,9 +117,6 @@ if [[ -n "${BATCH_MODE:-}" ]]; then
   # contention rather than degenerating into one-app flushes.
   awk "BEGIN{exit !(${bs:-0} > ${bc:-0})}" \
     || bad "gitops_batch_size_sum=${bs} not > _count=${bc} (no coalescing observed)"
-else
-  [[ "${wc:-0}" -gt 0 ]] || bad "gitops_writeback_duration_seconds_count=${wc} (expected > 0)"
-  [[ "${lc:-0}" -gt 0 ]] || bad "gitops_lock_wait_duration_seconds_count=${lc} (expected > 0)"
 fi
 
 echo "=== no lost updates ==="

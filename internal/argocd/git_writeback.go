@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/shini4i/argo-watcher/internal/models"
 	"github.com/shini4i/argo-watcher/internal/updater"
@@ -56,6 +57,15 @@ func generateOverrideFileContent(annotations map[string]string, task *models.Tas
 				})
 			}
 		}
+	}
+
+	// No image the task carries is managed by this application, so there is no tag
+	// to write. Returning the empty override would clone the repository to write
+	// nothing, and create an override file holding an empty parameter list.
+	if len(overrideFileContent.Helm.Parameters) == 0 {
+		slog.Warn("no task image matches a managed image, skipping write-back",
+			"annotation", managedImagesAnnotation, "id", task.Id)
+		return nil, nil
 	}
 
 	return &overrideFileContent, nil
@@ -149,7 +159,7 @@ func runGitUpdateWithRetry(parentCtx context.Context, repo *updater.GitRepo, app
 			return ErrDeploymentSuperseded
 		}
 
-		invalidateCacheOnFinalAttempt(repo, task, attempt, maxAttempts)
+		invalidateCacheOnFinalAttempt(repo, attempt, maxAttempts, "id", task.Id)
 
 		err := runGitUpdateAttempt(parentCtx, repo, opTimeout, appName, releaseOverrides, task)
 		if err == nil {
@@ -165,7 +175,7 @@ func runGitUpdateWithRetry(parentCtx context.Context, repo *updater.GitRepo, app
 			return err
 		}
 
-		if waitErr := backoffBeforeRetry(parentCtx, task, err, attempt, maxAttempts); waitErr != nil {
+		if waitErr := backoffBeforeGitRetry(parentCtx, attempt, maxAttempts, nil, "error", err, "id", task.Id); waitErr != nil {
 			return waitErr
 		}
 	}
@@ -173,25 +183,43 @@ func runGitUpdateWithRetry(parentCtx context.Context, repo *updater.GitRepo, app
 	return fmt.Errorf("git update failed after %d attempts: %w", maxAttempts, lastErr)
 }
 
-func invalidateCacheOnFinalAttempt(repo *updater.GitRepo, task *models.Task, attempt, maxAttempts uint) {
+// invalidateCacheOnFinalAttempt drops the on-disk clone before the last attempt, so
+// a poisoned cache (partial commit, stale ref, half-written file) self-heals with a
+// fresh clone. logArgs identify the task or the batch in the log lines.
+func invalidateCacheOnFinalAttempt(repo *updater.GitRepo, attempt, maxAttempts uint, logArgs ...any) {
 	if attempt != maxAttempts {
 		return
 	}
-	slog.Warn("Final attempt: invalidating cache and performing fresh clone", "attempt", attempt, "max_attempts", maxAttempts, "id", task.Id)
+	slog.Warn("Final git update attempt: invalidating cache and performing fresh clone",
+		append([]any{"attempt", attempt, "max_attempts", maxAttempts}, logArgs...)...)
 	if invErr := repo.InvalidateCache(); invErr != nil {
-		slog.Warn("Failed to invalidate cache before final attempt; proceeding anyway", "error", invErr, "id", task.Id)
+		slog.Warn("Failed to invalidate cache before the final attempt; proceeding anyway",
+			append([]any{"error", invErr}, logArgs...)...)
 	}
 }
 
-func backoffBeforeRetry(parentCtx context.Context, task *models.Task, attemptErr error, attempt, maxAttempts uint) error {
+// backoffBeforeGitRetry waits out the jittered backoff before the next attempt,
+// unless this was the final one. It returns non-nil when the wait must not finish:
+// parentCtx cancelled, or drainCh closed. A nil drainCh never fires — the single-app
+// path has no batcher, and sees a shutdown through its supersede predicate.
+func backoffBeforeGitRetry(parentCtx context.Context, attempt, maxAttempts uint, drainCh <-chan struct{}, logArgs ...any) error {
 	if attempt >= maxAttempts {
 		return nil
 	}
 	backoff := gitUpdateBackoff(attempt)
-	slog.Warn("Git update attempt failed; retrying", "attempt", attempt, "max_attempts", maxAttempts, "backoff", backoff, "error", attemptErr, "id", task.Id)
+	slog.Warn("Git update attempt left work unresolved; retrying",
+		append([]any{"attempt", attempt, "max_attempts", maxAttempts, "backoff", backoff}, logArgs...)...)
+
+	// The drain is observed here, between attempts, never by cancelling the attempt's
+	// own context: aborting mid-push would report a task failed while its commit is
+	// already live in git. The cost is one more in-flight attempt before it completes.
 	select {
 	case <-parentCtx.Done():
 		return fmt.Errorf("git update cancelled during backoff: %w", parentCtx.Err())
+	case <-drainCh:
+		slog.Warn("Git update stopped retrying: the batcher is draining for shutdown",
+			append([]any{"attempt", attempt, "max_attempts", maxAttempts}, logArgs...)...)
+		return errWritebackDraining
 	case <-time.After(backoff):
 		return nil
 	}
@@ -213,21 +241,54 @@ func runGitUpdateAttempt(parentCtx context.Context, repo *updater.GitRepo, opTim
 	return nil
 }
 
-// extractManagedImages maps each application alias from the annotations to its image name.
+// extractManagedImages maps each application alias from the annotations to its
+// image name. Both halves of an "alias=image" entry are trimmed: a space left on
+// either one makes the alias miss its tag annotation and the image miss the
+// task's, which skips the write-back and leaves the rollout blaming the image.
 func extractManagedImages(annotations map[string]string) (map[string]string, error) {
 	managedImages := map[string]string{}
 
-	for annotation, value := range annotations {
-		if annotation == managedImagesAnnotation {
-			for _, image := range strings.Split(value, ",") {
-				if !strings.Contains(image, "=") {
-					return nil, fmt.Errorf("invalid format for %s annotation", managedImagesAnnotation)
-				}
-				managedImage := strings.Split(strings.TrimSpace(image), "=")
-				managedImages[managedImage[0]] = managedImage[1]
-			}
+	value, declared := annotations[managedImagesAnnotation]
+	if !declared {
+		return managedImages, nil
+	}
+
+	for _, entry := range strings.Split(value, ",") {
+		alias, image, err := parseManagedImage(entry)
+		if err != nil {
+			return nil, err
 		}
+		// Two images cannot share an alias: the loser would be declared managed,
+		// match nothing, and let the write-back report success having written
+		// neither. Two aliases sharing one image is a different, supported thing.
+		if _, repeated := managedImages[alias]; repeated {
+			return nil, fmt.Errorf("duplicate alias %q in %s annotation", alias, managedImagesAnnotation)
+		}
+		managedImages[alias] = image
 	}
 
 	return managedImages, nil
+}
+
+// parseManagedImage splits one "alias=image" entry, rejecting anything that could
+// only fail later: a missing separator, an empty half, or a half still carrying a
+// character it cannot hold. Salvaging a prefix instead would write back an image
+// nobody asked for, or skip the write-back and leave the rollout blaming the image.
+func parseManagedImage(entry string) (string, string, error) {
+	alias, image, found := strings.Cut(entry, "=")
+	alias, image = strings.TrimSpace(alias), strings.TrimSpace(image)
+
+	if !found || unusableManagedImageHalf(alias) || unusableManagedImageHalf(image) {
+		return "", "", fmt.Errorf("invalid format for %s annotation: %q is not alias=image", managedImagesAnnotation, strings.TrimSpace(entry))
+	}
+
+	return alias, image, nil
+}
+
+// unusableManagedImageHalf reports whether a trimmed half can never be matched.
+// The alias becomes part of an annotation key and the image is a registry
+// reference, so interior whitespace is impossible in either, and only the first
+// "=" of an entry separates them.
+func unusableManagedImageHalf(half string) bool {
+	return half == "" || strings.ContainsFunc(half, unicode.IsSpace) || strings.Contains(half, "=")
 }

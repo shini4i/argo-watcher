@@ -51,6 +51,21 @@ describe('dataProvider', () => {
     expect(result.data).toHaveLength(1);
   });
 
+  // react-admin types pagination as optional. The defaults decide the request every
+  // caller makes, so they are pinned rather than left to whoever edits the line next.
+  it('falls back to the first page of 25 when no pagination is supplied', async () => {
+    const fetch = mockFetch().mockResolvedValue(jsonResponse({ tasks: [], total: 0 }));
+
+    await dataProvider.getList('tasks', {
+      sort: { field: 'created', order: 'DESC' as const },
+      filter: {},
+    } as never);
+
+    const params = getQueryParams(fetch.mock.calls[0][0] as string);
+    expect(params.get('limit')).toBe('25');
+    expect(params.get('offset')).toBe('0');
+  });
+
   it('trusts backend totals when provided', async () => {
     mockFetch().mockResolvedValue(
       jsonResponse({
@@ -217,6 +232,42 @@ describe('dataProvider', () => {
     expect(params.has('search')).toBe(false);
   });
 
+  it('forwards a trimmed author filter to the backend', async () => {
+    const fetch = mockFetch().mockResolvedValue(jsonResponse({ tasks: [] }));
+    await dataProvider.getList('tasks', {
+      ...createListParams(),
+      filter: { author: '  jane@example.com  ' },
+    });
+
+    const params = getQueryParams(fetch.mock.calls[0][0] as string);
+    expect(params.get('author')).toBe('jane@example.com');
+  });
+
+  // The "Mine" scope must not cost the user their search term: the backend
+  // treats the two params independently and so must the provider.
+  it('sends author and search together', async () => {
+    const fetch = mockFetch().mockResolvedValue(jsonResponse({ tasks: [] }));
+    await dataProvider.getList('tasks', {
+      ...createListParams(),
+      filter: { author: 'jane@example.com', search: 'checkout' },
+    });
+
+    const params = getQueryParams(fetch.mock.calls[0][0] as string);
+    expect(params.get('author')).toBe('jane@example.com');
+    expect(params.get('search')).toBe('checkout');
+  });
+
+  it('omits the author param when the filter is blank', async () => {
+    const fetch = mockFetch().mockResolvedValue(jsonResponse({ tasks: [] }));
+    await dataProvider.getList('tasks', {
+      ...createListParams(),
+      filter: { author: '   ' },
+    });
+
+    const params = getQueryParams(fetch.mock.calls[0][0] as string);
+    expect(params.has('author')).toBe(false);
+  });
+
   it('falls back to default timeframe when filters are invalid', async () => {
     const fetch = mockFetch().mockResolvedValue(jsonResponse({ tasks: [] }));
     await dataProvider.getList('tasks', {
@@ -285,6 +336,20 @@ describe('dataProvider', () => {
 
   // Reachable only on a 2xx with no parseable JSON — a proxy sign-in page, say.
   // httpClient throws on a real 404, so this must not be labelled "task not found".
+  // An intermediary answering 200 with no JSON is not an empty estate. Reporting it
+  // as "no tasks" hides an outage behind the same screen a quiet day produces.
+  it('reports a body-less list response as a transport failure, not an empty list', async () => {
+    mockFetch().mockResolvedValue(new Response('<html>login</html>', {
+      status: 200,
+      headers: { 'Content-Type': 'text/html' },
+    }));
+
+    await expect(dataProvider.getList('tasks', createListParams())).rejects.toMatchObject({
+      status: 0,
+      message: 'The server returned no task data',
+    });
+  });
+
   it('reports a body-less success as a transport failure, not a missing task', async () => {
     mockFetch().mockResolvedValue(new Response('<html>login</html>', {
       status: 200,
@@ -331,7 +396,7 @@ describe('dataProvider', () => {
       ),
     );
 
-    const result = await dataProvider.create('tasks', { data: payload, previousData: undefined });
+    const result = await dataProvider.create('tasks', { data: payload });
     expect(fetch).toHaveBeenCalledWith(
       expect.stringContaining('/api/v1/tasks'),
       expect.objectContaining({ method: 'POST' }),
@@ -353,7 +418,6 @@ describe('dataProvider', () => {
     await expect(
       dataProvider.create('tasks', {
         data: { app: 'demo' },
-        previousData: undefined,
       }),
     ).rejects.toThrow(HttpError);
   });
@@ -371,7 +435,6 @@ describe('dataProvider', () => {
     await expect(
       dataProvider.create('tasks', {
         data: { app: 'demo' },
-        previousData: undefined,
       }),
     ).rejects.toThrow('Task creation did not return an identifier');
   });

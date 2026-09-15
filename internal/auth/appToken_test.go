@@ -410,3 +410,23 @@ func TestPrefixRouterHandles(t *testing.T) {
 			"nothing evaluates this, so it is not a credential")
 	})
 }
+
+// unauthenticatedStrategy answers "not valid" with no reason, the one shape that lets a
+// discarded bool read as success.
+type unauthenticatedStrategy struct{}
+
+func (unauthenticatedStrategy) Validate(string) (bool, error) { return false, nil }
+
+// TestPrefixRouterAuthenticateHonoursTheVerdict pins that the router reports a refusal
+// its strategy expressed through the bool alone. Authenticate returns only an error, so
+// discarding the bool turns "no" into "authenticated".
+func TestPrefixRouterAuthenticateHonoursTheVerdict(t *testing.T) {
+	router := NewPrefixRouter(nil, unauthenticatedStrategy{})
+
+	err := router.Authenticate("some-token")
+
+	assert.Error(t, err)
+	// walk skips ErrNoCredential as a header nobody read, so reporting the refusal with
+	// that sentinel would restore the fall-through this test exists to prevent.
+	assert.NotErrorIs(t, err, ErrNoCredential)
+}

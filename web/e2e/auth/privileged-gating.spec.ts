@@ -10,7 +10,7 @@ import {
   waitForDeployed,
 } from '../helpers';
 
-const ROLLBACK_BUTTON = 'Rollback to this version';
+const ROLLBACK_BUTTON = 'Deploy this version again';
 const LOCK_SWITCH = 'Toggle deploy lock';
 
 const openConfigDrawer = async (page: Page): Promise<void> => {
@@ -34,7 +34,7 @@ const openTaskAs = async (
   const permissions = awaitPermissionsResolved(page);
   await signIn(page, user.username, user.password);
   await permissions;
-  await expect(page.getByText(`Task ${id.slice(0, 8)}`)).toBeVisible();
+  await expect(page.getByRole('button', { name: /copy task id/i })).toHaveText(id);
 };
 
 /**

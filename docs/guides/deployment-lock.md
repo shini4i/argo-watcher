@@ -27,6 +27,8 @@ Deploys are then rejected between Wednesday 20:00 and Thursday 08:00, and betwee
 !!! warning
     Windows are evaluated in the **server's** timezone, which is UTC in the published image unless you set `TZ`.
 
+A window that starts and ends on the same day must end later than it starts. An overnight freeze names the following day — write `Sat 22:00 - Sun 06:00`, not `Sat 22:00 - Sat 06:00`. The server refuses to start on a window it could never open, rather than accepting a freeze that silently never fires.
+
 ## Manual lockdown
 
 !!! note

@@ -64,6 +64,9 @@ export const AppNotification = (props: NotificationProps) => {
     if (notifications.length && !currentNotification) {
       const notification = takeNotification();
       if (notification) {
+        // Draining react-admin's notification queue is external-store
+        // synchronization, which is what the rule's own guidance allows.
+        // oxlint-disable-next-line react/set-state-in-effect
         setCurrentNotification(notification);
         setOpen(true);
       }
@@ -148,7 +151,10 @@ export const AppNotification = (props: NotificationProps) => {
 
   const [restSx, restWithoutSx] = extractSx(rest);
   const [notificationSx, notificationWithoutSx] = extractSx(notificationProps);
-  const combinedSx = [defaultSnackbarOffset, restSx, notificationSx].filter(Boolean) as SxProps<Theme>[];
+  // Flattened, not nested: MUI's sx array form holds style objects, not other arrays.
+  const combinedSx = [defaultSnackbarOffset, restSx, notificationSx]
+    .filter(Boolean)
+    .flat() as SxProps<Theme>;
 
   return (
     <CloseNotificationContext.Provider value={handleClose}>
@@ -156,13 +162,13 @@ export const AppNotification = (props: NotificationProps) => {
         className={className}
         open={open}
         onClose={handleClose}
-        TransitionProps={{ onExited: handleExited }}
+        slotProps={{ transition: { onExited: handleExited } }}
         anchorOrigin={anchorOrigin}
         autoHideDuration={effectiveAutoHide ?? undefined}
         disableWindowBlurListener={undoable}
         sx={combinedSx}
-        {...(restWithoutSx as NotificationProps)}
-        {...(notificationWithoutSx as NotificationProps)}
+        {...(restWithoutSx as Partial<SnackbarProps>)}
+        {...(notificationWithoutSx as Partial<SnackbarProps>)}
       >
         <Alert
           severity={severity}

@@ -101,7 +101,7 @@ A TruffleHog pre-commit hook scans staged files, and CI scans the pushed range. 
 - **A bug fix** needs a test that fails before your fix and passes after it. Include it even when the fix is one line — it is what stops the bug from returning.
 - Tests live in `_test.go` files beside the code they cover.
 - The suite uses [testify](https://github.com/stretchr/testify) (`assert` for ordinary checks, `require` where a failure makes the rest of the test meaningless) and table-driven cases for anything with more than two variants.
-- Interfaces are mocked with [gomock](https://github.com/uber-go/mock). Mocks are generated into `internal/mocks/`, which is gitignored — `task test` regenerates them, and changed interface files are picked up automatically. If you introduce a *new* mocked interface, add its `mockgen` line and its source path to the `mocks` task in `Taskfile.yml`.
+- Interfaces are mocked with [gomock](https://github.com/uber-go/mock). Mocks are generated into `internal/mocks/`, which is gitignored — `task test` regenerates them, and changed interface files are picked up automatically. If you introduce a *new* mocked interface, add its `go tool mockgen` line and its source path to the `mocks` task in `Taskfile.yml`.
 
 Run the suites locally before opening a PR:
 

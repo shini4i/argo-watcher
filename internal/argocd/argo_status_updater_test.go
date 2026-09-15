@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -33,6 +34,7 @@ import (
 	"github.com/shini4i/argo-watcher/internal/models"
 	"github.com/shini4i/argo-watcher/internal/notifications"
 	"github.com/shini4i/argo-watcher/internal/prometheus"
+	"github.com/shini4i/argo-watcher/internal/state"
 )
 
 var (
@@ -75,9 +77,13 @@ func zeroDelay(_ uint, _ error, _ *retry.Config) time.Duration {
 	return 0
 }
 
+// neverDraining is the abandon predicate for a test whose subject is not the
+// shutdown handover: the replica stays up for the whole rollout.
+func neverDraining() bool { return false }
+
 // newArgoApiMock builds an ArgoApi mock pre-loaded with the best-effort defaults every test
 // tolerates. The failure-path resource-tree fetch is best-effort, so it defaults to "no tree"
-// (GetRolloutMessage then falls back to the app's top-level resources). Only tests that assert
+// (rolloutMessage then falls back to the app's top-level resources). Only tests that assert
 // on tree-derived diagnostics register their own GetResourceTree expectation (using a raw mock).
 //
 // Register any future best-effort (optional) ArgoApi call here so adding one never has to touch
@@ -85,7 +91,7 @@ func zeroDelay(_ uint, _ error, _ *retry.Config) time.Duration {
 func newArgoApiMock(ctrl *gomock.Controller) *mocks.MockArgoApiInterface {
 	api := mocks.NewMockArgoApiInterface(ctrl)
 	api.EXPECT().GetResourceTree(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
-	api.EXPECT().GetManagedResources(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+	api.EXPECT().GetManifests(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 	return api
 }
 
@@ -168,7 +174,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		metricsMock.EXPECT().RemoveInProgressTask()
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
 
-		updater.WaitForRollout(task, false)
+		updater.WaitForRollout(task, false, neverDraining)
 	})
 
 	t.Run("Status Updater - Application deployed with Retry", func(t *testing.T) {
@@ -216,7 +222,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		metricsMock.EXPECT().RemoveInProgressTask()
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
 
-		updater.WaitForRollout(task, false)
+		updater.WaitForRollout(task, false, neverDraining)
 	})
 
 	t.Run("Status Updater - Application deployed with Registry proxy", func(t *testing.T) {
@@ -256,7 +262,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		metricsMock.EXPECT().RemoveInProgressTask()
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
 
-		updater.WaitForRollout(task, false)
+		updater.WaitForRollout(task, false, neverDraining)
 	})
 
 	t.Run("Status Updater - Application deployed without Registry proxy", func(t *testing.T) {
@@ -302,7 +308,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 				"List of expected images:\n"+
 				"\tghcr.io/shini4i/argo-watcher:dev")
 
-		updater.WaitForRollout(task, false)
+		updater.WaitForRollout(task, false, neverDraining)
 	})
 
 	t.Run("Status Updater - Application not found", func(t *testing.T) {
@@ -331,7 +337,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		metricsMock.EXPECT().RemoveInProgressTask()
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusAppNotFoundMessage, "ArgoCD API Error: applications.argoproj.io \"test-app\" not found")
 
-		updater.WaitForRollout(task, false)
+		updater.WaitForRollout(task, false, neverDraining)
 	})
 
 	t.Run("Status Updater - ArgoCD unavailable", func(t *testing.T) {
@@ -358,7 +364,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		metricsMock.EXPECT().RemoveInProgressTask()
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusAborted, "ArgoCD API Error: dial tcp: connect: connection refused")
 
-		updater.WaitForRollout(task, false)
+		updater.WaitForRollout(task, false, neverDraining)
 	})
 
 	t.Run("Status Updater - Application API error", func(t *testing.T) {
@@ -384,7 +390,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 		metricsMock.EXPECT().RemoveInProgressTask()
 		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage, "ArgoCD API Error: unexpected failure")
 
-		updater.WaitForRollout(task, false)
+		updater.WaitForRollout(task, false, neverDraining)
 	})
 
 	t.Run("Status Updater - Application not available", func(t *testing.T) {
@@ -426,7 +432,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 				"List of expected images:\n"+
 				"\tghcr.io/shini4i/argo-watcher:dev")
 
-		updater.WaitForRollout(task, false)
+		updater.WaitForRollout(task, false, neverDraining)
 	})
 
 	t.Run("Status Updater - Application out of Sync", func(t *testing.T) {
@@ -479,7 +485,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 				return nil
 			})
 
-		updater.WaitForRollout(task, false)
+		updater.WaitForRollout(task, false, neverDraining)
 
 		assert.True(t, strings.HasPrefix(capturedReason, "Deployment failed: ArgoCD reports sync status Syncing"),
 			"unexpected headline: %s", capturedReason)
@@ -527,7 +533,7 @@ func TestArgoStatusUpdaterCheck(t *testing.T) {
 				"App sync status \"Synced\"\n"+
 				"App health status \"NotHealthy\"")
 
-		updater.WaitForRollout(task, false)
+		updater.WaitForRollout(task, false, neverDraining)
 	})
 }
 
@@ -588,7 +594,7 @@ func TestDeploymentMonitorHandleDeploymentFailureHandlesStateError(t *testing.T)
 		SetTaskStatus(task.Id, models.StatusFailedMessage, gomock.Any()).
 		Return(errors.New("update failed"))
 
-	monitor.handleDeploymentFailure(&task, models.ArgoRolloutAppNotHealthy, application, 0)
+	monitor.handleDeploymentFailure(&task, ArgoRolloutAppNotHealthy, application, 0)
 	assert.Equal(t, models.StatusFailedMessage, task.Status)
 }
 
@@ -632,7 +638,7 @@ func TestDeploymentMonitorHandleDeploymentFailureEnrichesReasonFromResourceTree(
 			return nil
 		})
 
-	monitor.handleDeploymentFailure(&task, models.ArgoRolloutAppNotAvailable, application, 0)
+	monitor.handleDeploymentFailure(&task, ArgoRolloutAppNotAvailable, application, 0)
 
 	assert.Contains(t, capturedReason, "Unhealthy resources:")
 	assert.Contains(t, capturedReason, `Pod(app-xyz) Degraded with message Back-off pulling image "example.com/app:v2": ErrImagePull`)
@@ -721,7 +727,7 @@ func TestDeploymentMonitorHandleDeploymentFailureResourceTreeErrorIsNonFatal(t *
 			return nil
 		})
 
-	monitor.handleDeploymentFailure(&task, models.ArgoRolloutAppNotAvailable, application, 0)
+	monitor.handleDeploymentFailure(&task, ArgoRolloutAppNotAvailable, application, 0)
 
 	assert.Equal(t, models.StatusFailedMessage, task.Status)
 	assert.Contains(t, capturedReason, "Rollout status is not available")
@@ -782,7 +788,7 @@ func TestArgoStatusUpdaterDegradedReportsRolloutDiagnostics(t *testing.T) {
 	// Mirrors newArgoApiMock's default for the other best-effort call, which this raw mock
 	// bypasses: without it, flipping the instance-wide refresh default would fail this test
 	// with an opaque "unexpected call" instead of a behavioural assertion.
-	api.EXPECT().GetManagedResources(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+	api.EXPECT().GetManifests(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 
 	var capturedReason string
 	metrics.EXPECT().AddInProgressTask()
@@ -796,7 +802,7 @@ func TestArgoStatusUpdaterDegradedReportsRolloutDiagnostics(t *testing.T) {
 			return nil
 		})
 
-	updater.WaitForRollout(task, false)
+	updater.WaitForRollout(task, false, neverDraining)
 
 	assert.NotContains(t, capturedReason, "ArgoCD API Error")
 	assert.Contains(t, capturedReason, "Application deployment failed. Rollout status is degraded")
@@ -857,7 +863,7 @@ func TestArgoStatusUpdaterSupersededAfterSuccessfulPollWritesNoStatus(t *testing
 	// No SetTaskStatus and no failed-deployment metric are expected, so gomock fails the test
 	// if the superseded task is mistaken for a reportable rollout state.
 
-	updater.WaitForRollout(task, false)
+	updater.WaitForRollout(task, false, neverDraining)
 
 	require.NotEmpty(t, capture.sent)
 	assert.Equal(t, models.StatusCancelledMessage, capture.sent[len(capture.sent)-1].Status)
@@ -913,7 +919,7 @@ func TestArgoStatusUpdaterAbortsWhenArgoBecomesUnreachableMidPoll(t *testing.T) 
 			return nil
 		})
 
-	updater.WaitForRollout(task, false)
+	updater.WaitForRollout(task, false, neverDraining)
 
 	assert.Contains(t, capturedReason, "connection refused")
 }
@@ -962,6 +968,63 @@ func TestDeploymentMonitorHandleArgoAPIFailureAbortCountsAsFailure(t *testing.T)
 
 	monitor.HandleArgoAPIFailure(&task, context.DeadlineExceeded, true)
 	assert.Equal(t, models.StatusAborted, task.Status)
+}
+
+// A failed write-back is the deployment's own outcome, not Argo CD's: nothing was asked
+// of Argo CD, so naming its API would send an operator to read the wrong logs.
+func TestWaitForRolloutWriteBackFailure(t *testing.T) {
+	// Every case fails the write-back and must end the same way: "failed", blaming git.
+	// The network error matters most: the shared unavailability check cannot tell a git
+	// remote from the Argo CD API, so reaching it at all would classify this "aborted".
+	cases := []struct {
+		name      string
+		lockerErr error
+		reason    string
+	}{
+		{
+			name:      "a plain write-back failure names git",
+			lockerErr: errors.New("lock failed"),
+			reason:    "Git write-back error: lock failed",
+		},
+		{
+			name:      "an unreachable git remote is a failure, not an abort",
+			lockerErr: &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connect: connection refused")},
+			reason:    "Git write-back error: dial tcp: connect: connection refused",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			apiMock := newArgoApiMock(ctrl)
+			metricsMock := mocks.NewMockMetricsInterface(ctrl)
+			stateMock := notSupersededState(ctrl)
+
+			argo := &Argo{}
+			argo.Init(stateMock, apiMock, metricsMock)
+
+			updater := initTestUpdater(t, newUpdaterTestConfig(&spyLocker{err: tc.lockerErr}), argo)
+
+			task := models.Task{
+				Id:        "test-id",
+				App:       "test-app",
+				Validated: true,
+				Images:    []models.Image{{Image: "example.com/app", Tag: "v1"}},
+			}
+
+			apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(managedApp(), nil)
+			metricsMock.EXPECT().AddInProgressTask()
+			metricsMock.EXPECT().InitDeploymentOutcomes(task.App)
+			metricsMock.EXPECT().AddFailedDeployment(task.App)
+			metricsMock.EXPECT().AddDeploymentOutcome(task.App, models.StatusFailedMessage)
+			metricsMock.EXPECT().RemoveInProgressTask()
+			stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage, tc.reason)
+
+			updater.WaitForRollout(task, false, neverDraining)
+		})
+	}
 }
 
 func TestGitUpdaterUpdateIfNeeded(t *testing.T) {
@@ -1415,7 +1478,7 @@ func TestArgoStatusUpdaterFailureDurationExcludesSetup(t *testing.T) {
 			return nil
 		})
 
-	updater.WaitForRollout(task, false)
+	updater.WaitForRollout(task, false, neverDraining)
 
 	assert.Equal(t,
 		"Deployment failed: ArgoCD reports sync status OutOfSync.\n\n"+
@@ -1641,7 +1704,7 @@ func TestArgoStatusUpdaterStopsWhenSuperseded(t *testing.T) {
 	// "cancelled" status the newer deployment already wrote untouched. Any
 	// GetApplication or SetTaskStatus call would be unexpected and fail the test.
 
-	updater.WaitForRollout(task, false)
+	updater.WaitForRollout(task, false, neverDraining)
 
 	require.NotEmpty(t, capture.sent)
 	assert.Equal(t, models.StatusCancelledMessage, capture.sent[len(capture.sent)-1].Status)
@@ -1692,7 +1755,7 @@ func TestArgoStatusUpdaterStopsMidPollWhenSuperseded(t *testing.T) {
 	// No SetTaskStatus and no failed-deployment metric: a superseded rollout is not
 	// a failure and its status must not be overwritten.
 
-	updater.WaitForRollout(task, false)
+	updater.WaitForRollout(task, false, neverDraining)
 }
 
 // TestArgoStatusUpdaterAppDisappearsMidRollout is the regression guard for issue #387:
@@ -1747,7 +1810,7 @@ func TestArgoStatusUpdaterAppDisappearsMidRollout(t *testing.T) {
 		fmt.Sprintf(ArgoAPIErrorTemplate, notFound.Error()),
 	)
 
-	updater.WaitForRollout(task, false)
+	updater.WaitForRollout(task, false, neverDraining)
 }
 
 // TestArgoStatusUpdaterProceedsWhenStatusReadFails verifies that a transient
@@ -1791,7 +1854,7 @@ func TestArgoStatusUpdaterProceedsWhenStatusReadFails(t *testing.T) {
 	metricsMock.EXPECT().RemoveInProgressTask()
 	stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "")
 
-	updater.WaitForRollout(task, false)
+	updater.WaitForRollout(task, false, neverDraining)
 }
 
 func TestHandleApplicationFetchError(t *testing.T) {
@@ -1825,14 +1888,14 @@ func TestCheckRolloutStatus(t *testing.T) {
 	app.Status.Health.Status = "Healthy"
 
 	t.Run("returnsNilOnSuccess", func(t *testing.T) {
-		err := checkRolloutStatus(task, app, app.GetRolloutStatus(task.ListImages(), "", false))
+		err := checkRolloutStatus(task, app, rolloutStatus(app, task.ListImages(), "", false))
 		assert.NoError(t, err)
 	})
 
 	t.Run("returnsForceRetryOnPending", func(t *testing.T) {
 		pending := *app
 		pending.Status.Health.Status = "Progressing"
-		err := checkRolloutStatus(task, &pending, pending.GetRolloutStatus(task.ListImages(), "", false))
+		err := checkRolloutStatus(task, &pending, rolloutStatus(&pending, task.ListImages(), "", false))
 		require.Error(t, err)
 		assert.True(t, retry.IsRecoverable(err))
 	})
@@ -1845,7 +1908,7 @@ func TestCheckRolloutStatus(t *testing.T) {
 		taskCopy := task
 		taskCopy.SavedAppStatus.ImagesHash = helpers.GenerateHash("example.com/app:v1")
 
-		err := checkRolloutStatus(taskCopy, &degraded, degraded.GetRolloutStatus(taskCopy.ListImages(), "", false))
+		err := checkRolloutStatus(taskCopy, &degraded, rolloutStatus(&degraded, taskCopy.ListImages(), "", false))
 		require.Error(t, err)
 		assert.False(t, retry.IsRecoverable(err))
 		// The sentinel identity is load-bearing: WaitRollout keys on it to report the degraded
@@ -1862,7 +1925,7 @@ func TestCheckRolloutStatus(t *testing.T) {
 		taskCopy := task
 		taskCopy.SavedAppStatus.ImagesHash = hash
 
-		err := checkRolloutStatus(taskCopy, &degraded, degraded.GetRolloutStatus(taskCopy.ListImages(), "", false))
+		err := checkRolloutStatus(taskCopy, &degraded, rolloutStatus(&degraded, taskCopy.ListImages(), "", false))
 		require.Error(t, err)
 		assert.True(t, retry.IsRecoverable(err))
 	})
@@ -2449,7 +2512,7 @@ func TestArgoStatusUpdaterLostLeaseWritesNoStatus(t *testing.T) {
 				Images:  []models.Image{{Image: "ghcr.io/shini4i/argo-watcher", Tag: "dev"}},
 			}
 
-			updater.WaitForRollout(task, false)
+			updater.WaitForRollout(task, false, neverDraining)
 
 			for _, sent := range capture.sent {
 				assert.Equal(t, models.StatusInProgressMessage, sent.Status,
@@ -2586,7 +2649,7 @@ func TestWaitForRollout_LeavesASupersessionItLostToTheNewOwner(t *testing.T) {
 		Images:  []models.Image{{Image: "demo", Tag: "v1"}},
 	}
 
-	updater.WaitForRollout(task, false)
+	updater.WaitForRollout(task, false, neverDraining)
 
 	for _, sent := range capture.sent {
 		assert.Equal(t, models.StatusInProgressMessage, sent.Status,
@@ -2680,7 +2743,7 @@ func TestWaitForRollout_PerAppSeriesWaitForArgoConfirmation(t *testing.T) {
 		metricsMock.EXPECT().ResetFailedDeployment(task.App)
 		metricsMock.EXPECT().ObserveDeploymentDuration(task.App, gomock.Any())
 
-		updater.WaitForRollout(task, false)
+		updater.WaitForRollout(task, false, neverDraining)
 	})
 
 	t.Run("an application ArgoCD never confirmed is counted without a label", func(t *testing.T) {
@@ -2692,7 +2755,7 @@ func TestWaitForRollout_PerAppSeriesWaitForArgoConfirmation(t *testing.T) {
 		// controller fails the test if the unconfirmed name reaches either.
 		metricsMock.EXPECT().AddUnconfirmedFailure()
 
-		updater.WaitForRollout(task, false)
+		updater.WaitForRollout(task, false, neverDraining)
 	})
 
 	t.Run("a failure after confirmation names the app", func(t *testing.T) {
@@ -2707,7 +2770,7 @@ func TestWaitForRollout_PerAppSeriesWaitForArgoConfirmation(t *testing.T) {
 		metricsMock.EXPECT().AddDeploymentOutcome(task.App, models.StatusAppNotFoundMessage)
 		metricsMock.EXPECT().AddFailedDeployment(task.App)
 
-		updater.WaitForRollout(task, false)
+		updater.WaitForRollout(task, false, neverDraining)
 	})
 
 	t.Run("a resumed deployment is counted by the replica that finishes it", func(t *testing.T) {
@@ -2719,7 +2782,7 @@ func TestWaitForRollout_PerAppSeriesWaitForArgoConfirmation(t *testing.T) {
 		metricsMock.EXPECT().ResetFailedDeployment(task.App)
 		metricsMock.EXPECT().ObserveDeploymentDuration(task.App, gomock.Any())
 
-		updater.WaitForRollout(task, true)
+		updater.WaitForRollout(task, true, neverDraining)
 	})
 }
 
@@ -2806,7 +2869,7 @@ func TestArgoStatusUpdaterStopsWhenTheStaleSweepAborted(t *testing.T) {
 	metricsMock.EXPECT().RemoveInProgressTask()
 	// No SetTaskStatus: the sweep already wrote the terminal status, with its own reason.
 
-	updater.WaitForRollout(task, false)
+	updater.WaitForRollout(task, false, neverDraining)
 
 	// Exactly the start and the result: announcing one deployment twice is the
 	// failure the no-status-written branches exist to avoid.
@@ -2843,7 +2906,7 @@ func TestArgoStatusUpdaterStopsBeforeStartingAnAbortedTask(t *testing.T) {
 	metricsMock.EXPECT().AddInProgressTask()
 	metricsMock.EXPECT().RemoveInProgressTask()
 
-	updater.WaitForRollout(task, false)
+	updater.WaitForRollout(task, false, neverDraining)
 
 	require.Len(t, capture.sent, 2)
 	assert.Empty(t, capture.sent[0].Status, "the first is the start notification")
@@ -2913,7 +2976,7 @@ func TestWaitForRollout_EveryTerminalOutcomeIsPreCreated(t *testing.T) {
 			task := models.Task{Id: "test-id", App: "test-app", Images: []models.Image{{Image: "app", Tag: "v1"}}}
 			tt.arrange(apiMock, task)
 
-			initTestUpdater(t, newUpdaterTestConfig(lock.NewInMemoryLocker()), argo).WaitForRollout(task, false)
+			initTestUpdater(t, newUpdaterTestConfig(lock.NewInMemoryLocker()), argo).WaitForRollout(task, false, neverDraining)
 
 			var expected strings.Builder
 			expected.WriteString("# HELP deployments_total Deployments that reached a terminal state for an application ArgoCD confirmed, by outcome.\n")
@@ -2929,4 +2992,200 @@ func TestWaitForRollout_EveryTerminalOutcomeIsPreCreated(t *testing.T) {
 			assert.NoError(t, testutil.CollectAndCompare(reg, strings.NewReader(expected.String()), "deployments_total"))
 		})
 	}
+}
+
+// The gauge operators alert on must not move for an outcome this replica did not
+// decide: the owner counts the same deployment, so a second increment trips a
+// threshold of N consecutive failures after N-1 real ones. The mirror case is a
+// loser's success clearing a gauge that holds the owner's failures.
+func TestDeploymentMonitorRefusedWriteLeavesTheGaugesAlone(t *testing.T) {
+	newMonitor := func(t *testing.T) (*DeploymentMonitor, *mocks.MockTaskRepository, models.Task) {
+		t.Helper()
+		ctrl := gomock.NewController(t)
+		metrics := mocks.NewMockMetricsInterface(ctrl)
+		stateMock := newTaskRepositoryMock(ctrl)
+		// No metrics expectation is declared anywhere below: gomock fails the test if
+		// any gauge is touched for a write the backend refused.
+		monitor := NewDeploymentMonitor(Argo{metrics: metrics, State: stateMock}, "",
+			[]retry.Option{retry.DelayType(zeroDelay), retry.LastErrorOnly(true)}, false, time.Millisecond)
+		return monitor, stateMock, models.Task{Id: "refused-id", App: "demo", Validated: true}
+	}
+
+	t.Run("a confirmed API failure does not count one", func(t *testing.T) {
+		monitor, stateMock, task := newMonitor(t)
+		stateMock.EXPECT().SetTaskStatus(task.Id, gomock.Any(), gomock.Any()).Return(state.ErrTaskNotOwned)
+
+		assert.False(t, monitor.HandleArgoAPIFailure(&task, fmt.Errorf("boom"), true))
+	})
+
+	t.Run("an unconfirmed API failure does not count one", func(t *testing.T) {
+		monitor, stateMock, task := newMonitor(t)
+		stateMock.EXPECT().SetTaskStatus(task.Id, gomock.Any(), gomock.Any()).Return(state.ErrTaskNotOwned)
+
+		assert.False(t, monitor.HandleArgoAPIFailure(&task, fmt.Errorf("boom"), false))
+	})
+
+	t.Run("a missing image does not count one", func(t *testing.T) {
+		monitor, stateMock, task := newMonitor(t)
+		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage, gomock.Any()).Return(state.ErrTaskNotOwned)
+
+		imageErr := &ImageNotPartOfAppError{App: task.App, Image: "app", DesiredImages: []string{"other"}}
+		assert.False(t, monitor.HandleImageNotPartOfApp(&task, imageErr))
+	})
+
+	t.Run("a write-back failure does not count one", func(t *testing.T) {
+		monitor, stateMock, task := newMonitor(t)
+		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage, gomock.Any()).Return(state.ErrTaskNotOwned)
+
+		assert.False(t, monitor.HandleWriteBackFailure(&task, &WriteBackError{Err: errors.New("push rejected")}))
+	})
+
+	t.Run("a success does not clear the app's failures", func(t *testing.T) {
+		monitor, stateMock, task := newMonitor(t)
+		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusDeployedMessage, "").Return(state.ErrTaskNotOwned)
+
+		app := &models.Application{}
+		app.Status.Summary.Images = []string{"app:v1"}
+		app.Status.Sync.Status = "Synced"
+		app.Status.Health.Status = "Healthy"
+		task.Images = []models.Image{{Image: "app", Tag: "v1"}}
+
+		assert.False(t, monitor.ProcessDeploymentResult(&task, app, time.Second))
+	})
+
+	// The path that opened the window the store's fence closes: it fetches the
+	// resource tree before writing, so it is the likeliest of the five to be refused.
+	t.Run("a failure does not count one", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		metrics := mocks.NewMockMetricsInterface(ctrl)
+		stateMock := newTaskRepositoryMock(ctrl)
+		// The helper stubs the resource-tree fetch this path makes before writing.
+		api := newArgoApiMock(ctrl)
+
+		monitor := NewDeploymentMonitor(Argo{metrics: metrics, State: stateMock, api: api}, "",
+			[]retry.Option{retry.DelayType(zeroDelay), retry.LastErrorOnly(true)}, false, time.Millisecond)
+		task := models.Task{Id: "refused-id", App: "demo", Validated: true,
+			Images: []models.Image{{Image: "app", Tag: "v1"}}}
+		stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage, gomock.Any()).Return(state.ErrTaskNotOwned)
+
+		app := &models.Application{}
+		app.Status.Summary.Images = []string{"app:v1"}
+		app.Status.Sync.Status = "Synced"
+		app.Status.Health.Status = "Degraded"
+
+		assert.False(t, monitor.ProcessDeploymentResult(&task, app, time.Second))
+	})
+}
+
+// Error() must stay bare: it is what the slog line and any wrapping print, and
+// Reason() is the only place the user-facing prefix is added. A prefix in both
+// would render it twice in the log.
+func TestWriteBackErrorKeepsThePrefixToTheReason(t *testing.T) {
+	cause := errors.New("push rejected")
+	err := &WriteBackError{Err: cause}
+
+	assert.Equal(t, "push rejected", err.Error())
+	assert.Equal(t, "Git write-back error: push rejected", err.Reason())
+	assert.ErrorIs(t, err, cause)
+}
+
+// A deployment something else already ended must keep that outcome. There is no successor to
+// announce it either — a sweep only re-claims a task still in progress — so this replica
+// reports the stored result rather than its own, and never writes one of its own on top.
+func TestWaitForRolloutReportsTheOutcomeThatEndedItFirst(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	apiMock := newArgoApiMock(ctrl)
+	metricsMock := mocks.NewMockMetricsInterface(ctrl)
+	stateMock := newTaskRepositoryMock(ctrl)
+
+	argo := &Argo{}
+	argo.Init(stateMock, apiMock, metricsMock)
+
+	// In progress until the terminal write is refused: the race this closes is the store
+	// learning of the cancellation only when that write lands, not during the poll.
+	var endedElsewhere atomic.Bool
+	stateMock.EXPECT().GetTask(gomock.Any()).
+		DoAndReturn(func(string) (*models.Task, error) {
+			if endedElsewhere.Load() {
+				return &models.Task{Status: models.StatusCancelledMessage}, nil
+			}
+			return &models.Task{Status: models.StatusInProgressMessage}, nil
+		}).AnyTimes()
+	stateMock.EXPECT().SetTaskStatus(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(string, string, string) error {
+			endedElsewhere.Store(true)
+			return state.ErrTaskEnded
+		})
+
+	updater := initTestUpdater(t, newUpdaterTestConfig(&spyLocker{err: errors.New("boom")}), argo)
+
+	task := models.Task{Id: "test-id", App: "test-app", Validated: true,
+		Status: models.StatusInProgressMessage,
+		Images: []models.Image{{Image: "app", Tag: "v1"}}}
+
+	apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(managedApp(), nil)
+	metricsMock.EXPECT().AddInProgressTask()
+	metricsMock.EXPECT().InitDeploymentOutcomes(task.App)
+	metricsMock.EXPECT().RemoveInProgressTask()
+	// The outcome counted is the one that won, not the failure this replica had computed.
+	metricsMock.EXPECT().AddDeploymentOutcome(task.App, models.StatusCancelledMessage)
+
+	capture := &capturingStrategy{}
+	updater.notifier = notifications.NewNotifier(capture)
+
+	updater.WaitForRollout(task, false, neverDraining)
+
+	require.Len(t, capture.sent, 2, "the cancellation still has to be announced by someone")
+	assert.Equal(t, models.StatusCancelledMessage, capture.sent[1].Status)
+}
+
+// The compound case: the write is refused AND the follow-up read fails. The winning status is
+// then unknown, so nothing is announced or counted — reporting a guess would be worse than
+// reporting nothing, and the stored outcome is still correct for the client that polls it.
+func TestWaitForRolloutStaysSilentWhenTheWinningOutcomeCannotBeRead(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	apiMock := newArgoApiMock(ctrl)
+	metricsMock := mocks.NewMockMetricsInterface(ctrl)
+	stateMock := newTaskRepositoryMock(ctrl)
+
+	argo := &Argo{}
+	argo.Init(stateMock, apiMock, metricsMock)
+
+	var writeRefused atomic.Bool
+	stateMock.EXPECT().GetTask(gomock.Any()).
+		DoAndReturn(func(string) (*models.Task, error) {
+			if writeRefused.Load() {
+				return nil, errors.New("database is unreachable")
+			}
+			return &models.Task{Status: models.StatusInProgressMessage}, nil
+		}).AnyTimes()
+	stateMock.EXPECT().SetTaskStatus(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(string, string, string) error {
+			writeRefused.Store(true)
+			return state.ErrTaskEnded
+		})
+
+	updater := initTestUpdater(t, newUpdaterTestConfig(&spyLocker{err: errors.New("boom")}), argo)
+
+	task := models.Task{Id: "test-id", App: "test-app", Validated: true,
+		Status: models.StatusInProgressMessage,
+		Images: []models.Image{{Image: "app", Tag: "v1"}}}
+
+	apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(managedApp(), nil)
+	metricsMock.EXPECT().AddInProgressTask()
+	metricsMock.EXPECT().InitDeploymentOutcomes(task.App)
+	metricsMock.EXPECT().RemoveInProgressTask()
+	// No outcome and no failure gauge are declared: gomock fails the test if one is recorded
+	// for a deployment whose real result could not be read.
+
+	capture := &capturingStrategy{}
+	updater.notifier = notifications.NewNotifier(capture)
+
+	updater.WaitForRollout(task, false, neverDraining)
+
+	require.Len(t, capture.sent, 1, "only the start notification: the outcome is unknown")
 }

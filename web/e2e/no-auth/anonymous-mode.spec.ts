@@ -13,7 +13,7 @@ test('an anonymous deployment renders without a sign-in and hides privileged con
 
   await page.goto(`/task/${id}`);
 
-  await expect(page.getByText(`Task ${id.slice(0, 8)}`)).toBeVisible();
+  await expect(page.getByRole('button', { name: /copy task id/i })).toHaveText(id);
 
   await page.getByRole('button', { name: 'Open configuration drawer' }).click();
   await expect(page.getByRole('heading', { name: 'Workspace Controls' })).toBeVisible();
@@ -30,5 +30,5 @@ test('an anonymous deployment renders without a sign-in and hides privileged con
   await expect(page.getByRole('img', { name: 'Privileged access' })).toHaveCount(0);
 
   await page.keyboard.press('Escape');
-  await expect(page.getByRole('button', { name: 'Rollback to this version' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Deploy this version again' })).toHaveCount(0);
 });

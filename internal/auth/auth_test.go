@@ -589,3 +589,18 @@ func TestAuthenticatorStrategyNilReceiver(t *testing.T) {
 	assert.Nil(t, strategy)
 	assert.False(t, ok)
 }
+
+// TestAuthenticateTokenRejectsABareBearerPrefix pins the WS transport against sending
+// an empty credential onward: "Bearer " alone is no credential, and the header path
+// treats it as one (ParseAuthToken returns ""), so the subprotocol path must agree
+// rather than asking the provider about an empty token.
+func TestAuthenticateTokenRejectsABareBearerPrefix(t *testing.T) {
+	strategy := mocks.NewMockAuthStrategy(gomock.NewController(t))
+	strategy.EXPECT().Validate(gomock.Any()).Times(0)
+	authenticator := NewAuthenticator(map[string]AuthStrategy{"Oidc-Authorization": strategy})
+
+	valid, err := authenticator.AuthenticateToken("Oidc-Authorization", "Bearer ")
+
+	assert.False(t, valid)
+	assert.NoError(t, err)
+}

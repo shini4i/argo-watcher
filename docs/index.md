@@ -6,9 +6,9 @@ hide:
 
 # Argo Watcher
 
-**A feedback loop for your GitOps workflow.**
+**Wait for an Argo CD deployment from your CI pipeline, and learn whether the image you just built rolled out.**
 
-Argo Watcher bridges the gap between your CI pipeline and Argo CD, providing real-time status and visibility into your deployments. Stop guessing whether your deployment succeeded — Argo Watcher tells your pipeline exactly what happened.
+Argo Watcher tracks Argo CD deployments for CI/CD pipelines. After a pipeline builds and pushes an image, the Argo Watcher client waits for that exact image to be deployed and exits with success or failure, so the pipeline can act on it. A feedback loop for your GitOps workflow, with an optional built-in GitOps updater. Coming from `argocd app wait`? Start with [Wait for an Argo CD Deployment from CI](guides/ci-pipeline-wait.md).
 
 If a page looks wrong, [open an issue](https://github.com/shini4i/argo-watcher/issues) or use the pencil icon at the top right to suggest a fix.
 

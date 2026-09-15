@@ -5,7 +5,7 @@ Deploy the Argo Watcher server on Kubernetes with the official Helm chart, then 
 ## Prerequisites
 
 - A Kubernetes cluster with [Argo CD](https://argo-cd.readthedocs.io/) installed
-- Helm 3
+- Helm 3 or 4
 - An Argo CD API token (below)
 - PostgreSQL, if you want task history to survive restarts or to run more than one replica
 

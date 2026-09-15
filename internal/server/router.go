@@ -92,6 +92,9 @@ func (env *Env) CreateRouter() *chi.Mux {
 		}
 
 		r.With(requireAuth).Get("/tasks", env.getState)
+		// Same gate as /tasks: the response is a census of every app name plus
+		// verbatim failure text, exactly what the task-read gate withholds.
+		r.With(requireAuth).Get("/apps/summary", env.getAppSummaries)
 		r.With(requireAuth).Get("/version", env.getVersion)
 		// Read-only ArgoCD + state-backend reachability for the frontend
 		// "unreachable" banner (issue #498). It exposes no privileged action and

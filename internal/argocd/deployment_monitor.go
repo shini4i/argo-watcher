@@ -14,6 +14,7 @@ import (
 
 	"github.com/shini4i/argo-watcher/internal/helpers"
 	"github.com/shini4i/argo-watcher/internal/models"
+	"github.com/shini4i/argo-watcher/internal/state"
 )
 
 const (
@@ -49,10 +50,10 @@ var errTaskAborted = errors.New("task aborted by the staleness sweep")
 // rollout without writing a status: the new owner records the outcome.
 var errLeaseLost = errors.New("task taken over by another replica")
 
-// errReplicaDraining is an internal sentinel returned when this replica began
-// shutting down while it was monitoring a resumed rollout. It stops the rollout
-// without writing a status, like errLeaseLost: the claim is released at the end of
-// shutdown and the replica that resumes the task records the outcome.
+// errReplicaDraining is an internal sentinel returned when this replica gives a
+// rollout up to shutdown — whether it accepted or resumed the task, or its
+// write-back never ran. It stops the rollout without writing a status, like
+// errLeaseLost: the replica that resumes the task records the outcome.
 var errReplicaDraining = errors.New("replica is shutting down")
 
 // ImageNotPartOfAppError reports that a task expects an image the application's desired
@@ -80,6 +81,27 @@ func (err *ImageNotPartOfAppError) Reason() string {
 		err.App,
 		strings.Join(err.DesiredImages, "\n\t"),
 	)
+}
+
+// WriteBackError reports that the git write-back did not complete, so the image tag is
+// not known to have reached the GitOps repository. It is a type of its own because the
+// failure names a different system than an ArgoCD API error does, and because there is
+// no rollout to wait on either way.
+type WriteBackError struct {
+	Err error
+}
+
+func (err *WriteBackError) Error() string {
+	return err.Err.Error()
+}
+
+func (err *WriteBackError) Unwrap() error {
+	return err.Err
+}
+
+// Reason renders the user-facing task failure reason.
+func (err *WriteBackError) Reason() string {
+	return fmt.Sprintf(GitWriteBackErrorTemplate, err.Err.Error())
 }
 
 // DeploymentMonitor encapsulates the logic for tracking ArgoCD application rollouts.
@@ -189,9 +211,9 @@ func (monitor *DeploymentMonitor) StoreInitialAppStatus(task *models.Task, appli
 		return errors.New("application is nil")
 	}
 
-	status := application.GetRolloutStatus(task.ListImages(), monitor.registryProxyUrl, monitor.acceptSuspended)
+	status := rolloutStatus(application, task.ListImages(), monitor.registryProxyUrl, monitor.acceptSuspended)
 	// The ArgoCD API may return images in different orders between calls; sorting guarantees stable hash comparisons.
-	normalizedImages := helpers.NormalizeImages(application.Status.Summary.Images)
+	normalizedImages := normalizeImages(application.Status.Summary.Images)
 
 	task.SavedAppStatus = models.SavedAppStatus{
 		Status:     status,
@@ -265,7 +287,7 @@ func (monitor *DeploymentMonitor) WaitRollout(task models.Task, abandoned func()
 			return nil
 		}
 
-		status := app.GetRolloutStatus(task.ListImages(), monitor.registryProxyUrl, monitor.acceptSuspended)
+		status := rolloutStatus(app, task.ListImages(), monitor.registryProxyUrl, monitor.acceptSuspended)
 
 		if !imagesValidated && refresh && shouldValidateDesiredImages(app, status) {
 			imagesValidated = true
@@ -310,7 +332,7 @@ func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) ([]ret
 
 	retryOptions = append(retryOptions, retry.Delay(delay))
 
-	delaySeconds := helpers.CeilDivDuration(delay, time.Second)
+	delaySeconds := ceilDivDuration(delay, time.Second)
 
 	defaultAttempts := monitor.resolvedDefaultAttempts(delay)
 
@@ -325,14 +347,14 @@ func (monitor *DeploymentMonitor) configureRetryOptions(task models.Task) ([]ret
 			slog.Debug("No per-task timeout override, using the instance default",
 				"attempts", defaultAttempts, "id", task.Id)
 		}
-		return append(retryOptions, retry.Attempts(defaultAttempts)), helpers.MulDurationSaturating(defaultAttempts, delay)
+		return append(retryOptions, retry.Attempts(defaultAttempts)), mulDurationSaturating(defaultAttempts, delay)
 	}
 
 	attempts := monitor.rolloutAttempts(task, delay)
 
 	slog.Debug("Overriding task timeout", "timeout_seconds", task.Timeout, "retry_delay", delay, "delay_step_seconds", delaySeconds, "attempts", attempts, "id", task.Id)
 
-	return append(retryOptions, retry.Attempts(attempts)), helpers.MulDurationSaturating(attempts, delay)
+	return append(retryOptions, retry.Attempts(attempts)), mulDurationSaturating(attempts, delay)
 }
 
 // rolloutAttempts is how many polls a task is given: its timeout in whole delay steps
@@ -343,7 +365,7 @@ func (monitor *DeploymentMonitor) rolloutAttempts(task models.Task, delay time.D
 		return monitor.resolvedDefaultAttempts(delay)
 	}
 
-	return helpers.SafeIntToUint(int64(task.Timeout)/helpers.CeilDivDuration(delay, time.Second) + 1)
+	return safeIntToUint(int64(task.Timeout)/ceilDivDuration(delay, time.Second) + 1)
 }
 
 // rolloutWindow is the wall-clock span the poll loop is given for task, which is the
@@ -356,23 +378,23 @@ func (monitor *DeploymentMonitor) rolloutAttempts(task models.Task, delay time.D
 func (monitor *DeploymentMonitor) rolloutWindow(task models.Task) time.Duration {
 	delay := monitor.resolvedDelay()
 
-	return helpers.MulDurationSaturating(monitor.rolloutAttempts(task, delay), delay)
+	return mulDurationSaturating(monitor.rolloutAttempts(task, delay), delay)
 }
 
 // ProcessDeploymentResult determines if the deployment was successful and updates the appropriate
 // status and metrics. waited is how long the rollout was polled, reported in the failure message so
 // the user can tell a rollout that ran out its window from one that failed immediately.
-func (monitor *DeploymentMonitor) ProcessDeploymentResult(task *models.Task, application *models.Application, waited time.Duration) {
-	status := application.GetRolloutStatus(task.ListImages(), monitor.registryProxyUrl, monitor.acceptSuspended)
+func (monitor *DeploymentMonitor) ProcessDeploymentResult(task *models.Task, application *models.Application, waited time.Duration) bool {
+	status := rolloutStatus(application, task.ListImages(), monitor.registryProxyUrl, monitor.acceptSuspended)
 	if application.IsFireAndForgetModeActive() {
-		status = models.ArgoRolloutAppSuccess
+		status = ArgoRolloutAppSuccess
 	}
 
-	if status == models.ArgoRolloutAppSuccess {
-		monitor.handleDeploymentSuccess(task)
-	} else {
-		monitor.handleDeploymentFailure(task, status, application, waited)
+	if status == ArgoRolloutAppSuccess {
+		return monitor.handleDeploymentSuccess(task)
 	}
+
+	return monitor.handleDeploymentFailure(task, status, application, waited)
 }
 
 // storedTaskStatus returns the task's status as the shared state holds it, or an empty
@@ -408,6 +430,30 @@ func (monitor *DeploymentMonitor) taskEndedElsewhere(id string) error {
 	}
 }
 
+// recordStatus writes the task's terminal status and reports whether this replica
+// decided it. A refusal means the claim moved on mid-write — taken over, or released
+// at shutdown — so whoever resumes the task reaches the outcome and the caller must
+// not count or announce one. Any other failure is logged and the outcome stands.
+func (monitor *DeploymentMonitor) recordStatus(task *models.Task, status, reason string) bool {
+	err := monitor.argo.State.SetTaskStatus(task.Id, status, reason)
+	if errors.Is(err, state.ErrTaskNotOwned) {
+		slog.Info("Left the outcome to whichever replica resumes this deployment.", "id", task.Id)
+		return false
+	}
+	if errors.Is(err, state.ErrTaskEnded) {
+		// A newer deployment cancelled it, or the sweep gave up on it, while this replica
+		// was deciding. That outcome is stored and is what the client polling the task
+		// reads; announcing or counting one of our own here would contradict it.
+		slog.Info("Deployment was already ended by something else; leaving its outcome alone.", "id", task.Id)
+		return false
+	}
+	if err != nil {
+		slog.Error("Failed to change task status", "error", err, "id", task.Id)
+	}
+
+	return true
+}
+
 // HandleArgoAPIFailure processes API errors and updates task status accordingly.
 // task is taken by pointer so the resolved terminal status is reflected back to
 // the caller, keeping the outgoing failure notification in sync with the stored
@@ -417,57 +463,89 @@ func (monitor *DeploymentMonitor) taskEndedElsewhere(id string) error {
 // Only then may the app name label a metric: without a confirmation the name is only as
 // trustworthy as the submission that supplied it, so the failure is counted under no app
 // at all (issue #552).
-func (monitor *DeploymentMonitor) HandleArgoAPIFailure(task *models.Task, err error, confirmed bool) {
-	if confirmed {
-		monitor.argo.metrics.AddFailedDeployment(task.App)
-	} else {
-		monitor.argo.metrics.AddUnconfirmedFailure()
-	}
+func (monitor *DeploymentMonitor) HandleArgoAPIFailure(task *models.Task, err error, confirmed bool) bool {
 	finalStatus := determineFailureStatus(*task, err)
 	reason := fmt.Sprintf(ArgoAPIErrorTemplate, err.Error())
 	slog.Warn("Deployment not completed", "status", finalStatus, "reason", reason, "id", task.Id)
 
-	if err := monitor.argo.State.SetTaskStatus(task.Id, finalStatus, reason); err != nil {
-		slog.Error("Failed to change task status", "error", err, "id", task.Id)
-	}
+	recorded := monitor.recordStatus(task, finalStatus, reason)
 	task.Status = finalStatus
+
+	// Counted only for an outcome this replica decided: on a handover the owner
+	// counts the same deployment, and two increments would trip a threshold early.
+	if recorded {
+		if confirmed {
+			monitor.argo.metrics.AddFailedDeployment(task.App)
+		} else {
+			monitor.argo.metrics.AddUnconfirmedFailure()
+		}
+	}
+
+	return recorded
+}
+
+// HandleWriteBackFailure fails the task with the git write-back as its reason. The status
+// is always "failed", never the "aborted" reserved for an unreachable ArgoCD: the write-back
+// did not complete, so this replica has no rollout to report at all. The app was confirmed
+// before the write-back ran, so its name may label the metric (issue #552).
+func (monitor *DeploymentMonitor) HandleWriteBackFailure(task *models.Task, writeBackErr *WriteBackError) bool {
+	slog.Warn("App deployment failed: the image tag could not be written back to git.",
+		"app", task.App, "error", writeBackErr.Err, "id", task.Id)
+
+	recorded := monitor.recordStatus(task, models.StatusFailedMessage, writeBackErr.Reason())
+	task.Status = models.StatusFailedMessage
+	if recorded {
+		monitor.argo.metrics.AddFailedDeployment(task.App)
+	}
+
+	return recorded
 }
 
 // HandleImageNotPartOfApp fails the task immediately instead of letting it run out its
 // timeout waiting for an image the application will never have.
-func (monitor *DeploymentMonitor) HandleImageNotPartOfApp(task *models.Task, imageErr *ImageNotPartOfAppError) {
+func (monitor *DeploymentMonitor) HandleImageNotPartOfApp(task *models.Task, imageErr *ImageNotPartOfAppError) bool {
 	slog.Warn("App deployment failed: expected image is not part of the application.",
 		"image", imageErr.Image, "app", imageErr.App, "id", task.Id)
-	monitor.argo.metrics.AddFailedDeployment(task.App)
 
-	if err := monitor.argo.State.SetTaskStatus(task.Id, models.StatusFailedMessage, imageErr.Reason()); err != nil {
-		slog.Error("Failed to change task status", "error", err, "id", task.Id)
-	}
+	recorded := monitor.recordStatus(task, models.StatusFailedMessage, imageErr.Reason())
 	task.Status = models.StatusFailedMessage
-}
-
-func (monitor *DeploymentMonitor) handleDeploymentSuccess(task *models.Task) {
-	slog.Info("App is running on the expected version.", "id", task.Id)
-	monitor.argo.metrics.ResetFailedDeployment(task.App)
-	if err := monitor.argo.State.SetTaskStatus(task.Id, models.StatusDeployedMessage, ""); err != nil {
-		slog.Error("Failed to change task status", "error", err, "id", task.Id)
+	if recorded {
+		monitor.argo.metrics.AddFailedDeployment(task.App)
 	}
-	task.Status = models.StatusDeployedMessage
+
+	return recorded
 }
 
-func (monitor *DeploymentMonitor) handleDeploymentFailure(task *models.Task, status string, application *models.Application, waited time.Duration) {
+func (monitor *DeploymentMonitor) handleDeploymentSuccess(task *models.Task) bool {
+	slog.Info("App is running on the expected version.", "id", task.Id)
+
+	recorded := monitor.recordStatus(task, models.StatusDeployedMessage, "")
+	task.Status = models.StatusDeployedMessage
+	// Clearing the gauge for a rollout the owner decided would erase its failures.
+	if recorded {
+		monitor.argo.metrics.ResetFailedDeployment(task.App)
+	}
+
+	return recorded
+}
+
+func (monitor *DeploymentMonitor) handleDeploymentFailure(task *models.Task, status string, application *models.Application, waited time.Duration) bool {
 	slog.Warn("App deployment failed.", "id", task.Id)
-	monitor.argo.metrics.AddFailedDeployment(task.App)
 	tree := monitor.fetchResourceTree(task)
 	reason := fmt.Sprintf(
 		"%s\n\n%s",
-		application.RolloutFailureHeadline(status, waited),
-		application.GetRolloutMessage(status, task.ListImages(), tree),
+		rolloutFailureHeadline(application, status, waited),
+		rolloutMessage(application, status, task.ListImages(), tree),
 	)
-	if err := monitor.argo.State.SetTaskStatus(task.Id, models.StatusFailedMessage, reason); err != nil {
-		slog.Error("Failed to change task status", "error", err, "id", task.Id)
-	}
+	recorded := monitor.recordStatus(task, models.StatusFailedMessage, reason)
 	task.Status = models.StatusFailedMessage
+	// The resource-tree fetch above widens the window between the lease check and
+	// the write, so this is the most likely place for the claim to have moved on.
+	if recorded {
+		monitor.argo.metrics.AddFailedDeployment(task.App)
+	}
+
+	return recorded
 }
 
 // resourceTreeTimeout bounds the best-effort resource-tree fetch on the failure path so
@@ -476,7 +554,7 @@ const resourceTreeTimeout = 10 * time.Second
 
 // fetchResourceTree best-effort fetches the application's live resource tree to enrich the
 // failure reason with pod-level causes (ImagePullBackOff, CrashLoopBackOff). It is deliberately
-// non-fatal: any error yields a nil tree and GetRolloutMessage falls back to the app's top-level
+// non-fatal: any error yields a nil tree and rolloutMessage falls back to the app's top-level
 // resources, so a resource-tree hiccup never prevents the deployment from being marked failed.
 func (monitor *DeploymentMonitor) fetchResourceTree(task *models.Task) *models.ApplicationTree {
 	ctx, cancel := context.WithTimeout(context.Background(), resourceTreeTimeout)
@@ -502,7 +580,7 @@ func handleApplicationFetchError(task models.Task, err error) error {
 // lacks an expected image. Only then is the image's absence worth investigating: while the
 // app is unsynced or unhealthy the image may still be on its way.
 func shouldValidateDesiredImages(app *models.Application, status string) bool {
-	return status == models.ArgoRolloutAppNotAvailable &&
+	return status == ArgoRolloutAppNotAvailable &&
 		app.Status.Sync.Status == "Synced" &&
 		app.Status.Health.Status == "Healthy"
 }
@@ -515,21 +593,26 @@ func (monitor *DeploymentMonitor) validateDesiredImages(ctx context.Context, tas
 		return nil
 	}
 
-	resources, err := monitor.argo.api.GetManagedResources(ctx, task.App)
+	rendered, err := monitor.argo.api.GetManifests(ctx, task.App)
 	if err != nil {
-		slog.Debug("Could not fetch managed resources to validate images", "error", err, "id", task.Id)
+		slog.Warn("Could not fetch rendered manifests to validate images", "error", err, "id", task.Id)
 		return nil
 	}
 
-	desired := resources.DesiredImageNames()
+	desired, err := desiredImageNames(rendered)
+	if err != nil {
+		slog.Warn("Could not read the application's desired state to validate images", "error", err, "id", task.Id)
+		return nil
+	}
+
 	if len(desired) == 0 {
 		slog.Debug("Application desired state declares no images; skipping validation", "id", task.Id)
 		return nil
 	}
 
 	for index := range task.Images {
-		name := helpers.ImageName(task.Images[index].Image)
-		if helpers.ImagesContains(desired, name, monitor.registryProxyUrl) {
+		name := imageName(task.Images[index].Image)
+		if imagesContains(desired, name, monitor.registryProxyUrl) {
 			continue
 		}
 		return &ImageNotPartOfAppError{App: task.App, Image: name, DesiredImages: desired}
@@ -543,14 +626,14 @@ func (monitor *DeploymentMonitor) validateDesiredImages(ctx context.Context, tas
 // already applied — i.e. the image hash moved off the saved initial one.
 func checkRolloutStatus(task models.Task, application *models.Application, status string) error {
 	switch status {
-	case models.ArgoRolloutAppDegraded:
+	case ArgoRolloutAppDegraded:
 		slog.Debug("Application is degraded", "id", task.Id)
-		normalizedImages := helpers.NormalizeImages(application.Status.Summary.Images)
+		normalizedImages := normalizeImages(application.Status.Summary.Images)
 		hash := helpers.GenerateHash(strings.Join(normalizedImages, ","))
 		if !bytes.Equal(task.SavedAppStatus.ImagesHash, hash) {
 			return retry.Unrecoverable(errAppDegraded)
 		}
-	case models.ArgoRolloutAppSuccess:
+	case ArgoRolloutAppSuccess:
 		slog.Debug("Application rollout finished", "id", task.Id)
 		return nil
 	default:
@@ -559,6 +642,10 @@ func checkRolloutStatus(task models.Task, application *models.Application, statu
 	return errForceRetry
 }
 
+// determineFailureStatus classifies an error raised while talking to ArgoCD. Only such
+// errors may reach it: isArgoUnavailable treats any transport failure as ArgoCD being
+// unreachable, so an error from another system — a git write-back, say — would be blamed
+// on ArgoCD and aborted rather than failed.
 func determineFailureStatus(task models.Task, err error) string {
 	if task.IsAppNotFoundError(err) {
 		return models.StatusAppNotFoundMessage
@@ -607,5 +694,5 @@ func (monitor *DeploymentMonitor) resolvedDefaultAttempts(delay time.Duration) u
 
 	fallbackWindow := time.Duration(legacyRetryIntervals) * ArgoSyncRetryDelay
 
-	return helpers.SafeIntToUint(helpers.CeilDivDuration(fallbackWindow, delay))
+	return safeIntToUint(ceilDivDuration(fallbackWindow, delay))
 }

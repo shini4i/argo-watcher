@@ -17,6 +17,31 @@ type AuthStrategy interface {
 	Validate(token string) (bool, error)
 }
 
+// TokenAuthenticator is implemented by a strategy that separates authentication
+// from authorization. One without a group concept does not: for it a valid token
+// answers both questions.
+type TokenAuthenticator interface {
+	Authenticate(token string) error
+}
+
+// AppValidator is implemented by a strategy whose tokens are confined to
+// named applications. One that authorizes the whole estate does not.
+type AppValidator interface {
+	ValidateForApp(token, app string) (bool, error)
+}
+
+// UserIdentifier is implemented by a strategy that can name the user behind a
+// token, for attributing a privileged action.
+type UserIdentifier interface {
+	Identify(token string) (string, error)
+}
+
+// TokenMatcher is implemented by a strategy that can recognise its own tokens by
+// shape, so a credential no strategy reads is not mistaken for one in use.
+type TokenMatcher interface {
+	Handles(token string) bool
+}
+
 // ErrNoCredential reports that no configured strategy evaluates a token of the
 // presented shape, so the request carries nothing to judge. walk skips it instead
 // of recording a rejection, which keeps a header no strategy reads behaving as it
@@ -112,6 +137,12 @@ func (a *Authenticator) AuthenticateToken(header, token string) (bool, error) {
 		token = after
 	}
 
+	// Re-checked after the prefix is stripped: "Bearer " alone is no credential, and
+	// the header path reads it as none.
+	if token == "" {
+		return false, nil
+	}
+
 	return authenticate(strategy, token)
 }
 
@@ -121,7 +152,7 @@ func (a *Authenticator) AuthenticateToken(header, token string) (bool, error) {
 // concept (the deploy token, a CI JWT) does not, because for it a valid token answers
 // both questions.
 func authenticate(strategy AuthStrategy, token string) (bool, error) {
-	authenticator, ok := strategy.(interface{ Authenticate(token string) error })
+	authenticator, ok := strategy.(TokenAuthenticator)
 	if !ok {
 		return strategy.Validate(token)
 	}
@@ -137,9 +168,7 @@ func authenticate(strategy AuthStrategy, token string) (bool, error) {
 // are confined to named applications exposes ValidateForApp; one whose tokens
 // authorize the whole estate does not, and answers the unscoped question instead.
 func validateForApp(strategy AuthStrategy, token, app string) (bool, error) {
-	scoped, ok := strategy.(interface {
-		ValidateForApp(token, app string) (bool, error)
-	})
+	scoped, ok := strategy.(AppValidator)
 	if !ok {
 		return strategy.Validate(token)
 	}
@@ -206,9 +235,7 @@ func (a *Authenticator) IdentifyRequest(request *http.Request, header string) (s
 		return "", nil
 	}
 
-	identifier, ok := strategy.(interface {
-		Identify(token string) (string, error)
-	})
+	identifier, ok := strategy.(UserIdentifier)
 	if !ok {
 		return "", nil
 	}
@@ -275,6 +302,12 @@ func NewDeployTokenAuthService(token string) *DeployTokenAuthService {
 	}
 }
 
+// clockSkewLeeway is how far the server's clock may disagree with the one that minted a
+// JWT before the token is refused: a runner a second ahead mints a future iat, which
+// WithIssuedAt rejects. It is global to the time-based claims, so the same window also
+// honours a token for this long past its exp.
+const clockSkewLeeway = 30 * time.Second
+
 // NewJWTAuthService initializes a JWT authentication service. An empty issuer or
 // audience leaves that claim unchecked, so a fleet minting tokens without it keeps
 // working; a configured value is enforced strictly — a token missing the claim is
@@ -282,7 +315,11 @@ func NewDeployTokenAuthService(token string) *DeployTokenAuthService {
 func NewJWTAuthService(secret, issuer, audience string) *JWTAuthService {
 	// exp is required and a future iat rejected whatever the configuration: both were
 	// enforced before the claim binding existed.
-	options := []jwt.ParserOption{jwt.WithExpirationRequired(), jwt.WithIssuedAt()}
+	options := []jwt.ParserOption{
+		jwt.WithExpirationRequired(),
+		jwt.WithIssuedAt(),
+		jwt.WithLeeway(clockSkewLeeway),
+	}
 
 	if issuer != "" {
 		options = append(options, jwt.WithIssuer(issuer))
@@ -302,4 +339,15 @@ var (
 	_ AuthStrategy = (*OIDCAuthService)(nil)
 	_ AuthStrategy = (*DeployTokenAuthService)(nil)
 	_ AuthStrategy = (*JWTAuthService)(nil)
+
+	// Optional capabilities, asserted here so dropping one is a compile error
+	// rather than a silent fall back to the unscoped answer.
+	_ TokenAuthenticator = (*OIDCAuthService)(nil)
+	_ TokenAuthenticator = (*AppTokenAuthService)(nil)
+	_ TokenAuthenticator = (*PrefixRouter)(nil)
+	_ AppValidator       = (*AppTokenAuthService)(nil)
+	_ AppValidator       = (*JWTAuthService)(nil)
+	_ AppValidator       = (*PrefixRouter)(nil)
+	_ UserIdentifier     = (*OIDCAuthService)(nil)
+	_ TokenMatcher       = (*PrefixRouter)(nil)
 )

@@ -7,24 +7,26 @@ tasks:
     cmds:
       - echo "===> Installing dependencies"
       - go install github.com/swaggo/swag/cmd/swag@latest
-      - go install go.uber.org/mock/mockgen@latest
       - go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
       - echo "===> Done"
     status:
-      - type swag mockgen migrate
+      - type swag migrate
 
   mocks:
     desc: Generate mocks for tests
     cmds:
       - echo "===> Generating mocks"
-      - mockgen --source=internal/argocd/argo_api.go --destination=internal/mocks/argo_api.go --package=mocks
-      - mockgen --source=internal/state/state.go --destination=internal/mocks/state.go --package=mocks
-      - mockgen --source=internal/prometheus/metrics.go --destination=internal/mocks/metrics.go --package=mocks
-      - mockgen --source=internal/updater/interfaces.go --destination=internal/mocks/updater.go --package=mocks
-      - mockgen --source=internal/notifications/webhook.go --destination=internal/mocks/notifications.go --package=mocks
-      - mockgen --source=internal/auth/auth.go --destination=internal/mocks/auth.go --package=mocks
-      - mockgen --source=internal/migrate/migrate.go --destination=internal/mocks/migrate.go --package=mocks
+      - go tool mockgen --source=internal/argocd/argo_api.go --destination=internal/mocks/argo_api.go --package=mocks
+      - go tool mockgen --source=internal/state/state.go --destination=internal/mocks/state.go --package=mocks
+      - go tool mockgen --source=internal/prometheus/metrics.go --destination=internal/mocks/metrics.go --package=mocks
+      - go tool mockgen --source=internal/updater/interfaces.go --destination=internal/mocks/updater.go --package=mocks
+      - go tool mockgen --source=internal/notifications/webhook.go --destination=internal/mocks/notifications.go --package=mocks
+      - go tool mockgen --source=internal/auth/auth.go --destination=internal/mocks/auth.go --package=mocks
+      - go tool mockgen --source=internal/migrate/migrate.go --destination=internal/mocks/migrate.go --package=mocks
     sources:
+      # go.mod pins mockgen via its tool directive, so a version bump must
+      # invalidate the fingerprint and regenerate.
+      - go.mod
       - internal/argocd/argo_api.go
       - internal/state/state.go
       - internal/prometheus/metrics.go
@@ -40,7 +42,11 @@ tasks:
     dir: cmd/argo-watcher
     cmds:
       - echo "===> Generating swagger spec"
-      - swag init --parseDependency --parseInternal --dir ./,../../internal/server --outputTypes json -o ../../web/public/swagger
+      # Every package holding an annotated type is named explicitly instead of using
+      # --parseDependency, which walks $GOROOT: swag carries the go/parser of the Go it was
+      # built with, so a newer stdlib than that fails the whole run. A type outside this list
+      # is a loud "cannot find type definition", never a silent omission.
+      - swag init --parseInternal --dir ./,../../internal/server,../../internal/models,../../internal/config --outputTypes json -o ../../web/public/swagger
       # argo_cd_url is documented as a string only because of the swaggertype tag on
       # ServerConfig; without it swag emits the fields of a url.URL and the published
       # spec silently contradicts what the endpoint serves.
@@ -52,6 +58,8 @@ tasks:
     sources:
       - main.go
       - ../../internal/server/router.go
+      - ../../internal/models/*.go
+      - ../../internal/config/*.go
     generates:
       - ../../web/public/swagger/swagger.json
 
@@ -146,6 +154,15 @@ tasks:
     cmds:
       - echo "===> Linting web workspace"
       - npm run lint
+      - echo "===> Done"
+
+  typecheck-web:
+    desc: Type-check the React-admin workspace
+    deps: [install-web-dependencies]
+    dir: web
+    cmds:
+      - echo "===> Type-checking web workspace"
+      - npm run typecheck
       - echo "===> Done"
 
   test-web:

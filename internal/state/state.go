@@ -11,11 +11,23 @@ import (
 
 var errDesiredRetry = errors.New("desired retry error")
 
-// ErrTaskNotFound is returned by TaskRepository.GetTask when no task exists for
-// the requested id. Callers use errors.Is to distinguish a genuine "not found"
+// ErrTaskNotFound is returned by TaskRepository.GetTask and SetTaskStatus when no
+// task exists for the requested id. Callers use errors.Is to distinguish a genuine "not found"
 // (HTTP 404) from a backend failure (HTTP 500), so a database outage is not
 // silently reported as a missing task.
 var ErrTaskNotFound = errors.New("task not found")
+
+// ErrTaskNotOwned is returned by SetTaskStatus when the claim has moved on since
+// the caller checked it — taken by another instance, or released by this one at
+// shutdown. Either way the task is somebody else's to finish, and writing here
+// would land on the outcome they reach. Only the shared backend reports it.
+var ErrTaskNotOwned = errors.New("task is not this instance's to finish")
+
+// ErrTaskEnded is returned by SetTaskStatus when the task already holds a terminal
+// status — cancelled by a newer deployment, or given up by the staleness sweep — while
+// this caller was still deciding. Whatever wrote it got there first and its outcome is
+// the one that stands, so the caller must report that rather than its own.
+var ErrTaskEnded = errors.New("task already reached a terminal status")
 
 // maySupersede reports whether a deployment may cancel an in-flight task, by
 // comparing the credential each one presented. Only the uncredentialed-cancels-
@@ -43,23 +55,27 @@ func imageNamesOverlap(a, b []models.Image) bool {
 // TaskRepository defines the contract for task persistence.
 type TaskRepository interface {
 	Connect(serverConfig *config.ServerConfig) error
+	// AddTask stores the task and returns it with the server-owned fields filled
+	// in: id, in-progress status, and Created/Updated as Unix seconds.
 	AddTask(task models.Task) (*models.Task, error)
-	GetTasks(filter models.TaskFilter) ([]models.Task, int64)
+	// GetTasks returns the page the filter selects and the total matching it,
+	// newest first. A backend failure is returned rather than rendered as an empty
+	// page: a caller cannot otherwise tell "no deployments" from "cannot read".
+	GetTasks(filter models.TaskFilter) ([]models.Task, int64, error)
+	// GetAppSummaries aggregates the filter's time window per application. Only
+	// StartTime and EndTime are honoured — the summary is a census of the
+	// window, so narrowing it by app or status would defeat its purpose.
+	GetAppSummaries(filter models.TaskFilter) ([]models.AppSummary, error)
+	// GetTask and SetTaskStatus return ErrTaskNotFound when no task matches id, and
+	// SetTaskStatus returns ErrTaskEnded — from either backend — when the task already
+	// reached a terminal status.
 	GetTask(id string) (*models.Task, error)
 	SetTaskStatus(id, status, reason string) error
-	// CancelInProgressTasks marks in-progress tasks for the given app as
-	// cancelled and returns how many were affected. A task is only cancelled when
-	// it shares at least one image name with the supplied images, so independent
-	// per-image deployments of the same app do not cancel each other (issue #353).
-	// Tags are ignored on purpose: a newer tag of the same image must still
-	// supersede the older in-flight rollout. Operating on the shared state makes
-	// the cancellation visible to every replica, not just the one handling the new
-	// deployment.
-	//
-	// newTaskValidated is the superseding deployment's own authority: an
-	// uncredentialed task never cancels a credentialed one, which would otherwise
-	// let an anonymous request abort a credentialed rollout's git write-back.
-	CancelInProgressTasks(app string, images []models.Image, reason string, newTaskValidated bool) (int64, error)
+	// SupersedeAndAdd cancels the in-progress tasks the new one supersedes and stores
+	// it atomically, returning it with the number cancelled. It supersedes a task of
+	// the same app sharing an image name (tags ignored) that is no more credentialed
+	// than itself (issue #353); the atomicity stops racing submissions both surviving.
+	SupersedeAndAdd(task models.Task, reason string) (*models.Task, int64, error)
 	Check() bool
 	ProcessObsoleteTasks(retryTimes uint)
 

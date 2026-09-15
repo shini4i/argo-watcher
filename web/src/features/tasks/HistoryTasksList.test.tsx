@@ -19,7 +19,7 @@ const {
 
   const taskListLayout = (props: Record<string, unknown>) => {
     layoutCallsInternal.push(props);
-    return <div data-testid="history-task-layout">{props.children}</div>;
+    return <div data-testid="history-task-layout">{props.children as ReactNode}</div>;
   };
 
   const filters = () => <div data-testid="history-filters" />;
@@ -61,7 +61,7 @@ vi.mock('./components/TasksDatagrid', () => ({
 const lastLayoutProps = () => layoutCalls.at(-1)!;
 
 const isReactElement = (node: ReactNode): node is ReactElement =>
-  typeof node === 'object' && node !== null && 'type' in (node as Record<string, unknown>);
+  typeof node === 'object' && node !== null && 'type' in (node as unknown as Record<string, unknown>);
 
 describe('HistoryTasksList', () => {
   beforeEach(() => {
@@ -89,13 +89,13 @@ describe('HistoryTasksList', () => {
     expect(headerNodes.map(node => node.type)).toContain(HistoryFiltersMock);
     expect(headerNodes).toHaveLength(1);
 
-    const emptyComponent = props.emptyComponent;
+    const emptyComponent = props.emptyComponent as ReactElement<Record<string, unknown>>;
     expect(emptyComponent.type).toBe(EmptyStateMock);
     expect(emptyComponent.props.icon).toBe('filter');
     expect(emptyComponent.props.title).toBe('No history yet');
     expect(emptyComponent.props.description).toMatch(/Adjust filters/);
 
-    const paginationElement = props.listProps.pagination!;
+    const paginationElement = props.listProps.pagination! as ReactElement<Record<string, unknown>>;
     expect(paginationElement.props.rowsPerPageOptions).toEqual([10, 25, 50, 100]);
 
     unmount();

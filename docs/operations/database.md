@@ -20,7 +20,7 @@ There are two tables. `tasks` stores every deployment task and its status; index
 | `timeout` | `int NOT NULL DEFAULT 0` | Per-task rollout deadline in seconds; `0` when the client did not override `DEPLOYMENT_TIMEOUT`. |
 | `refresh` | `boolean` | Per-task override of `ARGO_REFRESH_APP`; `NULL` when the client omitted it, which is distinct from an explicit `false`. |
 | `owner_id` | `text` | The replica currently monitoring the rollout; `NULL` when unclaimed. See [High Availability](high-availability.md#task-ownership). |
-| `lease_expires_at` | `timestamptz` | When that claim lapses. A lapsed claim on an in-progress task is taken over by another replica; indexed for that sweep via the partial index `idx_tasks_claimable`. |
+| `lease_expires_at` | `timestamptz` | When that claim lapses. A lapsed claim on an in-progress task is taken over by another replica; indexed for that sweep via the partial index `idx_tasks_claimable`. Read together with `owner_id`, it also says which kind of unclaimed a task is: both `NULL` means never claimed, while a `NULL` owner with a deadline set means a replica released it on shutdown for another to resume — only the former may still have its outcome written by the replica that accepted it. |
 | `app` | `varchar(255) NOT NULL` | Argo CD application name. |
 | `author` | `varchar(255) NOT NULL` | Deployment author identifier. |
 | `project` | `varchar(255) NOT NULL` | Business project identifier. |
@@ -113,6 +113,8 @@ The `tasks` table grows linearly with the number of deployments. Each row is sma
 | 100 | ~36 K | ~20 MB |
 | 1 000 | ~365 K | ~200 MB |
 | 10 000 | ~3.7 M | ~2 GB |
+
+Connections are bounded rather than sized by load: a replica opens at most 30 — 20 for task and state queries, 10 reserved for the advisory locks the git write-back serializes on. See [High availability](high-availability.md#sizing) when running more than one.
 
 ## Retention
 

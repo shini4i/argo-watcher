@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/url"
+	"os"
 	"testing"
 	"time"
 
@@ -30,11 +31,76 @@ func TestNewServer_Success(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, s)
-	assert.Equal(t, cfg, s.config)
+	assert.Equal(t, cfg, s.env.config)
 	// A zero drainDelay silently skips the readiness-propagation phase of shutdown,
 	// and every other test constructs Server directly — so this is the only place a
 	// dropped wiring line would be caught before the lab.
 	assert.Equal(t, readinessDrainDelay, s.drainDelay)
+	assert.Nil(t, s.closeLockPool, "in-memory state opens no advisory-lock pool")
+}
+
+// A Postgres-backed server must build its locker on a pool of its own. Sharing the
+// state's — now capped — pool deadlocks: a lock holder keeps its connection for the
+// whole write-back while that write-back queries the state, so enough concurrent
+// holders occupy every connection the queries they are waiting on need.
+func TestNewServer_PostgresBuildsADedicatedLockPool(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode.")
+	}
+	dsn := os.Getenv("POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("POSTGRES_DSN environment variable not set. Skipping integration test.")
+	}
+
+	argoURL, err := url.Parse("https://argo.example.com")
+	require.NoError(t, err)
+
+	s, err := NewServer(&config.ServerConfig{
+		ArgoUrl:   config.URL{URL: *argoURL},
+		ArgoToken: "test-token",
+		StateType: "postgres",
+		Db:        config.DatabaseConfig{DSN: dsn},
+	}, prometheus.NewRegistry())
+
+	require.NoError(t, err)
+	require.NotNil(t, s.closeLockPool, "the advisory locker must own the pool it holds connections from")
+	t.Cleanup(func() {
+		s.probeCancel()
+		_ = s.closeLockPool()
+	})
+}
+
+// A startup that fails after the advisory-lock pool is open must still close it.
+// Only the returned Server owns that pool, so a caller retrying startup — a test
+// suite, or a supervised restart in-process — would otherwise pile up connections.
+func TestNewServer_PostgresClosesTheLockPoolWhenStartupFails(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode.")
+	}
+	dsn := os.Getenv("POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("POSTGRES_DSN environment variable not set. Skipping integration test.")
+	}
+
+	argoURL, err := url.Parse("https://argo.example.com")
+	require.NoError(t, err)
+
+	// Rejected by NewBatchConfig, which runs after the pool is created.
+	t.Setenv("GIT_BATCH_WRITEBACK", "true")
+	t.Setenv("GIT_BATCH_MAX_SIZE", "0")
+
+	s, err := NewServer(&config.ServerConfig{
+		ArgoUrl:   config.URL{URL: *argoURL},
+		ArgoToken: "test-token",
+		StateType: "postgres",
+		Db:        config.DatabaseConfig{DSN: dsn},
+	}, prometheus.NewRegistry())
+
+	require.Error(t, err)
+	assert.Nil(t, s)
+	// Names the failure that proves the pool was already open when it happened —
+	// the window the deferred close covers. Fail earlier and this guards nothing.
+	assert.Contains(t, err.Error(), "GIT_BATCH_MAX_SIZE")
 }
 
 func TestNewServer_StateInitFailure(t *testing.T) {
@@ -162,6 +228,44 @@ func TestShutdown_HTTPDrainPrecedesWebSocketDrain(t *testing.T) {
 	s.shutdown(srv)
 
 	assert.False(t, wsAlreadySignalled, "the WebSocket drain must not begin before the listener is closed")
+}
+
+// The advisory-lock pool is closed last, so no drain phase is cut off mid-commit.
+// Hoisting the close above the drains is the regression, hence the phase-1 probe.
+func TestShutdown_ClosesTheLockPoolLast(t *testing.T) {
+	env := &Env{shutdownCh: make(chan struct{})}
+	closed := 0
+	s := &Server{env: env, closeLockPool: func() error {
+		closed++
+		return nil
+	}}
+
+	var closedDuringHTTPDrain bool
+	srv := &fakeHTTPShutdowner{onShutdown: func() { closedDuringHTTPDrain = closed > 0 }}
+
+	s.shutdown(srv)
+
+	assert.False(t, closedDuringHTTPDrain, "the pool must outlive every drain phase")
+	assert.Equal(t, 1, closed, "the lock pool must be closed exactly once")
+}
+
+// In-memory deployments never build a lock pool, so shutdown must tolerate a nil
+// closer, and a closer that fails must not derail the rest of the sequence.
+func TestShutdown_SurvivesAMissingOrFailingLockPoolCloser(t *testing.T) {
+	t.Run("nil closer", func(t *testing.T) {
+		s := &Server{env: &Env{shutdownCh: make(chan struct{})}}
+
+		assert.NotPanics(t, func() { s.shutdown(&fakeHTTPShutdowner{}) })
+	})
+
+	t.Run("closer returns an error", func(t *testing.T) {
+		s := &Server{
+			env:           &Env{shutdownCh: make(chan struct{})},
+			closeLockPool: func() error { return errors.New("pool already closed") },
+		}
+
+		assert.NotPanics(t, func() { s.shutdown(&fakeHTTPShutdowner{}) })
+	})
 }
 
 // TestShutdown_WebSocketDrainRunsAfterHTTPDrainFailure covers the failure branch: a

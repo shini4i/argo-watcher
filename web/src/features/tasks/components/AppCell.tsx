@@ -1,18 +1,13 @@
 import { Box, Stack, Typography } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { tokens } from '../../../theme/tokens';
+import { monogramSwatch } from '../../../theme/monogram';
+import { RollbackIndicator } from './RollbackIndicator';
 
 interface AppCellProps {
   readonly app: string;
+  readonly isRollback?: boolean;
 }
-
-const hashIndex = (name: string, modulo: number): number => {
-  let hash = 0;
-  for (let i = 0; i < name.length; i += 1) {
-    hash = Math.imul(hash, 31) + (name.codePointAt(i) ?? 0);
-  }
-  return Math.abs(hash) % modulo;
-};
 
 /** Derives 1-2 letter monogram initials from an app name (e.g. checkout-api → CA). */
 export const deriveMonogram = (name: string): string => {
@@ -51,16 +46,20 @@ export const describeProject = (project: string): ProjectLinkInfo => {
   }
   const parts = stripped.split('/').filter(Boolean);
   const host = parts[0] ?? stripped;
-  const lastPath = parts.length > 1 ? parts[parts.length - 1] : '';
+  const lastPath = parts.length > 1 ? (parts.at(-1) ?? '') : '';
   const label = lastPath ? `${host}/${lastPath}` : host;
   return { isUrl: true, label, href: project };
 };
 
-export const AppCell = ({ app }: AppCellProps) => {
+/**
+ * @description Application identity for a task row: the monogram, the app name,
+ * and the rollback badge beneath it. The badge describes the deployment, so it
+ * sits with the application rather than in the Status cell.
+ */
+export const AppCell = ({ app, isRollback }: AppCellProps) => {
   const theme = useTheme();
-  const swatches = theme.palette.mode === 'dark' ? tokens.monogramSwatchesDark : tokens.monogramSwatches;
   const monogram = deriveMonogram(app);
-  const swatch = swatches[hashIndex(app, swatches.length)];
+  const swatch = monogramSwatch(app, theme.palette.mode === 'dark');
 
   return (
     <Stack
@@ -89,14 +88,17 @@ export const AppCell = ({ app }: AppCellProps) => {
       >
         {monogram}
       </Box>
-      <Typography
-        variant="body2"
-        sx={{ fontWeight: 500, fontSize: 13.5, lineHeight: 1.2, minWidth: 0 }}
-        noWrap
-        title={app}
-      >
-        {app}
-      </Typography>
+      <Stack spacing={0.25} sx={{ minWidth: 0, alignItems: 'flex-start' }}>
+        <Typography
+          variant="body2"
+          sx={{ fontWeight: 500, fontSize: 13.5, lineHeight: 1.2, minWidth: 0, maxWidth: '100%' }}
+          noWrap
+          title={app}
+        >
+          {app}
+        </Typography>
+        <RollbackIndicator isRollback={isRollback} />
+      </Stack>
     </Stack>
   );
 };

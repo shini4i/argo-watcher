@@ -56,12 +56,16 @@ func newRepo(ctrl *gomock.Controller) (*mocks.MockTaskRepository, *repoCapture) 
 	capture := &repoCapture{}
 	repo.EXPECT().Connect(gomock.Any()).Return(nil).AnyTimes()
 	repo.EXPECT().GetTasks(gomock.Any()).
-		DoAndReturn(func(filter models.TaskFilter) ([]models.Task, int64) {
+		DoAndReturn(func(filter models.TaskFilter) ([]models.Task, int64, error) {
 			capture.lastFilter = filter
-			return []models.Task{}, 0
+			return []models.Task{}, 0, nil
+		}).AnyTimes()
+	repo.EXPECT().GetAppSummaries(gomock.Any()).
+		DoAndReturn(func(filter models.TaskFilter) ([]models.AppSummary, error) {
+			capture.lastFilter = filter
+			return []models.AppSummary{}, nil
 		}).AnyTimes()
 	repo.EXPECT().SetTaskStatus(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
-	repo.EXPECT().CancelInProgressTasks(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(int64(0), nil).AnyTimes()
 	repo.EXPECT().ProcessObsoleteTasks(gomock.Any()).AnyTimes()
 	return repo, capture
 }
@@ -232,44 +236,6 @@ func TestDeployLockEndpointRegistration(t *testing.T) {
 		assert.True(t, routeExists(t, routes, http.MethodGet, lockPath),
 			"read-only GET deploy-lock must stay registered")
 	})
-}
-
-func TestRemoveWebSocketConnection(t *testing.T) {
-	conn := &websocket.Conn{}
-	connectionsMutex.Lock()
-	connections = append(connections, conn)
-	connectionsMutex.Unlock()
-	removeWebSocketConnection(conn)
-	connectionsMutex.Lock()
-	assert.NotContains(t, connections, conn)
-	connectionsMutex.Unlock()
-}
-
-func TestWebSocketConnectionsConcurrentAccess(t *testing.T) {
-	connectionsMutex.Lock()
-	connections = nil
-	connectionsMutex.Unlock()
-
-	var wg sync.WaitGroup
-	numGoroutines := 10
-
-	for i := 0; i < numGoroutines; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			conn := &websocket.Conn{}
-			connectionsMutex.Lock()
-			connections = append(connections, conn)
-			connectionsMutex.Unlock()
-			removeWebSocketConnection(conn)
-		}()
-	}
-
-	wg.Wait()
-
-	connectionsMutex.Lock()
-	assert.Empty(t, connections)
-	connectionsMutex.Unlock()
 }
 
 // signJWT mints an HS256 token valid for an hour, so a claim assertion is never
@@ -862,11 +828,6 @@ func TestWebSocketInterceptor(t *testing.T) {
 // (wired in .github/workflows/run-tests.yml), since a plain run cannot observe
 // it. Keep the -race CI step if you touch this test.
 func TestWebSocketConnectionIntegration(t *testing.T) {
-
-	connectionsMutex.Lock()
-	connections = nil
-	connectionsMutex.Unlock()
-
 	tmpDir := t.TempDir()
 	err := os.WriteFile(tmpDir+"/index.html", []byte("<html></html>"), 0644)
 	assert.NoError(t, err)
@@ -884,13 +845,10 @@ func TestWebSocketConnectionIntegration(t *testing.T) {
 	// Use httptest.Server for real HTTP connection (supports hijacking)
 	server := httptest.NewServer(router)
 
-	// Cleanup: shut down the env (stops checkConnection goroutines), then the HTTP server, then reset connections.
+	// Shut the env down first: that stops the checkConnection goroutines.
 	t.Cleanup(func() {
 		shutdownEnv(env)
 		server.Close()
-		connectionsMutex.Lock()
-		connections = nil
-		connectionsMutex.Unlock()
 	})
 
 	// Capture debug output around the handshake: a successful upgrade must not
@@ -959,11 +917,6 @@ func TestDeployLockNotifiedOnlyByWatcher(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			connectionsMutex.Lock()
-			connections = nil
-			closedConns = make(map[*websocket.Conn]bool)
-			connectionsMutex.Unlock()
-
 			tmpDir := t.TempDir()
 			require.NoError(t, os.WriteFile(tmpDir+"/index.html", []byte("<html></html>"), 0644))
 
@@ -993,10 +946,6 @@ func TestDeployLockNotifiedOnlyByWatcher(t *testing.T) {
 			t.Cleanup(func() {
 				shutdownEnv(env)
 				server.Close()
-				connectionsMutex.Lock()
-				connections = nil
-				closedConns = make(map[*websocket.Conn]bool)
-				connectionsMutex.Unlock()
 			})
 
 			dialCtx, dialCancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -1010,7 +959,7 @@ func TestDeployLockNotifiedOnlyByWatcher(t *testing.T) {
 			// Run the watcher far faster than production so the test does not wait 5s.
 			stop := make(chan struct{})
 			defer close(stop)
-			go lockdown.WatchTransitions(stop, 5*time.Millisecond, notifyWebSocketClients)
+			go lockdown.WatchTransitions(stop, 5*time.Millisecond, env.notifyWebSocketClients)
 
 			// The watcher captures its baseline on entry, and only a change against
 			// that baseline is broadcast. Wait for the baseline read before mutating,
@@ -1381,141 +1330,6 @@ func TestStartRouter(t *testing.T) {
 	assert.Equal(t, 120*time.Second, srv.IdleTimeout)
 }
 
-func TestNotifyWebSocketClients(t *testing.T) {
-	t.Run("notifies with no connections", func(t *testing.T) {
-		connectionsMutex.Lock()
-		connections = nil
-		closedConns = make(map[*websocket.Conn]bool)
-		connectionsMutex.Unlock()
-
-		t.Cleanup(func() {
-			connectionsMutex.Lock()
-			connections = nil
-			closedConns = make(map[*websocket.Conn]bool)
-			connectionsMutex.Unlock()
-		})
-
-		notifyWebSocketClients("test message")
-	})
-}
-
-func TestRemoveWebSocketConnectionCleanup(t *testing.T) {
-	t.Run("removes connection and cleans up closedConns", func(t *testing.T) {
-		connectionsMutex.Lock()
-		connections = nil
-		closedConns = make(map[*websocket.Conn]bool)
-		connectionsMutex.Unlock()
-
-		t.Cleanup(func() {
-			connectionsMutex.Lock()
-			connections = nil
-			closedConns = make(map[*websocket.Conn]bool)
-			connectionsMutex.Unlock()
-		})
-
-		removeWebSocketConnection(nil)
-
-		connectionsMutex.RLock()
-		assert.Len(t, connections, 0)
-		assert.Len(t, closedConns, 0)
-		connectionsMutex.RUnlock()
-	})
-
-	t.Run("removes actual connection from slice", func(t *testing.T) {
-		connectionsMutex.Lock()
-		connections = nil
-		closedConns = make(map[*websocket.Conn]bool)
-		connectionsMutex.Unlock()
-
-		t.Cleanup(func() {
-			connectionsMutex.Lock()
-			connections = nil
-			closedConns = make(map[*websocket.Conn]bool)
-			connectionsMutex.Unlock()
-		})
-
-		conn := &websocket.Conn{}
-		connectionsMutex.Lock()
-		connections = append(connections, conn)
-		connectionsMutex.Unlock()
-
-		removeWebSocketConnection(conn)
-
-		connectionsMutex.RLock()
-		assert.NotContains(t, connections, conn)
-		assert.Len(t, closedConns, 0)
-		connectionsMutex.RUnlock()
-	})
-
-	t.Run("removes connection from middle of slice", func(t *testing.T) {
-		connectionsMutex.Lock()
-		connections = nil
-		closedConns = make(map[*websocket.Conn]bool)
-		connectionsMutex.Unlock()
-
-		t.Cleanup(func() {
-			connectionsMutex.Lock()
-			connections = nil
-			closedConns = make(map[*websocket.Conn]bool)
-			connectionsMutex.Unlock()
-		})
-
-		conn1 := &websocket.Conn{}
-		conn2 := &websocket.Conn{}
-		conn3 := &websocket.Conn{}
-		connectionsMutex.Lock()
-		connections = append(connections, conn1, conn2, conn3)
-		connectionsMutex.Unlock()
-
-		removeWebSocketConnection(conn2)
-
-		connectionsMutex.RLock()
-		assert.Len(t, connections, 2)
-		// Check by pointer address, not value (all zero-value Conns are equal by value)
-		foundConn1 := false
-		foundConn2 := false
-		foundConn3 := false
-		for _, c := range connections {
-			if c == conn1 {
-				foundConn1 = true
-			}
-			if c == conn2 {
-				foundConn2 = true
-			}
-			if c == conn3 {
-				foundConn3 = true
-			}
-		}
-		connectionsMutex.RUnlock()
-
-		assert.True(t, foundConn1, "conn1 should still be in the slice")
-		assert.False(t, foundConn2, "conn2 should have been removed")
-		assert.True(t, foundConn3, "conn3 should still be in the slice")
-	})
-}
-
-func TestNotifyWebSocketClientsFiltersClosedConnections(t *testing.T) {
-	connectionsMutex.Lock()
-	connections = nil
-	closedConns = make(map[*websocket.Conn]bool)
-	connectionsMutex.Unlock()
-
-	t.Cleanup(func() {
-		connectionsMutex.Lock()
-		connections = nil
-		closedConns = make(map[*websocket.Conn]bool)
-		connectionsMutex.Unlock()
-	})
-
-	conn := &websocket.Conn{}
-	connectionsMutex.Lock()
-	connections = append(connections, conn)
-	closedConns[conn] = true
-	connectionsMutex.Unlock()
-
-	notifyWebSocketClients("test message")
-}
-
 func TestConnWgTracking(t *testing.T) {
 	env := &Env{
 		shutdownCh: make(chan struct{}),
@@ -1687,6 +1501,43 @@ func TestGetTaskStatusEndpoint(t *testing.T) {
 		assert.Equal(t, http.StatusOK, w.Code)
 		assert.Contains(t, w.Body.String(), "test-task-id")
 		assert.Contains(t, w.Body.String(), "test-app")
+		// Both carry omitempty, so an ordinary deployment omits the keys entirely.
+		// Without this a handler hardcoding the flag would still look correct.
+		assert.NotContains(t, w.Body.String(), "is_rollback")
+		assert.NotContains(t, w.Body.String(), "rollback_target_id")
+	})
+
+	t.Run("carries the rollback flag and its target", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		repo, _ := newRepo(ctrl)
+		repo.EXPECT().GetTask(gomock.Any()).DoAndReturn(func(id string) (*models.Task, error) {
+			return &models.Task{
+				Id:               id,
+				App:              "test-app",
+				Author:           "test-author",
+				Project:          "test-project",
+				Status:           "deployed",
+				IsRollback:       true,
+				RollbackTargetId: "previous-task-id",
+			}, nil
+		}).AnyTimes()
+		argo := &argocd.Argo{}
+		argo.Init(repo, newArgoAPI(ctrl), newMetrics(ctrl))
+
+		env := &Env{argo: argo}
+
+		router := chi.NewRouter()
+		router.Get("/api/v1/tasks/{id}", env.getTaskStatus)
+
+		req, _ := http.NewRequest(http.MethodGet, "/api/v1/tasks/test-task-id", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		// The task list serves both fields, so the detail view must too or the
+		// UI cannot tell a rollback apart from an ordinary deployment.
+		assert.Contains(t, w.Body.String(), `"is_rollback":true`)
+		assert.Contains(t, w.Body.String(), `"rollback_target_id":"previous-task-id"`)
 	})
 
 	t.Run("returns 404 when task not found", func(t *testing.T) {
@@ -1869,7 +1720,7 @@ func TestAddTaskEndpoint(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		repo, _ := newRepo(ctrl)
 		repo.EXPECT().Check().Return(true).AnyTimes()
-		repo.EXPECT().AddTask(gomock.Any()).Return(nil, fmt.Errorf("argo unavailable")).AnyTimes()
+		repo.EXPECT().SupersedeAndAdd(gomock.Any(), gomock.Any()).Return(nil, int64(0), fmt.Errorf("argo unavailable")).AnyTimes()
 		argo := &argocd.Argo{}
 		argo.Init(repo, newArgoAPI(ctrl), newMetrics(ctrl))
 
@@ -1910,9 +1761,9 @@ func TestAddTaskEndpoint(t *testing.T) {
 		// handler's real WaitForRollout goroutine, which this Env has no updater for.
 		// The flag is already decided by the time AddTask is called.
 		var stored models.Task
-		repo.EXPECT().AddTask(gomock.Any()).DoAndReturn(func(task models.Task) (*models.Task, error) {
+		repo.EXPECT().SupersedeAndAdd(gomock.Any(), gomock.Any()).DoAndReturn(func(task models.Task, _ string) (*models.Task, int64, error) {
 			stored = task
-			return nil, fmt.Errorf("stop before the rollout goroutine")
+			return nil, 0, fmt.Errorf("stop before the rollout goroutine")
 		})
 		argo := &argocd.Argo{}
 		argo.Init(repo, newArgoAPI(ctrl), newMetrics(ctrl))
@@ -1950,9 +1801,9 @@ func TestAddTaskEndpoint(t *testing.T) {
 		repo.EXPECT().Check().Return(true).AnyTimes()
 
 		var stored models.Task
-		repo.EXPECT().AddTask(gomock.Any()).DoAndReturn(func(task models.Task) (*models.Task, error) {
+		repo.EXPECT().SupersedeAndAdd(gomock.Any(), gomock.Any()).DoAndReturn(func(task models.Task, _ string) (*models.Task, int64, error) {
 			stored = task
-			return nil, fmt.Errorf("stop before the rollout goroutine")
+			return nil, 0, fmt.Errorf("stop before the rollout goroutine")
 		})
 		argo := &argocd.Argo{}
 		argo.Init(repo, newArgoAPI(ctrl), newMetrics(ctrl))
@@ -1990,18 +1841,18 @@ func TestAddTaskEndpoint(t *testing.T) {
 			"Authorization": newAuthStrategy(t, true, nil),
 		}
 
-		// A bare mock, not newRepo: its permissive CancelInProgressTasks stub would
-		// absorb the call before the specific expectation below could match it.
+		// A bare mock, not newRepo, so nothing stubbed there can absorb the calls this
+		// case declares for itself.
 		ctrl := gomock.NewController(t)
 		repo := mocks.NewMockTaskRepository(ctrl)
-		repo.EXPECT().GetTasks(deployedHistoryOf("test-app")).Return([]models.Task{}, int64(0))
-		// The literal true ties the handler's authority to the state-layer rule.
-		repo.EXPECT().CancelInProgressTasks("test-app", gomock.Any(), gomock.Any(), true).Return(int64(0), nil)
+		repo.EXPECT().GetTasks(deployedHistoryOf("test-app")).Return([]models.Task{}, int64(0), nil)
 
+		// The captured task is what ties the handler's authority to the state-layer
+		// rule: its Validated flag is what SupersedeAndAdd weighs.
 		var stored models.Task
-		repo.EXPECT().AddTask(gomock.Any()).DoAndReturn(func(task models.Task) (*models.Task, error) {
+		repo.EXPECT().SupersedeAndAdd(gomock.Any(), gomock.Any()).DoAndReturn(func(task models.Task, _ string) (*models.Task, int64, error) {
 			stored = task
-			return nil, fmt.Errorf("stop before the rollout goroutine")
+			return nil, 0, fmt.Errorf("stop before the rollout goroutine")
 		})
 		argo := &argocd.Argo{}
 		argo.Init(repo, newArgoAPI(ctrl), newMetrics(ctrl))
@@ -2738,18 +2589,16 @@ func TestAddTaskResolvesTheDeploymentWindow(t *testing.T) {
 			argo.Init(stateMock, mocks.NewMockArgoApiInterface(ctrl), metricsMock)
 
 			stateMock.EXPECT().GetTasks(gomock.Any()).
-				Return([]models.Task{}, int64(0)).AnyTimes()
-			stateMock.EXPECT().CancelInProgressTasks(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-				Return(int64(0), nil).AnyTimes()
+				Return([]models.Task{}, int64(0), nil).AnyTimes()
 			stateMock.EXPECT().ClaimTask(gomock.Any()).Return(nil).AnyTimes()
 			metricsMock.EXPECT().AddAcceptedDeployment().AnyTimes()
 
 			var stored models.Task
-			stateMock.EXPECT().AddTask(gomock.Any()).DoAndReturn(func(task models.Task) (*models.Task, error) {
+			stateMock.EXPECT().SupersedeAndAdd(gomock.Any(), gomock.Any()).DoAndReturn(func(task models.Task, _ string) (*models.Task, int64, error) {
 				stored = task
 				// Returning an error stops the handler before it spawns a rollout, which
 				// this test is not about.
-				return nil, errors.New("stop here")
+				return nil, 0, errors.New("stop here")
 			})
 
 			lockdown, err := NewLockdown("", lock.NewInMemoryDeployLockStore())

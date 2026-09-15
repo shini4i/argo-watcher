@@ -15,6 +15,7 @@ import (
 	"github.com/shini4i/argo-watcher/internal/mocks"
 	"github.com/shini4i/argo-watcher/internal/models"
 	"github.com/shini4i/argo-watcher/internal/notifications"
+	"github.com/shini4i/argo-watcher/internal/state"
 )
 
 func monitorWithDefaultWindow(window time.Duration) *DeploymentMonitor {
@@ -501,4 +502,40 @@ func TestResumeRollout_AnnouncesAnAbortedTaskEvenWhileDraining(t *testing.T) {
 
 	require.Len(t, capture.sent, 1, "the abort must still be announced")
 	assert.Equal(t, models.StatusAborted, capture.sent[0].Status)
+}
+
+// The claim can move on between the sweep taking it and the stale abort landing.
+// The write is then refused, so the outcome stored is the new owner's — counting
+// or announcing one here would report the same task twice.
+func TestResumeRollout_ARefusedStaleAbortIsNotCountedOrAnnounced(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	stateMock := newTaskRepositoryMock(ctrl)
+	metricsMock := mocks.NewMockMetricsInterface(ctrl)
+
+	argo := &Argo{}
+	argo.Init(stateMock, newArgoApiMock(ctrl), metricsMock)
+
+	task := models.Task{
+		Id:        "refused-abort",
+		App:       "test-app",
+		Timeout:   30,
+		Created:   float64(time.Now().Add(-10 * time.Minute).Unix()),
+		Validated: true,
+		Images:    []models.Image{{Image: "app", Tag: "v1"}},
+	}
+
+	stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusAborted, StaleResumedTaskReason).
+		Return(state.ErrTaskNotOwned)
+	// No metrics expectation at all: gomock fails if this replica counts a failure
+	// for a task whose abort the backend refused.
+
+	updater := initTestUpdater(t, newUpdaterTestConfig(lock.NewInMemoryLocker()), argo)
+	capture := &capturingStrategy{}
+	updater.notifier = notifications.NewNotifier(capture)
+
+	updater.ResumeRollout(task, neverDraining)
+
+	require.Empty(t, capture.sent, "a refused abort must not announce an outcome this replica did not decide")
 }

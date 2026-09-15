@@ -69,11 +69,31 @@ func TestLockdown_Parse(t *testing.T) {
 		{"Fri - mon 06:30", true, nil},
 		{"Fri 13:20 -", true, nil},
 		{"", true, nil},
+		// A time with no colon reached strconv with a one-element slice and
+		// panicked, taking the process down at startup instead of reporting the
+		// typo like every other malformed input here.
+		{"Fri 1320 - Mon 06:30", true, nil},
+		{"Fri 13:20 - Mon 0630", true, nil},
+		// Out-of-range components parse as integers but name an instant the clock
+		// never reaches, so the window silently never opens.
+		{"Fri 25:00 - Mon 06:30", true, nil},
+		{"Fri 13:60 - Mon 06:30", true, nil},
+		{"Fri 13:20 - Mon 24:00", true, nil},
+		{"Fri -1:20 - Mon 06:30", true, nil},
+		// A same-day window may not end at or before it starts: the same-day
+		// branch of timeWithinSchedule does not wrap, so such a window is never
+		// active. Rejecting it surfaces the mistake instead of freezing nothing.
+		{"Fri 18:00 - Fri 09:00", true, nil},
+		{"Fri 09:00 - Fri 09:00", true, nil},
+		// The legitimate same-day window still parses.
+		{"Fri 09:00 - Fri 18:00", false, []LockdownSchedule{
+			{time.Friday, 9, 0, time.Friday, 18, 0},
+		}},
 	}
 
 	for _, tt := range testCases {
 		l := Lockdown{}
-		err := l.Parse(tt.input)
+		err := l.parse(tt.input)
 
 		if tt.expectError {
 			assert.Error(t, err)
@@ -577,4 +597,30 @@ func TestLockdown_IsLockedWith(t *testing.T) {
 			assert.Equal(t, tt.expected, l.isLockedWith(tt.state, now))
 		})
 	}
+}
+
+// TestLockdown_ParseReplacesSchedules pins that parsing is idempotent: a second
+// parse describes the whole configuration, it does not add to the previous one.
+func TestLockdown_ParseReplacesSchedules(t *testing.T) {
+	l := Lockdown{}
+
+	require.NoError(t, l.parse("Fri 13:20 - Mon 06:30"))
+	require.NoError(t, l.parse("Tue 03:00 - Thu 08:00"))
+
+	assert.Equal(t, []LockdownSchedule{
+		{time.Tuesday, 3, 0, time.Thursday, 8, 0},
+	}, l.Schedules)
+}
+
+// TestLockdown_ParseRejectionKeepsSchedules pins that a rejected schedule string
+// leaves the previously parsed configuration untouched rather than half-applied.
+func TestLockdown_ParseRejectionKeepsSchedules(t *testing.T) {
+	l := Lockdown{}
+	require.NoError(t, l.parse("Fri 13:20 - Mon 06:30"))
+
+	require.Error(t, l.parse("Tue 03:00 - Thu 08:00, garbage"))
+
+	assert.Equal(t, []LockdownSchedule{
+		{time.Friday, 13, 20, time.Monday, 6, 30},
+	}, l.Schedules)
 }

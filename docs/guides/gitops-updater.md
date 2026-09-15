@@ -66,6 +66,8 @@ The override file name is derived from the application name, so application `Dem
 sandbox/charts/demo/.argocd-source-demo.yaml
 ```
 
+Argo Watcher rewrites only the `helm.parameters` entries it manages, leaving the rest of the file alone. That matters when `argo-watcher/write-back-filename` points at a file you also maintain.
+
 ### Fire-and-forget mode
 
 When the new image will not run on its own — an application containing only `CronJob` resources, for instance — annotate it:
@@ -175,9 +177,9 @@ openssl rand -base64 32
 
 | Claim | Validated | Notes |
 |---|---|---|
-| `exp` | Yes | **Required.** A token without it is rejected. |
-| `iat` | Yes | A future `iat` is rejected. `date +%s` gives you the current value. |
-| `nbf` | Yes | Optional; enforced by the JWT library. |
+| `exp` | Yes | **Required.** A token without it is rejected. A 30-second tolerance for clock skew applies here too, so a token stays usable that long past its expiry. |
+| `iat` | Yes | An `iat` more than 30 seconds in the future is rejected. `date +%s` gives you the current value. |
+| `nbf` | Yes | Optional; when present, the same 30-second tolerance applies. |
 | `iss` | Only if `JWT_ISSUER` is set | Must equal it exactly. |
 | `aud` | Only if `JWT_AUDIENCE` is set | A list matches when it contains the configured value. |
 | `sub` | No | Informational — service or team name. |

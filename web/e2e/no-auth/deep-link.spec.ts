@@ -22,8 +22,7 @@ test.describe('task detail deep link', () => {
 
     await page.goto(`/task/${id}`);
 
-    await expect(page.getByText(`Task ${id.slice(0, 8)}`)).toBeVisible();
-    // Exact: "Rollback to this version" also contains "Back".
+    await expect(page.getByRole('button', { name: /copy task id/i })).toHaveText(id);
     await expect(page.getByRole('button', { name: 'Back', exact: true })).toBeVisible();
   });
 
@@ -38,7 +37,7 @@ test.describe('task detail deep link', () => {
     await waitForDeployed(request, id);
 
     await page.goto(`/task/${id}`);
-    await expect(page.getByText(`Task ${id.slice(0, 8)}`)).toBeVisible();
+    await expect(page.getByRole('button', { name: /copy task id/i })).toHaveText(id);
 
     await page.getByRole('button', { name: 'Back', exact: true }).click();
 

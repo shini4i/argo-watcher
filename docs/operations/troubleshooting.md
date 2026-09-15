@@ -36,7 +36,7 @@ Read the client's last log line first — it distinguishes these:
 
 | Client says | Meaning |
 |---|---|
-| `The deployment has failed` | Argo CD reported a failure, or the timeout elapsed. Continue with [Deployment times out](#deployment-times-out). |
+| `The deployment has failed` | Argo CD reported a failure, or the timeout elapsed. Continue with [Deployment times out](#deployment-times-out). A reason beginning `Git write-back error:` means the image tag was not committed to the GitOps repository, so there was no rollout to wait on — read the rest of that line and check the repository, not Argo CD. |
 | `Application <name> does not exist` | `ARGO_APP` does not match an Argo CD application (names are case-sensitive). |
 | `Image "<name>" is not part of application` | The application does not declare that image — see [Image is not part of application](#image-is-not-part-of-application). |
 | `The deployment was aborted before its outcome could be confirmed` | Argo CD became unreachable during the check. The application itself may be perfectly healthy — check Argo CD before blaming the deployment. |
@@ -119,6 +119,16 @@ curl -sSI "$ARGO_WATCHER_URL/api/v1/config"
 !!! warning
     Do not work around this by letting the credential follow the redirect. The deploy token does not expire, is not scoped to an application, and authorizes commits to your GitOps repository — whoever answers for the redirect target would receive it on every request.
 
+## Managed-images annotation is rejected
+
+**Symptom:** the deployment fails immediately, reporting `Git write-back error: invalid format for argo-watcher/managed-images annotation: "<entry>" is not alias=image`.
+
+Each entry must read `alias=image`. Whitespace around the `=` is ignored, so `app = myimage` is accepted, but neither half may be empty or contain whitespace of its own, and the image may not contain a second `=`.
+
+An alias may not be repeated either — `app=one,app=two` is rejected, since only one of the two could ever be written back. Pointing two aliases at the same image is fine.
+
+**Fix:** correct the entry named in the error on the `Application`. The alias must also match the one in the matching `argo-watcher/<alias>.helm.image-tag` annotation.
+
 ## Client refuses a redirect away from https
 
 **Symptom:** the deployment fails immediately with `refused to follow a redirect away from https`, naming the endpoint that answered and the plain-`http` target it pointed at.
@@ -131,22 +141,20 @@ curl -sSI "$ARGO_WATCHER_URL/api/v1/config"
 
 **Symptom:** the deployment fails immediately with `Image "<name>" is not part of application "<app>"`, followed by the images the application does declare.
 
-**Meaning:** the application finished rolling out — synced and healthy — but its desired state never declares the requested image, so waiting would only burn the timeout. The desired state comes from Argo CD's managed resources, not from running pods, so a workload with no pod yet (an untriggered `CronJob`, a `Deployment` scaled to zero) still counts as declaring its image.
+**Meaning:** the application finished rolling out — synced and healthy — but its desired state never declares the requested image, so waiting would only burn the timeout. The check compares image names and ignores the tag. The desired state comes from Argo CD's rendered manifests, not from running pods, so a workload with no pod yet (an untriggered `CronJob`, a `Deployment` scaled to zero, a sync hook) still counts as declaring its image.
 
 **Likely causes**
 
 - The image name is misspelled, or its registry prefix does not match the manifests.
 - The deployment targets a real but different application — it exists, so it is not `app not found`, but it does not contain this image.
-- The tag was never committed: see [Image tag is never committed](#image-tag-is-never-committed-write-back-skipped).
+
+An uncommitted tag does not trigger this error: the image name is still declared, so the task polls until `DEPLOYMENT_TIMEOUT` and fails with a timeout instead. See [Image tag is never committed](#image-tag-is-never-committed-write-back-skipped).
 
 **How to verify:** compare the requested image against the list in the failure reason, or run `argocd app manifests <app> | grep image:`.
 
-**When the check does not run:** it needs a freshly reconciled application, so it is skipped when `ARGO_REFRESH_APP` is `false` or the task sets `TASK_REFRESH=false`.
+**When the check does not run:** it needs a freshly reconciled application, so it is skipped when `ARGO_REFRESH_APP` is `false` or the task sets `TASK_REFRESH=false`. It also abstains when one of the application's rendered manifests cannot be read, logging `Could not read the application's desired state to validate images` at `warn`; the deployment then polls to a timeout instead of failing fast.
 
-**When the check is wrong:** two kinds of image belong to an application yet never appear in the desired state Argo CD reports, so a correct name still fails:
-
-- **Images used only by a sync hook** — Argo CD omits hook resources, so an image appearing only in a PreSync migration Job is invisible.
-- **Images named by a custom resource** — if an operator creates the workload from a CR, that workload is not a managed resource of the application.
+**When the check is wrong:** an image named by a **custom resource** belongs to the application yet never appears in its rendered manifests — if an operator creates the workload from a CR, the image is in the operator's spec, not in a manifest Argo CD renders, so a correct image name still fails.
 
 Turn the check off for such an application. Its deployments then poll for the image and fail only on the timeout, exactly as before:
 
@@ -166,6 +174,8 @@ A task that still ends up `aborted` means its rollout window elapsed while no re
 `Deployment window elapsed while the task was unattended; marked aborted by argo-watcher.`
 
 The other possibility is that no replica was left to take it over: with a single replica, nothing claims the task until that pod is back.
+
+A `Left the outcome to the replica that took the deployment over.` line in the log of the *previous* owner is expected during a handover, not a fault. It means that replica reached an outcome after its claim had already moved on, and the database refused the write so the new owner's result stands.
 
 **Cause with `STATE_TYPE=in-memory`:** the task lives only in the process that accepted it, so it cannot be handed over at all. The row is later reaped by the obsolete-task sweep, which marks a row `aborted` once it has gone quiet for the task's own rollout window plus an hour (its `TASK_TIMEOUT`, or the server's `DEPLOYMENT_TIMEOUT`) — bookkeeping only, so the recorded status can disagree with what really happened. This is expected, and is **not** fixed by tuning the shutdown budget: a graceful shutdown protects the git commit, not the task status. Treat the GitOps repository and Argo CD as the record of what happened, or move to Postgres.
 
@@ -321,14 +331,15 @@ Also check whether `LOCKDOWN_SCHEDULE` covers the current time. Schedules are ev
 
 **Likely causes**
 
-- `WEBHOOK_ENABLED` is not `true`, or `WEBHOOK_URL` is unset or unreachable from the server.
+- `WEBHOOK_ENABLED` is not `true`, or `WEBHOOK_URL` is set but unreachable from the server. An
+  unset or malformed `WEBHOOK_URL` fails startup instead, so the server would not be running.
 - The receiver answers with a code that is not in `WEBHOOK_ALLOWED_RESPONSE_CODES` (default `200` only). A receiver replying `201` or `204` counts as a failure until you list it.
 - The receiver rejects the request because `WEBHOOK_AUTHORIZATION_HEADER_NAME`/`_VALUE` do not match what it expects, or `WEBHOOK_CONTENT_TYPE` does not match the body.
 - `WEBHOOK_FORMAT` references a field that does not exist. (A template that does not *parse* fails startup instead, so the server would not be running.)
 
 **How to verify**
 
-- Look for `Failed to dispatch notification` in the server log — it carries the response code and the receiver's body. `LOG_LEVEL=debug` additionally logs the rendered payload.
+- Look for `Failed to dispatch notification` in the server log — it carries the response code and the receiver's body. `LOG_LEVEL=debug` additionally logs the rendered payload. The receiver's URL is deliberately left out, since it is a secret for most receivers; a connection that never got that far is reported by its cause alone (`Post: dial tcp …`).
 - Reproduce the call by hand:
 
     ```bash

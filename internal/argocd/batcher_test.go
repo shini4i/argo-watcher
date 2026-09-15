@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	gogit "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -312,6 +314,11 @@ func TestBatcher_FlushDeliversLockError(t *testing.T) {
 
 	req := newBatchReq("git@example.com:test/repo.git", "main")
 	req.gitopsRepo.Path = "apps"
+	// Populated so this test fails on the assertion rather than on a nil dereference if a
+	// duration is ever observed on a path where the lock was never acquired.
+	req.app = newAppWithImages("app-a")
+	req.task = newImageTask()
+	req.task.App = "app-a"
 
 	err := b.Submit(req)
 
@@ -396,4 +403,195 @@ func TestBatcher_FlushThreadsDrainIntoRetryLoop(t *testing.T) {
 	assert.ErrorIs(t, err, errWritebackDraining, "flush must pass its drain channel into the retry loop")
 	assert.NotContains(t, err.Error(), "after 20 attempts", "the retry budget must not have been spent")
 	assert.True(t, locker.called, "the real flush path must have run")
+}
+
+// GIT_BATCH_WRITEBACK must not silently retire the two write-back histograms: both are
+// documented in observability.md with no batch caveat and the shipped dashboard queries them.
+// The clone fails here; the successful batch is covered by its own test below.
+func TestBatcher_FlushObservesDurationsForEveryAppInTheBatch(t *testing.T) {
+	// Only needs to be SET so updater.NewGitRepo can load its config; the clone that
+	// follows fails, which is deliberate — a failed write-back is the slow, retried one
+	// the histograms exist to surface, so it must still be measured.
+	t.Setenv("SSH_KEY_PATH", "/nonexistent/key")
+
+	apps := []string{"app-a", "app-b"}
+
+	ctrl := gomock.NewController(t)
+	metrics := mocks.NewMockMetricsInterface(ctrl)
+	metrics.EXPECT().ObserveGitBatchSize(len(apps)).Times(1)
+	// One lock and one clone/commit/push serve the whole batch, so every app it carried
+	// waited that long and took that long.
+	// The wait is measured from Submit, not from the lock: flushLoop serialises flushes per
+	// repo, so timing the lock alone would report near-zero however long an app queued.
+	const queued = 40 * time.Millisecond
+	for _, app := range apps {
+		metrics.EXPECT().ObserveGitLockWaitDuration(app, gomock.Cond(func(v float64) bool {
+			return v >= queued.Seconds()
+		})).Times(1)
+		metrics.EXPECT().ObserveGitWritebackDuration(app, gomock.Any()).Times(1)
+	}
+
+	locker := &spyLocker{}
+	b := NewBatcher(locker, t.TempDir(), 20, metrics)
+
+	batch := make([]*batchWriteRequest, 0, len(apps))
+	for _, app := range apps {
+		req := newBatchReq("git@example.com:test/repo.git", "main")
+		req.gitopsRepo.Path = "apps"
+		req.app = newAppWithImages(app)
+		req.task = newImageTask()
+		req.task.App = app
+		req.enqueuedAt = time.Now().Add(-queued)
+		batch = append(batch, req)
+	}
+
+	// flush is called directly: the queueing that assembles a batch is covered elsewhere,
+	// and a hand-built batch makes the per-app fan-out deterministic.
+	b.flush(batch)
+
+	assert.True(t, locker.called, "the real flush path must have run")
+}
+
+// The wait is measured from the stamp Submit puts on the request, so that stamp has to be
+// covered through the real Submit path: without it every app would report the time since the
+// zero Time — about two millennia — and poison the histogram rather than leave it empty.
+func TestBatcher_SubmitStampsTheRequestSoLockWaitIsSane(t *testing.T) {
+	t.Setenv("SSH_KEY_PATH", "/nonexistent/key")
+
+	var lockWait float64
+	ctrl := gomock.NewController(t)
+	metrics := mocks.NewMockMetricsInterface(ctrl)
+	metrics.EXPECT().ObserveGitBatchSize(1).Times(1)
+	metrics.EXPECT().ObserveGitLockWaitDuration("app-a", gomock.Any()).
+		Do(func(_ string, seconds float64) { lockWait = seconds }).Times(1)
+	metrics.EXPECT().ObserveGitWritebackDuration("app-a", gomock.Any()).Times(1)
+
+	b := NewBatcher(&spyLocker{}, t.TempDir(), 20, metrics)
+
+	req := newBatchReq("git@example.com:test/repo.git", "main")
+	req.gitopsRepo.Path = "apps"
+	req.app = newAppWithImages("app-a")
+	req.task = newImageTask()
+	req.task.App = "app-a"
+
+	// The clone fails, which is fine: the durations are recorded either way.
+	require.Error(t, b.Submit(req))
+
+	assert.GreaterOrEqual(t, lockWait, 0.0)
+	assert.Less(t, lockWait, 60.0, "an unstamped request would report the time since the zero Time")
+}
+
+// The shortcut before the lock: no lock was requested, so no wait and no work happened,
+// and reporting either would invent a measurement.
+func TestBatcher_FlushWithoutAGitRepoDeliversTheErrorAndObservesNoDurations(t *testing.T) {
+	t.Setenv("SSH_KEY_PATH", "/nonexistent/key")
+	// Rejected by NewGitConfig, so updater.NewGitRepo fails before flush reaches the lock.
+	t.Setenv("GIT_OP_TIMEOUT", "0s")
+
+	ctrl := gomock.NewController(t)
+	metrics := mocks.NewMockMetricsInterface(ctrl)
+	// Only the batch size is declared: any duration observation fails as an unexpected call.
+	metrics.EXPECT().ObserveGitBatchSize(1).Times(1)
+
+	locker := &spyLocker{}
+	b := NewBatcher(locker, t.TempDir(), 20, metrics)
+
+	req := newBatchReq("git@example.com:test/repo.git", "main")
+	req.gitopsRepo.Path = "apps"
+	req.app = newAppWithImages("app-a")
+	req.task = newImageTask()
+	req.task.App = "app-a"
+
+	require.Error(t, b.Submit(req))
+	assert.False(t, locker.called, "the batch must short-circuit before the lock")
+}
+
+// seedLocalRemote builds a bare git repository on disk, seeded with the apps/ directory the
+// write-back commits into. A filesystem remote needs no network and no host key, which is what
+// makes a SUCCESSFUL batch reachable here at all.
+func seedLocalRemote(t *testing.T) string {
+	t.Helper()
+
+	seed := t.TempDir()
+	repo, err := gogit.PlainInit(seed, false)
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(filepath.Join(seed, "apps"), 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(seed, "apps", ".gitkeep"), nil, 0o600))
+
+	wt, err := repo.Worktree()
+	require.NoError(t, err)
+	_, err = wt.Add("apps/.gitkeep")
+	require.NoError(t, err)
+	_, err = wt.Commit("seed", &gogit.CommitOptions{
+		Author: &object.Signature{Name: "test", Email: "test@example.com", When: time.Now()},
+	})
+	require.NoError(t, err)
+
+	bare := filepath.Join(t.TempDir(), "origin.git")
+	_, err = gogit.PlainClone(bare, true, &gogit.CloneOptions{URL: seed})
+	require.NoError(t, err)
+
+	return bare
+}
+
+// The failing-batch test above proves the observation is not skipped; this one proves it is
+// not confined to an error path. Without it, moving the defer into a failure branch would
+// leave the whole suite green.
+func TestBatcher_FlushObservesDurationsOnASuccessfulBatch(t *testing.T) {
+	t.Setenv("SSH_KEY_PATH", writeThrowawaySSHKey(t))
+	t.Setenv("GIT_OP_TIMEOUT", "60s")
+	t.Setenv("GIT_MAX_ATTEMPTS", "3")
+
+	remote := seedLocalRemote(t)
+	apps := []string{"app-a", "app-b"}
+
+	ctrl := gomock.NewController(t)
+	metrics := mocks.NewMockMetricsInterface(ctrl)
+	metrics.EXPECT().ObserveGitBatchSize(len(apps)).Times(1)
+	for _, app := range apps {
+		metrics.EXPECT().ObserveGitLockWaitDuration(app, gomock.Any()).Times(1)
+		metrics.EXPECT().ObserveGitWritebackDuration(app, gomock.Any()).Times(1)
+	}
+
+	b := NewBatcher(&spyLocker{}, t.TempDir(), 20, metrics)
+
+	batch := make([]*batchWriteRequest, 0, len(apps))
+	for _, app := range apps {
+		req := newBatchReq(remote, "master")
+		req.gitopsRepo.Path = "apps"
+		req.app = newAppWithImages(app)
+		req.task = newImageTask()
+		req.task.App = app
+		req.enqueuedAt = time.Now()
+		batch = append(batch, req)
+	}
+
+	b.flush(batch)
+
+	// The observation only means anything if the batch actually landed.
+	for _, req := range batch {
+		assert.NoError(t, <-req.resultCh, "app %s must succeed", req.task.App)
+	}
+	assert.Equal(t, 2, countRemoteCommitsBeyondSeed(t, remote), "one commit per app")
+}
+
+// countRemoteCommitsBeyondSeed reports how many commits the write-back added on top of the
+// single seed commit.
+func countRemoteCommitsBeyondSeed(t *testing.T, remote string) int {
+	t.Helper()
+
+	dir := t.TempDir()
+	repo, err := gogit.PlainClone(dir, false, &gogit.CloneOptions{URL: remote})
+	require.NoError(t, err)
+
+	iter, err := repo.Log(&gogit.LogOptions{})
+	require.NoError(t, err)
+
+	total := 0
+	require.NoError(t, iter.ForEach(func(*object.Commit) error {
+		total++
+		return nil
+	}))
+
+	return total - 1
 }

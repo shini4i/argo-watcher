@@ -5,7 +5,7 @@ Argo Watcher reads these annotations from the Argo CD `Application` resource. Al
 | Annotation | Example | Description |
 |---|---|---|
 | `argo-watcher/managed` | `"true"` | Enables Argo Watcher management, and with it the GitOps write-back. |
-| `argo-watcher/managed-images` | `app=registry.example.com/group/project` | Maps an alias to a full image name; comma-separated for several. |
+| `argo-watcher/managed-images` | `app=registry.example.com/group/project` | Maps an alias to a full image name; comma-separated for several. Whitespace around `=` is ignored. An entry with an empty alias or image, whitespace inside either, or a second `=` is rejected, as is a repeated alias. |
 | `argo-watcher/<alias>.helm.image-tag` | `app.image.tag` | Helm value path the new tag is written to, keyed by an alias from `managed-images`. |
 | `argo-watcher/write-back-filename` | `values-override.yaml` | Overrides the override-file name (derived from the app name by default). |
 | `argo-watcher/write-back-repo` | `git@github.com:example/gitops.git` | Write-back repository. **Multi-source applications only.** |

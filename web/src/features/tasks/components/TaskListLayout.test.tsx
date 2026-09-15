@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import type { ReactElement } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TaskListLayout } from './TaskListLayout';
 
@@ -24,7 +24,7 @@ const {
 
   const list = ({ children, ...props }: Record<string, unknown>) => {
     listCallsInternal.push(props);
-    return <div data-testid="ra-list">{children}</div>;
+    return <div data-testid="ra-list">{children as ReactNode}</div>;
   };
 
   const pagination = ({ rowsPerPageOptions }: { rowsPerPageOptions: number[] }) => (
@@ -117,8 +117,8 @@ describe('TaskListLayout', () => {
     expect(props.resource).toBe('customTasks');
     expect(props.sort).toEqual({ field: 'author', order: 'ASC' });
     expect(props.perPage).toBe(40);
-    expect(props.pagination.props['data-testid']).toBe('custom-pagination');
-    expect(props.actions.props['data-testid']).toBe('actions');
+    expect((props.pagination as ReactElement<Record<string, unknown>>).props['data-testid']).toBe('custom-pagination');
+    expect((props.actions as ReactElement<Record<string, unknown>>).props['data-testid']).toBe('actions');
     expect(props.storeKey).toBe('customStore');
     // The layout must NOT delegate the empty state to react-admin's <List empty>,
     // because react-admin renders it *instead of* the list, dropping the filter
@@ -320,6 +320,6 @@ describe('TaskListLayout', () => {
     const props = listCalls.at(-1) as { perPage: number; pagination: ReactElement };
     expect(props.pagination.type).toBe(PaginationMock);
     expect(props.perPage).toBe(15);
-    expect(props.pagination.props.rowsPerPageOptions).toEqual([10, 25, 50, 100]);
+    expect((props.pagination as ReactElement<Record<string, unknown>>).props.rowsPerPageOptions).toEqual([10, 25, 50, 100]);
   });
 });

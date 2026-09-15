@@ -1,39 +1,18 @@
-import { useEffect, useState } from 'react';
-import { httpClient } from '../../data/httpClient';
-
-interface ServerConfigResponse {
-  oidc?: {
-    enabled?: boolean;
-  };
-}
+import { useServerConfig } from '../../data/serverConfig';
 
 /**
- * Returns `null` while the request is in flight or when it fails, so callers
- * gate privileged actions conservatively (treating "unknown" as "denied")
- * instead of falling open if the /api/v1/config request errors.
+ * @returns whether OIDC is enabled, or `null` while the server configuration is
+ * unknown — in flight or failed — so callers gate privileged actions conservatively
+ * (treating "unknown" as "denied") instead of falling open.
  */
 export const useOidcEnabled = (): boolean | null => {
-  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const { config } = useServerConfig();
 
-  useEffect(() => {
-    let subscribed = true;
+  // Collapsing an unknown configuration to false would let ConfigDrawer treat OIDC as
+  // disabled and allow unauthenticated toggling of the deploy lock.
+  if (config === null) {
+    return null;
+  }
 
-    httpClient<ServerConfigResponse>('/api/v1/config')
-      .then(response => {
-        if (subscribed) {
-          setEnabled(Boolean(response.data?.oidc?.enabled));
-        }
-      })
-      .catch(() => {
-        // Leave enabled as null on failure — collapsing to false would let
-        // ConfigDrawer treat OIDC as disabled and allow unauthenticated
-        // toggling of the deploy lock.
-      });
-
-    return () => {
-      subscribed = false;
-    };
-  }, []);
-
-  return enabled;
+  return Boolean(config.oidc?.enabled);
 };

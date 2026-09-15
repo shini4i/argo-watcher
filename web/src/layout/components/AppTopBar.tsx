@@ -1,5 +1,6 @@
 import RestoreIcon from '@mui/icons-material/Restore';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
+import DashboardIcon from '@mui/icons-material/Dashboard';
 import QuizRoundedIcon from '@mui/icons-material/QuizRounded';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import LocalOfferIcon from '@mui/icons-material/LocalOffer';
@@ -30,6 +31,7 @@ const GITHUB_REPO_URL = 'https://github.com/shini4i/argo-watcher';
 
 const navigationButtons = [
   { to: '/', icon: <RestoreIcon fontSize="small" />, label: 'Recent' },
+  { to: '/overview', icon: <DashboardIcon fontSize="small" />, label: 'Overview' },
   { to: '/history', icon: <CalendarMonthIcon fontSize="small" />, label: 'History' },
 ];
 
@@ -53,16 +55,23 @@ const appBarStyles: SxProps<Theme> = theme => {
   };
 };
 
+// Recent is reached as `/`, but the tasks Resource settles the URL on `/tasks`,
+// so an equality test would light the icon only for the instant before that.
+// `/task/:id` is the detail page and deliberately matches neither.
 const routeIsActive = (pathname: string, target: string) => {
   if (target === '/') {
-    return pathname === target;
+    return pathname === target || pathname === '/tasks' || pathname.startsWith('/tasks?');
   }
   return pathname.startsWith(target);
 };
 
 export const AppTopBar = (props: AppBarProps) => {
   const { sx: appBarSxProp, ...appBarProps } = props;
-  const composedSx: SxProps<Theme> = appBarSxProp ? [appBarStyles, appBarSxProp] : appBarStyles;
+  // Flattened, not nested: MUI's sx array form holds style objects, not other arrays.
+  const composedSx: SxProps<Theme> = [
+    appBarStyles,
+    ...(Array.isArray(appBarSxProp) ? appBarSxProp : [appBarSxProp]),
+  ];
   const [version, setVersion] = useState<string>('—');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const notify = useNotify();
@@ -85,7 +94,10 @@ export const AppTopBar = (props: AppBarProps) => {
     }
   }, [notify]);
 
+  // The rule does not model the await boundary: `fetchVersion` writes state
+  // only after the request settles.
   useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect
     fetchVersion();
   }, [fetchVersion]);
 

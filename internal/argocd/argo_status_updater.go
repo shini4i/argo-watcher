@@ -112,28 +112,11 @@ func (updater *ArgoStatusUpdater) Close(ctx context.Context) {
 	}
 }
 
-// WaitForRollout monitors the application until it reaches a final state (deployed
-// or failed), or stops early if a newer deployment for the same app supersedes it
-// (issue #353), or if another replica takes the task over.
-//
-// resumed marks a task picked up from another replica: its start notification was
-// already sent by the replica that accepted it, so sending a second one would
-// announce the same deployment twice.
-func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task, resumed bool) {
-	updater.waitForRollout(task, resumed, neverDraining)
-}
-
-// neverDraining is the abandon predicate for a rollout monitored by the replica
-// that accepted the deployment. Such a task has nowhere to be handed back to:
-// nothing else holds its claim, so it is watched until it finishes or until the
-// process ends with it.
-func neverDraining() bool { return false }
-
-// waitForRollout is WaitForRollout with the condition under which this replica
-// gives the rollout up: draining reports that shutdown has begun, which ends the
-// monitoring as a takeover would — without a status, so the replica that resumes
-// the task records the outcome instead.
-func (updater *ArgoStatusUpdater) waitForRollout(task models.Task, resumed bool, draining func() bool) {
+// WaitForRollout monitors the application until it reaches a final state, giving it
+// up without a status when a newer deployment supersedes it (issue #353), when
+// another replica takes the task over, or when draining reports shutdown has begun.
+// resumed marks a task already announced as started by the replica that accepted it.
+func (updater *ArgoStatusUpdater) WaitForRollout(task models.Task, resumed bool, draining func() bool) {
 	updater.monitor.BeginTracking()
 	defer updater.monitor.EndTracking()
 
@@ -148,9 +131,8 @@ func (updater *ArgoStatusUpdater) waitForRollout(task models.Task, resumed bool,
 
 	// start bounds the deployment-duration metric: a monotonic in-process clock over the whole
 	// deployment, write-back included. It is taken after the start notification so a slow
-	// synchronous notifier does not inflate the measured duration, and deliberately not derived
-	// from task.Created (whose stored unit differs across state backends). The failure message
-	// reports waited instead, which covers the rollout polling alone.
+	// synchronous notifier does not inflate the measured duration. The failure message reports
+	// waited instead, which covers the rollout polling alone.
 	start := time.Now()
 
 	// Both conditions end the rollout the same way, so the poll loop and the
@@ -176,10 +158,20 @@ func (updater *ArgoStatusUpdater) waitForRollout(task models.Task, resumed bool,
 		// whatever wrote it, and neither a cancelled nor an aborted task is re-claimed by
 		// a sweep — so this replica is the last one able to announce it.
 	case draining():
+		// Covers the write-back errors shutdown raises (errBatcherClosed,
+		// errWritebackDraining) as well as a poll given up. Only shared state reports
+		// draining, so with in-memory state those errors fall through and are reported:
+		// no replica could resume the task, and a dropped deployment is the worse answer.
 		err = errReplicaDraining
 	}
 
-	var imageErr *ImageNotPartOfAppError
+	var (
+		imageErr     *ImageNotPartOfAppError
+		writeBackErr *WriteBackError
+	)
+	// The arms that stop without writing leave this true: there is no refused write
+	// to suppress, and they return before it is read.
+	recorded := true
 
 	switch {
 	case errors.Is(err, errReplicaDraining):
@@ -197,7 +189,7 @@ func (updater *ArgoStatusUpdater) waitForRollout(task models.Task, resumed bool,
 		slog.Info("Stopped monitoring a deployment taken over by another replica.", "id", task.Id)
 		return
 	case errors.As(err, &imageErr):
-		updater.monitor.HandleImageNotPartOfApp(&task, imageErr)
+		recorded = updater.monitor.HandleImageNotPartOfApp(&task, imageErr)
 	case errors.Is(err, errTaskSuperseded):
 		// A newer deployment for the same app already marked this task "cancelled"
 		// in the shared state (possibly on another replica). Stop without writing a
@@ -210,10 +202,24 @@ func (updater *ArgoStatusUpdater) waitForRollout(task models.Task, resumed bool,
 		// outcome the sweep decided.
 		slog.Info("Deployment already given up on by the staleness sweep; stopping.", "id", task.Id)
 		task.Status = models.StatusAborted
+	case errors.As(err, &writeBackErr):
+		recorded = updater.monitor.HandleWriteBackFailure(&task, writeBackErr)
 	case err != nil:
-		updater.monitor.HandleArgoAPIFailure(&task, err, confirmed)
+		recorded = updater.monitor.HandleArgoAPIFailure(&task, err, confirmed)
 	default:
-		updater.monitor.ProcessDeploymentResult(&task, application, waited)
+		recorded = updater.monitor.ProcessDeploymentResult(&task, application, waited)
+	}
+
+	// The write was refused. A handover has a successor that reports the outcome; a cancelled
+	// or aborted task has none, since a sweep only re-claims one still in progress, so its
+	// outcome is reported here or nowhere. A status that cannot be read stays silent as well:
+	// the stored outcome is right either way, and announcing a guess would not be.
+	if !recorded {
+		ended := updater.monitor.storedTaskStatus(task.Id)
+		if ended != models.StatusCancelledMessage && ended != models.StatusAborted {
+			return
+		}
+		task.Status = ended
 	}
 
 	// Counted once: the branches that return early leave the outcome to the replica that
@@ -280,7 +286,9 @@ func (updater *ArgoStatusUpdater) waitForApplicationDeployment(task models.Task,
 		if errors.Is(err, ErrDeploymentSuperseded) {
 			return nil, 0, true, updater.abortedWriteBackCause(task.Id, abandoned())
 		}
-		return nil, 0, true, err
+		// Marked as the write-back's own so the failure is not reported against ArgoCD,
+		// which was never asked for anything here.
+		return nil, 0, true, &WriteBackError{Err: err}
 	}
 
 	application, waited, err := updater.monitor.WaitRollout(task, abandoned)

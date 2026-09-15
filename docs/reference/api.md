@@ -11,6 +11,7 @@ The server exposes a REST API on its own port (default `8080`), with every endpo
 - `GET /api/v1/tasks` returns at most 1000 tasks per request, which is also its default page size.
 - Authentication failures return `401 Unauthorized`, and `503 Service Unavailable` when the credential could not be checked because the OIDC provider was unreachable.
 - Server-side problems return `500 Internal Server Error`.
+- `GET /api/v1/tasks` and `GET /api/v1/apps/summary` answer `200` with an `error` field and no results when the state backend could not be read. Check `error` before reading an empty list as "nothing deployed".
 
 ## Security headers
 
@@ -96,7 +97,7 @@ Two unauthenticated endpoints report health. They answer different questions, an
 | `GET /livez` | Only that the process is still serving | Liveness probe |
 | `GET /readyz` | Not shutting down, **and** the state backend answers | Readiness probe |
 
-Both return `{"status":"up"}`, or `503` with `{"status":"down","reason":"..."}` — `shutting down` during a graceful shutdown, `state backend unreachable` when the database cannot be pinged.
+Both return `{"status":"up"}`, or `503` with `{"status":"down","reason":"..."}` — `shutting down` during a graceful shutdown, `state backend unreachable` when the database cannot be pinged. The database ping is capped at two seconds, so a database that accepts the connection but never answers still fails `/readyz` within the chart's default `readinessProbe.timeoutSeconds` of 3 rather than hanging the probe.
 
 !!! warning "Never point a liveness probe at `/readyz`"
     A liveness failure restarts the container, and a restart cannot fix a database that is down. Probing the state backend for liveness turns a recoverable outage into a fleet-wide `CrashLoopBackoff` while every replica could still serve task history and the unreachable banner. That is why `/livez` checks no dependency.

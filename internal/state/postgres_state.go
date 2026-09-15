@@ -1,6 +1,7 @@
 package state
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -16,11 +17,16 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/shini4i/argo-watcher/internal/config"
+	"github.com/shini4i/argo-watcher/internal/lock"
 	"github.com/shini4i/argo-watcher/internal/models"
 	"github.com/shini4i/argo-watcher/internal/state/state_models"
 )
 
 const whereStatusEquals = "status = ?"
+
+// supersedeSavepoint names the savepoint SupersedeAndAdd rolls back to when the
+// supersede fails, so the insert it shares a transaction with can still proceed.
+const supersedeSavepoint = "supersede"
 
 // retentionDeleteBatchSize is how many expired tasks one DELETE removes. It
 // keeps each statement short enough not to hold locks or grow a transaction for
@@ -52,6 +58,12 @@ func (state *PostgresState) Connect(serverConfig *config.ServerConfig) error {
 		state.orm = orm
 	}
 
+	sqlDB, err := state.orm.DB()
+	if err != nil {
+		return fmt.Errorf("could not reach the underlying connection pool: %w", err)
+	}
+	configurePool(sqlDB)
+
 	ownerId, err := newOwnerId()
 	if err != nil {
 		return err
@@ -68,8 +80,35 @@ func (state *PostgresState) Connect(serverConfig *config.ServerConfig) error {
 	return nil
 }
 
-// AddTask returns the task with the DB-generated id and creation time.
+// Connection-pool bounds. database/sql defaults to an unlimited pool, so a burst of
+// concurrent deployments could open a connection each and exhaust the server's
+// max_connections — taking down every other client of that database with it.
+const (
+	maxOpenConns    = 20
+	maxIdleConns    = 10
+	connMaxLifetime = 30 * time.Minute
+	connMaxIdleTime = 5 * time.Minute
+)
+
+// configurePool bounds the pool. Queries queue in Go once the cap is reached, which
+// is safe only because nothing holds a connection from this pool across work that
+// queries it again — the advisory locker holds its own pool for exactly that reason
+// (lock.NewPostgresLockerPool).
+func configurePool(sqlDB *sql.DB) {
+	sqlDB.SetMaxOpenConns(maxOpenConns)
+	sqlDB.SetMaxIdleConns(maxIdleConns)
+	sqlDB.SetConnMaxLifetime(connMaxLifetime)
+	sqlDB.SetConnMaxIdleTime(connMaxIdleTime)
+}
+
+// AddTask returns the task with the DB-generated id and timestamps, in Unix seconds.
 func (state *PostgresState) AddTask(task models.Task) (*models.Task, error) {
+	return insertTask(state.orm, task)
+}
+
+// insertTask writes the task row and returns the task with its server-owned
+// fields filled in. It takes the handle so it can run inside a transaction.
+func insertTask(tx *gorm.DB, task models.Task) (*models.Task, error) {
 	ormTask := state_models.TaskModel{
 		Images:           datatypes.NewJSONSlice(task.Images),
 		Status:           models.StatusInProgressMessage,
@@ -83,13 +122,14 @@ func (state *PostgresState) AddTask(task models.Task) (*models.Task, error) {
 		Refresh:          nullBoolFromPointer(task.Refresh),
 	}
 
-	if err := state.orm.Create(&ormTask).Error; err != nil {
+	if err := tx.Create(&ormTask).Error; err != nil {
 		slog.Error("Failed to create task database record", "error", err)
 		return nil, fmt.Errorf("failed to create task in database")
 	}
 
 	task.Id = ormTask.Id.String()
-	task.Created = float64(ormTask.Created.UnixMilli())
+	task.Created = float64(ormTask.Created.Unix())
+	task.Updated = float64(ormTask.Updated.Unix())
 	task.Status = models.StatusInProgressMessage
 
 	return &task, nil
@@ -101,9 +141,134 @@ func escapeLikePattern(value string) string {
 	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(value)
 }
 
+// appSummaryAggregate is one row of the per-app aggregate query.
+type appSummaryAggregate struct {
+	App                   string
+	Total                 int64
+	Failed                int64
+	Running               int64
+	Deployed              int64
+	MedianDurationSeconds float64
+}
+
+// appSummaryRecent is one of the newest rows of an app, ordered by recency.
+type appSummaryRecent struct {
+	App          string
+	Project      string
+	Status       string
+	StatusReason string
+	Created      time.Time
+}
+
+// The counters are exact for the window: Postgres groups every matching row,
+// where the browser could only group one page of them.
+const appSummaryAggregateSQL = `
+SELECT
+    app,
+    count(*) AS total,
+    count(*) FILTER (WHERE status IN (?)) AS failed,
+    count(*) FILTER (WHERE status = ?) AS running,
+    count(*) FILTER (WHERE status = ?) AS deployed,
+    coalesce(
+        percentile_cont(0.5) WITHIN GROUP (
+            ORDER BY extract(epoch FROM (updated - created))
+        ) FILTER (WHERE status <> ? AND updated >= created),
+        0
+    ) AS median_duration_seconds
+FROM tasks
+WHERE created > ? AND created <= ?
+GROUP BY app
+ORDER BY app`
+
+// Recency is computed over the same window, so the strip and the counters can
+// never disagree about which tasks the window contains.
+const appSummaryRecentSQL = `
+SELECT app, project, status, coalesce(status_reason, '') AS status_reason, created
+FROM (
+    SELECT app, project, status, status_reason, created, id,
+           row_number() OVER (PARTITION BY app ORDER BY created DESC, id DESC) AS recency
+    FROM tasks
+    WHERE created > ? AND created <= ?
+) ranked
+WHERE recency <= ?
+ORDER BY app, created DESC, id DESC`
+
+// GetAppSummaries aggregates the window per application in two queries: the
+// counters and median, then the newest rows per app for the outcome strip. Both
+// run in one REPEATABLE READ transaction, so a task inserted or swept between
+// them cannot leave an app counted here and unreported there.
+func (state *PostgresState) GetAppSummaries(filter models.TaskFilter) ([]models.AppSummary, error) {
+	startTimeUTC := time.Unix(int64(filter.StartTime), 0).UTC()
+	endTimeUTC := time.Unix(int64(filter.EndTime), 0).UTC()
+
+	var aggregates []appSummaryAggregate
+	var recent []appSummaryRecent
+
+	// Read-only, so the commit error gorm returns here carries no lost work.
+	err := state.orm.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Raw(
+			appSummaryAggregateSQL,
+			models.FailedTaskStatuses(),
+			models.StatusInProgressMessage,
+			models.StatusDeployedMessage,
+			models.StatusInProgressMessage,
+			startTimeUTC,
+			endTimeUTC,
+		).Scan(&aggregates).Error; err != nil {
+			return fmt.Errorf("failed to aggregate app summaries: %w", err)
+		}
+
+		if err := tx.Raw(
+			appSummaryRecentSQL, startTimeUTC, endTimeUTC, models.RecentOutcomeLimit,
+		).Scan(&recent).Error; err != nil {
+			return fmt.Errorf("failed to query recent app outcomes: %w", err)
+		}
+
+		return nil
+	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	if err != nil {
+		slog.Error("Failed to read app summaries", "error", err)
+		return nil, err
+	}
+
+	byApp := make(map[string][]appSummaryRecent, len(aggregates))
+	for _, row := range recent {
+		byApp[row.App] = append(byApp[row.App], row)
+	}
+
+	summaries := make([]models.AppSummary, 0, len(aggregates))
+	for _, aggregate := range aggregates {
+		summary := models.AppSummary{
+			App:                   aggregate.App,
+			Total:                 aggregate.Total,
+			Failed:                aggregate.Failed,
+			Running:               aggregate.Running,
+			Deployed:              aggregate.Deployed,
+			MedianDurationSeconds: aggregate.MedianDurationSeconds,
+			RecentStatuses:        []string{},
+		}
+
+		rows := byApp[aggregate.App]
+		for _, row := range rows {
+			summary.RecentStatuses = append(summary.RecentStatuses, row.Status)
+		}
+		if len(rows) > 0 {
+			newest := rows[0]
+			summary.Project = newest.Project
+			summary.LastStatus = newest.Status
+			summary.LastStatusReason = newest.StatusReason
+			summary.LastCreated = float64(newest.Created.Unix())
+		}
+
+		summaries = append(summaries, summary)
+	}
+
+	return summaries, nil
+}
+
 // GetTasks retrieves the tasks matching filter. Empty filter values (App, Status,
-// Search) are wildcards, and the Search clause mirrors models.Task.MatchesSearch.
-func (state *PostgresState) GetTasks(filter models.TaskFilter) ([]models.Task, int64) {
+// Author, Search) are wildcards, and the Search clause mirrors models.Task.MatchesSearch.
+func (state *PostgresState) GetTasks(filter models.TaskFilter) ([]models.Task, int64, error) {
 	startTimeUTC := time.Unix(int64(filter.StartTime), 0).UTC()
 	endTimeUTC := time.Unix(int64(filter.EndTime), 0).UTC()
 
@@ -113,6 +278,9 @@ func (state *PostgresState) GetTasks(filter models.TaskFilter) ([]models.Task, i
 	}
 	if filter.Status != "" {
 		query = query.Where(`"tasks"."status" = ?`, filter.Status)
+	}
+	if filter.Author != "" {
+		query = query.Where(`lower("tasks"."author") = lower(?)`, filter.Author)
 	}
 	if filter.Search != "" {
 		// A leading-wildcard ILIKE cannot use an index, so this is a filter over
@@ -133,7 +301,7 @@ func (state *PostgresState) GetTasks(filter models.TaskFilter) ([]models.Task, i
 	var total int64
 	if err := countQuery.Count(&total).Error; err != nil {
 		slog.Error("Failed to count tasks", "error", err)
-		return []models.Task{}, 0
+		return nil, 0, err
 	}
 
 	if filter.Limit > 0 {
@@ -143,12 +311,14 @@ func (state *PostgresState) GetTasks(filter models.TaskFilter) ([]models.Task, i
 		query = query.Offset(filter.Offset)
 	}
 
-	query = query.Order("created DESC")
+	// created is a timestamptz, so a tie needs microsecond-identical rows; id breaks
+	// it only to keep the page totally ordered across offsets.
+	query = query.Order("created DESC, id DESC")
 
 	var ormTasks []state_models.TaskModel
 	if err := query.Find(&ormTasks).Error; err != nil {
 		slog.Error("Failed to query tasks", "error", err)
-		return []models.Task{}, 0
+		return nil, 0, err
 	}
 
 	tasks := make([]models.Task, len(ormTasks))
@@ -156,7 +326,7 @@ func (state *PostgresState) GetTasks(filter models.TaskFilter) ([]models.Task, i
 		tasks[i] = *ormTask.ConvertToExternalTask()
 	}
 
-	return tasks, total
+	return tasks, total, nil
 }
 
 // GetTask retrieves a task by id. It returns ErrTaskNotFound when the id is
@@ -180,36 +350,118 @@ func (state *PostgresState) GetTask(id string) (*models.Task, error) {
 	return ormTask.ConvertToExternalTask(), nil
 }
 
-// SetTaskStatus errors if the id is malformed or no matching task exists.
+// SetTaskStatus errors if the id is malformed, returns ErrTaskNotFound when no task exists,
+// ErrTaskNotOwned when another instance holds the claim, and ErrTaskEnded when the task already
+// reached a terminal status.
 func (state *PostgresState) SetTaskStatus(id, status, reason string) error {
 	uuidv4, err := uuid.Parse(id)
 	if err != nil {
 		return err
 	}
+	// gorm omits a zero primary key from the WHERE clause. That once left no
+	// condition at all and was caught as a missing where; the fence below would now
+	// satisfy that check and rewrite every unowned row instead.
+	if uuidv4 == uuid.Nil {
+		return ErrTaskNotFound
+	}
+
+	// Fenced on ownership — a task claimed elsewhere has that owner monitoring it too, while a
+	// row never claimed stays writable (AddTask's claim is best-effort) and is told apart from
+	// one released at shutdown by having no lease deadline. Fenced on the status too: whoever
+	// ended the task first wins, the same rule supersedeInProgress applies when it cancels.
 	var ormTask = state_models.TaskModel{Id: uuidv4}
-	result := state.orm.Model(ormTask).Updates(state_models.TaskModel{Status: status, StatusReason: sql.NullString{String: reason, Valid: true}})
+	result := state.orm.Model(ormTask).
+		Where("owner_id = ? OR (owner_id IS NULL AND lease_expires_at IS NULL)", state.ownerId).
+		Where(whereStatusEquals, models.StatusInProgressMessage).
+		Updates(state_models.TaskModel{Status: status, StatusReason: sql.NullString{String: reason, Valid: true}})
 	if result.Error != nil {
 		return result.Error
 	}
 	if result.RowsAffected == 0 {
-		return errors.New("task not found")
+		return state.classifyRefusedWrite(uuidv4)
 	}
 
 	return nil
 }
 
-// CancelInProgressTasks marks in-progress tasks for the given app as cancelled
-// and returns how many rows were affected. A task is only cancelled when it
-// shares at least one image name with the supplied images (tags ignored), so
-// independent per-image deployments of the same app do not cancel each other,
-// and only when it carries no more authority than the superseding deployment.
-// Because both checks are evaluated in Go, the in-progress tasks are first
-// fetched, filtered, then updated by id. The UPDATE re-checks the in-progress
-// status so a task that finished between the two queries is not clobbered.
-func (state *PostgresState) CancelInProgressTasks(app string, images []models.Image, reason string, newTaskValidated bool) (int64, error) {
+// classifyRefusedWrite tells the three reasons SetTaskStatus matched no row apart: an id
+// that never existed is a caller bug, a task already in a terminal status was ended by
+// something else whose outcome stands, and one held elsewhere is an ordinary handover.
+func (state *PostgresState) classifyRefusedWrite(id uuid.UUID) error {
+	var stored state_models.TaskModel
+	// Only the status is read: decoding the row.s jsonb on an error path would add a failure
+	// mode to a function whose whole job is to classify one.
+	err := state.orm.Select("status").Where("id = ?", id).First(&stored).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return ErrTaskNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if stored.Status != models.StatusInProgressMessage {
+		return ErrTaskEnded
+	}
+
+	return ErrTaskNotOwned
+}
+
+// SupersedeAndAdd serialises submissions per app with an advisory lock, then
+// cancels what the new task supersedes and inserts it in one transaction. The
+// supersede keeps its best-effort contract through a savepoint, so a failure
+// there cannot poison the insert. See the interface for the supersede rules.
+func (state *PostgresState) SupersedeAndAdd(task models.Task, reason string) (*models.Task, int64, error) {
+	var (
+		added     *models.Task
+		cancelled int64
+	)
+
+	err := state.orm.Transaction(func(tx *gorm.DB) error {
+		// Serialised per application, so a concurrent submission for the same app
+		// waits rather than reading the set of in-progress tasks this one is about
+		// to join. Transaction-scoped: the lock is released by the commit below.
+		if err := tx.Exec("SELECT pg_advisory_xact_lock(?)", appLockID(task.App)).Error; err != nil {
+			return err
+		}
+
+		// Best-effort, as it was before it moved in here: refusing a deployment over a
+		// failed supersede is the worse outcome. The savepoint is what lets the insert
+		// go ahead, since a failed statement would otherwise poison the transaction.
+		// Neither savepoint call reports an error — the postgres driver discards it.
+		tx.SavePoint(supersedeSavepoint)
+
+		var supersedeErr error
+		if cancelled, supersedeErr = supersedeInProgress(tx, task, reason); supersedeErr != nil {
+			slog.Warn("Failed to cancel in-progress deployments for the app", "error", supersedeErr, "app", task.App)
+			cancelled = 0
+			tx.RollbackTo(supersedeSavepoint)
+		}
+
+		var insertErr error
+		added, insertErr = insertTask(tx, task)
+		return insertErr
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return added, cancelled, nil
+}
+
+// appLockID derives the advisory-lock key for an application. Advisory locks are
+// a flat 64-bit namespace shared with the git write-back's per-repository locks,
+// so the prefix is what keeps an application from colliding with a repository URL.
+func appLockID(app string) int64 {
+	return lock.GenerateLockID("app:" + app)
+}
+
+// supersedeInProgress cancels the in-progress tasks of the app that the new task
+// supersedes and reports how many. Selecting the candidates in Go rather than SQL
+// keeps the image-overlap and authority rules in one place, shared with the
+// in-memory backend.
+func supersedeInProgress(tx *gorm.DB, task models.Task, reason string) (int64, error) {
 	var candidates []state_models.TaskModel
-	if err := state.orm.Model(&state_models.TaskModel{}).
-		Where(`"tasks"."app" = ?`, app).
+	if err := tx.Model(&state_models.TaskModel{}).
+		Where(`"tasks"."app" = ?`, task.App).
 		Where(whereStatusEquals, models.StatusInProgressMessage).
 		Find(&candidates).Error; err != nil {
 		return 0, err
@@ -217,7 +469,7 @@ func (state *PostgresState) CancelInProgressTasks(app string, images []models.Im
 
 	var ids []uuid.UUID
 	for _, candidate := range candidates {
-		if maySupersede(newTaskValidated, candidate.Validated) && imageNamesOverlap(candidate.Images, images) {
+		if maySupersede(task.Validated, candidate.Validated) && imageNamesOverlap(candidate.Images, task.Images) {
 			ids = append(ids, candidate.Id)
 		}
 	}
@@ -225,7 +477,7 @@ func (state *PostgresState) CancelInProgressTasks(app string, images []models.Im
 		return 0, nil
 	}
 
-	result := state.orm.Model(&state_models.TaskModel{}).
+	result := tx.Model(&state_models.TaskModel{}).
 		Where("id IN ?", ids).
 		Where(whereStatusEquals, models.StatusInProgressMessage).
 		Updates(state_models.TaskModel{
@@ -238,6 +490,12 @@ func (state *PostgresState) CancelInProgressTasks(app string, images []models.Im
 	return result.RowsAffected, nil
 }
 
+// checkPingTimeout bounds the health probe's ping. The DSN's connect_timeout covers
+// dialing only, so without it a database that accepts the connection and then answers
+// nothing parks the readiness handler indefinitely. It sits under the chart's 3s
+// readinessProbe timeout, so /readyz answers 503 rather than being abandoned mid-ping.
+const checkPingTimeout = 2 * time.Second
+
 // Check reports whether the database connection is alive.
 func (state *PostgresState) Check() bool {
 	connection, err := state.orm.DB()
@@ -246,7 +504,10 @@ func (state *PostgresState) Check() bool {
 		return false
 	}
 
-	if err = connection.Ping(); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), checkPingTimeout)
+	defer cancel()
+
+	if err = connection.PingContext(ctx); err != nil {
 		slog.Error("Failed to ping DB", "error", err)
 		return false
 	}
@@ -280,8 +541,12 @@ func (state *PostgresState) ProcessObsoleteTasks(retryTimes uint) {
 func (state *PostgresState) doProcessPostgresObsoleteTasks() error {
 	slog.Debug("Removing obsolete tasks...")
 
-	slog.Debug("Removing app not found tasks older than 1 hour from the database...")
-	if err := state.orm.Where(whereStatusEquals, models.StatusAppNotFoundMessage).Where("created < now() - interval '1 hour'").Delete(&state_models.TaskModel{}).Error; err != nil {
+	slog.Debug("Removing expired app not found tasks from the database...")
+	// The deadline is computed by the database, so a replica whose clock drifts cannot
+	// widen or shorten the window the others apply.
+	if err := state.orm.Where(whereStatusEquals, models.StatusAppNotFoundMessage).
+		Where("created < now() - make_interval(secs => ?)", AppNotFoundRetention.Seconds()).
+		Delete(&state_models.TaskModel{}).Error; err != nil {
 		return err
 	}
 

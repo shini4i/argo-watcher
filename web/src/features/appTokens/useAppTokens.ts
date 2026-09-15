@@ -43,7 +43,10 @@ export const useAppTokens = (): UseAppTokens => {
     }
   }, []);
 
+  // The rule does not model the await boundary: `reload` writes state only
+  // after the fetch resolves, and a first fetch is what an effect is for.
   useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect
     void reload();
   }, [reload]);
 

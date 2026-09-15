@@ -14,7 +14,7 @@ test('a privileged user can roll a task back, and the new task carries their ide
   await page.waitForURL(url => url.href.startsWith(KEYCLOAK_ORIGIN));
   await signIn(page);
 
-  await page.getByRole('button', { name: 'Rollback to this version' }).click();
+  await page.getByRole('button', { name: 'Deploy this version again' }).click();
   await expect(page.getByRole('heading', { name: 'Rollback Confirmation' })).toBeVisible();
 
   // Scope the check below to tasks created from here on. The servers keep their

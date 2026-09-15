@@ -26,9 +26,9 @@ const MaxTaskImages = 50
 const MaxTaskFieldLength = 255
 
 type Task struct {
-	// Id, Created and Updated are server-owned: the state backend stamps all three,
-	// and AddTask additionally clears Updated, which the backend would otherwise leave
-	// carrying a submitted value into the start notification.
+	// Id, Created and Updated are server-owned: the state backend stamps all three in
+	// Unix seconds, and Argo.AddTask clears Updated before the store or the start
+	// notification can see a submitted value.
 	Id      string  `json:"id,omitempty"`
 	Created float64 `json:"created,omitempty"`
 	Updated float64 `json:"updated,omitempty"`
@@ -88,6 +88,9 @@ func (task *Task) IsAppNotFoundError(err error) bool {
 	return strings.Contains(err.Error(), appNotFoundError) || strings.Contains(err.Error(), "permission denied")
 }
 
+// TasksResponse is the body of GET /api/v1/tasks. Error is set, with no tasks and
+// a zero total, when the state backend could not be read — a reader that ignores
+// it cannot tell an outage from an estate with nothing deployed.
 type TasksResponse struct {
 	Tasks []Task `json:"tasks"`
 	Error string `json:"error,omitempty"`
@@ -113,18 +116,17 @@ type TaskStatus struct {
 	Images       []Image `json:"images,omitempty" binding:"required"`
 	Status       string  `json:"status,omitempty"`
 	StatusReason string  `json:"status_reason,omitempty"`
-	Error        string  `json:"error,omitempty"`
+	// Served alongside the task list's own copies, so the detail view can tell a
+	// rollback apart from an ordinary deployment and link to what it returned to.
+	IsRollback       bool   `json:"is_rollback,omitempty"`
+	RollbackTargetId string `json:"rollback_target_id,omitempty"`
+	Error            string `json:"error,omitempty"`
 }
 
 type ArgoApiErrorResponse struct {
 	Error   string `json:"error"`
 	Code    int32  `json:"code"`
 	Message string `json:"message"`
-}
-
-type LockdownSchedule struct {
-	Cron     string `json:"cron" example:"0 2 * * *"`
-	Duration string `json:"duration" example:"2h"`
 }
 
 // MatchesSearch reports whether query occurs, case-insensitively, in the task's

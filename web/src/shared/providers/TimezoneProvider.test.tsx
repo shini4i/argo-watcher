@@ -2,6 +2,7 @@ import { act, renderHook } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as timeUtils from '../utils/time';
+import { blockStorageAccess } from '../../test/blockStorage';
 import { TimezoneProvider, useTimezone } from './TimezoneProvider';
 
 const wrapper = ({ children }: { children: ReactNode }) => <TimezoneProvider>{children}</TimezoneProvider>;
@@ -19,6 +20,22 @@ describe('TimezoneProvider', () => {
 
     act(() => result.current.setTimezone('utc'));
     expect(globalThis.window?.localStorage?.getItem('argo-watcher:timezone')).toBe('utc');
+  });
+
+  // This provider wraps the app and reads the stored mode while rendering, so
+  // an unguarded read in a browser that blocks storage is a blank page.
+  it('still provides a timezone when the browser blocks storage', () => {
+    const restore = blockStorageAccess();
+
+    try {
+      const { result } = renderHook(() => useTimezone(), { wrapper });
+      expect(result.current.timezone).toBe('utc');
+
+      act(() => result.current.setTimezone('local'));
+      expect(result.current.timezone).toBe('local');
+    } finally {
+      restore();
+    }
   });
 
   it('formats dates using UTC vs local options', () => {

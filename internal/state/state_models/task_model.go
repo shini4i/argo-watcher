@@ -21,7 +21,7 @@ type TaskModel struct {
 	StatusReason     sql.NullString                    `gorm:"column:status_reason;"`
 	IsRollback       bool                              `gorm:"column:is_rollback;not null;default:false;"`
 	RollbackTargetId string                            `gorm:"column:rollback_target_id;not null;default:'';"`
-	// Validated is persisted because CancelInProgressTasks weighs it against the
+	// Validated is persisted because SupersedeAndAdd weighs it against the
 	// superseding task, which may be handled by another replica.
 	Validated bool `gorm:"column:validated;not null;default:false;"`
 	// Timeout is the per-task rollout deadline in seconds, 0 when the client did

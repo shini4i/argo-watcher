@@ -1,6 +1,6 @@
 site_name: Argo Watcher
 site_url: https://argo-watcher.readthedocs.io
-site_description: Documentation for Argo Watcher - a feedback loop for your GitOps workflow
+site_description: Documentation for Argo Watcher - wait for an Argo CD deployment from your CI pipeline and learn whether the image you built rolled out
 site_author: Vadim Gedz
 copyright: Copyright &copy; 2023 - 2026 Vadim Gedz
 
@@ -56,6 +56,7 @@ nav:
     - Concepts: 'getting-started/concepts.md'
   - Guides:
     - Overview: 'guides/index.md'
+    - Wait for a Deployment from CI: 'guides/ci-pipeline-wait.md'
     - Installation: 'guides/install.md'
     - GitOps Updater: 'guides/gitops-updater.md'
     - Notifications: 'guides/notifications.md'
@@ -148,10 +149,11 @@ plugins:
       base_url: !ENV [READTHEDOCS_CANONICAL_URL, 'https://argo-watcher.readthedocs.io/en/latest/']
       full_output: llms-full.txt
       markdown_description: >-
-        Argo Watcher is a feedback loop for your GitOps workflow. It bridges the
-        gap between your CI pipeline and Argo CD, reporting real-time deployment
-        status back to the pipeline and optionally updating image tags in your
-        GitOps repository.
+        Argo Watcher lets a CI/CD pipeline wait for an Argo CD deployment and
+        learn whether the image it just built rolled out. Unlike `argocd app
+        wait`, it waits for the specific image tag to be running and keeps
+        every deployment as history. It can also commit image tags to the
+        GitOps repository, replacing Argo CD Image Updater.
       sections:
         Getting Started:
           - getting-started/index.md: Starting point for new users.
@@ -159,6 +161,7 @@ plugins:
           - getting-started/concepts.md: The problem Argo Watcher solves, its parts, and the task lifecycle.
         Guides:
           - guides/index.md: Index of task-oriented guides.
+          - guides/ci-pipeline-wait.md: Waiting for an Argo CD deployment from a CI pipeline, compared with argocd app wait, API polling, and kubectl.
           - guides/install.md: Installing the server and client.
           - guides/gitops-updater.md: Configuring the GitOps Updater to commit image tag changes.
           - guides/notifications.md: Sending deployment notifications via webhook or Mattermost.

@@ -5,6 +5,7 @@ import { dataProvider } from './data/dataProvider';
 import { authProvider } from './auth/authProvider';
 import { RecentTasksList } from './features/tasks/RecentTasksList';
 import { HistoryTasksList } from './features/tasks/HistoryTasksList';
+import { OverviewPage } from './features/overview/OverviewPage';
 import { AppNotification } from './layout/components/AppNotification';
 import { TaskShow } from './features/tasks/show/TaskShow';
 import { AppTokensPage } from './features/appTokens/AppTokensPage';
@@ -31,6 +32,7 @@ export const App = () => {
     >
       <Resource name="tasks" options={{ label: 'Recent Tasks' }} list={RecentTasksList} />
       <CustomRoutes>
+        <Route path="/overview" element={<OverviewPage />} />
         <Route path="/history" element={<HistoryTasksList />} />
         <Route path="/task/:id" element={<TaskShow />} />
         <Route path="/app-tokens" element={<AppTokensPage />} />

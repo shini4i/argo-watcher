@@ -23,12 +23,8 @@ func settledApp() *models.Application {
 	return app
 }
 
-func managedResources(manifests ...string) *models.ManagedResources {
-	resources := &models.ManagedResources{}
-	for _, manifest := range manifests {
-		resources.Items = append(resources.Items, models.ManagedResource{TargetState: manifest})
-	}
-	return resources
+func renderedManifests(manifests ...string) *models.ApplicationManifests {
+	return &models.ApplicationManifests{Manifests: manifests}
 }
 
 func refreshMetrics(ctrl *gomock.Controller) *mocks.MockMetricsInterface {
@@ -49,11 +45,11 @@ func TestShouldValidateDesiredImages(t *testing.T) {
 		status   string
 		expected bool
 	}{
-		{"settledWithoutImage", "Synced", "Healthy", models.ArgoRolloutAppNotAvailable, true},
-		{"stillSyncing", "OutOfSync", "Healthy", models.ArgoRolloutAppNotAvailable, false},
-		{"stillProgressing", "Synced", "Progressing", models.ArgoRolloutAppNotAvailable, false},
-		{"imageAlreadyThere", "Synced", "Healthy", models.ArgoRolloutAppSuccess, false},
-		{"degraded", "Synced", "Degraded", models.ArgoRolloutAppDegraded, false},
+		{"settledWithoutImage", "Synced", "Healthy", ArgoRolloutAppNotAvailable, true},
+		{"stillSyncing", "OutOfSync", "Healthy", ArgoRolloutAppNotAvailable, false},
+		{"stillProgressing", "Synced", "Progressing", ArgoRolloutAppNotAvailable, false},
+		{"imageAlreadyThere", "Synced", "Healthy", ArgoRolloutAppSuccess, false},
+		{"degraded", "Synced", "Degraded", ArgoRolloutAppDegraded, false},
 	}
 
 	for _, test := range tests {
@@ -82,8 +78,8 @@ func TestValidateDesiredImages(t *testing.T) {
 		defer ctrl.Finish()
 
 		api := mocks.NewMockArgoApiInterface(ctrl)
-		api.EXPECT().GetManagedResources(gomock.Any(), task.App).Return(
-			managedResources(deploymentWith("ghcr.io/shini4i/app:v1")), nil)
+		api.EXPECT().GetManifests(gomock.Any(), task.App).Return(
+			renderedManifests(deploymentWith("ghcr.io/shini4i/app:v1")), nil)
 
 		err := newMonitor(api, "").validateDesiredImages(context.Background(), task, settledApp())
 
@@ -104,8 +100,8 @@ func TestValidateDesiredImages(t *testing.T) {
 		cronTask.Images = []models.Image{{Image: "ghcr.io/shini4i/cleanup", Tag: "v2"}}
 
 		api := mocks.NewMockArgoApiInterface(ctrl)
-		api.EXPECT().GetManagedResources(gomock.Any(), task.App).Return(
-			managedResources(`{"kind":"CronJob","spec":{"jobTemplate":{"spec":{"template":{"spec":{"containers":[{"image":"ghcr.io/shini4i/cleanup:v1"}]}}}}}}`), nil)
+		api.EXPECT().GetManifests(gomock.Any(), task.App).Return(
+			renderedManifests(`{"kind":"CronJob","spec":{"jobTemplate":{"spec":{"template":{"spec":{"containers":[{"image":"ghcr.io/shini4i/cleanup:v1"}]}}}}}}`), nil)
 
 		assert.NoError(t, newMonitor(api, "").validateDesiredImages(context.Background(), cronTask, settledApp()))
 	})
@@ -118,8 +114,8 @@ func TestValidateDesiredImages(t *testing.T) {
 		tagged.Images = []models.Image{{Image: "ghcr.io/shini4i/app:v1", Tag: "v2"}}
 
 		api := mocks.NewMockArgoApiInterface(ctrl)
-		api.EXPECT().GetManagedResources(gomock.Any(), task.App).Return(
-			managedResources(deploymentWith("ghcr.io/shini4i/app:v1")), nil)
+		api.EXPECT().GetManifests(gomock.Any(), task.App).Return(
+			renderedManifests(deploymentWith("ghcr.io/shini4i/app:v1")), nil)
 
 		assert.NoError(t, newMonitor(api, "").validateDesiredImages(context.Background(), tagged, settledApp()))
 	})
@@ -135,8 +131,8 @@ func TestValidateDesiredImages(t *testing.T) {
 		}
 
 		api := mocks.NewMockArgoApiInterface(ctrl)
-		api.EXPECT().GetManagedResources(gomock.Any(), task.App).Return(
-			managedResources(deploymentWith("ghcr.io/shini4i/app:v1")), nil)
+		api.EXPECT().GetManifests(gomock.Any(), task.App).Return(
+			renderedManifests(deploymentWith("ghcr.io/shini4i/app:v1")), nil)
 
 		err := newMonitor(api, "").validateDesiredImages(context.Background(), multi, settledApp())
 
@@ -150,8 +146,8 @@ func TestValidateDesiredImages(t *testing.T) {
 		defer ctrl.Finish()
 
 		api := mocks.NewMockArgoApiInterface(ctrl)
-		api.EXPECT().GetManagedResources(gomock.Any(), task.App).Return(
-			managedResources(deploymentWith("proxy.local/ghcr.io/shini4i/typo:v1")), nil)
+		api.EXPECT().GetManifests(gomock.Any(), task.App).Return(
+			renderedManifests(deploymentWith("proxy.local/ghcr.io/shini4i/typo:v1")), nil)
 
 		assert.NoError(t, newMonitor(api, "proxy.local").validateDesiredImages(context.Background(), task, settledApp()))
 	})
@@ -168,14 +164,49 @@ func TestValidateDesiredImages(t *testing.T) {
 		assert.NoError(t, newMonitor(api, "").validateDesiredImages(context.Background(), task, app))
 	})
 
+	// The bug this endpoint was chosen for: an image carried only by a sync hook. ArgoCD drops
+	// hooks from managed-resources and from Status.Resources, so reading either would call a
+	// real image absent; the rendered manifests carry it.
+	t.Run("findsImageDeclaredOnlyBySyncHook", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		hookJob := `{"kind":"Job","metadata":{"annotations":{"argocd.argoproj.io/hook":"PreSync"}},` +
+			`"spec":{"template":{"spec":{"containers":[{"image":"ghcr.io/shini4i/typo:v1"}]}}}}`
+
+		api := mocks.NewMockArgoApiInterface(ctrl)
+		api.EXPECT().GetManifests(gomock.Any(), task.App).Return(
+			renderedManifests(deploymentWith("ghcr.io/shini4i/app:v1"), hookJob), nil)
+
+		assert.NoError(t, newMonitor(api, "").validateDesiredImages(context.Background(), task, settledApp()))
+	})
+
 	t.Run("keepsWaitingWhenLookupFails", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 
 		api := mocks.NewMockArgoApiInterface(ctrl)
-		api.EXPECT().GetManagedResources(gomock.Any(), task.App).Return(nil, errors.New("unavailable"))
+		api.EXPECT().GetManifests(gomock.Any(), task.App).Return(nil, errors.New("unavailable"))
 
 		assert.NoError(t, newMonitor(api, "").validateDesiredImages(context.Background(), task, settledApp()))
+	})
+
+	// The undecodable manifest may be the very one declaring the requested image, so
+	// its absence from the readable resources is not proof of anything. The warning is
+	// the only sign an operator gets that validation went quiet for the app.
+	t.Run("keepsWaitingWhenDesiredStateCannotBeRead", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		api := mocks.NewMockArgoApiInterface(ctrl)
+		api.EXPECT().GetManifests(gomock.Any(), task.App).Return(
+			renderedManifests(deploymentWith("ghcr.io/shini4i/app:v1"), "not json"), nil)
+
+		logs := captureDebugLogs(t)
+
+		assert.NoError(t, newMonitor(api, "").validateDesiredImages(context.Background(), task, settledApp()))
+		assert.Contains(t, logs.String(), "Could not read the application's desired state")
+		assert.Contains(t, logs.String(), task.Id)
 	})
 
 	t.Run("keepsWaitingWhenDesiredStateDeclaresNoImages", func(t *testing.T) {
@@ -183,8 +214,8 @@ func TestValidateDesiredImages(t *testing.T) {
 		defer ctrl.Finish()
 
 		api := mocks.NewMockArgoApiInterface(ctrl)
-		api.EXPECT().GetManagedResources(gomock.Any(), task.App).Return(
-			managedResources(`{"kind":"Service","spec":{"ports":[{"port":80}]}}`), nil)
+		api.EXPECT().GetManifests(gomock.Any(), task.App).Return(
+			renderedManifests(`{"kind":"Service","spec":{"ports":[{"port":80}]}}`), nil)
 
 		assert.NoError(t, newMonitor(api, "").validateDesiredImages(context.Background(), task, settledApp()))
 	})
@@ -204,13 +235,13 @@ func TestWaitRolloutFailsFastOnImageNotPartOfApp(t *testing.T) {
 		Images:  []models.Image{{Image: "ghcr.io/shini4i/typo", Tag: "v1"}},
 	}
 
-	// Raw mock: newArgoApiMock's catch-all GetManagedResources would shadow the
+	// Raw mock: newArgoApiMock's catch-all GetManifests would shadow the
 	// expectation this test is about.
 	api := mocks.NewMockArgoApiInterface(ctrl)
 	api.EXPECT().GetResourceTree(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 	api.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(settledApp(), nil).Times(1)
-	api.EXPECT().GetManagedResources(gomock.Any(), task.App).Return(
-		managedResources(deploymentWith("ghcr.io/shini4i/app:v1")), nil).Times(1)
+	api.EXPECT().GetManifests(gomock.Any(), task.App).Return(
+		renderedManifests(deploymentWith("ghcr.io/shini4i/app:v1")), nil).Times(1)
 
 	monitor := NewDeploymentMonitor(
 		Argo{api: api, State: notSupersededState(ctrl), metrics: refreshMetrics(ctrl)},
@@ -238,12 +269,12 @@ func TestWaitRolloutValidatesDesiredImagesOnce(t *testing.T) {
 		Images:  []models.Image{{Image: "ghcr.io/shini4i/app", Tag: "v2"}},
 	}
 
-	// Raw mock: newArgoApiMock's catch-all GetManagedResources would shadow the
+	// Raw mock: newArgoApiMock's catch-all GetManifests would shadow the
 	// expectation this test is about.
 	api := mocks.NewMockArgoApiInterface(ctrl)
 	api.EXPECT().GetResourceTree(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 	api.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(settledApp(), nil).MinTimes(2)
-	api.EXPECT().GetManagedResources(gomock.Any(), task.App).Return(nil, errors.New("unavailable")).Times(1)
+	api.EXPECT().GetManifests(gomock.Any(), task.App).Return(nil, errors.New("unavailable")).Times(1)
 
 	monitor := NewDeploymentMonitor(
 		Argo{api: api, State: notSupersededState(ctrl), metrics: refreshMetrics(ctrl)},
@@ -285,7 +316,7 @@ func TestWaitRolloutSkipsValidationWithoutRefresh(t *testing.T) {
 		time.Millisecond,
 	)
 
-	// No GetManagedResources expectation: any call is a failure.
+	// No GetManifests expectation: any call is a failure.
 	_, _, err := monitor.WaitRollout(task, neverLost)
 	require.NoError(t, err)
 }
@@ -307,8 +338,8 @@ func TestWaitForRolloutCountsImageNotPartOfAppAsFailed(t *testing.T) {
 	api := mocks.NewMockArgoApiInterface(ctrl)
 	api.EXPECT().GetResourceTree(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 	api.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(settledApp(), nil).MinTimes(1)
-	api.EXPECT().GetManagedResources(gomock.Any(), task.App).Return(
-		managedResources(deploymentWith("ghcr.io/shini4i/app:v1")), nil).Times(1)
+	api.EXPECT().GetManifests(gomock.Any(), task.App).Return(
+		renderedManifests(deploymentWith("ghcr.io/shini4i/app:v1")), nil).Times(1)
 
 	metrics := refreshMetrics(ctrl)
 	state := notSupersededState(ctrl)
@@ -333,7 +364,7 @@ func TestWaitForRolloutCountsImageNotPartOfAppAsFailed(t *testing.T) {
 			return nil
 		})
 
-	updater.WaitForRollout(task, false)
+	updater.WaitForRollout(task, false, neverDraining)
 
 	assert.Contains(t, capturedReason, "is not part of application")
 }

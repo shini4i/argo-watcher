@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { resetServerConfigCache } from '../../../data/serverConfig';
 import type { TaskStatus } from '../../../data/types';
 import { TaskShow } from './TaskShow';
 
@@ -12,6 +13,7 @@ const mockUseDeployLockState = vi.fn();
 const mockUseOidcEnabled = vi.fn();
 const mockHttpClient = vi.fn();
 const mockGetAccessToken = vi.fn();
+const mockUsePreviousDeploy = vi.fn();
 let configResponse: Record<string, unknown>;
 
 vi.mock('react-admin', async () => {
@@ -25,6 +27,13 @@ vi.mock('react-admin', async () => {
     useGetIdentity: () => mockUseGetIdentity(),
   };
 });
+
+// Stubbed rather than exercised here: it issues its own list query, which needs
+// a QueryClient this suite deliberately does not stand up. Covered by
+// usePreviousDeploy.test.tsx.
+vi.mock('./usePreviousDeploy', () => ({
+  usePreviousDeploy: () => mockUsePreviousDeploy(),
+}));
 
 vi.mock('../../deployLock/useDeployLockState', () => ({
   useDeployLockState: () => mockUseDeployLockState(),
@@ -89,7 +98,10 @@ describe('TaskShow', () => {
     mockUseDeployLockState.mockReturnValue(false);
     mockUseOidcEnabled.mockReturnValue(true);
     mockHttpClient.mockReset();
-    configResponse = {};
+    // The configuration is fetched once per page load and cached, so a case that sets
+    // its own response would otherwise get the previous case's.
+    resetServerConfigCache();
+    configResponse = { oidc: { enabled: false } };
     mockHttpClient.mockImplementation((url: string) => {
       if (url === '/api/v1/config') {
         return Promise.resolve({ data: configResponse, status: 200, headers: {} as Headers });
@@ -97,6 +109,7 @@ describe('TaskShow', () => {
       return Promise.resolve({ data: {}, status: 202, headers: {} as Headers });
     });
     mockGetAccessToken.mockReturnValue('token');
+    mockUsePreviousDeploy.mockReturnValue(null);
   });
 
   it('renders basic task summary when data resolves', async () => {
@@ -110,11 +123,131 @@ describe('TaskShow', () => {
 
     await renderWithRouter('/task/task-1');
 
-    expect(screen.getByText('demo-app')).toBeInTheDocument();
-    expect(screen.getByText(/Task ID/i)).toBeInTheDocument();
-    expect(screen.getByText('task-1')).toBeInTheDocument();
-    expect(screen.getByText('Images')).toBeInTheDocument();
+    // The app name is the title; the id is a copy chip, not a labelled field.
+    expect(screen.getByRole('heading', { name: 'demo-app' })).toBeInTheDocument();
+    expect(screen.queryByText(/^Task task-1/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /copy task id/i })).toHaveTextContent('task-1');
+    expect(screen.getByText('IMAGES')).toBeInTheDocument();
+    expect(screen.getByText('DEPLOYMENT')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Refresh/i })).toBeInTheDocument();
+  });
+
+  it('offers exactly one re-deploy action, not a separate retry', async () => {
+    mockUseGetOne.mockReturnValue({
+      data: buildTask({ status: 'failed' }),
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+
+    await renderWithRouter('/task/task-1');
+
+    expect(screen.getAllByRole('button', { name: /Deploy this version again/i })).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
+  });
+
+  it('leads with the failure reason and keeps the raw text reachable', async () => {
+    const raw = 'Application deployment failed. Rollout status is not available\n\nSync operation phase: Failed';
+    mockUseGetOne.mockReturnValue({
+      data: buildTask({ status: 'failed', status_reason: raw }),
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+
+    await renderWithRouter('/task/task-1');
+
+    expect(screen.getByText('WHY IT FAILED')).toBeInTheDocument();
+    expect(
+      screen.getByText('Application deployment failed. Rollout status is not available'),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Full reason from Argo CD/ }));
+    // getByText collapses the newlines, so match the disclosed body by its tail.
+    expect(screen.getByText(/Sync operation phase: Failed/)).toBeInTheDocument();
+  });
+
+  it('uses neutral wording for a reason that is not a failure', async () => {
+    mockUseGetOne.mockReturnValue({
+      data: buildTask({ status: 'cancelled', status_reason: 'Cancelled by alice' }),
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+
+    await renderWithRouter('/task/task-1');
+
+    expect(screen.getByText('STATUS REASON')).toBeInTheDocument();
+    expect(screen.queryByText('WHY IT FAILED')).not.toBeInTheDocument();
+  });
+
+  it('omits the reason panel entirely when the task carries no reason', async () => {
+    mockUseGetOne.mockReturnValue({
+      data: buildTask({ status_reason: '' }),
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+
+    await renderWithRouter('/task/task-1');
+
+    expect(screen.queryByText('WHY IT FAILED')).not.toBeInTheDocument();
+    expect(screen.queryByText('STATUS REASON')).not.toBeInTheDocument();
+  });
+
+  // Back and Refresh lead the page. Back is the only exit, including from a CI
+  // deep link, where it falls back to the list rather than leaving the app.
+  it('leads with Back and Refresh', async () => {
+    mockUseGetOne.mockReturnValue({
+      data: buildTask(),
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+
+    await renderWithRouter('/task/task-1');
+
+    expect(screen.getByRole('button', { name: 'Back' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'Breadcrumb' })).not.toBeInTheDocument();
+  });
+
+  it('links the previous deploy for the same app when there is one', async () => {
+    mockUsePreviousDeploy.mockReturnValue({
+      id: 'older-task-id',
+      app: 'demo-app',
+      author: 'alice',
+      project: 'demo',
+      created: 1689990000,
+      updated: 1689990100,
+      images: [],
+    });
+    mockUseGetOne.mockReturnValue({
+      data: buildTask(),
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+
+    await renderWithRouter('/task/task-1');
+
+    expect(screen.getByRole('link', { name: /older-ta/ })).toHaveAttribute(
+      'href',
+      '/task/older-task-id',
+    );
+  });
+
+  it('says so plainly when no previous deploy was found', async () => {
+    mockUseGetOne.mockReturnValue({
+      data: buildTask(),
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+
+    await renderWithRouter('/task/task-1');
+
+    expect(screen.getByText('None found')).toBeInTheDocument();
   });
 
   describe('back navigation', () => {
@@ -158,7 +291,7 @@ describe('TaskShow', () => {
       expect(screen.queryByRole('link', { name: 'demo' })).not.toBeInTheDocument();
     });
 
-    it('starts the project link on its own line below the label', async () => {
+    it('links a URL project out to the repository', async () => {
       mockUseGetOne.mockReturnValue({
         data: buildTask({ project: 'https://project.example.com/' }),
         isLoading: false,
@@ -168,12 +301,9 @@ describe('TaskShow', () => {
 
       await renderWithRouter('/task/task-1');
 
-      // An inline value such as a link would otherwise share the label's line.
-      const label = screen.getByText('Project');
-      expect(label).toHaveStyle({ display: 'block' });
-      expect(label.nextElementSibling).toBe(
-        screen.getByRole('link', { name: 'project.example.com' }),
-      );
+      const link = screen.getByRole('link', { name: 'project.example.com' });
+      expect(link).toHaveAttribute('href', 'https://project.example.com/');
+      expect(link).toHaveAttribute('target', '_blank');
     });
 
     it('falls back to an em-dash when the task has no project', async () => {
@@ -186,11 +316,11 @@ describe('TaskShow', () => {
 
       await renderWithRouter('/task/task-1');
 
-      expect(screen.getByText('Project').nextElementSibling).toHaveTextContent('—');
+      expect(screen.getByText('Project').parentElement).toHaveTextContent('—');
       expect(screen.queryByRole('link', { name: /project/i })).not.toBeInTheDocument();
     });
 
-    it('wraps a long project url instead of overflowing the card', async () => {
+    it('shortens a deep project url to host and final segment', async () => {
       const project = 'https://a-very-long-project-hostname.example.com/some/deep/path';
       mockUseGetOne.mockReturnValue({
         data: buildTask({ project }),
@@ -202,10 +332,9 @@ describe('TaskShow', () => {
       await renderWithRouter('/task/task-1');
 
       const link = screen.getByRole('link', {
-        name: 'a-very-long-project-hostname.example.com/some/deep/path',
+        name: 'a-very-long-project-hostname.example.com/path',
       });
       expect(link).toHaveAttribute('href', project);
-      expect(link).toHaveStyle({ overflowWrap: 'anywhere' });
     });
   });
 
@@ -326,7 +455,7 @@ describe('TaskShow', () => {
 
     await renderWithRouter('/task/task-1');
 
-    expect(screen.getByText('demo-app')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'demo-app' })).toBeInTheDocument();
     expect(screen.queryByText('Argo Watcher cannot verify your session')).not.toBeInTheDocument();
     expect(mockUseNotify).toHaveBeenCalledWith('Argo Watcher cannot verify your session', {
       type: 'error',
@@ -369,7 +498,7 @@ describe('TaskShow', () => {
 
     await renderWithRouter('/task/task-1');
 
-    expect(screen.getByText('demo-app')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'demo-app' })).toBeInTheDocument();
     expect(mockUseNotify).toHaveBeenCalledWith('This task is no longer available', {
       type: 'error',
     });
@@ -392,6 +521,29 @@ describe('TaskShow', () => {
     expect(screen.getByText(/Task not found/i)).toBeInTheDocument();
     // The card already says it; a toast repeating it would be noise.
     expect(mockUseNotify).not.toHaveBeenCalledWith(expect.anything(), { type: 'error' });
+  });
+
+  it('warns when the configuration answers 200 with no body', async () => {
+    // A proxy interstitial in front of the API. It used to disable the Argo CD button
+    // silently, which reads as "no Argo CD URL configured" rather than a failure.
+    mockUseGetOne.mockReturnValue({
+      data: buildTask(),
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+    mockHttpClient.mockImplementation((url: string) => {
+      if (url === '/api/v1/config') {
+        return Promise.resolve({ data: undefined, status: 200, headers: {} as Headers });
+      }
+      return Promise.resolve({ data: {}, status: 202, headers: {} as Headers });
+    });
+
+    await renderWithRouter('/task/task-1');
+
+    await waitFor(() =>
+      expect(mockUseNotify).toHaveBeenCalledWith(expect.any(String), { type: 'warning' }),
+    );
   });
 
   it('warns when configuration request fails', async () => {
@@ -479,7 +631,7 @@ describe('TaskShow', () => {
 
     await renderWithRouter('/task/task-1');
 
-    fireEvent.click(screen.getByRole('button', { name: /Rollback to this version/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Deploy this version again/i }));
     fireEvent.click(screen.getByRole('button', { name: /^Yes$/i }));
 
     await waitFor(() => {
@@ -511,7 +663,7 @@ describe('TaskShow', () => {
 
     await renderWithRouter('/task/task-1');
 
-    expect(screen.getByRole('button', { name: /Rollback to this version/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Deploy this version again/i })).toBeDisabled();
   });
 
   it('disables Argo CD button when config lacks application URL', async () => {
@@ -524,12 +676,12 @@ describe('TaskShow', () => {
 
     await renderWithRouter('/task/task-1');
 
-    const button = await screen.findByRole('button', { name: /Open in Argo CD UI/i });
+    const button = await screen.findByRole('button', { name: /^Argo CD$/ });
     expect(button).toBeDisabled();
   });
 
   it('enables Argo CD link when alias is configured', async () => {
-    configResponse = { argo_cd_url_alias: 'https://argocd.example' };
+    configResponse = { oidc: { enabled: false }, argo_cd_url_alias: 'https://argocd.example' };
     mockUseGetOne.mockReturnValue({
       data: buildTask(),
       isLoading: false,
@@ -539,12 +691,12 @@ describe('TaskShow', () => {
 
     await renderWithRouter('/task/task-1');
 
-    const link = await screen.findByRole('link', { name: /Open in Argo CD UI/i });
+    const link = await screen.findByRole('link', { name: /^Argo CD$/ });
     expect(link).toHaveAttribute('href', 'https://argocd.example/applications/demo-app');
   });
 
   it('keeps the application route in the path of a URL carrying a query', async () => {
-    configResponse = { argo_cd_url: 'https://argocd.local/platform?view=tree#overview' };
+    configResponse = { oidc: { enabled: false }, argo_cd_url: 'https://argocd.local/platform?view=tree#overview' };
     mockUseGetOne.mockReturnValue({
       data: buildTask(),
       isLoading: false,
@@ -554,7 +706,7 @@ describe('TaskShow', () => {
 
     await renderWithRouter('/task/task-1');
 
-    const link = await screen.findByRole('link', { name: /Open in Argo CD UI/i });
+    const link = await screen.findByRole('link', { name: /^Argo CD$/ });
     expect(link).toHaveAttribute(
       'href',
       'https://argocd.local/platform/applications/demo-app?view=tree#overview',
@@ -564,6 +716,7 @@ describe('TaskShow', () => {
   it('prefers the alias over the server URL', async () => {
     // The alias exists for an ARGO_URL the browser cannot reach.
     configResponse = {
+      oidc: { enabled: false },
       argo_cd_url_alias: 'https://argocd.example',
       argo_cd_url: 'https://argocd.local/platform',
     };
@@ -576,12 +729,12 @@ describe('TaskShow', () => {
 
     await renderWithRouter('/task/task-1');
 
-    const link = await screen.findByRole('link', { name: /Open in Argo CD UI/i });
+    const link = await screen.findByRole('link', { name: /^Argo CD$/ });
     expect(link).toHaveAttribute('href', 'https://argocd.example/applications/demo-app');
   });
 
   it('builds Argo CD link from the server URL', async () => {
-    configResponse = { argo_cd_url: 'https://argocd.local/platform/' };
+    configResponse = { oidc: { enabled: false }, argo_cd_url: 'https://argocd.local/platform/' };
     mockUseGetOne.mockReturnValue({
       data: buildTask(),
       isLoading: false,
@@ -591,7 +744,7 @@ describe('TaskShow', () => {
 
     await renderWithRouter('/task/task-1');
 
-    const link = await screen.findByRole('link', { name: /Open in Argo CD UI/i });
+    const link = await screen.findByRole('link', { name: /^Argo CD$/ });
     expect(link).toHaveAttribute('href', 'https://argocd.local/platform/applications/demo-app');
   });
 });

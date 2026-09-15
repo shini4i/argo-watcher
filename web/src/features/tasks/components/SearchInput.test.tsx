@@ -12,13 +12,17 @@ const PausedReasonsProbe = () => {
 
 const renderWith = (value = '', debounceMs = 50) => {
   const onChange = vi.fn();
-  const utils = render(
+  const tree = (next: string) => (
     <TaskListProvider>
-      <SearchInput value={value} onChange={onChange} debounceMs={debounceMs} />
+      <SearchInput value={next} onChange={onChange} debounceMs={debounceMs} />
       <PausedReasonsProbe />
-    </TaskListProvider>,
+    </TaskListProvider>
   );
-  return { ...utils, onChange };
+  const utils = render(tree(value));
+  // Re-renders the same provider tree with a new committed query, which is how
+  // the parent reports one back (Clear all, removing a filter chip).
+  const setValue = (next: string) => utils.rerender(tree(next));
+  return { ...utils, onChange, setValue };
 };
 
 const setViewportWide = (wide: boolean) => {
@@ -111,6 +115,20 @@ describe('SearchInput', () => {
       await waitFor(() => expect(onChange).toHaveBeenLastCalledWith('checkout api'));
     });
 
+    it('replaces the draft when a new committed query arrives from the parent', () => {
+      const { setValue } = renderWith('checkout');
+      const input = screen.getByLabelText('Search tasks') as HTMLInputElement;
+      expect(input.value).toBe('checkout');
+
+      fireEvent.change(input, { target: { value: 'checkout api' } });
+      expect(input.value).toBe('checkout api');
+
+      // What "Clear all" does: the parent commits '' back down. The stale
+      // draft must not survive it.
+      act(() => setValue(''));
+      expect((screen.getByLabelText('Search tasks') as HTMLInputElement).value).toBe('');
+    });
+
     it('registers "search" pause reason on focus and releases it after blur grace', async () => {
       renderWith('', 50);
       const input = screen.getByLabelText('Search tasks');
@@ -134,6 +152,49 @@ describe('SearchInput', () => {
         () => expect(screen.getByTestId('paused-reasons').textContent).toBe(''),
         { timeout: 500 },
       );
+    });
+
+    it('re-arms the blur grace from scratch when the field is refocused and blurred again', () => {
+      const debounceMs = 200;
+      const grace = debounceMs + 100; // the component's own release delay
+      vi.useFakeTimers();
+      try {
+        renderWith('', debounceMs);
+        const input = screen.getByLabelText('Search tasks') as HTMLInputElement;
+
+        act(() => {
+          input.focus();
+        });
+        act(() => {
+          input.blur();
+        });
+
+        // Refocus well inside the first grace window, then blur again. The
+        // second blur must start a fresh window, not inherit the first
+        // deadline — otherwise the pause lifts before the trailing debounced
+        // onChange commits and auto-refresh refetches the stale query.
+        act(() => {
+          vi.advanceTimersByTime(grace / 2);
+        });
+        act(() => {
+          input.focus();
+        });
+        act(() => {
+          input.blur();
+        });
+
+        act(() => {
+          vi.advanceTimersByTime(grace - 50);
+        });
+        expect(screen.getByTestId('paused-reasons').textContent).toBe('search');
+
+        act(() => {
+          vi.advanceTimersByTime(100);
+        });
+        expect(screen.getByTestId('paused-reasons').textContent).toBe('');
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 

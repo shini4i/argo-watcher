@@ -23,7 +23,7 @@ type ArgoApiInterface interface {
 	GetUserInfo() (*models.Userinfo, error)
 	GetApplication(ctx context.Context, app string, refresh bool) (*models.Application, error)
 	GetResourceTree(ctx context.Context, app string) (*models.ApplicationTree, error)
-	GetManagedResources(ctx context.Context, app string) (*models.ManagedResources, error)
+	GetManifests(ctx context.Context, app string) (*models.ApplicationManifests, error)
 }
 
 type ArgoApi struct {
@@ -93,15 +93,17 @@ func (api *ArgoApi) doGet(ctx context.Context, reqURL string) ([]byte, int, erro
 		return nil, 0, err
 	}
 
-	req = req.WithContext(ctx)
 	req.Header.Set("Accept", "application/json")
 
-	// Safe to reuse across retries: GET request has no body that would be consumed.
+	// Cloned per attempt rather than reused: the client's jar appends the session
+	// cookie to the request it is handed, so a reused one accumulates a copy of the
+	// token per attempt until a proxy rejects the header. Replaying a clone is safe
+	// only because this GET has no body — Clone shallow-copies Body.
 	var resp *http.Response
 	err = retry.Do(
 		func() error {
 			var doErr error
-			resp, doErr = api.client.Do(req)
+			resp, doErr = api.client.Do(req.Clone(ctx))
 			return doErr
 		},
 		retry.Context(ctx),
@@ -236,13 +238,12 @@ func (api *ArgoApi) GetResourceTree(ctx context.Context, app string) (*models.Ap
 	return &tree, nil
 }
 
-// GetManagedResources fetches the desired state of every resource the named application
-// manages, which is what tells whether an image belongs to the application at all.
-// ArgoCD serves it from its application state cache, so no manifests are rendered.
-// The context bounds the request. Like GetResourceTree it does not log: the caller
-// treats any failure as "cannot conclude".
-func (api *ArgoApi) GetManagedResources(ctx context.Context, app string) (*models.ManagedResources, error) {
-	apiUrl := fmt.Sprintf("%s/api/v1/applications/%s/managed-resources", api.baseUrl.String(), url.PathEscape(app))
+// GetManifests fetches every manifest the named application renders, sync hooks included,
+// which is what tells whether an image belongs to the application at all. ArgoCD answers it
+// from the repo server's per-revision manifest cache. Like GetResourceTree it does not log:
+// the caller treats any failure as "cannot conclude".
+func (api *ArgoApi) GetManifests(ctx context.Context, app string) (*models.ApplicationManifests, error) {
+	apiUrl := fmt.Sprintf("%s/api/v1/applications/%s/manifests", api.baseUrl.String(), url.PathEscape(app))
 
 	body, statusCode, err := api.doGet(ctx, apiUrl)
 	if err != nil {
@@ -253,10 +254,10 @@ func (api *ArgoApi) GetManagedResources(ctx context.Context, app string) (*model
 		return nil, parseArgoErrorResponse(statusCode, body)
 	}
 
-	var resources models.ManagedResources
-	if err = json.Unmarshal(body, &resources); err != nil {
-		return nil, fmt.Errorf("could not parse managed-resources response: %w", err)
+	var manifests models.ApplicationManifests
+	if err = json.Unmarshal(body, &manifests); err != nil {
+		return nil, fmt.Errorf("could not parse manifests response: %w", err)
 	}
 
-	return &resources, nil
+	return &manifests, nil
 }

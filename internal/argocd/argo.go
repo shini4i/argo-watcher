@@ -9,7 +9,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/shini4i/argo-watcher/internal/helpers"
 	"github.com/shini4i/argo-watcher/internal/prometheus"
 	"github.com/shini4i/argo-watcher/internal/state"
 
@@ -23,6 +22,11 @@ var (
 	// refreshes the argocd_unavailable metric (see Argo.StartLivenessProbe).
 	ArgoLivenessProbeInterval = 30 * time.Second
 )
+
+// ErrTaskHistoryUnavailable marks a submission refused because the app's deployment
+// history could not be read. The cause carries driver text and submission takes no
+// credential, so the handler answers with a fixed message and leaves detail to the log.
+var ErrTaskHistoryUnavailable = errors.New("could not read the deployment history")
 
 // rollbackHistoryWindow bounds how many of an app's most recent successfully
 // deployed tasks are inspected when deciding whether a new deployment is a
@@ -43,6 +47,10 @@ const (
 const (
 	// ArgoAPIErrorTemplate is the template for ArgoCD API errors.
 	ArgoAPIErrorTemplate = "ArgoCD API Error: %s"
+	// GitWriteBackErrorTemplate is the template for a failure to commit the image
+	// tag to the GitOps repository. Kept apart from ArgoAPIErrorTemplate because the
+	// two send an operator to a different system: nothing reached ArgoCD at all.
+	GitWriteBackErrorTemplate = "Git write-back error: %s"
 	// supersededTaskReason is the status reason stored on a deployment that was
 	// cancelled because a newer deployment of the same image superseded it.
 	supersededTaskReason = "superseded by a newer deployment for the same image"
@@ -187,7 +195,11 @@ func (argo *Argo) AddTask(task models.Task) (*models.Task, error) {
 	// Always overwrite the rollback fields from server-side history so a
 	// client-supplied value (e.g. echoed back by the "rollback to this version"
 	// action) can never influence the stored result.
-	task.RollbackTargetId = argo.detectRollback(task)
+	rollbackTargetId, err := argo.detectRollback(task)
+	if err != nil {
+		return nil, err
+	}
+	task.RollbackTargetId = rollbackTargetId
 	task.IsRollback = task.RollbackTargetId != ""
 
 	// StatusReason and Updated are server-owned but JSON-bindable, and submission takes
@@ -197,32 +209,20 @@ func (argo *Argo) AddTask(task models.Task) (*models.Task, error) {
 	task.Updated = 0
 
 	// Superseding stops the watcher polling ArgoCD for a rollout nobody is waiting
-	// on anymore (issue #353). Matching on image name
-	// (not just the app) keeps independent per-image deployments of the same app
-	// from cancelling each other. This runs against the shared state, so in an HA
-	// setup it also cancels rollouts being watched by other replicas. Best-effort:
-	// a failure here must not block the new deployment.
-	if cancelled, err := argo.State.CancelInProgressTasks(task.App, task.Images, supersededTaskReason, task.Validated); err != nil {
-		slog.Warn("Failed to cancel in-progress deployments for the app", "error", err, "app", task.App)
-	} else if cancelled > 0 {
-		slog.Info("Cancelled in-progress deployment(s) superseded by the new task", "cancelled", cancelled, "app", task.App)
-	}
-
-	newTask, err := argo.State.AddTask(task)
+	// on anymore (issue #353). It shares a step with the insert so two submissions
+	// racing here cannot each miss the other's task and both survive.
+	newTask, cancelled, err := argo.State.SupersedeAndAdd(task, supersededTaskReason)
 	if err != nil {
 		return nil, err
 	}
+	if cancelled > 0 {
+		slog.Info("Cancelled in-progress deployment(s) superseded by the new task", "cancelled", cancelled, "app", task.App)
+	}
 
-	// This replica is about to start monitoring the rollout, so it claims the task
-	// before any sweep can offer it to another replica.
-	//
-	// Best-effort on purpose: a claim that cannot be written is a database blip, and
-	// refusing the deployment over it would be a worse outcome than proceeding. An
-	// unclaimed task is nobody else's to take for a full lease — the sweep leaves
-	// rows that young alone — so this replica monitors it unopposed, discovers at
-	// its first renewal that it holds no claim, and stops without writing a status.
-	// A sweep then picks the task up and resumes it, re-running the write-back
-	// idempotently. The cost is a delayed deployment, not a lost or duplicated one.
+	// This replica is about to monitor the rollout, so it claims the task before any
+	// sweep can offer it elsewhere. Best-effort: a claim that cannot be written is a
+	// database blip, and the sweep leaves rows this young alone, so the worst case is
+	// a handover on the first failed renewal — a delayed deployment, not a lost one.
 	if err := argo.State.ClaimTask(newTask.Id); err != nil {
 		slog.Warn("Failed to claim the new task for this replica", "error", err, "id", newTask.Id)
 	}
@@ -236,20 +236,24 @@ func (argo *Argo) AddTask(task models.Task) (*models.Task, error) {
 	return newTask, nil
 }
 
-// detectRollback returns the ID of the task this deployment rolls back to, or an
-// empty string when it is not a rollback. A rollback is a deployment whose image set
-// was successfully deployed at some earlier point for the app AND differs from the
-// current (most recently deployed) version; redeploying the current version is not a
-// rollback. The returned ID is the most recent earlier task carrying that image set.
-func (argo *Argo) detectRollback(task models.Task) string {
-	deployed, _ := argo.State.GetTasks(models.TaskFilter{
+// detectRollback returns the ID of the most recent earlier task this deployment
+// rolls back to, or an empty string when it is not one. A rollback's image set was
+// deployed successfully at some earlier point for the app AND differs from the
+// current version — redeploying the current version is not a rollback.
+func (argo *Argo) detectRollback(task models.Task) (string, error) {
+	deployed, _, err := argo.State.GetTasks(models.TaskFilter{
 		EndTime: float64(time.Now().Unix()),
 		App:     task.App,
 		Status:  models.StatusDeployedMessage,
 		Limit:   rollbackHistoryWindow,
 	})
+	if err != nil {
+		// Treated as an empty history, this would record IsRollback=false for a task
+		// the backend never actually answered for.
+		return "", fmt.Errorf("%w of %q: %w", ErrTaskHistoryUnavailable, task.App, err)
+	}
 	if len(deployed) == 0 {
-		return ""
+		return "", nil
 	}
 
 	target := imageSignature(task)
@@ -257,37 +261,68 @@ func (argo *Argo) detectRollback(task models.Task) string {
 	// GetTasks orders by created DESC, so deployed[0] is the current version.
 	// Matching it means we are redeploying the current version, not rolling back.
 	if imageSignature(deployed[0]) == target {
-		return ""
+		return "", nil
 	}
 
 	for _, previous := range deployed[1:] {
 		if imageSignature(previous) == target {
-			return previous.Id
+			return previous.Id, nil
 		}
 	}
 
-	return ""
+	return "", nil
 }
 
 // imageSignature returns a key for a task's image set that is independent of the
 // order the images arrived in.
 func imageSignature(task models.Task) string {
-	return strings.Join(helpers.NormalizeImages(task.ListImages()), ",")
+	return strings.Join(normalizeImages(task.ListImages()), ",")
 }
 
-// GetTasks retrieves tasks from the state.
-//
-// Listing is deliberately NOT gated on ArgoCD reachability. Stored task history must
-// stay viewable even when ArgoCD is unavailable (e.g. a DNS/network outage): coupling
-// the read to a live ArgoCD `session/userinfo` call would make the whole list hang on
-// the API retry budget and then hide existing tasks behind an error. Note the /readyz
-// endpoint probes only the state backend (SimpleHealthCheck), not ArgoCD.
+// GetTasks retrieves tasks from the state. Listing is deliberately NOT gated on
+// ArgoCD reachability: coupling the read to a live `session/userinfo` call would
+// hang the whole list on the API retry budget during an outage and then hide
+// existing tasks behind an error. /readyz probes only the state backend.
 func (argo *Argo) GetTasks(filter models.TaskFilter) models.TasksResponse {
-	tasks, total := argo.State.GetTasks(filter)
+	tasks, total, err := argo.State.GetTasks(filter)
+	if err != nil {
+		// Reported in the body rather than as an empty page, as GetAppSummaries
+		// does: a reader cannot otherwise tell an outage from a quiet estate.
+		slog.Error("Failed to read tasks", "error", err)
+		return models.TasksResponse{Error: tasksFailedMessage}
+	}
 
 	return models.TasksResponse{
 		Tasks: tasks,
 		Total: total,
+	}
+}
+
+// tasksFailedMessage is the client-facing text for a failed task read. The real
+// cause stays in the server log, as appSummariesFailedMessage does.
+const tasksFailedMessage = "failed to read tasks"
+
+// appSummariesFailedMessage is the client-facing text for a failed aggregate.
+// The real cause stays in the server log, as internalErrorMessage does for the
+// handlers.
+const appSummariesFailedMessage = "failed to read app summaries"
+
+// GetAppSummaries aggregates the filter's window per application. Like
+// GetTasks, it is not gated on ArgoCD reachability: it reads stored history.
+func (argo *Argo) GetAppSummaries(filter models.TaskFilter) models.AppSummariesResponse {
+	summaries, err := argo.State.GetAppSummaries(filter)
+	if err != nil {
+		// The state layer logs the cause, which names the database and its
+		// schema; this body is served to any reader of the overview.
+		return models.AppSummariesResponse{
+			Apps:  []models.AppSummary{},
+			Error: appSummariesFailedMessage,
+		}
+	}
+
+	return models.AppSummariesResponse{
+		Apps:      summaries,
+		TotalApps: len(summaries),
 	}
 }
 
