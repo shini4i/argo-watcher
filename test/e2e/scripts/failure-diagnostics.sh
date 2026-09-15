@@ -13,7 +13,9 @@
 #   task=<json>            deploy payload (app/author/project/timeout/images)  (required)
 #   token=<0|1>            send the deploy token (enables write-back); default 1
 #   expect=<substring>     a substring that MUST appear in the client output (repeatable)
+#   reject=<substring>     a substring that must NOT appear in the client output (repeatable)
 #   max_seconds=<n>        optional: the client must return within n seconds
+#   min_seconds=<n>        optional: the client must NOT return before n seconds
 #   setup / teardown       optional: names of functions run before/after the scenario
 # The runner runs the client, captures its combined output + exit code, and greps.
 #
@@ -259,6 +261,23 @@ setup_image_not_part_of_app() {
   return
 }
 
+# The app chart ships a `helm.sh/hook: test` Pod running busybox, so busybox is an image the
+# application declares and never runs. ArgoCD drops hook resources from managed-resources, so
+# reading that endpoint calls busybox absent and fails the deploy in seconds; the rendered
+# manifests carry it, and the deploy must wait out its timeout instead.
+scenario_hook_only_image_is_found() {
+  echo "task={\"app\":\"app2\",\"author\":\"e2e\",\"project\":\"lab\",\"timeout\":60,\"images\":[{\"image\":\"busybox\",\"tag\":\"1.36\"}]}"
+  echo "token=0"
+  echo "expect=Rollout status is not available"
+  echo "reject=is not part of application"
+  # A fail-fast returns within a poll or two, so only an elapsed time near the task's own timeout
+  # proves the hook-carried image was found rather than declared missing.
+  echo "min_seconds=45"
+  echo "setup=setup_hook_only_image_is_found"
+  return
+}
+setup_hook_only_image_is_found() { require_app_synced app2 60; return; }
+
 SCENARIOS=(
   scenario_bad_image
   scenario_unvalidated_not_available
@@ -266,7 +285,17 @@ SCENARIOS=(
   scenario_degraded_migration_job
   scenario_progressing_timeout
   scenario_image_not_part_of_app
+  scenario_hook_only_image_is_found
 )
+
+# SCENARIO_FILTER=<substring> narrows the run to the scenarios whose name contains it, for
+# iterating on one without paying for the others. Unset runs them all, which is what CI does;
+# a filter matching nothing is an error rather than a vacuous pass.
+if [[ -n "${SCENARIO_FILTER:-}" ]]; then
+  mapfile -t SCENARIOS < <(printf '%s\n' "${SCENARIOS[@]}" | grep -F -- "$SCENARIO_FILTER" || true)
+  [[ ${#SCENARIOS[@]} -gt 0 ]] || die "SCENARIO_FILTER=${SCENARIO_FILTER} matched no scenario"
+  echo "SCENARIO_FILTER=${SCENARIO_FILTER} -> ${#SCENARIOS[@]} scenario(s)"
+fi
 
 # Every scenario below drives a real deployment to the "failed" status, so the counter
 # must rise by one per scenario. A delta, because it is cumulative across the phases
@@ -281,8 +310,12 @@ for scenario in "${SCENARIOS[@]}"; do
   token=$(sed -n 's/^token=//p' <<<"$spec"); token="${token:-1}"
   setup=$(sed -n 's/^setup=//p' <<<"$spec")
   teardown=$(sed -n 's/^teardown=//p' <<<"$spec")
+  # Two more optional keys beyond the set the header lists: reject=<substring> asserts the output
+  # does NOT carry it, and min_seconds=<n> asserts the client did not return before n seconds.
   max_seconds=$(sed -n 's/^max_seconds=//p' <<<"$spec")
+  min_seconds=$(sed -n 's/^min_seconds=//p' <<<"$spec")
   mapfile -t expects < <(sed -n 's/^expect=//p' <<<"$spec")
+  mapfile -t rejects < <(sed -n 's/^reject=//p' <<<"$spec")
 
   [[ -n "$setup" ]] && { echo "  setup: $setup"; "$setup"; }
 
@@ -302,11 +335,27 @@ for scenario in "${SCENARIOS[@]}"; do
     fi
   done
 
+  for unwanted in "${rejects[@]}"; do
+    if grep -qF -- "$unwanted" <<<"$out"; then
+      bad "client output contains «${unwanted}», which it must not"
+    else
+      ok "client output free of «${unwanted}»"
+    fi
+  done
+
   if [[ -n "$max_seconds" ]]; then
     if [[ "$elapsed" -le "$max_seconds" ]]; then
       ok "client returned in ${elapsed}s (<= ${max_seconds}s)"
     else
       bad "client took ${elapsed}s, expected <= ${max_seconds}s"
+    fi
+  fi
+
+  if [[ -n "$min_seconds" ]]; then
+    if [[ "$elapsed" -ge "$min_seconds" ]]; then
+      ok "client waited ${elapsed}s (>= ${min_seconds}s)"
+    else
+      bad "client returned after only ${elapsed}s, expected >= ${min_seconds}s"
     fi
   fi
 

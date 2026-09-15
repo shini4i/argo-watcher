@@ -386,15 +386,17 @@ func TestArgoApiGetResourceTreeSuccess(t *testing.T) {
 	assert.Equal(t, `Back-off pulling image "demo:v2": ErrImagePull`, result.Nodes[0].Health.Message)
 }
 
-func TestArgoApiGetManagedResourcesSuccess(t *testing.T) {
-	manifest := `{"kind":"Deployment","spec":{"template":{"spec":{"containers":[{"image":"demo:v1"}]}}}}`
+// TestArgoApiGetManifestsSuccess pins the wire contract literally instead of round-tripping
+// through ApplicationManifests: a renamed json tag would encode and decode symmetrically here
+// while production decoded an empty list, silently disabling the desired-image check. The
+// namespace and revision fields are ArgoCD's own and must be ignored.
+func TestArgoApiGetManifestsSuccess(t *testing.T) {
+	body := `{"manifests":["{\"kind\":\"Deployment\",\"spec\":{\"template\":{\"spec\":{\"containers\":[{\"image\":\"demo:v1\"}]}}}}"],"namespace":"demo-ns","revision":"abc123"}`
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/api/v1/applications/demo/managed-resources", r.URL.Path)
+		assert.Equal(t, "/api/v1/applications/demo/manifests", r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
-		require.NoError(t, json.NewEncoder(w).Encode(models.ManagedResources{
-			Items: []models.ManagedResource{{TargetState: manifest}},
-		}))
+		_, _ = w.Write([]byte(body))
 	}))
 	defer server.Close()
 
@@ -406,7 +408,7 @@ func TestArgoApiGetManagedResourcesSuccess(t *testing.T) {
 	api.client = server.Client()
 	api.maxRetries = 1
 
-	result, err := api.GetManagedResources(context.Background(), "demo")
+	result, err := api.GetManifests(context.Background(), "demo")
 	require.NoError(t, err)
 
 	names, err := desiredImageNames(result)
@@ -414,7 +416,7 @@ func TestArgoApiGetManagedResourcesSuccess(t *testing.T) {
 	assert.Equal(t, []string{"demo"}, names)
 }
 
-func TestArgoApiGetManagedResourcesError(t *testing.T) {
+func TestArgoApiGetManifestsError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 	}))
@@ -428,7 +430,48 @@ func TestArgoApiGetManagedResourcesError(t *testing.T) {
 	api.client = server.Client()
 	api.maxRetries = 1
 
-	_, err = api.GetManagedResources(context.Background(), "demo")
+	_, err = api.GetManifests(context.Background(), "demo")
+	require.Error(t, err)
+}
+
+func TestArgoApiGetManifestsUnmarshalError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("not json"))
+	}))
+	defer server.Close()
+
+	parsedURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	api := NewArgoApi()
+	api.baseUrl = *parsedURL
+	api.client = server.Client()
+	api.maxRetries = 1
+
+	_, err = api.GetManifests(context.Background(), "demo")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "could not parse manifests response")
+}
+
+// TestArgoApiGetManifestsTransportError pins the error validateDesiredImages relies on to
+// treat an unreachable repo server as "cannot conclude" and keep polling.
+func TestArgoApiGetManifestsTransportError(t *testing.T) {
+	// A closed server's port is bound for the length of the test and answers nothing, so the
+	// connection is refused without depending on what else the machine happens to be listening on.
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	serverURL := server.URL
+	server.Close()
+
+	parsedURL, err := url.Parse(serverURL)
+	require.NoError(t, err)
+
+	api := NewArgoApi()
+	api.baseUrl = *parsedURL
+	api.client = &http.Client{}
+	api.maxRetries = 1
+
+	_, err = api.GetManifests(context.Background(), "demo")
 	require.Error(t, err)
 }
 
@@ -475,8 +518,13 @@ func TestArgoApiGetResourceTreeUnmarshalError(t *testing.T) {
 // TestArgoApiGetResourceTreeTransportError pins the error the best-effort caller relies
 // on to fall back to a nil tree.
 func TestArgoApiGetResourceTreeTransportError(t *testing.T) {
-	// Port 1 is not listenable, so the request fails to connect.
-	parsedURL, err := url.Parse("http://127.0.0.1:1")
+	// A closed server's port is bound for the length of the test and answers nothing, so the
+	// connection is refused without depending on what else the machine happens to be listening on.
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	serverURL := server.URL
+	server.Close()
+
+	parsedURL, err := url.Parse(serverURL)
 	require.NoError(t, err)
 
 	api := NewArgoApi()
@@ -519,6 +567,42 @@ func TestArgoApiGetApplicationEscapesAppName(t *testing.T) {
 			api.client = server.Client()
 			api.maxRetries = 1
 			_, err = api.GetApplication(context.Background(), tc.appName, false)
+			assert.NoError(t, err)
+		})
+	}
+}
+
+// TestArgoApiGetManifestsEscapesAppName repeats the escaping table for the manifests endpoint,
+// which builds its path the same way: app names arrive from the open POST /tasks payload, so
+// dropping the escape here would be a one-character path-traversal regression.
+func TestArgoApiGetManifestsEscapesAppName(t *testing.T) {
+	testCases := []struct {
+		appName     string
+		expectedURL string
+	}{
+		{"my/app", "/api/v1/applications/my%2Fapp/manifests"},
+		{"app with spaces", "/api/v1/applications/app%20with%20spaces/manifests"},
+		{"../traversal", "/api/v1/applications/..%2Ftraversal/manifests"},
+		{"app?param=value", "/api/v1/applications/app%3Fparam=value/manifests"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.appName, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, tc.expectedURL, r.URL.EscapedPath())
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"manifests":[]}`))
+			}))
+			defer server.Close()
+
+			parsedURL, err := url.Parse(server.URL)
+			require.NoError(t, err)
+
+			api := NewArgoApi()
+			api.baseUrl = *parsedURL
+			api.client = server.Client()
+			api.maxRetries = 1
+			_, err = api.GetManifests(context.Background(), tc.appName)
 			assert.NoError(t, err)
 		})
 	}

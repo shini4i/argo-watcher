@@ -593,13 +593,13 @@ func (monitor *DeploymentMonitor) validateDesiredImages(ctx context.Context, tas
 		return nil
 	}
 
-	resources, err := monitor.argo.api.GetManagedResources(ctx, task.App)
+	rendered, err := monitor.argo.api.GetManifests(ctx, task.App)
 	if err != nil {
-		slog.Debug("Could not fetch managed resources to validate images", "error", err, "id", task.Id)
+		slog.Warn("Could not fetch rendered manifests to validate images", "error", err, "id", task.Id)
 		return nil
 	}
 
-	desired, err := desiredImageNames(resources)
+	desired, err := desiredImageNames(rendered)
 	if err != nil {
 		slog.Warn("Could not read the application's desired state to validate images", "error", err, "id", task.Id)
 		return nil
