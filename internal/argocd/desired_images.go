@@ -9,25 +9,25 @@ import (
 )
 
 // desiredImageNames returns the sorted, de-duplicated repository names (tags and digests
-// stripped) of every container image declared in the application's desired state. An
-// undecodable target state is an error, not a skip: the item may be the one declaring the
-// image the caller looks for, and a shorter list reads as proof of an absence.
-func desiredImageNames(resources *models.ManagedResources) ([]string, error) {
-	if resources == nil {
+// stripped) of every container image declared in the application's rendered manifests. An
+// undecodable manifest is an error, not a skip: it may be the one declaring the image the
+// caller looks for, and a shorter list reads as proof of an absence.
+func desiredImageNames(rendered *models.ApplicationManifests) ([]string, error) {
+	if rendered == nil {
 		return nil, nil
 	}
 
 	found := make(map[string]struct{})
 
-	for index := range resources.Items {
-		targetState := resources.Items[index].TargetState
-		if targetState == "" {
+	for index := range rendered.Manifests {
+		manifestJSON := rendered.Manifests[index]
+		if manifestJSON == "" {
 			continue
 		}
 
 		var manifest any
-		if err := json.Unmarshal([]byte(targetState), &manifest); err != nil {
-			return nil, fmt.Errorf("decoding the target state of item %d: %w", index, err)
+		if err := json.Unmarshal([]byte(manifestJSON), &manifest); err != nil {
+			return nil, fmt.Errorf("decoding manifest %d: %w", index, err)
 		}
 
 		collectImages(manifest, found)

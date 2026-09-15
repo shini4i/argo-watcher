@@ -91,7 +91,7 @@ func neverDraining() bool { return false }
 func newArgoApiMock(ctrl *gomock.Controller) *mocks.MockArgoApiInterface {
 	api := mocks.NewMockArgoApiInterface(ctrl)
 	api.EXPECT().GetResourceTree(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
-	api.EXPECT().GetManagedResources(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+	api.EXPECT().GetManifests(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 	return api
 }
 
@@ -788,7 +788,7 @@ func TestArgoStatusUpdaterDegradedReportsRolloutDiagnostics(t *testing.T) {
 	// Mirrors newArgoApiMock's default for the other best-effort call, which this raw mock
 	// bypasses: without it, flipping the instance-wide refresh default would fail this test
 	// with an opaque "unexpected call" instead of a behavioural assertion.
-	api.EXPECT().GetManagedResources(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+	api.EXPECT().GetManifests(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 
 	var capturedReason string
 	metrics.EXPECT().AddInProgressTask()

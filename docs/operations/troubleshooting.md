@@ -141,7 +141,7 @@ An alias may not be repeated either — `app=one,app=two` is rejected, since onl
 
 **Symptom:** the deployment fails immediately with `Image "<name>" is not part of application "<app>"`, followed by the images the application does declare.
 
-**Meaning:** the application finished rolling out — synced and healthy — but its desired state never declares the requested image, so waiting would only burn the timeout. The check compares image names and ignores the tag. The desired state comes from Argo CD's managed resources, not from running pods, so a workload with no pod yet (an untriggered `CronJob`, a `Deployment` scaled to zero) still counts as declaring its image.
+**Meaning:** the application finished rolling out — synced and healthy — but its desired state never declares the requested image, so waiting would only burn the timeout. The check compares image names and ignores the tag. The desired state comes from Argo CD's rendered manifests, not from running pods, so a workload with no pod yet (an untriggered `CronJob`, a `Deployment` scaled to zero, a sync hook) still counts as declaring its image.
 
 **Likely causes**
 
@@ -152,12 +152,9 @@ An uncommitted tag does not trigger this error: the image name is still declared
 
 **How to verify:** compare the requested image against the list in the failure reason, or run `argocd app manifests <app> | grep image:`.
 
-**When the check does not run:** it needs a freshly reconciled application, so it is skipped when `ARGO_REFRESH_APP` is `false` or the task sets `TASK_REFRESH=false`. It also abstains when one of the application's desired manifests cannot be read, logging `Could not read the application's desired state to validate images` at `warn`; the deployment then polls to a timeout instead of failing fast.
+**When the check does not run:** it needs a freshly reconciled application, so it is skipped when `ARGO_REFRESH_APP` is `false` or the task sets `TASK_REFRESH=false`. It also abstains when one of the application's rendered manifests cannot be read, logging `Could not read the application's desired state to validate images` at `warn`; the deployment then polls to a timeout instead of failing fast.
 
-**When the check is wrong:** two kinds of image belong to an application yet never appear in the desired state Argo CD reports, so a correct name still fails:
-
-- **Images used only by a sync hook** — Argo CD omits hook resources, so an image appearing only in a PreSync migration Job is invisible.
-- **Images named by a custom resource** — if an operator creates the workload from a CR, that workload is not a managed resource of the application.
+**When the check is wrong:** an image named by a **custom resource** belongs to the application yet never appears in its rendered manifests — if an operator creates the workload from a CR, the image is in the operator's spec, not in a manifest Argo CD renders, so a correct image name still fails.
 
 Turn the check off for such an application. Its deployments then poll for the image and fail only on the timeout, exactly as before:
 

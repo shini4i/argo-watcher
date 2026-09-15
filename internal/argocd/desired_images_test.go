@@ -10,10 +10,6 @@ import (
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
-func resource(targetState string) models.ManagedResource {
-	return models.ManagedResource{TargetState: targetState}
-}
-
 const deploymentManifest = `{
   "apiVersion": "apps/v1",
   "kind": "Deployment",
@@ -48,11 +44,11 @@ const cronJobManifest = `{
 const serviceManifest = `{"apiVersion": "v1", "kind": "Service", "spec": {"ports": [{"port": 80}]}}`
 
 func TestDesiredImageNamesCollectsWorkloadKinds(t *testing.T) {
-	resources := models.ManagedResources{Items: []models.ManagedResource{
-		resource(deploymentManifest),
-		resource(cronJobManifest),
-		resource(serviceManifest),
-		resource(deploymentManifest),
+	resources := models.ApplicationManifests{Manifests: []string{
+		deploymentManifest,
+		cronJobManifest,
+		serviceManifest,
+		deploymentManifest,
 	}}
 
 	names, err := desiredImageNames(&resources)
@@ -69,12 +65,12 @@ func TestDesiredImageNamesCollectsWorkloadKinds(t *testing.T) {
 // unusable: one that exists only in the cluster carries the target state "null" or none
 // at all, and a container may simply have no image key.
 func TestDesiredImageNamesSkipsImagelessItems(t *testing.T) {
-	resources := models.ManagedResources{Items: []models.ManagedResource{
-		resource(""),
-		resource("null"),
-		resource(`{"kind": "Deployment", "spec": {"template": {"spec": {"containers": "not-a-list"}}}}`),
-		resource(`{"kind": "Deployment", "spec": {"template": {"spec": {"containers": [{"name": "no-image"}]}}}}`),
-		resource(deploymentManifest),
+	resources := models.ApplicationManifests{Manifests: []string{
+		"",
+		"null",
+		`{"kind": "Deployment", "spec": {"template": {"spec": {"containers": "not-a-list"}}}}`,
+		`{"kind": "Deployment", "spec": {"template": {"spec": {"containers": [{"name": "no-image"}]}}}}`,
+		deploymentManifest,
 	}}
 
 	names, err := desiredImageNames(&resources)
@@ -86,26 +82,26 @@ func TestDesiredImageNamesSkipsImagelessItems(t *testing.T) {
 // An undecodable manifest may be the one declaring the requested image, so the set is
 // reported as unusable rather than as a smaller set of images.
 func TestDesiredImageNamesReportsUndecodableItem(t *testing.T) {
-	resources := models.ManagedResources{Items: []models.ManagedResource{
-		resource(deploymentManifest),
-		resource("not json"),
+	resources := models.ApplicationManifests{Manifests: []string{
+		deploymentManifest,
+		"not json",
 	}}
 
 	names, err := desiredImageNames(&resources)
 
 	require.Error(t, err)
 	assert.Nil(t, names)
-	assert.Contains(t, err.Error(), "item 1")
+	assert.Contains(t, err.Error(), "manifest 1")
 	assert.NotNil(t, errors.Unwrap(err), "the decoder's error must stay in the chain")
 }
 
 // An image declared outside a pod template — an operator CR is the common case — still
 // counts as part of the application.
 func TestDesiredImageNamesCollectsNonTemplateImages(t *testing.T) {
-	resources := models.ManagedResources{Items: []models.ManagedResource{
-		resource(`{"kind":"Workflow","spec":{"templates":[{"container":{"image":"ghcr.io/shini4i/step:v1"}}]}}`),
+	resources := models.ApplicationManifests{Manifests: []string{
+		`{"kind":"Workflow","spec":{"templates":[{"container":{"image":"ghcr.io/shini4i/step:v1"}}]}}`,
 		// An "image" key holding an object, not a reference, must not be recorded.
-		resource(`{"kind":"ConfigMap","data":{"image":{"repository":"ignored"}}}`),
+		`{"kind":"ConfigMap","data":{"image":{"repository":"ignored"}}}`,
 	}}
 
 	names, err := desiredImageNames(&resources)
@@ -117,12 +113,12 @@ func TestDesiredImageNamesCollectsNonTemplateImages(t *testing.T) {
 // "Cannot conclude" has two shapes, and callers respond to them differently: an empty
 // list means the desired state declares no image, an error means it could not be read.
 func TestDesiredImageNamesEmpty(t *testing.T) {
-	resources := models.ManagedResources{Items: []models.ManagedResource{resource(serviceManifest)}}
+	resources := models.ApplicationManifests{Manifests: []string{serviceManifest}}
 	names, err := desiredImageNames(&resources)
 	require.NoError(t, err)
 	assert.Empty(t, names)
 
-	empty := models.ManagedResources{}
+	empty := models.ApplicationManifests{}
 	names, err = desiredImageNames(&empty)
 	require.NoError(t, err)
 	assert.Empty(t, names)

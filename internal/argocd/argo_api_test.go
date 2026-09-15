@@ -386,14 +386,14 @@ func TestArgoApiGetResourceTreeSuccess(t *testing.T) {
 	assert.Equal(t, `Back-off pulling image "demo:v2": ErrImagePull`, result.Nodes[0].Health.Message)
 }
 
-func TestArgoApiGetManagedResourcesSuccess(t *testing.T) {
+func TestArgoApiGetManifestsSuccess(t *testing.T) {
 	manifest := `{"kind":"Deployment","spec":{"template":{"spec":{"containers":[{"image":"demo:v1"}]}}}}`
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/api/v1/applications/demo/managed-resources", r.URL.Path)
+		assert.Equal(t, "/api/v1/applications/demo/manifests", r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
-		require.NoError(t, json.NewEncoder(w).Encode(models.ManagedResources{
-			Items: []models.ManagedResource{{TargetState: manifest}},
+		require.NoError(t, json.NewEncoder(w).Encode(models.ApplicationManifests{
+			Manifests: []string{manifest},
 		}))
 	}))
 	defer server.Close()
@@ -406,7 +406,7 @@ func TestArgoApiGetManagedResourcesSuccess(t *testing.T) {
 	api.client = server.Client()
 	api.maxRetries = 1
 
-	result, err := api.GetManagedResources(context.Background(), "demo")
+	result, err := api.GetManifests(context.Background(), "demo")
 	require.NoError(t, err)
 
 	names, err := desiredImageNames(result)
@@ -414,7 +414,7 @@ func TestArgoApiGetManagedResourcesSuccess(t *testing.T) {
 	assert.Equal(t, []string{"demo"}, names)
 }
 
-func TestArgoApiGetManagedResourcesError(t *testing.T) {
+func TestArgoApiGetManifestsError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 	}))
@@ -428,7 +428,7 @@ func TestArgoApiGetManagedResourcesError(t *testing.T) {
 	api.client = server.Client()
 	api.maxRetries = 1
 
-	_, err = api.GetManagedResources(context.Background(), "demo")
+	_, err = api.GetManifests(context.Background(), "demo")
 	require.Error(t, err)
 }
 

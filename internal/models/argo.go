@@ -7,9 +7,9 @@ const (
 	managedGitPath          = "argo-watcher/write-back-path"
 	managedGitFile          = "argo-watcher/write-back-filename"
 	fireAndForgetAnnotation = "argo-watcher/fire-and-forget"
-	// skipImageValidationAnnotation opts out of the desired-state image check for apps
-	// whose images it cannot see: used only by sync hooks (ArgoCD omits those resources),
-	// or named by a custom resource whose workload an operator creates out-of-band.
+	// skipImageValidationAnnotation opts out of the desired-state image check for apps whose
+	// images it cannot see: named by a custom resource whose workload an operator creates
+	// out-of-band, and so absent from the rendered manifests the check reads.
 	skipImageValidationAnnotation = "argo-watcher/skip-image-validation"
 )
 

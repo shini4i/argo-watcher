@@ -406,7 +406,7 @@ func TestWaitForRollout_ADrainStartingInsideTheDiagnosticsFetchStillReachesTheWr
 	app.Status.Sync.Status = "Synced"
 	app.Status.Health.Status = "Degraded"
 	apiMock.EXPECT().GetApplication(gomock.Any(), gomock.Any(), gomock.Any()).Return(app, nil).AnyTimes()
-	apiMock.EXPECT().GetManagedResources(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+	apiMock.EXPECT().GetManifests(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 
 	var draining atomic.Bool
 	apiMock.EXPECT().GetResourceTree(gomock.Any(), gomock.Any()).

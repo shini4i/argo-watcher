@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A deployment whose image is declared only by an Argo CD sync hook — a PreSync migration Job, a
+  PostSync registrar — is no longer failed with `Image "<name>" is not part of application`. The
+  check read the application's managed resources, which Argo CD reports with every hook resource
+  removed, so such an image looked absent however correctly it was named. It now reads the
+  application's rendered manifests, where hooks are present. Applications that needed
+  `argo-watcher/skip-image-validation` for this reason no longer do.
+
 ## [1.4.0] - 2026-09-15
 
 ### Added
