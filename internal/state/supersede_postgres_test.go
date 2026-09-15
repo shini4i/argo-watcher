@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	envConfig "github.com/caarlos0/env/v11"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -27,7 +26,7 @@ func newImpatientState(t *testing.T) *PostgresState {
 		t.Skip("Postgres integration tests require DB_DSN or DB_HOST to be configured")
 	}
 
-	databaseConfig, err := envConfig.ParseAs[config.DatabaseConfig]()
+	databaseConfig, err := config.NewDatabaseConfig()
 	require.NoError(t, err)
 	databaseConfig.DSN += " lock_timeout=200"
 

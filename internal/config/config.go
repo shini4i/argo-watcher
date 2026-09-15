@@ -102,6 +102,29 @@ type DatabaseConfig struct {
 	DSN string `env:"DB_DSN,expand"`
 }
 
+// NewDatabaseConfig reads the DB_* settings and assembles the connection string. Prefer
+// it to parsing DatabaseConfig directly: the DSN is built here rather than by a struct
+// tag, so a bare parse leaves it empty and the driver silently falls back to the OS user
+// on a local socket.
+func NewDatabaseConfig() (DatabaseConfig, error) {
+	db, err := envConfig.ParseAs[DatabaseConfig]()
+	if err != nil {
+		return DatabaseConfig{}, err
+	}
+
+	db.ensureDSN()
+
+	return db, nil
+}
+
+// ensureDSN assembles the connection string unless the operator supplied one, which is
+// then used as given — its encoding is theirs to own.
+func (db *DatabaseConfig) ensureDSN() {
+	if db.DSN == "" {
+		db.DSN = db.buildDSN()
+	}
+}
+
 // buildDSN assembles the keyword/value connection string from the DB_* settings.
 func (db DatabaseConfig) buildDSN() string {
 	return fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s TimeZone=%s",
@@ -278,10 +301,8 @@ func NewServerConfig() (*ServerConfig, error) {
 	// Enforce the connect timeout even when DB_DSN is supplied explicitly (which
 	// bypasses the default template), so an unreachable Postgres always fails fast
 	// instead of blocking on the OS TCP timeout.
+	config.Db.ensureDSN()
 	if config.StateType == "postgres" {
-		if config.Db.DSN == "" {
-			config.Db.DSN = config.Db.buildDSN()
-		}
 		config.Db.DSN = ensureConnectTimeout(config.Db.DSN, config.Db.ConnectTimeout)
 	}
 

@@ -875,3 +875,33 @@ func TestNewServerConfig_TimeZoneStaysUnquotedForGorm(t *testing.T) {
 	require.Len(t, match, 4, "the DSN must carry a timezone gorm can find")
 	assert.Equal(t, "Europe/Riga", match[2], "gorm passes this value to the server verbatim")
 }
+
+// TestNewDatabaseConfig_AssemblesTheDSN pins what the struct tag used to give every
+// caller for free. The state layer parses a DatabaseConfig without going through
+// NewServerConfig, and an empty DSN does not fail loudly: pgx falls back to the OS user
+// on a local socket, so the tests connect as somebody else instead of reporting it.
+func TestNewDatabaseConfig_AssemblesTheDSN(t *testing.T) {
+	t.Setenv("DB_HOST", "localhost")
+	t.Setenv("DB_PORT", "5432")
+	t.Setenv("DB_USER", "watcher")
+	t.Setenv("DB_PASSWORD", "watcher")
+	t.Setenv("DB_NAME", "watcher")
+
+	cfg, err := NewDatabaseConfig()
+	require.NoError(t, err)
+
+	parsed, err := pgconn.ParseConfig(cfg.DSN)
+	require.NoError(t, err)
+	assert.Equal(t, "watcher", parsed.User)
+	assert.Equal(t, "watcher", parsed.Database)
+	assert.Equal(t, "localhost", parsed.Host)
+}
+
+// An operator-supplied DSN is used as given; its encoding is theirs to own.
+func TestNewDatabaseConfig_KeepsAnExplicitDSN(t *testing.T) {
+	t.Setenv("DB_DSN", "host=elsewhere user=someone")
+
+	cfg, err := NewDatabaseConfig()
+	require.NoError(t, err)
+	assert.Equal(t, "host=elsewhere user=someone", cfg.DSN)
+}
