@@ -42,7 +42,11 @@ tasks:
     dir: cmd/argo-watcher
     cmds:
       - echo "===> Generating swagger spec"
-      - swag init --parseDependency --parseInternal --dir ./,../../internal/server --outputTypes json -o ../../web/public/swagger
+      # Every package holding an annotated type is named explicitly instead of using
+      # --parseDependency, which walks $GOROOT: swag carries the go/parser of the Go it was
+      # built with, so a newer stdlib than that fails the whole run. A type outside this list
+      # is a loud "cannot find type definition", never a silent omission.
+      - swag init --parseInternal --dir ./,../../internal/server,../../internal/models,../../internal/config --outputTypes json -o ../../web/public/swagger
       # argo_cd_url is documented as a string only because of the swaggertype tag on
       # ServerConfig; without it swag emits the fields of a url.URL and the published
       # spec silently contradicts what the endpoint serves.
