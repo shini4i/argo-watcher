@@ -58,6 +58,8 @@ tasks:
     sources:
       - main.go
       - ../../internal/server/router.go
+      - ../../internal/models/*.go
+      - ../../internal/config/*.go
     generates:
       - ../../web/public/swagger/swagger.json
 

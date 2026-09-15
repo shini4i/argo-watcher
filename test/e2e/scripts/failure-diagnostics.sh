@@ -13,7 +13,9 @@
 #   task=<json>            deploy payload (app/author/project/timeout/images)  (required)
 #   token=<0|1>            send the deploy token (enables write-back); default 1
 #   expect=<substring>     a substring that MUST appear in the client output (repeatable)
+#   reject=<substring>     a substring that must NOT appear in the client output (repeatable)
 #   max_seconds=<n>        optional: the client must return within n seconds
+#   min_seconds=<n>        optional: the client must NOT return before n seconds
 #   setup / teardown       optional: names of functions run before/after the scenario
 # The runner runs the client, captures its combined output + exit code, and greps.
 #

@@ -14,7 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   check read the application's managed resources, which Argo CD reports with every hook resource
   removed, so such an image looked absent however correctly it was named. It now reads the
   application's rendered manifests, where hooks are present. Applications that needed
-  `argo-watcher/skip-image-validation` for this reason no longer do.
+  `argo-watcher/skip-image-validation` for this reason no longer do. Rendered manifests are
+  produced by the repo server rather than read from a cache, so an application whose manifests
+  fail to render now logs a warning and keeps polling, where the failure was previously silent.
 
 ## [1.4.0] - 2026-09-15
 

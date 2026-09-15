@@ -235,7 +235,7 @@ func TestWaitRolloutFailsFastOnImageNotPartOfApp(t *testing.T) {
 		Images:  []models.Image{{Image: "ghcr.io/shini4i/typo", Tag: "v1"}},
 	}
 
-	// Raw mock: newArgoApiMock's catch-all GetManagedResources would shadow the
+	// Raw mock: newArgoApiMock's catch-all GetManifests would shadow the
 	// expectation this test is about.
 	api := mocks.NewMockArgoApiInterface(ctrl)
 	api.EXPECT().GetResourceTree(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
@@ -269,7 +269,7 @@ func TestWaitRolloutValidatesDesiredImagesOnce(t *testing.T) {
 		Images:  []models.Image{{Image: "ghcr.io/shini4i/app", Tag: "v2"}},
 	}
 
-	// Raw mock: newArgoApiMock's catch-all GetManagedResources would shadow the
+	// Raw mock: newArgoApiMock's catch-all GetManifests would shadow the
 	// expectation this test is about.
 	api := mocks.NewMockArgoApiInterface(ctrl)
 	api.EXPECT().GetResourceTree(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
@@ -316,7 +316,7 @@ func TestWaitRolloutSkipsValidationWithoutRefresh(t *testing.T) {
 		time.Millisecond,
 	)
 
-	// No GetManagedResources expectation: any call is a failure.
+	// No GetManifests expectation: any call is a failure.
 	_, _, err := monitor.WaitRollout(task, neverLost)
 	require.NoError(t, err)
 }

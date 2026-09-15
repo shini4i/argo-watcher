@@ -595,7 +595,7 @@ func (monitor *DeploymentMonitor) validateDesiredImages(ctx context.Context, tas
 
 	rendered, err := monitor.argo.api.GetManifests(ctx, task.App)
 	if err != nil {
-		slog.Debug("Could not fetch rendered manifests to validate images", "error", err, "id", task.Id)
+		slog.Warn("Could not fetch rendered manifests to validate images", "error", err, "id", task.Id)
 		return nil
 	}
 

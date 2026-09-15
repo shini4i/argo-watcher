@@ -110,6 +110,21 @@ func TestDesiredImageNamesCollectsNonTemplateImages(t *testing.T) {
 	assert.Equal(t, []string{"ghcr.io/shini4i/step"}, names)
 }
 
+// A string under any key named "image" counts, wherever it sits. Rendered manifests feed in
+// ConfigMaps and hook resources too, so stray matches are expected: they only widen the accepted
+// set, and a non-empty set is what lets the caller conclude at all.
+func TestDesiredImageNamesWidensOnAnyImageKey(t *testing.T) {
+	resources := models.ApplicationManifests{Manifests: []string{
+		`{"kind":"Deployment","spec":{"template":{"spec":{"containers":[{"image":"ghcr.io/shini4i/app:v1"}]}}}}`,
+		`{"kind":"ConfigMap","data":{"image":"ghcr.io/shini4i/sidecar:v1"}}`,
+	}}
+
+	names, err := desiredImageNames(&resources)
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"ghcr.io/shini4i/app", "ghcr.io/shini4i/sidecar"}, names)
+}
+
 // "Cannot conclude" has two shapes, and callers respond to them differently: an empty
 // list means the desired state declares no image, an error means it could not be read.
 func TestDesiredImageNamesEmpty(t *testing.T) {
