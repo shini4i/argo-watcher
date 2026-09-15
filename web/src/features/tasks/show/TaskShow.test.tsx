@@ -101,7 +101,7 @@ describe('TaskShow', () => {
     // The configuration is fetched once per page load and cached, so a case that sets
     // its own response would otherwise get the previous case's.
     resetServerConfigCache();
-    configResponse = {};
+    configResponse = { oidc: { enabled: false } };
     mockHttpClient.mockImplementation((url: string) => {
       if (url === '/api/v1/config') {
         return Promise.resolve({ data: configResponse, status: 200, headers: {} as Headers });
@@ -681,7 +681,7 @@ describe('TaskShow', () => {
   });
 
   it('enables Argo CD link when alias is configured', async () => {
-    configResponse = { argo_cd_url_alias: 'https://argocd.example' };
+    configResponse = { oidc: { enabled: false }, argo_cd_url_alias: 'https://argocd.example' };
     mockUseGetOne.mockReturnValue({
       data: buildTask(),
       isLoading: false,
@@ -696,7 +696,7 @@ describe('TaskShow', () => {
   });
 
   it('keeps the application route in the path of a URL carrying a query', async () => {
-    configResponse = { argo_cd_url: 'https://argocd.local/platform?view=tree#overview' };
+    configResponse = { oidc: { enabled: false }, argo_cd_url: 'https://argocd.local/platform?view=tree#overview' };
     mockUseGetOne.mockReturnValue({
       data: buildTask(),
       isLoading: false,
@@ -716,6 +716,7 @@ describe('TaskShow', () => {
   it('prefers the alias over the server URL', async () => {
     // The alias exists for an ARGO_URL the browser cannot reach.
     configResponse = {
+      oidc: { enabled: false },
       argo_cd_url_alias: 'https://argocd.example',
       argo_cd_url: 'https://argocd.local/platform',
     };
@@ -733,7 +734,7 @@ describe('TaskShow', () => {
   });
 
   it('builds Argo CD link from the server URL', async () => {
-    configResponse = { argo_cd_url: 'https://argocd.local/platform/' };
+    configResponse = { oidc: { enabled: false }, argo_cd_url: 'https://argocd.local/platform/' };
     mockUseGetOne.mockReturnValue({
       data: buildTask(),
       isLoading: false,

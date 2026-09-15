@@ -62,13 +62,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An `app not found` task now stays readable for an hour on the in-memory backend, as it already did
   on PostgreSQL. It was previously removed by the first cleanup pass, so a client polling for the
   outcome could be answered `404` instead of being told the application does not exist.
-- The readiness probe now fails within five seconds against a database that accepts the connection
+- The readiness probe now fails within two seconds against a database that accepts the connection
   and then answers nothing, such as a failover in progress. The check had no timeout, so the probe
-  hung instead of reporting the replica unready, and Kubernetes never took it out of service.
-- A `GET /api/v1/config` response carrying no JSON body — a proxy interstitial, or a sign-in page in
-  front of the API — is now reported as a configuration failure. The Web UI previously read it as a
-  server with nothing configured and started as though authentication were disabled, leaving every
-  request to fail with `401` and no way to sign in.
+  hung instead of reporting the replica unready, and Kubernetes never took it out of service. The
+  cap sits under the chart's default `readinessProbe.timeoutSeconds` of 3, so the answer arrives
+  before the probe is abandoned.
+- A `GET /api/v1/config` response that is not this server's configuration — a proxy interstitial, a
+  sign-in page in front of the API, a gateway's own error envelope — is now reported as a
+  configuration failure. The Web UI previously read any of them as a server with nothing configured
+  and started as though authentication were disabled, leaving every request to fail with `401` and
+  no way to sign in.
 - An application with failures in the window is no longer badged **Failing** in the success green on
   the Overview. The badge took its colour from the application's most recent task while taking its
   text from the window as a whole, so an app that had failed several times but happened to deploy

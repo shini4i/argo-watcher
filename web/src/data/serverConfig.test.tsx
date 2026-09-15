@@ -34,7 +34,7 @@ describe('fetchServerConfig', () => {
   });
 
   it('serves a later caller from the cache', async () => {
-    mockHttpClient.mockResolvedValue(respondWith({ state_type: 'postgres' }));
+    mockHttpClient.mockResolvedValue(respondWith({ oidc: { enabled: true }, state_type: 'postgres' }));
 
     await fetchServerConfig();
     await fetchServerConfig();
@@ -51,11 +51,27 @@ describe('fetchServerConfig', () => {
     expect(mockHttpClient).toHaveBeenCalledTimes(2);
   });
 
-  it('rejects a body-less response instead of reading it as an empty configuration', async () => {
-    // A 200 carrying no JSON is a proxy interstitial or the Web UI's HTML catch-all.
-    mockHttpClient.mockResolvedValue(respondWith(undefined));
+  it.each([
+    ['no JSON body at all', undefined],
+    ['an array', []],
+    ['an error envelope with no oidc', { error: 'gateway timeout' }],
+    ['an oidc value that is not an object', { oidc: 'unexpected' }],
+    ['a null oidc', { oidc: null }],
+  ])('rejects %s rather than caching it as a configuration', async (_name, payload) => {
+    // Every one of these is truthy-or-absent nonsense from something other than this
+    // server. Cached, each reads as "OIDC disabled" and leaves no way to sign in.
+    mockHttpClient.mockResolvedValue(respondWith(payload));
 
     await expect(fetchServerConfig()).rejects.toThrow('Failed to load configuration');
+  });
+
+  it('accepts a configuration that carries oidc', async () => {
+    mockHttpClient.mockResolvedValue(respondWith({ oidc: { enabled: false }, state_type: 'postgres' }));
+
+    await expect(fetchServerConfig()).resolves.toEqual({
+      oidc: { enabled: false },
+      state_type: 'postgres',
+    });
   });
 });
 

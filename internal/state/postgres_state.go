@@ -492,8 +492,9 @@ func supersedeInProgress(tx *gorm.DB, task models.Task, reason string) (int64, e
 
 // checkPingTimeout bounds the health probe's ping. The DSN's connect_timeout covers
 // dialing only, so without it a database that accepts the connection and then answers
-// nothing parks the readiness handler indefinitely and the replica is never restarted.
-const checkPingTimeout = 5 * time.Second
+// nothing parks the readiness handler indefinitely. It sits under the chart's 3s
+// readinessProbe timeout, so /readyz answers 503 rather than being abandoned mid-ping.
+const checkPingTimeout = 2 * time.Second
 
 // Check reports whether the database connection is alive.
 func (state *PostgresState) Check() bool {

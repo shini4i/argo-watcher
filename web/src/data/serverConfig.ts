@@ -18,6 +18,15 @@ export interface ServerConfig {
   argo_cd_url_alias?: string;
 }
 
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/** Reports whether a payload is this server's configuration rather than something
+ * else answering 200 on the route — a gateway's own JSON, or an error envelope.
+ * `oidc` is always emitted, so its absence is the tell. */
+const isServerConfig = (value: unknown): value is ServerConfig =>
+  isObject(value) && isObject(value.oidc);
+
 let pending: Promise<ServerConfig> | null = null;
 
 /**
@@ -28,10 +37,11 @@ let pending: Promise<ServerConfig> | null = null;
 export const fetchServerConfig = async (): Promise<ServerConfig> => {
   pending ??= httpClient<ServerConfig>('/api/v1/config')
     .then(response => {
-      // A body-less 200 is a proxy interstitial or the Web UI's own HTML catch-all, not
-      // a server with nothing configured. Reading it as {} would start the app as though
-      // auth were disabled, leaving every call to 401 with no login path.
-      if (!response.data) {
+      // Anything that is not this server's configuration — a body-less 200 from the Web
+      // UI's own HTML catch-all, a proxy interstitial, an error envelope — would start
+      // the app as though auth were disabled, leaving every call to 401 with no login
+      // path. Failing here surfaces it instead.
+      if (!isServerConfig(response.data)) {
         throw new HttpError('Failed to load configuration', response.status, null);
       }
       return response.data;

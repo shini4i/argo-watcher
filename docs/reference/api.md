@@ -97,7 +97,7 @@ Two unauthenticated endpoints report health. They answer different questions, an
 | `GET /livez` | Only that the process is still serving | Liveness probe |
 | `GET /readyz` | Not shutting down, **and** the state backend answers | Readiness probe |
 
-Both return `{"status":"up"}`, or `503` with `{"status":"down","reason":"..."}` — `shutting down` during a graceful shutdown, `state backend unreachable` when the database cannot be pinged. The database ping is capped at five seconds, so a database that accepts the connection but never answers still fails `/readyz` rather than hanging the probe — set `readinessProbe.timeoutSeconds` above that.
+Both return `{"status":"up"}`, or `503` with `{"status":"down","reason":"..."}` — `shutting down` during a graceful shutdown, `state backend unreachable` when the database cannot be pinged. The database ping is capped at two seconds, so a database that accepts the connection but never answers still fails `/readyz` within the chart's default `readinessProbe.timeoutSeconds` of 3 rather than hanging the probe.
 
 !!! warning "Never point a liveness probe at `/readyz`"
     A liveness failure restarts the container, and a restart cannot fix a database that is down. Probing the state backend for liveness turns a recoverable outage into a fleet-wide `CrashLoopBackoff` while every replica could still serve task history and the unreachable banner. That is why `/livez` checks no dependency.

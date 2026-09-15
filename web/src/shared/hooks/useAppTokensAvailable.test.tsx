@@ -30,7 +30,7 @@ describe('useAppTokensAvailable', () => {
     ['Postgres but no OIDC', { oidc: { enabled: false }, state_type: 'postgres' }, false],
     ['OIDC but in-memory state', { oidc: { enabled: true }, state_type: 'in-memory' }, false],
     ['neither', { oidc: { enabled: false }, state_type: 'in-memory' }, false],
-    ['a payload missing both fields', {}, false],
+    ['a config naming neither field', { oidc: {} }, false],
   ])('reports %s', async (_name, config, expected) => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse(config));
 
