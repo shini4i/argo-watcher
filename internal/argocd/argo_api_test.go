@@ -457,8 +457,13 @@ func TestArgoApiGetManifestsUnmarshalError(t *testing.T) {
 // TestArgoApiGetManifestsTransportError pins the error validateDesiredImages relies on to
 // treat an unreachable repo server as "cannot conclude" and keep polling.
 func TestArgoApiGetManifestsTransportError(t *testing.T) {
-	// Port 1 is not listenable, so the request fails to connect.
-	parsedURL, err := url.Parse("http://127.0.0.1:1")
+	// A closed server's port is bound for the length of the test and answers nothing, so the
+	// connection is refused without depending on what else the machine happens to be listening on.
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	serverURL := server.URL
+	server.Close()
+
+	parsedURL, err := url.Parse(serverURL)
 	require.NoError(t, err)
 
 	api := NewArgoApi()
@@ -513,8 +518,13 @@ func TestArgoApiGetResourceTreeUnmarshalError(t *testing.T) {
 // TestArgoApiGetResourceTreeTransportError pins the error the best-effort caller relies
 // on to fall back to a nil tree.
 func TestArgoApiGetResourceTreeTransportError(t *testing.T) {
-	// Port 1 is not listenable, so the request fails to connect.
-	parsedURL, err := url.Parse("http://127.0.0.1:1")
+	// A closed server's port is bound for the length of the test and answers nothing, so the
+	// connection is refused without depending on what else the machine happens to be listening on.
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	serverURL := server.URL
+	server.Close()
+
+	parsedURL, err := url.Parse(serverURL)
 	require.NoError(t, err)
 
 	api := NewArgoApi()
