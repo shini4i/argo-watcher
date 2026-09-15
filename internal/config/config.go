@@ -86,13 +86,42 @@ type OIDCConfig struct {
 }
 
 type DatabaseConfig struct {
-	SSLMode string `env:"DB_SSL_MODE" envDefault:"disable"`
+	Host     string `env:"DB_HOST"`
+	Port     string `env:"DB_PORT"`
+	User     string `env:"DB_USER"`
+	Password string `env:"DB_PASSWORD"`
+	Name     string `env:"DB_NAME"`
+	SSLMode  string `env:"DB_SSL_MODE" envDefault:"disable"`
 	// ConnectTimeout bounds the initial connection attempt (in seconds) so an
 	// unreachable Postgres fails fast instead of blocking on the OS TCP timeout.
 	// It is honored by both the pgx driver (server path) and libpq (migrations).
 	ConnectTimeout int    `env:"DB_CONNECT_TIMEOUT" envDefault:"10"`
 	TimeZone       string `env:"DB_TIMEZONE" envDefault:"UTC"`
-	DSN            string `env:"DB_DSN,expand" envDefault:"host=${DB_HOST} port=${DB_PORT} user=${DB_USER} password=${DB_PASSWORD} dbname=${DB_NAME} sslmode=${DB_SSL_MODE} TimeZone=${DB_TIMEZONE}"`
+	// DSN is assembled from the fields above unless the operator supplies one, in
+	// which case it is used verbatim — they own its encoding.
+	DSN string `env:"DB_DSN,expand"`
+}
+
+// buildDSN assembles the keyword/value connection string from the DB_* settings.
+func (db DatabaseConfig) buildDSN() string {
+	return fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s TimeZone=%s",
+		quoteDSNValue(db.Host),
+		quoteDSNValue(db.Port),
+		quoteDSNValue(db.User),
+		quoteDSNValue(db.Password),
+		quoteDSNValue(db.Name),
+		quoteDSNValue(db.SSLMode),
+		// Unquoted alone: gorm reads the timezone by regex over the raw DSN rather than
+		// through pgx, so quotes would reach the server verbatim and be rejected.
+		db.TimeZone,
+	)
+}
+
+// quoteDSNValue renders one keyword/value parameter. pgx ends an unquoted value at the
+// first space, so a password carrying one would reach Postgres truncated; quoting every
+// value keeps the rule in one place instead of guessing which settings need it.
+func quoteDSNValue(value string) string {
+	return "'" + strings.NewReplacer(`\`, `\\`, `'`, `\'`).Replace(value) + "'"
 }
 
 // WebhookConfig describes the generic notification receiver. Only Enabled is public:
@@ -250,6 +279,9 @@ func NewServerConfig() (*ServerConfig, error) {
 	// bypasses the default template), so an unreachable Postgres always fails fast
 	// instead of blocking on the OS TCP timeout.
 	if config.StateType == "postgres" {
+		if config.Db.DSN == "" {
+			config.Db.DSN = config.Db.buildDSN()
+		}
 		config.Db.DSN = ensureConnectTimeout(config.Db.DSN, config.Db.ConnectTimeout)
 	}
 

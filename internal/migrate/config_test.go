@@ -129,20 +129,62 @@ func TestNewMigrationConfig_ValidationError(t *testing.T) {
 	assert.Contains(t, err.Error(), "DB_USER")
 }
 
-// TestNewMigrationConfig_EmptyRequiredRejected verifies that a required DB
-// variable set to an empty string is rejected (the `,notEmpty` tag), rather
-// than producing a malformed DSN that fails obscurely at connect time.
+// TestNewMigrationConfig_EmptyRequiredRejected covers the `,notEmpty` tag on every
+// connection setting, not just one. pgx drops an empty username outright and falls back
+// to PGUSER or the OS user, so a blank DB_USER would connect as somebody else instead of
+// failing — a malformed DSN that goes wrong silently rather than at connect time.
 func TestNewMigrationConfig_EmptyRequiredRejected(t *testing.T) {
+	required := []string{"DB_USER", "DB_PASSWORD", "DB_HOST", "DB_PORT", "DB_NAME"}
+
+	for _, blanked := range required {
+		t.Run(blanked, func(t *testing.T) {
+			for _, name := range required {
+				t.Setenv(name, "value")
+			}
+			t.Setenv(blanked, "") // set, but empty
+
+			cfg, err := NewMigrationConfig()
+
+			require.Error(t, err)
+			assert.Nil(t, cfg)
+			assert.Contains(t, err.Error(), blanked)
+			assert.Contains(t, err.Error(), "should not be empty")
+		})
+	}
+}
+
+// TestNewMigrationConfig_CredentialsSurviveTheDSN pins that the credentials the
+// database receives are the ones configured. The userinfo component is not a query
+// string: a space encoded as "+" there stays a literal plus, so the password sent is
+// not the password set and the migration fails authentication naming nothing.
+func TestNewMigrationConfig_CredentialsSurviveTheDSN(t *testing.T) {
+	const (
+		user = "test user"
+		// Go emits the sub-delims "&" and "=" literally in userinfo, so a credential
+		// carrying them must not be able to open a query string of its own. "%" is the
+		// escape introducer, the one character an asymmetric escaper corrupts.
+		password = `p@ss word+x/y?z#w&k=v%s\`
+	)
+
 	t.Setenv("DB_HOST", "localhost")
 	t.Setenv("DB_PORT", "5432")
-	t.Setenv("DB_USER", "") // set, but empty
-	t.Setenv("DB_PASSWORD", "testpassword")
+	t.Setenv("DB_USER", user)
+	t.Setenv("DB_PASSWORD", password)
 	t.Setenv("DB_NAME", "testdb")
 
 	cfg, err := NewMigrationConfig()
+	require.NoError(t, err)
 
-	require.Error(t, err)
-	assert.Nil(t, cfg)
-	assert.Contains(t, err.Error(), "DB_USER")
-	assert.Contains(t, err.Error(), "should not be empty")
+	parsed, err := url.Parse(cfg.DSN)
+	require.NoError(t, err)
+
+	gotPassword, set := parsed.User.Password()
+	require.True(t, set)
+	assert.Equal(t, user, parsed.User.Username())
+	assert.Equal(t, password, gotPassword)
+	// The host, database and connection options must all still parse out intact.
+	assert.Equal(t, "localhost:5432", parsed.Host)
+	assert.Equal(t, "/testdb", parsed.Path)
+	assert.Equal(t, "disable", parsed.Query().Get("sslmode"))
+	assert.Equal(t, "10", parsed.Query().Get("connect_timeout"))
 }

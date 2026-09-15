@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -818,4 +820,58 @@ func captureWarnings(t *testing.T) *bytes.Buffer {
 	t.Cleanup(func() { slog.SetDefault(previous) })
 	slog.SetDefault(slog.New(slog.NewJSONHandler(logs, &slog.HandlerOptions{Level: slog.LevelWarn})))
 	return logs
+}
+
+// TestNewServerConfig_CredentialsSurviveTheDefaultDSN pins that the credentials the
+// database receives are the ones configured. The default DSN is pgx keyword/value form,
+// where an unquoted value ends at the first space — so a password carrying one used to
+// reach Postgres truncated, and the server failed to connect naming nothing.
+func TestNewServerConfig_CredentialsSurviveTheDefaultDSN(t *testing.T) {
+	const (
+		user     = "watch er"
+		password = `p@ss word'with\odd chars`
+		dbName   = "argo watcher"
+	)
+
+	t.Setenv("ARGO_URL", "https://example.com")
+	t.Setenv("ARGO_TOKEN", "secret-token")
+	t.Setenv("STATE_TYPE", "postgres")
+	t.Setenv("DB_HOST", "localhost")
+	t.Setenv("DB_PORT", "5432")
+	t.Setenv("DB_USER", user)
+	t.Setenv("DB_PASSWORD", password)
+	t.Setenv("DB_NAME", dbName)
+
+	cfg, err := NewServerConfig()
+	require.NoError(t, err)
+
+	// Parsed by pgx itself, so this asserts what the driver receives rather than how
+	// the string happens to be spelled.
+	parsed, err := pgconn.ParseConfig(cfg.Db.DSN)
+	require.NoError(t, err)
+
+	assert.Equal(t, user, parsed.User)
+	assert.Equal(t, password, parsed.Password)
+	assert.Equal(t, dbName, parsed.Database)
+	assert.Equal(t, "localhost", parsed.Host)
+}
+
+// TestNewServerConfig_TimeZoneStaysUnquotedForGorm pins an upstream constraint a tidy-up
+// would undo: gorm's postgres driver reads the timezone with this very regex over the raw
+// DSN instead of through pgx, so a quoted value reaches the server complete with quotes
+// and Postgres refuses the connection with `invalid value for parameter "TimeZone"`.
+func TestNewServerConfig_TimeZoneStaysUnquotedForGorm(t *testing.T) {
+	t.Setenv("ARGO_URL", "https://example.com")
+	t.Setenv("ARGO_TOKEN", "secret-token")
+	t.Setenv("STATE_TYPE", "postgres")
+	t.Setenv("DB_HOST", "localhost")
+	t.Setenv("DB_TIMEZONE", "Europe/Riga")
+
+	cfg, err := NewServerConfig()
+	require.NoError(t, err)
+
+	gormTimeZoneMatcher := regexp.MustCompile("(time_zone|TimeZone|timezone)=(.*?)($|&| )")
+	match := gormTimeZoneMatcher.FindStringSubmatch(cfg.Db.DSN)
+	require.Len(t, match, 4, "the DSN must carry a timezone gorm can find")
+	assert.Equal(t, "Europe/Riga", match[2], "gorm passes this value to the server verbatim")
 }
