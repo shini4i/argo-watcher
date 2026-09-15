@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-09-15
+
 ### Fixed
 
 - A deployment whose image is declared only by an Argo CD sync hook — a PreSync migration Job, a
@@ -1453,7 +1455,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bumped the Go toolchain to `1.25.11`, resolving a `net/textproto` standard
   library vulnerability present in `go1.25.9`.
 
-[Unreleased]: https://github.com/shini4i/argo-watcher/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/shini4i/argo-watcher/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/shini4i/argo-watcher/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/shini4i/argo-watcher/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/shini4i/argo-watcher/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/shini4i/argo-watcher/compare/v1.1.1...v1.2.0
