@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { resetServerConfigCache } from '../../../data/serverConfig';
 import type { TaskStatus } from '../../../data/types';
 import { TaskShow } from './TaskShow';
 
@@ -97,6 +98,9 @@ describe('TaskShow', () => {
     mockUseDeployLockState.mockReturnValue(false);
     mockUseOidcEnabled.mockReturnValue(true);
     mockHttpClient.mockReset();
+    // The configuration is fetched once per page load and cached, so a case that sets
+    // its own response would otherwise get the previous case's.
+    resetServerConfigCache();
     configResponse = {};
     mockHttpClient.mockImplementation((url: string) => {
       if (url === '/api/v1/config') {
@@ -517,6 +521,29 @@ describe('TaskShow', () => {
     expect(screen.getByText(/Task not found/i)).toBeInTheDocument();
     // The card already says it; a toast repeating it would be noise.
     expect(mockUseNotify).not.toHaveBeenCalledWith(expect.anything(), { type: 'error' });
+  });
+
+  it('warns when the configuration answers 200 with no body', async () => {
+    // A proxy interstitial in front of the API. It used to disable the Argo CD button
+    // silently, which reads as "no Argo CD URL configured" rather than a failure.
+    mockUseGetOne.mockReturnValue({
+      data: buildTask(),
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+    mockHttpClient.mockImplementation((url: string) => {
+      if (url === '/api/v1/config') {
+        return Promise.resolve({ data: undefined, status: 200, headers: {} as Headers });
+      }
+      return Promise.resolve({ data: {}, status: 202, headers: {} as Headers });
+    });
+
+    await renderWithRouter('/task/task-1');
+
+    await waitFor(() =>
+      expect(mockUseNotify).toHaveBeenCalledWith(expect.any(String), { type: 'warning' }),
+    );
   });
 
   it('warns when configuration request fails', async () => {

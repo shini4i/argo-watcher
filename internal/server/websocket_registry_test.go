@@ -50,8 +50,7 @@ func dialAndHold(t *testing.T, url string) {
 		}
 	}()
 
-	// CloseNow, not Close: a graceful close waits for a reply frame the server's
-	// write-only connection goroutine never sends.
+	// CloseNow, not Close: teardown has no reason to wait out a closing handshake.
 	t.Cleanup(func() { _ = conn.CloseNow() })
 }
 
@@ -184,4 +183,40 @@ func TestNotifyWebSocketClientsWithNoConnections(t *testing.T) {
 	env, _ := readAuthEnv(t, false, nil)
 
 	assert.NotPanics(t, func() { env.notifyWebSocketClients("test message") })
+}
+
+// TestWebSocketDropsAClientThatClosesGracefully pins that the server reads from the
+// connection. A write-only connection never sees the client's close frame, so the peer
+// stays registered and every broadcast keeps writing to it until the next heartbeat.
+func TestWebSocketDropsAClientThatClosesGracefully(t *testing.T) {
+	env, url := wsRegistryServer(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	conn, _, err := websocket.Dial(ctx, url, nil)
+	require.NoError(t, err)
+	registered(t, env, 1)
+
+	require.NoError(t, conn.Close(websocket.StatusNormalClosure, "done"))
+
+	// The window is deliberately shorter than wsHeartbeatInterval: a failed ping also
+	// unregisters the connection, so only the close frame can satisfy it this fast.
+	assert.Eventually(t, func() bool {
+		return len(env.ws.snapshot()) == 0
+	}, 5*time.Second, 10*time.Millisecond, "the close frame must be noticed well inside the heartbeat interval")
+}
+
+// TestWebSocketPingRoundTrips pins the reason the heartbeat can be a real ping: the
+// library answers control frames only while a read is in flight, so without one Ping
+// waits out its own deadline against a peer that is alive and answering.
+func TestWebSocketPingRoundTrips(t *testing.T) {
+	env, url := wsRegistryServer(t)
+	dialAndHold(t, url)
+	registered(t, env, 1)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	assert.NoError(t, env.ws.snapshot()[0].Ping(ctx))
 }

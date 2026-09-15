@@ -137,6 +137,12 @@ func (a *Authenticator) AuthenticateToken(header, token string) (bool, error) {
 		token = after
 	}
 
+	// Re-checked after the prefix is stripped: "Bearer " alone is no credential, and
+	// the header path reads it as none.
+	if token == "" {
+		return false, nil
+	}
+
 	return authenticate(strategy, token)
 }
 
@@ -296,6 +302,12 @@ func NewDeployTokenAuthService(token string) *DeployTokenAuthService {
 	}
 }
 
+// clockSkewLeeway is how far the server's clock may disagree with the one that minted a
+// JWT before the token is refused: a runner a second ahead mints a future iat, which
+// WithIssuedAt rejects. It is global to the time-based claims, so the same window also
+// honours a token for this long past its exp.
+const clockSkewLeeway = 30 * time.Second
+
 // NewJWTAuthService initializes a JWT authentication service. An empty issuer or
 // audience leaves that claim unchecked, so a fleet minting tokens without it keeps
 // working; a configured value is enforced strictly — a token missing the claim is
@@ -303,7 +315,11 @@ func NewDeployTokenAuthService(token string) *DeployTokenAuthService {
 func NewJWTAuthService(secret, issuer, audience string) *JWTAuthService {
 	// exp is required and a future iat rejected whatever the configuration: both were
 	// enforced before the claim binding existed.
-	options := []jwt.ParserOption{jwt.WithExpirationRequired(), jwt.WithIssuedAt()}
+	options := []jwt.ParserOption{
+		jwt.WithExpirationRequired(),
+		jwt.WithIssuedAt(),
+		jwt.WithLeeway(clockSkewLeeway),
+	}
 
 	if issuer != "" {
 		options = append(options, jwt.WithIssuer(issuer))

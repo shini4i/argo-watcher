@@ -37,3 +37,32 @@ func TestValidateDeployToken(t *testing.T) {
 		assert.NotContains(t, err.Error(), "missing")
 	})
 }
+
+// TestDeployTokenNeverAuthorizesAnEmptySecret pins the guard against a misconfigured
+// service: with no deploy token set, a constant-time compare of two empty strings
+// matches, so an empty credential would authorize a deployment.
+func TestDeployTokenNeverAuthorizesAnEmptySecret(t *testing.T) {
+	t.Run("unset token rejects an empty credential", func(t *testing.T) {
+		service := NewDeployTokenAuthService("")
+		isValid, err := service.Validate("")
+
+		assert.Error(t, err)
+		assert.False(t, isValid)
+	})
+
+	t.Run("unset token rejects any credential", func(t *testing.T) {
+		service := NewDeployTokenAuthService("")
+		isValid, err := service.Validate("guess")
+
+		assert.Error(t, err)
+		assert.False(t, isValid)
+	})
+
+	t.Run("configured token rejects an empty credential", func(t *testing.T) {
+		service := NewDeployTokenAuthService("valid_token")
+		isValid, err := service.Validate("")
+
+		assert.Error(t, err)
+		assert.False(t, isValid)
+	})
+}
