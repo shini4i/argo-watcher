@@ -1,0 +1,246 @@
+name: Strix
+
+# Opt-in gate, launched from a PR: add the `strix` label and an LLM-driven
+# pentest agent drives the real binary, reporting only findings it validated.
+# Re-run by removing and re-adding the label. Every run spends money, which is
+# why it is asked for rather than automatic. Other scanners: security.yml, dast.yml.
+on:
+  pull_request:
+    types: [labeled]
+  # Reruns a scan without touching labels, and covers a fork contribution once
+  # it is pushed to a branch here — a fork PR head ref cannot be dispatched. A
+  # manual run has no diff to scope to, so it covers the whole tree and may
+  # need a larger budget than the default below.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A superseded push should not keep paying for a scan of stale code.
+concurrency:
+  group: strix-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  strix:
+    name: Strix (agentic pentest)
+    # Label path: run only when `strix` is the label just added, and never on a
+    # fork — those get no repository secrets, and the agent treats branch
+    # content as instructions, which a fork controls while the job holds the key.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.label.name == 'strix' && github.event.pull_request.head.repo.fork == false)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # upload SARIF to the code-scanning dashboard
+    # quick mode is minutes of scanning, but the agent picks its own depth and
+    # the build ahead of it is not free.
+    timeout-minutes: 45
+    env:
+      # Upstream's figure for a quick diff-scoped PR scan. Too small is not a
+      # saving: the agent stops mid-diff and the completeness gate below turns
+      # that into a red check with no findings.
+      MAX_BUDGET: '10'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Strix scopes a CI run to the pull request's changed files, which
+          # needs the merge base present; without it, it scans the whole tree.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install Task
+        uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+        with:
+          # An exact version skips the unauthenticated go-task tags API
+          # lookup, which shares the runner IP 60 req/h anonymous quota.
+          version: 3.53.1
+
+      - name: Install environment dependencies
+        run: task install-deps
+
+      - name: Start Keycloak
+        # KC_HOSTNAME pins the issuer to one name both the server (on the host)
+        # and the agent (in its sandbox) can reach; without it a token minted on
+        # one is rejected on the other, the trap test/e2e/values/keycloak.yaml
+        # documents. Run directly, not via compose, to keep the pin job-scoped.
+        run: |
+          gateway=$(docker network inspect bridge -f '{{ (index .IPAM.Config 0).Gateway }}')
+          if [ "$gateway" != "172.17.0.1" ]; then
+            echo "::error::Docker bridge gateway is $gateway, not the 172.17.0.1 this job pins the issuer to"
+            exit 1
+          fi
+          # Keep this tag in step with docker-compose.yml's integration profile.
+          docker run -d --name strix-keycloak -p 8090:8080 \
+            -e KC_BOOTSTRAP_ADMIN_USERNAME=admin \
+            -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin \
+            -e KC_HOSTNAME=http://172.17.0.1:8090 \
+            -e KC_HOSTNAME_STRICT=false \
+            -v "$PWD/test/keycloak/argo-watcher-e2e-realm.json:/opt/keycloak/data/import/argo-watcher-e2e-realm.json:ro" \
+            quay.io/keycloak/keycloak:26.7.3 start-dev --import-realm
+
+      - name: Build UI and server binary
+        # `task build` depends on `task docs`, which writes the swagger spec the
+        # agent reads to enumerate the API. `task build-ui` emits web/dist, which
+        # the server serves exactly as the production image does.
+        run: |
+          task build-ui
+          task build
+
+      - name: Start argo-watcher
+        env:
+          STATE_TYPE: in-memory
+          # ARGO_URL only has to parse as a URL; it need not be reachable. The
+          # scanned surface is argo-watcher's own HTTP server.
+          ARGO_URL: http://127.0.0.1:9
+          ARGO_TOKEN: ci
+          PORT: '8080'
+          STATIC_FILES_PATH: web/dist
+          LOG_LEVEL: info
+          OIDC_ENABLED: 'true'
+          # The pinned issuer above, reachable from the host and the sandbox alike.
+          OIDC_ISSUER_URL: http://172.17.0.1:8090/realms/argo-watcher-e2e
+          OIDC_CLIENT_ID: argo-watcher
+          OIDC_PRIVILEGED_GROUPS: privileged
+        # Backgrounded; the job tears the process down on exit. HOST defaults to
+        # 0.0.0.0, which is what lets the agent's sandbox container reach it.
+        run: ./argo-watcher &
+
+      - name: Wait for readiness
+        run: |
+          for _ in $(seq 1 30); do
+            if curl -fsS --max-time 5 http://127.0.0.1:8080/readyz >/dev/null 2>&1; then
+              echo "argo-watcher is up"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::argo-watcher did not become ready in time"
+          exit 1
+
+      - name: Wait for Keycloak
+        # A realm that never came up leaves the agent testing an auth layer that
+        # rejects everything, which reads exactly like a hardened one.
+        run: |
+          discovery=http://172.17.0.1:8090/realms/argo-watcher-e2e/.well-known/openid-configuration
+          for _ in $(seq 1 60); do
+            if curl -fsS --max-time 5 "$discovery" >/dev/null 2>&1; then
+              echo "Keycloak realm is up"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::Keycloak realm argo-watcher-e2e not ready after 120s"
+          exit 1
+
+      - name: Assert a token from the pinned issuer is accepted
+        # Proves the issuer pin actually holds before the agent is told to rely
+        # on it. Without this the authorization half of the scan can silently
+        # test nothing while the job still reports a clean run.
+        run: |
+          token=$(curl -fsS --max-time 10 -X POST \
+            http://172.17.0.1:8090/realms/argo-watcher-e2e/protocol/openid-connect/token \
+            -d grant_type=password -d client_id=argo-watcher -d scope=openid \
+            -d username=priv-user -d password=priv-pass | jq -r '.access_token // empty')
+          if [ -z "$token" ]; then
+            echo "::error::could not mint a Keycloak token from the pinned issuer"
+            exit 1
+          fi
+          echo "::add-mask::$token"
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+            -H "Oidc-Authorization: Bearer $token" http://127.0.0.1:8080/api/v1/deploy-lock)
+          if [ "$code" != "200" ]; then
+            echo "::error::argo-watcher answered $code to a privileged token; the issuer pin does not hold"
+            exit 1
+          fi
+          echo "privileged token accepted; the auth surface is live"
+
+      - name: Install Strix
+        env:
+          STRIX_VERSION: 1.6.2
+          # sha256 of the release asset below. The upstream one-liner installer
+          # pipes unpinned remote script into a shell and verifies nothing; this
+          # fetches the same binary and refuses bytes it did not expect.
+          STRIX_SHA256: f3f29fa64bee420bf64f8911fb9f38e20270d406f6df44cc2436252c2af0bc81
+        run: |
+          asset="strix-${STRIX_VERSION}-linux-x86_64"
+          curl -fsSL --proto '=https' --tlsv1.2 -o strix.tar.gz \
+            "https://github.com/usestrix/strix/releases/download/v${STRIX_VERSION}/${asset}.tar.gz"
+          echo "${STRIX_SHA256}  strix.tar.gz" | sha256sum -c -
+          tar -xzf strix.tar.gz
+          mkdir -p "$HOME/.strix/bin"
+          install -m 0755 "$asset" "$HOME/.strix/bin/strix"
+          rm -f strix.tar.gz "$asset"
+          echo "$HOME/.strix/bin" >> "$GITHUB_PATH"
+
+      - name: Run Strix
+        id: strix
+        env:
+          # A model id is configuration, not a credential — keeping it here
+          # makes the choice reviewable and leaves one secret to configure.
+          STRIX_LLM: deepseek/deepseek-v4-pro
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          # Findings stay on the runner; nothing reaches the vendor.
+          STRIX_TELEMETRY: '0'
+        # Source plus the running server, because a finding the agent can only
+        # reason about statically is a hypothesis. The server is addressed by
+        # bridge gateway, not loopback: the agent runs in a container, where
+        # loopback is its own. Exit 2 means validated findings.
+        run: |
+          strix -n \
+            -t ./ \
+            -t http://172.17.0.1:8080 \
+            --scan-mode quick \
+            --max-budget "$MAX_BUDGET" \
+            --instruction-file .github/strix-instructions.md
+
+      - name: Fail unless the scan completed
+        # Runs after a scan that exited 2 on findings too: whether the target
+        # stayed up, and whether the budget truncated the run, is exactly what
+        # triaging those findings needs. The scan's own exit still fails the job.
+        if: always() && steps.strix.outcome != 'skipped'
+        # Do not fail open: a run stopped at the hard budget limit still exits 0,
+        # leaving run.json status "stopped". This does not close the gap — an
+        # agent wrapping up on a budget *warning* records "completed" — so the
+        # spend is printed too. A run that finished at the cap needs a bigger one.
+        run: |
+          if ! curl -fsS --max-time 5 http://127.0.0.1:8080/readyz >/dev/null 2>&1; then
+            echo "::error::argo-watcher was not alive after the scan; the live target went uncovered"
+            exit 1
+          fi
+          run_json=$(ls -t strix_runs/*/run.json 2>/dev/null | head -1)
+          if [ -z "$run_json" ]; then
+            echo "::error::Strix produced no run.json; the scan never started"
+            exit 1
+          fi
+          status=$(jq -r '.status' "$run_json")
+          spend=$(jq -r '.llm_usage.cost // "unknown"' "$run_json")
+          echo "Strix run status: $status (spend: $spend of $MAX_BUDGET USD)"
+          if [ "$status" != "completed" ]; then
+            echo "::error::Strix status is '$status', not 'completed' — the scan was cut off, most likely at the budget limit. Raise MAX_BUDGET."
+            exit 1
+          fi
+
+      - name: Upload Strix SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        # Best-effort: a clean scan may write no SARIF file, which errors here.
+        continue-on-error: true
+        with:
+          sarif_file: strix_runs
+          category: strix
+
+      - name: Stop Keycloak
+        if: always()
+        run: docker rm -f strix-keycloak

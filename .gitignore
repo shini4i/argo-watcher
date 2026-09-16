@@ -57,3 +57,6 @@ web/test-results/
 
 # TypeScript incremental build info (emitted by the composite node-side project)
 **/*.tsbuildinfo
+
+# Strix pentest run output (findings, SARIF, agent event log)
+strix_runs/
