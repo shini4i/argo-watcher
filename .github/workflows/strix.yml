@@ -1,29 +1,16 @@
 name: Strix
 
-# An LLM-driven pentest agent that reads the diff, drives the real binary, and
-# reports only findings it validated. Every run spends money on the configured
-# provider, so the triggers are narrow: non-fork pull requests touching shipped
-# code. Deterministic scanners live in security.yml, weekly nuclei in dast.yml.
+# Opt-in gate, launched from a PR: add the `strix` label and an LLM-driven
+# pentest agent drives the real binary, reporting only findings it validated.
+# Re-run by removing and re-adding the label. Every run spends money, which is
+# why it is asked for rather than automatic. Other scanners: security.yml, dast.yml.
 on:
   pull_request:
-    branches:
-      - main
-    paths:
-      - '**/*.go'
-      - 'go.mod'
-      - 'go.sum'
-      - 'web/**'
-      # Every step below runs `task install-deps`, `task build-ui` or
-      # `task build`, so a Taskfile-only change can break this workflow.
-      - 'Taskfile.yml'
-      # The realm defines the identities the agent is told to attack.
-      - 'test/keycloak/**'
-      - '.github/strix-instructions.md'
-      - '.github/workflows/strix.yml'
-  # Reruns a scan without pushing, and covers a fork contribution once it is
-  # pushed to a branch here — a fork PR head ref cannot be dispatched. A manual
-  # run has no diff to scope to, so it covers the whole tree and may need a
-  # larger budget than the default below.
+    types: [labeled]
+  # Reruns a scan without touching labels, and covers a fork contribution once
+  # it is pushed to a branch here — a fork PR head ref cannot be dispatched. A
+  # manual run has no diff to scope to, so it covers the whole tree and may
+  # need a larger budget than the default below.
   workflow_dispatch:
 
 permissions:
@@ -37,10 +24,12 @@ concurrency:
 jobs:
   strix:
     name: Strix (agentic pentest)
-    # Forks get no repository secrets, so the run could only fail there — and it
-    # would be the wrong place to succeed: the agent treats branch content as
-    # instructions, and a fork controls that while the job holds the LLM key.
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.fork == false
+    # Label path: run only when `strix` is the label just added, and never on a
+    # fork — those get no repository secrets, and the agent treats branch
+    # content as instructions, which a fork controls while the job holds the key.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.label.name == 'strix' && github.event.pull_request.head.repo.fork == false)
     runs-on: ubuntu-latest
     permissions:
       contents: read

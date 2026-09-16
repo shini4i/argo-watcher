@@ -137,7 +137,7 @@ These must be green before a merge: backend tests, frontend tests, integration t
 
 The nuclei DAST scan runs weekly on `main` rather than per pull request, so it does not gate your PR.
 
-Strix, an AI pentest agent, runs on pull requests that touch Go, `web/` or `Taskfile.yml`. It needs the repository's LLM credentials, which GitHub does not expose to forks, so it is skipped on a PR from a fork; a maintainer scans those by pushing the branch here and running the workflow manually.
+Strix, an AI pentest agent, is not part of the standard PR checks either, because each run costs money. Maintainers run it by adding the `strix` label to a pull request. It needs the repository's LLM credentials, which GitHub does not expose to forks, so a fork's branch has to be pushed here to be scanned.
 
 ## Code of Conduct
 
