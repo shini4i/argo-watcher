@@ -185,6 +185,7 @@ jobs:
           echo "$HOME/.strix/bin" >> "$GITHUB_PATH"
 
       - name: Run Strix
+        id: strix
         env:
           # A model id is configuration, not a credential — keeping it here
           # makes the choice reviewable and leaves one secret to configure.
@@ -205,6 +206,10 @@ jobs:
             --instruction-file .github/strix-instructions.md
 
       - name: Fail unless the scan completed
+        # Runs after a scan that exited 2 on findings too: whether the target
+        # stayed up, and whether the budget truncated the run, is exactly what
+        # triaging those findings needs. The scan's own exit still fails the job.
+        if: always() && steps.strix.outcome != 'skipped'
         # Do not fail open: a run stopped at the hard budget limit still exits 0,
         # leaving run.json status "stopped". This does not close the gap — an
         # agent wrapping up on a budget *warning* records "completed" — so the
