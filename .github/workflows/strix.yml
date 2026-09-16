@@ -179,20 +179,21 @@ jobs:
 
       - name: Install Strix
         env:
-          # Pins the binary the script downloads from the usestrix/strix
-          # release; the script itself is unpinned upstream content.
-          VERSION: 1.6.2
-        # The pin is asserted, not assumed: the gate below reads run.json's
-        # schema and the documented exit codes, both of which a silent upgrade
-        # to latest could change.
+          STRIX_VERSION: 1.6.2
+          # sha256 of the release asset below. The upstream one-liner installer
+          # pipes unpinned remote script into a shell and verifies nothing; this
+          # fetches the same binary and refuses bytes it did not expect.
+          STRIX_SHA256: f3f29fa64bee420bf64f8911fb9f38e20270d406f6df44cc2436252c2af0bc81
         run: |
-          curl -sSL https://strix.ai/install | bash
+          asset="strix-${STRIX_VERSION}-linux-x86_64"
+          curl -fsSL --proto '=https' --tlsv1.2 -o strix.tar.gz \
+            "https://github.com/usestrix/strix/releases/download/v${STRIX_VERSION}/${asset}.tar.gz"
+          echo "${STRIX_SHA256}  strix.tar.gz" | sha256sum -c -
+          tar -xzf strix.tar.gz
+          mkdir -p "$HOME/.strix/bin"
+          install -m 0755 "$asset" "$HOME/.strix/bin/strix"
+          rm -f strix.tar.gz "$asset"
           echo "$HOME/.strix/bin" >> "$GITHUB_PATH"
-          installed=$("$HOME/.strix/bin/strix" --version)
-          case "$installed" in
-            *"$VERSION"*) echo "strix $installed" ;;
-            *) echo "::error::installed $installed, not the pinned $VERSION"; exit 1 ;;
-          esac
 
       - name: Run Strix
         env:
