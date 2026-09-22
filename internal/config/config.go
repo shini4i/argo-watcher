@@ -433,8 +433,10 @@ func validateServerConfig(config *ServerConfig) error {
 		problems = append(problems, fmt.Sprintf("  - ConnectTimeout: must be at least 1 second, got %d", config.Db.ConnectTimeout))
 	}
 	// Checked here so a typo names the variable, rather than surfacing later as a driver
-	// parse error. Empty is valid: it leaves the transport to pgx and PGSSLMODE.
-	if config.StateType == "postgres" && config.Db.SSLMode != "" && !slices.Contains(PostgresSSLModes, config.Db.SSLMode) {
+	// parse error. Empty is valid: it leaves the transport to pgx and PGSSLMODE. Skipped
+	// behind DB_DSN, where the value is inert and only warned about — refusing to start
+	// over a setting that cannot reach the driver would fail a working deployment.
+	if config.StateType == "postgres" && config.Db.DSN == "" && config.Db.SSLMode != "" && !slices.Contains(PostgresSSLModes, config.Db.SSLMode) {
 		problems = append(problems, fmt.Sprintf("  - SSLMode: must be one of %v, got %q", PostgresSSLModes, config.Db.SSLMode))
 	}
 	problems = append(problems, argoApiProblems(config)...)

@@ -1012,6 +1012,19 @@ func TestNewServerConfig_SSLModeInertBehindCustomDSN(t *testing.T) {
 
 	assert.Equal(t, "host=db user=u connect_timeout=10", cfg.Db.DSN, "the operator's DSN is theirs")
 	assert.Contains(t, warnings.String(), "DB_SSL_MODE has no effect when DB_DSN is set")
+
+	// A stale value cannot reach the driver behind DB_DSN, so rejecting it would fail a
+	// deployment that works. It is warned about, not validated.
+	t.Run("aStaleInvalidValueDoesNotBlockStartup", func(t *testing.T) {
+		setPostgresEnv(t)
+		t.Setenv("DB_DSN", "host=db user=u")
+		t.Setenv("DB_SSL_MODE", "requires")
+
+		cfg, err := NewServerConfig()
+
+		require.NoError(t, err)
+		assert.Equal(t, "host=db user=u connect_timeout=10", cfg.Db.DSN)
+	})
 }
 
 // TestNewDatabaseConfig_SSLModeDoesNotOutrankPGSSLMODE is the point of the change. pgx
