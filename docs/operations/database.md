@@ -63,9 +63,11 @@ When managing the database yourself, run migrations directly with the `migrate` 
 ```bash
 migrate \
   -path db/migrations \
-  -database "postgres://watcher:watcher@db.example.com:5432/watcher?sslmode=disable" \
+  -database "postgres://watcher:watcher@db.example.com:5432/watcher?sslmode=require" \
   up
 ```
+
+Use `sslmode=disable` only when the database is reached over a loopback interface or a Unix socket. Across a network hop it sends the whole schema migration, and every credential the server's auth method puts on the wire, in the clear. Note that `require` encrypts but accepts any certificate: for a database whose network path you do not control, use `verify-full` with `sslrootcert=` naming a trusted root.
 
 ### Rolling back a release
 

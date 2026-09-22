@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 
@@ -91,7 +92,9 @@ type DatabaseConfig struct {
 	User     string `env:"DB_USER"`
 	Password string `env:"DB_PASSWORD"`
 	Name     string `env:"DB_NAME"`
-	SSLMode  string `env:"DB_SSL_MODE" envDefault:"disable"`
+	// No default: an always-present sslmode term outranks PGSSLMODE, so leaving it unset
+	// keeps pgx on its own `prefer` and lets the standard libpq hardening apply.
+	SSLMode string `env:"DB_SSL_MODE"`
 	// ConnectTimeout bounds the initial connection attempt (in seconds) so an
 	// unreachable Postgres fails fast instead of blocking on the OS TCP timeout.
 	// It is honored by both the pgx driver (server path) and libpq (migrations).
@@ -125,20 +128,32 @@ func (db *DatabaseConfig) ensureDSN() {
 	}
 }
 
-// buildDSN assembles the keyword/value connection string from the DB_* settings.
+// buildDSN assembles the keyword/value connection string from the DB_* settings. The
+// sslmode term is emitted only when the operator set DB_SSL_MODE: pgx merges
+// connection-string settings after environment settings, so an always-present term would
+// silently outrank PGSSLMODE and PGSSLROOTCERT.
 func (db DatabaseConfig) buildDSN() string {
-	return fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s TimeZone=%s",
+	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s",
 		quoteDSNValue(db.Host),
 		quoteDSNValue(db.Port),
 		quoteDSNValue(db.User),
 		quoteDSNValue(db.Password),
 		quoteDSNValue(db.Name),
-		quoteDSNValue(db.SSLMode),
-		// Unquoted alone: gorm reads the timezone by regex over the raw DSN rather than
-		// through pgx, so quotes would reach the server verbatim and be rejected.
-		db.TimeZone,
 	)
+
+	if db.SSLMode != "" {
+		dsn += " sslmode=" + quoteDSNValue(db.SSLMode)
+	}
+
+	// Unquoted alone: gorm reads the timezone by regex over the raw DSN rather than
+	// through pgx, so quotes would reach the server verbatim and be rejected.
+	return dsn + " TimeZone=" + db.TimeZone
 }
+
+// PostgresSSLModes are the modes libpq defines, and exactly the set pgx accepts. An unset
+// value is valid too: it leaves pgx on its own default and lets PGSSLMODE apply. Exported
+// because the migrator validates the same variable and two copies would drift.
+var PostgresSSLModes = []string{"disable", "allow", "prefer", "require", "verify-ca", "verify-full"}
 
 // quoteDSNValue renders one keyword/value parameter. pgx ends an unquoted value at the
 // first space, so a password carrying one would reach Postgres truncated; quoting every
@@ -298,6 +313,13 @@ func NewServerConfig() (*ServerConfig, error) {
 		slog.Warn("TASK_RETENTION_ENABLED has no effect with STATE_TYPE=in-memory; task history is only persisted by the postgres state.")
 	}
 
+	// An operator-supplied DSN is used verbatim, so DB_SSL_MODE never reaches the driver.
+	// Silence would be the same downgrade this setting exists to prevent: they would
+	// believe the hop is verified and get whatever their DSN says.
+	if config.Db.DSN != "" && config.Db.SSLMode != "" {
+		slog.Warn("DB_SSL_MODE has no effect when DB_DSN is set; put sslmode in the DSN itself.")
+	}
+
 	// Enforce the connect timeout even when DB_DSN is supplied explicitly (which
 	// bypasses the default template), so an unreachable Postgres always fails fast
 	// instead of blocking on the OS TCP timeout.
@@ -409,6 +431,11 @@ func validateServerConfig(config *ServerConfig) error {
 	// libpq, silently defeating the fail-fast guard; only relevant for postgres.
 	if config.StateType == "postgres" && config.Db.ConnectTimeout < 1 {
 		problems = append(problems, fmt.Sprintf("  - ConnectTimeout: must be at least 1 second, got %d", config.Db.ConnectTimeout))
+	}
+	// Checked here so a typo names the variable, rather than surfacing later as a driver
+	// parse error. Empty is valid: it leaves the transport to pgx and PGSSLMODE.
+	if config.StateType == "postgres" && config.Db.SSLMode != "" && !slices.Contains(PostgresSSLModes, config.Db.SSLMode) {
+		problems = append(problems, fmt.Sprintf("  - SSLMode: must be one of %v, got %q", PostgresSSLModes, config.Db.SSLMode))
 	}
 	problems = append(problems, argoApiProblems(config)...)
 	problems = append(problems, oidcProblems(config)...)

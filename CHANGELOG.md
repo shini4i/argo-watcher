@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- `DB_SSL_MODE` no longer defaults to `disable`, and the assembled DSN carries an `sslmode`
+  term only when you set one. The term was always present, and pgx resolves a
+  connection-string setting *after* the environment, so it silently outranked `PGSSLMODE` and
+  `PGSSLROOTCERT`: an operator hardening the database hop the standard libpq way got cleartext
+  with no error and no warning. Unset, the driver now negotiates TLS first and falls back to
+  cleartext only if the server refuses, which is pgx's own default. A database that does not
+  speak TLS keeps working, at the cost of one extra round trip per connection. Both the server
+  and `argo-watcher --migrate` are affected. Set `DB_SSL_MODE=verify-full` with `PGSSLROOTCERT`
+  for a database on another host.
+
+### Added
+
+- `DB_SSL_MODE` is validated against the modes libpq defines, by both the server at startup and
+  `argo-watcher --migrate`, so a typo names the variable instead of surfacing later as a driver
+  parse error. The migrator checks it too because it runs first in a deployment.
+- The server now warns when `DB_SSL_MODE` is set alongside `DB_DSN`. An operator-supplied DSN is
+  used verbatim, so the mode never reaches the driver; staying silent would be the same quiet
+  downgrade this release removes.
+
 ## [1.4.1] - 2026-09-15
 
 ### Fixed

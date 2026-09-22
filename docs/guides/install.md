@@ -85,10 +85,10 @@ If you manage the database outside the chart, apply the migrations yourself with
 
 ```bash
 migrate -path db/migrations \
-  -database "postgresql://<user>:<password>@<host>:<port>/<dbname>?sslmode=disable" up
+  -database "postgresql://<user>:<password>@<host>:<port>/<dbname>?sslmode=require" up
 ```
 
-See [Database](../operations/database.md) for the schema, backups, and sizing.
+See [Database](../operations/database.md#manual) for the schema, backups, sizing, and which `sslmode` to use — `require` encrypts but does not check the server's certificate.
 
 ## Run the client in CI
 
