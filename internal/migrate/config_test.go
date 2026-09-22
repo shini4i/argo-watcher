@@ -26,7 +26,7 @@ func TestNewMigrationConfig_Success(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
 	assert.Equal(t, "/app/db/migrations", cfg.MigrationsPath)
-	assert.Equal(t, "pgx5://testuser:testpassword%21%40%23@localhost:5432/testdb?sslmode=require&connect_timeout=10", cfg.DSN)
+	assert.Equal(t, "pgx5://testuser:testpassword%21%40%23@localhost:5432/testdb?connect_timeout=10&sslmode=require", cfg.DSN)
 }
 
 func TestNewMigrationConfig_ConnectTimeoutOverride(t *testing.T) {
@@ -41,7 +41,7 @@ func TestNewMigrationConfig_ConnectTimeoutOverride(t *testing.T) {
 	cfg, err := NewMigrationConfig()
 
 	require.NoError(t, err)
-	assert.Equal(t, "pgx5://testuser:testpassword@localhost:5432/testdb?sslmode=require&connect_timeout=3", cfg.DSN)
+	assert.Equal(t, "pgx5://testuser:testpassword@localhost:5432/testdb?connect_timeout=3&sslmode=require", cfg.DSN)
 }
 
 // TestNewMigrationConfig_SchemeIsRegisteredDriver verifies the DSN scheme names a
@@ -171,6 +171,7 @@ func TestNewMigrationConfig_CredentialsSurviveTheDSN(t *testing.T) {
 	t.Setenv("DB_USER", user)
 	t.Setenv("DB_PASSWORD", password)
 	t.Setenv("DB_NAME", "testdb")
+	t.Setenv("DB_SSL_MODE", "")
 
 	cfg, err := NewMigrationConfig()
 	require.NoError(t, err)
@@ -185,6 +186,58 @@ func TestNewMigrationConfig_CredentialsSurviveTheDSN(t *testing.T) {
 	// The host, database and connection options must all still parse out intact.
 	assert.Equal(t, "localhost:5432", parsed.Host)
 	assert.Equal(t, "/testdb", parsed.Path)
-	assert.Equal(t, "disable", parsed.Query().Get("sslmode"))
+	assert.False(t, parsed.Query().Has("sslmode"), "an unset DB_SSL_MODE must emit no term")
 	assert.Equal(t, "10", parsed.Query().Get("connect_timeout"))
+}
+
+// TestNewMigrationConfig_SSLMode pins that the migrator follows the server: the term is
+// emitted only when the operator chose one, so `argo-watcher --migrate` is not pinned to
+// cleartext and PGSSLMODE applies to it too.
+func TestNewMigrationConfig_SSLMode(t *testing.T) {
+	setEnv := func(t *testing.T) {
+		t.Helper()
+		t.Setenv("DB_HOST", "localhost")
+		t.Setenv("DB_PORT", "5432")
+		t.Setenv("DB_USER", "testuser")
+		t.Setenv("DB_PASSWORD", "testpassword")
+		t.Setenv("DB_NAME", "testdb")
+		// Cleared, not merely unset: DB_SSL_MODE is the variable under test and a
+		// developer shell or a sourced compose env carries it.
+		t.Setenv("DB_SSL_MODE", "")
+	}
+
+	t.Run("omittedWhenUnset", func(t *testing.T) {
+		setEnv(t)
+
+		cfg, err := NewMigrationConfig()
+		require.NoError(t, err)
+
+		assert.NotContains(t, cfg.DSN, "sslmode")
+	})
+
+	// The migrator runs before the server in a deployment — a pre-upgrade hook Job or an
+	// init container — so a typo surfaces here first and the server's own check is never
+	// reached. Without this the operator sees golang-migrate's "sslmode is invalid".
+	t.Run("rejectsAMisspelling", func(t *testing.T) {
+		setEnv(t)
+		t.Setenv("DB_SSL_MODE", "requires")
+
+		cfg, err := NewMigrationConfig()
+
+		assert.Nil(t, cfg)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "DB_SSL_MODE")
+	})
+
+	t.Run("emittedWhenSet", func(t *testing.T) {
+		setEnv(t)
+		t.Setenv("DB_SSL_MODE", "verify-full")
+
+		cfg, err := NewMigrationConfig()
+		require.NoError(t, err)
+
+		parsed, err := url.Parse(cfg.DSN)
+		require.NoError(t, err)
+		assert.Equal(t, "verify-full", parsed.Query().Get("sslmode"))
+	})
 }

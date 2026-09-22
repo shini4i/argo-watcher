@@ -3,9 +3,11 @@ package migrate
 import (
 	"fmt"
 	"net/url"
+	"slices"
 
 	envConfig "github.com/caarlos0/env/v11"
 
+	"github.com/shini4i/argo-watcher/internal/config"
 	"github.com/shini4i/argo-watcher/internal/helpers"
 )
 
@@ -15,7 +17,7 @@ type dbConfig struct {
 	Host           string `env:"DB_HOST,required,notEmpty"`
 	Port           string `env:"DB_PORT,required,notEmpty"`
 	Name           string `env:"DB_NAME,required,notEmpty"`
-	SSLMode        string `env:"DB_SSL_MODE" envDefault:"disable"`
+	SSLMode        string `env:"DB_SSL_MODE"`
 	ConnectTimeout int    `env:"DB_CONNECT_TIMEOUT" envDefault:"10"`
 	MigrationsPath string `env:"DB_MIGRATIONS_PATH" envDefault:"/app/db/migrations"`
 }
@@ -40,20 +42,31 @@ func NewMigrationConfig() (*MigrationConfig, error) {
 		return nil, fmt.Errorf("invalid argo-watcher migration configuration: DB_CONNECT_TIMEOUT must be at least 1 second, got %d", dbCfg.ConnectTimeout)
 	}
 
+	// Checked here as well as in the server: the migrator runs first in a deployment, so a
+	// typo surfaces as golang-migrate's "sslmode is invalid" before the server ever starts.
+	if dbCfg.SSLMode != "" && !slices.Contains(config.PostgresSSLModes, dbCfg.SSLMode) {
+		return nil, fmt.Errorf("invalid argo-watcher migration configuration: DB_SSL_MODE must be one of %v, got %q", config.PostgresSSLModes, dbCfg.SSLMode)
+	}
+
 	// The pgx5 scheme selects the driver registered in migrate.go; it rewrites the
 	// scheme to postgres before connecting, so the rest of the DSN is an ordinary
 	// PostgreSQL URI. connect_timeout bounds the initial connection so an
 	// unreachable database fails fast instead of blocking on the OS TCP timeout.
-	dsn := fmt.Sprintf("pgx5://%s@%s:%s/%s?sslmode=%s&connect_timeout=%d",
+	dsn := fmt.Sprintf("pgx5://%s@%s:%s/%s?connect_timeout=%d",
 		// url.UserPassword applies userinfo escaping, which is not the query string's:
 		// there a space is "+", which in credentials stays a literal plus.
 		url.UserPassword(dbCfg.User, dbCfg.Password).String(),
 		dbCfg.Host,
 		dbCfg.Port,
 		dbCfg.Name,
-		dbCfg.SSLMode,
 		dbCfg.ConnectTimeout,
 	)
+
+	// Appended only when the operator chose a mode: pgx resolves a connection-string
+	// setting after the environment, so an always-present term would outrank PGSSLMODE.
+	if dbCfg.SSLMode != "" {
+		dsn += "&sslmode=" + url.QueryEscape(dbCfg.SSLMode)
+	}
 
 	return &MigrationConfig{DSN: dsn, MigrationsPath: dbCfg.MigrationsPath}, nil
 }

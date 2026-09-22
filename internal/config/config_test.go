@@ -905,3 +905,190 @@ func TestNewDatabaseConfig_KeepsAnExplicitDSN(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "host=elsewhere user=someone", cfg.DSN)
 }
+
+// setPostgresEnv sets the minimum a postgres deployment needs, leaving DB_SSL_MODE and
+// the PG* environment to the caller.
+func setPostgresEnv(t *testing.T) {
+	t.Helper()
+
+	t.Setenv("ARGO_URL", "https://example.com")
+	t.Setenv("ARGO_TOKEN", "secret-token")
+	t.Setenv("STATE_TYPE", "postgres")
+	t.Setenv("DB_HOST", "db.example.com")
+	t.Setenv("DB_PORT", "5432")
+	t.Setenv("DB_USER", "watcher")
+	t.Setenv("DB_PASSWORD", "dummy-not-a-real-secret")
+	t.Setenv("DB_NAME", "watcher")
+	// Cleared, not merely unset: these are exactly the variables under test, and a
+	// developer shell or a sourced compose env carries them. Empty reads as unset on
+	// both sides — caarlos0/env leaves the field "", and pgconn records a PG* variable
+	// only when non-empty.
+	t.Setenv("DB_SSL_MODE", "")
+	t.Setenv("DB_DSN", "")
+	t.Setenv("PGSSLMODE", "")
+	t.Setenv("PGSSLROOTCERT", "")
+}
+
+// TestNewDatabaseConfig_SSLModeOmittedWhenUnset pins that an operator who sets no
+// DB_SSL_MODE is left on pgx's own libpq-compatible default rather than having cleartext
+// chosen for them. Asserted through the driver: `prefer` yields a usable TLS config plus
+// one plaintext fallback, where `disable` yields a nil config and no fallback at all.
+func TestNewDatabaseConfig_SSLModeOmittedWhenUnset(t *testing.T) {
+	setPostgresEnv(t)
+
+	cfg, err := NewServerConfig()
+	require.NoError(t, err)
+
+	assert.NotContains(t, cfg.Db.DSN, "sslmode", "an unset DB_SSL_MODE must emit no term")
+
+	parsed, err := pgconn.ParseConfig(cfg.Db.DSN)
+	require.NoError(t, err)
+	assert.NotNil(t, parsed.TLSConfig, "pgx must negotiate TLS first")
+	require.Len(t, parsed.Fallbacks, 1, "prefer appends exactly one plaintext fallback")
+	assert.Nil(t, parsed.Fallbacks[0].TLSConfig)
+}
+
+// TestNewDatabaseConfig_SSLModeEmittedWhenSet pins that a mode the operator does choose
+// still reaches the driver.
+func TestNewDatabaseConfig_SSLModeEmittedWhenSet(t *testing.T) {
+	setPostgresEnv(t)
+	t.Setenv("DB_SSL_MODE", "require")
+
+	cfg, err := NewServerConfig()
+	require.NoError(t, err)
+
+	assert.Contains(t, cfg.Db.DSN, "sslmode='require'")
+
+	parsed, err := pgconn.ParseConfig(cfg.Db.DSN)
+	require.NoError(t, err)
+	assert.NotNil(t, parsed.TLSConfig)
+	assert.Empty(t, parsed.Fallbacks, "require does not fall back to cleartext")
+
+	// The mirror of DoesNotOutrankPGSSLMODE: setting the variable pins the mode, so a
+	// conflicting PGSSLMODE must lose.
+	t.Run("outranksAConflictingPGSSLMODE", func(t *testing.T) {
+		setPostgresEnv(t)
+		t.Setenv("DB_SSL_MODE", "require")
+		t.Setenv("PGSSLMODE", "disable")
+
+		cfg, err := NewServerConfig()
+		require.NoError(t, err)
+
+		parsed, err := pgconn.ParseConfig(cfg.Db.DSN)
+		require.NoError(t, err)
+		assert.NotNil(t, parsed.TLSConfig, "the pinned mode must win")
+		assert.Empty(t, parsed.Fallbacks)
+	})
+}
+
+// TestNewDatabaseConfig_PGSSLROOTCERTUpgradesTheMode pins the half of the rationale the
+// prefer test cannot reach: PGSSLROOTCERT is what yields a verified connection, and the
+// old always-present term discarded it silently. prefer only sets InsecureSkipVerify.
+func TestNewDatabaseConfig_PGSSLROOTCERTUpgradesTheMode(t *testing.T) {
+	setPostgresEnv(t)
+	t.Setenv("PGSSLROOTCERT", "system")
+
+	cfg, err := NewServerConfig()
+	require.NoError(t, err)
+
+	parsed, err := pgconn.ParseConfig(cfg.Db.DSN)
+	require.NoError(t, err)
+	require.NotNil(t, parsed.TLSConfig)
+	assert.False(t, parsed.TLSConfig.InsecureSkipVerify, "the certificate must be verified")
+	assert.Empty(t, parsed.Fallbacks, "verify-full allows no cleartext fallback")
+}
+
+// TestNewServerConfig_SSLModeInertBehindCustomDSN pins that an operator DSN is used
+// verbatim and that DB_SSL_MODE being inert behind it is announced, not silent.
+func TestNewServerConfig_SSLModeInertBehindCustomDSN(t *testing.T) {
+	setPostgresEnv(t)
+	t.Setenv("DB_DSN", "host=db user=u")
+	t.Setenv("DB_SSL_MODE", "verify-full")
+
+	warnings := captureWarnings(t)
+
+	cfg, err := NewServerConfig()
+	require.NoError(t, err)
+
+	assert.Equal(t, "host=db user=u connect_timeout=10", cfg.Db.DSN, "the operator's DSN is theirs")
+	assert.Contains(t, warnings.String(), "DB_SSL_MODE has no effect when DB_DSN is set")
+
+	// A stale value cannot reach the driver behind DB_DSN, so rejecting it would fail a
+	// deployment that works. It is warned about, not validated.
+	t.Run("aStaleInvalidValueDoesNotBlockStartup", func(t *testing.T) {
+		setPostgresEnv(t)
+		t.Setenv("DB_DSN", "host=db user=u")
+		t.Setenv("DB_SSL_MODE", "requires")
+
+		cfg, err := NewServerConfig()
+
+		require.NoError(t, err)
+		assert.Equal(t, "host=db user=u connect_timeout=10", cfg.Db.DSN)
+	})
+}
+
+// TestNewDatabaseConfig_SSLModeDoesNotOutrankPGSSLMODE is the point of the change. pgx
+// merges connection-string settings after environment settings, so an always-present
+// sslmode term silently beat the standard libpq way of hardening the hop: the operator
+// got cleartext with no error and no warning.
+func TestNewDatabaseConfig_SSLModeDoesNotOutrankPGSSLMODE(t *testing.T) {
+	setPostgresEnv(t)
+	t.Setenv("PGSSLMODE", "require")
+
+	cfg, err := NewServerConfig()
+	require.NoError(t, err)
+
+	parsed, err := pgconn.ParseConfig(cfg.Db.DSN)
+	require.NoError(t, err)
+	assert.NotNil(t, parsed.TLSConfig, "PGSSLMODE must decide the transport")
+	assert.Empty(t, parsed.Fallbacks, "require, from the environment, allows no cleartext fallback")
+}
+
+// TestNewServerConfig_SSLModeAllowlist pins that a typo names the variable at startup
+// instead of surfacing later as an opaque driver parse error.
+func TestNewServerConfig_SSLModeAllowlist(t *testing.T) {
+	// Every accepted mode must also reach the driver intact. Parsing is the tripwire for
+	// drift: a pgx bump that renames or drops a mode fails here, not at connect time.
+	for _, mode := range PostgresSSLModes {
+		t.Run("accepts_"+mode, func(t *testing.T) {
+			setPostgresEnv(t)
+			t.Setenv("DB_SSL_MODE", mode)
+
+			cfg, err := NewServerConfig()
+			require.NoError(t, err)
+
+			assert.Contains(t, cfg.Db.DSN, "sslmode='"+mode+"'")
+			_, err = pgconn.ParseConfig(cfg.Db.DSN)
+			assert.NoError(t, err, "pgx must still accept %q", mode)
+		})
+	}
+
+	// A near-miss must fail closed. Pinned before someone adds a TrimSpace/ToLower
+	// normalization and turns these into silent acceptance.
+	for _, bad := range []string{"requires", "Require", " require"} {
+		t.Run("rejects_"+bad, func(t *testing.T) {
+			setPostgresEnv(t)
+			t.Setenv("DB_SSL_MODE", bad)
+
+			cfg, err := NewServerConfig()
+
+			assert.Nil(t, cfg)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "SSLMode")
+			assert.Contains(t, err.Error(), bad, "the error must quote the rejected value")
+			assert.Contains(t, err.Error(), "verify-full", "and list what is accepted")
+		})
+	}
+
+	// in-memory deployments never build a DSN, so the rule must not fire for them.
+	t.Run("ignoredWhenStateIsInMemory", func(t *testing.T) {
+		t.Setenv("ARGO_URL", "https://example.com")
+		t.Setenv("ARGO_TOKEN", "secret-token")
+		t.Setenv("STATE_TYPE", "in-memory")
+		t.Setenv("DB_SSL_MODE", "requires")
+
+		_, err := NewServerConfig()
+
+		assert.NoError(t, err)
+	})
+}

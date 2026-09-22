@@ -83,13 +83,17 @@ Required when `STATE_TYPE=postgres`. The server builds its DSN from these; `DB_D
 | `DB_NAME` | Database name | |
 | `DB_USER` | Database user | |
 | `DB_PASSWORD` | Database password | |
-| `DB_SSL_MODE` | PostgreSQL SSL mode | `disable` |
+| `DB_SSL_MODE` | PostgreSQL SSL mode: `disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full` | unset (pgx's own `prefer`) |
 | `DB_TIMEZONE` | Session timezone | `UTC` |
 | `DB_CONNECT_TIMEOUT` | Seconds to wait for the initial connection (at least 1) | `10` |
 | `DB_DSN` | Full DSN, replacing the one built from the variables above | built from `DB_*` |
 | `DB_MIGRATIONS_PATH` | Migrations directory used by `argo-watcher --migrate` | `/app/db/migrations` |
 
 `DB_CONNECT_TIMEOUT` is enforced even when `DB_DSN` is set explicitly, so an unreachable database fails fast instead of hanging on the OS TCP timeout.
+
+Left unset, `DB_SSL_MODE` emits no `sslmode` term at all, so the driver negotiates TLS first and falls back to cleartext only if the server refuses, and `PGSSLMODE`/`PGSSLROOTCERT` apply as libpq documents them. Setting it pins the mode and overrides those variables. For a database on another host use `verify-full` together with `PGSSLROOTCERT`; `disable` is for a loopback or Unix-socket database only. Note that `prefer` and `require` encrypt but accept any certificate — only `verify-ca` and `verify-full` authenticate the server.
+
+Setting `DB_SSL_MODE` together with `DB_DSN` has no effect — the DSN is used exactly as given, so the mode belongs inside it — and the server logs a warning at startup rather than staying silent about it.
 
 ## GitOps updater
 
