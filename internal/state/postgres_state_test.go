@@ -159,6 +159,12 @@ func TestPostgresState_GetTasks(t *testing.T) {
 	assert.Equal(t, int64(0), total)
 }
 
+// The sweep's status is a SQL literal so a generic plan can use the partial index;
+// this keeps that literal in step with the status the rest of the code writes.
+func TestWhereStatusAppNotFoundMatchesTheStatus(t *testing.T) {
+	assert.Equal(t, "status = '"+models.StatusAppNotFoundMessage+"'", whereStatusAppNotFound)
+}
+
 func TestEscapeLikePattern(t *testing.T) {
 	tests := []struct {
 		name  string
