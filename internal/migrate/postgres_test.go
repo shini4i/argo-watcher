@@ -13,6 +13,8 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/shini4i/argo-watcher/internal/models"
 )
 
 // These tests exercise the compatibility floor against a real PostgreSQL. As with
@@ -175,6 +177,42 @@ func TestMigratorRun_RefusesADirtyDatabase(t *testing.T) {
 
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "marked dirty")
+}
+
+// The tasks indexes are asserted by definition rather than by name, so what is
+// pinned is the access path each query relies on.
+func TestTasksIndexes(t *testing.T) {
+	dsn := newTestDatabase(t)
+	m := applyRepositoryMigrations(t, dsn)
+	defer func() { _, _ = m.Close() }()
+
+	db, err := sql.Open("pgx", dsn)
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	var idIndexes []string
+	rows, err := db.Query(`SELECT indexname FROM pg_indexes WHERE tablename = 'tasks' AND indexdef LIKE '%(id)'`)
+	require.NoError(t, err)
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var name string
+		require.NoError(t, rows.Scan(&name))
+		idIndexes = append(idIndexes, name)
+	}
+	require.NoError(t, rows.Err())
+	assert.Equal(t, []string{"tasks_pkey"}, idIndexes, "the primary key is the only index id needs")
+
+	// The hourly sweep deletes app-not-found tasks by age. Without this index the
+	// status filter has nothing to seek on and the sweep reads the whole table.
+	// Built from the constant the sweep filters on, so renaming the status fails here.
+	predicate := fmt.Sprintf("%%WHERE ((status)::text = '%s'::text)", models.StatusAppNotFoundMessage)
+	var appNotFound int
+	require.NoError(t, db.QueryRow(`
+		SELECT count(*) FROM pg_indexes
+		WHERE tablename = 'tasks'
+		  AND indexdef LIKE '%(created)%'
+		  AND indexdef LIKE $1`, predicate).Scan(&appNotFound))
+	assert.Equal(t, 1, appNotFound, "the app-not-found sweep needs a partial index on created")
 }
 
 func TestSchemaCompatibilitySingleRow(t *testing.T) {
