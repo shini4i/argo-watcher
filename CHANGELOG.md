@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The client warns when both `BEARER_TOKEN` and `ARGO_WATCHER_DEPLOY_TOKEN` are set. It
+  already sent only `BEARER_TOKEN` in that case; a pipeline moving to an application deploy
+  token now learns that the old shared token is ignored, instead of finding out later.
+  The warning is printed whether or not `DEBUG` is on.
+
 ## [1.4.2] - 2026-09-28
 
 ### Security

@@ -67,14 +67,10 @@ type credential struct {
 	value  string
 }
 
-// credentialFrom picks the credential to present from the client configuration,
-// preferring a CI JWT over a deploy token when both are set.
-//
-// The JWT is sent without a "Bearer " prefix: the raw value is maskable as a GitLab
-// CI variable (a prefix contains a space, which GitLab refuses to mask). A legacy
-// "Bearer <jwt>" value is normalized here, so the wire format never depends on how
-// BEARER_TOKEN was set. The deploy token is sent verbatim — it is an opaque secret
-// that may legitimately start with anything.
+// credentialFrom picks the credential to present, preferring BEARER_TOKEN over
+// ARGO_WATCHER_DEPLOY_TOKEN. BEARER_TOKEN is sent without a "Bearer " prefix, which GitLab
+// cannot mask (it holds a space); a legacy "Bearer <token>" value is normalized. The deploy
+// token is sent verbatim: it is an opaque secret that may legitimately start with anything.
 func credentialFrom(config *Config) credential {
 	switch {
 	case config.JsonWebToken != "":
