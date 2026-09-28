@@ -37,6 +37,16 @@ describe('useAppSummaries', () => {
     expect(params.get('from_timestamp')).toBe(String(expected));
   });
 
+  // Left open, the server ends the window at its own "now", which can count a
+  // task that the History link, ending at the pinned time, then leaves out.
+  it('bounds the request at the same end the History link uses', async () => {
+    const { result } = renderHook(() => useAppSummaries('7d'));
+
+    await waitFor(() => expect(result.current.isPending).toBe(false));
+    const params = new URL(lastUrl(), 'https://example.test').searchParams;
+    expect(params.get('to_timestamp')).toBe(String(result.current.range.end));
+  });
+
   it('returns the apps the backend reports', async () => {
     httpClient.mockImplementation(() =>
       ok({ apps: [{ app: 'checkout', total: 3 }], total_apps: 1 }),

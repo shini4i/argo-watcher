@@ -52,7 +52,10 @@ export const useAppSummaries = (window: OverviewWindow): AppSummariesState => {
     // Retry replaces the failure, so the error screen must go with the click.
     setError(null);
 
-    const query = buildQueryString({ from_timestamp: requestedRange.start });
+    const query = buildQueryString({
+      from_timestamp: requestedRange.start,
+      to_timestamp: requestedRange.end,
+    });
     httpClient<AppSummariesResponse>(`/api/v1/apps/summary${query}`)
       .then(({ data, status }) => {
         if (cancelled) {
