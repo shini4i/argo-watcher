@@ -36,3 +36,9 @@ export const WINDOW_LABELS: Readonly<Record<OverviewWindow, string>> = {
 
 export const isOverviewWindow = (value: unknown): value is OverviewWindow =>
   value === '24h' || value === '7d' || value === '30d';
+
+/** A closed range of unix seconds. */
+export interface TimeRange {
+  readonly start: number;
+  readonly end: number;
+}

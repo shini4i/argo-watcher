@@ -10,10 +10,13 @@ import { summariseFailure } from '../../tasks/utils/failureReason';
 import { deriveAppState, type AppState } from '../deriveOverview';
 import { appStateColors } from '../appStateColors';
 import { RecentOutcomeStrip } from './RecentOutcomeStrip';
-import type { AppSummary } from '../types';
+import { historyHref } from '../historyHref';
+import type { AppSummary, TimeRange } from '../types';
 
 interface AttentionCardsProps {
   readonly summaries: readonly AppSummary[];
+  /** The range the summaries cover; each card links to History over it. */
+  readonly range: TimeRange;
   readonly isPending: boolean;
 }
 
@@ -36,7 +39,7 @@ const lastEventText = (summary: AppSummary): string => {
   return `${descriptor.displayLabel} ${formatRelativeTime(summary.last_created)}`;
 };
 
-const AttentionCard = ({ summary }: { summary: AppSummary }) => {
+const AttentionCard = ({ summary, range }: { summary: AppSummary; range: TimeRange }) => {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
   const state = deriveAppState(summary);
@@ -47,7 +50,7 @@ const AttentionCard = ({ summary }: { summary: AppSummary }) => {
   return (
     <Box
       component={RouterLink}
-      to={`/tasks?app=${encodeURIComponent(summary.app)}`}
+      to={historyHref(summary.app, range)}
       sx={{
         display: 'block',
         textDecoration: 'none',
@@ -141,7 +144,7 @@ const AttentionCard = ({ summary }: { summary: AppSummary }) => {
  * window, ranked failing first. A clean application is left to the list below —
  * a card per app would bury what needs attention.
  */
-export const AttentionCards = ({ summaries, isPending }: AttentionCardsProps) => {
+export const AttentionCards = ({ summaries, range, isPending }: AttentionCardsProps) => {
   if (isPending) {
     return (
       <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' } }}>
@@ -168,7 +171,7 @@ export const AttentionCards = ({ summaries, isPending }: AttentionCardsProps) =>
       }}
     >
       {summaries.map(summary => (
-        <AttentionCard key={summary.app} summary={summary} />
+        <AttentionCard key={summary.app} summary={summary} range={range} />
       ))}
     </Box>
   );

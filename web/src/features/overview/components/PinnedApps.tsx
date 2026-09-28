@@ -9,11 +9,14 @@ import { tokens } from '../../../theme/tokens';
 import { useCopyToClipboard } from '../../../shared/hooks/useCopyToClipboard';
 import { deriveAppState, type AppState } from '../deriveOverview';
 import { appStateColors } from '../appStateColors';
-import type { AppSummary } from '../types';
+import { historyHref } from '../historyHref';
+import type { AppSummary, TimeRange } from '../types';
 
 interface PinnedAppsProps {
   readonly pinned: readonly string[];
   readonly summaries: readonly AppSummary[];
+  /** The range the summaries cover; each tile links to History over it. */
+  readonly range: TimeRange;
   readonly allAppNames: readonly string[];
   readonly shareLink: string;
   readonly isPending: boolean;
@@ -41,10 +44,12 @@ const stateText = (state: AppState, summary?: AppSummary): string =>
 const Tile = ({
   app,
   summary,
+  range,
   onUnpin,
 }: {
   app: string;
   summary?: AppSummary;
+  range: TimeRange;
   onUnpin: (app: string) => void;
 }) => {
   const theme = useTheme();
@@ -74,7 +79,7 @@ const Tile = ({
       <Box sx={{ minWidth: 0, flexGrow: 1 }}>
         <Box
           component={RouterLink}
-          to={`/tasks?app=${encodeURIComponent(app)}`}
+          to={historyHref(app, range)}
           sx={{
             display: 'block',
             fontSize: 12.5,
@@ -174,6 +179,7 @@ const PinPicker = ({
 export const PinnedApps = ({
   pinned,
   summaries,
+  range,
   allAppNames,
   shareLink,
   isPending,
@@ -228,7 +234,7 @@ export const PinnedApps = ({
         {isPending
           ? pinned.map(app => <Skeleton key={app} variant="rounded" height={TILE_HEIGHT} />)
           : pinned.map(app => (
-              <Tile key={app} app={app} summary={byApp.get(app)} onUnpin={onUnpin} />
+              <Tile key={app} app={app} summary={byApp.get(app)} range={range} onUnpin={onUnpin} />
             ))}
         <PinPicker allAppNames={allAppNames} pinned={pinned} onPin={onPin} />
       </Box>

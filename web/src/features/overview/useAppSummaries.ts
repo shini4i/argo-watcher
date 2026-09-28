@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { HttpError } from 'react-admin';
 import { buildQueryString, httpClient } from '../../data/httpClient';
-import type { AppSummariesResponse, AppSummary, OverviewWindow } from './types';
+import type { AppSummariesResponse, AppSummary, OverviewWindow, TimeRange } from './types';
 import { WINDOW_SECONDS } from './types';
 
 interface AppSummariesState {
@@ -10,6 +10,8 @@ interface AppSummariesState {
   readonly isPending: boolean;
   /** True while a fetch runs over rows already on screen. */
   readonly isRefreshing: boolean;
+  /** The range the rows on screen were counted over, in unix seconds. */
+  readonly range: TimeRange;
   readonly error: unknown;
   readonly refetch: () => void;
 }
@@ -20,7 +22,8 @@ interface AppSummariesState {
  * previous window stay until the next answer lands, which is what keeps a
  * window switch from unmounting the page.
  * @param window the selected look-back range
- * @returns the summaries, both loading flags, any error, and a refetch callback
+ * @returns the summaries, the range they cover, both loading flags, any error,
+ * and a refetch callback
  */
 export const useAppSummaries = (window: OverviewWindow): AppSummariesState => {
   const [apps, setApps] = useState<AppSummary[]>([]);
@@ -30,24 +33,29 @@ export const useAppSummaries = (window: OverviewWindow): AppSummariesState => {
 
   const refetch = useCallback(() => setReloadToken(token => token + 1), []);
 
-  // The window start is pinned per fetch rather than per render, so a re-render
-  // cannot slide the range and make two numbers on screen disagree.
-  const fromTimestamp = useMemo(
-    () => Math.floor(Date.now() / 1000) - WINDOW_SECONDS[window],
+  // The range is pinned per fetch rather than per render, so a re-render
+  // cannot slide it and make two numbers on screen disagree.
+  const requestedRange = useMemo<TimeRange>(() => {
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    return { start: nowSeconds - WINDOW_SECONDS[window], end: nowSeconds };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [window, reloadToken],
-  );
+  }, [window, reloadToken]);
+  // Follows the rows, not the request: while the next window loads, the rows
+  // on screen still belong to the previous range.
+  const [range, setRange] = useState<TimeRange>(requestedRange);
 
-  // reloadToken is a dependency in its own right: two refetches inside the same
-  // second compute the same fromTimestamp, and keying only on that would drop
-  // the second one.
+  // requestedRange is a new object on every refetch, so two refetches inside
+  // the same second still run twice even though their numbers match.
   useEffect(() => {
     let cancelled = false;
     setIsFetching(true);
     // Retry replaces the failure, so the error screen must go with the click.
     setError(null);
 
-    const query = buildQueryString({ from_timestamp: fromTimestamp });
+    const query = buildQueryString({
+      from_timestamp: requestedRange.start,
+      to_timestamp: requestedRange.end,
+    });
     httpClient<AppSummariesResponse>(`/api/v1/apps/summary${query}`)
       .then(({ data, status }) => {
         if (cancelled) {
@@ -63,6 +71,7 @@ export const useAppSummaries = (window: OverviewWindow): AppSummariesState => {
         }
         setError(null);
         setApps(data?.apps ?? []);
+        setRange(requestedRange);
       })
       .catch(cause => {
         if (!cancelled) {
@@ -79,7 +88,7 @@ export const useAppSummaries = (window: OverviewWindow): AppSummariesState => {
     return () => {
       cancelled = true;
     };
-  }, [fromTimestamp, reloadToken]);
+  }, [requestedRange]);
 
   // Both flags key on what is currently on screen rather than on how many
   // fetches have run: a retry after a failure has nothing to show and owes the
@@ -88,6 +97,7 @@ export const useAppSummaries = (window: OverviewWindow): AppSummariesState => {
     apps,
     isPending: isFetching && apps.length === 0,
     isRefreshing: isFetching && apps.length > 0,
+    range,
     error,
     refetch,
   };

@@ -7,15 +7,18 @@ import { tokens } from '../../../theme/tokens';
 import { formatDuration, formatRelativeTime } from '../../../shared/utils/time';
 import { describeTaskStatus } from '../../tasks/utils/statusPresentation';
 import { deriveAppState } from '../deriveOverview';
-import type { AppSummary } from '../types';
+import { historyHref } from '../historyHref';
+import type { AppSummary, TimeRange } from '../types';
 
 interface AllApplicationsProps {
   readonly summaries: readonly AppSummary[];
+  /** The range the summaries cover; each row links to History over it. */
+  readonly range: TimeRange;
 }
 
 const ROW_HEIGHT = 33;
 
-const Row = ({ summary }: { summary: AppSummary }) => {
+const Row = ({ summary, range }: { summary: AppSummary; range: TimeRange }) => {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
   const descriptor = describeTaskStatus(summary.last_status);
@@ -26,7 +29,7 @@ const Row = ({ summary }: { summary: AppSummary }) => {
   return (
     <Stack
       component={RouterLink}
-      to={`/tasks?app=${encodeURIComponent(summary.app)}`}
+      to={historyHref(summary.app, range)}
       direction="row"
       spacing={1.5}
       sx={{
@@ -72,7 +75,7 @@ const Row = ({ summary }: { summary: AppSummary }) => {
  * @description Every application with a deployment in the window, one compact
  * row each, searchable. This is the long tail the attention cards leave out.
  */
-export const AllApplications = ({ summaries }: AllApplicationsProps) => {
+export const AllApplications = ({ summaries, range }: AllApplicationsProps) => {
   const theme = useTheme();
   const [query, setQuery] = useState('');
 
@@ -148,7 +151,7 @@ export const AllApplications = ({ summaries }: AllApplicationsProps) => {
             No application matches “{query}”.
           </Typography>
         ) : (
-          sorted.map(summary => <Row key={summary.app} summary={summary} />)
+          sorted.map(summary => <Row key={summary.app} summary={summary} range={range} />)
         )}
       </Box>
     </Box>

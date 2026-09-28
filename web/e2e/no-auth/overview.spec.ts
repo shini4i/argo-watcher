@@ -5,12 +5,13 @@ import { MOCK_APP, seedTask, waitForDeployed } from '../helpers';
  * @description The overview is the only screen served by
  * `/api/v1/apps/summary`, and the unit suite stubs that fetch. Only a browser
  * against the real server proves the endpoint exists, that its aggregate shape
- * is the one the page reads, and that a row links to that app's task list.
+ * is the one the page reads, and that a row links to that app's History over
+ * the counted window.
  *
  * The servers keep in-memory state across specs, so counts here are lower
  * bounds: other specs' seeds share this window.
  */
-test('the overview summarises the window and links each app to its tasks', async ({ page, request }) => {
+test('the overview summarises the window and links each app to its history', async ({ page, request }) => {
   const id = await seedTask(request, 'overview');
   await waitForDeployed(request, id);
 
@@ -32,6 +33,12 @@ test('the overview summarises the window and links each app to its tasks', async
   await expect(page.getByText(/No application matches/)).toBeVisible();
   await page.getByLabel('Filter applications').fill('');
 
+  // History, not Recent Tasks: the link carries the window the overview
+  // counted, and the task seeded above must be listed within it.
   await row.click();
-  await expect(page).toHaveURL(new RegExp(`[?&]app=${MOCK_APP}(&|$)`));
+  await expect(page).toHaveURL(/\/history\?/);
+  const params = new URL(page.url()).searchParams;
+  expect(params.get('app')).toBe(MOCK_APP);
+  expect(Number(params.get('endDate')) - Number(params.get('startDate'))).toBe(24 * 60 * 60);
+  await expect(page.getByText('overview', { exact: true }).first()).toBeVisible();
 });
