@@ -186,6 +186,7 @@ describe('useAppSummaries', () => {
     });
 
     expect(result.current.apps.map(app => app.app)).toEqual(['current']);
+    expect(result.current.range.start).toBe(Math.floor(NOW_MS / 1000) - WINDOW_SECONDS['30d']);
   });
 
   // The History link must span the exact range these rows were counted over,
