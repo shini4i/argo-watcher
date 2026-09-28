@@ -177,4 +177,42 @@ describe('useAppSummaries', () => {
 
     expect(result.current.apps.map(app => app.app)).toEqual(['current']);
   });
+
+  // The History link must span the exact range these rows were counted over,
+  // or a click lands on a task list that disagrees with the card.
+  it('reports the range the rows on screen were counted over', async () => {
+    httpClient.mockImplementation(() => ok({ apps: [{ app: 'checkout' }], total_apps: 1 }));
+
+    const { result } = renderHook(() => useAppSummaries('7d'));
+
+    await waitFor(() => expect(result.current.apps).toHaveLength(1));
+    const nowSeconds = Math.floor(NOW_MS / 1000);
+    expect(result.current.range).toEqual({
+      start: nowSeconds - WINDOW_SECONDS['7d'],
+      end: nowSeconds,
+    });
+  });
+
+  it('keeps the previous range until the next window answers', async () => {
+    httpClient.mockImplementation(() => ok({ apps: [{ app: 'checkout' }], total_apps: 1 }));
+    const { result, rerender } = renderHook(
+      ({ w }: { w: '24h' | '30d' }) => useAppSummaries(w),
+      { initialProps: { w: '24h' as '24h' | '30d' } },
+    );
+    await waitFor(() => expect(result.current.apps).toHaveLength(1));
+    const nowSeconds = Math.floor(NOW_MS / 1000);
+
+    let release: (value: unknown) => void = () => {};
+    httpClient.mockImplementation(() => new Promise(resolve => { release = resolve; }));
+    rerender({ w: '30d' });
+
+    await waitFor(() => expect(result.current.isRefreshing).toBe(true));
+    expect(result.current.range.start).toBe(nowSeconds - WINDOW_SECONDS['24h']);
+
+    await act(async () => {
+      release({ data: { apps: [{ app: 'payments' }], total_apps: 1 }, status: 200, headers: {} });
+    });
+
+    expect(result.current.range.start).toBe(nowSeconds - WINDOW_SECONDS['30d']);
+  });
 });

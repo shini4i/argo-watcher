@@ -144,16 +144,69 @@ describe('OverviewPage', () => {
     await waitFor(() => expect(screen.getByText('Application deployment failed. Rollout status is not available')).toBeInTheDocument());
   });
 
-  // `/tasks`, not `/`: react-admin redirects `/` to the first resource's list
-  // and drops the query on the way, so `/?app=x` silently arrives unfiltered.
-  it('links a card into the task list filtered to that app', async () => {
-    respondWith([summary({ app: 'broken', failed: 1, last_status: 'failed' })]);
-    renderPage();
+  // Recent Tasks only reaches back 24 h, so a 7 d or 30 d card linked there
+  // usually opened on "no tasks found". History takes the same range instead.
+  describe('links into History over the selected window', () => {
+    const NOW_MS = Date.parse('2026-09-07T12:00:00Z');
+    const nowSeconds = Math.floor(NOW_MS / 1000);
+    const historyHref = (app: string, windowSeconds: number) =>
+      `/history?app=${app}&startDate=${nowSeconds - windowSeconds}&endDate=${nowSeconds}`;
+    const hrefs = () => screen.getAllByRole('link').map(link => link.getAttribute('href'));
 
-    await waitFor(() => expect(screen.getAllByRole('link').length).toBeGreaterThan(0));
-    const links = screen.getAllByRole('link').map(link => link.getAttribute('href'));
-    expect(links).toContain('/tasks?app=broken');
-    expect(links).not.toContain('/?app=broken');
+    beforeEach(() => {
+      vi.spyOn(Date, 'now').mockReturnValue(NOW_MS);
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('from an attention card and a list row', async () => {
+      respondWith([summary({ app: 'broken', failed: 1, last_status: 'failed' })]);
+      renderPage();
+
+      await waitFor(() => expect(screen.getByText('ALL APPLICATIONS')).toBeInTheDocument());
+      const expected = historyHref('broken', 24 * 60 * 60);
+      // One from the card, one from the all-applications row.
+      expect(hrefs().filter(href => href === expected)).toHaveLength(2);
+      expect(hrefs().some(href => href?.startsWith('/tasks'))).toBe(false);
+    });
+
+    it('from a pinned tile', async () => {
+      respondWith([summary({ app: 'checkout' })]);
+      renderPage();
+
+      await waitFor(() => expect(screen.getByText('MY APPS')).toBeInTheDocument());
+      fireEvent.click(screen.getByRole('button', { name: /Pin an app/ }));
+      fireEvent.click(await screen.findByRole('option', { name: 'checkout' }));
+
+      const unpin = await screen.findByRole('button', { name: 'Unpin checkout' });
+      const tile = unpin.parentElement as HTMLElement;
+      expect(within(tile).getByRole('link')).toHaveAttribute(
+        'href',
+        historyHref('checkout', 24 * 60 * 60),
+      );
+    });
+
+    it('follows a window switch', async () => {
+      respondWith([summary({ app: 'checkout' })]);
+      renderPage();
+
+      await waitFor(() => expect(screen.getByText('ALL APPLICATIONS')).toBeInTheDocument());
+      fireEvent.click(screen.getByRole('tab', { name: '30 d' }));
+
+      await waitFor(() =>
+        expect(hrefs()).toContain(historyHref('checkout', 30 * 24 * 60 * 60)),
+      );
+    });
+
+    it('encodes the app name', async () => {
+      respondWith([summary({ app: 'team/app one' })]);
+      renderPage();
+
+      await waitFor(() => expect(screen.getByText('ALL APPLICATIONS')).toBeInTheDocument());
+      expect(hrefs()).toContain(historyHref('team%2Fapp%20one', 24 * 60 * 60));
+    });
   });
 
   it('refetches when the window changes', async () => {

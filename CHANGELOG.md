@@ -28,6 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   used verbatim, so the mode never reaches the driver; staying silent would be the same quiet
   downgrade this release removes.
 
+### Changed
+
+- Clicking an application on the Overview page opens History filtered to that application and
+  the selected window, instead of Recent Tasks. Recent Tasks covers only the last 24 hours, so
+  a 7 d or 30 d window usually opened on an empty list.
+
 ## [1.4.1] - 2026-09-15
 
 ### Fixed

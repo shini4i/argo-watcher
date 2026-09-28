@@ -30,7 +30,7 @@ const SectionHeading = ({ children }: { children: string }) => (
 export const OverviewPage = () => {
   const [storedWindow, setStoredWindow] = useStore<OverviewWindow>(WINDOW_STORE_KEY, '24h');
   const window: OverviewWindow = isOverviewWindow(storedWindow) ? storedWindow : '24h';
-  const { apps, isPending, isRefreshing, error, refetch } = useAppSummaries(window);
+  const { apps, range, isPending, isRefreshing, error, refetch } = useAppSummaries(window);
   const { pinned, pin, unpin, shareLink } = usePinnedApps();
 
   useEffect(() => {
@@ -92,6 +92,7 @@ export const OverviewPage = () => {
       <PinnedApps
         pinned={pinned}
         summaries={apps}
+        range={range}
         allAppNames={appNames}
         shareLink={shareLink}
         isPending={isPending}
@@ -107,7 +108,7 @@ export const OverviewPage = () => {
           </Typography>
           {windowSelector}
         </Stack>
-        <AttentionCards summaries={attention} isPending={isPending} />
+        <AttentionCards summaries={attention} range={range} isPending={isPending} />
       </Box>
 
       {!isPending && apps.length === 0 ? (
@@ -117,7 +118,7 @@ export const OverviewPage = () => {
           description="Widen the window, or wait for the next deployment to land."
         />
       ) : (
-        !isPending && <AllApplications summaries={apps} />
+        !isPending && <AllApplications summaries={apps} range={range} />
       )}
     </Stack>
   );
