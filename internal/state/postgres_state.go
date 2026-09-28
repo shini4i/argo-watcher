@@ -24,6 +24,10 @@ import (
 
 const whereStatusEquals = "status = ?"
 
+// whereStatusAppNotFound is a literal rather than a bound parameter, so even a generic
+// plan can match the predicate of the partial index idx_tasks_app_not_found.
+const whereStatusAppNotFound = "status = 'app not found'"
+
 // supersedeSavepoint names the savepoint SupersedeAndAdd rolls back to when the
 // supersede fails, so the insert it shares a transaction with can still proceed.
 const supersedeSavepoint = "supersede"
@@ -544,7 +548,7 @@ func (state *PostgresState) doProcessPostgresObsoleteTasks() error {
 	slog.Debug("Removing expired app not found tasks from the database...")
 	// The deadline is computed by the database, so a replica whose clock drifts cannot
 	// widen or shorten the window the others apply.
-	if err := state.orm.Where(whereStatusEquals, models.StatusAppNotFoundMessage).
+	if err := state.orm.Where(whereStatusAppNotFound).
 		Where("created < now() - make_interval(secs => ?)", AppNotFoundRetention.Seconds()).
 		Delete(&state_models.TaskModel{}).Error; err != nil {
 		return err

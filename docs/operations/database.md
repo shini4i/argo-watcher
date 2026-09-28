@@ -4,12 +4,12 @@ When `STATE_TYPE=postgres` is set, Argo Watcher persists task data in PostgreSQL
 
 ## Schema overview
 
-There are two tables. `tasks` stores every deployment task and its status; indexes are tuned for the two access patterns the Web UI uses: listing recent tasks and looking up a task by ID.
+`tasks` stores every deployment task and its status. Its indexes serve listing recent tasks, looking a task up by ID, and the background sweeps that claim, abort and delete tasks.
 
 | Column | Type | Notes |
 |---|---|---|
-| `id` | `uuid` (default `gen_random_uuid()`) | Primary key, also unique-indexed via `idx_tasks_id`. |
-| `created` | `timestamptz NOT NULL` | Indexed via `idx_tasks_created_app` (descending, with `app`). |
+| `id` | `uuid` (default `gen_random_uuid()`) | Primary key. |
+| `created` | `timestamptz NOT NULL` | Indexed via `idx_tasks_created_app` (descending, with `app`), and for app-not-found tasks via the partial index `idx_tasks_app_not_found`, which the hourly sweep uses to delete them. |
 | `updated` | `timestamptz NOT NULL` | Last status transition. |
 | `images` | `jsonb NOT NULL` | Image list submitted with the task. |
 | `status` | `varchar(20) NOT NULL` | A task status value defined in `internal/models/constants.go` (e.g. in progress, deployed, failed, cancelled, aborted, app not found). |
