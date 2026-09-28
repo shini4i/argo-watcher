@@ -49,7 +49,7 @@ func TestCredentialFrom(t *testing.T) {
 			want:   credential{header: jwtHeader, value: testJWT},
 		},
 		{
-			name:   "JWT wins over a deploy token",
+			name:   "BEARER_TOKEN wins over a deploy token",
 			config: &Config{JsonWebToken: testJWT, Token: "s3cr3t-deploy-token"},
 			want:   credential{header: jwtHeader, value: testJWT},
 		},

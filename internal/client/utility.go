@@ -193,8 +193,12 @@ func generateAppUrl(ctx context.Context, watcher *Watcher, task models.Task) (st
 
 // setupWatcher takes application configuration and initializes a new Watcher instance
 // with the specified parameters, including the credential it presents on every
-// request to argo-watcher.
+// request to argo-watcher. It warns when both BEARER_TOKEN and ARGO_WATCHER_DEPLOY_TOKEN
+// are set, since the deploy token is then ignored.
 func setupWatcher(config *Config) *Watcher {
+	if config.JsonWebToken != "" && config.Token != "" {
+		log.Println("warning: both BEARER_TOKEN and ARGO_WATCHER_DEPLOY_TOKEN are set, using BEARER_TOKEN")
+	}
 	watcher := NewWatcher(
 		strings.TrimSuffix(config.Url, "/"),
 		config.Debug,

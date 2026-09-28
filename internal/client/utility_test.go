@@ -643,6 +643,35 @@ func TestSetupWatcher(t *testing.T) {
 
 		assert.Equal(t, credential{header: jwtHeader, value: testJWT}, watcher.auth)
 	})
+
+	// The warning must not depend on DEBUG: an ignored deploy token is a surprise worth
+	// one line in every CI log, not only in verbose ones.
+	t.Run("warns that BEARER_TOKEN overrides the deploy token", func(t *testing.T) {
+		var logs bytes.Buffer
+		original := log.Writer()
+		log.SetOutput(&logs)
+		t.Cleanup(func() { log.SetOutput(original) })
+
+		watcher := setupWatcher(&Config{Url: "http://localhost:8080", JsonWebToken: testJWT, Token: "s3cr3t-deploy-token"})
+
+		assert.Equal(t, credential{header: jwtHeader, value: testJWT}, watcher.auth)
+		assert.Contains(t, logs.String(),
+			"warning: both BEARER_TOKEN and ARGO_WATCHER_DEPLOY_TOKEN are set, using BEARER_TOKEN")
+		assert.NotContains(t, logs.String(), "s3cr3t-deploy-token", "the warning must not echo a credential")
+		assert.NotContains(t, logs.String(), testJWT, "the warning must not echo a credential")
+	})
+
+	t.Run("does not warn when only one credential is set", func(t *testing.T) {
+		var logs bytes.Buffer
+		original := log.Writer()
+		log.SetOutput(&logs)
+		t.Cleanup(func() { log.SetOutput(original) })
+
+		setupWatcher(&Config{Url: "http://localhost:8080", JsonWebToken: testJWT})
+		setupWatcher(&Config{Url: "http://localhost:8080", Token: "s3cr3t-deploy-token"})
+
+		assert.Empty(t, logs.String())
+	})
 }
 
 // A cancelled CI job must stop the client at the next checkpoint instead of
