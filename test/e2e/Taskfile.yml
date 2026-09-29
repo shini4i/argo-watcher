@@ -308,7 +308,7 @@ tasks:
       - ./scripts/verify.sh
 
   state-postgres:
-    desc: "Flip the release to Postgres state and assert migration, deploy, task-survives-restart, supersession"
+    desc: "Flip the release to Postgres state and assert migration, deploy, task-survives-restart, client-outage, supersession"
     deps: [apply-apps]
     cmds:
       - AW_CHART_REPO={{.AW_CHART_REPO}} AW_CHART_VERSION={{.AW_CHART_VERSION}}

@@ -141,7 +141,7 @@ phase() {
   phase supersede-authority.sh
 }
 
-@test "state-postgres: migration, deploy loop, task survives restart, shared lock" {
+@test "state-postgres: migration, deploy loop, task survives restart, client outage, shared lock" {
   # Flips the release to Postgres and asserts the Postgres-only properties. Placed
   # after the in-memory phases (which validate that backend) and BEFORE
   # failure-diagnostics so it deploys against pristine apps. Everything after runs on
