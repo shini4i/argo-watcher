@@ -1,6 +1,7 @@
 import { Box, Stack, Tooltip } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { describeTaskStatus } from '../../tasks/utils/statusPresentation';
+import { RECENT_OUTCOME_SLOTS } from '../deriveOverview';
 
 interface RecentOutcomeStripProps {
   /** Newest first, at most `slots` are drawn. */
@@ -14,7 +15,11 @@ interface RecentOutcomeStripProps {
  * reads as a timeline. Empty slots stay drawn, so a young application is
  * visibly young rather than looking like a shorter history of successes.
  */
-export const RecentOutcomeStrip = ({ statuses, slots = 10, size = 16 }: RecentOutcomeStripProps) => {
+export const RecentOutcomeStrip = ({
+  statuses,
+  slots = RECENT_OUTCOME_SLOTS,
+  size = 16,
+}: RecentOutcomeStripProps) => {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
   const newestFirst = statuses.slice(0, slots);

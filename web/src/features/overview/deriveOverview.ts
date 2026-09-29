@@ -19,14 +19,35 @@ const STATE_RANK: Readonly<Record<AppState, number>> = {
   idle: 3,
 };
 
+/** Recent outcomes the Failing rule inspects and the outcome strip draws. */
+export const RECENT_OUTCOME_SLOTS = 10;
+
+/** Failures among the recent outcomes that mark an app as flapping. */
+const RECENT_FAILURE_THRESHOLD = 2;
+
 /**
- * @description Classifies an app by what a reader should do about it: a failure
- * in the window outranks an in-flight deployment, which outranks a clean one.
+ * @description Whether the app is failing now: its newest task failed, or at
+ * least RECENT_FAILURE_THRESHOLD of its last RECENT_OUTCOME_SLOTS outcomes did.
+ * A lone failure the app has since deployed over does not count.
+ * @param summary the app's aggregate for the window
+ * @returns true when the app is currently failing
+ */
+const isCurrentlyFailing = (summary: AppSummary): boolean => {
+  if (isFailedStatus(summary.last_status)) {
+    return true;
+  }
+  const recent = summary.recent_statuses.slice(0, RECENT_OUTCOME_SLOTS);
+  return recent.filter(isFailedStatus).length >= RECENT_FAILURE_THRESHOLD;
+};
+
+/**
+ * @description Classifies an app by what a reader should do about it: a current
+ * failure outranks an in-flight deployment, which outranks a clean one.
  * @param summary the app's aggregate for the window
  * @returns the state used for ordering and colour
  */
 export const deriveAppState = (summary: AppSummary): AppState => {
-  if (summary.failed > 0 || isFailedStatus(summary.last_status)) {
+  if (isCurrentlyFailing(summary)) {
     return 'failing';
   }
   if (summary.running > 0 || isRunningStatus(summary.last_status)) {

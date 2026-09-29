@@ -50,6 +50,15 @@ const renderPage = () =>
     </StoreContextProvider>,
   );
 
+/** Deployed last, but failed three of its last four outcomes. */
+const flaky = summary({
+  app: 'flaky',
+  failed: 3,
+  deployed: 1,
+  last_status: 'deployed',
+  recent_statuses: ['deployed', 'failed', 'failed', 'failed'],
+});
+
 describe('OverviewPage', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -86,11 +95,11 @@ describe('OverviewPage', () => {
     expect(screen.queryByText(/last 1 ?000/i)).toBeNull();
   });
 
-  // An app whose most recent task deployed but which failed earlier in the window is
-  // still Failing. Taking the badge colour from last_status instead of that derived
-  // state painted the word "Failing" in the success green.
+  // A flapping app whose most recent task deployed is still Failing. Taking the
+  // badge colour from last_status instead of that derived state painted the word
+  // "Failing" in the success green.
   it('paints a recovered-but-failing card in the failed colour, not the deployed one', async () => {
-    respondWith([summary({ app: 'flaky', failed: 3, deployed: 1, last_status: 'deployed' })]);
+    respondWith([flaky]);
 
     renderPage();
 
@@ -100,7 +109,7 @@ describe('OverviewPage', () => {
   });
 
   it('paints a recovered-but-failing pinned tile in the failed colour too', async () => {
-    respondWith([summary({ app: 'flaky', failed: 3, deployed: 1, last_status: 'deployed' })]);
+    respondWith([flaky]);
     renderPage();
 
     await waitFor(() => expect(screen.getByText('MY APPS')).toBeInTheDocument());
@@ -127,6 +136,24 @@ describe('OverviewPage', () => {
     expect(screen.getByText('Failing')).toBeInTheDocument();
     // The clean app is in the list below, not carded.
     expect(screen.getAllByText('clean')).toHaveLength(1);
+  });
+
+  // One failure the app has since deployed over is history, not a live problem.
+  it('does not card an app that recovered from a single failure', async () => {
+    respondWith([
+      summary({
+        app: 'recovered',
+        failed: 1,
+        deployed: 3,
+        last_status: 'deployed',
+        recent_statuses: ['deployed', 'deployed', 'failed', 'deployed'],
+      }),
+    ]);
+
+    renderPage();
+
+    expect(await screen.findByText('Nothing failing or deploying in this window.')).toBeInTheDocument();
+    expect(screen.queryByText('Failing')).toBeNull();
   });
 
   it('names the failure on a failing card', async () => {

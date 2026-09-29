@@ -17,18 +17,44 @@ const summary = (overrides: Partial<AppSummary> = {}): AppSummary => ({
 });
 
 describe('deriveAppState', () => {
-  it('calls an app failing when the window holds a failure', () => {
-    expect(deriveAppState(summary({ failed: 1, last_status: 'deployed' }))).toBe('failing');
-  });
-
   // The newest task is what an on-call reader is reacting to, even when the
   // window's counters have not caught up with it.
   it('calls an app failing when its newest task failed', () => {
     expect(deriveAppState(summary({ failed: 0, last_status: 'aborted' }))).toBe('failing');
   });
 
+  it('calls an app failing when two of its last ten outcomes failed', () => {
+    const recent = ['deployed', 'failed', 'deployed', 'aborted', 'deployed'];
+    expect(deriveAppState(summary({ failed: 2, recent_statuses: recent }))).toBe('failing');
+  });
+
+  // One failure long since deployed over is history, not a live problem; the
+  // failure count still shows it.
+  it('does not call an app failing for a single failure it has recovered from', () => {
+    const recent = ['deployed', 'deployed', 'failed', 'deployed'];
+    expect(deriveAppState(summary({ failed: 1, recent_statuses: recent }))).toBe('deployed');
+  });
+
+  it('counts a failure in the tenth, oldest inspected slot', () => {
+    const recent = ['deployed', 'failed', ...Array(7).fill('deployed'), 'failed'];
+    expect(deriveAppState(summary({ failed: 2, recent_statuses: recent }))).toBe('failing');
+  });
+
+  it('ignores failures older than the last ten outcomes', () => {
+    const recent = [...Array(10).fill('deployed'), 'failed', 'failed'];
+    expect(deriveAppState(summary({ failed: 2, recent_statuses: recent }))).toBe('deployed');
+  });
+
+  it('does not count non-failure outcomes towards the threshold', () => {
+    const recent = ['deployed', 'cancelled', 'app not found', 'failed'];
+    expect(deriveAppState(summary({ failed: 1, recent_statuses: recent }))).toBe('deployed');
+  });
+
   it('prefers failing over running when both are true', () => {
-    expect(deriveAppState(summary({ failed: 1, running: 1 }))).toBe('failing');
+    const recent = ['in progress', 'failed', 'failed'];
+    expect(
+      deriveAppState(summary({ failed: 2, running: 1, last_status: 'in progress', recent_statuses: recent })),
+    ).toBe('failing');
   });
 
   it('calls an app running when a deployment is in flight', () => {
@@ -46,8 +72,9 @@ describe('deriveAppState', () => {
 
 describe('needsAttention', () => {
   it('includes failing and running apps only', () => {
-    expect(needsAttention(summary({ failed: 1 }))).toBe(true);
+    expect(needsAttention(summary({ failed: 1, last_status: 'failed' }))).toBe(true);
     expect(needsAttention(summary({ running: 1, last_status: 'in progress' }))).toBe(true);
+    expect(needsAttention(summary({ failed: 1, recent_statuses: ['deployed', 'failed'] }))).toBe(false);
     expect(needsAttention(summary())).toBe(false);
     expect(needsAttention(summary({ total: 0, deployed: 0, last_status: '' }))).toBe(false);
   });
@@ -105,7 +132,7 @@ describe('rankByAttention', () => {
     const ranked = rankByAttention([
       summary({ app: 'clean' }),
       summary({ app: 'busy', running: 1, last_status: 'in progress' }),
-      summary({ app: 'broken', failed: 1 }),
+      summary({ app: 'broken', failed: 1, last_status: 'failed' }),
     ]);
 
     expect(ranked.map(entry => entry.app)).toEqual(['broken', 'busy', 'clean']);
@@ -113,15 +140,15 @@ describe('rankByAttention', () => {
 
   it('puts the most recent activity first within a state', () => {
     const ranked = rankByAttention([
-      summary({ app: 'older', failed: 1, last_created: 100 }),
-      summary({ app: 'newer', failed: 1, last_created: 900 }),
+      summary({ app: 'older', failed: 1, last_status: 'failed', last_created: 100 }),
+      summary({ app: 'newer', failed: 1, last_status: 'failed', last_created: 900 }),
     ]);
 
     expect(ranked.map(entry => entry.app)).toEqual(['newer', 'older']);
   });
 
   it('does not mutate its input', () => {
-    const input = [summary({ app: 'clean' }), summary({ app: 'broken', failed: 1 })];
+    const input = [summary({ app: 'clean' }), summary({ app: 'broken', failed: 1, last_status: 'failed' })];
     rankByAttention(input);
     expect(input.map(entry => entry.app)).toEqual(['clean', 'broken']);
   });

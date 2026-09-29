@@ -27,6 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   storage and some work on every insert. Migration `000011` briefly blocks writes to `tasks`
   while it builds the new index.
 
+### Fixed
+
+- The Overview page no longer marks an application as Failing, or lists it under Needs
+  attention, because of one old failure it has since deployed over. An application is now
+  Failing only when its latest deployment failed, or when at least two of its last ten
+  deployments (the squares on its card) failed. The failure count on each card still covers
+  the whole selected window.
+
 ## [1.4.2] - 2026-09-28
 
 ### Security
