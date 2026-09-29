@@ -32,7 +32,11 @@ describe('appStateColors', () => {
   // The badge said "Failing" while wearing the success green, because its colour
   // came from last_status and its text from the derived state.
   it('never paints a failing app green, whatever its last status was', () => {
-    const recovered = summary({ failed: 3, last_status: 'deployed' });
+    const recovered = summary({
+      failed: 3,
+      last_status: 'deployed',
+      recent_statuses: ['deployed', 'failed', 'failed', 'failed'],
+    });
 
     expect(deriveAppState(recovered)).toBe('failing');
     for (const isDark of [false, true]) {
