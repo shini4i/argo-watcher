@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The client rides out an argo-watcher restart or a short network outage. It retries
+  transient failures for up to five minutes per request, starting at two seconds and backing
+  off to fifteen, instead of three times two seconds apart. The submission is now retried
+  too, but only when the connection was never established or the server answered `503`, so
+  an Argo CD outage at submission time is waited out rather than failing the job. A task
+  survives a server restart only with `STATE_TYPE=postgres`.
 - The hourly cleanup of app-not-found tasks now looks them up through an index instead of
   reading the whole `tasks` table. A redundant index on the task id is dropped, which saves
   storage and some work on every insert. Migration `000011` briefly blocks writes to `tasks`

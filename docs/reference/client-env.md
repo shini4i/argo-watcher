@@ -36,4 +36,11 @@ A credential is dropped rather than forwarded when a redirect changes the host, 
 
 ## Retries
 
-While polling, the client retries transient failures — network errors and `5xx` responses — three times, two seconds apart. Neither is configurable. Terminal failures fail immediately: `4xx` responses, a rejected token, a malformed response, or a redirect that steps down from `https`. The initial `POST` is not retried at all.
+The client retries transient failures for up to five minutes per request, so it rides out an argo-watcher restart or a short network outage. The first retry waits two seconds, and each wait doubles up to fifteen seconds. Neither the window nor the backoff is configurable.
+
+- **Status polls** retry network errors and every `5xx` response.
+- **The submission** retries only when the connection was never established or the answer was `503`. That covers an ingress with no ready server behind it and a server that cannot reach Argo CD, neither of which stores the task. If a proxy answers `503` after it forwarded the request, the retry supersedes the first submission rather than deploying twice. A dropped connection, a timeout, a `500` or a gateway `502`/`504` may follow a stored task, so they fail at once rather than risk a duplicate deployment.
+
+Terminal failures fail immediately: `4xx` responses, a rejected token, a malformed response, or a redirect that steps down from `https`.
+
+A task survives a server restart only with `STATE_TYPE=postgres`. With in-memory state the restart loses it, and the next poll fails with `task not found`.

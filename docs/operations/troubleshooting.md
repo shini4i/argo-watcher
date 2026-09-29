@@ -42,7 +42,7 @@ Read the client's last log line first — it distinguishes these:
 | `The deployment was aborted before its outcome could be confirmed` | Argo CD became unreachable during the check. The application itself may be perfectly healthy — check Argo CD before blaming the deployment. |
 | `The deployment was cancelled because a newer deployment superseded it` | Expected, not a fault: a newer deployment of the same image took over. Confirm that one succeeded; nothing else to do. |
 | `refused to follow a redirect away from https` | See [Client refuses a redirect away from https](#client-refuses-a-redirect-away-from-https). |
-| A `503 {"status":"down"}` on submission | Argo CD or the state backend is unreachable, so the server rejects the submission fast instead of letting the client wait. The Web UI shows a banner naming which. |
+| `argo-watcher stayed unavailable for <duration>, giving up` | argo-watcher could not be reached, or kept answering with a transient error, for the whole five-minute outage window. On a submission, a `503 {"status":"down"}` means Argo CD or the state backend is unreachable; the Web UI shows a banner naming which. |
 
 **Also check**
 
@@ -50,7 +50,7 @@ Read the client's last log line first — it distinguishes these:
 - `IMAGES` and `IMAGE_TAG` match what was actually built and pushed.
 
 !!! note
-    Transient failures while polling (network errors, `5xx`) are retried three times, two seconds apart, so a single blip is not fatal. A non-zero exit means the failure persisted or was terminal.
+    Transient failures are retried for up to five minutes, so an argo-watcher restart or a short network outage is not fatal. See [Retries](../reference/client-env.md#retries). A non-zero exit means the failure outlasted that window or was terminal.
 
 ## Deployment times out
 

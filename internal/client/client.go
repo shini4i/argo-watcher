@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -29,22 +30,27 @@ var (
 )
 
 const (
-	// maxTransientRetries is how many times a GET request is retried after a
-	// transient failure (network error or 5xx) before giving up. Deployments
-	// can poll for many minutes, so a single blip must not abort the process.
-	maxTransientRetries = 3
-	defaultRetryDelay   = 2 * time.Second
+	// outageTolerance is how long a single request keeps retrying transient failures
+	// (network errors, 5xx) before the client gives up. It is sized to outlast an
+	// argo-watcher restart, including the pod's shutdown budget and the lease sweep
+	// that hands its rollouts to the replacement.
+	outageTolerance = 5 * time.Minute
+	// defaultRetryDelay is the first wait after a transient failure; each further
+	// wait doubles, up to maxRetryDelay.
+	defaultRetryDelay = 2 * time.Second
+	maxRetryDelay     = 15 * time.Second
 	// initialStatusDelay gives the server time to register the submitted task
 	// before its status is first polled.
 	initialStatusDelay = 5 * time.Second
 )
 
 type Watcher struct {
-	baseUrl    string
-	client     *http.Client
-	debugMode  bool
-	retryDelay time.Duration
-	auth       credential
+	baseUrl      string
+	client       *http.Client
+	debugMode    bool
+	retryDelay   time.Duration
+	outageBudget time.Duration
+	auth         credential
 	// redirectWarning keeps the dropped-credential warning to one line per run. Every
 	// status poll of a deployment takes the same redirect, so warning per request would
 	// bury the rest of the CI log.
@@ -98,9 +104,10 @@ func (c credential) apply(request *http.Request) {
 // NewWatcher creates a new Watcher instance with the given base URL, timeout, and debug mode.
 func NewWatcher(baseUrl string, debugMode bool, timeout time.Duration) *Watcher {
 	watcher := &Watcher{
-		baseUrl:    baseUrl,
-		debugMode:  debugMode,
-		retryDelay: defaultRetryDelay,
+		baseUrl:      baseUrl,
+		debugMode:    debugMode,
+		retryDelay:   defaultRetryDelay,
+		outageBudget: outageTolerance,
 	}
 	// The redirect hook is a method so it reads the credential at request time: the
 	// caller assigns it after construction (see setupWatcher).
@@ -169,17 +176,31 @@ func (watcher *Watcher) guardRedirect(request *http.Request, via []*http.Request
 	return nil
 }
 
-// addTask presents the watcher's credential and returns the new task ID.
-// Cancelling ctx aborts the submission in flight.
+// addTask presents the watcher's credential and returns the new task ID. A submission
+// that provably never reached argo-watcher is retried within the outage budget.
+// Cancelling ctx aborts the submission in flight and the wait before a retry.
 func (watcher *Watcher) addTask(ctx context.Context, task models.Task) (string, error) {
 	requestBody, err := json.Marshal(task)
 	if err != nil {
 		return "", err
 	}
 
+	var id string
+	err = watcher.retryTransient(ctx, func() error {
+		var attemptErr error
+		id, attemptErr = watcher.addTaskOnce(ctx, requestBody)
+		return attemptErr
+	})
+	return id, err
+}
+
+// addTaskOnce sends one submission. Only a failed dial or a 503 is transient. A proxy 503
+// after forwarding makes the retry supersede the first task, not deploy twice; a dropped
+// connection, a timeout, a 500 or a gateway 502/504 are terminal to avoid a duplicate.
+func (watcher *Watcher) addTaskOnce(ctx context.Context, requestBody []byte) (string, error) {
 	url := fmt.Sprintf("%s/api/v1/tasks", watcher.baseUrl)
 
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(requestBody))
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(requestBody))
 	if err != nil {
 		return "", err
 	}
@@ -198,6 +219,11 @@ func (watcher *Watcher) addTask(ctx context.Context, task models.Task) (string, 
 
 	response, err := watcher.client.Do(request)
 	if err != nil {
+		var opErr *net.OpError
+		// "proxyconnect" is net/http's wrapper for a dial failure through HTTP(S)_PROXY.
+		if errors.As(err, &opErr) && (opErr.Op == "dial" || opErr.Op == "proxyconnect") {
+			return "", transientError{err}
+		}
 		return "", err
 	}
 
@@ -213,7 +239,11 @@ func (watcher *Watcher) addTask(ctx context.Context, task models.Task) (string, 
 	}
 
 	if response.StatusCode != http.StatusAccepted {
-		return "", serverErrorFromResponse(response.StatusCode, responseBody)
+		serverErr := serverErrorFromResponse(response.StatusCode, responseBody)
+		if response.StatusCode == http.StatusServiceUnavailable {
+			return "", transientError{serverErr}
+		}
+		return "", serverErr
 	}
 
 	var accepted models.TaskStatus

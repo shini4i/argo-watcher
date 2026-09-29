@@ -114,7 +114,7 @@ func TestAddTaskServerError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	watcher := NewWatcher(server.URL, false, 30*time.Second)
+	watcher := newTestWatcher(server.URL)
 
 	task := models.Task{
 		App:     "test",
@@ -165,7 +165,7 @@ func TestAddTask_NonAuthFailureSurfacesServerReason(t *testing.T) {
 	}))
 	defer server.Close()
 
-	watcher := NewWatcher(server.URL, false, 30*time.Second)
+	watcher := newTestWatcher(server.URL)
 	task := models.Task{
 		App: "test", Author: "x", Project: "y",
 		Images: []models.Image{{Tag: testVersion, Image: "example"}},
@@ -175,6 +175,7 @@ func TestAddTask_NonAuthFailureSurfacesServerReason(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "503")
 	assert.Contains(t, err.Error(), "argocd is unreachable")
+	assert.Contains(t, err.Error(), "unavailable for", "an outage at submission is waited out before failing")
 }
 
 func init() {
@@ -197,6 +198,178 @@ func TestNewWatcher(t *testing.T) {
 	// The retry backoff must default to a non-zero value, otherwise a persistent
 	// outage would spin through all retries with no pause (see issue #217).
 	assert.Equal(t, defaultRetryDelay, watcher.retryDelay)
+	assert.Equal(t, outageTolerance, watcher.outageBudget)
+}
+
+// acceptedTaskResponse writes the 202 the server returns for a stored task.
+func acceptedTaskResponse(t *testing.T, rw http.ResponseWriter) {
+	t.Helper()
+	rw.Header().Set("Content-Type", "application/json")
+	rw.WriteHeader(http.StatusAccepted)
+	require.NoError(t, json.NewEncoder(rw).Encode(models.TaskStatus{Status: models.StatusAccepted, Id: taskId}))
+}
+
+var retryTestTask = models.Task{
+	App:     "test",
+	Author:  "John Doe",
+	Project: "Example",
+	Images:  []models.Image{{Tag: testVersion, Image: "example"}},
+}
+
+// A submission that never reached the server cannot have created a task, so it
+// is retried — and every attempt must carry the full body, not a drained buffer.
+func TestAddTask_RetriesWhileServerIsUnreachable(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		var got models.Task
+		require.NoError(t, json.NewDecoder(req.Body).Decode(&got))
+		assert.Equal(t, retryTestTask.App, got.App)
+		acceptedTaskResponse(t, rw)
+	}))
+	defer server.Close()
+
+	transport := &flakyTransport{failures: 5, fallback: server.Client().Transport}
+	watcher := newTestWatcher(server.URL)
+	watcher.outageBudget = time.Minute
+	watcher.client.Transport = transport
+
+	id, err := watcher.addTask(context.Background(), retryTestTask)
+
+	require.NoError(t, err)
+	assert.Equal(t, taskId, id)
+	assert.Equal(t, int32(6), atomic.LoadInt32(&transport.calls))
+}
+
+// argo-watcher answers 503 before storing anything, and an ingress with no ready
+// endpoints answers 503 without forwarding, so a 503 is retried.
+// Every attempt reads the body, so a buffer drained by the first one would fail here.
+func TestAddTask_RetriesServiceUnavailable(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		var got models.Task
+		assert.NoError(t, json.NewDecoder(req.Body).Decode(&got))
+		assert.Equal(t, retryTestTask.App, got.App)
+		if calls.Add(1) <= 2 {
+			rw.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		acceptedTaskResponse(t, rw)
+	}))
+	defer server.Close()
+
+	watcher := newTestWatcher(server.URL)
+	watcher.outageBudget = time.Minute
+
+	id, err := watcher.addTask(context.Background(), retryTestTask)
+
+	require.NoError(t, err)
+	assert.Equal(t, taskId, id)
+	assert.Equal(t, int32(3), calls.Load())
+}
+
+// A cancelled CI job must stop a submission retry instead of waiting out the budget.
+func TestAddTask_CancellingStopsTheRetryWait(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		calls.Add(1)
+		rw.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	watcher := newTestWatcher(server.URL)
+	watcher.retryDelay = time.Hour
+	watcher.outageBudget = time.Minute
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		for calls.Load() == 0 {
+			time.Sleep(time.Millisecond)
+		}
+		cancel()
+	}()
+
+	start := time.Now()
+	_, err := watcher.addTask(ctx, retryTestTask)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Less(t, time.Since(start), 10*time.Second)
+	assert.Equal(t, int32(1), calls.Load())
+}
+
+// A proxy that cannot be reached never received the request, so it is retried like a dial.
+func TestAddTask_UnreachableProxyIsRetried(t *testing.T) {
+	closedProxy := httptest.NewServer(http.NotFoundHandler())
+	proxyURL, err := url.Parse(closedProxy.URL)
+	require.NoError(t, err)
+	closedProxy.Close()
+
+	logs := captureLogs(t)
+
+	watcher := newTestWatcher("http://argo-watcher.invalid")
+	watcher.client.Transport = &http.Transport{Proxy: http.ProxyURL(proxyURL)}
+
+	_, err = watcher.addTask(context.Background(), retryTestTask)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "proxyconnect")
+	assert.Contains(t, err.Error(), "unavailable for")
+	assert.Contains(t, logs.String(), "retrying")
+}
+
+// A 500 or a gateway 502/504 may follow a stored task, and a 4xx will be rejected
+// again, so none of them is retried.
+func TestAddTask_DoesNotRetryHandlerErrors(t *testing.T) {
+	for _, status := range []int{
+		http.StatusInternalServerError, http.StatusBadGateway, http.StatusGatewayTimeout,
+		http.StatusBadRequest, http.StatusUnauthorized,
+	} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			var calls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+				calls.Add(1)
+				rw.WriteHeader(status)
+			}))
+			defer server.Close()
+
+			_, err := newTestWatcher(server.URL).addTask(context.Background(), retryTestTask)
+
+			require.Error(t, err)
+			assert.Equal(t, int32(1), calls.Load())
+		})
+	}
+}
+
+// A connection dropped after the request was sent leaves it unknown whether the
+// task was stored; retrying could submit the deployment twice.
+func TestAddTask_DoesNotRetryAfterTheRequestWasSent(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		calls.Add(1)
+		conn, _, err := rw.(http.Hijacker).Hijack()
+		require.NoError(t, err)
+		_ = conn.Close()
+	}))
+	defer server.Close()
+
+	_, err := newTestWatcher(server.URL).addTask(context.Background(), retryTestTask)
+
+	require.Error(t, err)
+	assert.Equal(t, int32(1), calls.Load())
+}
+
+// Pins the classification against a real refused connection, not a stubbed error.
+func TestAddTask_RefusedConnectionIsRetriedUntilTheBudgetEnds(t *testing.T) {
+	server := httptest.NewServer(http.NotFoundHandler())
+	url := server.URL
+	server.Close()
+
+	logs := captureLogs(t)
+
+	_, err := newTestWatcher(url).addTask(context.Background(), retryTestTask)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unavailable for")
+	assert.Contains(t, logs.String(), "retrying")
 }
 
 func TestAddTask(t *testing.T) {
