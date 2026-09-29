@@ -36,4 +36,11 @@ A credential is dropped rather than forwarded when a redirect changes the host, 
 
 ## Retries
 
-While polling, the client retries transient failures — network errors and `5xx` responses — three times, two seconds apart. Neither is configurable. Terminal failures fail immediately: `4xx` responses, a rejected token, a malformed response, or a redirect that steps down from `https`. The initial `POST` is not retried at all.
+While polling, the client retries transient failures for up to five minutes per request, so it rides out an argo-watcher restart or a short network outage. The first retry waits two seconds, and each wait doubles up to fifteen seconds. Neither the window nor the backoff is configurable.
+
+- **Status polls** retry network errors and every `5xx` response.
+- **The submission** is never retried. The server lets the last submission for an application supersede the others, so a late resubmission could replace a newer deployment with an older tag. A failed submission fails the job; re-run it.
+
+Terminal failures fail immediately: `4xx` responses, a rejected token, a malformed response, or a redirect that steps down from `https`.
+
+A task survives a server restart only with `STATE_TYPE=postgres`. With in-memory state the restart loses it, and the next poll fails with `task not found`.

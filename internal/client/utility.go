@@ -10,8 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-
-	"github.com/avast/retry-go/v4"
+	"time"
 
 	"github.com/shini4i/argo-watcher/internal/models"
 )
@@ -38,34 +37,47 @@ func (watcher *Watcher) doRequest(ctx context.Context, method, url string, body 
 	return watcher.client.Do(req)
 }
 
+// retryTransient calls attempt until it returns nil or a terminal error, or until
+// transient failures outlast the outage budget, which starts afresh on every call.
+// The wait starts at retryDelay and doubles up to maxRetryDelay. Cancelling ctx ends it.
+func (watcher *Watcher) retryTransient(ctx context.Context, attempt func() error) error {
+	start := time.Now()
+	delay := watcher.retryDelay
+
+	for {
+		err := attempt()
+		var transient transientError
+		if !errors.As(err, &transient) {
+			return err // nil or terminal
+		}
+		if ctx.Err() != nil {
+			return fmt.Errorf("stopped retrying argo-watcher: %w", ctx.Err())
+		}
+		outageFor := time.Since(start)
+		if outageFor >= watcher.outageBudget {
+			return fmt.Errorf("argo-watcher stayed unavailable for %s, giving up: %w",
+				outageFor.Round(time.Second), err)
+		}
+
+		log.Printf("argo-watcher is unavailable (%v); retrying in %s", err, delay)
+		if err := waitOrCancel(ctx, delay); err != nil {
+			return err
+		}
+		delay = nextRetryDelay(delay)
+	}
+}
+
+// nextRetryDelay doubles current, capped at maxRetryDelay.
+func nextRetryDelay(current time.Duration) time.Duration {
+	return min(current*2, maxRetryDelay)
+}
+
 // getJSON GETs url and decodes the JSON response into v. Transient failures are
-// retried maxTransientRetries times with a fixed backoff; terminal ones (4xx, a
+// retried within the outage budget (see retryTransient); terminal ones (4xx, a
 // malformed body) are returned at once, because retrying them never succeeds.
 // Cancelling ctx aborts the request in flight and the wait before the next attempt.
 func (watcher *Watcher) getJSON(ctx context.Context, url string, v interface{}) error {
-	const totalAttempts = maxTransientRetries + 1
-
-	return retry.Do(
-		func() error { return watcher.getJSONOnce(ctx, url, v) },
-		retry.Context(ctx),
-		retry.Attempts(totalAttempts),
-		retry.Delay(watcher.retryDelay),
-		retry.DelayType(retry.FixedDelay),
-		retry.LastErrorOnly(true),
-		retry.RetryIf(func(err error) bool {
-			var te transientError
-			return errors.As(err, &te)
-		}),
-		retry.OnRetry(func(n uint, err error) {
-			// OnRetry also fires for the failure that spends the budget, which
-			// nothing follows; announcing a retry there would be a lie.
-			if n+1 >= totalAttempts {
-				return
-			}
-			log.Printf("transient error talking to argo-watcher (attempt %d/%d): %v; retrying in %s",
-				n+1, maxTransientRetries, err, watcher.retryDelay)
-		}),
-	)
+	return watcher.retryTransient(ctx, func() error { return watcher.getJSONOnce(ctx, url, v) })
 }
 
 // getJSONOnce wraps retryable failures in transientError; terminal ones are returned as-is.

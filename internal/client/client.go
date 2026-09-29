@@ -29,22 +29,27 @@ var (
 )
 
 const (
-	// maxTransientRetries is how many times a GET request is retried after a
-	// transient failure (network error or 5xx) before giving up. Deployments
-	// can poll for many minutes, so a single blip must not abort the process.
-	maxTransientRetries = 3
-	defaultRetryDelay   = 2 * time.Second
+	// outageTolerance is how long a single request keeps retrying transient failures
+	// (network errors, 5xx) before the client gives up. It is sized to outlast an
+	// argo-watcher restart, including the pod's shutdown budget and the lease sweep
+	// that hands its rollouts to the replacement.
+	outageTolerance = 5 * time.Minute
+	// defaultRetryDelay is the first wait after a transient failure; each further
+	// wait doubles, up to maxRetryDelay.
+	defaultRetryDelay = 2 * time.Second
+	maxRetryDelay     = 15 * time.Second
 	// initialStatusDelay gives the server time to register the submitted task
 	// before its status is first polled.
 	initialStatusDelay = 5 * time.Second
 )
 
 type Watcher struct {
-	baseUrl    string
-	client     *http.Client
-	debugMode  bool
-	retryDelay time.Duration
-	auth       credential
+	baseUrl      string
+	client       *http.Client
+	debugMode    bool
+	retryDelay   time.Duration
+	outageBudget time.Duration
+	auth         credential
 	// redirectWarning keeps the dropped-credential warning to one line per run. Every
 	// status poll of a deployment takes the same redirect, so warning per request would
 	// bury the rest of the CI log.
@@ -98,9 +103,10 @@ func (c credential) apply(request *http.Request) {
 // NewWatcher creates a new Watcher instance with the given base URL, timeout, and debug mode.
 func NewWatcher(baseUrl string, debugMode bool, timeout time.Duration) *Watcher {
 	watcher := &Watcher{
-		baseUrl:    baseUrl,
-		debugMode:  debugMode,
-		retryDelay: defaultRetryDelay,
+		baseUrl:      baseUrl,
+		debugMode:    debugMode,
+		retryDelay:   defaultRetryDelay,
+		outageBudget: outageTolerance,
 	}
 	// The redirect hook is a method so it reads the credential at request time: the
 	// caller assigns it after construction (see setupWatcher).
@@ -169,8 +175,9 @@ func (watcher *Watcher) guardRedirect(request *http.Request, via []*http.Request
 	return nil
 }
 
-// addTask presents the watcher's credential and returns the new task ID.
-// Cancelling ctx aborts the submission in flight.
+// addTask presents the watcher's credential and returns the new task ID. It is never
+// retried: the server lets the last submission supersede the others, so a late resubmission
+// could replace a newer deployment with this older tag. Cancelling ctx aborts it in flight.
 func (watcher *Watcher) addTask(ctx context.Context, task models.Task) (string, error) {
 	requestBody, err := json.Marshal(task)
 	if err != nil {

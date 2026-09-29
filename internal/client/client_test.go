@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -114,7 +115,7 @@ func TestAddTaskServerError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	watcher := NewWatcher(server.URL, false, 30*time.Second)
+	watcher := newTestWatcher(server.URL)
 
 	task := models.Task{
 		App:     "test",
@@ -165,7 +166,7 @@ func TestAddTask_NonAuthFailureSurfacesServerReason(t *testing.T) {
 	}))
 	defer server.Close()
 
-	watcher := NewWatcher(server.URL, false, 30*time.Second)
+	watcher := newTestWatcher(server.URL)
 	task := models.Task{
 		App: "test", Author: "x", Project: "y",
 		Images: []models.Image{{Tag: testVersion, Image: "example"}},
@@ -197,6 +198,70 @@ func TestNewWatcher(t *testing.T) {
 	// The retry backoff must default to a non-zero value, otherwise a persistent
 	// outage would spin through all retries with no pause (see issue #217).
 	assert.Equal(t, defaultRetryDelay, watcher.retryDelay)
+	assert.Equal(t, outageTolerance, watcher.outageBudget)
+}
+
+var retryTestTask = models.Task{
+	App:     "test",
+	Author:  "John Doe",
+	Project: "Example",
+	Images:  []models.Image{{Tag: testVersion, Image: "example"}},
+}
+
+// The submission is never retried: the server lets the last submission supersede the
+// others, so a late resubmission could deploy an older tag over a newer one. That holds
+// even when the request never left the runner, since a newer job may land in the meantime.
+func TestAddTask_DoesNotRetryUnreachableServer(t *testing.T) {
+	transport := &flakyTransport{failures: math.MaxInt32, fallback: http.DefaultTransport}
+	watcher := newTestWatcher("http://argo-watcher.invalid")
+	watcher.outageBudget = time.Minute
+	watcher.client.Transport = transport
+
+	_, err := watcher.addTask(context.Background(), retryTestTask)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "connection refused")
+	assert.Equal(t, int32(1), atomic.LoadInt32(&transport.calls))
+}
+
+func TestAddTask_DoesNotRetryHTTPErrors(t *testing.T) {
+	for _, status := range []int{
+		http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable,
+		http.StatusGatewayTimeout,
+		http.StatusBadRequest, http.StatusUnauthorized,
+	} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			var calls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+				calls.Add(1)
+				rw.WriteHeader(status)
+			}))
+			defer server.Close()
+
+			_, err := newTestWatcher(server.URL).addTask(context.Background(), retryTestTask)
+
+			require.Error(t, err)
+			assert.Equal(t, int32(1), calls.Load())
+		})
+	}
+}
+
+// A connection dropped after the request was sent leaves it unknown whether the
+// task was stored; retrying could submit the deployment twice.
+func TestAddTask_DoesNotRetryAfterTheRequestWasSent(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		calls.Add(1)
+		conn, _, err := rw.(http.Hijacker).Hijack()
+		require.NoError(t, err)
+		_ = conn.Close()
+	}))
+	defer server.Close()
+
+	_, err := newTestWatcher(server.URL).addTask(context.Background(), retryTestTask)
+
+	require.Error(t, err)
+	assert.Equal(t, int32(1), calls.Load())
 }
 
 func TestAddTask(t *testing.T) {

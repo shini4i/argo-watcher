@@ -50,6 +50,10 @@ APP="${APP:-app4}"
 bin_dir="$(mktemp -d)"
 probe_out="$(mktemp)"
 probe_pid=""
+outage_out="$(mktemp)"
+outage_clone="$(mktemp -d)"
+# Set to 1 while the outage assertion holds the release at zero replicas (see below).
+scaled_down=0
 # Set to 1 while the deploy-lock assertion holds the shared lock (see below).
 lock_set=0
 
@@ -59,11 +63,15 @@ cleanup() {
   if [[ "$lock_set" == 1 ]]; then
     psql_db "UPDATE deploy_lock SET manual_lock = false" >/dev/null 2>&1 || true
   fi
+  # A release left at zero replicas would fail every phase that follows.
+  if [[ "$scaled_down" == 1 ]]; then
+    kubectl -n "$NS_AW" scale statefulset/argo-watcher --replicas=1 >/dev/null 2>&1 || true
+  fi
   # jobs -p prints one PID per line; splitting them into separate arguments is
   # the point, and they are always bare digits.
   # shellcheck disable=SC2046
   kill $(jobs -p) 2>/dev/null || true
-  rm -rf "$bin_dir" "$probe_out"
+  rm -rf "$bin_dir" "$probe_out" "$outage_out" "$outage_clone"
 }
 trap cleanup EXIT
 
@@ -145,6 +153,89 @@ if [[ "$CODE" != "200" || "$status_after" != "deployed" ]]; then
 fi
 ok "task ${id} still present as 'deployed' after the restart"
 
+echo "=== the client rides out a server outage while it polls ==="
+# The release goes to zero replicas right after the submission is accepted, so the client's
+# polls fail until the next pod resumes the handed-over task. It must then finish "deployed",
+# having submitted once and committed its own tag: a resubmission could deploy an older tag.
+# The author is unique per run, because Postgres keeps earlier runs' tasks on its volume.
+OUTAGE_AUTHOR="e2e-pg-outage-$(date +%s)"
+OUTAGE_TAG="$(other_tag "$APP")"
+
+# outage_tasks: the ids of every task the outage deploy created, one per line.
+outage_tasks() {
+  curl -fsS -m 5 "${AW_API}/tasks?from_timestamp=0&app=${APP}" \
+    | jq -r --arg a "$OUTAGE_AUTHOR" '(.tasks // [])[] | select(.author == $a) | .id'
+  return
+}
+outage_task_accepted() {
+  [[ -n "$(outage_tasks)" ]]
+  return
+}
+client_logged_outage() {
+  grep -qF "argo-watcher is unavailable" "$outage_out"
+  return
+}
+
+# TIMEOUT caps each poll, so a request hanging on a missing endpoint fails fast.
+run_client "$APP" "$OUTAGE_TAG" \
+  COMMIT_AUTHOR="$OUTAGE_AUTHOR" \
+  ARGO_WATCHER_DEPLOY_TOKEN="$DEPLOY_TOKEN" \
+  TIMEOUT="10s" TASK_TIMEOUT="300" >"$outage_out" &
+outage_pid=$!
+
+if ! retry 30 1 outage_task_accepted; then
+  sed 's/^/  | /' "$outage_out"
+  die "the outage deploy of ${APP}:${OUTAGE_TAG} was never accepted"
+fi
+kubectl -n "$NS_AW" scale statefulset/argo-watcher --replicas=0 >/dev/null
+scaled_down=1
+kubectl -n "$NS_AW" wait --for=delete pod/argo-watcher-0 --timeout=120s >/dev/null \
+  || die "argo-watcher-0 did not terminate after scaling to zero"
+
+if ! retry 60 2 client_logged_outage; then
+  if ! kill -0 "$outage_pid" 2>/dev/null; then
+    early_rc=0
+    wait "$outage_pid" || early_rc=$?
+    [[ "$early_rc" -ne 0 ]] \
+      || die "the client finished 'deployed' before the outage, so it was never tested (re-run)"
+    sed 's/^/  | /' "$outage_out"
+    die "the client exited ${early_rc} during the outage without retrying"
+  fi
+  die "the client never reported the outage (output: $(tr '\n' ',' <"$outage_out"))"
+fi
+ok "the client reported the outage and kept waiting"
+
+kubectl -n "$NS_AW" scale statefulset/argo-watcher --replicas=1 >/dev/null
+kubectl -n "$NS_AW" rollout status statefulset/argo-watcher --timeout=180s
+scaled_down=0
+wait_service || die "argo-watcher /livez never came back after the outage"
+
+outage_rc=0
+wait "$outage_pid" || outage_rc=$?
+if [[ "$outage_rc" -ne 0 ]]; then
+  sed 's/^/  | /' "$outage_out"
+  die "the client exited ${outage_rc} after the outage, want 0 (deployed)"
+fi
+ok "the client finished 'deployed' after the server came back"
+
+outage_ids="$(outage_tasks)" || die "could not list ${APP} tasks after the outage"
+outage_count="$(grep -c . <<<"$outage_ids" || true)"
+[[ "$outage_count" -eq 1 ]] \
+  || die "the outage deploy created ${outage_count} tasks, want exactly 1 (the client resubmitted)"
+ok "the outage deploy submitted exactly once"
+
+resumed="$(kubectl -n "$NS_AW" logs argo-watcher-0 | grep -F "Resuming a deployment abandoned" || true)"
+grep -qF "$outage_ids" <<<"$resumed" \
+  || die "the new pod never resumed task ${outage_ids}, so the handover was not exercised"
+ok "the new pod resumed the task the old one handed over"
+
+gitops_clone "$outage_clone"
+committed="$(override_param "${outage_clone}/chart/.argocd-source-${APP}.yaml" app.image.tag)"
+[[ -n "$committed" ]] || die "could not read app.image.tag for ${APP} (parse failure, not a wrong tag)"
+[[ "$committed" == "$OUTAGE_TAG" ]] \
+  || die "committed tag ${committed} is not the outage deploy's ${OUTAGE_TAG}"
+ok "the committed tag is ${OUTAGE_TAG}"
+
 echo "=== shared deploy lock: a lock written by another writer is honored ==="
 # The manual lock API needs OIDC (heavy tier), so write the shared row directly —
 # which is exactly what a second replica's SetLock does. This asserts the whole
@@ -215,4 +306,4 @@ echo "=== supersede authority on Postgres ==="
 DEPLOY_TOKEN="$DEPLOY_TOKEN" "${here}/supersede-authority.sh" \
   || die "supersede authority failed on Postgres"
 
-echo "STATE-POSTGRES: PASS (migrated, deployed, survived restart, shared deploy lock, superseded under contention, supersede authority)"
+echo "STATE-POSTGRES: PASS (migrated, deployed, survived restart, client rode out an outage, shared deploy lock, superseded under contention, supersede authority)"

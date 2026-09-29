@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"log"
+	"math"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -22,11 +23,22 @@ import (
 )
 
 // newTestWatcher builds a Watcher pointing at the given URL with retries enabled
-// but a zero backoff, so retry-path tests run instantly.
+// but a zero backoff and a short outage budget, so retry-path tests run instantly.
 func newTestWatcher(url string) *Watcher {
 	watcher := NewWatcher(url, false, 30*time.Second)
 	watcher.retryDelay = 0
+	watcher.outageBudget = 50 * time.Millisecond
 	return watcher
+}
+
+// captureLogs redirects the standard logger into a buffer for the rest of the test.
+func captureLogs(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var logs bytes.Buffer
+	originalWriter := log.Writer()
+	log.SetOutput(&logs)
+	t.Cleanup(func() { log.SetOutput(originalWriter) })
+	return &logs
 }
 
 type flakyTransport struct {
@@ -87,7 +99,30 @@ func TestGetJSON_RetriesNetworkErrorThenSucceeds(t *testing.T) {
 	assert.Equal(t, int32(3), atomic.LoadInt32(&transport.calls), "two dial failures then success should be three attempts")
 }
 
-func TestGetJSON_ExhaustsRetriesOnPersistent5xx(t *testing.T) {
+// A server restart outlasts any small fixed retry count, so polling must keep going
+// for as long as the outage budget allows rather than for a number of attempts.
+func TestGetJSON_RidesOutARestart(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		_, _ = rw.Write([]byte(`{"message":"OK"}`))
+	}))
+	defer server.Close()
+
+	transport := &flakyTransport{failures: 20, fallback: server.Client().Transport}
+	watcher := newTestWatcher(server.URL)
+	watcher.outageBudget = time.Minute
+	watcher.client.Transport = transport
+
+	var resp struct {
+		Message string `json:"message"`
+	}
+	err := watcher.getJSON(context.Background(), server.URL, &resp)
+
+	require.NoError(t, err)
+	assert.Equal(t, "OK", resp.Message)
+	assert.Equal(t, int32(21), atomic.LoadInt32(&transport.calls))
+}
+
+func TestGetJSON_GivesUpOncePersistent5xxOutlastsTheBudget(t *testing.T) {
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		calls.Add(1)
@@ -96,21 +131,20 @@ func TestGetJSON_ExhaustsRetriesOnPersistent5xx(t *testing.T) {
 	}))
 	defer server.Close()
 
-	var logs bytes.Buffer
-	originalWriter := log.Writer()
-	log.SetOutput(&logs)
-	t.Cleanup(func() { log.SetOutput(originalWriter) })
+	logs := captureLogs(t)
 
 	watcher := newTestWatcher(server.URL)
+	watcher.retryDelay = time.Millisecond
 	var dummy struct{}
 	err := watcher.getJSON(context.Background(), server.URL, &dummy)
 
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Contains(t, err.Error(), "502")
-	assert.Equal(t, int32(maxTransientRetries+1), calls.Load(), "should try once then retry maxTransientRetries times")
-	// The attempt that spends the budget announces nothing: retry-go's OnRetry fires
-	// for it too, and a line promising a retry that never comes misleads an operator.
-	assert.Equal(t, maxTransientRetries, strings.Count(logs.String(), "retrying"))
+	assert.Contains(t, err.Error(), "unavailable for")
+	assert.Greater(t, calls.Load(), int32(1), "a persistent 5xx must be retried before giving up")
+	// The attempt that spends the budget announces nothing: a line promising a
+	// retry that never comes misleads an operator.
+	assert.Equal(t, int(calls.Load())-1, strings.Count(logs.String(), "retrying"))
 }
 
 // TestGetJSON_DoesNotRetryMalformedBody verifies a 200 response with an
@@ -132,22 +166,69 @@ func TestGetJSON_DoesNotRetryMalformedBody(t *testing.T) {
 	assert.Equal(t, int32(1), calls.Load(), "a malformed 200 body must not be retried")
 }
 
-func TestGetJSON_ExhaustsRetriesOnNetworkError(t *testing.T) {
+func TestGetJSON_GivesUpOnceNetworkErrorsOutlastTheBudget(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		_, _ = rw.Write([]byte(`{"message":"OK"}`))
 	}))
 	defer server.Close()
 
-	transport := &flakyTransport{failures: maxTransientRetries + 1, fallback: server.Client().Transport}
+	transport := &flakyTransport{failures: math.MaxInt32, fallback: server.Client().Transport}
 	watcher := newTestWatcher(server.URL)
+	watcher.retryDelay = time.Millisecond
 	watcher.client.Transport = transport
 
 	var dummy struct{}
 	err := watcher.getJSON(context.Background(), server.URL, &dummy)
 
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Contains(t, err.Error(), "connection refused")
-	assert.Equal(t, int32(maxTransientRetries+1), atomic.LoadInt32(&transport.calls), "should try once then retry maxTransientRetries times")
+	assert.Contains(t, err.Error(), "unavailable for")
+	assert.Greater(t, atomic.LoadInt32(&transport.calls), int32(1))
+}
+
+func TestGetJSON_BackoffDoublesBetweenRetries(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		_, _ = rw.Write([]byte(`{"message":"OK"}`))
+	}))
+	defer server.Close()
+
+	logs := captureLogs(t)
+
+	transport := &flakyTransport{failures: 4, fallback: server.Client().Transport}
+	watcher := newTestWatcher(server.URL)
+	watcher.retryDelay = time.Millisecond
+	watcher.outageBudget = time.Minute
+	watcher.client.Transport = transport
+
+	var dummy struct{}
+	require.NoError(t, watcher.getJSON(context.Background(), server.URL, &dummy))
+
+	var waits []string
+	for _, line := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
+		if _, wait, found := strings.Cut(line, "retrying in "); found {
+			waits = append(waits, wait)
+		}
+	}
+	assert.Equal(t, []string{"1ms", "2ms", "4ms", "8ms"}, waits)
+}
+
+func TestNextRetryDelay(t *testing.T) {
+	tests := []struct {
+		current time.Duration
+		want    time.Duration
+	}{
+		{current: 0, want: 0},
+		{current: 2 * time.Second, want: 4 * time.Second},
+		{current: 4 * time.Second, want: 8 * time.Second},
+		{current: 8 * time.Second, want: maxRetryDelay},
+		{current: maxRetryDelay, want: maxRetryDelay},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.current.String(), func(t *testing.T) {
+			assert.Equal(t, tt.want, nextRetryDelay(tt.current))
+		})
+	}
 }
 
 // TestGetJSON_DoesNotRetryTerminalError verifies a 4xx (auth failure) fails fast
@@ -703,6 +784,40 @@ func TestGetJSON_CancellingStopsTheRetryWait(t *testing.T) {
 	assert.ErrorIs(t, err, context.Canceled)
 	assert.Less(t, time.Since(start), 10*time.Second, "the wait must end with the context, not run its hour out")
 	assert.Equal(t, int32(1), calls.Load(), "no attempt may start after the context is done")
+}
+
+// A request cancelled in flight fails like a network error; it must still stop the
+// client rather than be announced and waited on as a retry.
+func TestGetJSON_CancellingMidRequestStopsWithoutRetry(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		calls.Add(1)
+		<-req.Context().Done()
+	}))
+	defer server.Close()
+
+	logs := captureLogs(t)
+
+	watcher := newTestWatcher(server.URL)
+	watcher.retryDelay = time.Hour
+	watcher.outageBudget = time.Minute
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		for calls.Load() == 0 {
+			time.Sleep(time.Millisecond)
+		}
+		cancel()
+	}()
+
+	var dummy struct{}
+	err := watcher.getJSON(ctx, server.URL, &dummy)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Contains(t, err.Error(), "stopped retrying")
+	assert.Equal(t, int32(1), calls.Load())
+	assert.NotContains(t, logs.String(), "retrying in")
 }
 
 func TestWaitOrCancel(t *testing.T) {
