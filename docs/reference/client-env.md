@@ -36,10 +36,10 @@ A credential is dropped rather than forwarded when a redirect changes the host, 
 
 ## Retries
 
-The client retries transient failures for up to five minutes per request, so it rides out an argo-watcher restart or a short network outage. The first retry waits two seconds, and each wait doubles up to fifteen seconds. Neither the window nor the backoff is configurable.
+While polling, the client retries transient failures for up to five minutes per request, so it rides out an argo-watcher restart or a short network outage. The first retry waits two seconds, and each wait doubles up to fifteen seconds. Neither the window nor the backoff is configurable.
 
 - **Status polls** retry network errors and every `5xx` response.
-- **The submission** retries only when the connection was never established or the answer was `503`. That covers an ingress with no ready server behind it and a server that cannot reach Argo CD, neither of which stores the task. If a proxy answers `503` after it forwarded the request, the retry supersedes the first submission rather than deploying twice. A dropped connection, a timeout, a `500` or a gateway `502`/`504` may follow a stored task, so they fail at once rather than risk a duplicate deployment.
+- **The submission** is never retried. The server lets the last submission for an application supersede the others, so a late resubmission could replace a newer deployment with an older tag. A failed submission fails the job; re-run it.
 
 Terminal failures fail immediately: `4xx` responses, a rejected token, a malformed response, or a redirect that steps down from `https`.
 

@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -176,31 +175,18 @@ func (watcher *Watcher) guardRedirect(request *http.Request, via []*http.Request
 	return nil
 }
 
-// addTask presents the watcher's credential and returns the new task ID. A submission
-// that provably never reached argo-watcher is retried within the outage budget.
-// Cancelling ctx aborts the submission in flight and the wait before a retry.
+// addTask presents the watcher's credential and returns the new task ID. It is never
+// retried: the server lets the last submission supersede the others, so a late resubmission
+// could replace a newer deployment with this older tag. Cancelling ctx aborts it in flight.
 func (watcher *Watcher) addTask(ctx context.Context, task models.Task) (string, error) {
 	requestBody, err := json.Marshal(task)
 	if err != nil {
 		return "", err
 	}
 
-	var id string
-	err = watcher.retryTransient(ctx, func() error {
-		var attemptErr error
-		id, attemptErr = watcher.addTaskOnce(ctx, requestBody)
-		return attemptErr
-	})
-	return id, err
-}
-
-// addTaskOnce sends one submission. Only a failed dial or a 503 is transient. A proxy 503
-// after forwarding makes the retry supersede the first task, not deploy twice; a dropped
-// connection, a timeout, a 500 or a gateway 502/504 are terminal to avoid a duplicate.
-func (watcher *Watcher) addTaskOnce(ctx context.Context, requestBody []byte) (string, error) {
 	url := fmt.Sprintf("%s/api/v1/tasks", watcher.baseUrl)
 
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(requestBody))
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(requestBody))
 	if err != nil {
 		return "", err
 	}
@@ -219,11 +205,6 @@ func (watcher *Watcher) addTaskOnce(ctx context.Context, requestBody []byte) (st
 
 	response, err := watcher.client.Do(request)
 	if err != nil {
-		var opErr *net.OpError
-		// "proxyconnect" is net/http's wrapper for a dial failure through HTTP(S)_PROXY.
-		if errors.As(err, &opErr) && (opErr.Op == "dial" || opErr.Op == "proxyconnect") {
-			return "", transientError{err}
-		}
 		return "", err
 	}
 
@@ -239,11 +220,7 @@ func (watcher *Watcher) addTaskOnce(ctx context.Context, requestBody []byte) (st
 	}
 
 	if response.StatusCode != http.StatusAccepted {
-		serverErr := serverErrorFromResponse(response.StatusCode, responseBody)
-		if response.StatusCode == http.StatusServiceUnavailable {
-			return "", transientError{serverErr}
-		}
-		return "", serverErr
+		return "", serverErrorFromResponse(response.StatusCode, responseBody)
 	}
 
 	var accepted models.TaskStatus

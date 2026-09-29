@@ -134,6 +134,7 @@ func TestGetJSON_GivesUpOncePersistent5xxOutlastsTheBudget(t *testing.T) {
 	logs := captureLogs(t)
 
 	watcher := newTestWatcher(server.URL)
+	watcher.retryDelay = time.Millisecond
 	var dummy struct{}
 	err := watcher.getJSON(context.Background(), server.URL, &dummy)
 
@@ -173,6 +174,7 @@ func TestGetJSON_GivesUpOnceNetworkErrorsOutlastTheBudget(t *testing.T) {
 
 	transport := &flakyTransport{failures: math.MaxInt32, fallback: server.Client().Transport}
 	watcher := newTestWatcher(server.URL)
+	watcher.retryDelay = time.Millisecond
 	watcher.client.Transport = transport
 
 	var dummy struct{}
@@ -203,8 +205,9 @@ func TestGetJSON_BackoffDoublesBetweenRetries(t *testing.T) {
 
 	var waits []string
 	for _, line := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
-		_, wait, _ := strings.Cut(line, "retrying in ")
-		waits = append(waits, wait)
+		if _, wait, found := strings.Cut(line, "retrying in "); found {
+			waits = append(waits, wait)
+		}
 	}
 	assert.Equal(t, []string{"1ms", "2ms", "4ms", "8ms"}, waits)
 }
@@ -781,6 +784,40 @@ func TestGetJSON_CancellingStopsTheRetryWait(t *testing.T) {
 	assert.ErrorIs(t, err, context.Canceled)
 	assert.Less(t, time.Since(start), 10*time.Second, "the wait must end with the context, not run its hour out")
 	assert.Equal(t, int32(1), calls.Load(), "no attempt may start after the context is done")
+}
+
+// A request cancelled in flight fails like a network error; it must still stop the
+// client rather than be announced and waited on as a retry.
+func TestGetJSON_CancellingMidRequestStopsWithoutRetry(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		calls.Add(1)
+		<-req.Context().Done()
+	}))
+	defer server.Close()
+
+	logs := captureLogs(t)
+
+	watcher := newTestWatcher(server.URL)
+	watcher.retryDelay = time.Hour
+	watcher.outageBudget = time.Minute
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		for calls.Load() == 0 {
+			time.Sleep(time.Millisecond)
+		}
+		cancel()
+	}()
+
+	var dummy struct{}
+	err := watcher.getJSON(ctx, server.URL, &dummy)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Contains(t, err.Error(), "stopped retrying")
+	assert.Equal(t, int32(1), calls.Load())
+	assert.NotContains(t, logs.String(), "retrying in")
 }
 
 func TestWaitOrCancel(t *testing.T) {
