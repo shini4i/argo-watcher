@@ -12,6 +12,7 @@ On startup all missing or invalid variables are reported together in one error, 
 | `ARGO_TOKEN` | Argo CD API token | | Yes |
 | `STATE_TYPE` | Storage backend: `in-memory` (single replica) or `postgres` | | Yes |
 | `DEPLOYMENT_TIMEOUT` | Seconds to wait for a deployment to finish; capped at `86400` | `900` | No |
+| `MAX_ANONYMOUS_ROLLOUTS` | Most deployments without a valid credential one replica accepts and monitors at once; a submission past it gets `429`. Credentialed deployments are never refused, and a rollout a replica takes over from another is not counted. `0` means no cap | `0` | No |
 | `ARGO_API_TIMEOUT` | Timeout for Argo CD API calls, in seconds (1–3600) | `60` | No |
 | `ARGO_API_RETRIES` | Total attempts per Argo CD API call (1–10) | `3` | No |
 | `ARGO_REFRESH_APP` | Refresh the application during status checks | `true` | No |

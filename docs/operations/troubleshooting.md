@@ -42,6 +42,7 @@ Read the client's last log line first — it distinguishes these:
 | `The deployment was aborted before its outcome could be confirmed` | Argo CD became unreachable during the check. The application itself may be perfectly healthy — check Argo CD before blaming the deployment. |
 | `The deployment was cancelled because a newer deployment superseded it` | Expected, not a fault: a newer deployment of the same image took over. Confirm that one succeeded; nothing else to do. |
 | `refused to follow a redirect away from https` | Ending in `ARGO_WATCHER_URL`: see [Client refuses a redirect away from https](#client-refuses-a-redirect-away-from-https). Ending in `ARGO_URL`: see [Server refuses a redirect away from https](#server-refuses-a-redirect-away-from-https). |
+| `too many deployments without a credential are in progress (MAX_ANONYMOUS_ROLLOUTS)` | See [Submission rejected over the anonymous rollout cap](#submission-rejected-over-the-anonymous-rollout-cap). |
 | `argo-watcher stayed unavailable for <duration>, giving up` | argo-watcher could not be reached, or kept answering with a transient error while polling, for the whole five-minute outage window. |
 | A `503 {"status":"down"}` on submission | Argo CD or the state backend is unreachable, so the server rejects the submission fast instead of letting the client wait. The Web UI shows a banner naming which. The submission is never retried; re-run the job. |
 
@@ -129,6 +130,14 @@ Each entry must read `alias=image`. Whitespace around the `=` is ignored, so `ap
 An alias may not be repeated either — `app=one,app=two` is rejected, since only one of the two could ever be written back. Pointing two aliases at the same image is fine.
 
 **Fix:** correct the entry named in the error on the `Application`. The alias must also match the one in the matching `argo-watcher/<alias>.helm.image-tag` annotation.
+
+## Submission rejected over the anonymous rollout cap
+
+**Symptom:** the deployment fails immediately with `429` and `too many deployments without a credential are in progress (MAX_ANONYMOUS_ROLLOUTS)`.
+
+**Meaning:** the replica that took the submission is already monitoring [`MAX_ANONYMOUS_ROLLOUTS`](../reference/server-env.md#core) deployments that presented no valid credential. The client never retries a submission, so the job fails.
+
+**Fix:** give the pipeline a credential, which the cap never refuses, or raise the cap. Re-running the job works once enough in-flight rollouts have finished.
 
 ## Client refuses a redirect away from https
 

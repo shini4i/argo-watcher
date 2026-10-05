@@ -1092,3 +1092,40 @@ func TestNewServerConfig_SSLModeAllowlist(t *testing.T) {
 		assert.NoError(t, err)
 	})
 }
+
+func TestNewServerConfig_MaxAnonymousRollouts(t *testing.T) {
+	baseEnv := func(t *testing.T) {
+		t.Helper()
+		t.Setenv("ARGO_URL", "https://example.com")
+		t.Setenv("ARGO_TOKEN", "secret-token")
+		t.Setenv("STATE_TYPE", "in-memory")
+	}
+
+	t.Run("defaults to no cap", func(t *testing.T) {
+		baseEnv(t)
+
+		cfg, err := NewServerConfig()
+
+		require.NoError(t, err)
+		assert.Zero(t, cfg.MaxAnonymousRollouts)
+	})
+
+	t.Run("parses a cap", func(t *testing.T) {
+		baseEnv(t)
+		t.Setenv("MAX_ANONYMOUS_ROLLOUTS", "5")
+
+		cfg, err := NewServerConfig()
+
+		require.NoError(t, err)
+		assert.Equal(t, uint(5), cfg.MaxAnonymousRollouts)
+	})
+
+	t.Run("rejects a negative cap", func(t *testing.T) {
+		baseEnv(t)
+		t.Setenv("MAX_ANONYMOUS_ROLLOUTS", "-1")
+
+		_, err := NewServerConfig()
+
+		assert.Error(t, err)
+	})
+}

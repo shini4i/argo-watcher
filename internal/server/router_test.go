@@ -286,6 +286,8 @@ func TestNewEnv(t *testing.T) {
 
 	// No store was passed, so the feature is off and its endpoints stay unregistered.
 	assert.Nil(t, env.appTokens)
+	// MAX_ANONYMOUS_ROLLOUTS is unset, so anonymous admission stays uncapped.
+	assert.Nil(t, env.anonymousRollouts)
 	accepted, err := env.strategies["Authorization"].Validate("awt_someIssuedToken")
 	assert.False(t, accepted)
 	require.Error(t, err)
