@@ -1,0 +1,8 @@
+[
+	{
+		"component": "DOMPurify",
+		"version": "3.4.13",
+		"identifiers": { "githubID": "GHSA-p98j-92pf-mc4p" },
+		"justification": "Copy inlined by swagger-ui-dist, which no release yet updates. The bug needs IN_PLACE sanitization with a node-removing afterSanitize hook; Swagger UI calls sanitize without IN_PLACE and registers only a beforeSanitizeElements hook. Remove once swagger-ui-dist bundles DOMPurify 3.4.16 or later."
+	}
+]
