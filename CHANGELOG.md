@@ -43,6 +43,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   https ... Point ARGO_URL at the https endpoint` instead of being followed. The refusal is
   not retried, since it is a misconfigured proxy rather than a blip. An `ARGO_URL` set to
   `http://` keeps working.
+- Raise the `dompurify` pin to 3.4.16, which fixes `IN_PLACE` sanitization leaving a node in
+  place when an `afterSanitize` hook removes it.
 
 ## [1.4.2] - 2026-09-28
 
