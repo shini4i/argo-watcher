@@ -568,8 +568,11 @@ func (monitor *DeploymentMonitor) fetchResourceTree(task *models.Task) *models.A
 	return tree
 }
 
+// handleApplicationFetchError decides whether the rollout loop may retry a failed application
+// fetch. A missing application and a refused https-to-http redirect are terminal; anything else
+// is returned as-is for the loop to retry.
 func handleApplicationFetchError(task models.Task, err error) error {
-	if task.IsAppNotFoundError(err) {
+	if task.IsAppNotFoundError(err) || errors.Is(err, helpers.ErrInsecureRedirect) {
 		return retry.Unrecoverable(err)
 	}
 	slog.Debug("Failed fetching application status", "error", err, "id", task.Id)
