@@ -135,7 +135,7 @@ An alias may not be repeated either — `app=one,app=two` is rejected, since onl
 
 **Symptom:** the deployment fails immediately with `429` and `too many deployments without a credential are in progress (MAX_ANONYMOUS_ROLLOUTS)`.
 
-**Meaning:** the replica that took the submission is already monitoring [`MAX_ANONYMOUS_ROLLOUTS`](../reference/server-env.md#core) deployments that presented no valid credential. The client never retries a submission, so the job fails.
+**Meaning:** the replica that took the submission is already monitoring [`MAX_ANONYMOUS_ROLLOUTS`](../reference/server-env.md#core) deployments that presented no valid credential. The client never retries a submission, so the job fails. This includes a deployment that would replace one already in progress for the same application: the older one keeps being monitored until its own timeout.
 
 **Fix:** give the pipeline a credential, which the cap never refuses, or raise the cap. Re-running the job works once enough in-flight rollouts have finished.
 

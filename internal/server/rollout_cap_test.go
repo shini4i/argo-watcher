@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -83,6 +84,8 @@ func fullSlots(n int) chan struct{} {
 func TestNewRolloutSlots(t *testing.T) {
 	assert.Nil(t, newRolloutSlots(0), "zero means no cap")
 	assert.Equal(t, 3, cap(newRolloutSlots(3)))
+	// The largest value the env parser accepts for a uint; a zero-size element makes it free.
+	assert.Equal(t, math.MaxUint32, cap(newRolloutSlots(math.MaxUint32)))
 }
 
 func TestAddTaskAnonymousRolloutCap(t *testing.T) {

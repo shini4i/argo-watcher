@@ -1120,6 +1120,17 @@ func TestNewServerConfig_MaxAnonymousRollouts(t *testing.T) {
 		assert.Equal(t, uint(5), cfg.MaxAnonymousRollouts)
 	})
 
+	t.Run("rejects a cap beyond 32 bits", func(t *testing.T) {
+		baseEnv(t)
+		t.Setenv("MAX_ANONYMOUS_ROLLOUTS", "18446744073709551615")
+
+		_, err := NewServerConfig()
+
+		require.Error(t, err)
+		t.Log(err)
+		assert.Contains(t, err.Error(), "MaxAnonymousRollouts")
+	})
+
 	t.Run("rejects a negative cap", func(t *testing.T) {
 		baseEnv(t)
 		t.Setenv("MAX_ANONYMOUS_ROLLOUTS", "-1")
