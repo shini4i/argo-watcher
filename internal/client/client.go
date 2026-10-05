@@ -8,7 +8,6 @@ import (
 	"syscall"
 
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -117,12 +116,6 @@ func NewWatcher(baseUrl string, debugMode bool, timeout time.Duration) *Watcher 
 	return watcher
 }
 
-// maxRedirects mirrors net/http's default redirect limit, which setting CheckRedirect
-// replaces.
-const maxRedirects = 10
-
-var errInsecureRedirect = errors.New("refused to follow a redirect away from https")
-
 // guardRedirect decides whether a redirect may be followed and with which headers.
 //
 // A step down from https to http is refused: net/http compares only hostnames when
@@ -138,14 +131,8 @@ var errInsecureRedirect = errors.New("refused to follow a redirect away from htt
 // carries a credential rather than assuming a host change drops it — net/http compares
 // hostnames with the port excluded, so Authorization survives a port-only change.
 func (watcher *Watcher) guardRedirect(request *http.Request, via []*http.Request) error {
-	if len(via) >= maxRedirects {
-		return fmt.Errorf("stopped after %d redirects", maxRedirects)
-	}
-
-	previous := via[len(via)-1]
-	if previous.URL.Scheme == "https" && request.URL.Scheme != "https" {
-		return fmt.Errorf("%w: %q redirected to %q. Point ARGO_WATCHER_URL at the https endpoint",
-			errInsecureRedirect, previous.URL.Host, request.URL.Scheme+"://"+request.URL.Host)
+	if err := helpers.RefuseSchemeDowngrade(request, via, "ARGO_WATCHER_URL"); err != nil {
+		return err
 	}
 
 	if request.URL.Host == via[0].URL.Host {

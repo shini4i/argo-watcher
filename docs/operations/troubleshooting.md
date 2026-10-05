@@ -41,7 +41,7 @@ Read the client's last log line first — it distinguishes these:
 | `Image "<name>" is not part of application` | The application does not declare that image — see [Image is not part of application](#image-is-not-part-of-application). |
 | `The deployment was aborted before its outcome could be confirmed` | Argo CD became unreachable during the check. The application itself may be perfectly healthy — check Argo CD before blaming the deployment. |
 | `The deployment was cancelled because a newer deployment superseded it` | Expected, not a fault: a newer deployment of the same image took over. Confirm that one succeeded; nothing else to do. |
-| `refused to follow a redirect away from https` | See [Client refuses a redirect away from https](#client-refuses-a-redirect-away-from-https). |
+| `refused to follow a redirect away from https` | Ending in `ARGO_WATCHER_URL`: see [Client refuses a redirect away from https](#client-refuses-a-redirect-away-from-https). Ending in `ARGO_URL`: see [Server refuses a redirect away from https](#server-refuses-a-redirect-away-from-https). |
 | `argo-watcher stayed unavailable for <duration>, giving up` | argo-watcher could not be reached, or kept answering with a transient error while polling, for the whole five-minute outage window. |
 | A `503 {"status":"down"}` on submission | Argo CD or the state backend is unreachable, so the server rejects the submission fast instead of letting the client wait. The Web UI shows a banner naming which. The submission is never retried; re-run the job. |
 
@@ -137,6 +137,14 @@ An alias may not be repeated either — `app=one,app=two` is rejected, since onl
 **Meaning:** `ARGO_WATCHER_URL` is an `https` URL but something on the path redirects to plain `http`. Go carries `Authorization` across such a redirect when the hostname is unchanged, so following it would put the deploy token or CI JWT on the wire in the clear. The client refuses and does not retry — this is configuration, not a blip.
 
 **Fix:** point `ARGO_WATCHER_URL` at the endpoint that serves the API over TLS, or stop the ingress from downgrading API requests. Only stepping *down* from TLS is refused; a client deliberately pointed at an `http://` URL keeps working.
+
+## Server refuses a redirect away from https
+
+**Symptom:** Argo CD calls from the server fail with `refused to follow a redirect away from https`, ending in `Point ARGO_URL at the https endpoint`. The message reaches the server log and the reason of any task that needed Argo CD.
+
+**Meaning:** `ARGO_URL` is an `https` URL but something in front of Argo CD redirects to plain `http`. Following it would send `ARGO_TOKEN` in the clear, so the server refuses and does not retry. This is the server-side twin of [the client's refusal](#client-refuses-a-redirect-away-from-https); fix `ARGO_URL`, not `ARGO_WATCHER_URL`.
+
+**Fix:** point `ARGO_URL` at the endpoint that serves the Argo CD API over TLS, or stop the proxy from downgrading API requests. An `ARGO_URL` deliberately set to `http://` keeps working.
 
 ## Image is not part of application
 
