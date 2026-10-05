@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/shini4i/argo-watcher/internal/config"
+	"github.com/shini4i/argo-watcher/internal/helpers"
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
@@ -1044,4 +1045,131 @@ func TestArgoApiDoGetNoRetryOnNon2xx(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, statusCode)
 	assert.Equal(t, errorBody, body)
 	assert.Equal(t, int32(1), callCount.Load())
+}
+
+// TestArgoApiRefusesSchemeDowngradeRedirect pins that an https→http redirect is refused
+// before the http hop is requested, and that the refusal is not retried. The plain server
+// stands in for the same host on another port, which a host-only cookie would match.
+func TestArgoApiRefusesSchemeDowngradeRedirect(t *testing.T) {
+	var plainHits atomic.Int32
+	plain := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		plainHits.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer plain.Close()
+
+	var tlsHits atomic.Int32
+	secure := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tlsHits.Add(1)
+		http.Redirect(w, r, plain.URL+r.URL.Path, http.StatusFound)
+	}))
+	defer secure.Close()
+
+	argoURL, err := url.Parse(secure.URL)
+	require.NoError(t, err)
+
+	api := NewArgoApi()
+	require.NoError(t, api.Init(&config.ServerConfig{
+		ArgoUrl:        config.URL{URL: *argoURL},
+		ArgoToken:      "super-secret",
+		ArgoApiTimeout: 5,
+		SkipTlsVerify:  true,
+		ArgoApiRetries: 3,
+	}))
+
+	_, err = api.GetUserInfo()
+	require.ErrorIs(t, err, helpers.ErrInsecureRedirect)
+	assert.Equal(t, int32(0), plainHits.Load(), "the http hop must never be requested")
+	assert.Equal(t, int32(1), tlsHits.Load(), "a refused downgrade must not be retried")
+}
+
+// TestArgoApiPlainHTTPEndpointKeepsWorking pins that an ARGO_URL that starts on http still
+// sends the token: only a step down from https is refused.
+func TestArgoApiPlainHTTPEndpointKeepsWorking(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cookie, err := r.Cookie("argocd.token")
+		if assert.NoError(t, err) {
+			assert.Equal(t, "super-secret", cookie.Value)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"loggedIn":true,"username":"tester"}`))
+	}))
+	defer server.Close()
+
+	argoURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	api := NewArgoApi()
+	require.NoError(t, api.Init(&config.ServerConfig{
+		ArgoUrl:        config.URL{URL: *argoURL},
+		ArgoToken:      "super-secret",
+		ArgoApiTimeout: 5,
+		ArgoApiRetries: 1,
+	}))
+
+	userInfo, err := api.GetUserInfo()
+	require.NoError(t, err)
+	assert.True(t, userInfo.LoggedIn)
+}
+
+// TestArgoApiTokenCookieSecureForHTTPS pins that the jar never offers ARGO_TOKEN to an http
+// URL on an https ARGO_URL's host. It needs a non-loopback host: cookiejar treats localhost
+// as a secure origin and would send a Secure cookie there over http.
+func TestArgoApiTokenCookieSecureForHTTPS(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		argoURL    string
+		sentOnHTTP bool
+	}{
+		{name: "https endpoint", argoURL: "https://argocd.example.com", sentOnHTTP: false},
+		{name: "http endpoint", argoURL: "http://argocd.example.com", sentOnHTTP: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			argoURL, err := url.Parse(tc.argoURL)
+			require.NoError(t, err)
+
+			api := NewArgoApi()
+			require.NoError(t, api.Init(&config.ServerConfig{
+				ArgoUrl:   config.URL{URL: *argoURL},
+				ArgoToken: "super-secret",
+			}))
+
+			plainURL := &url.URL{Scheme: "http", Host: argoURL.Host, Path: "/api/v1/session/userinfo"}
+			assert.Equal(t, tc.sentOnHTTP, len(api.client.Jar.Cookies(plainURL)) == 1)
+		})
+	}
+}
+
+// TestArgoApiFollowsHTTPSRedirect pins that the downgrade guard leaves a legitimate
+// https→https redirect, such as a path-rewriting ingress, working with the token attached.
+func TestArgoApiFollowsHTTPSRedirect(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/session/userinfo" {
+			http.Redirect(w, r, "/final/userinfo", http.StatusFound)
+			return
+		}
+		cookie, err := r.Cookie("argocd.token")
+		if assert.NoError(t, err) {
+			assert.Equal(t, "super-secret", cookie.Value)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"loggedIn":true,"username":"tester"}`))
+	}))
+	defer server.Close()
+
+	argoURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	api := NewArgoApi()
+	require.NoError(t, api.Init(&config.ServerConfig{
+		ArgoUrl:        config.URL{URL: *argoURL},
+		ArgoToken:      "super-secret",
+		ArgoApiTimeout: 5,
+		SkipTlsVerify:  true,
+		ArgoApiRetries: 1,
+	}))
+
+	userInfo, err := api.GetUserInfo()
+	require.NoError(t, err)
+	assert.True(t, userInfo.LoggedIn)
 }

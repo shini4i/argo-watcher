@@ -1864,6 +1864,13 @@ func TestHandleApplicationFetchError(t *testing.T) {
 		assert.False(t, retry.IsRecoverable(err))
 	})
 
+	t.Run("returnsUnrecoverableForSchemeDowngrade", func(t *testing.T) {
+		redirectErr := &url.Error{Op: "Get", URL: "https://argocd.example", Err: fmt.Errorf("%w: test", helpers.ErrInsecureRedirect)}
+		err := handleApplicationFetchError(task, redirectErr)
+		assert.False(t, retry.IsRecoverable(err))
+		assert.ErrorIs(t, err, helpers.ErrInsecureRedirect)
+	})
+
 	t.Run("returnsOriginalErrorForOthers", func(t *testing.T) {
 		errOrig := errors.New("boom")
 		err := handleApplicationFetchError(task, errOrig)

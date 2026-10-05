@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/shini4i/argo-watcher/internal/helpers"
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
@@ -444,7 +445,7 @@ func TestGuardRedirectLimit(t *testing.T) {
 
 		var err error
 		output := capture(t, func() {
-			err = watcher.guardRedirect(request, via(t, maxRedirects))
+			err = watcher.guardRedirect(request, via(t, helpers.MaxRedirects))
 		})
 
 		require.EqualError(t, err, "stopped after 10 redirects")
@@ -460,7 +461,7 @@ func TestGuardRedirectLimit(t *testing.T) {
 
 		var err error
 		output := capture(t, func() {
-			err = watcher.guardRedirect(request, via(t, maxRedirects-1))
+			err = watcher.guardRedirect(request, via(t, helpers.MaxRedirects-1))
 		})
 
 		require.NoError(t, err)
@@ -517,7 +518,7 @@ func TestRedirectSchemeDowngrade(t *testing.T) {
 				assert.NoError(t, err)
 				return
 			}
-			require.ErrorIs(t, err, errInsecureRedirect)
+			require.ErrorIs(t, err, helpers.ErrInsecureRedirect)
 			// The operator has to be able to tell which hop downgraded, and the secret
 			// must never reach a CI log.
 			assert.Contains(t, err.Error(), mustHost(t, tc.via[len(tc.via)-1]))
@@ -537,7 +538,7 @@ func TestRedirectSchemeDowngrade(t *testing.T) {
 			[]*http.Request{newRequest(t, "https://origin.example.com/")},
 		)
 
-		require.ErrorIs(t, err, errInsecureRedirect)
+		require.ErrorIs(t, err, helpers.ErrInsecureRedirect)
 	})
 }
 
@@ -564,7 +565,7 @@ func TestRedirectDowngradeIsRefusedInFlight(t *testing.T) {
 
 	_, err := watcher.getTaskStatus(context.Background(), taskId)
 
-	require.ErrorIs(t, err, errInsecureRedirect)
+	require.ErrorIs(t, err, helpers.ErrInsecureRedirect)
 	assert.Zero(t, plainHits, "the plaintext hop must never be made")
 	assert.Empty(t, plainSaw)
 	assert.Equal(t, 1, originHits, "a downgrade is permanent, so it must not be retried")

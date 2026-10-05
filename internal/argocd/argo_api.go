@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -15,6 +16,7 @@ import (
 	retry "github.com/avast/retry-go/v4"
 
 	"github.com/shini4i/argo-watcher/internal/config"
+	"github.com/shini4i/argo-watcher/internal/helpers"
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
@@ -44,6 +46,10 @@ func NewArgoApi() *ArgoApi {
 	}
 }
 
+// Init configures the HTTP client from serverConfig: it stores ARGO_TOKEN as the
+// argocd.token cookie (Secure for an https ARGO_URL), refuses https-to-http redirects, and
+// applies the timeout, retry count and TLS verification setting. It returns an error only
+// if the cookie jar cannot be created.
 func (api *ArgoApi) Init(serverConfig *config.ServerConfig) error {
 	slog.Debug("Initializing argo-watcher client...")
 	api.baseUrl = serverConfig.ArgoUrl.URL
@@ -52,22 +58,23 @@ func (api *ArgoApi) Init(serverConfig *config.ServerConfig) error {
 	if err != nil {
 		return err
 	}
-	// This is an outbound request cookie sent to the ArgoCD API through the
-	// client's cookie jar, not a Set-Cookie response to a browser, so G124's
-	// Secure/HttpOnly/SameSite attributes do not apply — the Go HTTP client
-	// ignores those browser-storage directives when sending.
-	cookie := &http.Cookie{ // #nosec G124
-		Name:  "argocd.token",
-		Value: serverConfig.ArgoToken,
+	// Secure keeps the jar from offering ARGO_TOKEN to any http URL on this host, so a
+	// redirect cannot carry it in cleartext; it is set only for an https ARGO_URL, since an
+	// http one could never send it at all.
+	cookie := &http.Cookie{ // #nosec G124 -- HttpOnly and SameSite govern browser storage; this jar is server-side.
+		Name:   "argocd.token",
+		Value:  serverConfig.ArgoToken,
+		Secure: api.baseUrl.Scheme == "https",
 	}
 	jar.SetCookies(&api.baseUrl, []*http.Cookie{cookie})
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: serverConfig.SkipTlsVerify}, // #nosec G402
 	}
 	api.client = &http.Client{
-		Transport: transport,
-		Jar:       jar,
-		Timeout:   time.Duration(serverConfig.ArgoApiTimeout) * time.Second,
+		Transport:     transport,
+		Jar:           jar,
+		Timeout:       time.Duration(serverConfig.ArgoApiTimeout) * time.Second,
+		CheckRedirect: refuseArgoSchemeDowngrade,
 	}
 
 	slog.Debug("Timeout for ArgoCD API calls set", "timeout", api.client.Timeout)
@@ -104,6 +111,9 @@ func (api *ArgoApi) doGet(ctx context.Context, reqURL string) ([]byte, int, erro
 		func() error {
 			var doErr error
 			resp, doErr = api.client.Do(req.Clone(ctx))
+			if errors.Is(doErr, helpers.ErrInsecureRedirect) {
+				return retry.Unrecoverable(doErr)
+			}
 			return doErr
 		},
 		retry.Context(ctx),
@@ -260,4 +270,11 @@ func (api *ArgoApi) GetManifests(ctx context.Context, app string) (*models.Appli
 	}
 
 	return &manifests, nil
+}
+
+// refuseArgoSchemeDowngrade is the ArgoCD client's CheckRedirect: a misconfigured proxy that
+// redirects to http surfaces as an error naming the redirect instead of moving the token
+// and API traffic to cleartext.
+func refuseArgoSchemeDowngrade(request *http.Request, via []*http.Request) error {
+	return helpers.RefuseSchemeDowngrade(request, via, "ARGO_URL")
 }

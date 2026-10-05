@@ -117,3 +117,46 @@ func TestGenerateHash(t *testing.T) {
 		})
 	}
 }
+
+func TestRefuseSchemeDowngrade(t *testing.T) {
+	hop := func(rawURL string) *http.Request {
+		request, err := http.NewRequest(http.MethodGet, rawURL, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return request
+	}
+
+	tests := []struct {
+		name      string
+		from      string
+		to        string
+		wantError error
+	}{
+		{name: "https to http is refused", from: "https://a.example", to: "http://a.example:8080", wantError: ErrInsecureRedirect},
+		{name: "https to https is followed", from: "https://a.example", to: "https://b.example"},
+		{name: "http to http is followed", from: "http://a.example", to: "http://b.example"},
+		{name: "http to https is followed", from: "http://a.example", to: "https://a.example"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := RefuseSchemeDowngrade(hop(tc.to), []*http.Request{hop(tc.from)}, "SOME_URL")
+			if tc.wantError == nil {
+				assert.NoError(t, err)
+				return
+			}
+			assert.ErrorIs(t, err, tc.wantError)
+			assert.Contains(t, err.Error(), "Point SOME_URL at the https endpoint")
+		})
+	}
+
+	t.Run("redirect cap", func(t *testing.T) {
+		via := make([]*http.Request, MaxRedirects)
+		for i := range via {
+			via[i] = hop("https://a.example")
+		}
+		assert.EqualError(t, RefuseSchemeDowngrade(hop("https://a.example"), via, "SOME_URL"),
+			"stopped after 10 redirects")
+	})
+}

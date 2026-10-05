@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/shini4i/argo-watcher/internal/helpers"
 	"github.com/shini4i/argo-watcher/internal/models"
 )
 
@@ -84,7 +85,7 @@ func (watcher *Watcher) getJSON(ctx context.Context, url string, v interface{}) 
 func (watcher *Watcher) getJSONOnce(ctx context.Context, url string, v interface{}) error {
 	resp, err := watcher.doRequest(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		if errors.Is(err, errInsecureRedirect) {
+		if errors.Is(err, helpers.ErrInsecureRedirect) {
 			return err // a misconfiguration, not a blip — retrying never clears it
 		}
 		// Network-level failure: connection refused/reset, DNS, timeout.

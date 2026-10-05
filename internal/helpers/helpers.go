@@ -1,6 +1,7 @@
 package helpers
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httputil"
@@ -72,4 +73,30 @@ func GenerateHash(s string) []byte {
 	// hash.Write is documented never to return an error.
 	hash.Write([]byte(s))
 	return hash.Sum(nil)
+}
+
+// MaxRedirects mirrors net/http's default redirect limit, which setting CheckRedirect
+// replaces.
+const MaxRedirects = 10
+
+// ErrInsecureRedirect is returned by RefuseSchemeDowngrade for a hop from https to a weaker
+// scheme. Callers treat it as terminal: retrying replays the same redirect.
+var ErrInsecureRedirect = errors.New("refused to follow a redirect away from https")
+
+// RefuseSchemeDowngrade is the CheckRedirect core for clients that carry a credential: it stops
+// after MaxRedirects hops and wraps ErrInsecureRedirect, naming urlEnvVar, for an https hop to a
+// weaker scheme. net/http forwards credentials by hostname alone. Comparing against the hop just
+// taken keeps an endpoint configured on http working.
+func RefuseSchemeDowngrade(request *http.Request, via []*http.Request, urlEnvVar string) error {
+	if len(via) >= MaxRedirects {
+		return fmt.Errorf("stopped after %d redirects", MaxRedirects)
+	}
+
+	previous := via[len(via)-1]
+	if previous.URL.Scheme == "https" && request.URL.Scheme != "https" {
+		return fmt.Errorf("%w: %q redirected to %q. Point %s at the https endpoint",
+			ErrInsecureRedirect, previous.URL.Host, request.URL.Scheme+"://"+request.URL.Host, urlEnvVar)
+	}
+
+	return nil
 }
