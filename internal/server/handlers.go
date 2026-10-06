@@ -207,11 +207,11 @@ func (env *Env) addTask(w http.ResponseWriter, r *http.Request) {
 	// unbounded number of rollout monitors, each polling ArgoCD for up to a day.
 	// Credentialed tasks are never refused: a flood of anonymous ones must not lock out
 	// pipelines that present a token.
-	release := func() {}
+	holdsSlot := false
 	if !task.Validated && env.anonymousRollouts != nil {
 		select {
 		case env.anonymousRollouts <- struct{}{}:
-			release = func() { <-env.anonymousRollouts }
+			holdsSlot = true
 		default:
 			slog.Warn("rejecting task: anonymous rollout cap reached", "app", task.App, "cap", cap(env.anonymousRollouts))
 			writeJSON(w, http.StatusTooManyRequests, models.TaskStatus{
@@ -219,6 +219,11 @@ func (env *Env) addTask(w http.ResponseWriter, r *http.Request) {
 				Error:  "too many deployments without a credential are in progress (MAX_ANONYMOUS_ROLLOUTS); retry later or present a deploy token",
 			})
 			return
+		}
+	}
+	release := func() {
+		if holdsSlot {
+			<-env.anonymousRollouts
 		}
 	}
 
