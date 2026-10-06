@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   already sent only `BEARER_TOKEN` in that case; a pipeline moving to an application deploy
   token now learns that the old shared token is ignored, instead of finding out later.
   The warning is printed whether or not `DEBUG` is on.
+- `MAX_ANONYMOUS_ROLLOUTS` caps how many deployments without a valid credential one replica
+  accepts and monitors at once. Submission takes no credential, and each task keeps a monitor
+  polling Argo CD for up to its timeout, so without a cap any caller can start as many as it
+  likes. A submission past the cap is rejected `429`; deployments that present a credential
+  are never refused. Unset or `0` keeps the current behaviour: no cap.
 
 ### Changed
 
