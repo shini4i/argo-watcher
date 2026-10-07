@@ -39,6 +39,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Failing only when its latest deployment failed, or when at least two of its last ten
   deployments (the squares on its card) failed. The failure count on each card still covers
   the whole selected window.
+- The full failure reason on a task's page now wraps to the panel width. Argo CD often
+  quotes whole object specs as JSON without spaces, and those lines stretched the whole page
+  wider than the window, so it scrolled sideways.
 
 ### Security
 

@@ -82,7 +82,8 @@ export const FailureReasonPanel = ({ summary, tone }: FailureReasonPanelProps) =
             padding: 1.5,
             margin: 0,
             whiteSpace: 'pre-wrap',
-            overflowX: 'auto',
+            // Argo CD embeds object specs as space-free JSON; break inside them.
+            overflowWrap: 'anywhere',
           }}
         >
           {summary.raw}
