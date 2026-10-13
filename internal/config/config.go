@@ -224,6 +224,10 @@ type ServerConfig struct {
 	// process. Deleting deployment history is irreversible, so it is opt-in.
 	TaskRetentionEnabled bool `env:"TASK_RETENTION_ENABLED" envDefault:"false" json:"-"`
 	TaskRetentionDays    int  `env:"TASK_RETENTION_DAYS" envDefault:"365" json:"-"`
+
+	// MaxAnonymousRollouts caps how many rollouts without a valid credential one replica
+	// monitors at once; 0 means no cap.
+	MaxAnonymousRollouts uint `env:"MAX_ANONYMOUS_ROLLOUTS" envDefault:"0" json:"-"`
 }
 
 // removedKeycloakVars pairs each KEYCLOAK_* variable removed in 1.0.0 with the

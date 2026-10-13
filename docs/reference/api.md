@@ -66,7 +66,7 @@ With OIDC **enabled**, the endpoints the Web UI consumes require one, group memb
 `POST /api/v1/tasks` takes an **optional** credential:
 
 - **With a valid credential** the task is authorized: the git write-back runs, and the task can supersede an in-flight deployment of the same images.
-- **Without one** the task is still accepted (`202`) and monitored normally — the expected setup when image tags are committed elsewhere (Argo CD Image Updater, your pipeline). The write-back is skipped, and it cannot cancel a deployment that did present a credential.
+- **Without one** the task is still accepted (`202`) and monitored normally — the expected setup when image tags are committed elsewhere (Argo CD Image Updater, your pipeline). The write-back is skipped, and it cannot cancel a deployment that did present a credential. With [`MAX_ANONYMOUS_ROLLOUTS`](server-env.md#core) set, it is rejected `429` once that many uncredentialed deployments are in progress on the replica.
 - **With an invalid or expired one** the request is rejected `401`.
 - **With a credential scoped to other applications** the request is rejected `401`. An application deploy token, and a JWT carrying `allowed_apps`, authorize only the applications they name.
 

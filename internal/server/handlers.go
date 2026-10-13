@@ -136,6 +136,7 @@ func (env *Env) getVersion(w http.ResponseWriter, _ *http.Request) {
 // @Failure 401 {object} models.TaskStatus
 // @Failure 406 {object} models.TaskStatus
 // @Failure 413 {object} models.TaskStatus "the request body is larger than the server accepts"
+// @Failure 429 {object} models.TaskStatus "MAX_ANONYMOUS_ROLLOUTS anonymous rollouts in progress"
 // @Failure 503 {object} models.TaskStatus "the credential could not be checked; retry"
 // @Router /api/v1/tasks [post]
 func (env *Env) addTask(w http.ResponseWriter, r *http.Request) {
@@ -202,8 +203,33 @@ func (env *Env) addTask(w http.ResponseWriter, r *http.Request) {
 		task.Timeout = maxTaskTimeout
 	}
 
+	// Submission takes no credential, so without a cap any caller could start an
+	// unbounded number of rollout monitors, each polling ArgoCD for up to a day.
+	// Credentialed tasks are never refused: a flood of anonymous ones must not lock out
+	// pipelines that present a token.
+	holdsSlot := false
+	if !task.Validated && env.anonymousRollouts != nil {
+		select {
+		case env.anonymousRollouts <- struct{}{}:
+			holdsSlot = true
+		default:
+			slog.Warn("rejecting task: anonymous rollout cap reached", "app", task.App, "cap", cap(env.anonymousRollouts))
+			writeJSON(w, http.StatusTooManyRequests, models.TaskStatus{
+				Status: "rejected",
+				Error:  "too many deployments without a credential are in progress (MAX_ANONYMOUS_ROLLOUTS); retry later or present a deploy token",
+			})
+			return
+		}
+	}
+	release := func() {
+		if holdsSlot {
+			<-env.anonymousRollouts
+		}
+	}
+
 	newTask, err := env.argo.AddTask(task)
 	if err != nil {
+		release()
 		slog.Error("failed to add task", "error", err)
 		// Submission takes no credential, so a backend failure's driver text must not
 		// travel with the response. Every other cause here names a client mistake.
@@ -218,7 +244,10 @@ func (env *Env) addTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go env.updater.WaitForRollout(*newTask, false, env.handsOverOnShutdown)
+	go func() {
+		defer release()
+		env.updater.WaitForRollout(*newTask, false, env.handsOverOnShutdown)
+	}()
 
 	writeJSON(w, http.StatusAccepted, models.TaskStatus{
 		Id:     newTask.Id,

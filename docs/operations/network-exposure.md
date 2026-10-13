@@ -35,6 +35,8 @@ A caller *with* a valid credential deploys for real — the write-back commits t
 
 The payload is [bounded](../reference/api.md#submitting-a-task) so one request cannot ask for unbounded work, and the [cross-origin gate](../reference/api.md#cross-origin-requests) stops a page on an unrelated site from submitting through a visitor's browser. Neither is a substitute for a credential: `curl` sends no `Origin`.
 
+By default nothing limits how many anonymous tasks are in flight, and each keeps a monitor polling Argo CD for up to its timeout. Set [`MAX_ANONYMOUS_ROLLOUTS`](../reference/server-env.md#core) to cap them per replica; tasks that present a credential are never refused by it.
+
 ## What enabling OIDC closes
 
 [OIDC](../guides/oidc.md) closes the reads only the Web UI consumes — `GET /api/v1/tasks`, `/apps/summary`, `/version`, `/reachability`, `GET /api/v1/deploy-lock` and `/ws` — and makes the deploy-lock writes available to `OIDC_PRIVILEGED_GROUPS` alone. [Protected endpoints](../guides/oidc.md#protected-endpoints) is the full table.

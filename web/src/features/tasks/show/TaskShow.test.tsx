@@ -167,6 +167,23 @@ describe('TaskShow', () => {
     expect(screen.getByText(/Sync operation phase: Failed/)).toBeInTheDocument();
   });
 
+  it('wraps a space-free raw reason instead of scrolling it sideways', async () => {
+    // Argo CD embeds whole object specs as JSON with no spaces to break on.
+    const raw = 'Sync operation message: {"Spec":{"Volumes":null,"InitContainers":null}}';
+    mockUseGetOne.mockReturnValue({
+      data: buildTask({ status: 'failed', status_reason: raw }),
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+
+    await renderWithRouter('/task/task-1');
+
+    fireEvent.click(screen.getByRole('button', { name: /Full reason from Argo CD/ }));
+    const body = screen.getByText(/"InitContainers":null/, { selector: 'pre' });
+    expect(body).toHaveStyle({ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' });
+  });
+
   it('uses neutral wording for a reason that is not a failure', async () => {
     mockUseGetOne.mockReturnValue({
       data: buildTask({ status: 'cancelled', status_reason: 'Cancelled by alice' }),

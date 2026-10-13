@@ -40,6 +40,18 @@ type Env struct {
 	connWg sync.WaitGroup
 	// ws holds the clients this server broadcasts to.
 	ws wsRegistry
+	// anonymousRollouts holds one token per rollout without a valid credential this
+	// replica is monitoring. Nil means MAX_ANONYMOUS_ROLLOUTS is unset: no cap.
+	anonymousRollouts chan struct{}
+}
+
+// newRolloutSlots returns a channel with room for limit in-flight rollouts, or nil
+// when limit is 0, which leaves admission uncapped.
+func newRolloutSlots(limit uint) chan struct{} {
+	if limit == 0 {
+		return nil
+	}
+	return make(chan struct{}, limit)
 }
 
 // lockdownPollInterval is how often the lockdown watcher re-evaluates the lock
@@ -211,6 +223,8 @@ func NewEnv(serverConfig *config.ServerConfig, argo *argocd.Argo, metrics *prome
 		metrics:    metrics,
 		updater:    updater,
 		shutdownCh: make(chan struct{}),
+
+		anonymousRollouts: newRolloutSlots(serverConfig.MaxAnonymousRollouts),
 	}
 
 	if env.lockdown, err = NewLockdown(serverConfig.LockdownSchedule, deployLockStore); err != nil {
