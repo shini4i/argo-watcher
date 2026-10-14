@@ -58,6 +58,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `http://` keeps working.
 - Raise the `dompurify` pin to 3.4.16, which fixes `IN_PLACE` sanitization leaving a node in
   place when an `afterSanitize` hook removes it.
+- Build with Go 1.27.2 and `golang.org/x/net` 0.61.0, fixing HTTP/2, `net/http`,
+  `crypto/tls` and `mime/multipart` vulnerabilities reachable from the server and the client.
+- Raise `swagger-ui-dist` to 5.33.2, whose bundled DOMPurify (3.4.16) carries the same
+  `IN_PLACE` fix as the `dompurify` pin.
 
 ## [1.4.2] - 2026-09-28
 

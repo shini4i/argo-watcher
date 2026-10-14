@@ -103,7 +103,8 @@ The write-back fails, naming the cause, when:
 
 - the file is missing, or resolves through a symlink to a path outside the repository;
 - no field in the file is marked for the application and alias;
-- a marker sits on a key or a collection, or is not valid JSON;
+- a marker for the application sits on a key or a collection;
+- the application has no valid marker and another marker in the file is not valid JSON (such a marker names no application, so with a valid marker present it is only logged as a warning);
 - the tag is not a valid image tag (`[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}`), or the task gives one image two different tags;
 - the marked value carries an anchor or explicit tag, sits inside an anchored collection, is an alias, a block or multi-line scalar, or a quoted string with escape sequences.
 
