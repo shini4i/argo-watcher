@@ -52,7 +52,7 @@ func competitorEditsAppB(t *testing.T, env *giteaEnv, tag string) {
 	file := filepath.Join(dir, "apps", "apps.yaml")
 	content, err := os.ReadFile(file) // #nosec G304 -- test-controlled path
 	require.NoError(t, err)
-	edited := appBTagLine.ReplaceAllString(string(content), `tag: `+tag+` # {"$argo-watcher": "app-b:app"}`)
+	edited := appBTagLine.ReplaceAllLiteralString(string(content), `tag: `+tag+` # {"$argo-watcher": "app-b:app"}`)
 	require.NoError(t, os.WriteFile(file, []byte(edited), 0o644)) // #nosec G306
 
 	wt, err := repo.Worktree()
@@ -115,9 +115,9 @@ func TestIntegration_InlineWriteBack_SharedManifestPushRace(t *testing.T) {
 		case err := <-done:
 			require.NoError(t, err, "inline write-back should succeed after recovery (attempt %d)", attempt)
 			_, got := cloneRemoteState(t, env.DirectRepoURL, env.SSHKeyPath, "master", "apps/apps.yaml")
-			want := appBTagLine.ReplaceAllString(inlineAppsManifest, `tag: `+theirTag+` # {"$argo-watcher": "app-b:app"}`)
+			want := appBTagLine.ReplaceAllLiteralString(inlineAppsManifest, `tag: `+theirTag+` # {"$argo-watcher": "app-b:app"}`)
 			want = regexp.MustCompile(`tag: \S+ # \{"\$argo-watcher": "app-a:app"\}`).
-				ReplaceAllString(want, `tag: `+ourTag+` # {"$argo-watcher": "app-a:app"}`)
+				ReplaceAllLiteralString(want, `tag: `+ourTag+` # {"$argo-watcher": "app-a:app"}`)
 			assert.Equal(t, want, got, "both edits must survive and nothing else may change (attempt %d)", attempt)
 		case <-time.After(90 * time.Second):
 			t.Fatalf("inline write-back did not complete in 90s (attempt %d)", attempt)

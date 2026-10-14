@@ -108,6 +108,20 @@ func resolveInsideRoot(root, relPath string) (string, error) {
 	return filepath.Join(root, rel), nil
 }
 
+// markedField is one field carrying a marker. err is set when the marker is placed
+// where the field cannot be edited; it only matters to the app the marker names.
+type markedField struct {
+	node *yaml.Node
+	err  error
+}
+
+// markedFields holds every marker of a file, keyed by its "<app>:<alias>" value.
+// Malformed markers name no app, so they are kept apart.
+type markedFields struct {
+	byMarker  map[string][]markedField
+	malformed []error
+}
+
 // spliceMarkedTags returns content with every field marked for appName and an
 // update's alias set to that tag. It edits raw bytes so the rest of the file is kept,
 // then re-parses the result to prove only the marked fields changed.
@@ -125,13 +139,18 @@ func spliceMarkedTags(content []byte, appName string, updates []InlineTagUpdate)
 		}
 
 		marker := appName + ":" + update.Alias
-		nodes := marked[marker]
-		if len(nodes) == 0 {
-			return nil, fmt.Errorf("no field is marked {%q: %q}", inlineMarkerKey, marker)
+		fields := marked.byMarker[marker]
+		if len(fields) == 0 {
+			// A malformed marker may have been meant for this app, so name it too.
+			noField := fmt.Errorf("no field is marked {%q: %q}", inlineMarkerKey, marker)
+			return nil, errors.Join(append([]error{noField}, marked.malformed...)...)
 		}
 
-		for _, node := range nodes {
-			edit, err := planScalarEdit(content, lineStarts, node, update.Tag)
+		for _, field := range fields {
+			if field.err != nil {
+				return nil, field.err
+			}
+			edit, err := planScalarEdit(content, lineStarts, field.node, update.Tag)
 			if err != nil {
 				return nil, err
 			}
@@ -149,23 +168,23 @@ func spliceMarkedTags(content []byte, appName string, updates []InlineTagUpdate)
 	if err := verifySplice(content, updated, appName, updates); err != nil {
 		return nil, err
 	}
+	if len(marked.malformed) > 0 {
+		slog.Warn("Ignored malformed argo-watcher markers", "app", appName, "error", errors.Join(marked.malformed...))
+	}
 	return updated, nil
 }
 
-// findMarkedFields parses every YAML document in content and returns the marked
-// nodes keyed by the marker's "<app>:<alias>" value. The nodes belong to the
-// returned documents, which the caller may modify.
-func findMarkedFields(content []byte) (map[string][]*yaml.Node, error) {
+// findMarkedFields parses every YAML document in content and returns its markers.
+// The nodes belong to the parsed documents, which the caller may modify.
+func findMarkedFields(content []byte) (*markedFields, error) {
 	documents, err := decodeDocuments(content)
 	if err != nil {
 		return nil, err
 	}
 
-	marked := map[string][]*yaml.Node{}
+	marked := &markedFields{byMarker: map[string][]markedField{}}
 	for _, document := range documents {
-		if err := collectMarkedFields(document, false, false, marked); err != nil {
-			return nil, err
-		}
+		collectMarkedFields(document, false, false, marked)
 	}
 	return marked, nil
 }
@@ -186,32 +205,30 @@ func decodeDocuments(content []byte) ([]*yaml.Node, error) {
 	}
 }
 
-// collectMarkedFields records each marked node under node in marked. A marker counts
-// only as the line comment of a scalar value outside any anchored collection (an
-// alias would copy the edit elsewhere); any other placement is an error, never ignored.
-func collectMarkedFields(node *yaml.Node, isKey, underAnchor bool, marked map[string][]*yaml.Node) error {
+// collectMarkedFields records each marker under node. A marker is editable only as
+// the line comment of a scalar value outside any anchored collection (an alias would
+// copy the edit elsewhere); any other placement is recorded as an error for its app.
+func collectMarkedFields(node *yaml.Node, isKey, underAnchor bool, marked *markedFields) {
 	if strings.Contains(node.LineComment, strconv.Quote(inlineMarkerKey)) {
-		marker, err := parseMarker(node)
-		if err != nil {
-			return err
+		if marker, err := parseMarker(node); err != nil {
+			marked.malformed = append(marked.malformed, err)
+		} else {
+			field := markedField{node: node}
+			switch {
+			case isKey || (node.Kind != yaml.ScalarNode && node.Kind != yaml.AliasNode):
+				field.err = fmt.Errorf("the %s marker on line %d must follow a scalar value", inlineMarkerKey, node.Line)
+			case underAnchor:
+				field.err = fmt.Errorf("the marked field on line %d is inside an anchored collection; editing it would change every alias of it", node.Line)
+			}
+			marked.byMarker[marker] = append(marked.byMarker[marker], field)
 		}
-		if isKey || (node.Kind != yaml.ScalarNode && node.Kind != yaml.AliasNode) {
-			return fmt.Errorf("the %s marker on line %d must follow a scalar value", inlineMarkerKey, node.Line)
-		}
-		if underAnchor {
-			return fmt.Errorf("the marked field on line %d is inside an anchored collection; editing it would change every alias of it", node.Line)
-		}
-		marked[marker] = append(marked[marker], node)
 	}
 
 	childUnderAnchor := underAnchor || (node.Kind != yaml.ScalarNode && node.Anchor != "")
 	for i, child := range node.Content {
 		childIsKey := node.Kind == yaml.MappingNode && i%2 == 0
-		if err := collectMarkedFields(child, childIsKey, childUnderAnchor, marked); err != nil {
-			return err
-		}
+		collectMarkedFields(child, childIsKey, childUnderAnchor, marked)
 	}
-	return nil
 }
 
 // parseMarker returns the "<app>:<alias>" value of a node's marker comment.
@@ -322,15 +339,13 @@ func verifySplice(original, updated []byte, appName string, updates []InlineTagU
 	if err != nil {
 		return err
 	}
-	expectedMarked := map[string][]*yaml.Node{}
+	expectedMarked := &markedFields{byMarker: map[string][]markedField{}}
 	for _, document := range expectedDocs {
-		if err := collectMarkedFields(document, false, false, expectedMarked); err != nil {
-			return err
-		}
+		collectMarkedFields(document, false, false, expectedMarked)
 	}
 	for _, update := range updates {
-		for _, node := range expectedMarked[appName+":"+update.Alias] {
-			node.Value, node.Tag, node.Style = update.Tag, "!!str", yaml.DoubleQuotedStyle
+		for _, field := range expectedMarked.byMarker[appName+":"+update.Alias] {
+			field.node.Value, field.node.Tag, field.node.Style = update.Tag, "!!str", yaml.DoubleQuotedStyle
 		}
 	}
 

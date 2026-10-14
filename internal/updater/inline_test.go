@@ -326,3 +326,18 @@ func TestVerifySplice_RejectsAnyOtherChange(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "number of YAML documents")
 }
+
+func TestSpliceMarkedTags_AnotherAppsBadMarkerDoesNotBlock(t *testing.T) {
+	ours := "tag: v1 # {\"$argo-watcher\": \"demo:app\"}\n"
+	for name, theirs := range map[string]string{
+		"anchored":  "defaults: &d\n  tag: x # {\"$argo-watcher\": \"other:app\"}\ncopy: *d\n",
+		"on a key":  "image: # {\"$argo-watcher\": \"other:app\"}\n  tag: x\n",
+		"malformed": "tag2: x # {\"$argo-watcher\": }\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := spliceMarkedTags([]byte(ours+theirs), "demo", []InlineTagUpdate{{Alias: "app", Tag: "v2"}})
+			require.NoError(t, err)
+			assert.Equal(t, "tag: v2 # {\"$argo-watcher\": \"demo:app\"}\n"+theirs, string(got))
+		})
+	}
+}
