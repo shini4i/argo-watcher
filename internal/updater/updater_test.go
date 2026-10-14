@@ -312,6 +312,16 @@ func setupGitForTest(t *testing.T) (sourceRepo, remoteRepo, localRepo *git.Repos
 	return sourceRepo, remoteRepo, localRepo, remotePath, localPath
 }
 
+// commitAppAndPublish commits the override at repo.Path/repo.FileName and pushes it
+// when a commit was made, the same sequence the write-back flow runs.
+func commitAppAndPublish(repo *GitRepo, ctx context.Context, appName string, overrideContent *ArgoOverrideFile, tmplData any) error {
+	committed, err := repo.CommitAppLocal(appName, repo.Path, repo.FileName, overrideContent, tmplData)
+	if err != nil || !committed {
+		return err
+	}
+	return repo.Push(ctx)
+}
+
 func TestFullUpdateAppCycle(t *testing.T) {
 	t.Run("Success - With Changes", func(t *testing.T) {
 		_, remoteRepo, localRepo, _, localPath := setupGitForTest(t)
@@ -326,7 +336,7 @@ func TestFullUpdateAppCycle(t *testing.T) {
 		newParams := &ArgoOverrideFile{}
 		newParams.Helm.Parameters = []ArgoParameterOverride{{Name: "image.tag", Value: "v2.0.0"}}
 
-		err := repo.UpdateApp(context.Background(), "my-app", newParams, nil)
+		err := commitAppAndPublish(repo, context.Background(), "my-app", newParams, nil)
 		require.NoError(t, err)
 
 		content, err := os.ReadFile(valuesFile)
@@ -351,13 +361,13 @@ func TestFullUpdateAppCycle(t *testing.T) {
 
 		initialParams := &ArgoOverrideFile{}
 		initialParams.Helm.Parameters = []ArgoParameterOverride{{Name: "image.tag", Value: "v2.0.0"}}
-		err := repo.UpdateApp(context.Background(), "my-app", initialParams, nil)
+		err := commitAppAndPublish(repo, context.Background(), "my-app", initialParams, nil)
 		require.NoError(t, err)
 
 		headBefore, err := localRepo.Head()
 		require.NoError(t, err)
 
-		err = repo.UpdateApp(context.Background(), "my-app", initialParams, nil)
+		err = commitAppAndPublish(repo, context.Background(), "my-app", initialParams, nil)
 		require.NoError(t, err)
 
 		headAfter, err := localRepo.Head()
@@ -380,7 +390,7 @@ func TestFullUpdateAppCycle(t *testing.T) {
 		newParams := &ArgoOverrideFile{}
 		newParams.Helm.Parameters = []ArgoParameterOverride{{Name: "image.tag", Value: "v2.0.0"}}
 
-		err := repo.UpdateApp(ctx, "my-app", newParams, nil)
+		err := commitAppAndPublish(repo, ctx, "my-app", newParams, nil)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "budget exhausted before push")
 	})
@@ -415,8 +425,8 @@ func TestFullUpdateAppCycle(t *testing.T) {
 		newParams := &ArgoOverrideFile{}
 		newParams.Helm.Parameters = []ArgoParameterOverride{{Name: "image.tag", Value: "v3.0.0"}}
 
-		err = repo.UpdateApp(context.Background(), "my-app", newParams, nil)
-		// We no longer classify push errors — UpdateApp just surfaces whatever go-git
+		err = commitAppAndPublish(repo, context.Background(), "my-app", newParams, nil)
+		// We no longer classify push errors — the push just surfaces whatever go-git
 		// returns. The retry loop in the caller decides whether to retry.
 		assert.Error(t, err)
 	})
@@ -835,7 +845,7 @@ func renderOverride(t *testing.T, content *ArgoOverrideFile) []byte {
 }
 
 // commitLocalAndPush is the single-app compose (commit locally, then push) that
-// UpdateApp performs; tests that assert on remote state use it directly.
+// the write-back flow performs; tests that assert on remote state use it directly.
 func commitLocalAndPush(t *testing.T, repo *GitRepo, fullPath, msg string, content *ArgoOverrideFile) {
 	t.Helper()
 	committed, err := repo.commitLocal(fullPath, msg, renderOverride(t, content))
@@ -995,7 +1005,7 @@ func TestUpdateApp_ErrorHandling(t *testing.T) {
 		appDir := filepath.Join(localPath, "apps")
 		require.NoError(t, os.Mkdir(appDir, 0755))
 
-		err := repo.UpdateApp(context.Background(), "my-app", newParams, nil)
+		err := commitAppAndPublish(repo, context.Background(), "my-app", newParams, nil)
 		assert.NoError(t, err)
 	})
 }

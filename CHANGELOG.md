@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Inline write-back: `argo-watcher/write-back-mode: inline` writes the image tag straight into
+  the `Application` manifest's `valuesObject` instead of an override file. Fields are picked
+  with a `# {"$argo-watcher": "<app>:<alias>"}` line comment, and only the marked value
+  changes; the rest of the file keeps its formatting and comments. The default stays
+  `override`.
 - The client warns when both `BEARER_TOKEN` and `ARGO_WATCHER_DEPLOY_TOKEN` are set. It
   already sent only `BEARER_TOKEN` in that case; a pipeline moving to an application deploy
   token now learns that the old shared token is ignored, instead of finding out later.

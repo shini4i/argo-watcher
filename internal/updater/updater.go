@@ -194,21 +194,6 @@ func (repo *GitRepo) generateCommitMessage(appName string, tmplData any) string 
 	return message.String()
 }
 
-// UpdateApp is the main entry point for updating an application's manifest file.
-// It merges the new content with any existing override file, commits the change
-// locally, and pushes it. The provided ctx bounds the push. It is the single-app
-// path; batch write-back instead calls CommitAppLocal for each app and Push once.
-func (repo *GitRepo) UpdateApp(ctx context.Context, appName string, overrideContent *ArgoOverrideFile, tmplData any) error {
-	committed, err := repo.CommitAppLocal(appName, repo.Path, repo.FileName, overrideContent, tmplData)
-	if err != nil {
-		return err
-	}
-	if !committed {
-		return nil
-	}
-	return repo.push(ctx)
-}
-
 // CommitAppLocal merges an app's override file with the new content and commits
 // the change into the local clone WITHOUT pushing. It reports whether a commit
 // was actually created (false when the on-disk content already matches, so there
@@ -264,7 +249,7 @@ func assertInsideRoot(root, path string) error {
 // as a yaml.Node so that sibling keys and comments survive: the target may be
 // Argo CD's own .argocd-source-<app>.yaml, or a file write-back-filename names.
 func (repo *GitRepo) mergeOverrideFileContent(fullPath string, overrideContent *ArgoOverrideFile) ([]byte, error) {
-	existingContent, err := os.ReadFile(fullPath) // #nosec G304 -- path already validated by assertInsideRoot in UpdateApp
+	existingContent, err := os.ReadFile(fullPath) // #nosec G304 -- path already validated by assertInsideRoot in CommitAppLocal
 	if err != nil {
 		if os.IsNotExist(err) {
 			return yaml.Marshal(overrideContent)
@@ -432,15 +417,16 @@ func (repo *GitRepo) commitLocal(fullPath, commitMsg string, contentBytes []byte
 	}
 
 	// Detect "nothing to commit" with a single-file byte compare instead of
-	// worktree.Status(). Clone() hard-resets to origin HEAD and this override file is
-	// the only path we write, so equal bytes mean a clean worktree — but O(1 file)
+	// worktree.Status(). Clone() hard-resets to origin HEAD and fullPath is the only
+	// path we write, so equal bytes mean a clean worktree — but O(1 file)
 	// instead of scanning the whole repo, which dominates the cost on a large repo.
-	// #nosec G304 -- path already validated by assertInsideRoot in CommitAppLocal
+	// #nosec G304 -- every caller validates fullPath against the clone root first
 	if existing, readErr := os.ReadFile(fullPath); readErr == nil && bytes.Equal(existing, contentBytes) {
 		slog.Debug("No changes detected. Skipping commit.")
 		return false, nil
 	}
 
+	// #nosec G703 -- every caller validates fullPath against the clone root first
 	if err := os.WriteFile(fullPath, contentBytes, 0600); err != nil {
 		return false, fmt.Errorf("failed to write override file: %w", err)
 	}
