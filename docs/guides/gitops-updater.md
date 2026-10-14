@@ -68,6 +68,51 @@ sandbox/charts/demo/.argocd-source-demo.yaml
 
 Argo Watcher rewrites only the `helm.parameters` entries it manages, leaving the rest of the file alone. That matters when `argo-watcher/write-back-filename` points at a file you also maintain.
 
+### Inline write-back
+
+Instead of an override file, Argo Watcher can write the tag straight into the `Application` manifest's `spec.source.helm.valuesObject`. Opt in per application:
+
+```yaml
+metadata:
+  annotations:
+    argo-watcher/managed: "true"
+    argo-watcher/managed-images: "app=registry.example.com/group-name/project-name"
+    argo-watcher/write-back-mode: "inline"
+    argo-watcher/write-back-repo: "git@github.com:example/apps.git"
+    argo-watcher/write-back-branch: "main"
+    argo-watcher/write-back-path: "apps"
+    argo-watcher/write-back-filename: "demo.yaml"
+```
+
+The four location annotations are required and name the file that holds this `Application` manifest — normally in your app-of-apps repository. Use `.` as the path for the repository root. `<alias>.helm.image-tag` is not used.
+
+Then mark each field to update with a line comment. `<app>` is the Application's `metadata.name` and `<alias>` an alias from `managed-images`:
+
+```yaml
+spec:
+  source:
+    helm:
+      valuesObject:
+        image:
+          tag: 1.4.2 # {"$argo-watcher": "demo:app"}
+```
+
+On deploy, Argo Watcher replaces only the marked value. Every other byte of the file, comments and formatting included, stays as it is, and the result is re-parsed to prove nothing else changed. Several `Application` documents may share one file: each application only touches the fields marked with its own name.
+
+The write-back fails, naming the cause, when:
+
+- the file is missing, or resolves through a symlink to a path outside the repository;
+- no field in the file is marked for the application and alias;
+- a marker for the application sits on a key or a collection;
+- the application has no valid marker and another marker in the file is not valid JSON (such a marker names no application, so with a valid marker present it is only logged as a warning);
+- the tag is not a valid image tag (`[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}`), or the task gives one image two different tags;
+- the marked value carries an anchor or explicit tag, sits inside an anchored collection, is an alias, a block or multi-line scalar, or a quoted string with escape sequences.
+
+A tag that YAML would read as a number or boolean (`1.10`, `on`) is written quoted, so it stays a string.
+
+!!! warning "Switching an existing application"
+    Argo CD gives Helm parameters precedence over `valuesObject`, and that includes the ones in the `.argocd-source-<app>.yaml` override file. An application that used override mode still has its tag there, so it would keep rendering the old tag. Delete the application's managed entries from the override file (or the whole file, if Argo Watcher was its only writer) when you switch.
+
 ### Fire-and-forget mode
 
 When the new image will not run on its own — an application containing only `CronJob` resources, for instance — annotate it:
@@ -250,7 +295,7 @@ extraEnvs:
 
 Batching is contention-driven, so it costs nothing when there is no contention: a write-back for an idle repository flushes immediately, while ones arriving during an in-flight flush are queued and flushed together as soon as it completes. Each flush makes **one commit per application** — preserving per-app history and `COMMIT_MESSAGE_FORMAT` — followed by a single push. `GIT_BATCH_MAX_SIZE` bounds one flush; the rest carries into the next.
 
-Correctness is unchanged. Each application writes its own `.argocd-source-<app>.yaml`, so applications in a batch cannot conflict; a misconfigured application fails alone; a superseded deployment is dropped from the batch rather than committing a stale tag; and a push that loses a race re-clones onto the new tip and re-applies, exactly as the serialized path does. `GIT_OP_TIMEOUT` and `GIT_MAX_ATTEMPTS` apply to the batch as a whole. With multiple replicas each coalesces its own write-backs, and the Postgres advisory lock still serializes pushes between them.
+Correctness is unchanged. Each application writes either its own `.argocd-source-<app>.yaml` or, in inline mode, only the fields marked with its own name, so applications in a batch cannot overwrite each other even when they share a manifest file; a misconfigured application fails alone; a superseded deployment is dropped from the batch rather than committing a stale tag; and a push that loses a race re-clones onto the new tip and re-applies, exactly as the serialized path does. `GIT_OP_TIMEOUT` and `GIT_MAX_ATTEMPTS` apply to the batch as a whole. With multiple replicas each coalesces its own write-backs, and the Postgres advisory lock still serializes pushes between them.
 
 Watch `gitops_batch_size` to see whether batching is doing anything: a distribution clustered at `1` means there is no contention to collapse.
 

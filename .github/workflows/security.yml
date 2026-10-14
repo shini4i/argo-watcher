@@ -47,17 +47,13 @@ jobs:
       - name: Run Gosec Security Scanner
         id: gosec
         continue-on-error: true
-        uses: securego/gosec@deb54465fea23d19a77f037e11e6589021f8501d # v2.29.0
-        env:
-          # The gosec image bundles an older Go with GOTOOLCHAIN=local, so it
-          # refuses a go.mod whose toolchain directive names a newer patch. Allow
-          # it to fetch the toolchain named in go.mod instead of failing.
-          GOTOOLCHAIN: auto
-        with:
-          # Exclude the e2e lab tooling (test/e2e): it is not shipped in any
-          # release binary, and its git-exec / file-read / math-rand usage is
-          # intentional for a disposable local lab, not a production attack surface.
-          args: -exclude-dir=test/e2e ./...
+        # Built from source with the go.mod toolchain: the gosec image's binary
+        # predates go1.27.2 and cannot read its export data.
+        # Exclude the e2e lab tooling (test/e2e): it ships in no release binary, and
+        # its git-exec / file-read / math-rand use is intentional for a local lab.
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@v2.29.0
+          "$(go env GOPATH)/bin/gosec" -exclude-dir=test/e2e ./...
 
       - name: Run govulncheck
         id: govulncheck

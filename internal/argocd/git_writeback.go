@@ -71,6 +71,83 @@ func generateOverrideFileContent(annotations map[string]string, task *models.Tas
 	return &overrideFileContent, nil
 }
 
+// generateInlineTagUpdates builds the inline write-back's tag per managed alias. It
+// returns nil (no error) when no task image is managed. It rejects, before anything
+// is cloned, a tag outside the OCI grammar and an image given two different tags.
+func generateInlineTagUpdates(annotations map[string]string, task *models.Task) ([]updater.InlineTagUpdate, error) {
+	managedImages, err := extractManagedImages(annotations)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(managedImages) == 0 {
+		slog.Warn("annotation not found, skipping image update", "annotation", managedImagesAnnotation)
+		return nil, nil
+	}
+
+	var updates []updater.InlineTagUpdate
+	tagByAlias := map[string]string{}
+	for _, image := range task.Images {
+		for appAlias, appImage := range managedImages {
+			if image.Image != appImage {
+				continue
+			}
+			if err := updater.ValidateImageTag(image.Tag); err != nil {
+				return nil, err
+			}
+			if seen, ok := tagByAlias[appAlias]; ok {
+				if seen != image.Tag {
+					return nil, fmt.Errorf("image %q is given twice with different tags", image.Image)
+				}
+				continue
+			}
+			tagByAlias[appAlias] = image.Tag
+			updates = append(updates, updater.InlineTagUpdate{Alias: appAlias, Tag: image.Tag})
+		}
+	}
+
+	if len(updates) == 0 {
+		slog.Warn("no task image matches a managed image, skipping write-back",
+			"annotation", managedImagesAnnotation, "id", task.Id)
+		return nil, nil
+	}
+	return updates, nil
+}
+
+// appWriteBack is the change one application commits: an override file, or in
+// inline mode the tags for the marked fields of its manifest.
+type appWriteBack struct {
+	overrides  *updater.ArgoOverrideFile
+	inlineTags []updater.InlineTagUpdate
+}
+
+// buildWriteBack returns the app's change for gitopsRepo's mode, or nil when there is
+// nothing to write.
+func buildWriteBack(app *models.Application, task *models.Task, gitopsRepo *models.GitopsRepo) (*appWriteBack, error) {
+	if gitopsRepo.Inline {
+		tags, err := generateInlineTagUpdates(app.Metadata.Annotations, task)
+		if err != nil || tags == nil {
+			return nil, err
+		}
+		return &appWriteBack{inlineTags: tags}, nil
+	}
+
+	overrides, err := generateOverrideFileContent(app.Metadata.Annotations, task)
+	if err != nil || overrides == nil {
+		return nil, err
+	}
+	return &appWriteBack{overrides: overrides}, nil
+}
+
+// commit applies the change to repo's local clone without pushing and reports
+// whether a commit was created.
+func (w *appWriteBack) commit(repo *updater.GitRepo, appName string, gitopsRepo *models.GitopsRepo, task *models.Task) (bool, error) {
+	if w.inlineTags != nil {
+		return repo.CommitAppInline(appName, gitopsRepo.Path, gitopsRepo.Filename, w.inlineTags, task)
+	}
+	return repo.CommitAppLocal(appName, gitopsRepo.Path, gitopsRepo.Filename, w.overrides, task)
+}
+
 // UpdateGitImageTag writes the new image tag for app into the GitOps repository.
 // gitHandler is injected to enable testing; production callers pass updater.GitClient{}.
 //
@@ -92,12 +169,12 @@ func UpdateGitImageTag(ctx context.Context, app *models.Application, task *model
 		supersededCheck = isSuperseded[0]
 	}
 
-	releaseOverrides, err := generateOverrideFileContent(app.Metadata.Annotations, task)
+	writeBack, err := buildWriteBack(app, task, gitopsRepo)
 	if err != nil {
 		return err
 	}
 
-	if releaseOverrides == nil {
+	if writeBack == nil {
 		slog.Warn("No release overrides found for app", "app", app.Metadata.Name, "id", task.Id)
 		return nil
 	}
@@ -108,7 +185,7 @@ func UpdateGitImageTag(ctx context.Context, app *models.Application, task *model
 		return err
 	}
 
-	return runGitUpdateWithRetry(ctx, repo, app.Metadata.Name, releaseOverrides, task, supersededCheck)
+	return runGitUpdateWithRetry(ctx, repo, app.Metadata.Name, gitopsRepo, writeBack, task, supersededCheck)
 }
 
 // Retry backoff bounds for the clone+update sequence. Backoff is capped
@@ -148,7 +225,7 @@ func gitUpdateBackoff(attempt uint) time.Duration {
 //
 // Permanent errors (see updater.IsPermanent) short-circuit the loop — a bad SSH key
 // or auth failure fails the same way on every attempt.
-func runGitUpdateWithRetry(parentCtx context.Context, repo *updater.GitRepo, appName string, releaseOverrides *updater.ArgoOverrideFile, task *models.Task, isSuperseded func() bool) error {
+func runGitUpdateWithRetry(parentCtx context.Context, repo *updater.GitRepo, appName string, gitopsRepo *models.GitopsRepo, writeBack *appWriteBack, task *models.Task, isSuperseded func() bool) error {
 	maxAttempts := repo.GitMaxAttempts()
 	opTimeout := repo.GitOpTimeout()
 
@@ -161,7 +238,7 @@ func runGitUpdateWithRetry(parentCtx context.Context, repo *updater.GitRepo, app
 
 		invalidateCacheOnFinalAttempt(repo, attempt, maxAttempts, "id", task.Id)
 
-		err := runGitUpdateAttempt(parentCtx, repo, opTimeout, appName, releaseOverrides, task)
+		err := runGitUpdateAttempt(parentCtx, repo, opTimeout, appName, gitopsRepo, writeBack, task)
 		if err == nil {
 			if attempt > 1 {
 				slog.Info("Git update succeeded", "attempt", attempt, "max_attempts", maxAttempts, "id", task.Id)
@@ -226,7 +303,7 @@ func backoffBeforeGitRetry(parentCtx context.Context, attempt, maxAttempts uint,
 }
 
 // runGitUpdateAttempt performs one clone+update cycle, bounded by opTimeout.
-func runGitUpdateAttempt(parentCtx context.Context, repo *updater.GitRepo, opTimeout time.Duration, appName string, releaseOverrides *updater.ArgoOverrideFile, task *models.Task) error {
+func runGitUpdateAttempt(parentCtx context.Context, repo *updater.GitRepo, opTimeout time.Duration, appName string, gitopsRepo *models.GitopsRepo, writeBack *appWriteBack, task *models.Task) error {
 	ctx, cancel := context.WithTimeout(parentCtx, opTimeout)
 	defer cancel()
 
@@ -234,10 +311,17 @@ func runGitUpdateAttempt(parentCtx context.Context, repo *updater.GitRepo, opTim
 		return fmt.Errorf("clone failed: %w", err)
 	}
 
-	if err := repo.UpdateApp(ctx, appName, releaseOverrides, task); err != nil {
+	committed, err := writeBack.commit(repo, appName, gitopsRepo, task)
+	if err != nil {
 		return fmt.Errorf("update failed: %w", err)
 	}
+	if !committed {
+		return nil
+	}
 
+	if err := repo.Push(ctx); err != nil {
+		return fmt.Errorf("update failed: %w", err)
+	}
 	return nil
 }
 

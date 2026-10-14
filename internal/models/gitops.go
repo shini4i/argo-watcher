@@ -5,21 +5,70 @@ import (
 	"strings"
 )
 
+// GitopsRepo is where an application's image tags are written back.
 type GitopsRepo struct {
 	RepoUrl       string
 	BranchName    string
 	Path          string
 	Filename      string
 	RepoCachePath string
+	// Inline is true when the tags are written into the marked fields of Filename
+	// (normally the Application manifest) instead of an override file.
+	Inline bool
 }
 
+// NewGitopsRepo resolves an application's write-back location from its write-back-mode
+// annotation: "override" (the default) writes an override file beside spec.source,
+// "inline" edits the file the four write-back-* annotations name. Any other mode, or a
+// missing required field, is an error.
 func NewGitopsRepo(app *Application, repoCachePath string) (GitopsRepo, error) {
-	gitopsRepo, err := extractGitOverrides(app.Metadata.Annotations, app, app.Spec.Sources == nil)
+	var gitopsRepo GitopsRepo
+	var err error
+
+	switch mode := app.Metadata.Annotations[writeBackMode]; mode {
+	case "", "override":
+		gitopsRepo, err = extractGitOverrides(app.Metadata.Annotations, app, app.Spec.Sources == nil)
+	case "inline":
+		gitopsRepo, err = extractInlineTarget(app.Metadata.Annotations)
+	default:
+		return GitopsRepo{}, fmt.Errorf("unknown %s %q: use \"override\" or \"inline\"", writeBackMode, mode)
+	}
 	if err != nil {
 		return gitopsRepo, err
 	}
+
 	gitopsRepo.RepoCachePath = repoCachePath
 	return gitopsRepo, nil
+}
+
+// extractInlineTarget reads an inline write-back location. The Application manifest
+// lives outside spec.source, so all four write-back-* annotations are required
+// whether the app is single- or multi-source.
+func extractInlineTarget(annotations map[string]string) (GitopsRepo, error) {
+	gr := GitopsRepo{
+		RepoUrl:    annotations[managedGitRepo],
+		BranchName: annotations[managedGitBranch],
+		Path:       annotations[managedGitPath],
+		Filename:   annotations[managedGitFile],
+		Inline:     true,
+	}
+
+	var missing []string
+	for _, field := range []struct{ annotation, value string }{
+		{managedGitRepo, gr.RepoUrl},
+		{managedGitBranch, gr.BranchName},
+		{managedGitPath, gr.Path},
+		{managedGitFile, gr.Filename},
+	} {
+		if field.value == "" {
+			missing = append(missing, field.annotation)
+		}
+	}
+	if len(missing) > 0 {
+		return gr, fmt.Errorf("inline write-back requires annotation(s): %s", strings.Join(missing, ", "))
+	}
+
+	return gr, nil
 }
 
 func extractGitOverrides(annotations map[string]string, app *Application, isSourceNil bool) (GitopsRepo, error) {

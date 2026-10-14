@@ -6,6 +6,7 @@ const (
 	managedGitBranch        = "argo-watcher/write-back-branch"
 	managedGitPath          = "argo-watcher/write-back-path"
 	managedGitFile          = "argo-watcher/write-back-filename"
+	writeBackMode           = "argo-watcher/write-back-mode"
 	fireAndForgetAnnotation = "argo-watcher/fire-and-forget"
 	// skipImageValidationAnnotation opts out of the desired-state image check for apps whose
 	// images it cannot see: named by a custom resource whose workload an operator creates

@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Inline write-back: `argo-watcher/write-back-mode: inline` writes the image tag straight into
+  the `Application` manifest's `valuesObject` instead of an override file. Fields are picked
+  with a `# {"$argo-watcher": "<app>:<alias>"}` line comment, and only the marked value
+  changes; the rest of the file keeps its formatting and comments. The default stays
+  `override`.
 - The client warns when both `BEARER_TOKEN` and `ARGO_WATCHER_DEPLOY_TOKEN` are set. It
   already sent only `BEARER_TOKEN` in that case; a pipeline moving to an application deploy
   token now learns that the old shared token is ignored, instead of finding out later.
@@ -53,6 +58,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `http://` keeps working.
 - Raise the `dompurify` pin to 3.4.16, which fixes `IN_PLACE` sanitization leaving a node in
   place when an `afterSanitize` hook removes it.
+- Build with Go 1.27.2 and `golang.org/x/net` 0.61.0, fixing HTTP/2, `net/http`,
+  `crypto/tls` and `mime/multipart` vulnerabilities reachable from the server and the client.
+- Raise `swagger-ui-dist` to 5.33.2, whose bundled DOMPurify (3.4.16) carries the same
+  `IN_PLACE` fix as the `dompurify` pin.
 
 ## [1.4.2] - 2026-09-28
 
