@@ -47,8 +47,8 @@ jobs:
       - name: Run Gosec Security Scanner
         id: gosec
         continue-on-error: true
-        # Built from source with the go.mod toolchain: the gosec image's binary
-        # predates go1.27.2 and cannot read its export data.
+        # v2.29.0 pins an x/tools that cannot read go1.27 export data, so this
+        # step reports type errors until a gosec release raises it to v0.52.0+.
         # Exclude the e2e lab tooling (test/e2e): it ships in no release binary, and
         # its git-exec / file-read / math-rand use is intentional for a local lab.
         run: |

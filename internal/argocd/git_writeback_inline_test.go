@@ -168,6 +168,24 @@ func TestGenerateInlineTagUpdates(t *testing.T) {
 		require.NoError(t, err)
 		assert.Nil(t, updates)
 	})
+
+	t.Run("reports nothing to write without the managed-images annotation", func(t *testing.T) {
+		updates, err := generateInlineTagUpdates(map[string]string{}, newImageTask())
+		require.NoError(t, err)
+		assert.Nil(t, updates)
+	})
+
+	t.Run("rejects a malformed managed-images annotation", func(t *testing.T) {
+		_, err := generateInlineTagUpdates(map[string]string{managedImagesAnnotation: "no-separator"}, newImageTask())
+		assert.Error(t, err)
+	})
+}
+
+func TestBuildWriteBack_InlineNothingToWrite(t *testing.T) {
+	task := &models.Task{Id: "id", Images: []models.Image{{Image: "unmanaged", Tag: "v1"}}}
+	writeBack, err := buildWriteBack(newInlineApp("app-a"), task, &models.GitopsRepo{Inline: true})
+	require.NoError(t, err)
+	assert.Nil(t, writeBack)
 }
 
 func TestUpdateGitImageTag_Inline(t *testing.T) {
@@ -210,6 +228,22 @@ func TestUpdateGitImageTag_Inline(t *testing.T) {
 		got := remoteFile(t, remotePath, "apps/apps.yaml")
 		assert.Contains(t, got, `tag: v1.0.0 # {"$argo-watcher": "app-a:app"}`)
 		assert.Contains(t, got, `tag: v9.9.9 # {"$argo-watcher": "app-b:app"}`, "the external commit must survive")
+	})
+
+	t.Run("pushes nothing when the marked field already holds the tag", func(t *testing.T) {
+		remotePath := newInlineRemote(t)
+		remote, err := gogit.PlainOpen(remotePath)
+		require.NoError(t, err)
+		before, err := remote.Head()
+		require.NoError(t, err)
+
+		task := &models.Task{Id: "id", Images: []models.Image{{Image: "myimage", Tag: "v0.0.1"}}}
+		err = UpdateGitImageTag(context.Background(), newInlineApp("app-a"), task, inlineGitopsRepo(t.TempDir()), cloneHandler(t, remotePath))
+		require.NoError(t, err)
+
+		after, err := remote.Head()
+		require.NoError(t, err)
+		assert.Equal(t, before.Hash(), after.Hash())
 	})
 
 	t.Run("fails loudly when the file has no marker for the app", func(t *testing.T) {

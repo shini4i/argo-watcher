@@ -341,3 +341,60 @@ func TestSpliceMarkedTags_AnotherAppsBadMarkerDoesNotBlock(t *testing.T) {
 		})
 	}
 }
+
+func TestCommitAppInline_UnreadableManifest(t *testing.T) {
+	repo := newTestRepo(t, nil)
+	repo.localRepoPath = t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(repo.localRepoPath, "apps", "demo.yaml"), 0755))
+
+	_, err := repo.CommitAppInline("demo", "apps", "demo.yaml", []InlineTagUpdate{{Alias: "app", Tag: "v1"}}, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to read application manifest")
+}
+
+func TestCommitAppInline_UnmarkedAlias(t *testing.T) {
+	repo := newTestRepo(t, nil)
+	repo.localRepoPath = t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(repo.localRepoPath, "apps"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(repo.localRepoPath, "apps", "demo.yaml"), []byte(applicationManifest), 0644))
+
+	_, err := repo.CommitAppInline("demo", "apps", "demo.yaml", []InlineTagUpdate{{Alias: "missing", Tag: "v1"}}, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot update apps/demo.yaml")
+}
+
+func TestResolveInsideRoot_MissingRoot(t *testing.T) {
+	_, err := resolveInsideRoot(filepath.Join(t.TempDir(), "gone"), "demo.yaml")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to resolve repository root")
+}
+
+func TestByteOffset(t *testing.T) {
+	content := []byte("ab\n\xffc\n")
+	lineStarts := lineOffsets(content)
+
+	offset, ok := byteOffset(content, lineStarts, 1, 2)
+	assert.True(t, ok)
+	assert.Equal(t, 1, offset)
+
+	for name, pos := range map[string][2]int{
+		"line before the file": {0, 1},
+		"line past the file":   {9, 1},
+		"column zero":          {1, 0},
+		"column past the line": {1, 5},
+		"invalid UTF-8":        {2, 2},
+	} {
+		_, ok := byteOffset(content, lineStarts, pos[0], pos[1])
+		assert.False(t, ok, name)
+	}
+}
+
+func TestVerifySplice_UnparsableInput(t *testing.T) {
+	updates := []InlineTagUpdate{{Alias: "app", Tag: "v2"}}
+
+	require.Error(t, verifySplice([]byte("tag: [v1\n"), []byte("tag: v2\n"), "demo", updates))
+
+	err := verifySplice([]byte("tag: v1\n"), []byte("tag: [v2\n"), "demo", updates)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no longer parses")
+}

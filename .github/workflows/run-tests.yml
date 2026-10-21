@@ -78,10 +78,8 @@ jobs:
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           # Matches the version the flake's nixpkgs pin gives the dev shell, so
-          # `task lint-go` and this job report the same findings. Built from source:
-          # the release binary predates go1.27.2 and cannot read its export data.
-          version: v2.13.2
-          install-mode: goinstall
+          # `task lint-go` and this job report the same findings.
+          version: v2.15.0
 
   # gosec and govulncheck moved to the dedicated security.yml workflow.
   test:

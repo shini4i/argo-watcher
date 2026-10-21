@@ -2,7 +2,7 @@ module github.com/shini4i/argo-watcher
 
 go 1.27.1
 
-toolchain go1.27.2
+toolchain go1.27.3
 
 require (
 	github.com/Shopify/toxiproxy/v2 v2.12.0
