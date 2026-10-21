@@ -97,6 +97,10 @@ phase() {
   phase multi-image.sh
 }
 
+@test "inline-write-back: only the marked tag changes and the app-of-apps child rolls out on it" {
+  phase inline-write-back.sh
+}
+
 @test "accept-suspended: a paused Rollout is accepted as deployed" {
   phase accept-suspended.sh
 }

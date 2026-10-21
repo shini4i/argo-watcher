@@ -86,6 +86,8 @@ metadata:
 
 The four location annotations are required and name the file that holds this `Application` manifest — normally in your app-of-apps repository. Use `.` as the path for the repository root. `<alias>.helm.image-tag` is not used.
 
+Argo Watcher refreshes only the deployed application, so the parent that syncs this manifest must notice the commit on its own. Point a Git webhook at Argo CD for that repository; otherwise the rollout waits for the parent's next poll (`timeout.reconciliation` in `argocd-cm`), which can outlast the client's `TASK_TIMEOUT`.
+
 Then mark each field to update with a line comment. `<app>` is the Application's `metadata.name` and `<alias>` an alias from `managed-images`:
 
 ```yaml

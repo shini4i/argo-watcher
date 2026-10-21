@@ -67,6 +67,7 @@ task jwt-auth             # assert the JWT (BEARER_TOKEN) auth path drives an au
 task fire-and-forget      # assert fire-and-forget mode: a managed CronJob app's write-back reaches deployed without the image rolling out
 task commit-format        # assert COMMIT_MESSAGE_FORMAT renders into the git write-back commit message
 task multi-image          # assert a multi-image deploy bumps and writes back both images in one commit
+task inline-write-back    # assert inline write-back edits only the marked valuesObject tag and the app-of-apps child rolls out on it
 task accept-suspended     # assert ACCEPT_SUSPENDED_APP treats a paused argo-rollouts Rollout (Suspended) as deployed
 task docker-proxy         # assert DOCKER_IMAGES_PROXY matches a bare image name against the proxy-prefixed running image
 task lockdown             # assert LOCKDOWN_SCHEDULE freezes deploys in-window (406) and the watcher broadcasts "locked"
@@ -144,6 +145,8 @@ again instead of re-establishing a forward.
 | `scripts/multi-image.sh` | assert a two-image deploy reaches "deployed" and writes back both image-tag overrides in one commit |
 | `fixtures/multi-image/` | two-image umbrella: the `app` chart (primary image) plus a second image via the chart's rawObject passthrough |
 | `fixtures/multi-image-app.yaml` | dedicated `multiapp` Argo Application declaring two managed images mapped to two Helm image-tag values |
+| `scripts/inline-write-back.sh` | assert inline write-back through an app-of-apps: the commit changes only `inlineapp`'s marked tag in `inline/apps.yaml`, and the parent's sync rolls the child out on it (a parent refresh stands in for the Git webhook) |
+| `fixtures/inline/apps.yaml` + `fixtures/inline-parent-app.yaml` | `inlineapp` (managed, inline mode) and `inlineapp-peer` sharing one manifest, and the `inline-apps` parent that syncs it |
 | `scripts/accept-suspended.sh` | assert `ACCEPT_SUSPENDED_APP` accepts a paused Rollout as deployed (write-back triggers a canary pause) |
 | `fixtures/rollout-chart/` + `fixtures/suspended-app.yaml` | `suspendapp`: a managed argo-rollouts Rollout (canary pause step); the write-back bump pauses it mid-rollout so ArgoCD reports it Suspended |
 | `scripts/docker-proxy.sh` | assert `DOCKER_IMAGES_PROXY` matches a bare image against the proxy-prefixed running image |

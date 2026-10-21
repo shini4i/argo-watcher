@@ -239,6 +239,11 @@ tasks:
     cmds:
       - DEPLOY_TOKEN={{.DEPLOY_TOKEN}} ./scripts/multi-image.sh
 
+  inline-write-back:
+    desc: "Assert an inline write-back edits only the marked tag and Argo CD rolls it out via app-of-apps"
+    cmds:
+      - DEPLOY_TOKEN={{.DEPLOY_TOKEN}} ./scripts/inline-write-back.sh
+
   accept-suspended:
     desc: "Assert ACCEPT_SUSPENDED_APP: a paused Rollout (Synced+Suspended) is accepted as deployed"
     cmds:

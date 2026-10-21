@@ -1,0 +1,22 @@
+# App-of-apps parent for the inline-write-back phase (name "inline-apps"). It syncs
+# the gitops repo's inline/ directory, which holds the inlineapp and inlineapp-peer
+# Application manifests, so a tag argo-watcher writes into inline/apps.yaml reaches
+# the cluster only through this parent's sync.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: inline-apps
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: http://gitea-http.gitea.svc.cluster.local:3000/e2e/gitops.git
+    targetRevision: main
+    path: inline
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
