@@ -702,6 +702,27 @@ func TestGenerateAppUrl(t *testing.T) {
 		assert.Equal(t, "https://argo-cd.example.com/applications/..%2Fsettings", appUrl)
 	})
 
+	// PathEscape leaves "." and ".." intact, and JoinPath would resolve them as dot
+	// segments, so they are refused instead of producing a link to the wrong page.
+	for _, app := range []string{".", ".."} {
+		t.Run("DotSegmentAppNameRejected/"+app, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+				_, err := rw.Write([]byte(`{"argo_cd_url":"https://argo-cd.example.com"}`))
+				if err != nil {
+					t.Error(err)
+				}
+			}))
+			defer server.Close()
+
+			watcher := NewWatcher(server.URL, false, 30*time.Second)
+
+			appUrl, err := generateAppUrl(context.Background(), watcher, models.Task{App: app})
+
+			assert.Error(t, err)
+			assert.Empty(t, appUrl)
+		})
+	}
+
 	// Characters legal in an Argo CD app name must pass through unescaped, or the
 	// link points at a different application.
 	t.Run("ValidAppNameUnchanged", func(t *testing.T) {

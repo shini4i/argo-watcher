@@ -43,7 +43,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   quotes whole object specs as JSON without spaces, and those lines stretched the whole page
   wider than the window, so it scrolled sideways.
 - The Argo CD link the client prints keeps the application name as one path segment. A name
-  containing `/` or `..` could previously point the link outside `/applications`.
+  containing `/` or `..` could previously point the link outside `/applications`. A name
+  that is exactly `.` or `..` now fails with `invalid application name` instead.
 
 ### Security
 
