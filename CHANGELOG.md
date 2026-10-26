@@ -42,6 +42,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The full failure reason on a task's page now wraps to the panel width. Argo CD often
   quotes whole object specs as JSON without spaces, and those lines stretched the whole page
   wider than the window, so it scrolled sideways.
+- The Argo CD link the client prints keeps the application name as one path segment. A name
+  containing `/` or `..` could previously point the link outside `/applications`. A name
+  that is exactly `.` or `..` now fails with `invalid application name` instead.
 
 ### Security
 
@@ -53,6 +56,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `http://` keeps working.
 - Raise the `dompurify` pin to 3.4.16, which fixes `IN_PLACE` sanitization leaving a node in
   place when an `afterSanitize` hook removes it.
+- Build with Go 1.27.3, which fixes eleven standard-library vulnerabilities the server and
+  client reach, in `net/http`, HTTP/2, `crypto/tls`, `crypto/x509` and `mime/multipart`.
+  `golang.org/x/net` moves to 0.61.0 for the matching HTTP/2 fixes.
 
 ## [1.4.2] - 2026-09-28
 

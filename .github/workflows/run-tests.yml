@@ -79,7 +79,7 @@ jobs:
         with:
           # Matches the version the flake's nixpkgs pin gives the dev shell, so
           # `task lint-go` and this job report the same findings.
-          version: v2.13.2
+          version: v2.15.0
 
   # gosec and govulncheck moved to the dedicated security.yml workflow.
   test:
@@ -154,7 +154,7 @@ jobs:
         run: go test -race -count=1 -timeout=5m ./internal/server/... ./internal/apptoken/... ./internal/lock/...
 
       - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage.out
@@ -246,7 +246,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: npm
@@ -265,7 +265,7 @@ jobs:
         run: npm run test -- --coverage
 
       - name: Upload frontend coverage to Codecov
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: web/coverage/lcov.info
