@@ -47,7 +47,10 @@ jobs:
       - name: Run Gosec Security Scanner
         id: gosec
         continue-on-error: true
-        uses: securego/gosec@5eb1d104ef85ff2c905c877eb600e8c1dee33a22 # v2.30.0
+        # A master commit, not the v2.30.0 tag: that tag's action.yml still runs the
+        # 2.29.0 image, which cannot read Go 1.27.2+ export data. Return to a release
+        # tag once one ships the 2.30.0+ image.
+        uses: securego/gosec@359a2c3f87dbe093c4dc1a89059645f3d7418c54 # master (2.30.0 image)
         env:
           # The gosec image bundles an older Go with GOTOOLCHAIN=local, so it
           # refuses a go.mod whose go directive names a newer patch. Allow it to
