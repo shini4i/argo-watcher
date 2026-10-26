@@ -47,11 +47,11 @@ jobs:
       - name: Run Gosec Security Scanner
         id: gosec
         continue-on-error: true
-        uses: securego/gosec@deb54465fea23d19a77f037e11e6589021f8501d # v2.29.0
+        uses: securego/gosec@5eb1d104ef85ff2c905c877eb600e8c1dee33a22 # v2.30.0
         env:
           # The gosec image bundles an older Go with GOTOOLCHAIN=local, so it
-          # refuses a go.mod whose toolchain directive names a newer patch. Allow
-          # it to fetch the toolchain named in go.mod instead of failing.
+          # refuses a go.mod whose go directive names a newer patch. Allow it to
+          # fetch the toolchain go.mod requires instead of failing.
           GOTOOLCHAIN: auto
         with:
           # Exclude the e2e lab tooling (test/e2e): it is not shipped in any
@@ -63,7 +63,7 @@ jobs:
         id: govulncheck
         continue-on-error: true
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
           "$(go env GOPATH)/bin/govulncheck" ./...
 
       - name: Fail if any Go scanner failed
@@ -106,7 +106,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: npm
@@ -151,7 +151,7 @@ jobs:
           persist-credentials: false
 
       - name: Scan for secrets
-        uses: trufflesecurity/trufflehog@363923b901c911a9164f50b6c423f47c15372b1c # v3.97.4
+        uses: trufflesecurity/trufflehog@31ce31ee1abbcc7dc8eee5764c17121c3044c8b2 # v3.99.7
         with:
           # .trufflehog-exclude skips files holding intentional non-secrets
           # (local dev credentials, SSH key fixtures). Keep it in sync with the

@@ -683,6 +683,44 @@ func TestGenerateAppUrl(t *testing.T) {
 		assert.Equal(t, "https://platform.example.com/argocd/applications/test-app?view=tree#overview", appUrl)
 	})
 
+	// The app name is one path segment: a slash or dot-segment in it must not
+	// climb out of /applications.
+	t.Run("AppNameStaysOneSegment", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+			_, err := rw.Write([]byte(`{"argo_cd_url":"https://argo-cd.example.com"}`))
+			if err != nil {
+				t.Error(err)
+			}
+		}))
+		defer server.Close()
+
+		watcher := NewWatcher(server.URL, false, 30*time.Second)
+
+		appUrl, err := generateAppUrl(context.Background(), watcher, models.Task{App: "../settings"})
+
+		assert.Nil(t, err)
+		assert.Equal(t, "https://argo-cd.example.com/applications/..%2Fsettings", appUrl)
+	})
+
+	// Characters legal in an Argo CD app name must pass through unescaped, or the
+	// link points at a different application.
+	t.Run("ValidAppNameUnchanged", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+			_, err := rw.Write([]byte(`{"argo_cd_url":"https://argo-cd.example.com"}`))
+			if err != nil {
+				t.Error(err)
+			}
+		}))
+		defer server.Close()
+
+		watcher := NewWatcher(server.URL, false, 30*time.Second)
+
+		appUrl, err := generateAppUrl(context.Background(), watcher, models.Task{App: "team.app_v2-prod"})
+
+		assert.Nil(t, err)
+		assert.Equal(t, "https://argo-cd.example.com/applications/team.app_v2-prod", appUrl)
+	})
+
 	t.Run("ErrorScenario", func(t *testing.T) {
 		// Create a new Watcher instance with an invalid URL. A dial failure is
 		// transient, so use the zero-backoff test watcher to skip retry sleeps.

@@ -200,8 +200,10 @@ func generateAppUrl(ctx context.Context, watcher *Watcher, task models.Task) (st
 		base = cfg.ArgoUrl.String()
 	}
 	// JoinPath puts the route in the path, where a query or fragment on the base
-	// would otherwise swallow it, and folds a trailing slash on the way.
-	return url.JoinPath(base, "applications", task.App)
+	// would otherwise swallow it, and folds a trailing slash on the way. JoinPath
+	// takes its elements as already escaped, so the app name is escaped to stay
+	// one segment.
+	return url.JoinPath(base, "applications", url.PathEscape(task.App))
 }
 
 // setupWatcher takes application configuration and initializes a new Watcher instance
