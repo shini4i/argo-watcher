@@ -47,19 +47,26 @@ jobs:
       - name: Run Gosec Security Scanner
         id: gosec
         continue-on-error: true
-        # v2.29.0 pins an x/tools that cannot read go1.27 export data, so this
-        # step reports type errors until a gosec release raises it to v0.52.0+.
-        # Exclude the e2e lab tooling (test/e2e): it ships in no release binary, and
-        # its git-exec / file-read / math-rand use is intentional for a local lab.
-        run: |
-          go install github.com/securego/gosec/v2/cmd/gosec@v2.29.0
-          "$(go env GOPATH)/bin/gosec" -exclude-dir=test/e2e ./...
+        # A master commit, not the v2.30.0 tag: that tag's action.yml still runs the
+        # 2.29.0 image, which cannot read Go 1.27.2+ export data. Return to a release
+        # tag once one ships the 2.30.0+ image.
+        uses: securego/gosec@359a2c3f87dbe093c4dc1a89059645f3d7418c54 # master (2.30.0 image)
+        env:
+          # The gosec image bundles an older Go with GOTOOLCHAIN=local, so it
+          # refuses a go.mod whose go directive names a newer patch. Allow it to
+          # fetch the toolchain go.mod requires instead of failing.
+          GOTOOLCHAIN: auto
+        with:
+          # Exclude the e2e lab tooling (test/e2e): it is not shipped in any
+          # release binary, and its git-exec / file-read / math-rand usage is
+          # intentional for a disposable local lab, not a production attack surface.
+          args: -exclude-dir=test/e2e ./...
 
       - name: Run govulncheck
         id: govulncheck
         continue-on-error: true
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
           "$(go env GOPATH)/bin/govulncheck" ./...
 
       - name: Fail if any Go scanner failed
@@ -102,7 +109,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: npm
@@ -147,7 +154,7 @@ jobs:
           persist-credentials: false
 
       - name: Scan for secrets
-        uses: trufflesecurity/trufflehog@363923b901c911a9164f50b6c423f47c15372b1c # v3.97.4
+        uses: trufflesecurity/trufflehog@31ce31ee1abbcc7dc8eee5764c17121c3044c8b2 # v3.99.7
         with:
           # .trufflehog-exclude skips files holding intentional non-secrets
           # (local dev credentials, SSH key fixtures). Keep it in sync with the

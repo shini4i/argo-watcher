@@ -188,8 +188,13 @@ func printClientConfiguration(watcher *Watcher, task models.Task) {
 
 // generateAppUrl builds the ArgoCD UI link for the task's application from the
 // server's config, preferring ARGO_URL_ALIAS when the server publishes one.
-// It fails when that config cannot be fetched or carries an unparsable URL.
+// It fails when that config cannot be fetched or carries an unparsable URL, or
+// when the app name is "." or "..", which no escaping keeps inside /applications.
 func generateAppUrl(ctx context.Context, watcher *Watcher, task models.Task) (string, error) {
+	if task.App == "." || task.App == ".." {
+		return "", fmt.Errorf("invalid application name %q", task.App)
+	}
+
 	cfg, err := watcher.getWatcherConfig(ctx)
 	if err != nil {
 		return "", err
@@ -200,8 +205,10 @@ func generateAppUrl(ctx context.Context, watcher *Watcher, task models.Task) (st
 		base = cfg.ArgoUrl.String()
 	}
 	// JoinPath puts the route in the path, where a query or fragment on the base
-	// would otherwise swallow it, and folds a trailing slash on the way.
-	return url.JoinPath(base, "applications", task.App)
+	// would otherwise swallow it, and folds a trailing slash on the way. JoinPath
+	// takes its elements as already escaped, so the app name is escaped to stay
+	// one segment.
+	return url.JoinPath(base, "applications", url.PathEscape(task.App))
 }
 
 // setupWatcher takes application configuration and initializes a new Watcher instance

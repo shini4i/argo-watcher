@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with a `# {"$argo-watcher": "<app>:<alias>"}` line comment, and only the marked value
   changes; the rest of the file keeps its formatting and comments. The default stays
   `override`.
+
+## [1.4.3] - 2026-10-26
+
+### Added
+
 - The client warns when both `BEARER_TOKEN` and `ARGO_WATCHER_DEPLOY_TOKEN` are set. It
   already sent only `BEARER_TOKEN` in that case; a pipeline moving to an application deploy
   token now learns that the old shared token is ignored, instead of finding out later.
@@ -47,6 +52,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The full failure reason on a task's page now wraps to the panel width. Argo CD often
   quotes whole object specs as JSON without spaces, and those lines stretched the whole page
   wider than the window, so it scrolled sideways.
+- The Argo CD link the client prints keeps the application name as one path segment. A name
+  containing `/` or `..` could previously point the link outside `/applications`. A name
+  that is exactly `.` or `..` now fails with `invalid application name` instead.
 
 ### Security
 
@@ -58,11 +66,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `http://` keeps working.
 - Raise the `dompurify` pin to 3.4.16, which fixes `IN_PLACE` sanitization leaving a node in
   place when an `afterSanitize` hook removes it.
-- Build with Go 1.27.3 and `golang.org/x/net` 0.61.0, fixing HTTP/2, `net/http`,
-  `crypto/tls`, `crypto/x509` and `mime/multipart` vulnerabilities reachable from the server
-  and the client.
-- Raise `swagger-ui-dist` to 5.33.2, whose bundled DOMPurify (3.4.16) carries the same
-  `IN_PLACE` fix as the `dompurify` pin.
+- Build with Go 1.27.3, which fixes eleven standard-library vulnerabilities the server and
+  client reach, in `net/http`, HTTP/2, `crypto/tls`, `crypto/x509` and `mime/multipart`.
+  `golang.org/x/net` moves to 0.61.0 for the matching HTTP/2 fixes.
 
 ## [1.4.2] - 2026-09-28
 
@@ -1541,7 +1547,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bumped the Go toolchain to `1.25.11`, resolving a `net/textproto` standard
   library vulnerability present in `go1.25.9`.
 
-[Unreleased]: https://github.com/shini4i/argo-watcher/compare/v1.4.2...HEAD
+[Unreleased]: https://github.com/shini4i/argo-watcher/compare/v1.4.3...HEAD
+[1.4.3]: https://github.com/shini4i/argo-watcher/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/shini4i/argo-watcher/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/shini4i/argo-watcher/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/shini4i/argo-watcher/compare/v1.3.0...v1.4.0

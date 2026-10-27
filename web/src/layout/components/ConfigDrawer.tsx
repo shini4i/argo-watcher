@@ -31,6 +31,9 @@ interface ConfigDrawerProps {
   version: string;
 }
 
+/** Copyright end year, read once at module load so rendering stays pure. */
+const COPYRIGHT_YEAR = new Date().getFullYear();
+
 export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
   const [lockUpdating, setLockUpdating] = useState(false);
   const { mode, toggleMode } = useThemeMode();
@@ -247,7 +250,7 @@ export const ConfigDrawer = ({ open, onClose, version }: ConfigDrawerProps) => {
           <Typography variant="caption" sx={{
             color: 'text.secondary'
           }}>
-            © 2022 - {new Date().getFullYear()} Vadim Gedz
+            © 2022 - {COPYRIGHT_YEAR} Vadim Gedz
           </Typography>
         </Box>
       </Stack>
