@@ -22,6 +22,7 @@ chart_src="${E2E_DIR}/fixtures/chart"
 ffcron_src="${E2E_DIR}/fixtures/fire-and-forget-chart"
 multiimage_src="${E2E_DIR}/fixtures/multi-image"
 rollout_src="${E2E_DIR}/fixtures/rollout-chart"
+inline_src="${E2E_DIR}/fixtures/inline"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
@@ -69,8 +70,12 @@ helm dependency update "${work}/multi-image" >/dev/null
 # so it is pushed as-is (no helm dependency update).
 mkdir -p "${work}/rollout-chart"
 cp -r "${rollout_src}/." "${work}/rollout-chart/"
-git -C "$work" -c user.name=seed -c user.email=seed@e2e add chart fire-and-forget-chart multi-image rollout-chart
-git -C "$work" -c user.name=seed -c user.email=seed@e2e commit -qm 'seed fixture chart, fire-and-forget, multi-image, and rollout charts'
+# Application manifests for the inline-write-back fixture (inline-apps parent);
+# plain YAML, edited in place by argo-watcher.
+mkdir -p "${work}/inline"
+cp -r "${inline_src}/." "${work}/inline/"
+git -C "$work" -c user.name=seed -c user.email=seed@e2e add chart fire-and-forget-chart multi-image rollout-chart inline
+git -C "$work" -c user.name=seed -c user.email=seed@e2e commit -qm 'seed fixture chart, fire-and-forget, multi-image and rollout charts, and inline apps'
 git -C "$work" push -q --force "$GITOPS_REPO_URL" main
 
 # --- k8s secret (private key) + known-hosts configmap ------------------------

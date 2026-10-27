@@ -177,20 +177,20 @@ func applyRequest(repo *updater.GitRepo, req *batchWriteRequest, outcomes, commi
 		outcomes[req] = nil
 		return false
 	}
-	content, genErr := generateOverrideFileContent(req.app.Metadata.Annotations, req.task)
+	writeBack, genErr := buildWriteBack(req.app, req.task, req.gitopsRepo)
 	if genErr != nil {
 		// A per-app misconfiguration is permanent; resolve it terminally so it does
 		// not poison the rest of the batch.
 		outcomes[req] = genErr
 		return false
 	}
-	if content == nil {
+	if writeBack == nil {
 		slog.Warn("No release overrides found for app", "app", req.app.Metadata.Name, "id", req.task.Id)
 		outcomes[req] = nil
 		return false
 	}
 
-	didCommit, commitErr := repo.CommitAppLocal(req.app.Metadata.Name, req.gitopsRepo.Path, req.gitopsRepo.Filename, content, req.task)
+	didCommit, commitErr := writeBack.commit(repo, req.app.Metadata.Name, req.gitopsRepo, req.task)
 	if commitErr != nil {
 		// Retriable per-app failure: record it and leave the request unresolved so
 		// the next attempt reclones and re-applies just this app. A transient

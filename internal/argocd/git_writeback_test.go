@@ -522,7 +522,7 @@ func TestUpdateGitImageTag(t *testing.T) {
 
 		// 4. Set up mock so the first Clone returns our stale localRepo (at commit A).
 		//    The recovery Clone uses PlainOpen to find it on disk at localRepoPath, then
-		//    FetchContext advances it to commit B, and the second UpdateApp succeeds.
+		//    FetchContext advances it to commit B, and the second commit and push succeed.
 		ctrl := gomock.NewController(t)
 		mockHandler := mocks.NewMockGitHandler(ctrl)
 		mockHandler.EXPECT().AddSSHKey(gomock.Any(), gomock.Any(), gomock.Any()).

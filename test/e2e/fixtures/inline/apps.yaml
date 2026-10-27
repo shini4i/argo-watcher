@@ -1,0 +1,67 @@
+# Child Applications for the inline-write-back phase, synced from the gitops repo by
+# the inline-apps parent (fixtures/inline-parent-app.yaml). argo-watcher edits the
+# marked valuesObject field of inlineapp in THIS file; inlineapp-peer shares the file
+# so the phase can prove its marked field, and every other byte, stays as written.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: inlineapp
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argo-watcher/managed: "true"
+    argo-watcher/managed-images: app=traefik/whoami
+    argo-watcher/write-back-mode: inline
+    argo-watcher/write-back-repo: ssh://git@gitea-ssh.gitea.svc.cluster.local:2222/e2e/gitops.git
+    argo-watcher/write-back-branch: main
+    argo-watcher/write-back-path: inline
+    argo-watcher/write-back-filename: apps.yaml
+spec:
+  project: default
+  source:
+    repoURL: http://gitea-http.gitea.svc.cluster.local:3000/e2e/gitops.git
+    targetRevision: main
+    path: chart
+    helm:
+      valuesObject:
+        app:
+          image:
+            tag: v1.10.1 # {"$argo-watcher": "inlineapp:app"}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: inlineapp
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: inlineapp-peer
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: http://gitea-http.gitea.svc.cluster.local:3000/e2e/gitops.git
+    targetRevision: main
+    path: chart
+    helm:
+      valuesObject:
+        app:
+          image:
+            tag: v1.10.1 # {"$argo-watcher": "inlineapp-peer:app"}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: inlineapp-peer
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

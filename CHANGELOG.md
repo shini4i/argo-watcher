@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Inline write-back: `argo-watcher/write-back-mode: inline` writes the image tag straight into
+  the `Application` manifest's `valuesObject` instead of an override file. Fields are picked
+  with a `# {"$argo-watcher": "<app>:<alias>"}` line comment, and only the marked value
+  changes; the rest of the file keeps its formatting and comments. The default stays
+  `override`.
+
 ## [1.4.3] - 2026-10-26
 
 ### Added
