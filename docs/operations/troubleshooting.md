@@ -76,6 +76,14 @@ kubectl logs -l app.kubernetes.io/name=argocd-application-controller   # sync er
 1. Raise `argo.timeout` (chart) or `DEPLOYMENT_TIMEOUT` to cover your slowest rollout.
 2. If the updater should have committed the tag, confirm the pipeline sets `ARGO_WATCHER_DEPLOY_TOKEN` or `BEARER_TOKEN`, and that the SSH key can write to the repository.
 
+## Deployment fails on a brief Degraded state
+
+**Symptom:** the deployment fails with `Rollout status is degraded`, but the application recovers on its own within minutes. The named resource is unrelated to the new version, for example `HorizontalPodAutoscaler(...) Degraded with message the HPA was unable to compute the replica count`.
+
+**Cause:** a `Degraded` application with the new images fails the deployment once it stays `Degraded` for `DEGRADED_GRACE_PERIOD` (default `120` seconds). The outage outlasted that window.
+
+**Fix:** raise `DEGRADED_GRACE_PERIOD` to cover your longest expected outage. A broken release then takes that much longer to fail.
+
 ## Image tag is never committed (write-back skipped)
 
 **Symptom:** the server logs `Skipping git repo update: application is managed by the watcher but the task presented no valid credential`, and `gitops_writeback_skipped_unvalidated` rises for that application.

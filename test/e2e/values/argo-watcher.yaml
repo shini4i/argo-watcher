@@ -74,6 +74,10 @@ extraEnvs:
   # Global, but harmless to the normal fixtures, which report Healthy not Suspended.
   - name: ACCEPT_SUSPENDED_APP
     value: "true"
+  # Shorter than the 120s default so the degraded failure-diagnostics case still fails
+  # well inside its deploy timeout.
+  - name: DEGRADED_GRACE_PERIOD
+    value: "30"
   # Registry proxy prefix for image matching (docker-proxy phase). proxyapp runs
   # mirror.gcr.io/traefik/whoami; a deploy of the bare image matches via the proxy
   # form. Global, but safe: the normal fixtures still match on the bare image name.

@@ -120,3 +120,62 @@ func TestNewServerConfig_ArgoUrlRejectionKeepsCredentialsOut(t *testing.T) {
 		})
 	}
 }
+
+func TestNewServerConfig_DegradedGracePeriodDefaultsToTwoMinutes(t *testing.T) {
+	t.Setenv("ARGO_URL", "https://example.com")
+	t.Setenv("ARGO_TOKEN", "secret-token")
+	t.Setenv("STATE_TYPE", "in-memory")
+
+	cfg, err := NewServerConfig()
+
+	require.NoError(t, err)
+	assert.Equal(t, uint(120), cfg.DegradedGracePeriod)
+}
+
+// 0 keeps the fail-on-first-Degraded-poll behaviour, so it must stay accepted.
+func TestNewServerConfig_DegradedGracePeriodAcceptsTheWholeRange(t *testing.T) {
+	for _, tt := range []struct {
+		env  string
+		want uint
+	}{{"0", 0}, {"120", 120}, {"3600", 3600}} {
+		t.Run(tt.env, func(t *testing.T) {
+			t.Setenv("ARGO_URL", "https://example.com")
+			t.Setenv("ARGO_TOKEN", "secret-token")
+			t.Setenv("STATE_TYPE", "in-memory")
+			t.Setenv("DEGRADED_GRACE_PERIOD", tt.env)
+
+			cfg, err := NewServerConfig()
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, cfg.DegradedGracePeriod)
+		})
+	}
+}
+
+func TestNewServerConfig_DegradedGracePeriodMustBeInRange(t *testing.T) {
+	t.Setenv("ARGO_URL", "https://example.com")
+	t.Setenv("ARGO_TOKEN", "secret-token")
+	t.Setenv("STATE_TYPE", "in-memory")
+	t.Setenv("DEGRADED_GRACE_PERIOD", "3601")
+
+	_, err := NewServerConfig()
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "DegradedGracePeriod")
+}
+
+// The period is whole seconds: a negative value or a Go duration string must stop startup
+// rather than fall back to the default.
+func TestNewServerConfig_DegradedGracePeriodRejectsNonSeconds(t *testing.T) {
+	for _, period := range []string{"-1", "2m"} {
+		t.Run(period, func(t *testing.T) {
+			t.Setenv("ARGO_URL", "https://example.com")
+			t.Setenv("ARGO_TOKEN", "secret-token")
+			t.Setenv("STATE_TYPE", "in-memory")
+			t.Setenv("DEGRADED_GRACE_PERIOD", period)
+
+			_, err := NewServerConfig()
+			require.Error(t, err)
+		})
+	}
+}

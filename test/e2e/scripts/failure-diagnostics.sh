@@ -157,7 +157,7 @@ scenario_degraded_migration_job() {
   # The pod-level cause comes only from the resource tree; the pod name carries a random
   # suffix, so assert the message. Without the tree enrichment this line is absent entirely.
   echo "expect=failed with exit code 1"
-  # A terminal degradation must be reported the moment it is observed, not waited out: the
+  # A lasting degradation must fail once DEGRADED_GRACE_PERIOD (30s in the lab) passes: the
   # deploy above allows 180s, so anything near it means the rollout kept polling instead.
   echo "max_seconds=120"
   echo "setup=setup_degraded_migration_job"

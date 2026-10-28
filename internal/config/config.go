@@ -26,6 +26,10 @@ const maxTaskRetentionDays = 36500
 // non-positive value, which http.Client reads as no timeout at all.
 const maxArgoApiTimeout = 3600
 
+// maxDegradedGracePeriod is the ceiling on DEGRADED_GRACE_PERIOD, in seconds. It keeps the
+// value far from the overflow of its conversion to time.Duration.
+const maxDegradedGracePeriod = 3600
+
 // URL is a url.URL that crosses every boundary as a URL string: the JSON of
 // GET /api/v1/config and the structured logs, which would otherwise carry the
 // eleven exported fields of a url.URL for every consumer to reassemble. It parses
@@ -192,32 +196,33 @@ type MattermostConfig struct {
 // (github.com/shini4i/argo-watcher-mcp allowlists it field by field), so removing a
 // key is a breaking change for them.
 type ServerConfig struct {
-	ArgoUrl            URL              `env:"ARGO_URL,required,notEmpty" json:"argo_cd_url" swaggertype:"primitive,string"`
-	ArgoUrlAlias       string           `env:"ARGO_URL_ALIAS" json:"argo_cd_url_alias,omitempty"` // Used to generate App Url. Can be omitted if ArgoUrl is reachable from outside.
-	ArgoToken          string           `env:"ARGO_TOKEN,required,notEmpty" json:"-"`
-	ArgoApiTimeout     int64            `env:"ARGO_API_TIMEOUT" envDefault:"60" json:"argo_api_timeout"`
-	AcceptSuspendedApp bool             `env:"ACCEPT_SUSPENDED_APP" envDefault:"false" json:"accept_suspended_app"`
-	DeploymentTimeout  uint             `env:"DEPLOYMENT_TIMEOUT" envDefault:"900" json:"deployment_timeout"`
-	ArgoRefreshApp     bool             `env:"ARGO_REFRESH_APP" envDefault:"true" json:"argo_refresh_app"`
-	RegistryProxyUrl   string           `env:"DOCKER_IMAGES_PROXY" json:"registry_proxy_url,omitempty"`
-	StateType          string           `env:"STATE_TYPE,required" json:"state_type"`
-	StaticFilePath     string           `env:"STATIC_FILES_PATH" envDefault:"static" json:"-"`
-	SkipTlsVerify      bool             `env:"SKIP_TLS_VERIFY" envDefault:"false" json:"skip_tls_verify"`
-	LogLevel           string           `env:"LOG_LEVEL" envDefault:"info" json:"log_level"`
-	Host               string           `env:"HOST" envDefault:"0.0.0.0" json:"-"`
-	Port               string           `env:"PORT" envDefault:"8080" json:"-"`
-	DeployToken        string           `env:"ARGO_WATCHER_DEPLOY_TOKEN" json:"-"`
-	JWTSecret          string           `env:"JWT_SECRET" json:"-"`
-	JWTIssuer          string           `env:"JWT_ISSUER" json:"-"`
-	JWTAudience        string           `env:"JWT_AUDIENCE" json:"-"`
-	Db                 DatabaseConfig   `json:"-"`
-	OIDC               OIDCConfig       `json:"oidc,omitempty"`
-	LockdownSchedule   string           `env:"LOCKDOWN_SCHEDULE" json:"lockdown_schedule,omitempty"`
-	Webhook            WebhookConfig    `json:"webhook,omitempty"`
-	Mattermost         MattermostConfig `json:"mattermost,omitempty"`
-	DevEnvironment     bool             `env:"DEV_ENVIRONMENT" envDefault:"false" json:"devEnvironment"` // Whether a set of dev specific setting should be turned on, do not touch unless you know what you are doing
-	ArgoApiRetries     uint             `env:"ARGO_API_RETRIES" envDefault:"3" json:"argo_api_retries"`  // Total attempts (including initial); passed to retry.Attempts()
-	RepoCachePath      string           `env:"REPO_CACHE_PATH" envDefault:"/data" json:"-"`
+	ArgoUrl             URL              `env:"ARGO_URL,required,notEmpty" json:"argo_cd_url" swaggertype:"primitive,string"`
+	ArgoUrlAlias        string           `env:"ARGO_URL_ALIAS" json:"argo_cd_url_alias,omitempty"` // Used to generate App Url. Can be omitted if ArgoUrl is reachable from outside.
+	ArgoToken           string           `env:"ARGO_TOKEN,required,notEmpty" json:"-"`
+	ArgoApiTimeout      int64            `env:"ARGO_API_TIMEOUT" envDefault:"60" json:"argo_api_timeout"`
+	AcceptSuspendedApp  bool             `env:"ACCEPT_SUSPENDED_APP" envDefault:"false" json:"accept_suspended_app"`
+	DeploymentTimeout   uint             `env:"DEPLOYMENT_TIMEOUT" envDefault:"900" json:"deployment_timeout"`
+	DegradedGracePeriod uint             `env:"DEGRADED_GRACE_PERIOD" envDefault:"120" json:"degraded_grace_period"`
+	ArgoRefreshApp      bool             `env:"ARGO_REFRESH_APP" envDefault:"true" json:"argo_refresh_app"`
+	RegistryProxyUrl    string           `env:"DOCKER_IMAGES_PROXY" json:"registry_proxy_url,omitempty"`
+	StateType           string           `env:"STATE_TYPE,required" json:"state_type"`
+	StaticFilePath      string           `env:"STATIC_FILES_PATH" envDefault:"static" json:"-"`
+	SkipTlsVerify       bool             `env:"SKIP_TLS_VERIFY" envDefault:"false" json:"skip_tls_verify"`
+	LogLevel            string           `env:"LOG_LEVEL" envDefault:"info" json:"log_level"`
+	Host                string           `env:"HOST" envDefault:"0.0.0.0" json:"-"`
+	Port                string           `env:"PORT" envDefault:"8080" json:"-"`
+	DeployToken         string           `env:"ARGO_WATCHER_DEPLOY_TOKEN" json:"-"`
+	JWTSecret           string           `env:"JWT_SECRET" json:"-"`
+	JWTIssuer           string           `env:"JWT_ISSUER" json:"-"`
+	JWTAudience         string           `env:"JWT_AUDIENCE" json:"-"`
+	Db                  DatabaseConfig   `json:"-"`
+	OIDC                OIDCConfig       `json:"oidc,omitempty"`
+	LockdownSchedule    string           `env:"LOCKDOWN_SCHEDULE" json:"lockdown_schedule,omitempty"`
+	Webhook             WebhookConfig    `json:"webhook,omitempty"`
+	Mattermost          MattermostConfig `json:"mattermost,omitempty"`
+	DevEnvironment      bool             `env:"DEV_ENVIRONMENT" envDefault:"false" json:"devEnvironment"` // Whether a set of dev specific setting should be turned on, do not touch unless you know what you are doing
+	ArgoApiRetries      uint             `env:"ARGO_API_RETRIES" envDefault:"3" json:"argo_api_retries"`  // Total attempts (including initial); passed to retry.Attempts()
+	RepoCachePath       string           `env:"REPO_CACHE_PATH" envDefault:"/data" json:"-"`
 	// TaskRetentionEnabled turns on the periodic removal of finished tasks older
 	// than TaskRetentionDays, and TaskRetentionDays is that window in days. Both
 	// only apply to the postgres state; in-memory tasks live no longer than the
@@ -392,6 +397,10 @@ func argoApiProblems(config *ServerConfig) []string {
 	// from the nanosecond overflow, which lands in the same place (maxArgoApiTimeout).
 	if config.ArgoApiTimeout < 1 || config.ArgoApiTimeout > maxArgoApiTimeout {
 		problems = append(problems, fmt.Sprintf("  - ArgoApiTimeout: must be between 1 and %d seconds, got %d", maxArgoApiTimeout, config.ArgoApiTimeout))
+	}
+
+	if config.DegradedGracePeriod > maxDegradedGracePeriod {
+		problems = append(problems, fmt.Sprintf("  - DegradedGracePeriod: must be between 0 and %d seconds, got %d", maxDegradedGracePeriod, config.DegradedGracePeriod))
 	}
 
 	return problems

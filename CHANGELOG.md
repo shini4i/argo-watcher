@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   changes; the rest of the file keeps its formatting and comments. The default stays
   `override`.
 
+### Changed
+
+- A deployment no longer fails the moment the application turns `Degraded`. It fails only
+  once the application stays `Degraded` with the new images for `DEGRADED_GRACE_PERIOD`
+  seconds (default `120`), so a short outage unrelated to the release, such as an HPA
+  briefly missing metrics, no longer fails it (#631). A broken release now takes up to two
+  minutes longer to fail. `DEGRADED_GRACE_PERIOD=0` restores the previous behaviour.
+
 ## [1.4.3] - 2026-10-26
 
 ### Added
