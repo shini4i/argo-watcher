@@ -110,13 +110,16 @@ func TestWaitRolloutRestartsTheGracePeriodAfterARecovery(t *testing.T) {
 
 	grace := 50 * time.Millisecond
 	firstOutage := 30 * time.Millisecond
-	start := time.Now()
+	var outageStart time.Time
 	recovered := false
 
 	api := mocks.NewMockArgoApiInterface(ctrl)
 	api.EXPECT().GetApplication(gomock.Any(), "demo", gomock.Any()).
 		DoAndReturn(func(context.Context, string, bool) (*models.Application, error) {
-			if !recovered && time.Since(start) >= firstOutage {
+			if outageStart.IsZero() {
+				outageStart = time.Now()
+			}
+			if !recovered && time.Since(outageStart) >= firstOutage {
 				recovered = true
 				return appWithHealth("Progressing"), nil
 			}

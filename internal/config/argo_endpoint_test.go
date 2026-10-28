@@ -129,14 +129,14 @@ func TestNewServerConfig_DegradedGracePeriodDefaultsToTwoMinutes(t *testing.T) {
 	cfg, err := NewServerConfig()
 
 	require.NoError(t, err)
-	assert.Equal(t, uint(120), cfg.DegradedGracePeriod)
+	assert.Equal(t, int64(120), cfg.DegradedGracePeriod)
 }
 
 // 0 keeps the fail-on-first-Degraded-poll behaviour, so it must stay accepted.
 func TestNewServerConfig_DegradedGracePeriodAcceptsTheWholeRange(t *testing.T) {
 	for _, tt := range []struct {
 		env  string
-		want uint
+		want int64
 	}{{"0", 0}, {"120", 120}, {"3600", 3600}} {
 		t.Run(tt.env, func(t *testing.T) {
 			t.Setenv("ARGO_URL", "https://example.com")

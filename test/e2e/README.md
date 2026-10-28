@@ -77,6 +77,7 @@ task batch-writeback      # toggle GIT_BATCH_WRITEBACK on, re-run the contention
 task race                 # same-app supersession: a newer deploy must win over an older retrying one
 task state-postgres       # flip the release to Postgres state: assert migration, deploy loop, task survives a pod restart, the client rides out a server outage, the shared deploy lock, supersession under contention
 task app-tokens           # application deploy tokens end to end: issue through the Keycloak-authenticated API, enforce the per-application scope on a real deploy, revoke, expire
+task degraded-grace       # assert DEGRADED_GRACE_PERIOD: app4 goes Degraded mid-deploy, recovers inside the window, and the deploy still succeeds
 task failure-diagnostics  # assert failure reasons carry the real cause (pod ImagePullBackOff, failed hooks, a degraded migration Job, a stuck rollout)
 task argocd-unreachable   # scale ArgoCD down: assert /reachability flips (reason "argocd") + the watcher broadcasts "argocd_down:argocd" + POST fast-fails 503, then recovers
 task shutdown-drain       # assert graceful shutdown drains in-flight WebSocket connections (GoingAway) with no race/panic
@@ -124,6 +125,7 @@ again instead of re-establishing a forward.
 | `values/` | pinned Helm values for argocd / argo-watcher / gitea / webhook-tester |
 | `scripts/load-race-image.sh` | load a local image into the kind node |
 | `scripts/mint-argo-token.sh` | mint `ARGO_TOKEN` into `argo-watcher-secret` |
+| `scripts/degraded-grace.sh` | assert `DEGRADED_GRACE_PERIOD` (90s in the lab): deploy app4 while the `degraded` fixture holds it Degraded, remove the fixture once argo-watcher logs it is waiting out the window, and require the deploy to succeed |
 | `scripts/failure-diagnostics.sh` | table-driven failure-reason assertions, driven through the real client (add a case = one table entry) |
 | `scripts/race-supersede.sh` | same-app supersession assertion: real client, newer deploy wins, older is superseded |
 | `scripts/app-tokens.sh` | assert application deploy tokens end to end against the lab's real Keycloak: the endpoints are unregistered and a token refused by name while the feature is off; issuing is restricted to a privileged operator (an unprivileged user and a token minted for another client of the realm are both 401); an issued token records its scope, hint and creator and returns its secret exactly once, with `Cache-Control: no-store`; a scope matching nothing is 406 and one with duplicates/whitespace is normalized; the per-application scope authorizes a REAL deploy of `app4` (write-back committed) while refusing `app2` and near-miss names; a multi-application token covers each of its apps and an all-applications one covers any; `last_used_at` moves on a deployment but never on a read; revocation takes effect on the next request and keeps the audit row; an expired token is refused; the token opens a `/ws` handshake and a CI JWT still works on the same header; and the token survives a pod restart |

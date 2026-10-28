@@ -302,6 +302,15 @@ go_version() {
 }
 
 # --- gitops repo -------------------------------------------------------------
+# refresh_all_apps: ask ArgoCD to re-compare every fixture app against git now. All apps,
+# because chart/values.yaml is shared: a fixture breaks every app, and refreshing one would
+# leave the rest stale for up to 180s and stall the next phase's Synced/Healthy precondition.
+refresh_all_apps() {
+  kubectl -n "$NS_ARGOCD" annotate applications --all \
+    argocd.argoproj.io/refresh=normal --overwrite >/dev/null 2>&1 || true
+  return
+}
+
 # gitops_clone <dir>: clone the lab's shared gitops repo (every fixture app renders
 # from it, which is what makes their write-back pushes contend) into <dir>.
 gitops_clone() {

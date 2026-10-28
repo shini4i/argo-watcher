@@ -202,7 +202,7 @@ type ServerConfig struct {
 	ArgoApiTimeout      int64            `env:"ARGO_API_TIMEOUT" envDefault:"60" json:"argo_api_timeout"`
 	AcceptSuspendedApp  bool             `env:"ACCEPT_SUSPENDED_APP" envDefault:"false" json:"accept_suspended_app"`
 	DeploymentTimeout   uint             `env:"DEPLOYMENT_TIMEOUT" envDefault:"900" json:"deployment_timeout"`
-	DegradedGracePeriod uint             `env:"DEGRADED_GRACE_PERIOD" envDefault:"120" json:"degraded_grace_period"`
+	DegradedGracePeriod int64            `env:"DEGRADED_GRACE_PERIOD" envDefault:"120" json:"degraded_grace_period"`
 	ArgoRefreshApp      bool             `env:"ARGO_REFRESH_APP" envDefault:"true" json:"argo_refresh_app"`
 	RegistryProxyUrl    string           `env:"DOCKER_IMAGES_PROXY" json:"registry_proxy_url,omitempty"`
 	StateType           string           `env:"STATE_TYPE,required" json:"state_type"`
@@ -399,7 +399,7 @@ func argoApiProblems(config *ServerConfig) []string {
 		problems = append(problems, fmt.Sprintf("  - ArgoApiTimeout: must be between 1 and %d seconds, got %d", maxArgoApiTimeout, config.ArgoApiTimeout))
 	}
 
-	if config.DegradedGracePeriod > maxDegradedGracePeriod {
+	if config.DegradedGracePeriod < 0 || config.DegradedGracePeriod > maxDegradedGracePeriod {
 		problems = append(problems, fmt.Sprintf("  - DegradedGracePeriod: must be between 0 and %d seconds, got %d", maxDegradedGracePeriod, config.DegradedGracePeriod))
 	}
 
