@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A deployment taken over by another replica now fails on `Degraded` after
+  `DEGRADED_GRACE_PERIOD` instead of running to its deadline. The baseline image hash is
+  stored with the task (migration `000012`), so the new owner no longer recomputes it from
+  the already rolled-out application.
+
 ## [1.5.0] - 2026-10-28
 
 ### Added

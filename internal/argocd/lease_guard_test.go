@@ -108,13 +108,14 @@ func TestLeaseGuard_StopsRenewing(t *testing.T) {
 func neverLost() bool { return false }
 
 // newTaskRepositoryMock returns a task repository mock that already allows the
-// lease calls every monitored rollout makes, so each test declares only the
+// lease and baseline calls every monitored rollout makes, so each test declares only the
 // expectations it is actually about. Tests asserting on the lease itself build
 // the mock directly instead.
 func newTaskRepositoryMock(ctrl *gomock.Controller) *mocks.MockTaskRepository {
 	repository := mocks.NewMockTaskRepository(ctrl)
 	repository.EXPECT().ClaimTask(gomock.Any()).Return(nil).AnyTimes()
 	repository.EXPECT().RenewLease(gomock.Any()).Return(true, nil).AnyTimes()
+	repository.EXPECT().SetBaselineImagesHash(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	return repository
 }
 

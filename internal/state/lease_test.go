@@ -37,4 +37,6 @@ func TestInMemoryState_LeasesAreNoOps(t *testing.T) {
 	reclaimed, err := state.ClaimExpiredTasks(10)
 	require.NoError(t, err)
 	assert.Empty(t, reclaimed)
+
+	require.NoError(t, state.SetBaselineImagesHash(task.Id, []byte{0x01}))
 }

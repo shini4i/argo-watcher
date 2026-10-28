@@ -67,3 +67,14 @@ func TestConvertToResumedTask_OmittedRefreshStaysNil(t *testing.T) {
 	assert.Nil(t, resumed.Refresh,
 		"a NULL refresh means the client never overrode it, so the instance default applies")
 }
+
+func TestConvertToResumedTask_CarriesTheBaselineImagesHash(t *testing.T) {
+	stored := storedTask()
+	stored.BaselineImagesHash = []byte{0xaa, 0xbb}
+
+	resumed := stored.ConvertToResumedTask()
+
+	assert.Equal(t, []byte{0xaa, 0xbb}, resumed.SavedAppStatus.ImagesHash,
+		"without the baseline a resumed rollout never fails on Degraded")
+	assert.Nil(t, stored.ConvertToExternalTask().SavedAppStatus.ImagesHash)
+}

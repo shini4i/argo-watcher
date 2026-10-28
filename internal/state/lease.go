@@ -185,3 +185,20 @@ func (state *PostgresState) ClaimExpiredTasks(limit int) ([]models.Task, error) 
 func (state *InMemoryState) ClaimTask(_ string) error {
 	return nil
 }
+
+// SetBaselineImagesHash is a no-op: no other process resumes in-memory tasks, and the
+// replica monitoring one already holds its baseline.
+func (state *InMemoryState) SetBaselineImagesHash(_ string, _ []byte) error {
+	return nil
+}
+
+// SetBaselineImagesHash records the task's baseline images hash unless one is already
+// stored. It is not fenced on ownership: only the first owner saw the application before
+// the rollout changed it, so its hash is the one worth keeping even if it lost the claim.
+func (state *PostgresState) SetBaselineImagesHash(id string, hash []byte) error {
+	result := state.orm.Model(&state_models.TaskModel{}).
+		Where("id = ? AND baseline_images_hash IS NULL", id).
+		Update("baseline_images_hash", hash)
+
+	return result.Error
+}

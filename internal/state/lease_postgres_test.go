@@ -370,3 +370,31 @@ func TestPostgresState_ReleaseOwnedLeases(t *testing.T) {
 			"a finished task's row is left untouched")
 	})
 }
+
+func TestPostgresState_SetBaselineImagesHash(t *testing.T) {
+	env := newPostgresTestEnv(t)
+
+	t.Run("a resumed task carries the baseline its first owner recorded", func(t *testing.T) {
+		inserted := env.addTask(t, sampleTask("Baseline"))
+		require.NoError(t, env.state.ClaimTask(inserted.Id))
+		require.NoError(t, env.state.SetBaselineImagesHash(inserted.Id, []byte{0x01, 0x02, 0x03}))
+		env.expireLease(t, inserted.Id)
+
+		claimed, err := env.secondReplica(t).ClaimExpiredTasks(TaskReapBatchSize)
+		require.NoError(t, err)
+
+		resumed := findTask(claimed, inserted.Id)
+		require.NotNil(t, resumed)
+		assert.Equal(t, []byte{0x01, 0x02, 0x03}, resumed.SavedAppStatus.ImagesHash,
+			"a resumed rollout that recomputes its baseline cannot tell the new images from the old")
+	})
+
+	t.Run("a recorded baseline is never replaced", func(t *testing.T) {
+		inserted := env.addTask(t, sampleTask("BaselineKept"))
+		require.NoError(t, env.state.SetBaselineImagesHash(inserted.Id, []byte{0x01}))
+		require.NoError(t, env.secondReplica(t).SetBaselineImagesHash(inserted.Id, []byte{0x02}))
+
+		assert.Equal(t, []byte{0x01}, env.storedModel(t, inserted.Id).BaselineImagesHash,
+			"only the first owner saw the application before the rollout changed it")
+	})
+}

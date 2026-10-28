@@ -36,6 +36,10 @@ type TaskModel struct {
 	// expired is available for another replica to claim and resume.
 	OwnerId        sql.NullString `gorm:"column:owner_id;"`
 	LeaseExpiresAt sql.NullTime   `gorm:"column:lease_expires_at;"`
+	// BaselineImagesHash is the hash of the application's images before this deployment
+	// changed them, NULL until the first owner records it. A resumed rollout compares
+	// against it to tell whether a Degraded application runs this deployment's images.
+	BaselineImagesHash []byte `gorm:"column:baseline_images_hash;"`
 }
 
 func (TaskModel) TableName() string {
@@ -63,16 +67,15 @@ func (ormTask *TaskModel) ConvertToExternalTask() *models.Task {
 	}
 }
 
-// ConvertToResumedTask maps the row onto a task ready to be monitored again by a
-// replica that claimed it after its previous owner stopped. Unlike
-// ConvertToExternalTask it carries the fields the rollout acts on: Validated,
-// without which UpdateIfNeeded would silently skip the git write-back; and the
-// Timeout and Refresh overrides the deployment was accepted with, which would
-// otherwise fall back to this replica's defaults.
+// ConvertToResumedTask maps the row onto a task another replica resumes. Unlike
+// ConvertToExternalTask it carries what the rollout acts on: Validated, which gates the git
+// write-back; the Timeout and Refresh overrides it was accepted with; and the baseline images
+// hash, which can no longer be taken once the new images are rolled out.
 func (ormTask *TaskModel) ConvertToResumedTask() *models.Task {
 	task := ormTask.ConvertToExternalTask()
 	task.Validated = ormTask.Validated
 	task.Timeout = ormTask.Timeout
+	task.SavedAppStatus.ImagesHash = ormTask.BaselineImagesHash
 	if ormTask.Refresh.Valid {
 		refresh := ormTask.Refresh.Bool
 		task.Refresh = &refresh

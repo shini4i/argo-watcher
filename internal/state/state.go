@@ -95,6 +95,10 @@ type TaskRepository interface {
 	// carry the authority and overrides the rollout acts on, which the API-facing
 	// tasks deliberately do not.
 	ClaimExpiredTasks(limit int) ([]models.Task, error)
+	// SetBaselineImagesHash records the hash of the application's images as they were
+	// before this deployment changed them, so a replica resuming the task can still tell
+	// whether a Degraded application runs its images. The first recorded hash is kept.
+	SetBaselineImagesHash(id string, hash []byte) error
 }
 
 // NewState returns a task repository for the configured StateType, already connected.
