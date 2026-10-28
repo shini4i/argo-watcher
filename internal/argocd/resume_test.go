@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	"github.com/shini4i/argo-watcher/internal/helpers"
 	"github.com/shini4i/argo-watcher/internal/lock"
 	"github.com/shini4i/argo-watcher/internal/mocks"
 	"github.com/shini4i/argo-watcher/internal/models"
@@ -223,6 +224,59 @@ func TestResumeRollout_KeepsTheOriginalDeadline(t *testing.T) {
 	require.Len(t, capture.sent, 1,
 		"a resumed deployment was already announced as started by the replica that accepted it")
 	assert.Equal(t, models.StatusDeployedMessage, capture.sent[0].Status)
+}
+
+// TestResumeRollout_FailsADegradedRolloutAgainstThePersistedBaseline covers issue #633: by
+// the time a task is resumed its images are already rolled out, so only the baseline its
+// first owner persisted can tell that the Degraded application is running this deployment.
+func TestResumeRollout_FailsADegradedRolloutAgainstThePersistedBaseline(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	apiMock := newArgoApiMock(ctrl)
+	metricsMock := mocks.NewMockMetricsInterface(ctrl)
+	stateMock := notSupersededState(ctrl)
+
+	argo := &Argo{}
+	argo.Init(stateMock, apiMock, metricsMock)
+
+	updater := initTestUpdater(t, newUpdaterTestConfig(lock.NewInMemoryLocker()), argo)
+	capture := &capturingStrategy{}
+	updater.notifier = notifications.NewNotifier(capture)
+
+	task := models.Task{
+		Id:        "resumed-degraded-id",
+		App:       "test-app",
+		Timeout:   600,
+		Created:   float64(time.Now().Unix()),
+		Validated: true,
+		Images:    []models.Image{{Image: "app", Tag: "v2"}},
+		SavedAppStatus: models.SavedAppStatus{
+			ImagesHash: helpers.GenerateHash("app:v1"),
+		},
+	}
+
+	degraded := models.Application{}
+	degraded.Status.Summary.Images = []string{"app:v2"}
+	degraded.Status.Sync.Status = "Synced"
+	degraded.Status.Health.Status = "Degraded"
+
+	// The confirming fetch and a single poll. A baseline recomputed from the rolled-out
+	// application keeps polling past this, which gomock reports as an unexpected call.
+	apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).
+		Return(&degraded, nil).Times(2)
+
+	metricsMock.EXPECT().AddInProgressTask()
+	metricsMock.EXPECT().RemoveInProgressTask()
+	metricsMock.EXPECT().InitDeploymentOutcomes(task.App)
+	metricsMock.EXPECT().AddDeploymentOutcome(task.App, models.StatusFailedMessage)
+	metricsMock.EXPECT().AddFailedDeployment(task.App)
+	stateMock.EXPECT().SetTaskStatus(task.Id, models.StatusFailedMessage, gomock.Any())
+
+	updater.ResumeRollout(task, neverDraining)
+
+	require.Len(t, capture.sent, 1)
+	assert.Equal(t, models.StatusFailedMessage, capture.sent[0].Status)
 }
 
 // Shutdown can begin after the reaper handed the task over but before the rollout

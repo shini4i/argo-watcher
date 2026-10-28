@@ -206,18 +206,25 @@ func (monitor *DeploymentMonitor) InitDeploymentOutcomes(app string) {
 }
 
 // StoreInitialAppStatus caches the initial rollout status for comparison during monitoring.
+// A resumed task keeps the baseline images hash it carries (issue #633); otherwise the hash
+// is taken from application and persisted, best-effort, for whichever replica resumes it.
 func (monitor *DeploymentMonitor) StoreInitialAppStatus(task *models.Task, application *models.Application) error {
 	if application == nil {
 		return errors.New("application is nil")
 	}
 
-	status := rolloutStatus(application, task.ListImages(), monitor.registryProxyUrl, monitor.acceptSuspended)
-	// The ArgoCD API may return images in different orders between calls; sorting guarantees stable hash comparisons.
-	normalizedImages := normalizeImages(application.Status.Summary.Images)
+	task.SavedAppStatus.Status = rolloutStatus(application, task.ListImages(), monitor.registryProxyUrl, monitor.acceptSuspended)
+	if task.SavedAppStatus.ImagesHash != nil {
+		return nil
+	}
 
-	task.SavedAppStatus = models.SavedAppStatus{
-		Status:     status,
-		ImagesHash: helpers.GenerateHash(strings.Join(normalizedImages, ",")),
+	// ArgoCD may return images in a different order between calls; sorting keeps the hash stable.
+	normalizedImages := normalizeImages(application.Status.Summary.Images)
+	task.SavedAppStatus.ImagesHash = helpers.GenerateHash(strings.Join(normalizedImages, ","))
+
+	if err := monitor.argo.State.SetBaselineImagesHash(task.Id, task.SavedAppStatus.ImagesHash); err != nil {
+		slog.Warn("Could not persist the baseline images hash; a resumed rollout will not fail on Degraded",
+			"error", err, "id", task.Id)
 	}
 
 	return nil

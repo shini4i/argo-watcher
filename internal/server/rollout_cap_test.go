@@ -138,6 +138,7 @@ func TestAddTaskReleasesSlotWhenRolloutEnds(t *testing.T) {
 	repo.EXPECT().GetTask(gomock.Any()).Return(&models.Task{Status: models.StatusInProgressMessage}, nil).AnyTimes()
 	repo.EXPECT().ClaimTask(gomock.Any()).Return(nil).AnyTimes()
 	repo.EXPECT().RenewLease(gomock.Any()).Return(true, nil).AnyTimes()
+	repo.EXPECT().SetBaselineImagesHash(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	repo.EXPECT().SetTaskStatus(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	argo := &argocd.Argo{}

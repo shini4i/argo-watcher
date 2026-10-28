@@ -21,6 +21,7 @@ When `STATE_TYPE=postgres` is set, Argo Watcher persists task data in PostgreSQL
 | `refresh` | `boolean` | Per-task override of `ARGO_REFRESH_APP`; `NULL` when the client omitted it, which is distinct from an explicit `false`. |
 | `owner_id` | `text` | The replica currently monitoring the rollout; `NULL` when unclaimed. See [High Availability](high-availability.md#task-ownership). |
 | `lease_expires_at` | `timestamptz` | When that claim lapses. A lapsed claim on an in-progress task is taken over by another replica; indexed for that sweep via the partial index `idx_tasks_claimable`. Read together with `owner_id`, it also says which kind of unclaimed a task is: both `NULL` means never claimed, while a `NULL` owner with a deadline set means a replica released it on shutdown for another to resume — only the former may still have its outcome written by the replica that accepted it. |
+| `baseline_images_hash` | `bytea` | Hash of the application's images before this deployment changed them. The first replica to record it wins, and a replica resuming the task compares against it to tell whether a `Degraded` application runs this deployment's images. `NULL` until recorded; a resumed task without it runs a `Degraded` rollout to its deadline instead of failing after `DEGRADED_GRACE_PERIOD`. Never exposed through the API. |
 | `app` | `varchar(255) NOT NULL` | Argo CD application name. |
 | `author` | `varchar(255) NOT NULL` | Deployment author identifier. |
 | `project` | `varchar(255) NOT NULL` | Business project identifier. |

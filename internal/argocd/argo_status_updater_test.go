@@ -544,6 +544,64 @@ func TestDeploymentMonitorStoreInitialAppStatusRequiresApplication(t *testing.T)
 	assert.Equal(t, "application is nil", err.Error())
 }
 
+// The baseline is the application's images before this deployment changed them, so it is
+// persisted for whichever replica resumes the task.
+func TestDeploymentMonitorStoreInitialAppStatusPersistsTheBaseline(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	state := mocks.NewMockTaskRepository(ctrl)
+	monitor := NewDeploymentMonitor(Argo{State: state}, "", nil, false, time.Millisecond)
+
+	app := &models.Application{}
+	app.Status.Summary.Images = []string{"example.com/b:v1", "example.com/a:v1"}
+	want := helpers.GenerateHash("example.com/a:v1,example.com/b:v1")
+
+	state.EXPECT().SetBaselineImagesHash("task-id", want).Return(nil)
+
+	task := models.Task{Id: "task-id"}
+	require.NoError(t, monitor.StoreInitialAppStatus(&task, app))
+	assert.Equal(t, want, task.SavedAppStatus.ImagesHash)
+}
+
+// The baseline only sharpens failure detection, so losing it must not fail a rollout.
+func TestDeploymentMonitorStoreInitialAppStatusToleratesAPersistFailure(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	state := mocks.NewMockTaskRepository(ctrl)
+	monitor := NewDeploymentMonitor(Argo{State: state}, "", nil, false, time.Millisecond)
+
+	app := &models.Application{}
+	app.Status.Summary.Images = []string{"example.com/a:v1"}
+
+	state.EXPECT().SetBaselineImagesHash("task-id", gomock.Any()).Return(errors.New("connection reset"))
+
+	task := models.Task{Id: "task-id"}
+	require.NoError(t, monitor.StoreInitialAppStatus(&task, app))
+	assert.Equal(t, helpers.GenerateHash("example.com/a:v1"), task.SavedAppStatus.ImagesHash)
+}
+
+// A resumed task arrives with the baseline its first owner recorded. The application already
+// runs the new images by then, so recomputing the hash would erase the very change that makes
+// a degradation terminal (issue #633).
+func TestDeploymentMonitorStoreInitialAppStatusKeepsAResumedBaseline(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	// No SetBaselineImagesHash expectation: gomock fails the test if it is called.
+	state := mocks.NewMockTaskRepository(ctrl)
+	monitor := NewDeploymentMonitor(Argo{State: state}, "", nil, false, time.Millisecond)
+
+	app := &models.Application{}
+	app.Status.Summary.Images = []string{"example.com/a:v2"}
+	baseline := helpers.GenerateHash("example.com/a:v1")
+
+	task := models.Task{Id: "task-id", SavedAppStatus: models.SavedAppStatus{ImagesHash: baseline}}
+	require.NoError(t, monitor.StoreInitialAppStatus(&task, app))
+	assert.Equal(t, baseline, task.SavedAppStatus.ImagesHash)
+}
+
 func TestDeploymentMonitorHandleDeploymentSuccessHandlesStateError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -2475,6 +2533,7 @@ func TestArgoStatusUpdaterLostLeaseWritesNoStatus(t *testing.T) {
 				once.Do(func() { close(takenOver) })
 				return false, nil
 			}).AnyTimes()
+			stateMock.EXPECT().SetBaselineImagesHash(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 			application := models.Application{}
 			application.Status.Summary.Images = []string{"ghcr.io/shini4i/argo-watcher:dev"}
@@ -2627,6 +2686,7 @@ func TestWaitForRollout_LeavesASupersessionItLostToTheNewOwner(t *testing.T) {
 		once.Do(func() { close(takenOver) })
 		return false, nil
 	}).AnyTimes()
+	stateMock.EXPECT().SetBaselineImagesHash(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	stateMock.EXPECT().GetTask(gomock.Any()).
 		DoAndReturn(func(string) (*models.Task, error) {

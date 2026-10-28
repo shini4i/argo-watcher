@@ -30,7 +30,9 @@ it finds. A lease is lapsed when its owner stopped renewing it — because the p
 crashed, was evicted, lost its database connection for long enough, or shut
 down. The new owner starts monitoring the rollout from where it stands: it
 re-reads the application, re-runs the write-back if the target tag is not
-committed yet, and records the outcome.
+committed yet, and records the outcome. It keeps the baseline image hash the
+first owner stored, so a `Degraded` rollout still fails after
+`DEGRADED_GRACE_PERIOD` instead of running to its deadline.
 
 Two properties make that safe to run everywhere at once. Claims are taken with
 `FOR UPDATE SKIP LOCKED`, so simultaneous sweeps partition the abandoned tasks
