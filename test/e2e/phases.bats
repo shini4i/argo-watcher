@@ -161,6 +161,12 @@ phase() {
   phase app-tokens.sh
 }
 
+@test "degraded-grace: a Degraded app that recovers inside the window still deploys" {
+  # Injects the shared degraded fixture around app4, like failure-diagnostics, so it runs
+  # beside it and after the phases that need pristine apps.
+  phase degraded-grace.sh
+}
+
 @test "failure-diagnostics: failure reasons carry the real cause" {
   # Deliberately breaks apps (bad images, and — injected into the SHARED chart values — a
   # failing PreSync hook, a failing migration Job, or a never-ready Deployment) and pushes

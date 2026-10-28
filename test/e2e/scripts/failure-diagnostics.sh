@@ -149,7 +149,7 @@ teardown_failed_presync_hook() { "${here}/failure-fixture.sh" remove; restore_go
 scenario_degraded_migration_job() {
   local tag
   tag=$(other_tag app4)
-  echo "task={\"app\":\"app4\",\"author\":\"e2e\",\"project\":\"lab\",\"timeout\":180,\"images\":[{\"image\":\"${IMAGE}\",\"tag\":\"${tag}\"}]}"
+  echo "task={\"app\":\"app4\",\"author\":\"e2e\",\"project\":\"lab\",\"timeout\":240,\"images\":[{\"image\":\"${IMAGE}\",\"tag\":\"${tag}\"}]}"
   echo "expect=Rollout status is degraded"
   echo "expect=App health status \"Degraded\""
   echo "expect=Job(failing-migration) Degraded with message Job has reached the specified backoff limit"
@@ -157,9 +157,10 @@ scenario_degraded_migration_job() {
   # The pod-level cause comes only from the resource tree; the pod name carries a random
   # suffix, so assert the message. Without the tree enrichment this line is absent entirely.
   echo "expect=failed with exit code 1"
-  # A terminal degradation must be reported the moment it is observed, not waited out: the
-  # deploy above allows 180s, so anything near it means the rollout kept polling instead.
-  echo "max_seconds=120"
+  # DEGRADED_GRACE_PERIOD is 90s in the lab: the failure must wait it out, yet land well
+  # before the 240s timeout.
+  echo "min_seconds=90"
+  echo "max_seconds=200"
   echo "setup=setup_degraded_migration_job"
   echo "teardown=teardown_degraded_migration_job"
   return
@@ -217,18 +218,6 @@ teardown_progressing_timeout() {
   refresh_all_apps
   wait_app app5 "Synced/Healthy" 60 || note "app5 did not return to Synced/Healthy (last: ${APP_STATE:-unknown})"
   restore_good_tag app5
-  return
-}
-
-# refresh_all_apps: ask ArgoCD to re-compare every fixture app against git now.
-#
-# Scoped to ALL apps, not just the one under test: chart/values.yaml is shared, so an injected
-# fixture breaks every fixture app, and removing it only clears them once each one reconciles.
-# Refreshing just the app under test would leave the rest unhealthy for up to ArgoCD's 180s
-# reconciliation and stall whichever phase runs next on its Synced/Healthy precondition.
-refresh_all_apps() {
-  kubectl -n "$NS_ARGOCD" annotate applications --all \
-    argocd.argoproj.io/refresh=normal --overwrite >/dev/null 2>&1 || true
   return
 }
 

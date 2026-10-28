@@ -31,15 +31,16 @@ type ArgoStatusUpdater struct {
 
 // ArgoStatusUpdaterConfig groups the dependencies required to bootstrap an ArgoStatusUpdater.
 type ArgoStatusUpdaterConfig struct {
-	RetryAttempts    uint
-	RetryDelay       time.Duration
-	RegistryProxyURL string
-	RepoCachePath    string
-	AcceptSuspended  bool
-	RefreshApp       bool
-	WebhookConfig    *config.WebhookConfig
-	MattermostConfig *config.MattermostConfig
-	Locker           lock.Locker
+	RetryAttempts       uint
+	RetryDelay          time.Duration
+	RegistryProxyURL    string
+	RepoCachePath       string
+	AcceptSuspended     bool
+	RefreshApp          bool
+	DegradedGracePeriod time.Duration
+	WebhookConfig       *config.WebhookConfig
+	MattermostConfig    *config.MattermostConfig
+	Locker              lock.Locker
 	// BatchWriteBack enables the contention-coalescing batch write-back mode.
 	BatchWriteBack bool
 	// BatchMaxSize bounds the number of apps committed in a single batch flush.
@@ -63,6 +64,7 @@ func (updater *ArgoStatusUpdater) Init(argo Argo, cfg ArgoStatusUpdaterConfig) e
 	updater.monitor = NewDeploymentMonitor(argo, cfg.RegistryProxyURL, retryOptions, cfg.AcceptSuspended, cfg.RetryDelay)
 	updater.monitor.defaultAttempts = cfg.RetryAttempts
 	updater.monitor.refreshApp = cfg.RefreshApp
+	updater.monitor.degradedGrace = cfg.DegradedGracePeriod
 
 	var batcher *Batcher
 	if cfg.BatchWriteBack {

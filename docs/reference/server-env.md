@@ -16,6 +16,7 @@ On startup all missing or invalid variables are reported together in one error, 
 | `ARGO_API_TIMEOUT` | Timeout for Argo CD API calls, in seconds (1–3600) | `60` | No |
 | `ARGO_API_RETRIES` | Total attempts per Argo CD API call (1–10) | `3` | No |
 | `ARGO_REFRESH_APP` | Refresh the application during status checks | `true` | No |
+| `DEGRADED_GRACE_PERIOD` | Seconds an application may stay `Degraded` with the new images before the deployment fails (0–3600). A shorter outage, such as an HPA briefly missing metrics, does not fail it. `0` fails on the first `Degraded` check | `120` | No |
 | `ACCEPT_SUSPENDED_APP` | Treat a `Suspended` health status as deployed | `false` | No |
 
 Turning `ARGO_REFRESH_APP` off also disables the [fail-fast image check](../operations/troubleshooting.md#image-is-not-part-of-application), which needs a freshly reconciled application.

@@ -124,17 +124,18 @@ func NewServer(serverConfig *config.ServerConfig, reg prometheus.Registerer) (*S
 
 	statusUpdater := &argocd.ArgoStatusUpdater{}
 	err = statusUpdater.Init(*argo, argocd.ArgoStatusUpdaterConfig{
-		RetryAttempts:    serverConfig.GetRetryAttempts(),
-		RetryDelay:       argocd.ArgoSyncRetryDelay,
-		RegistryProxyURL: serverConfig.RegistryProxyUrl,
-		RepoCachePath:    serverConfig.RepoCachePath,
-		AcceptSuspended:  serverConfig.AcceptSuspendedApp,
-		RefreshApp:       serverConfig.ArgoRefreshApp,
-		WebhookConfig:    &serverConfig.Webhook,
-		MattermostConfig: &serverConfig.Mattermost,
-		Locker:           locker,
-		BatchWriteBack:   batchConfig.Enabled,
-		BatchMaxSize:     batchConfig.MaxSize,
+		RetryAttempts:       serverConfig.GetRetryAttempts(),
+		RetryDelay:          argocd.ArgoSyncRetryDelay,
+		RegistryProxyURL:    serverConfig.RegistryProxyUrl,
+		RepoCachePath:       serverConfig.RepoCachePath,
+		AcceptSuspended:     serverConfig.AcceptSuspendedApp,
+		RefreshApp:          serverConfig.ArgoRefreshApp,
+		DegradedGracePeriod: time.Duration(serverConfig.DegradedGracePeriod) * time.Second,
+		WebhookConfig:       &serverConfig.Webhook,
+		MattermostConfig:    &serverConfig.Mattermost,
+		Locker:              locker,
+		BatchWriteBack:      batchConfig.Enabled,
+		BatchMaxSize:        batchConfig.MaxSize,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize the argo updater: %w", err)

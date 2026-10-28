@@ -26,12 +26,9 @@ const (
 // It must never reach the user-visible task status — WaitRollout swallows it so the caller can report the actual rollout state instead.
 var errForceRetry = errors.New("force retry")
 
-// errAppDegraded is an internal sentinel returned by the poll loop when the application went
-// Degraded after the task's images landed, which makes the failure terminal. Like errForceRetry it
-// must never reach the user-visible task status: any error escaping WaitRollout is reported through
-// HandleArgoAPIFailure, which blames ArgoCD's API and carries no diagnostics. WaitRollout therefore
-// swallows it so the caller reports the degraded rollout together with its resource-level
-// cause instead.
+// errAppDegraded is an internal sentinel returned by the poll loop when the application stayed
+// Degraded past the grace period after the task's images landed. Like errForceRetry, WaitRollout
+// swallows it: an escaping error is reported as an ArgoCD API failure without diagnostics.
 var errAppDegraded = errors.New("application has degraded")
 
 // errTaskSuperseded is an internal sentinel returned by the poll loop when the task
@@ -112,6 +109,9 @@ type DeploymentMonitor struct {
 	acceptSuspended  bool
 	retryDelay       time.Duration
 	defaultAttempts  uint
+	// degradedGrace is how long a degradation must last before it fails the rollout; zero fails
+	// on the first Degraded poll. Rides out outages unrelated to the new version (issue #631).
+	degradedGrace time.Duration
 	// refreshApp is the instance-wide default for requesting an ArgoCD refresh during status checks.
 	// A per-task Refresh override takes precedence (see resolveRefresh).
 	refreshApp bool
@@ -260,6 +260,10 @@ func (monitor *DeploymentMonitor) WaitRollout(task models.Task, abandoned func()
 	// which may predate the commit that introduces the image.
 	imagesValidated := false
 
+	// degradedSince is when the current unbroken run of Degraded polls began; zero while the
+	// app is not Degraded.
+	var degradedSince time.Time
+
 	err := retry.Do(func() error {
 		// Stop before hitting ArgoCD if the task already ended in the shared state. A
 		// status that lands mid-iteration is caught on the next poll, and if this
@@ -296,7 +300,19 @@ func (monitor *DeploymentMonitor) WaitRollout(task models.Task, abandoned func()
 			}
 		}
 
-		return checkRolloutStatus(task, app, status)
+		statusErr := checkRolloutStatus(task, app, status)
+		if !errors.Is(statusErr, errAppDegraded) {
+			degradedSince = time.Time{}
+			return statusErr
+		}
+		if degradedSince.IsZero() {
+			degradedSince = time.Now()
+		}
+		if time.Since(degradedSince) < monitor.degradedGrace {
+			slog.Debug("Application is degraded, waiting for the grace period", "id", task.Id, "since", degradedSince)
+			return errForceRetry
+		}
+		return statusErr
 	}, retryOptions...)
 
 	// A nil application means no fetch ever succeeded, so the error is returned as-is for
