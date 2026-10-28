@@ -14,7 +14,14 @@ GRACE_LOG="Application is degraded, waiting for the grace period"
 bin_dir="$(mktemp -d)"
 out="${bin_dir}/client.out"
 fixture_applied=0
+client_pid=""
 cleanup() {
+  if [[ -n "$client_pid" ]] && kill -0 "$client_pid" 2>/dev/null; then
+    kill "$client_pid" 2>/dev/null || true
+    wait "$client_pid" 2>/dev/null || true
+    # shellcheck disable=SC2001  # per-line prefix needs a regex anchor; ${//} can't do it
+    echo "  client output (stopped): $(sed 's/^/    | /' "$out")"
+  fi
   if [[ "$fixture_applied" == 1 ]]; then
     "${here}/failure-fixture.sh" remove || true
     refresh_all_apps
