@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-10-28
+
 ### Added
 
 - Inline write-back: `argo-watcher/write-back-mode: inline` writes the image tag straight into
@@ -1555,7 +1557,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bumped the Go toolchain to `1.25.11`, resolving a `net/textproto` standard
   library vulnerability present in `go1.25.9`.
 
-[Unreleased]: https://github.com/shini4i/argo-watcher/compare/v1.4.3...HEAD
+[Unreleased]: https://github.com/shini4i/argo-watcher/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/shini4i/argo-watcher/compare/v1.4.3...v1.5.0
 [1.4.3]: https://github.com/shini4i/argo-watcher/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/shini4i/argo-watcher/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/shini4i/argo-watcher/compare/v1.4.0...v1.4.1
