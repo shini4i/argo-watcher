@@ -103,7 +103,7 @@ The server warning and the counter are what identify the credential as the cause
 
 - The pipeline sets neither `ARGO_WATCHER_DEPLOY_TOKEN` nor `BEARER_TOKEN`.
 - The value does not match the server's `ARGO_WATCHER_DEPLOY_TOKEN` or `JWT_SECRET`.
-- The credential is scoped to other applications. An [application deploy token](../guides/gitops-updater.md#application-deploy-tokens), and a JWT carrying `allowed_apps`, is rejected `401` for an application it does not name — so this shows up as a failed submission, not a skipped write-back.
+- The credential is scoped to other applications. An [application deploy token](../guides/gitops-updater.md#application-deploy-tokens), and a JWT carrying `allowed_apps`, is rejected `401` for an application it does not name, unless its scope is the wildcard — so this shows up as a failed submission, not a skipped write-back.
 - The application deploy token was revoked or has expired. Both are reported `401` naming which.
 - Application deploy tokens are not available on this server: they need `OIDC_ENABLED=true` and `STATE_TYPE=postgres`, and a token presented without both is rejected `401` naming the missing setting.
 - The server sets `JWT_ISSUER` or `JWT_AUDIENCE` and the token carries no such claim, or a different value. Both are strict once set — see [Binding a token to this server](../guides/gitops-updater.md#binding-a-token-to-this-server).
