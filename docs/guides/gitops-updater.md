@@ -231,7 +231,7 @@ openssl rand -base64 32
 | `aud` | Only if `JWT_AUDIENCE` is set | A list matches when it contains the configured value. |
 | `sub` | No | Informational — service or team name. |
 | `cluster` | No | Informational. |
-| `allowed_apps` | When present | A list of application names the token may deploy. **A token omitting the claim still authorizes every application**, so an existing fleet is unaffected; one that carries it is confined to what it names. See the caveat below. |
+| `allowed_apps` | When present | A list of application names the token may deploy. **A token omitting the claim still authorizes every application**, so an existing fleet is unaffected; one that carries it is confined to what it names. An entry of `"*"` authorizes every application; it is matched whole, so `"app*"` is a literal name, not a pattern. See the caveat below. |
 
 
 !!! warning "`allowed_apps` is a self-restriction, not a boundary"

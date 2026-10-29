@@ -234,6 +234,37 @@ func TestJWTAuthServiceValidateForApp(t *testing.T) {
 		assert.Contains(t, err.Error(), "does not cover application app3")
 	})
 
+	t.Run("a wildcard entry authorizes every application", func(t *testing.T) {
+		tests := []struct {
+			name  string
+			claim []string
+		}{
+			{name: "wildcard alone", claim: []string{"*"}},
+			{name: "wildcard beside a named app", claim: []string{"app1", "*"}},
+		}
+
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				tokenStr := mint(t, jwt.MapClaims{"allowed_apps": test.claim})
+
+				isValid, err := service.ValidateForApp(tokenStr, "any-app")
+
+				assert.NoError(t, err)
+				assert.True(t, isValid)
+			})
+		}
+	})
+
+	t.Run("a wildcard is only a whole entry, not a pattern", func(t *testing.T) {
+		tokenStr := mint(t, jwt.MapClaims{"allowed_apps": []string{"app*"}})
+
+		isValid, err := service.ValidateForApp(tokenStr, "app1")
+
+		assert.False(t, isValid)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "does not cover application app1")
+	})
+
 	t.Run("an empty claim authorizes nothing", func(t *testing.T) {
 		tokenStr := mint(t, jwt.MapClaims{"allowed_apps": []string{}})
 

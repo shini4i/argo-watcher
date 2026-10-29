@@ -8,11 +8,16 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// allowedAppsClaim optionally confines a token to a set of applications. It is a
-// self-restriction, not an authorization decision: anyone holding JWT_SECRET can
-// name any application, so it limits the blast radius of a leaked *minted token*
-// only. A token omitting the claim keeps authorizing every application.
+// allowedAppsClaim optionally confines a token to a set of applications. It is a self-restriction,
+// not an authorization decision: anyone holding JWT_SECRET can name any application, so it limits
+// the blast radius of a leaked *minted token* only. A token omitting the claim, or listing
+// allowedAppsWildcard, authorizes every application.
 const allowedAppsClaim = "allowed_apps"
+
+// allowedAppsWildcard is the allowedAppsClaim entry that covers every application.
+// It matches only as a whole entry, never as a glob, and cannot collide with a real
+// application because Kubernetes names never contain "*".
+const allowedAppsWildcard = "*"
 
 // JWTAuthService validates the HMAC-signed tokens a CI pipeline presents. Beyond the
 // signature it enforces the claim policy assembled in NewJWTAuthService.
@@ -32,7 +37,8 @@ func (j *JWTAuthService) Validate(tokenStr string) (bool, error) {
 }
 
 // ValidateForApp verifies the token and additionally honors allowedAppsClaim,
-// confining the token to the applications it names.
+// confining the token to the applications it names unless it lists
+// allowedAppsWildcard.
 func (j *JWTAuthService) ValidateForApp(tokenStr, app string) (bool, error) {
 	token, err := j.parse(tokenStr)
 	if err != nil {
@@ -48,7 +54,7 @@ func (j *JWTAuthService) ValidateForApp(tokenStr, app string) (bool, error) {
 		return true, nil
 	}
 
-	if !slices.Contains(allowed, app) {
+	if !slices.Contains(allowed, app) && !slices.Contains(allowed, allowedAppsWildcard) {
 		return false, fmt.Errorf("this token's %s claim does not cover application %s", allowedAppsClaim, app)
 	}
 

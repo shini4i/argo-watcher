@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `DEGRADED_GRACE_PERIOD` instead of running to its deadline. The baseline image hash is
   stored with the task (migration `000012`), so the new owner no longer recomputes it from
   the already rolled-out application.
+- A JWT with `"allowed_apps": ["*"]` authorizes every application again. The wildcard was
+  documented before 1.1.0 started enforcing the claim, and since then such tokens were
+  rejected `401` for every application.
 
 ## [1.5.0] - 2026-10-28
 

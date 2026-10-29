@@ -68,7 +68,7 @@ With OIDC **enabled**, the endpoints the Web UI consumes require one, group memb
 - **With a valid credential** the task is authorized: the git write-back runs, and the task can supersede an in-flight deployment of the same images.
 - **Without one** the task is still accepted (`202`) and monitored normally — the expected setup when image tags are committed elsewhere (Argo CD Image Updater, your pipeline). The write-back is skipped, and it cannot cancel a deployment that did present a credential. With [`MAX_ANONYMOUS_ROLLOUTS`](server-env.md#core) set, it is rejected `429` once that many uncredentialed deployments are in progress on the replica.
 - **With an invalid or expired one** the request is rejected `401`.
-- **With a credential scoped to other applications** the request is rejected `401`. An application deploy token, and a JWT carrying `allowed_apps`, authorize only the applications they name.
+- **With a credential scoped to other applications** the request is rejected `401`. An application deploy token, and a JWT carrying `allowed_apps`, authorize only the applications they name, unless their scope is the wildcard (`all_apps` for a deploy token, `"*"` in `allowed_apps`).
 
 Because the endpoint is open, its payload is bounded: at most 50 images per task, no name longer than 255 characters, and a `timeout` above 86400 seconds is clamped to it. That cap is what limits how long one request keeps the watcher polling Argo CD — a task still being monitored is not given up on by the staleness sweep.
 
