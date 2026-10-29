@@ -42,6 +42,11 @@ export const scopeError = (apps: string[]): string | null => {
     return `An application name must be at most ${MAX_APP_NAME_LENGTH} characters.`;
   }
 
+  const wildcard = apps.find(app => app === '*' || app === 'all_apps');
+  if (wildcard !== undefined) {
+    return `"${wildcard}" is not an application name; tick All applications instead.`;
+  }
+
   return null;
 };
 

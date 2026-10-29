@@ -76,6 +76,16 @@ func TestScopeValidate(t *testing.T) {
 			error: "must not be empty",
 		},
 		{
+			name:  "rejects a star entry, pointing to all_apps",
+			scope: Scope{Apps: []string{"app1", " * "}},
+			error: `"*" is not an application name; use all_apps`,
+		},
+		{
+			name:  "rejects all_apps written as an application name",
+			scope: Scope{Apps: []string{"all_apps"}},
+			error: `"all_apps" is not an application name; use all_apps`,
+		},
+		{
 			name:  "rejects an oversized application name",
 			scope: Scope{Apps: []string{strings.Repeat("a", MaxAppNameLength+1)}},
 			error: "at most 255 characters",

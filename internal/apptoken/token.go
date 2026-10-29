@@ -81,7 +81,8 @@ func (s Scope) String() string {
 
 // Validate normalizes the scope and reports why it cannot be stored. It trims and
 // deduplicates the application list, so the same scope always round-trips to the
-// same row and Allows cannot be defeated by stray whitespace.
+// same row and Allows cannot be defeated by stray whitespace. A "*" or "all_apps"
+// entry is refused: AllApps is the only spelling of the wildcard.
 func (s *Scope) Validate() error {
 	if s.AllApps {
 		if len(s.Apps) > 0 {
@@ -98,6 +99,9 @@ func (s *Scope) Validate() error {
 		app = strings.TrimSpace(app)
 		if app == "" {
 			return errors.New("an application name must not be empty")
+		}
+		if app == "*" || app == "all_apps" {
+			return fmt.Errorf("%q is not an application name; use all_apps to scope a token to every application", app)
 		}
 		if len(app) > MaxAppNameLength {
 			return fmt.Errorf("an application name must be at most %d characters", MaxAppNameLength)
