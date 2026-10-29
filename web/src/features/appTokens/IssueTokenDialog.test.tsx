@@ -191,5 +191,7 @@ describe('scopeError', () => {
   it('names why a scope is refused', () => {
     expect(scopeError(Array.from({ length: 201 }, (_, i) => `app-${i}`))).toMatch(/At most 200/);
     expect(scopeError(['ok', 'a'.repeat(256)])).toMatch(/at most 255 characters/);
+    expect(scopeError(['app1', '*'])).toMatch(/"\*" is not an application name/);
+    expect(scopeError(['all_apps'])).toMatch(/"all_apps" is not an application name/);
   });
 });

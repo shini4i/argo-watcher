@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Issuing an application deploy token with `"*"` or `"all_apps"` in `apps` is now rejected
+  `406` with a pointer to the `all_apps` flag. Before, either was stored as a literal
+  application name, so the token authorized nothing.
+
 ## [1.5.1] - 2026-10-29
 
 ### Fixed

@@ -84,7 +84,7 @@ An unauthorized task on an application that relies on the built-in updater fails
 
 `GET`, `POST /api/v1/app-tokens` and `DELETE /api/v1/app-tokens/{id}` are **registered only when OIDC is enabled and `STATE_TYPE=postgres`**, and each requires a session in one of the `OIDC_PRIVILEGED_GROUPS` — listing tokens included, since the list names who holds a credential for which applications. As with the deploy lock, an unregistered route falls through to the Web UI's catch-all: check the `Content-Type`.
 
-`POST` takes a scope of either `apps` (a list of application names) or `all_apps: true` (a wildcard), never both, plus an optional `description` and `expires_in_days`. It answers `201` with the token's `secret` — the only time that value exists anywhere. `406` means the scope or the payload was refused.
+`POST` takes a scope of either `apps` (a list of application names) or `all_apps: true` (a wildcard), never both, plus an optional `description` and `expires_in_days`. A `"*"` or `"all_apps"` entry in `apps` is refused rather than read as a wildcard. It answers `201` with the token's `secret` — the only time that value exists anywhere. `406` means the scope or the payload was refused.
 
 `DELETE` revokes a token, effective on its next use. The row is kept, so who issued it and when it was withdrawn stay on record.
 
