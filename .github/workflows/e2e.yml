@@ -41,7 +41,7 @@ jobs:
         with:
           go-version-file: go.mod
 
-      # Node + Task + swag mirror the UI build the rest of the automation uses;
+      # Node + Task mirror the UI build the rest of the automation uses;
       # `task build-race-image` runs `task build-ui` to produce web/dist.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -56,7 +56,7 @@ jobs:
           # lookup, which shares the runner IP 60 req/h anonymous quota.
           version: 3.53.1
 
-      - name: Install build dependencies (swag for the UI's swagger step)
+      - name: Install build dependencies
         run: task install-deps
 
       - name: Install kind, kubectl, helm
