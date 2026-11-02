@@ -6,11 +6,10 @@ tasks:
     desc: Install dependencies
     cmds:
       - echo "===> Installing dependencies"
-      - go install github.com/swaggo/swag/cmd/swag@latest
       - go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
       - echo "===> Done"
     status:
-      - type swag migrate
+      - type migrate
 
   mocks:
     desc: Generate mocks for tests
@@ -41,25 +40,13 @@ tasks:
     desc: Generate swagger spec
     dir: cmd/argo-watcher
     cmds:
-      - echo "===> Generating swagger spec"
-      # Every package holding an annotated type is named explicitly instead of using
-      # --parseDependency, which walks $GOROOT: swag carries the go/parser of the Go it was
-      # built with, so a newer stdlib than that fails the whole run. A type outside this list
-      # is a loud "cannot find type definition", never a silent omission.
-      - swag init --parseInternal --dir ./,../../internal/server,../../internal/models,../../internal/config --outputTypes json -o ../../web/public/swagger
-      # argo_cd_url is documented as a string only because of the swaggertype tag on
-      # ServerConfig; without it swag emits the fields of a url.URL and the published
-      # spec silently contradicts what the endpoint serves.
-      - |
-        if ! grep -A1 '"argo_cd_url":' ../../web/public/swagger/swagger.json | grep -q '"type": "string"'; then
-          echo "===> ERROR: argo_cd_url is not documented as a string (check the swaggertype tag)"
-          exit 1
-        fi
+      - bash ../../docs/scripts/build-swagger.sh
     sources:
       - main.go
       - ../../internal/server/router.go
       - ../../internal/models/*.go
       - ../../internal/config/*.go
+      - ../../docs/scripts/build-swagger.sh
     generates:
       - ../../web/public/swagger/swagger.json
 

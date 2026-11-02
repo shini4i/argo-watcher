@@ -26,6 +26,8 @@ on:
       - 'test/keycloak/**'
       - 'docker-compose.yml'
       - 'Taskfile.yml'
+      # task build-ui runs task docs, which runs this script.
+      - 'docs/scripts/build-swagger.sh'
   pull_request:
     types: [opened, synchronize, reopened]
     # Kept in sync with the push filter above; GitHub Actions does not support
@@ -42,6 +44,8 @@ on:
       - 'test/keycloak/**'
       - 'docker-compose.yml'
       - 'Taskfile.yml'
+      # task build-ui runs task docs, which runs this script.
+      - 'docs/scripts/build-swagger.sh'
 
 jobs:
   playwright:
@@ -73,7 +77,6 @@ jobs:
           version: 3.53.1
 
       - name: Install environment dependencies
-        # swag, for the swagger spec that task build-ui requires.
         run: task install-deps
 
       - name: Install frontend dependencies

@@ -13,7 +13,6 @@ build:
     - libpng-dev
   jobs:
     pre_build:
-      - go install github.com/swaggo/swag/cmd/swag@latest
       - bash docs/scripts/build-swagger.sh
 
 python:
