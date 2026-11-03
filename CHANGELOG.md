@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The example Grafana dashboard has a **Clients Without Auth** table: the applications
+  whose pipelines read `GET /api/v1/tasks/{id}` without a credential in the selected
+  range, from `unauthenticated_reads`.
+
 ### Changed
 
 - Issuing an application deploy token with `"*"` or `"all_apps"` in `apps` is now rejected

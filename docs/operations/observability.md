@@ -160,7 +160,7 @@ groups:
 
 ## Example dashboard
 
-A ready-made Grafana dashboard lives at [`monitoring/grafana/dashboards/argo-watcher.json`](https://github.com/shini4i/argo-watcher/blob/main/monitoring/grafana/dashboards/argo-watcher.json). Its **Overview** row covers availability, in-progress tasks, the success rate, deployment counts, failing apps and unconfirmed failures — all scoped to the selected time range, so the tiles cannot contradict each other — plus a breakdown of how those deployments ended. The **Per-Application Breakdown** row is driven by an `Application` template variable and shows that app's deployment counts, failures, and the refresh / write-back / lock-wait / end-to-end durations as p50, p95 and p99 over the whole range. `gitops_batch_size`, `state_unavailable` and `accepted_deployments` have no panel yet.
+A ready-made Grafana dashboard lives at [`monitoring/grafana/dashboards/argo-watcher.json`](https://github.com/shini4i/argo-watcher/blob/main/monitoring/grafana/dashboards/argo-watcher.json). Its **Overview** row covers availability, in-progress tasks, the success rate, deployment counts, failing apps and unconfirmed failures — all scoped to the selected time range, so the tiles cannot contradict each other — plus a breakdown of how those deployments ended and a **Clients Without Auth** table listing the applications whose pipelines still poll without a credential (see [Tracking the read-auth migration](#tracking-the-read-auth-migration)). The **Per-Application Breakdown** row is driven by an `Application` template variable and shows that app's deployment counts, failures, and the refresh / write-back / lock-wait / end-to-end durations as p50, p95 and p99 over the whole range. `gitops_batch_size`, `state_unavailable` and `accepted_deployments` have no panel yet.
 
 Import it through **Dashboards → New → Import** — a **Data source** picker at the top of the dashboard selects which Prometheus to query, so no datasource UID has to match. Or run it next to the dev server:
 
@@ -198,10 +198,15 @@ sum(increase(accepted_deployments[1h])) - sum(increase(deployments_total[1h]))
 With [OIDC](../guides/oidc.md) enabled the browser-facing reads require a credential, but `GET /api/v1/tasks/{id}` stays open by default: the client polls it throughout every deployment, and a client too old to send a credential there would fail every deployment it drives. `unauthenticated_reads` measures how much of the fleet is still in that state:
 
 ```promql
-sum(rate(unauthenticated_reads[1h])) by (app)
+# Unauthenticated reads per application over the last day. The first arm counts
+# series created inside the window, which increase() alone reports as zero.
+round(sum by (app) (
+  (max_over_time(unauthenticated_reads[1d]) unless unauthenticated_reads offset 1d)
+  or increase(unauthenticated_reads[1d])
+)) > 0
 ```
 
-Each application named is a pipeline running such a client; group by `path` for the endpoint breakdown. When the figure reaches zero and stays there across a full deployment cycle for every project, nothing depends on the exemption and you can close it with `OIDC_REQUIRE_TASK_READ_AUTH=true` — see [Closing the task lookup](../guides/oidc.md#closing-the-task-lookup).
+Each application named is a pipeline running such a client; group by `path` for the endpoint breakdown. When the query stays empty across a full deployment cycle for every project, nothing depends on the exemption and you can close it with `OIDC_REQUIRE_TASK_READ_AUTH=true` — see [Closing the task lookup](../guides/oidc.md#closing-the-task-lookup). The example dashboard's **Clients Without Auth** table shows the same list for the selected time range.
 
 Two caveats: the counter records that a credential was *present*, not that it was valid, and once the endpoint is closed the counter stops moving and its series disappears from `/metrics` after the next restart — which matters if you alert on it with `absent()`.
 
