@@ -7,11 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The example Grafana dashboard has a **Clients Without Auth** table: the applications
+  whose pipelines read `GET /api/v1/tasks/{id}` without a credential in the selected
+  range, from `unauthenticated_reads`.
+
 ### Changed
 
 - Issuing an application deploy token with `"*"` or `"all_apps"` in `apps` is now rejected
   `406` with a pointer to the `all_apps` flag. Before, either was stored as a literal
   application name, so the token authorized nothing.
+
+### Fixed
+
+- `unauthenticated_reads` names the application of a task submitted without a credential
+  once Argo CD has confirmed the app (migration `000013`). Before, every such read was
+  labelled `app="unknown"`, and with the Postgres backend credentialed tasks were too.
 
 ## [1.5.1] - 2026-10-29
 

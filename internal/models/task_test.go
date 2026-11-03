@@ -24,6 +24,14 @@ func TestTask_ValidatedIsNeverSerialized(t *testing.T) {
 	assert.False(t, in.Validated, "a caller must not be able to assert its own authority")
 }
 
+// TestTask_AppConfirmedIsNeverAccepted pins the `json:"-"` tag on AppConfirmed: a caller
+// able to assert it would put a free-text app name on a metric label.
+func TestTask_AppConfirmedIsNeverAccepted(t *testing.T) {
+	var in Task
+	require.NoError(t, json.Unmarshal([]byte(`{"app":"app","app_confirmed":true,"AppConfirmed":true}`), &in))
+	assert.False(t, in.AppConfirmed)
+}
+
 // TestTask_MetricApp pins the bound on Prometheus label values: task submission is
 // open and the app name is free text, so an unvalidated task must never contribute
 // one. Without this an unauthenticated caller mints a permanent series per request.
@@ -33,6 +41,10 @@ func TestTask_MetricApp(t *testing.T) {
 
 	unvalidated := Task{App: "attacker-controlled-name"}
 	assert.Equal(t, UnknownApp, unvalidated.MetricApp())
+
+	confirmed := Task{App: "payments-api", AppConfirmed: true}
+	assert.Equal(t, "payments-api", confirmed.MetricApp(),
+		"ArgoCD knowing the app bounds the label as well as a credential does")
 }
 
 // TestTask_RefreshUnmarshal verifies the per-task refresh override (issue #334) is optional and

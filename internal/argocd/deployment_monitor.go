@@ -207,23 +207,22 @@ func (monitor *DeploymentMonitor) InitDeploymentOutcomes(app string) {
 
 // StoreInitialAppStatus caches the initial rollout status for comparison during monitoring.
 // A resumed task keeps the baseline images hash it carries (issue #633); otherwise the hash
-// is taken from application and persisted, best-effort, for whichever replica resumes it.
+// is taken from application. Either way it is persisted, best-effort, with the app's
+// confirmation, so a task resumed from a replica that never recorded one is still labelled.
 func (monitor *DeploymentMonitor) StoreInitialAppStatus(task *models.Task, application *models.Application) error {
 	if application == nil {
 		return errors.New("application is nil")
 	}
 
 	task.SavedAppStatus.Status = rolloutStatus(application, task.ListImages(), monitor.registryProxyUrl, monitor.acceptSuspended)
-	if task.SavedAppStatus.ImagesHash != nil {
-		return nil
+	if task.SavedAppStatus.ImagesHash == nil {
+		// ArgoCD may return images in a different order between calls; sorting keeps the hash stable.
+		normalizedImages := normalizeImages(application.Status.Summary.Images)
+		task.SavedAppStatus.ImagesHash = helpers.GenerateHash(strings.Join(normalizedImages, ","))
 	}
 
-	// ArgoCD may return images in a different order between calls; sorting keeps the hash stable.
-	normalizedImages := normalizeImages(application.Status.Summary.Images)
-	task.SavedAppStatus.ImagesHash = helpers.GenerateHash(strings.Join(normalizedImages, ","))
-
-	if err := monitor.argo.State.SetBaselineImagesHash(task.Id, task.SavedAppStatus.ImagesHash); err != nil {
-		slog.Warn("Could not persist the baseline images hash; a resumed rollout will not fail on Degraded",
+	if err := monitor.argo.State.RecordConfirmedApp(task.Id, task.SavedAppStatus.ImagesHash); err != nil {
+		slog.Warn("Could not record the confirmed app; its baseline images hash or read labels may not persist",
 			"error", err, "id", task.Id)
 	}
 

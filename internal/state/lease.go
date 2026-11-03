@@ -2,11 +2,13 @@ package state
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
 	"github.com/shini4i/argo-watcher/internal/models"
 	"github.com/shini4i/argo-watcher/internal/state/state_models"
@@ -186,19 +188,34 @@ func (state *InMemoryState) ClaimTask(_ string) error {
 	return nil
 }
 
-// SetBaselineImagesHash is a no-op: no other process resumes in-memory tasks, and the
-// replica monitoring one already holds its baseline.
-func (state *InMemoryState) SetBaselineImagesHash(_ string, _ []byte) error {
+// RecordConfirmedApp marks the task's app as confirmed, so the task lookup may label its
+// metric by app. The hash is not stored: no other process resumes in-memory tasks, and
+// the replica monitoring one already holds its baseline. An unknown id is ignored.
+func (state *InMemoryState) RecordConfirmedApp(id string, _ []byte) error {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+
+	for idx := range state.tasks {
+		if state.tasks[idx].Id == id {
+			state.tasks[idx].AppConfirmed = true
+			return nil
+		}
+	}
 	return nil
 }
 
-// SetBaselineImagesHash records the task's baseline images hash unless one is already
-// stored. It is not fenced on ownership: only the first owner saw the application before
-// the rollout changed it, so its hash is the one worth keeping even if it lost the claim.
-func (state *PostgresState) SetBaselineImagesHash(id string, hash []byte) error {
+// RecordConfirmedApp marks the task's app as confirmed and records its baseline images
+// hash unless one is already stored. It is not fenced on ownership: only the first owner
+// saw the application before the rollout changed it, so its hash is the one worth keeping.
+// The hash travels as hex because gorm expands a bound []byte into a value list.
+func (state *PostgresState) RecordConfirmedApp(id string, hash []byte) error {
 	result := state.orm.Model(&state_models.TaskModel{}).
-		Where("id = ? AND baseline_images_hash IS NULL", id).
-		Update("baseline_images_hash", hash)
+		Where("id = ?", id).
+		Updates(map[string]any{
+			"app_confirmed": true,
+			"baseline_images_hash": gorm.Expr(
+				"COALESCE(baseline_images_hash, decode(?, 'hex'))", hex.EncodeToString(hash)),
+		})
 
 	return result.Error
 }

@@ -949,12 +949,126 @@
       "type": "piechart"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Applications whose pipelines polled GET /api/v1/tasks/{id} without a credential inside the selected range, i.e. still run a client that sends no auth on reads. Reads unauthenticated_reads, which only moves while OIDC is enabled; \"unknown\" is a read that did not resolve to a task. A series created inside the range (a first unauthenticated read, or a replica restart) counts its whole value, since increase() alone cannot see a counter born at 1. Only reads with no credential at all are counted: a pipeline sending an invalid token is not listed, yet is still rejected once OIDC_REQUIRE_TASK_READ_AUTH=true closes the endpoint.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Unauthenticated Reads"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 21
+      },
+      "id": 18,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Unauthenticated Reads",
+            "desc": true
+          }
+        ]
+      },
+      "pluginVersion": "12.3.8",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "round(sum by (app) ((max_over_time(unauthenticated_reads[$__range]) unless unauthenticated_reads offset $__range) or increase(unauthenticated_reads[$__range]))) > 0",
+          "format": "table",
+          "instant": true,
+          "refId": "A",
+          "range": false
+        }
+      ],
+      "transformations": [
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "names": [
+                "app",
+                "Value"
+              ]
+            }
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "renameByName": {
+              "app": "Application",
+              "Value": "Unauthenticated Reads"
+            }
+          }
+        }
+      ],
+      "title": "Clients Without Auth (selected range)",
+      "type": "table"
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 21
+        "y": 29
       },
       "id": 101,
       "panels": [],
@@ -999,7 +1113,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 22
+        "y": 30
       },
       "id": 9,
       "options": {
@@ -1069,7 +1183,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 22
+        "y": 30
       },
       "id": 10,
       "options": {
@@ -1130,7 +1244,7 @@
         "h": 5,
         "w": 6,
         "x": 0,
-        "y": 30
+        "y": 38
       },
       "id": 11,
       "options": {
@@ -1219,7 +1333,7 @@
         "h": 5,
         "w": 6,
         "x": 6,
-        "y": 30
+        "y": 38
       },
       "id": 12,
       "options": {
@@ -1308,7 +1422,7 @@
         "h": 5,
         "w": 6,
         "x": 12,
-        "y": 30
+        "y": 38
       },
       "id": 13,
       "options": {
@@ -1397,7 +1511,7 @@
         "h": 5,
         "w": 6,
         "x": 18,
-        "y": 30
+        "y": 38
       },
       "id": 14,
       "options": {

@@ -37,6 +37,8 @@
           shellcheck
           yq-go
           (bats.withLibraries (p: [ p.bats-support p.bats-assert ]))
+          # promtool, for `task test-dashboard`; CI pins the same release.
+          prometheus.cli
         ];
 
         # Security scanners from the CI security workflow, minus gosec (in

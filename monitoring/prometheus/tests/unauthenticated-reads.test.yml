@@ -1,0 +1,52 @@
+# Unit tests for the "Clients Without Auth" dashboard query, run by `task test-dashboard`.
+# The expression is the panel's with $__range set to 1h; scripts/check-dashboard-queries.sh
+# fails when it drifts from the dashboard or from docs/operations/observability.md.
+rule_files: []
+evaluation_interval: 1m
+
+tests:
+  - interval: 1m
+    input_series:
+      # A counter that existed before the range and grew from 6 to 8 inside it.
+      - series: 'unauthenticated_reads{path="/api/v1/tasks/:id",app="growing",instance="a"}'
+        values: '5x60 6 7 8x58'
+      # A counter created inside the range by its first read, never incremented again.
+      - series: 'unauthenticated_reads{path="/api/v1/tasks/:id",app="first-read",instance="a"}'
+        values: '_x99 1x20'
+      # A counter created on the last scrape, so only one sample lies in the range.
+      - series: 'unauthenticated_reads{path="/api/v1/tasks/:id",app="last-scrape",instance="a"}'
+        values: '_x119 1'
+      # A counter that existed before the range and saw no reads inside it.
+      - series: 'unauthenticated_reads{path="/api/v1/tasks/:id",app="idle",instance="a"}'
+        values: '4x120'
+      # Reads only before the range.
+      - series: 'unauthenticated_reads{path="/api/v1/tasks/:id",app="before-range",instance="a"}'
+        values: '1 2 3x40'
+      # A replica that stops mid-range, and the replacement that starts at 2.
+      - series: 'unauthenticated_reads{path="/api/v1/tasks/:id",app="restarted",instance="a"}'
+        values: '10x80'
+      - series: 'unauthenticated_reads{path="/api/v1/tasks/:id",app="restarted",instance="b"}'
+        values: '_x95 2x24'
+      # A process restart that keeps the labels: the counter resets from 10 to 1.
+      - series: 'unauthenticated_reads{path="/api/v1/tasks/:id",app="reset",instance="a"}'
+        values: '10x70 1x49'
+      # A scrape gap across the range start makes an old counter look new, so its whole
+      # value counts although one read happened in the range. It can only add an app.
+      - series: 'unauthenticated_reads{path="/api/v1/tasks/:id",app="scrape-gap",instance="a"}'
+        values: '5x50 _x30 5 6x38'
+    promql_expr_test:
+      - expr: 'round(sum by (app) ((max_over_time(unauthenticated_reads[1h]) unless unauthenticated_reads offset 1h) or increase(unauthenticated_reads[1h]))) > 0'
+        eval_time: 2h
+        exp_samples:
+          - labels: '{app="growing"}'
+            value: 2
+          - labels: '{app="first-read"}'
+            value: 1
+          - labels: '{app="last-scrape"}'
+            value: 1
+          - labels: '{app="restarted"}'
+            value: 2
+          - labels: '{app="reset"}'
+            value: 1
+          - labels: '{app="scrape-gap"}'
+            value: 6

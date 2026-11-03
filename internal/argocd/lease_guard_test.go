@@ -115,7 +115,7 @@ func newTaskRepositoryMock(ctrl *gomock.Controller) *mocks.MockTaskRepository {
 	repository := mocks.NewMockTaskRepository(ctrl)
 	repository.EXPECT().ClaimTask(gomock.Any()).Return(nil).AnyTimes()
 	repository.EXPECT().RenewLease(gomock.Any()).Return(true, nil).AnyTimes()
-	repository.EXPECT().SetBaselineImagesHash(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	repository.EXPECT().RecordConfirmedApp(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	return repository
 }
 

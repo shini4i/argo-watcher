@@ -72,6 +72,20 @@ tasks:
       - scripts/lint-migrations.sh
       - scripts/lint-migrations.bats
 
+  test-dashboard:
+    desc: Test the example dashboard's queries with promtool
+    cmds:
+      - echo "===> Testing dashboard queries"
+      - ./scripts/check-dashboard-queries.sh
+      - bats scripts/check-dashboard-queries.bats
+      - promtool test rules monitoring/prometheus/tests/*.test.yml
+    sources:
+      - monitoring/grafana/dashboards/argo-watcher.json
+      - monitoring/prometheus/tests/*.test.yml
+      - docs/operations/observability.md
+      - scripts/check-dashboard-queries.sh
+      - scripts/check-dashboard-queries.bats
+
   test:
     desc: Run tests
     deps: [mocks, docs]

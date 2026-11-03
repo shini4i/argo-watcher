@@ -40,17 +40,19 @@ type TaskModel struct {
 	// changed them, NULL until the first owner records it. A resumed rollout compares
 	// against it to tell whether a Degraded application runs this deployment's images.
 	BaselineImagesHash []byte `gorm:"column:baseline_images_hash;"`
+	// AppConfirmed is set once ArgoCD answered for the application, which makes the name
+	// safe as a metric label for whichever replica serves the task lookup.
+	AppConfirmed bool `gorm:"column:app_confirmed;not null;default:false;"`
 }
 
 func (TaskModel) TableName() string {
 	return "tasks"
 }
 
-// ConvertToExternalTask maps the row onto the API-facing task. The fields that
-// grant authority or steer the rollout — Validated, Timeout, Refresh — are
-// deliberately left out: this task is served to clients and re-read for status
-// checks, neither of which may act on them. Resuming a rollout needs them, and
-// uses ConvertToResumedTask instead.
+// ConvertToExternalTask maps the row onto the API-facing task. The fields that grant
+// authority or steer the rollout — Validated, Timeout, Refresh — are left out: clients
+// and status re-reads may not act on them; resuming uses ConvertToResumedTask instead.
+// AppConfirmed is carried, because it only bounds a metric label and is never served.
 func (ormTask *TaskModel) ConvertToExternalTask() *models.Task {
 	return &models.Task{
 		Id:               ormTask.Id.String(),
@@ -64,6 +66,7 @@ func (ormTask *TaskModel) ConvertToExternalTask() *models.Task {
 		StatusReason:     ormTask.StatusReason.String,
 		IsRollback:       ormTask.IsRollback,
 		RollbackTargetId: ormTask.RollbackTargetId,
+		AppConfirmed:     ormTask.AppConfirmed,
 	}
 }
 
