@@ -1,0 +1,67 @@
+name: Dashboard queries
+
+# Runs the promtool tests for the example Grafana dashboard's queries, and checks that
+# the dashboard, its tests and the observability docs carry the same expression.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'monitoring/**'
+      - 'docs/operations/observability.md'
+      - 'scripts/check-dashboard-queries.*'
+      - '.github/workflows/dashboard.yml'
+      - '.github/actions/setup-bats/**'
+      # The job runs `task test-dashboard`, so a Taskfile-only change can drop a test.
+      - 'Taskfile.yml'
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'monitoring/**'
+      - 'docs/operations/observability.md'
+      - 'scripts/check-dashboard-queries.*'
+      - '.github/workflows/dashboard.yml'
+      - '.github/actions/setup-bats/**'
+      # The job runs `task test-dashboard`, so a Taskfile-only change can drop a test.
+      - 'Taskfile.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  queries:
+    name: promtool tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Task
+        uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+        with:
+          # An exact version skips the unauthenticated go-task tags API
+          # lookup, which shares the runner IP 60 req/h anonymous quota.
+          version: 3.53.1
+
+      - uses: $/.github/actions/setup-bats
+
+      # Pinned to the promtool the flake devshell provides, so CI and `nix develop`
+      # evaluate the tests with the same PromQL engine. jq comes from the image.
+      - name: Install promtool
+        env:
+          PROMETHEUS_VERSION: 3.15.0
+          PROMETHEUS_SHA256: 2a542df32eac02ee17b9d844fb2aa1de00dafa5476579ba8a3ba862e9d572ea0
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          archive="prometheus-${PROMETHEUS_VERSION}.linux-amd64.tar.gz"
+          curl --proto '=https' --tlsv1.2 -fsSL -o "$tmp/$archive" \
+            "https://github.com/prometheus/prometheus/releases/download/v${PROMETHEUS_VERSION}/${archive}"
+          echo "${PROMETHEUS_SHA256}  $tmp/$archive" | sha256sum -c -
+          tar -xzf "$tmp/$archive" -C "$tmp" --strip-components=1 "prometheus-${PROMETHEUS_VERSION}.linux-amd64/promtool"
+          sudo install -m 0755 "$tmp/promtool" /usr/local/bin/
+
+      - name: Test dashboard queries
+        run: task test-dashboard
