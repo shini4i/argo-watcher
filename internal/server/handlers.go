@@ -163,7 +163,7 @@ func (env *Env) addTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Scoped to the requested application: an application deploy token, and a JWT
-	// carrying allowed_apps, authorize only the applications they name.
+	// carrying allowed_apps or allowed_app_prefixes, authorize only what they cover.
 	tokenValid, err := env.authenticator.ValidateForApp(r, task.App)
 	if errors.Is(err, auth.ErrProviderUnavailable) {
 		// The credential could not be judged at all. Accepting the task as

@@ -128,6 +128,21 @@ else
   bad "allowed_apps token for ${APP}: code=${CODE} body=${BODY} (want 401 naming the claim)"
 fi
 
+# allowed_app_prefixes covers names the minter cannot list in advance.
+prefix_jwt="$(mint JWT_ALLOWED_APP_PREFIXES="jwt-scope-review-")"
+post_task "$(task_json "jwt-scope-review-x7k2" v0.0.1)" -H "Authorization: ${prefix_jwt}"
+if [[ "$CODE" == "202" ]]; then
+  ok "allowed_app_prefixes authorizes an application starting with the prefix"
+else
+  bad "allowed_app_prefixes token for jwt-scope-review-x7k2: code=${CODE} body=${BODY} (want 202)"
+fi
+post_task "$(task_json "$APP" "$TAG")" -H "Authorization: ${prefix_jwt}"
+if [[ "$CODE" == "401" ]] && jq -e '.error | test("allowed_app_prefixes")' <<<"$BODY" >/dev/null 2>&1; then
+  ok "allowed_app_prefixes refuses ${APP}, naming the claim that confined the token"
+else
+  bad "allowed_app_prefixes token for ${APP}: code=${CODE} body=${BODY} (want 401 naming the claim)"
+fi
+
 # Section 1 already deployed with a claimless token; this states the compatibility
 # rule outright, since a fleet that never set the claim depends on it.
 post_task "$(task_json "$APP" "$TAG")" -H "Authorization: ${plain_jwt}"

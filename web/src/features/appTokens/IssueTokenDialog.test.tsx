@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { IssueTokenDialog, parseApps, scopeError } from './IssueTokenDialog';
+import { IssueTokenDialog, parseApps, prefixError, scopeError } from './IssueTokenDialog';
 
 vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
 
@@ -72,6 +72,66 @@ describe('IssueTokenDialog', () => {
         description: undefined,
         expires_in_days: undefined,
       });
+    });
+  });
+
+  it('submits prefixes alone', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+
+    await user.type(screen.getByLabelText(/^Application prefixes/), 'whatever-');
+    await user.click(screen.getByRole('button', { name: 'Issue' }));
+
+    await waitFor(() => {
+      expect(onIssue).toHaveBeenCalledWith({
+        apps: undefined,
+        app_prefixes: ['whatever-'],
+        all_apps: undefined,
+        description: undefined,
+        expires_in_days: undefined,
+      });
+    });
+  });
+
+  it('submits names and prefixes together', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+
+    await user.type(screen.getByLabelText(/^Applications/), 'whatever');
+    await user.type(screen.getByLabelText(/^Application prefixes/), 'whatever-review-');
+    await user.click(screen.getByRole('button', { name: 'Issue' }));
+
+    await waitFor(() => {
+      expect(onIssue).toHaveBeenCalledWith(
+        expect.objectContaining({ apps: ['whatever'], app_prefixes: ['whatever-review-'] }),
+      );
+    });
+  });
+
+  it('blocks a prefix the server would refuse', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+
+    await user.type(screen.getByLabelText(/^Application prefixes/), 'whatever');
+
+    expect(screen.getByText(/must end with "-"/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Issue' })).toBeDisabled();
+  });
+
+  it('does not send stale prefixes with the wildcard', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+
+    await user.type(screen.getByLabelText(/^Application prefixes/), 'whatever');
+    await user.click(screen.getByLabelText('All applications'));
+
+    expect(screen.getByLabelText(/^Application prefixes/)).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Issue' }));
+
+    await waitFor(() => {
+      expect(onIssue).toHaveBeenCalledWith(
+        expect.objectContaining({ apps: undefined, app_prefixes: undefined, all_apps: true }),
+      );
     });
   });
 
@@ -193,5 +253,31 @@ describe('scopeError', () => {
     expect(scopeError(['ok', 'a'.repeat(256)])).toMatch(/at most 255 characters/);
     expect(scopeError(['app1', '*'])).toMatch(/"\*" is not an application name/);
     expect(scopeError(['all_apps'])).toMatch(/"all_apps" is not an application name/);
+    expect(scopeError(['whatever-*'])).toMatch(/list "whatever-" under Application prefixes/);
+    expect(scopeError(['whatever*'])).toMatch(/list a prefix ending with "-" under Application prefixes/);
+    expect(scopeError(['*-review'])).toMatch(/list a prefix ending with "-" under Application prefixes/);
+  });
+
+  it('counts prefixes against the shared cap', () => {
+    const names = Array.from({ length: 200 }, (_, i) => `app-${i}`);
+    expect(scopeError(names, 0)).toBeNull();
+    expect(scopeError(names, 1)).toMatch(/At most 200 applications and prefixes/);
+  });
+});
+
+describe('prefixError', () => {
+  it('accepts a well-formed prefix', () => {
+    expect(prefixError([])).toBeNull();
+    expect(prefixError(['whatever-', 'team-a-'])).toBeNull();
+  });
+
+  it.each([
+    ['whatever', /must end with "-"/],
+    ['-', /at least one segment/],
+    ['---', /at least one segment/],
+    ['whatever-*', /must not contain "\*"/],
+    [`${'a'.repeat(255)}-`, /at most 255 characters/],
+  ])('refuses %j', (prefix, message) => {
+    expect(prefixError([prefix])).toMatch(message);
   });
 });

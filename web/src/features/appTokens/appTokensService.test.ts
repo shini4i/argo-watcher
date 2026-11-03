@@ -126,6 +126,18 @@ describe('appTokensService', () => {
     it('does not pretend an empty scope covers something', () => {
       expect(describeScope(token({ apps: [] }))).toBe('No applications');
     });
+
+    it('marks prefixes so their breadth is visible', () => {
+      expect(describeScope(token({ apps: undefined, app_prefixes: ['whatever-'] }))).toBe(
+        'whatever-* (prefix)',
+      );
+    });
+
+    it('lists names before prefixes', () => {
+      expect(
+        describeScope(token({ apps: ['whatever'], app_prefixes: ['whatever-review-'] })),
+      ).toBe('whatever, whatever-review-* (prefix)');
+    });
   });
 });
 

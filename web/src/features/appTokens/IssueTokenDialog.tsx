@@ -32,10 +32,14 @@ const MAX_APP_NAME_LENGTH = 255;
 const MAX_EXPIRY_DAYS = 3650;
 const MAX_DESCRIPTION_LENGTH = 255;
 
-/** Names why a parsed scope would be refused, or null when it is acceptable. */
-export const scopeError = (apps: string[]): string | null => {
-  if (apps.length > MAX_APPS) {
-    return `At most ${MAX_APPS} applications; scope the token to all applications instead.`;
+/**
+ * Names why the application list would be refused, or null when it is acceptable.
+ * @param apps the parsed application names
+ * @param prefixCount how many prefixes share the server's cap on scope entries
+ */
+export const scopeError = (apps: string[], prefixCount = 0): string | null => {
+  if (apps.length + prefixCount > MAX_APPS) {
+    return `At most ${MAX_APPS} applications and prefixes in total; scope the token to all applications instead.`;
   }
 
   if (apps.some(app => app.length > MAX_APP_NAME_LENGTH)) {
@@ -45,6 +49,39 @@ export const scopeError = (apps: string[]): string | null => {
   const wildcard = apps.find(app => app === '*' || app === 'all_apps');
   if (wildcard !== undefined) {
     return `"${wildcard}" is not an application name; tick All applications instead.`;
+  }
+
+  const pattern = apps.find(app => app.includes('*'));
+  if (pattern !== undefined) {
+    const stem = pattern.replace(/\*$/, '');
+    if (prefixError([stem]) === null) {
+      return `"${pattern}" is not an application name; list "${stem}" under Application prefixes instead.`;
+    }
+    return `"${pattern}" is not an application name; list a prefix ending with "-" under Application prefixes instead.`;
+  }
+
+  return null;
+};
+
+/**
+ * Names why a prefix would be refused, or null when all are acceptable. Mirrors the
+ * server's apptoken.ValidatePrefix.
+ * @param prefixes the parsed prefixes
+ */
+export const prefixError = (prefixes: string[]): string | null => {
+  for (const prefix of prefixes) {
+    if (prefix.includes('*')) {
+      return `"${prefix}" must not contain "*"; a prefix already covers every name starting with it.`;
+    }
+    if (!prefix.endsWith('-')) {
+      return `"${prefix}" must end with "-", so it covers whole name segments.`;
+    }
+    if (prefix.replace(/-/g, '') === '') {
+      return `"${prefix}" must name at least one segment before the "-".`;
+    }
+    if (prefix.length > MAX_APP_NAME_LENGTH) {
+      return `A prefix must be at most ${MAX_APP_NAME_LENGTH} characters.`;
+    }
   }
 
   return null;
@@ -64,6 +101,19 @@ const describeAppsField = (allApps: boolean, apps: string[], invalidScope: strin
   return `${apps.length} ${apps.length === 1 ? 'application' : 'applications'}`;
 };
 
+/** Describes the prefix field: why a prefix is refused, or what the prefixes cover. */
+const describePrefixesField = (prefixes: string[], invalidPrefix: string | null): string => {
+  if (invalidPrefix) {
+    return invalidPrefix;
+  }
+
+  if (prefixes.length === 0) {
+    return 'Optional. A prefix such as "whatever-review-" covers every application starting with it.';
+  }
+
+  return 'Also covers applications created later with a matching name.';
+};
+
 /**
  * Collects the scope of a new token. All applications is a deliberate second
  * choice rather than the default, since it is the credential that authorizes the
@@ -71,6 +121,7 @@ const describeAppsField = (allApps: boolean, apps: string[], invalidScope: strin
  */
 export const IssueTokenDialog = ({ open, onClose, onIssue }: IssueTokenDialogProps) => {
   const [appsInput, setAppsInput] = useState('');
+  const [prefixesInput, setPrefixesInput] = useState('');
   const [allApps, setAllApps] = useState(false);
   const [description, setDescription] = useState('');
   const [expiresInDays, setExpiresInDays] = useState('');
@@ -78,17 +129,25 @@ export const IssueTokenDialog = ({ open, onClose, onIssue }: IssueTokenDialogPro
   const [error, setError] = useState<string | null>(null);
 
   const apps = useMemo(() => parseApps(appsInput), [appsInput]);
-  const invalidScope = allApps ? null : scopeError(apps);
+  const prefixes = useMemo(() => parseApps(prefixesInput), [prefixesInput]);
+  const invalidScope = allApps ? null : scopeError(apps, prefixes.length);
+  const invalidPrefix = allApps ? null : prefixError(prefixes);
   const appsHelperText = describeAppsField(allApps, apps, invalidScope);
+  const prefixesHelperText = describePrefixesField(prefixes, invalidPrefix);
   const expiryDays = Number(expiresInDays);
   const expiryValid =
     expiresInDays === '' ||
     (Number.isInteger(expiryDays) && expiryDays >= 0 && expiryDays <= MAX_EXPIRY_DAYS);
   const canSubmit =
-    (allApps || apps.length > 0) && invalidScope === null && expiryValid && !submitting;
+    (allApps || apps.length > 0 || prefixes.length > 0) &&
+    invalidScope === null &&
+    invalidPrefix === null &&
+    expiryValid &&
+    !submitting;
 
   const reset = useCallback(() => {
     setAppsInput('');
+    setPrefixesInput('');
     setAllApps(false);
     setDescription('');
     setExpiresInDays('');
@@ -112,7 +171,8 @@ export const IssueTokenDialog = ({ open, onClose, onIssue }: IssueTokenDialogPro
     setError(null);
     try {
       await onIssue({
-        apps: allApps ? undefined : apps,
+        apps: allApps || apps.length === 0 ? undefined : apps,
+        app_prefixes: allApps || prefixes.length === 0 ? undefined : prefixes,
         all_apps: allApps || undefined,
         description: description.trim() || undefined,
         expires_in_days: expiresInDays === '' ? undefined : expiryDays,
@@ -124,7 +184,18 @@ export const IssueTokenDialog = ({ open, onClose, onIssue }: IssueTokenDialogPro
     } finally {
       setSubmitting(false);
     }
-  }, [allApps, apps, canSubmit, description, expiresInDays, expiryDays, onClose, onIssue, reset]);
+  }, [
+    allApps,
+    apps,
+    canSubmit,
+    description,
+    expiresInDays,
+    expiryDays,
+    onClose,
+    onIssue,
+    prefixes,
+    reset,
+  ]);
 
   return (
     <Dialog open={open} onClose={handleClose} fullWidth maxWidth="sm">
@@ -154,6 +225,19 @@ export const IssueTokenDialog = ({ open, onClose, onIssue }: IssueTokenDialogPro
             minRows={3}
             error={invalidScope !== null}
             helperText={appsHelperText}
+            fullWidth
+          />
+
+          <TextField
+            label="Application prefixes"
+            placeholder="e.g. whatever-review-, one per line or comma separated"
+            value={prefixesInput}
+            onChange={event => setPrefixesInput(event.target.value)}
+            disabled={allApps}
+            multiline
+            minRows={2}
+            error={invalidPrefix !== null}
+            helperText={prefixesHelperText}
             fullWidth
           />
 
