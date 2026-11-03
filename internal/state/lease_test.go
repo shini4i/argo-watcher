@@ -38,5 +38,27 @@ func TestInMemoryState_LeasesAreNoOps(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, reclaimed)
 
-	require.NoError(t, state.SetBaselineImagesHash(task.Id, []byte{0x01}))
+	require.NoError(t, state.RecordConfirmedApp(task.Id, []byte{0x01}))
+}
+
+// TestInMemoryState_RecordConfirmedApp checks the task lookup sees the confirmation,
+// which is what lets the unauthenticated_reads counter name the app.
+func TestInMemoryState_RecordConfirmedApp(t *testing.T) {
+	state := &InMemoryState{}
+	task, err := state.AddTask(createTestTask("Confirmed"))
+	require.NoError(t, err)
+	other, err := state.AddTask(createTestTask("Other"))
+	require.NoError(t, err)
+
+	require.NoError(t, state.RecordConfirmedApp(task.Id, []byte{0x01}))
+
+	stored, err := state.GetTask(task.Id)
+	require.NoError(t, err)
+	assert.True(t, stored.AppConfirmed)
+
+	untouched, err := state.GetTask(other.Id)
+	require.NoError(t, err)
+	assert.False(t, untouched.AppConfirmed, "only the recorded task's reads may be labelled")
+
+	require.NoError(t, state.RecordConfirmedApp("missing-id", nil))
 }

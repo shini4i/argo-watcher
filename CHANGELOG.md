@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `406` with a pointer to the `all_apps` flag. Before, either was stored as a literal
   application name, so the token authorized nothing.
 
+### Fixed
+
+- `unauthenticated_reads` names the application of a task submitted without a credential
+  once Argo CD has confirmed the app (migration `000013`). Before, every such read was
+  labelled `app="unknown"`, and with the Postgres backend credentialed tasks were too.
+
 ## [1.5.1] - 2026-10-29
 
 ### Fixed

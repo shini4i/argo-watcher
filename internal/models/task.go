@@ -43,9 +43,12 @@ type Task struct {
 	// Validated records whether the request that created this task presented a valid
 	// credential. It gates the git write-back and, since it also decides what a task
 	// may supersede, it is never accepted from or served over the API.
-	Validated  bool `json:"-"`
-	Timeout    int  `json:"timeout,omitempty"`
-	IsRollback bool `json:"is_rollback,omitempty"`
+	Validated bool `json:"-"`
+	// AppConfirmed records that ArgoCD answered for App, so the name is a real application
+	// and safe as a metric label. Like Validated it is never accepted from the API.
+	AppConfirmed bool `json:"-"`
+	Timeout      int  `json:"timeout,omitempty"`
+	IsRollback   bool `json:"is_rollback,omitempty"`
 	// Refresh optionally overrides the instance-wide ARGO_REFRESH_APP setting for this task.
 	// A nil pointer (field omitted) keeps the instance default, so old clients are unaffected;
 	// an explicit true/false forces a refresh on or off for this deployment (issue #334).
@@ -59,12 +62,12 @@ type Task struct {
 // UnknownApp is the app label used for a task whose name must not reach a metric.
 const UnknownApp = "unknown"
 
-// MetricApp returns the app name safe to use as a Prometheus label. Task submission
-// accepts an arbitrary app name without a credential, so an unvalidated task reports
-// UnknownApp: a caller could otherwise mint a permanent series per request. Call sites
-// that only run once ArgoCD has confirmed the application exists may use App directly.
+// MetricApp returns the app name safe to use as a Prometheus label. Submission takes any
+// app name without a credential, so a task neither validated nor confirmed by ArgoCD
+// reports UnknownApp: a caller could otherwise mint a permanent series per request. Call
+// sites that only run once ArgoCD has confirmed the application may use App directly.
 func (task *Task) MetricApp() string {
-	if !task.Validated {
+	if !task.Validated && !task.AppConfirmed {
 		return UnknownApp
 	}
 	return task.App

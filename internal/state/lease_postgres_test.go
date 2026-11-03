@@ -371,13 +371,13 @@ func TestPostgresState_ReleaseOwnedLeases(t *testing.T) {
 	})
 }
 
-func TestPostgresState_SetBaselineImagesHash(t *testing.T) {
+func TestPostgresState_RecordConfirmedApp(t *testing.T) {
 	env := newPostgresTestEnv(t)
 
 	t.Run("a resumed task carries the baseline its first owner recorded", func(t *testing.T) {
 		inserted := env.addTask(t, sampleTask("Baseline"))
 		require.NoError(t, env.state.ClaimTask(inserted.Id))
-		require.NoError(t, env.state.SetBaselineImagesHash(inserted.Id, []byte{0x01, 0x02, 0x03}))
+		require.NoError(t, env.state.RecordConfirmedApp(inserted.Id, []byte{0x01, 0x02, 0x03}))
 		env.expireLease(t, inserted.Id)
 
 		claimed, err := env.secondReplica(t).ClaimExpiredTasks(TaskReapBatchSize)
@@ -391,10 +391,41 @@ func TestPostgresState_SetBaselineImagesHash(t *testing.T) {
 
 	t.Run("a recorded baseline is never replaced", func(t *testing.T) {
 		inserted := env.addTask(t, sampleTask("BaselineKept"))
-		require.NoError(t, env.state.SetBaselineImagesHash(inserted.Id, []byte{0x01}))
-		require.NoError(t, env.secondReplica(t).SetBaselineImagesHash(inserted.Id, []byte{0x02}))
+		require.NoError(t, env.state.RecordConfirmedApp(inserted.Id, []byte{0x01}))
+		require.NoError(t, env.secondReplica(t).RecordConfirmedApp(inserted.Id, []byte{0x02}))
 
 		assert.Equal(t, []byte{0x01}, env.storedModel(t, inserted.Id).BaselineImagesHash,
 			"only the first owner saw the application before the rollout changed it")
+	})
+
+	t.Run("the task lookup sees the confirmed app", func(t *testing.T) {
+		inserted := env.addTask(t, sampleTask("Confirmed"))
+		require.NoError(t, env.state.RecordConfirmedApp(inserted.Id, []byte{0x01}))
+
+		stored, err := env.state.GetTask(inserted.Id)
+		require.NoError(t, err)
+		assert.True(t, stored.AppConfirmed,
+			"the unauthenticated_reads counter names the app only once ArgoCD confirmed it")
+	})
+
+	t.Run("a row an older build gave a baseline is confirmed and keeps that baseline", func(t *testing.T) {
+		inserted := env.addTask(t, sampleTask("PreFlagBaseline"))
+		// A replica predating app_confirmed wrote only the hash.
+		require.NoError(t, env.state.orm.Exec(
+			"UPDATE tasks SET baseline_images_hash = decode('aa', 'hex') WHERE id = ?", inserted.Id).Error)
+
+		require.NoError(t, env.state.RecordConfirmedApp(inserted.Id, []byte{0xbb}))
+
+		stored := env.storedModel(t, inserted.Id)
+		assert.Equal(t, []byte{0xaa}, stored.BaselineImagesHash)
+		assert.True(t, stored.AppConfirmed)
+	})
+
+	t.Run("a task is unconfirmed until its app is recorded", func(t *testing.T) {
+		inserted := env.addTask(t, sampleTask("Unconfirmed"))
+
+		stored, err := env.state.GetTask(inserted.Id)
+		require.NoError(t, err)
+		assert.False(t, stored.AppConfirmed)
 	})
 }

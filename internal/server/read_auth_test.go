@@ -396,6 +396,17 @@ func TestReadAuthTaskLookupRemainsOpen(t *testing.T) {
 		assert.Zero(t, unauthenticatedReads(metrics, routePath, models.UnknownApp))
 	})
 
+	t.Run("labels an uncredentialed submission once ArgoCD confirmed its app", func(t *testing.T) {
+		// The pipelines this counter exists to name submit without a credential too.
+		env, metrics := readAuthEnvWithTask(t, true, oidcStrategies(),
+			&models.Task{Id: "task-id", App: "payments-api", AppConfirmed: true})
+
+		getWith(t, env, unknownTask, "", "")
+
+		assert.Equal(t, float64(1), unauthenticatedReads(metrics, routePath, "payments-api"))
+		assert.Zero(t, unauthenticatedReads(metrics, routePath, models.UnknownApp))
+	})
+
 	t.Run("does not label an app supplied by an uncredentialed submission", func(t *testing.T) {
 		// Otherwise an open POST + open lookup mints a permanent series per request.
 		env, metrics := readAuthEnvWithTask(t, true, oidcStrategies(),

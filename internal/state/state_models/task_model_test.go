@@ -78,3 +78,11 @@ func TestConvertToResumedTask_CarriesTheBaselineImagesHash(t *testing.T) {
 		"without the baseline a resumed rollout never fails on Degraded")
 	assert.Nil(t, stored.ConvertToExternalTask().SavedAppStatus.ImagesHash)
 }
+
+func TestConvertToExternalTask_CarriesAppConfirmed(t *testing.T) {
+	stored := storedTask()
+	stored.AppConfirmed = true
+
+	assert.True(t, stored.ConvertToExternalTask().AppConfirmed,
+		"the task lookup labels its metric by app only once ArgoCD confirmed the app")
+}

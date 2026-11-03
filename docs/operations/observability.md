@@ -31,7 +31,7 @@ Fourteen metrics, all defined in [`internal/prometheus/metrics.go`](https://gith
 | `unauthenticated_reads` | counter | `path`, `app` | Reads served without a credential on the endpoints left open while OIDC is enabled (currently `GET /api/v1/tasks/{id}`). |
 
 !!! note "Why some deployments are counted without an `app` label"
-    `POST /api/v1/tasks` accepts a task without a credential, and the application name is free text — so nothing may become a label value until Argo CD has answered for that application. A deployment is therefore counted twice on its way through: once in `accepted_deployments` at submission, and once in `deployments_total{app,result}` when it ends. The gap between the two is mostly deployments naming an application Argo CD never confirmed — read it as an upper bound, since deployments still in flight, one superseded before its first check, or one whose replica died before it widen the gap as well. `unconfirmed_deployment_failures` counts the failures on that side of the confirmation, `unauthenticated_reads` still labels a read that did not resolve to a task as `app="unknown"`.
+    `POST /api/v1/tasks` accepts a task without a credential, and the application name is free text — so nothing may become a label value until Argo CD has answered for that application. A deployment is therefore counted twice on its way through: once in `accepted_deployments` at submission, and once in `deployments_total{app,result}` when it ends. The gap between the two is mostly deployments naming an application Argo CD never confirmed — read it as an upper bound, since deployments still in flight, one superseded before its first check, or one whose replica died before it widen the gap as well. `unconfirmed_deployment_failures` counts the failures on that side of the confirmation. `unauthenticated_reads` labels a read `app="unknown"` until Argo CD has confirmed the task's application, and when the read did not resolve to a task.
 
     The same openness means anyone who can reach the endpoint and knows a managed application's name can raise `gitops_writeback_skipped_unvalidated`. Treat a rise as "investigate", not automatically "our pipeline regressed".
 
@@ -206,7 +206,7 @@ round(sum by (app) (
 )) > 0
 ```
 
-Each application named is a pipeline running such a client; group by `path` for the endpoint breakdown. When the query stays empty across a full deployment cycle for every project, nothing depends on the exemption and you can close it with `OIDC_REQUIRE_TASK_READ_AUTH=true` — see [Closing the task lookup](../guides/oidc.md#closing-the-task-lookup). The example dashboard's **Clients Without Auth** table shows the same list for the selected time range.
+Each application named is a pipeline running such a client; group by `path` for the endpoint breakdown. A read labelled `unknown` came from a task whose application Argo CD has not confirmed yet, or from an id that matched no task. When the query stays empty across a full deployment cycle for every project, nothing depends on the exemption and you can close it with `OIDC_REQUIRE_TASK_READ_AUTH=true` — see [Closing the task lookup](../guides/oidc.md#closing-the-task-lookup). The example dashboard's **Clients Without Auth** table shows the same list for the selected time range.
 
 Two caveats: the counter records that a credential was *present*, not that it was valid, and once the endpoint is closed the counter stops moving and its series disappears from `/metrics` after the next restart — which matters if you alert on it with `absent()`.
 

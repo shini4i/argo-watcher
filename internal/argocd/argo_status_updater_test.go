@@ -557,7 +557,7 @@ func TestDeploymentMonitorStoreInitialAppStatusPersistsTheBaseline(t *testing.T)
 	app.Status.Summary.Images = []string{"example.com/b:v1", "example.com/a:v1"}
 	want := helpers.GenerateHash("example.com/a:v1,example.com/b:v1")
 
-	state.EXPECT().SetBaselineImagesHash("task-id", want).Return(nil)
+	state.EXPECT().RecordConfirmedApp("task-id", want).Return(nil)
 
 	task := models.Task{Id: "task-id"}
 	require.NoError(t, monitor.StoreInitialAppStatus(&task, app))
@@ -575,7 +575,7 @@ func TestDeploymentMonitorStoreInitialAppStatusToleratesAPersistFailure(t *testi
 	app := &models.Application{}
 	app.Status.Summary.Images = []string{"example.com/a:v1"}
 
-	state.EXPECT().SetBaselineImagesHash("task-id", gomock.Any()).Return(errors.New("connection reset"))
+	state.EXPECT().RecordConfirmedApp("task-id", gomock.Any()).Return(errors.New("connection reset"))
 
 	task := models.Task{Id: "task-id"}
 	require.NoError(t, monitor.StoreInitialAppStatus(&task, app))
@@ -589,13 +589,16 @@ func TestDeploymentMonitorStoreInitialAppStatusKeepsAResumedBaseline(t *testing.
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	// No SetBaselineImagesHash expectation: gomock fails the test if it is called.
 	state := mocks.NewMockTaskRepository(ctrl)
 	monitor := NewDeploymentMonitor(Argo{State: state}, "", nil, false, time.Millisecond)
 
 	app := &models.Application{}
 	app.Status.Summary.Images = []string{"example.com/a:v2"}
 	baseline := helpers.GenerateHash("example.com/a:v1")
+
+	// The carried baseline is passed on, never the recomputed one, and the confirmation is
+	// still recorded: the replica that stored the baseline may predate the flag.
+	state.EXPECT().RecordConfirmedApp("task-id", baseline).Return(nil)
 
 	task := models.Task{Id: "task-id", SavedAppStatus: models.SavedAppStatus{ImagesHash: baseline}}
 	require.NoError(t, monitor.StoreInitialAppStatus(&task, app))
@@ -2533,7 +2536,7 @@ func TestArgoStatusUpdaterLostLeaseWritesNoStatus(t *testing.T) {
 				once.Do(func() { close(takenOver) })
 				return false, nil
 			}).AnyTimes()
-			stateMock.EXPECT().SetBaselineImagesHash(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+			stateMock.EXPECT().RecordConfirmedApp(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 			application := models.Application{}
 			application.Status.Summary.Images = []string{"ghcr.io/shini4i/argo-watcher:dev"}
@@ -2686,7 +2689,7 @@ func TestWaitForRollout_LeavesASupersessionItLostToTheNewOwner(t *testing.T) {
 		once.Do(func() { close(takenOver) })
 		return false, nil
 	}).AnyTimes()
-	stateMock.EXPECT().SetBaselineImagesHash(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	stateMock.EXPECT().RecordConfirmedApp(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	stateMock.EXPECT().GetTask(gomock.Any()).
 		DoAndReturn(func(string) (*models.Task, error) {
@@ -2768,12 +2771,18 @@ func TestAbortedWriteBackCause(t *testing.T) {
 // the application. Until then the deployment is counted by the labelless counters, since
 // task submission takes an arbitrary app name without a credential.
 func TestWaitForRollout_PerAppSeriesWaitForArgoConfirmation(t *testing.T) {
-	newUpdater := func(t *testing.T) (*ArgoStatusUpdater, *mocks.MockArgoApiInterface, *mocks.MockMetricsInterface) {
+	// confirmations is how often the app may be recorded as confirmed: the flag lets the task
+	// lookup label reads by app, so it must never be written for a name ArgoCD did not answer for.
+	newUpdater := func(t *testing.T, confirmations int) (*ArgoStatusUpdater, *mocks.MockArgoApiInterface, *mocks.MockMetricsInterface) {
 		t.Helper()
 		ctrl := gomock.NewController(t)
 		apiMock := newArgoApiMock(ctrl)
 		metricsMock := mocks.NewMockMetricsInterface(ctrl)
-		stateMock := notSupersededState(ctrl)
+		stateMock := mocks.NewMockTaskRepository(ctrl)
+		stateMock.EXPECT().ClaimTask(gomock.Any()).Return(nil).AnyTimes()
+		stateMock.EXPECT().RenewLease(gomock.Any()).Return(true, nil).AnyTimes()
+		stateMock.EXPECT().GetTask(gomock.Any()).Return(&models.Task{Status: models.StatusInProgressMessage}, nil).AnyTimes()
+		stateMock.EXPECT().RecordConfirmedApp("test-id", gomock.Any()).Return(nil).Times(confirmations)
 
 		argo := &Argo{}
 		argo.Init(stateMock, apiMock, metricsMock)
@@ -2802,7 +2811,7 @@ func TestWaitForRollout_PerAppSeriesWaitForArgoConfirmation(t *testing.T) {
 	}
 
 	t.Run("confirmed application is counted under its own name", func(t *testing.T) {
-		updater, apiMock, metricsMock := newUpdater(t)
+		updater, apiMock, metricsMock := newUpdater(t, 1)
 
 		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(deployedApp(), nil).AnyTimes()
 		metricsMock.EXPECT().InitDeploymentOutcomes(task.App)
@@ -2814,7 +2823,7 @@ func TestWaitForRollout_PerAppSeriesWaitForArgoConfirmation(t *testing.T) {
 	})
 
 	t.Run("an application ArgoCD never confirmed is counted without a label", func(t *testing.T) {
-		updater, apiMock, metricsMock := newUpdater(t)
+		updater, apiMock, metricsMock := newUpdater(t, 0)
 
 		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).
 			Return(nil, fmt.Errorf("applications.argoproj.io %q not found", task.App))
@@ -2826,7 +2835,7 @@ func TestWaitForRollout_PerAppSeriesWaitForArgoConfirmation(t *testing.T) {
 	})
 
 	t.Run("a failure after confirmation names the app", func(t *testing.T) {
-		updater, apiMock, metricsMock := newUpdater(t)
+		updater, apiMock, metricsMock := newUpdater(t, 1)
 
 		gomock.InOrder(
 			apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(deployedApp(), nil),
@@ -2841,7 +2850,7 @@ func TestWaitForRollout_PerAppSeriesWaitForArgoConfirmation(t *testing.T) {
 	})
 
 	t.Run("a resumed deployment is counted by the replica that finishes it", func(t *testing.T) {
-		updater, apiMock, metricsMock := newUpdater(t)
+		updater, apiMock, metricsMock := newUpdater(t, 1)
 
 		apiMock.EXPECT().GetApplication(gomock.Any(), task.App, gomock.Any()).Return(deployedApp(), nil).AnyTimes()
 		metricsMock.EXPECT().InitDeploymentOutcomes(task.App)

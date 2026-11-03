@@ -145,11 +145,10 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 			Help:    "Number of applications committed in a single batch write-back flush.",
 			Buckets: []float64{1, 2, 5, 10, 20, 50, 100},
 		}),
-		// UnauthenticatedReads is the migration signal for closing the read endpoints
-		// left open on purpose (see router.go): it keeps rising while pipelines run a
-		// client that sends no credential on GETs, and reaching zero is the evidence
-		// that requiring auth there is safe. The app label names who still has to
-		// upgrade; it is "unknown" when the read did not resolve to a task.
+		// UnauthenticatedReads is the migration signal for closing the read endpoints left
+		// open on purpose (see router.go); reaching zero shows requiring auth there is safe.
+		// The app label names who still has to upgrade; it is "unknown" until ArgoCD has
+		// confirmed the task's app, or when the read did not resolve to a task.
 		UnauthenticatedReads: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "unauthenticated_reads",
 			Help: "Reads served without a credential on the deliberately open read endpoints while OIDC auth was enabled.",
@@ -262,7 +261,7 @@ func (m *Metrics) ObserveGitBatchSize(size int) {
 
 // AddUnauthenticatedRead increments the UnauthenticatedReads counter for the given
 // request path and application. Callers pass "unknown" as app when the read did not
-// resolve to a task.
+// resolve to a task whose app is safe as a label (see models.Task.MetricApp).
 func (m *Metrics) AddUnauthenticatedRead(path, app string) {
 	m.UnauthenticatedReads.WithLabelValues(path, app).Inc()
 }
