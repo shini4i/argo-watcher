@@ -269,3 +269,69 @@ func TestMigratorRun_AgainstRealSchema(t *testing.T) {
 		})
 	}
 }
+
+// Rolling back 000014 must refuse while a token depends on app_prefixes: the old
+// schema has no column for it, so dropping one would narrow or invalidate the token.
+func TestAppTokenPrefixesRollback(t *testing.T) {
+	refused := []struct {
+		name     string
+		apps     string
+		prefixes string
+	}{
+		{name: "prefix_only", apps: `[]`, prefixes: `["whatever-"]`},
+		{name: "mixed", apps: `["whatever"]`, prefixes: `["whatever-review-"]`},
+	}
+
+	for _, test := range refused {
+		t.Run("refuses a "+test.name+" token", func(t *testing.T) {
+			dsn := newTestDatabase(t)
+			m := applyRepositoryMigrations(t, dsn)
+			defer func() { _, _ = m.Close() }()
+
+			db, err := sql.Open("pgx", dsn)
+			require.NoError(t, err)
+			defer func() { _ = db.Close() }()
+			insertAppToken(t, db, test.apps, test.prefixes)
+
+			err = m.Migrate(13)
+
+			require.ErrorContains(t, err, "prefix-scoped tokens")
+			var prefixes string
+			require.NoError(t, db.QueryRow("SELECT app_prefixes::text FROM app_tokens").Scan(&prefixes))
+			assert.JSONEq(t, test.prefixes, prefixes, "a refused rollback must leave the token's scope intact")
+		})
+	}
+
+	t.Run("rolls back once no token uses a prefix", func(t *testing.T) {
+		dsn := newTestDatabase(t)
+		m := applyRepositoryMigrations(t, dsn)
+		defer func() { _, _ = m.Close() }()
+
+		db, err := sql.Open("pgx", dsn)
+		require.NoError(t, err)
+		defer func() { _ = db.Close() }()
+		insertAppToken(t, db, `["app1"]`, `[]`)
+
+		require.NoError(t, m.Migrate(13))
+
+		var columns int
+		require.NoError(t, db.QueryRow(`SELECT count(*) FROM information_schema.columns
+			WHERE table_name = 'app_tokens' AND column_name = 'app_prefixes'`).Scan(&columns))
+		assert.Zero(t, columns)
+
+		// The restored constraint must again demand a non-empty apps list.
+		_, err = db.Exec(`INSERT INTO app_tokens (token_hash, apps, all_apps, hint, created_by)
+			VALUES ('\x02'::bytea, '[]'::jsonb, false, 'aaaa', 'test')`)
+		require.ErrorContains(t, err, "app_tokens_scope_exclusive")
+	})
+}
+
+// insertAppToken stores a bare token row with the given scope, bypassing the store
+// so the test depends on the schema alone.
+func insertAppToken(t *testing.T, db *sql.DB, apps, prefixes string) {
+	t.Helper()
+
+	_, err := db.Exec(`INSERT INTO app_tokens (token_hash, apps, app_prefixes, all_apps, hint, created_by)
+		VALUES ('\x01'::bytea, $1::jsonb, $2::jsonb, false, 'aaaa', 'test')`, apps, prefixes)
+	require.NoError(t, err)
+}

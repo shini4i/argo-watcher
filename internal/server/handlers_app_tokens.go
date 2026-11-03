@@ -50,7 +50,9 @@ func (env *Env) listAppTokens(w http.ResponseWriter, r *http.Request) {
 
 // issueAppToken godoc
 // @Summary Issue an application deploy token
-// @Description Mint a token for a set of applications, or for all of them. Requires membership of OIDC_PRIVILEGED_GROUPS. The secret is returned once and never again.
+// @Description Mint a token for named applications, name prefixes, or all applications.
+// @Description Requires membership of OIDC_PRIVILEGED_GROUPS.
+// @Description The secret is returned once and never again.
 // @Tags frontend
 // @Accept json
 // @Produce json
@@ -75,7 +77,7 @@ func (env *Env) issueAppToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	scope := apptoken.Scope{Apps: request.Apps, AllApps: request.AllApps}
+	scope := apptoken.Scope{Apps: request.Apps, AppPrefixes: request.AppPrefixes, AllApps: request.AllApps}
 	if err := scope.Validate(); err != nil {
 		// The same code the rest of the API answers for a body it will not accept.
 		writeJSON(w, http.StatusNotAcceptable, models.TaskStatus{
@@ -175,6 +177,7 @@ func appTokenPayload(token *apptoken.Token, secret string) models.AppTokenRespon
 	return models.AppTokenResponse{
 		Id:          token.Id.String(),
 		Apps:        token.Scope.Apps,
+		AppPrefixes: token.Scope.AppPrefixes,
 		AllApps:     token.Scope.AllApps,
 		Hint:        token.Hint,
 		Description: token.Description,

@@ -68,7 +68,7 @@ With OIDC **enabled**, the endpoints the Web UI consumes require one, group memb
 - **With a valid credential** the task is authorized: the git write-back runs, and the task can supersede an in-flight deployment of the same images.
 - **Without one** the task is still accepted (`202`) and monitored normally — the expected setup when image tags are committed elsewhere (Argo CD Image Updater, your pipeline). The write-back is skipped, and it cannot cancel a deployment that did present a credential. With [`MAX_ANONYMOUS_ROLLOUTS`](server-env.md#core) set, it is rejected `429` once that many uncredentialed deployments are in progress on the replica.
 - **With an invalid or expired one** the request is rejected `401`.
-- **With a credential scoped to other applications** the request is rejected `401`. An application deploy token, and a JWT carrying `allowed_apps`, authorize only the applications they name, unless their scope is the wildcard (`all_apps` for a deploy token, `"*"` in `allowed_apps`).
+- **With a credential scoped to other applications** the request is rejected `401`. An application deploy token, and a JWT carrying `allowed_apps` or `allowed_app_prefixes`, authorize only the applications they name or whose names start with one of their prefixes, unless their scope is the wildcard (`all_apps` for a deploy token, `"*"` in `allowed_apps`).
 
 Because the endpoint is open, its payload is bounded: at most 50 images per task, no name longer than 255 characters, and a `timeout` above 86400 seconds is clamped to it. That cap is what limits how long one request keeps the watcher polling Argo CD — a task still being monitored is not given up on by the staleness sweep.
 
@@ -84,7 +84,7 @@ An unauthorized task on an application that relies on the built-in updater fails
 
 `GET`, `POST /api/v1/app-tokens` and `DELETE /api/v1/app-tokens/{id}` are **registered only when OIDC is enabled and `STATE_TYPE=postgres`**, and each requires a session in one of the `OIDC_PRIVILEGED_GROUPS` — listing tokens included, since the list names who holds a credential for which applications. As with the deploy lock, an unregistered route falls through to the Web UI's catch-all: check the `Content-Type`.
 
-`POST` takes a scope of either `apps` (a list of application names) or `all_apps: true` (a wildcard), never both, plus an optional `description` and `expires_in_days`. A `"*"` or `"all_apps"` entry in `apps` is refused rather than read as a wildcard. It answers `201` with the token's `secret` — the only time that value exists anywhere. `406` means the scope or the payload was refused.
+`POST` takes a scope of `apps` (a list of application names), `app_prefixes` (a list of name prefixes), or both; or `all_apps: true` (a wildcard) alone. Each prefix must end with `-` after at least one segment, so `"whatever-"` is accepted and `"whatever"` or `"-"` are refused. The two lists share the cap of 200 entries. An optional `description` and `expires_in_days` round out the body. An entry in `apps` containing `*` is refused rather than read as a pattern. It answers `201` with the token's `secret` — the only time that value exists anywhere. `406` means the scope or the payload was refused.
 
 `DELETE` revokes a token, effective on its next use. The row is kept, so who issued it and when it was withdrawn stay on record.
 

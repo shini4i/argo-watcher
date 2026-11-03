@@ -110,9 +110,9 @@ func (a *Authenticator) AuthenticateRequest(request *http.Request) (bool, error)
 }
 
 // ValidateForApp reports whether the request carries a credential authorizing a
-// deployment of the named application, with the same three return states as
-// Validate. Only application deploy tokens and JWTs carrying allowed_apps narrow
-// their answer by application; every other credential authorizes every one.
+// deployment of the named application, with Validate's three return states. Only
+// application deploy tokens and JWTs carrying allowed_apps or allowed_app_prefixes
+// narrow their answer by application; every other credential authorizes every one.
 func (a *Authenticator) ValidateForApp(request *http.Request, app string) (bool, error) {
 	return a.walk(request, func(strategy AuthStrategy, token string) (bool, error) {
 		return validateForApp(strategy, token, app)

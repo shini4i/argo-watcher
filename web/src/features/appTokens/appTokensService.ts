@@ -10,6 +10,8 @@ const ENDPOINT = '/api/v1/app-tokens';
 export interface AppToken {
   id: string;
   apps?: string[];
+  /** Covers every application whose name starts with one of these. */
+  app_prefixes?: string[];
   all_apps: boolean;
   hint: string;
   description?: string;
@@ -23,11 +25,12 @@ export interface AppToken {
 }
 
 /**
- * The scope a new token is asked for. `all_apps` and `apps` are mutually
- * exclusive; the server rejects a request setting both.
+ * The scope a new token is asked for. `all_apps` excludes `apps` and
+ * `app_prefixes`, which may be combined; the server rejects a request mixing them.
  */
 export interface IssueAppTokenRequest {
   apps?: string[];
+  app_prefixes?: string[];
   all_apps?: boolean;
   description?: string;
   /** Omit or pass 0 for a token that never expires. */
@@ -90,10 +93,17 @@ export const isTokenActive = (token: AppToken, now: number = Date.now()): boolea
   return !token.expires_at || token.expires_at > now;
 };
 
-/** Human-readable scope: the wildcard, or the application list. */
+/**
+ * Human-readable scope: the wildcard, or the names followed by the prefixes. A
+ * prefix renders as `prefix-* (prefix)`, matching the server's wording.
+ */
 export const describeScope = (token: AppToken): string => {
   if (token.all_apps) {
     return 'All applications';
   }
-  return token.apps?.length ? token.apps.join(', ') : 'No applications';
+  const entries = [
+    ...(token.apps ?? []),
+    ...(token.app_prefixes ?? []).map(prefix => `${prefix}* (prefix)`),
+  ];
+  return entries.length ? entries.join(', ') : 'No applications';
 };

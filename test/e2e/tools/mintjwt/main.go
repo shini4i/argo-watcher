@@ -1,7 +1,7 @@
 // Command mintjwt prints a one-hour HS256 token signed with JWT_SECRET, using the
 // very library the server validates with, so the lab needs no openssl. JWT_ISS,
-// JWT_AUD and JWT_ALLOWED_APPS (comma-separated) add the iss, aud and allowed_apps
-// claims; iat and exp are always set, because the server requires them.
+// JWT_AUD, JWT_ALLOWED_APPS and JWT_ALLOWED_APP_PREFIXES (both comma-separated) add
+// the matching claims; iat and exp are always set, because the server requires them.
 package main
 
 import (
@@ -38,6 +38,9 @@ func main() {
 	// keeps authorizing every application.
 	if apps := os.Getenv("JWT_ALLOWED_APPS"); apps != "" {
 		claims["allowed_apps"] = strings.Split(apps, ",")
+	}
+	if prefixes := os.Getenv("JWT_ALLOWED_APP_PREFIXES"); prefixes != "" {
+		claims["allowed_app_prefixes"] = strings.Split(prefixes, ",")
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

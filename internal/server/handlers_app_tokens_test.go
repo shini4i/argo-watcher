@@ -201,6 +201,22 @@ func TestIssueAppToken(t *testing.T) {
 		assert.Empty(t, issued.Apps)
 	})
 
+	t.Run("issues a token scoped to names and prefixes", func(t *testing.T) {
+		store := newFakeTokenStore()
+		env := appTokenEnv(t, privilegedStrategy("alice"), store)
+
+		recorder := callAppTokens(t, env, http.MethodPost, appTokensEndpoint,
+			`{"apps":["whatever"],"app_prefixes":[" whatever-review- "]}`)
+
+		require.Equal(t, http.StatusCreated, recorder.Code, recorder.Body.String())
+
+		var issued models.AppTokenResponse
+		require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &issued))
+		assert.Equal(t, []string{"whatever"}, issued.Apps)
+		assert.Equal(t, []string{"whatever-review-"}, issued.AppPrefixes, "the prefix is stored trimmed")
+		assert.False(t, issued.AllApps)
+	})
+
 	t.Run("records the requested expiry", func(t *testing.T) {
 		store := newFakeTokenStore()
 		env := appTokenEnv(t, privilegedStrategy("alice"), store)
@@ -227,6 +243,11 @@ func TestIssueAppToken(t *testing.T) {
 		{name: "a malformed body", body: `{"apps":`},
 		{name: "an over-long description", body: `{"apps":["app1"],"description":"` + strings.Repeat("d", 256) + `"}`},
 		{name: "more applications than the cap", body: `{"apps":` + jsonAppList(201) + `}`},
+		{name: "a wildcard that also lists prefixes", body: `{"all_apps":true,"app_prefixes":["whatever-"]}`},
+		{name: "a prefix without a separator", body: `{"app_prefixes":["whatever"]}`},
+		{name: "a separator-only prefix", body: `{"app_prefixes":["-"]}`},
+		{name: "a glob in the application list", body: `{"apps":["whatever-*"]}`},
+		{name: "more prefixes than the cap", body: `{"app_prefixes":` + jsonPrefixList(201) + `}`},
 	}
 
 	for _, test := range rejected {
@@ -368,34 +389,44 @@ func TestAppTokenAttributionFallsBackToUnknown(t *testing.T) {
 }
 
 func TestAppTokenScopesTaskSubmission(t *testing.T) {
-	store := newFakeTokenStore()
-	scoped, err := store.Issue(apptoken.Scope{Apps: []string{"app1"}}, "", "alice", time.Time{})
-	require.NoError(t, err)
-
-	env, _ := readAuthEnv(t, true, map[string]auth.AuthStrategy{
-		oidcHeader:      privilegedStrategy("alice"),
-		"Authorization": auth.NewPrefixRouter(auth.NewAppTokenAuthService(store), nil),
-	})
-	env.appTokens = store
-	router := env.CreateRouter()
-
-	submit := func(t *testing.T, app string) *httptest.ResponseRecorder {
-		t.Helper()
-		body := fmt.Sprintf(`{"app":%q,"author":"ci","project":"demo","images":[{"image":"nginx","tag":"1.0"}]}`, app)
-		req, err := http.NewRequest(http.MethodPost, "/api/v1/tasks", strings.NewReader(body))
-		require.NoError(t, err)
-		req.Header.Set("Authorization", "Bearer "+scoped.Secret)
-		req.Header.Set("Content-Type", "application/json")
-
-		recorder := httptest.NewRecorder()
-		router.ServeHTTP(recorder, req)
-		return recorder
+	tests := []struct {
+		name  string
+		scope apptoken.Scope
+		app   string
+	}{
+		{name: "a name token on another application", scope: apptoken.Scope{Apps: []string{"app1"}}, app: "app2"},
+		{name: "a prefix token on a name missing the separator", scope: apptoken.Scope{AppPrefixes: []string{"app-"}}, app: "appx-review"},
+		{name: "a prefix token on a name merely containing it", scope: apptoken.Scope{AppPrefixes: []string{"app-"}}, app: "other-app-x"},
 	}
 
-	// The task submission endpoint takes an optional credential, so a token outside
-	// its scope is a rejection rather than a silently unvalidated task: accepting it
-	// would skip the write-back and fail the rollout blaming the image.
-	assert.Equal(t, http.StatusUnauthorized, submit(t, "app2").Code)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			store := newFakeTokenStore()
+			scoped, err := store.Issue(test.scope, "", "alice", time.Time{})
+			require.NoError(t, err)
+
+			env, _ := readAuthEnv(t, true, map[string]auth.AuthStrategy{
+				oidcHeader:      privilegedStrategy("alice"),
+				"Authorization": auth.NewPrefixRouter(auth.NewAppTokenAuthService(store), nil),
+			})
+			env.appTokens = store
+			router := env.CreateRouter()
+
+			body := fmt.Sprintf(`{"app":%q,"author":"ci","project":"demo","images":[{"image":"nginx","tag":"1.0"}]}`, test.app)
+			req, err := http.NewRequest(http.MethodPost, "/api/v1/tasks", strings.NewReader(body))
+			require.NoError(t, err)
+			req.Header.Set("Authorization", "Bearer "+scoped.Secret)
+			req.Header.Set("Content-Type", "application/json")
+
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(recorder, req)
+
+			// The task submission endpoint takes an optional credential, so a token outside
+			// its scope is a rejection rather than a silently unvalidated task: accepting it
+			// would skip the write-back and fail the rollout blaming the image.
+			assert.Equal(t, http.StatusUnauthorized, recorder.Code)
+		})
+	}
 }
 
 // TestAppTokenAuthorizesAnInScopeSubmission is the feature's central assertion: an
@@ -411,6 +442,7 @@ func TestAppTokenAuthorizesAnInScopeSubmission(t *testing.T) {
 	}{
 		{name: "a token scoped to the application", scope: apptoken.Scope{Apps: []string{"app1"}}, app: "app1"},
 		{name: "a wildcard token on an unrelated application", scope: apptoken.Scope{AllApps: true}, app: "some-other-app"},
+		{name: "a prefix token on a matching application", scope: apptoken.Scope{AppPrefixes: []string{"app-"}}, app: "app-x7k2-review"},
 	}
 
 	for _, test := range tests {
@@ -504,6 +536,20 @@ func jsonAppList(count int) string {
 		apps[i] = fmt.Sprintf("app-%d", i)
 	}
 	encoded, err := json.Marshal(apps)
+	if err != nil {
+		panic(err)
+	}
+	return string(encoded)
+}
+
+// jsonPrefixList renders count distinct, individually valid prefixes, so a test of
+// the cap is refused for the count rather than for a malformed entry.
+func jsonPrefixList(count int) string {
+	prefixes := make([]string, count)
+	for i := range prefixes {
+		prefixes[i] = fmt.Sprintf("app-%d-", i)
+	}
+	encoded, err := json.Marshal(prefixes)
 	if err != nil {
 		panic(err)
 	}

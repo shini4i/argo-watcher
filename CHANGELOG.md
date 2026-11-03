@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Application deploy tokens can be scoped by name prefix through `app_prefixes`, and a
+  new **Application prefixes** field in the issue dialog sets it. A prefix such as
+  `whatever-review-` covers every application whose name starts with it, including ones
+  created later, so randomly named review environments no longer need an all-apps
+  token. Prefixes combine with exact names on one token, must end with `-`, and are
+  refused alongside `all_apps`.
+- CI JWTs accept an `allowed_app_prefixes` claim with the same rules. It combines with
+  `allowed_apps`: a token is authorized when either one covers the application.
+
+### Changed
+
+- Issuing an application deploy token with a `*` anywhere in an `apps` entry, such as
+  `whatever-*`, is now rejected `406` with a pointer to `app_prefixes`. Before, it was
+  stored as a literal name that matched nothing.
+- Rolling back migration `000014` refuses while any prefix-scoped token exists. Delete
+  those tokens first.
+
 ## [1.5.2] - 2026-11-03
 
 ### Added

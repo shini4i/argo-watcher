@@ -266,6 +266,10 @@ neither-apps-nor-all {}
 bounded-and-unbounded {"apps":["a"],"all_apps":true}
 empty-application-name {"apps":["  "]}
 expiry-beyond-ten-years {"apps":["a"],"expires_in_days":4000}
+prefix-without-separator {"app_prefixes":["a"]}
+separator-only-prefix {"app_prefixes":["-"]}
+glob-as-application-name {"apps":["a-*"]}
+bounded-prefix-and-unbounded {"app_prefixes":["a-"],"all_apps":true}
 EOF
 
 # The bounds on the list. Both are refused by the request validator before
@@ -379,6 +383,34 @@ if token_moved "$ALL_ID" .last_used_at; then
   ok "the all-applications token authorized those tasks (the wildcard branch really ran)"
 else
   bad "the all-applications token's use was never recorded, so its 202s prove nothing"
+fi
+
+# A prefix covers applications whose names are not known when the token is issued,
+# such as review environments with a random segment. Fictional names, for the
+# reason given above.
+issue_secret '{"apps":["e2e-prefix"],"app_prefixes":["e2e-prefix-review-"]}' prefix
+PREFIX_SECRET="$TOKEN_SECRET"
+PREFIX_ID="$TOKEN_ID"
+for app in "e2e-prefix" "e2e-prefix-review-x7k2"; do
+  post_task "$(task_json "$app" v0.0.1)" -H "Authorization: ${PREFIX_SECRET}"
+  if [[ "$CODE" == "202" ]]; then
+    ok "the name-and-prefix token authorizes ${app}"
+  else
+    bad "name-and-prefix token for ${app}: code=${CODE} body=${BODY} (want 202)"
+  fi
+done
+for app in "e2e-prefix-prod" "e2e-prefix-reviewx"; do
+  post_task "$(task_json "$app" v0.0.1)" -H "Authorization: ${PREFIX_SECRET}"
+  if [[ "$CODE" == "401" ]]; then
+    ok "the name-and-prefix token refuses ${app}"
+  else
+    bad "name-and-prefix token for ${app}: code=${CODE} body=${BODY} (want 401)"
+  fi
+done
+if token_moved "$PREFIX_ID" .last_used_at; then
+  ok "the name-and-prefix token authorized those tasks (the prefix branch really ran)"
+else
+  bad "the name-and-prefix token's use was never recorded, so its 202s prove nothing"
 fi
 
 # --- 6. Use is recorded on deployments, never on reads -------------------------

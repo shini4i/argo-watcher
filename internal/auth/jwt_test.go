@@ -308,6 +308,95 @@ func TestJWTAuthServiceValidateForApp(t *testing.T) {
 		}
 	})
 
+	t.Run("a prefix claim confines a token to the applications starting with it", func(t *testing.T) {
+		tokenStr := mint(t, jwt.MapClaims{"allowed_app_prefixes": []string{"whatever-"}})
+
+		isValid, err := service.ValidateForApp(tokenStr, "whatever-x7k2-review")
+		assert.NoError(t, err)
+		assert.True(t, isValid)
+
+		isValid, err = service.ValidateForApp(tokenStr, "whateverprod")
+		assert.False(t, isValid)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "does not cover application whateverprod")
+	})
+
+	t.Run("names and prefixes together authorize either", func(t *testing.T) {
+		tokenStr := mint(t, jwt.MapClaims{
+			"allowed_apps":         []string{"whatever"},
+			"allowed_app_prefixes": []string{"whatever-review-"},
+		})
+
+		for _, app := range []string{"whatever", "whatever-review-abc"} {
+			isValid, err := service.ValidateForApp(tokenStr, app)
+			assert.NoError(t, err, app)
+			assert.True(t, isValid, app)
+		}
+
+		isValid, err := service.ValidateForApp(tokenStr, "whatever-prod")
+		assert.False(t, isValid)
+		require.Error(t, err)
+	})
+
+	t.Run("an empty prefix claim authorizes nothing", func(t *testing.T) {
+		tokenStr := mint(t, jwt.MapClaims{"allowed_app_prefixes": []string{}})
+
+		isValid, err := service.ValidateForApp(tokenStr, "app1")
+
+		assert.False(t, isValid)
+		require.Error(t, err)
+	})
+
+	t.Run("a malformed prefix claim is a rejection", func(t *testing.T) {
+		tests := []struct {
+			name  string
+			claim any
+			error string
+		}{
+			{name: "a bare string", claim: "whatever-", error: "allowed_app_prefixes"},
+			{name: "a list of numbers", claim: []int{1}, error: "allowed_app_prefixes"},
+			// An empty or separator-only prefix would match nearly every application,
+			// widening a token its minter meant to confine.
+			{name: "an empty prefix", claim: []string{""}, error: "must not be empty"},
+			{name: "a separator-only prefix", claim: []string{"-"}, error: "must name at least one segment"},
+			{name: "a prefix without a separator", claim: []string{"whatever"}, error: `must end with "-"`},
+			{name: "a starred prefix", claim: []string{"whatever-*"}, error: `must not contain "*"`},
+		}
+
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				tokenStr := mint(t, jwt.MapClaims{"allowed_app_prefixes": test.claim})
+
+				isValid, err := service.ValidateForApp(tokenStr, "whatever-app")
+
+				assert.False(t, isValid)
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), test.error)
+			})
+		}
+	})
+
+	t.Run("an invalid prefix is refused even beside a covering allowed_apps", func(t *testing.T) {
+		tests := []struct {
+			name   string
+			claims jwt.MapClaims
+			app    string
+		}{
+			{name: "a listed name", claims: jwt.MapClaims{"allowed_apps": []string{"app1"}, "allowed_app_prefixes": []string{"-"}}, app: "app1"},
+			{name: "the wildcard", claims: jwt.MapClaims{"allowed_apps": []string{"*"}, "allowed_app_prefixes": []string{"whatever"}}, app: "anything"},
+		}
+
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				isValid, err := service.ValidateForApp(mint(t, test.claims), test.app)
+
+				assert.False(t, isValid)
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "allowed_app_prefixes")
+			})
+		}
+	})
+
 	t.Run("an invalid signature is rejected before the claim is read", func(t *testing.T) {
 		claims := jwt.MapClaims{
 			"exp":          float64(time.Now().Add(time.Hour).Unix()),

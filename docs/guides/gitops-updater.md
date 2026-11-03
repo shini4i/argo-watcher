@@ -163,8 +163,12 @@ Where either of the first two is missing, a presented token is rejected `401` na
 
 Open **Workspace Controls → Deploy Tokens → Manage**, then **Issue token**. A token is scoped to either:
 
-- **a list of applications** — the usual choice, one token per pipeline; or
+- **a list of applications** — the usual choice, one token per pipeline;
+- **application prefixes** — every application whose name starts with one, including those created later. This fits review environments with a random segment: `whatever-review-` covers `whatever-review-x7k2`. A prefix must end with `-`, so `whatever-` never covers `whateverprod`. Names and prefixes can be combined on one token; or
 - **all applications** — the wildcard, covering every application present and future. This is the revocable, attributable equivalent of `ARGO_WATCHER_DEPLOY_TOKEN`.
+
+!!! warning "A prefix covers names that do not exist yet"
+    Anyone who can create an Argo CD Application whose name matches the prefix brings it into the token's scope. Do not give production applications a name that a review prefix also matches.
 
 An optional expiry and a description round it out. The description is what the list shows, so name the pipeline that holds the token.
 
@@ -189,7 +193,7 @@ The server routes on the `awt_` prefix every token carries, and hands anything e
 
 | | Application deploy token | JWT | Shared deploy token |
 |---|---|---|---|
-| Scope | set by the server at issue time | asserted by the minter via `allowed_apps` | every application |
+| Scope | set by the server at issue time | asserted by the minter via `allowed_apps` and `allowed_app_prefixes` | every application |
 | Revocable individually | yes, immediately | no, not before `exp` | no |
 | Attributed to an issuer | yes | no | no |
 | Needs OIDC + Postgres | yes | no | no |
@@ -217,6 +221,7 @@ openssl rand -base64 32
   "sub": "argo-watcher-client",
   "cluster": "prod",
   "allowed_apps": ["app1", "app2"],
+  "allowed_app_prefixes": ["app1-review-"],
   "iat": 1773352800,
   "exp": 1804888800
 }
@@ -231,10 +236,11 @@ openssl rand -base64 32
 | `aud` | Only if `JWT_AUDIENCE` is set | A list matches when it contains the configured value. |
 | `sub` | No | Informational — service or team name. |
 | `cluster` | No | Informational. |
-| `allowed_apps` | When present | A list of application names the token may deploy. **A token omitting the claim still authorizes every application**, so an existing fleet is unaffected; one that carries it is confined to what it names. An entry of `"*"` authorizes every application; it is matched whole, so `"app*"` is a literal name, not a pattern. See the caveat below. |
+| `allowed_apps` | When present | A list of application names the token may deploy. **A token omitting the claim still authorizes every application**, so an existing fleet is unaffected; one that carries it is confined to what it names. An entry of `"*"` authorizes every application; it is matched whole, so `"app*"` is a literal name, not a pattern — use `allowed_app_prefixes` for that. See the caveat below. |
+| `allowed_app_prefixes` | When present | A list of name prefixes. The token also covers every application whose name starts with one. It confines the token just as `allowed_apps` does, and the two combine: either matching is enough. Each prefix must end with `-` after at least one segment; a token carrying `""`, `"-"` or `"app"` is rejected rather than read as covering everything. |
 
 
-!!! warning "`allowed_apps` is a self-restriction, not a boundary"
+!!! warning "`allowed_apps` and `allowed_app_prefixes` are a self-restriction, not a boundary"
     The claim is written by whoever mints the token, so anyone holding `JWT_SECRET` can name any application. It limits the blast radius of a **minted token** leaking out of one pipeline; it is no defence against the secret itself leaking, for which only rotation helps. Where you need a scope the holder cannot assert, use an [application deploy token](#application-deploy-tokens) — its scope is a server-side column.
 
     Setting the claim on a token that previously relied on it being ignored will now confine that token. Check your pipelines before rolling it out.

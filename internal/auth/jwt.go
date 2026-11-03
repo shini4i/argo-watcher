@@ -6,18 +6,26 @@ import (
 	"slices"
 
 	"github.com/golang-jwt/jwt/v5"
+
+	"github.com/shini4i/argo-watcher/internal/apptoken"
 )
 
 // allowedAppsClaim optionally confines a token to a set of applications. It is a self-restriction,
 // not an authorization decision: anyone holding JWT_SECRET can name any application, so it limits
-// the blast radius of a leaked *minted token* only. A token omitting the claim, or listing
-// allowedAppsWildcard, authorizes every application.
+// the blast radius of a leaked *minted token* only. A token omitting both scope claims, or
+// listing allowedAppsWildcard, authorizes every application.
 const allowedAppsClaim = "allowed_apps"
 
 // allowedAppsWildcard is the allowedAppsClaim entry that covers every application.
 // It matches only as a whole entry, never as a glob, and cannot collide with a real
 // application because Kubernetes names never contain "*".
 const allowedAppsWildcard = "*"
+
+// allowedAppPrefixesClaim optionally confines a token to the applications whose names
+// start with one of its entries, under the same self-restriction caveat. Each entry
+// must pass apptoken.ValidatePrefix. Alongside allowedAppsClaim, either one matching
+// is enough.
+const allowedAppPrefixesClaim = "allowed_app_prefixes"
 
 // JWTAuthService validates the HMAC-signed tokens a CI pipeline presents. Beyond the
 // signature it enforces the claim policy assembled in NewJWTAuthService.
@@ -36,26 +44,45 @@ func (j *JWTAuthService) Validate(tokenStr string) (bool, error) {
 	return true, nil
 }
 
-// ValidateForApp verifies the token and additionally honors allowedAppsClaim,
-// confining the token to the applications it names unless it lists
-// allowedAppsWildcard.
+// ValidateForApp verifies the token and additionally honors allowedAppsClaim and
+// allowedAppPrefixesClaim. A token carrying neither authorizes every application;
+// one carrying either is confined to what they name together.
 func (j *JWTAuthService) ValidateForApp(tokenStr, app string) (bool, error) {
 	token, err := j.parse(tokenStr)
 	if err != nil {
 		return false, err
 	}
 
-	allowed, present, err := allowedApps(token)
+	apps, appsPresent, err := stringListClaim(token, allowedAppsClaim)
 	if err != nil {
 		return false, err
 	}
 
-	if !present {
+	prefixes, prefixesPresent, err := stringListClaim(token, allowedAppPrefixesClaim)
+	if err != nil {
+		return false, err
+	}
+
+	if !appsPresent && !prefixesPresent {
 		return true, nil
 	}
 
-	if !slices.Contains(allowed, app) && !slices.Contains(allowed, allowedAppsWildcard) {
-		return false, fmt.Errorf("this token's %s claim does not cover application %s", allowedAppsClaim, app)
+	// A malformed prefix is refused rather than skipped: "" or "-" would match nearly
+	// every application, widening a token its minter meant to confine.
+	for _, prefix := range prefixes {
+		if err := apptoken.ValidatePrefix(prefix); err != nil {
+			return false, fmt.Errorf("the %s claim is invalid: %w", allowedAppPrefixesClaim, err)
+		}
+	}
+
+	scope := apptoken.Scope{
+		Apps:        apps,
+		AppPrefixes: prefixes,
+		AllApps:     slices.Contains(apps, allowedAppsWildcard),
+	}
+	if !scope.Allows(app) {
+		return false, fmt.Errorf("the scope in this token's %s and %s claims does not cover application %s",
+			allowedAppsClaim, allowedAppPrefixesClaim, app)
 	}
 
 	return true, nil
@@ -86,33 +113,33 @@ func (j *JWTAuthService) parse(tokenStr string) (*jwt.Token, error) {
 	return token, nil
 }
 
-// allowedApps reads allowedAppsClaim, reporting whether the token carries it at
-// all. A claim present but malformed is reported rather than ignored: treating it
-// as absent would widen the token to the whole estate.
-func allowedApps(token *jwt.Token) (apps []string, present bool, err error) {
+// stringListClaim reads a claim holding a list of strings, reporting whether the
+// token carries it at all. A claim present but malformed is reported rather than
+// ignored: treating it as absent would widen the token to the whole estate.
+func stringListClaim(token *jwt.Token, name string) (values []string, present bool, err error) {
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
 		return nil, false, nil
 	}
 
-	raw, present := claims[allowedAppsClaim]
+	raw, present := claims[name]
 	if !present {
 		return nil, false, nil
 	}
 
 	entries, ok := raw.([]any)
 	if !ok {
-		return nil, true, fmt.Errorf("the %s claim must be an array of application names", allowedAppsClaim)
+		return nil, true, fmt.Errorf("the %s claim must be an array of strings", name)
 	}
 
-	apps = make([]string, 0, len(entries))
+	values = make([]string, 0, len(entries))
 	for _, entry := range entries {
-		app, ok := entry.(string)
+		value, ok := entry.(string)
 		if !ok {
-			return nil, true, fmt.Errorf("the %s claim must contain only application names", allowedAppsClaim)
+			return nil, true, fmt.Errorf("the %s claim must contain only strings", name)
 		}
-		apps = append(apps, app)
+		values = append(values, value)
 	}
 
-	return apps, true, nil
+	return values, true, nil
 }

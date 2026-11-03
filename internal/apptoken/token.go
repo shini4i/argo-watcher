@@ -47,12 +47,17 @@ const MaxAppNameLength = 255
 // treat it as a rejection, never as a backend failure.
 var ErrNotFound = errors.New("application deploy token not found")
 
-// Scope names the applications a token authorizes. AllApps and a non-empty Apps
-// are mutually exclusive — the database rejects the combination — because a token
-// that is both bounded and unbounded has no meaning.
+// Scope names the applications a token authorizes: either AllApps, or any mix of
+// exact names in Apps and name prefixes in AppPrefixes. AllApps beside a non-empty
+// list is refused — the database rejects the combination — because a token that is
+// both bounded and unbounded has no meaning.
 type Scope struct {
 	// Apps is the explicit list of application names, empty when AllApps is set.
 	Apps []string
+	// AppPrefixes covers every application whose name starts with one of them, so a
+	// token can follow applications created later under a known naming scheme. Each
+	// entry ends with "-" — see ValidatePrefix. Empty when AllApps is set.
+	AppPrefixes []string
 	// AllApps authorizes every application. It is a distinct field rather than a
 	// wildcard entry in Apps so that granting the whole estate cannot be the
 	// accidental result of building the list wrongly.
@@ -67,44 +72,116 @@ func (s Scope) Allows(app string) bool {
 		return true
 	}
 
-	return slices.Contains(s.Apps, app)
+	if slices.Contains(s.Apps, app) {
+		return true
+	}
+
+	for _, prefix := range s.AppPrefixes {
+		if strings.HasPrefix(app, prefix) {
+			return true
+		}
+	}
+
+	return false
 }
 
-// String renders the scope for logs and error messages.
+// String renders the scope for logs and error messages. A prefix is written as
+// "prefix-* (prefix)", so the operator reading a rejection sees how wide it is.
 func (s Scope) String() string {
 	if s.AllApps {
 		return "all applications"
 	}
 
-	return strings.Join(s.Apps, ", ")
+	entries := slices.Clone(s.Apps)
+	for _, prefix := range s.AppPrefixes {
+		entries = append(entries, prefix+"* (prefix)")
+	}
+
+	return strings.Join(entries, ", ")
 }
 
-// Validate normalizes the scope and reports why it cannot be stored. It trims and
-// deduplicates the application list, so the same scope always round-trips to the
-// same row and Allows cannot be defeated by stray whitespace. A "*" or "all_apps"
-// entry is refused: AllApps is the only spelling of the wildcard.
+// ValidatePrefix reports why prefix cannot scope a credential, checking it as given.
+// It must end with "-" after at least one segment, so "whatever-" covers
+// "whatever-review" but not "whateverprod", and "-" cannot cover the whole estate.
+// A "*" is refused: the prefix already means "anything after this".
+func ValidatePrefix(prefix string) error {
+	if prefix == "" {
+		return errors.New("an application prefix must not be empty")
+	}
+	if strings.Contains(prefix, "*") {
+		return fmt.Errorf(`application prefix %q must not contain "*"; it already covers every name that starts with it`, prefix)
+	}
+	if !strings.HasSuffix(prefix, "-") {
+		return fmt.Errorf(`application prefix %q must end with "-", so it covers whole name segments`, prefix)
+	}
+	if strings.Trim(prefix, "-") == "" {
+		return fmt.Errorf(`application prefix %q must name at least one segment before the "-"`, prefix)
+	}
+	if len(prefix) > MaxAppNameLength {
+		return fmt.Errorf("an application prefix must be at most %d characters", MaxAppNameLength)
+	}
+
+	return nil
+}
+
+// Validate normalizes the scope and reports why it cannot be stored. Trimming and
+// deduplicating both lists makes a scope round-trip to the same row. A "*" in Apps
+// is refused: AllApps is the only spelling of the wildcard, and AppPrefixes the
+// only spelling of a pattern.
 func (s *Scope) Validate() error {
 	if s.AllApps {
-		if len(s.Apps) > 0 {
-			return errors.New("a token scoped to all applications must not also list applications")
+		if len(s.Apps) > 0 || len(s.AppPrefixes) > 0 {
+			return errors.New("a token scoped to all applications must not also list applications or prefixes")
 		}
 		s.Apps = nil
+		s.AppPrefixes = nil
 		return nil
 	}
 
-	seen := make(map[string]struct{}, len(s.Apps))
-	normalized := make([]string, 0, len(s.Apps))
+	apps, err := normalizeApps(s.Apps)
+	if err != nil {
+		return err
+	}
 
-	for _, app := range s.Apps {
+	prefixes, err := normalizePrefixes(s.AppPrefixes)
+	if err != nil {
+		return err
+	}
+
+	if len(apps) == 0 && len(prefixes) == 0 {
+		return errors.New("a token must be scoped to at least one application or application prefix, or to all applications")
+	}
+	if len(apps)+len(prefixes) > MaxApps {
+		return fmt.Errorf("a token must not list more than %d applications and prefixes in total; scope it to all applications instead", MaxApps)
+	}
+
+	s.Apps = apps
+	s.AppPrefixes = prefixes
+	return nil
+}
+
+// normalizeApps trims and deduplicates application names, refusing an entry that
+// is empty, oversized, or written as a wildcard or pattern. It returns nil for an
+// empty list.
+func normalizeApps(raw []string) ([]string, error) {
+	var normalized []string
+	seen := make(map[string]struct{}, len(raw))
+
+	for _, app := range raw {
 		app = strings.TrimSpace(app)
 		if app == "" {
-			return errors.New("an application name must not be empty")
+			return nil, errors.New("an application name must not be empty")
 		}
 		if app == "*" || app == "all_apps" {
-			return fmt.Errorf("%q is not an application name; use all_apps to scope a token to every application", app)
+			return nil, fmt.Errorf("%q is not an application name; use all_apps to scope a token to every application", app)
+		}
+		// Kubernetes names never contain "*", so this entry could only be a pattern
+		// the operator expected to match, stored as a name that matches nothing.
+		if strings.Contains(app, "*") {
+			return nil, patternError(app)
 		}
 		if len(app) > MaxAppNameLength {
-			return fmt.Errorf("an application name must be at most %d characters", MaxAppNameLength)
+			return nil, fmt.Errorf("an application name must be at most %d characters", MaxAppNameLength)
 		}
 		if _, duplicate := seen[app]; duplicate {
 			continue
@@ -113,15 +190,39 @@ func (s *Scope) Validate() error {
 		normalized = append(normalized, app)
 	}
 
-	if len(normalized) == 0 {
-		return errors.New("a token must be scoped either to at least one application or to all of them")
-	}
-	if len(normalized) > MaxApps {
-		return fmt.Errorf("a token must not list more than %d applications; scope it to all applications instead", MaxApps)
+	return normalized, nil
+}
+
+// patternError refuses an application name written as a pattern. It suggests the
+// pattern's stem as a prefix only when that stem would itself pass ValidatePrefix.
+func patternError(app string) error {
+	if stem := strings.TrimSuffix(app, "*"); ValidatePrefix(stem) == nil {
+		return fmt.Errorf("%q is not an application name; list %q under app_prefixes to cover every application starting with it",
+			app, stem)
 	}
 
-	s.Apps = normalized
-	return nil
+	return fmt.Errorf(`%q is not an application name; list a prefix ending with "-" under app_prefixes instead`, app)
+}
+
+// normalizePrefixes trims and deduplicates application prefixes, refusing any that
+// ValidatePrefix rejects. It returns nil for an empty list.
+func normalizePrefixes(raw []string) ([]string, error) {
+	var normalized []string
+	seen := make(map[string]struct{}, len(raw))
+
+	for _, prefix := range raw {
+		prefix = strings.TrimSpace(prefix)
+		if err := ValidatePrefix(prefix); err != nil {
+			return nil, err
+		}
+		if _, duplicate := seen[prefix]; duplicate {
+			continue
+		}
+		seen[prefix] = struct{}{}
+		normalized = append(normalized, prefix)
+	}
+
+	return normalized, nil
 }
 
 // Token is a stored token's metadata. The secret itself is never part of it: it

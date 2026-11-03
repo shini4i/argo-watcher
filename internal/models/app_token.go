@@ -1,10 +1,13 @@
 package models
 
-// AppTokenRequest is the body of POST /api/v1/app-tokens. Apps and AllApps are
-// mutually exclusive; the server rejects a request setting both.
+// AppTokenRequest is the body of POST /api/v1/app-tokens. AllApps excludes Apps and
+// AppPrefixes; the server rejects a request combining them. Apps and AppPrefixes mix.
 type AppTokenRequest struct {
 	// Apps names the applications the token may deploy.
 	Apps []string `json:"apps,omitempty" binding:"max=200,dive,max=255"`
+	// AppPrefixes covers every application whose name starts with one of them. Each
+	// must end with "-".
+	AppPrefixes []string `json:"app_prefixes,omitempty" binding:"max=200,dive,max=255"`
 	// AllApps is the wildcard: every application, present and future.
 	AllApps bool `json:"all_apps,omitempty"`
 	// Description is free text identifying the holder, e.g. the pipeline name.
@@ -21,6 +24,7 @@ type AppTokenRequest struct {
 type AppTokenResponse struct {
 	Id          string   `json:"id"`
 	Apps        []string `json:"apps,omitempty"`
+	AppPrefixes []string `json:"app_prefixes,omitempty"`
 	AllApps     bool     `json:"all_apps"`
 	Hint        string   `json:"hint"`
 	Description string   `json:"description,omitempty"`

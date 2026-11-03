@@ -87,13 +87,43 @@ func TestPostgresStoreIssueWildcard(t *testing.T) {
 	assert.True(t, found.Scope.Allows("any-application-at-all"))
 }
 
+func TestPostgresStoreIssueWithPrefixes(t *testing.T) {
+	store := newTestStore(t)
+
+	issued, err := store.Issue(Scope{Apps: []string{"whatever"}, AppPrefixes: []string{"whatever-review-"}}, "", "alice", time.Time{})
+	require.NoError(t, err)
+
+	found, err := store.Lookup(issued.Secret)
+	require.NoError(t, err)
+
+	assert.False(t, found.Scope.AllApps)
+	assert.Equal(t, []string{"whatever"}, found.Scope.Apps)
+	assert.Equal(t, []string{"whatever-review-"}, found.Scope.AppPrefixes)
+	assert.True(t, found.Scope.Allows("whatever"))
+	assert.True(t, found.Scope.Allows("whatever-review-x7k2"))
+	assert.False(t, found.Scope.Allows("whatever-prod"))
+}
+
+func TestPostgresStoreIssuePrefixesOnly(t *testing.T) {
+	store := newTestStore(t)
+
+	issued, err := store.Issue(Scope{AppPrefixes: []string{"whatever-"}}, "", "alice", time.Time{})
+	require.NoError(t, err)
+
+	found, err := store.Lookup(issued.Secret)
+	require.NoError(t, err)
+
+	assert.Empty(t, found.Scope.Apps)
+	assert.Equal(t, []string{"whatever-"}, found.Scope.AppPrefixes)
+}
+
 func TestPostgresStoreIssueRejectsAnUnstorableScope(t *testing.T) {
 	store := newTestStore(t)
 
 	_, err := store.Issue(Scope{}, "", "alice", time.Time{})
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "at least one application or to all of them")
+	assert.Contains(t, err.Error(), "at least one application or application prefix, or to all applications")
 }
 
 func TestPostgresStoreIssuePersistsAnExpiry(t *testing.T) {
@@ -219,37 +249,51 @@ func TestAppTokensScopeConstraint(t *testing.T) {
 
 	// The hash travels as hex because gorm expands a []byte argument into a list of
 	// values, which makes the statement itself malformed.
-	insert := func(label, apps string, allApps bool) error {
+	insert := func(label, apps, prefixes string, allApps bool) error {
 		return db.Exec(`
-			INSERT INTO app_tokens (token_hash, apps, all_apps, hint, created_by)
-			VALUES (decode(?, 'hex'), CAST(? AS jsonb), ?, 'aaaa', 'test')`,
-			hex.EncodeToString(Hash(label)), apps, allApps).Error
+			INSERT INTO app_tokens (token_hash, apps, app_prefixes, all_apps, hint, created_by)
+			VALUES (decode(?, 'hex'), CAST(? AS jsonb), CAST(? AS jsonb), ?, 'aaaa', 'test')`,
+			hex.EncodeToString(Hash(label)), apps, prefixes, allApps).Error
 	}
 
-	t.Run("accepts a wildcard with an empty array", func(t *testing.T) {
-		require.NoError(t, insert("wildcard", `[]`, true))
-	})
+	accepted := []struct {
+		name     string
+		apps     string
+		prefixes string
+		allApps  bool
+	}{
+		{name: "a wildcard with empty arrays", apps: `[]`, prefixes: `[]`, allApps: true},
+		{name: "a list without the wildcard", apps: `["app1"]`, prefixes: `[]`, allApps: false},
+		{name: "prefixes without the wildcard", apps: `[]`, prefixes: `["whatever-"]`, allApps: false},
+		{name: "a list and prefixes together", apps: `["app1"]`, prefixes: `["whatever-"]`, allApps: false},
+	}
 
-	t.Run("accepts a list without the wildcard", func(t *testing.T) {
-		require.NoError(t, insert("scoped", `["app1"]`, false))
-	})
+	for _, test := range accepted {
+		t.Run("accepts "+test.name, func(t *testing.T) {
+			require.NoError(t, insert(test.name, test.apps, test.prefixes, test.allApps))
+		})
+	}
 
 	rejected := []struct {
-		name    string
-		apps    string
-		allApps bool
+		name     string
+		apps     string
+		prefixes string
+		allApps  bool
 	}{
-		{name: "a wildcard that also lists applications", apps: `["app1"]`, allApps: true},
-		{name: "neither a wildcard nor a list", apps: `[]`, allApps: false},
+		{name: "a wildcard that also lists applications", apps: `["app1"]`, prefixes: `[]`, allApps: true},
+		{name: "a wildcard that also lists prefixes", apps: `[]`, prefixes: `["whatever-"]`, allApps: true},
+		{name: "neither a wildcard, a list nor prefixes", apps: `[]`, prefixes: `[]`, allApps: false},
 		// JSON null would make jsonb_array_length return SQL NULL, and a CHECK
 		// evaluating to NULL passes — jsonb_typeof is what closes that hole.
-		{name: "JSON null instead of an array", apps: `null`, allApps: true},
-		{name: "an object instead of an array", apps: `{"app":"app1"}`, allApps: true},
+		{name: "JSON null instead of an array", apps: `null`, prefixes: `[]`, allApps: true},
+		{name: "an object instead of an array", apps: `{"app":"app1"}`, prefixes: `[]`, allApps: true},
+		{name: "JSON null prefixes beside a list", apps: `["app1"]`, prefixes: `null`, allApps: false},
+		{name: "object prefixes beside a list", apps: `["app1"]`, prefixes: `{"p":"whatever-"}`, allApps: false},
 	}
 
 	for _, test := range rejected {
 		t.Run("refuses "+test.name, func(t *testing.T) {
-			err := insert(test.name, test.apps, test.allApps)
+			err := insert(test.name, test.apps, test.prefixes, test.allApps)
 
 			// Naming the constraint keeps a malformed statement from passing as a
 			// refusal, which is what hid a broken cast in this test once already.

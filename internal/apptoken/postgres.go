@@ -14,13 +14,14 @@ import (
 // whereID is the predicate every by-id statement in this store shares.
 const whereID = "id = ?"
 
-// tokenRow is the app_tokens table. It stays unexported: the scope is two columns
+// tokenRow is the app_tokens table. It stays unexported: the scope is three columns
 // on the wire and one Scope everywhere else, and nothing outside this file should
 // have to know which.
 type tokenRow struct {
 	Id          uuid.UUID                   `gorm:"column:id;type:uuid;not null;default:gen_random_uuid();"`
 	TokenHash   []byte                      `gorm:"column:token_hash;not null;uniqueIndex;"`
 	Apps        datatypes.JSONSlice[string] `gorm:"column:apps;type:jsonb;not null;"`
+	AppPrefixes datatypes.JSONSlice[string] `gorm:"column:app_prefixes;type:jsonb;not null;"`
 	AllApps     bool                        `gorm:"column:all_apps;not null;default:false;"`
 	Hint        string                      `gorm:"column:hint;not null;"`
 	Description string                      `gorm:"column:description;not null;default:'';"`
@@ -39,7 +40,7 @@ func (tokenRow) TableName() string {
 func (row *tokenRow) toToken() Token {
 	return Token{
 		Id:          row.Id,
-		Scope:       Scope{Apps: row.Apps, AllApps: row.AllApps},
+		Scope:       Scope{Apps: row.Apps, AppPrefixes: row.AppPrefixes, AllApps: row.AllApps},
 		Hint:        row.Hint,
 		Description: row.Description,
 		CreatedBy:   row.CreatedBy,
@@ -79,10 +80,15 @@ func (s *PostgresStore) Issue(scope Scope, description, createdBy string, expire
 	if apps == nil {
 		apps = []string{}
 	}
+	prefixes := scope.AppPrefixes
+	if prefixes == nil {
+		prefixes = []string{}
+	}
 
 	row := tokenRow{
 		TokenHash:   credential.Hash,
 		Apps:        datatypes.NewJSONSlice(apps),
+		AppPrefixes: datatypes.NewJSONSlice(prefixes),
 		AllApps:     scope.AllApps,
 		Hint:        credential.Hint,
 		Description: description,
